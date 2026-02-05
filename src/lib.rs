@@ -56,6 +56,7 @@ enum TokenKind {
     Tilde,
     Eq,
     EqEq,
+    FatArrow,
     BangEq,
     Lt,
     Lte,
@@ -170,6 +171,8 @@ impl Lexer {
             '=' => {
                 if self.match_char('=') {
                     TokenKind::EqEq
+                } else if self.match_char('>') {
+                    TokenKind::FatArrow
                 } else {
                     TokenKind::Eq
                 }
@@ -461,6 +464,14 @@ impl Parser {
             }
             return Ok(CallArg::Named { name, value: None });
         }
+        if let Some(name) = self.peek_ident() {
+            if matches!(self.peek_next_kind(), Some(TokenKind::FatArrow)) {
+                self.pos += 1;
+                self.consume_kind(TokenKind::FatArrow)?;
+                let value = self.parse_expr()?;
+                return Ok(CallArg::Named { name, value: Some(value) });
+            }
+        }
         Ok(CallArg::Positional(self.parse_expr()?))
     }
 
@@ -604,6 +615,11 @@ impl Parser {
         if self.match_kind(TokenKind::Nil) {
             return Ok(Expr::Literal(Value::Nil));
         }
+        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_))) {
+            if let TokenKind::Ident(name) = token.kind {
+                return Ok(Expr::Literal(Value::Str(name)));
+            }
+        }
         if self.peek_is_var() {
             let name = self.consume_var()?;
             return Ok(Expr::Var(name));
@@ -701,11 +717,12 @@ pub struct Interpreter {
     env: HashMap<String, Value>,
     output: String,
     test_state: Option<TestState>,
+    halted: bool,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self { env: HashMap::new(), output: String::new(), test_state: None }
+        Self { env: HashMap::new(), output: String::new(), test_state: None, halted: false }
     }
 
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
@@ -723,6 +740,9 @@ impl Interpreter {
         let stmts = parser.parse_program()?;
         for stmt in stmts {
             self.exec_stmt(&stmt)?;
+            if self.halted {
+                break;
+            }
         }
         if let Some(state) = &self.test_state {
             if let Some(planned) = state.planned {
@@ -788,13 +808,23 @@ impl Interpreter {
     fn exec_call(&mut self, name: &str, args: &[CallArg]) -> Result<(), RuntimeError> {
         match name {
             "plan" => {
-                let count = self.eval_expr(self.positional_arg(args, 0, "plan expects count")?)?;
-                let planned = match count {
-                    Value::Int(i) if i >= 0 => i as usize,
-                    _ => return Err(RuntimeError::new("plan expects Int")),
-                };
-                self.test_state.get_or_insert_with(TestState::new).planned = Some(planned);
-                self.output.push_str(&format!("1..{}\n", planned));
+                if let Some(reason) = self.named_arg_value(args, "skip-all")? {
+                    self.test_state.get_or_insert_with(TestState::new).planned = Some(0);
+                    if reason.is_empty() {
+                        self.output.push_str("1..0 # SKIP\n");
+                    } else {
+                        self.output.push_str(&format!("1..0 # SKIP {}\n", reason));
+                    }
+                    self.halted = true;
+                } else {
+                    let count = self.eval_expr(self.positional_arg(args, 0, "plan expects count")?)?;
+                    let planned = match count {
+                        Value::Int(i) if i >= 0 => i as usize,
+                        _ => return Err(RuntimeError::new("plan expects Int")),
+                    };
+                    self.test_state.get_or_insert_with(TestState::new).planned = Some(planned);
+                    self.output.push_str(&format!("1..{}\n", planned));
+                }
             }
             "done-testing" => {
                 let state = self.test_state.get_or_insert_with(TestState::new);
@@ -874,6 +904,20 @@ impl Interpreter {
             }
         }
         Ok(false)
+    }
+
+    fn named_arg_value(&mut self, args: &[CallArg], name: &str) -> Result<Option<String>, RuntimeError> {
+        for arg in args {
+            if let CallArg::Named { name: arg_name, value } = arg {
+                if arg_name == name {
+                    if let Some(expr) = value {
+                        return Ok(Some(self.eval_expr(expr)?.to_string_value()));
+                    }
+                    return Ok(Some(String::new()));
+                }
+            }
+        }
+        Ok(None)
     }
 
     fn test_ok(&mut self, success: bool, desc: &str, todo: bool) -> Result<(), RuntimeError> {
