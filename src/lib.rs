@@ -11,6 +11,7 @@ pub enum Value {
     RangeExcl(i64, i64),
     Array(Vec<Value>),
     FatRat(i64, i64),
+    CompUnitDepSpec { short_name: String },
     Package(String),
     Routine { package: String, name: String },
     Sub {
@@ -33,6 +34,7 @@ impl PartialEq for Value {
             (Value::RangeExcl(a1, b1), Value::RangeExcl(a2, b2)) => a1 == a2 && b1 == b2,
             (Value::Array(a), Value::Array(b)) => a == b,
             (Value::FatRat(a1, b1), Value::FatRat(a2, b2)) => a1 == a2 && b1 == b2,
+            (Value::CompUnitDepSpec { short_name: a }, Value::CompUnitDepSpec { short_name: b }) => a == b,
             (Value::Package(a), Value::Package(b)) => a == b,
             (Value::Routine { package: ap, name: an }, Value::Routine { package: bp, name: bn }) => ap == bp && an == bn,
             (Value::Nil, Value::Nil) => true,
@@ -51,6 +53,7 @@ impl Value {
             Value::RangeExcl(_, _) => true,
             Value::Array(items) => !items.is_empty(),
             Value::FatRat(_, _) => true,
+            Value::CompUnitDepSpec { .. } => true,
             Value::Package(_) => true,
             Value::Routine { .. } => true,
             Value::Sub { .. } => true,
@@ -72,6 +75,7 @@ impl Value {
                 .collect::<Vec<_>>()
                 .join(" "),
             Value::FatRat(a, b) => format!("{}/{}", a, b),
+            Value::CompUnitDepSpec { short_name } => format!("CompUnit::DependencySpecification({})", short_name),
             Value::Package(s) => s.clone(),
             Value::Routine { package, name } => format!("{}::{}", package, name),
             Value::Sub { name, .. } => name.clone(),
@@ -705,6 +709,7 @@ enum Expr {
         then_expr: Box<Expr>,
         else_expr: Box<Expr>,
     },
+    AssignExpr { name: String, expr: Box<Expr> },
     Unary { op: TokenKind, expr: Box<Expr> },
     Binary { left: Box<Expr>, op: TokenKind, right: Box<Expr> },
     Hash(Vec<(String, Option<Expr>)>),
@@ -1212,6 +1217,40 @@ impl Parser {
         Ok(exprs.remove(0))
     }
 
+    fn parse_method_arg(&mut self) -> Expr {
+        if self.match_kind(TokenKind::Colon) {
+            let name = self.consume_ident().unwrap_or_default();
+            let value = if self.check(&TokenKind::Lt) {
+                self.parse_angle_literal()
+            } else if self.match_kind(TokenKind::LParen) {
+                let expr = self.parse_expr_or_true();
+                self.match_kind(TokenKind::RParen);
+                expr
+            } else {
+                self.parse_expr_or_true()
+            };
+            return Expr::AssignExpr { name, expr: Box::new(value) };
+        }
+        self.parse_expr_or_true()
+    }
+
+    fn parse_angle_literal(&mut self) -> Expr {
+        if !self.match_kind(TokenKind::Lt) {
+            return Expr::Literal(Value::Nil);
+        }
+        let value = if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_) | TokenKind::Str(_))) {
+            match token.kind {
+                TokenKind::Ident(s) => s,
+                TokenKind::Str(s) => s,
+                _ => String::new(),
+            }
+        } else {
+            String::new()
+        };
+        self.match_kind(TokenKind::Gt);
+        Expr::Literal(Value::Str(value))
+    }
+
     fn parse_ternary(&mut self) -> Result<Expr, RuntimeError> {
         let mut expr = self.parse_or()?;
         if self.match_kind(TokenKind::QuestionQuestion) {
@@ -1474,6 +1513,17 @@ impl Parser {
                 }
                 self.consume_kind(TokenKind::RParen)?;
                 Expr::Call { name, args }
+            } else if name == "my"
+                && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
+            {
+                self.pos += 1;
+                let var_name = self.consume_var()?;
+                if self.match_kind(TokenKind::Eq) || self.match_kind(TokenKind::Bind) {
+                    let expr = self.parse_comma_expr()?;
+                    Expr::AssignExpr { name: var_name, expr: Box::new(expr) }
+                } else {
+                    Expr::Literal(Value::Nil)
+                }
             } else if name == "class" && matches!(self.peek_next_kind(), Some(TokenKind::LBrace)) {
                 self.pos += 1;
                 self.consume_kind(TokenKind::LBrace)?;
@@ -1555,9 +1605,9 @@ impl Parser {
                 let mut args = Vec::new();
                 if self.match_kind(TokenKind::LParen) {
                     if !self.check(&TokenKind::RParen) {
-                        args.push(self.parse_expr_or_true());
+                        args.push(self.parse_method_arg());
                         while self.match_kind(TokenKind::Comma) {
-                            args.push(self.parse_expr_or_true());
+                            args.push(self.parse_method_arg());
                         }
                     }
                     self.consume_kind(TokenKind::RParen)?;
@@ -1845,11 +1895,6 @@ impl Interpreter {
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
         if !self.env.contains_key("*PROGRAM") {
             self.env.insert("*PROGRAM".to_string(), Value::Str(String::new()));
-        }
-        if input.contains("CompUnit::DependencySpecification") && input.contains("plan 6;") {
-            return Ok(
-                "1..6\nok 1\nok 2\nok 3\nok 4\nok 5\nok 6\n".to_string(),
-            );
         }
         if input.contains("use isms <Perl5>") && input.contains("plan 2;") {
             return Ok("1..2\nok 1 - does =~ survive?\nok 2 - did it actually do the assignment?\n".to_string());
@@ -2204,10 +2249,14 @@ impl Interpreter {
                 self.test_ok(ok, &desc, todo)?;
             }
             "dies-ok" => {
-                let _ = self.positional_arg(args, 0, "dies-ok expects block")?;
+                let block = self.positional_arg(args, 0, "dies-ok expects block")?;
                 let desc = self.positional_arg_value(args, 1)?;
                 let todo = self.named_arg_bool(args, "todo")?;
-                self.test_ok(true, &desc, todo)?;
+                let ok = match block {
+                    Expr::Block(body) => self.eval_block_value(body).is_err(),
+                    _ => self.eval_expr(block).is_err(),
+                };
+                self.test_ok(ok, &desc, todo)?;
             }
             "force_todo" | "force-todo" => {
                 let mut ranges = Vec::new();
@@ -2563,6 +2612,11 @@ impl Interpreter {
                     _ => Ok(Value::Nil),
                 }
             }
+            Expr::AssignExpr { name, expr } => {
+                let value = self.eval_expr(expr)?;
+                self.env.insert(name.clone(), value.clone());
+                Ok(value)
+            }
             Expr::EnvIndex(key) => {
                 if let Some(value) = std::env::var_os(key) {
                     Ok(Value::Str(value.to_string_lossy().to_string()))
@@ -2683,6 +2737,10 @@ impl Interpreter {
                         }
                         _ => Ok(Value::Nil),
                     },
+                    "version-matcher" | "auth-matcher" | "api-matcher" => match base {
+                        Value::CompUnitDepSpec { .. } => Ok(Value::Bool(true)),
+                        _ => Ok(Value::Nil),
+                    },
                     "new" => match base {
                         Value::Str(name) if name == "FatRat" => {
                             let a = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
@@ -2690,6 +2748,25 @@ impl Interpreter {
                             let a = match a { Some(Value::Int(i)) => i, _ => 0 };
                             let b = match b { Some(Value::Int(i)) => i, _ => 1 };
                             Ok(Value::FatRat(a, b))
+                        }
+                        Value::Str(name) if name == "CompUnit::DependencySpecification" => {
+                            let mut short_name = None;
+                            if let Some(arg) = args.get(0) {
+                                if let Expr::AssignExpr { name, expr } = arg {
+                                    if name == "short-name" {
+                                        if let Ok(Value::Str(s)) = self.eval_expr(expr) {
+                                            short_name = Some(s);
+                                        }
+                                    }
+                                } else if let Ok(Value::Str(s)) = self.eval_expr(arg) {
+                                    short_name = Some(s);
+                                }
+                            }
+                            if let Some(s) = short_name {
+                                Ok(Value::CompUnitDepSpec { short_name: s })
+                            } else {
+                                Err(RuntimeError::new("CompUnit::DependencySpecification requires short-name"))
+                            }
                         }
                         _ => Ok(Value::Nil),
                     },
