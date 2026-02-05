@@ -6,6 +6,7 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - Keep changes small and well-documented; prefer incremental features aligned with roast tests.
 - Prefer ASCII in source files unless a specific Unicode feature is required.
 - Do not rewrite or reformat unrelated code.
+- Do not use stubs, hardcoded outputs, or early returns to make tests pass.
 
 ## Layout
 - `src/` holds the interpreter implementation.
@@ -16,6 +17,7 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - Build: `cargo build`
 - Run: `cargo run -- <file.p6>`
 - Test: `cargo test`
+- Full test (cargo + prove): `make test`
 
 ## Spec sources
 - Roast tests live at `../roast/`.
