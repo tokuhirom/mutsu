@@ -97,8 +97,39 @@ impl Lexer {
             if self.pos >= self.src.len() {
                 return Token { kind: TokenKind::Eof };
             }
-            let ch = self.bump();
-            let kind = match ch {
+        let ch = self.bump();
+        let kind = match ch {
+            'q' => {
+                if self.peek() == Some('<') {
+                    self.pos += 1;
+                    let mut s = String::new();
+                    while let Some(c) = self.peek() {
+                        self.pos += 1;
+                        if c == '>' {
+                            break;
+                        }
+                        s.push(c);
+                    }
+                    TokenKind::Str(s)
+                } else {
+                    let mut ident = String::new();
+                    ident.push(ch);
+                    while let Some(c) = self.peek() {
+                        if c.is_ascii_alphanumeric() || c == '_' || self.is_ident_hyphen(c) {
+                            ident.push(c);
+                            self.pos += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    match ident.as_str() {
+                        "True" => TokenKind::True,
+                        "False" => TokenKind::False,
+                        "Nil" => TokenKind::Nil,
+                        _ => TokenKind::Ident(ident),
+                    }
+                }
+            }
             '0'..='9' => {
                 let mut num = ch.to_string();
                 while let Some(c) = self.peek() {
