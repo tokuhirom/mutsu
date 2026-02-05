@@ -27,3 +27,4 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - Add small, focused tests for each new syntax feature.
 - Keep the parser and evaluator readable; comment only non-obvious logic.
 - テストは原則 prove (`tools/prove_existing_roast.sh`) で実装すること。`tests/*.rs` の Rust integration test は使わない。
+- 機能を追加したら必ずテストも実装すること。テストなしの機能追加は不完全とみなす。

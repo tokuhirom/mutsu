@@ -438,6 +438,21 @@ impl Lexer {
                 }
             }
             if self.peek() == Some('#') {
+                self.pos += 1;
+                // Check for embedded comment #`(...)
+                if self.peek() == Some('`') {
+                    self.pos += 1;
+                    if let Some(open) = self.peek() {
+                        if let Some(close) = Self::matching_bracket(open) {
+                            self.pos += 1;
+                            self.skip_bracketed_comment(open, close);
+                            continue;
+                        }
+                    }
+                    // Not a valid embedded comment, treat as regular comment
+                    self.pos -= 1; // back to after #
+                }
+                // Regular single-line comment
                 while let Some(c) = self.peek() {
                     self.pos += 1;
                     if c == '\n' {
@@ -448,6 +463,43 @@ impl Lexer {
                 continue;
             }
             break;
+        }
+    }
+
+    fn matching_bracket(open: char) -> Option<char> {
+        match open {
+            '(' => Some(')'),
+            '{' => Some('}'),
+            '[' => Some(']'),
+            '<' => Some('>'),
+            '\u{ff62}' => Some('\u{ff63}'), // Japanese corner brackets
+            '\u{300c}' => Some('\u{300d}'), // CJK corner brackets
+            '\u{300e}' => Some('\u{300f}'), // CJK white corner brackets
+            '\u{3010}' => Some('\u{3011}'), // CJK black lenticular brackets
+            '\u{3014}' => Some('\u{3015}'), // CJK tortoise shell brackets
+            '\u{3016}' => Some('\u{3017}'), // CJK white lenticular brackets
+            '\u{3018}' => Some('\u{3019}'), // CJK white tortoise shell brackets
+            '\u{301a}' => Some('\u{301b}'), // CJK white square brackets
+            '\u{00ab}' => Some('\u{00bb}'), // guillemets
+            '\u{2018}' => Some('\u{2019}'), // single quotes
+            '\u{201c}' => Some('\u{201d}'), // double quotes
+            _ => None,
+        }
+    }
+
+    fn skip_bracketed_comment(&mut self, open: char, close: char) {
+        let mut depth = 1usize;
+        while self.pos < self.src.len() && depth > 0 {
+            let c = self.src[self.pos];
+            if c == '\n' {
+                self.line += 1;
+            }
+            if c == open {
+                depth += 1;
+            } else if c == close {
+                depth -= 1;
+            }
+            self.pos += 1;
         }
     }
 
