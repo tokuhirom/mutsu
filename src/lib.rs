@@ -10,6 +10,7 @@ pub enum Value {
     Range(i64, i64),
     RangeExcl(i64, i64),
     Array(Vec<Value>),
+    FatRat(i64, i64),
     Package(String),
     Routine { package: String, name: String },
     Sub {
@@ -31,6 +32,7 @@ impl PartialEq for Value {
             (Value::Range(a1, b1), Value::Range(a2, b2)) => a1 == a2 && b1 == b2,
             (Value::RangeExcl(a1, b1), Value::RangeExcl(a2, b2)) => a1 == a2 && b1 == b2,
             (Value::Array(a), Value::Array(b)) => a == b,
+            (Value::FatRat(a1, b1), Value::FatRat(a2, b2)) => a1 == a2 && b1 == b2,
             (Value::Package(a), Value::Package(b)) => a == b,
             (Value::Routine { package: ap, name: an }, Value::Routine { package: bp, name: bn }) => ap == bp && an == bn,
             (Value::Nil, Value::Nil) => true,
@@ -48,6 +50,7 @@ impl Value {
             Value::Range(_, _) => true,
             Value::RangeExcl(_, _) => true,
             Value::Array(items) => !items.is_empty(),
+            Value::FatRat(_, _) => true,
             Value::Package(_) => true,
             Value::Routine { .. } => true,
             Value::Sub { .. } => true,
@@ -68,6 +71,7 @@ impl Value {
                 .map(|v| v.to_string_value())
                 .collect::<Vec<_>>()
                 .join(" "),
+            Value::FatRat(a, b) => format!("{}/{}", a, b),
             Value::Package(s) => s.clone(),
             Value::Routine { package, name } => format!("{}::{}", package, name),
             Value::Sub { name, .. } => name.clone(),
@@ -134,6 +138,7 @@ enum TokenKind {
     RBrace,
     Comma,
     Colon,
+    Bind,
     Semicolon,
     Eof,
 }
@@ -417,7 +422,13 @@ impl Lexer {
             '{' => TokenKind::LBrace,
             '}' => TokenKind::RBrace,
             ',' => TokenKind::Comma,
-            ':' => TokenKind::Colon,
+            ':' => {
+                if self.match_char('=') {
+                    TokenKind::Bind
+                } else {
+                    TokenKind::Colon
+                }
+            },
             ';' => TokenKind::Semicolon,
             '^' => {
                 continue;
@@ -848,7 +859,7 @@ impl Parser {
             } else {
                 (self.consume_var()?, false)
             };
-            if self.match_kind(TokenKind::Eq) {
+            if self.match_kind(TokenKind::Eq) || self.match_kind(TokenKind::Bind) {
                 let expr = self.parse_comma_expr()?;
                 self.match_kind(TokenKind::Semicolon);
                 return Ok(Stmt::VarDecl { name, expr });
@@ -915,9 +926,13 @@ impl Parser {
         }
         if self.peek_is_var() {
             if let Some(next) = self.peek_next_kind() {
-                if matches!(next, TokenKind::Eq) {
+                if matches!(next, TokenKind::Eq | TokenKind::Bind) {
                     let name = self.consume_var()?;
-                    self.consume_kind(TokenKind::Eq)?;
+                    if self.match_kind(TokenKind::Eq) {
+                        // ok
+                    } else {
+                        self.consume_kind(TokenKind::Bind)?;
+                    }
                     let expr = self.parse_comma_expr()?;
                     self.match_kind(TokenKind::Semicolon);
                     return Ok(Stmt::Assign { name, expr });
@@ -925,10 +940,14 @@ impl Parser {
             }
         }
         if let Some(TokenKind::ArrayVar(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
-            if matches!(self.peek_next_kind(), Some(TokenKind::Eq)) {
+            if matches!(self.peek_next_kind(), Some(TokenKind::Eq | TokenKind::Bind)) {
                 let name = format!("@{}", name.clone());
                 self.pos += 1;
-                self.consume_kind(TokenKind::Eq)?;
+                if self.match_kind(TokenKind::Eq) {
+                    // ok
+                } else {
+                    self.consume_kind(TokenKind::Bind)?;
+                }
                 let expr = self.parse_comma_expr()?;
                 self.match_kind(TokenKind::Semicolon);
                 return Ok(Stmt::Assign { name, expr });
@@ -1827,9 +1846,6 @@ impl Interpreter {
         if !self.env.contains_key("*PROGRAM") {
             self.env.insert("*PROGRAM".to_string(), Value::Str(String::new()));
         }
-        if input.contains("FatRat.new(9,10)") && input.contains("plan 1;") {
-            return Ok("1..1\nok 1\n".to_string());
-        }
         if input.contains("CompUnit::DependencySpecification") && input.contains("plan 6;") {
             return Ok(
                 "1..6\nok 1\nok 2\nok 3\nok 4\nok 5\nok 6\n".to_string(),
@@ -2172,6 +2188,7 @@ impl Interpreter {
                 let todo = self.named_arg_bool(args, "todo")?;
                 let ok = match type_name.as_str() {
                     "Array" => matches!(value, Value::Array(_)),
+                    "FatRat" => matches!(value, Value::FatRat(_, _)),
                     _ => true,
                 };
                 self.test_ok(ok, &desc, todo)?;
@@ -2663,6 +2680,16 @@ impl Interpreter {
                                 .collect::<Vec<_>>()
                                 .join(&sep);
                             Ok(Value::Str(joined))
+                        }
+                        _ => Ok(Value::Nil),
+                    },
+                    "new" => match base {
+                        Value::Str(name) if name == "FatRat" => {
+                            let a = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                            let b = args.get(1).map(|e| self.eval_expr(e).ok()).flatten();
+                            let a = match a { Some(Value::Int(i)) => i, _ => 0 };
+                            let b = match b { Some(Value::Int(i)) => i, _ => 1 };
+                            Ok(Value::FatRat(a, b))
                         }
                         _ => Ok(Value::Nil),
                     },
