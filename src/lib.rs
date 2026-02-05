@@ -505,9 +505,24 @@ impl Lexer {
         let mut i = self.pos;
         let mut found = false;
         let mut escaped = false;
+        let mut in_bracket = 0usize;
+        let mut in_quote: Option<char> = None;
         while i < self.src.len() {
             let c = self.src[i];
-            if !escaped && c == '/' {
+            if !escaped {
+                if let Some(q) = in_quote {
+                    if c == q {
+                        in_quote = None;
+                    }
+                } else if c == '\'' || c == '"' {
+                    in_quote = Some(c);
+                } else if c == '[' {
+                    in_bracket += 1;
+                } else if c == ']' && in_bracket > 0 {
+                    in_bracket -= 1;
+                }
+            }
+            if !escaped && in_bracket == 0 && in_quote.is_none() && c == '/' {
                 found = true;
                 break;
             }
@@ -527,9 +542,24 @@ impl Lexer {
         }
         let mut s = String::new();
         let mut escaped = false;
+        let mut in_bracket = 0usize;
+        let mut in_quote: Option<char> = None;
         while let Some(c) = self.peek() {
             self.pos += 1;
-            if !escaped && c == '/' {
+            if !escaped {
+                if let Some(q) = in_quote {
+                    if c == q {
+                        in_quote = None;
+                    }
+                } else if c == '\'' || c == '"' {
+                    in_quote = Some(c);
+                } else if c == '[' {
+                    in_bracket += 1;
+                } else if c == ']' && in_bracket > 0 {
+                    in_bracket -= 1;
+                }
+            }
+            if !escaped && in_bracket == 0 && in_quote.is_none() && c == '/' {
                 break;
             }
             if !escaped && c == '\\' {
@@ -546,9 +576,24 @@ impl Lexer {
     fn read_regex_literal(&mut self) -> String {
         let mut s = String::new();
         let mut escaped = false;
+        let mut in_bracket = 0usize;
+        let mut in_quote: Option<char> = None;
         while let Some(c) = self.peek() {
             self.pos += 1;
-            if !escaped && c == '/' {
+            if !escaped {
+                if let Some(q) = in_quote {
+                    if c == q {
+                        in_quote = None;
+                    }
+                } else if c == '\'' || c == '"' {
+                    in_quote = Some(c);
+                } else if c == '[' {
+                    in_bracket += 1;
+                } else if c == ']' && in_bracket > 0 {
+                    in_bracket -= 1;
+                }
+            }
+            if !escaped && in_bracket == 0 && in_quote.is_none() && c == '/' {
                 break;
             }
             if !escaped && c == '\\' {
@@ -992,6 +1037,13 @@ impl Parser {
                 let value = self.parse_expr()?;
                 self.consume_kind(TokenKind::RParen)?;
                 return Ok(CallArg::Named { name, value: Some(value) });
+            }
+            if self.match_kind(TokenKind::LBracket) {
+                while !self.check(&TokenKind::RBracket) && !self.check(&TokenKind::Eof) {
+                    self.pos += 1;
+                }
+                self.match_kind(TokenKind::RBracket);
+                return Ok(CallArg::Named { name, value: Some(Expr::Literal(Value::Nil)) });
             }
             return Ok(CallArg::Named { name, value: None });
         }
@@ -1575,6 +1627,8 @@ impl Interpreter {
     pub fn set_program_path(&mut self, path: &str) {
         self.program_path = Some(path.to_string());
         self.env.insert("*PROGRAM".to_string(), Value::Str(path.to_string()));
+        self.env
+            .insert("*PROGRAM-NAME".to_string(), Value::Str(path.to_string()));
     }
 
     pub fn output(&self) -> &str {
@@ -1584,12 +1638,6 @@ impl Interpreter {
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
         if !self.env.contains_key("*PROGRAM") {
             self.env.insert("*PROGRAM".to_string(), Value::Str(String::new()));
-        }
-        if input.contains("progname var matches test file path") && input.contains("plan 4;") {
-            return Ok(
-                "1..4\nok 1 - progname var matches test file path\nok 2 - progname var accessible as context var\nok 3 - $*PROGRAM-NAME is assignable\nok 4 - $*PROGRAM-NAME is not confused by compiler options\n"
-                    .to_string(),
-            );
         }
         if input.contains("the &?BLOCK magical worked") && input.contains("plan 3;") {
             return Ok(
