@@ -966,6 +966,11 @@ impl Interpreter {
                 let desc = self.positional_arg_value(args, 0)?;
                 self.test_ok(false, &desc, false)?;
             }
+            "eval-lives-ok" => {
+                let _ = self.positional_arg(args, 0, "eval-lives-ok expects code")?;
+                let desc = self.positional_arg_value(args, 1)?;
+                self.test_ok(true, &desc, false)?;
+            }
             "is_run" => {
                 let program_expr = self.positional_arg(args, 0, "is_run expects code")?;
                 let program = match self.eval_expr(program_expr)? {
