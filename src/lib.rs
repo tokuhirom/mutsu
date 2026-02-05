@@ -8,9 +8,16 @@ pub enum Value {
     Str(String),
     Bool(bool),
     Range(i64, i64),
+    Array(Vec<Value>),
     Package(String),
     Routine { package: String, name: String },
-    Sub { package: String, name: String, body: Vec<Stmt> },
+    Sub {
+        package: String,
+        name: String,
+        param: Option<String>,
+        body: Vec<Stmt>,
+        env: HashMap<String, Value>,
+    },
     Nil,
 }
 
@@ -21,6 +28,7 @@ impl PartialEq for Value {
             (Value::Str(a), Value::Str(b)) => a == b,
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Range(a1, b1), Value::Range(a2, b2)) => a1 == a2 && b1 == b2,
+            (Value::Array(a), Value::Array(b)) => a == b,
             (Value::Package(a), Value::Package(b)) => a == b,
             (Value::Routine { package: ap, name: an }, Value::Routine { package: bp, name: bn }) => ap == bp && an == bn,
             (Value::Nil, Value::Nil) => true,
@@ -36,6 +44,7 @@ impl Value {
             Value::Int(i) => *i != 0,
             Value::Str(s) => !s.is_empty(),
             Value::Range(_, _) => true,
+            Value::Array(items) => !items.is_empty(),
             Value::Package(_) => true,
             Value::Routine { .. } => true,
             Value::Sub { .. } => true,
@@ -50,6 +59,11 @@ impl Value {
             Value::Bool(true) => "True".to_string(),
             Value::Bool(false) => "False".to_string(),
             Value::Range(a, b) => format!("{}..{}", a, b),
+            Value::Array(items) => items
+                .iter()
+                .map(|v| v.to_string_value())
+                .collect::<Vec<_>>()
+                .join(" "),
             Value::Package(s) => s.clone(),
             Value::Routine { package, name } => format!("{}::{}", package, name),
             Value::Sub { name, .. } => name.clone(),
@@ -77,6 +91,8 @@ enum TokenKind {
     Var(String),
     HashVar(String),
     RoutineMagic,
+    BlockMagic,
+    ArrayVar(String),
     True,
     False,
     Nil,
@@ -94,6 +110,7 @@ enum TokenKind {
     SmartMatch,
     BangEq,
     BangTilde,
+    BangBang,
     Lt,
     Lte,
     Gt,
@@ -102,6 +119,7 @@ enum TokenKind {
     OrOr,
     OrWord,
     Bang,
+    QuestionQuestion,
     Ampersand,
     LParen,
     RParen,
@@ -124,6 +142,7 @@ struct Token {
 struct FunctionDef {
     package: String,
     name: String,
+    param: Option<String>,
     body: Vec<Stmt>,
 }
 
@@ -272,6 +291,10 @@ impl Lexer {
                 let ident = self.read_ident();
                 TokenKind::Var(ident)
             }
+            '@' => {
+                let ident = self.read_ident();
+                TokenKind::ArrayVar(ident)
+            }
             '%' => {
                 let ident = self.read_ident();
                 TokenKind::HashVar(ident)
@@ -309,7 +332,9 @@ impl Lexer {
                 }
             }
             '!' => {
-                if self.match_char('=') {
+                if self.match_char('!') {
+                    TokenKind::BangBang
+                } else if self.match_char('=') {
                     TokenKind::BangEq
                 } else if self.match_char('~') {
                     self.match_char('~');
@@ -339,6 +364,8 @@ impl Lexer {
                     let ident = self.read_ident_start(first);
                     if ident == "ROUTINE" {
                         TokenKind::RoutineMagic
+                    } else if ident == "BLOCK" {
+                        TokenKind::BlockMagic
                     } else {
                         TokenKind::Ident(format!("?{}", ident))
                     }
@@ -346,6 +373,13 @@ impl Lexer {
                     TokenKind::AndAnd
                 } else {
                     TokenKind::Ampersand
+                }
+            }
+            '?' => {
+                if self.match_char('?') {
+                    TokenKind::QuestionQuestion
+                } else {
+                    continue;
                 }
             }
             '|' => {
@@ -621,15 +655,22 @@ impl Lexer {
 enum Expr {
     Literal(Value),
     Var(String),
+    ArrayVar(String),
     HashVar(String),
     EnvIndex(String),
     MethodCall { target: Box<Expr>, name: String, args: Vec<Expr> },
     Exists(Box<Expr>),
     RoutineMagic,
+    BlockMagic,
     Block(Vec<Stmt>),
     AnonSub(Vec<Stmt>),
     CallOn { target: Box<Expr>, args: Vec<Expr> },
     Lambda { param: String, body: Vec<Stmt> },
+    Ternary {
+        cond: Box<Expr>,
+        then_expr: Box<Expr>,
+        else_expr: Box<Expr>,
+    },
     Unary { op: TokenKind, expr: Box<Expr> },
     Binary { left: Box<Expr>, op: TokenKind, right: Box<Expr> },
     Hash(Vec<(String, Option<Expr>)>),
@@ -659,7 +700,7 @@ enum ExpectedMatcher {
 enum Stmt {
     VarDecl { name: String, expr: Expr },
     Assign { name: String, expr: Expr },
-    SubDecl { name: String, body: Vec<Stmt> },
+    SubDecl { name: String, param: Option<String>, body: Vec<Stmt> },
     Package { name: String, body: Vec<Stmt> },
     Return(Expr),
     Say(Expr),
@@ -722,7 +763,16 @@ impl Parser {
         }
         if self.match_ident("sub") {
             let name = self.consume_ident()?;
+            let mut param = None;
             if self.match_kind(TokenKind::LParen) {
+                if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
+                    && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
+                {
+                    self.pos += 1;
+                }
+                if self.peek_is_var() {
+                    param = Some(self.consume_var()?);
+                }
                 while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
                     self.pos += 1;
                 }
@@ -738,7 +788,7 @@ impl Parser {
             if self.match_kind(TokenKind::LBrace) {
                 let body = self.parse_block_body()?;
                 self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::SubDecl { name, body });
+                return Ok(Stmt::SubDecl { name, param, body });
             }
             return Err(RuntimeError::new("Expected block for sub"));
         }
@@ -765,10 +815,26 @@ impl Parser {
             return Err(RuntimeError::new("Expected sub or block for subtest"));
         }
         if self.match_ident("my") {
-            let name = self.consume_var()?;
-            self.consume_kind(TokenKind::Eq)?;
-            let expr = self.parse_expr()?;
+            let (name, is_array) = if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_))) {
+                if let TokenKind::ArrayVar(n) = token.kind {
+                    (format!("@{}", n), true)
+                } else {
+                    (String::new(), false)
+                }
+            } else {
+                (self.consume_var()?, false)
+            };
+            if self.match_kind(TokenKind::Eq) {
+                let expr = self.parse_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::VarDecl { name, expr });
+            }
             self.match_kind(TokenKind::Semicolon);
+            let expr = if is_array {
+                Expr::Literal(Value::Array(Vec::new()))
+            } else {
+                Expr::Literal(Value::Nil)
+            };
             return Ok(Stmt::VarDecl { name, expr });
         }
         if self.match_ident("say") {
@@ -1068,7 +1134,24 @@ impl Parser {
     }
 
     fn parse_expr(&mut self) -> Result<Expr, RuntimeError> {
-        self.parse_or()
+        self.parse_ternary()
+    }
+
+    fn parse_ternary(&mut self) -> Result<Expr, RuntimeError> {
+        let mut expr = self.parse_or()?;
+        if self.match_kind(TokenKind::QuestionQuestion) {
+            let then_expr = self.parse_or()?;
+            if !self.match_kind(TokenKind::BangBang) {
+                return Err(RuntimeError::new("Expected !! in ternary"));
+            }
+            let else_expr = self.parse_or()?;
+            expr = Expr::Ternary {
+                cond: Box::new(expr),
+                then_expr: Box::new(then_expr),
+                else_expr: Box::new(else_expr),
+            };
+        }
+        Ok(expr)
     }
 
     fn parse_expr_or_true(&mut self) -> Expr {
@@ -1327,9 +1410,22 @@ impl Parser {
             } else {
                 Expr::Literal(Value::Nil)
             }
+        } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_))) {
+            if let TokenKind::ArrayVar(name) = token.kind {
+                Expr::ArrayVar(name)
+            } else {
+                Expr::Literal(Value::Nil)
+            }
         } else if self.match_kind(TokenKind::RoutineMagic) {
             Expr::RoutineMagic
+        } else if self.match_kind(TokenKind::BlockMagic) {
+            Expr::BlockMagic
         } else if self.match_kind(TokenKind::Arrow) {
+            if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
+                && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
+            {
+                self.pos += 1;
+            }
             let param = if self.peek_is_var() {
                 self.consume_var()?
             } else {
@@ -1599,6 +1695,7 @@ pub struct Interpreter {
     program_path: Option<String>,
     current_package: String,
     routine_stack: Vec<(String, String)>,
+    block_stack: Vec<Value>,
 }
 
 impl Interpreter {
@@ -1617,6 +1714,7 @@ impl Interpreter {
             program_path: None,
             current_package: "GLOBAL".to_string(),
             routine_stack: Vec::new(),
+            block_stack: Vec::new(),
         }
     }
 
@@ -1638,12 +1736,6 @@ impl Interpreter {
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
         if !self.env.contains_key("*PROGRAM") {
             self.env.insert("*PROGRAM".to_string(), Value::Str(String::new()));
-        }
-        if input.contains("the &?BLOCK magical worked") && input.contains("plan 3;") {
-            return Ok(
-                "1..3\nok 1 - the &?BLOCK magical worked\nok 2 - Correct result from function generator returning function using &?BLOCK\nok 3 - Correct closure semantics with &?BLOCK\n"
-                    .to_string(),
-            );
         }
         if input.contains("@*ARGS is an Array") && input.contains("plan 6;") {
             return Ok(
@@ -1715,11 +1807,12 @@ impl Interpreter {
                 let value = self.eval_expr(expr)?;
                 self.env.insert(name.clone(), value);
             }
-            Stmt::SubDecl { name, body } => {
+            Stmt::SubDecl { name, param, body } => {
                 let fq = format!("{}::{}", self.current_package, name);
                 let def = FunctionDef {
                     package: self.current_package.clone(),
                     name: name.clone(),
+                    param: param.clone(),
                     body: body.clone(),
                 };
                 self.functions.insert(fq, def);
@@ -2257,6 +2350,7 @@ impl Interpreter {
         match expr {
             Expr::Literal(v) => Ok(v.clone()),
             Expr::Var(name) => Ok(self.env.get(name).cloned().unwrap_or(Value::Nil)),
+            Expr::ArrayVar(name) => Ok(self.env.get(&format!("@{}", name)).cloned().unwrap_or(Value::Nil)),
             Expr::HashVar(_) => Ok(Value::Nil),
             Expr::RoutineMagic => {
                 if let Some((package, name)) = self.routine_stack.last() {
@@ -2265,13 +2359,28 @@ impl Interpreter {
                     Err(RuntimeError::new("X::Undeclared::Symbols"))
                 }
             }
+            Expr::BlockMagic => {
+                if let Some(Value::Sub { .. }) = self.block_stack.last() {
+                    Ok(self.block_stack.last().cloned().unwrap_or(Value::Nil))
+                } else {
+                    Err(RuntimeError::new("X::Undeclared::Symbols"))
+                }
+            }
             Expr::Block(body) => self.eval_block_value(body),
             Expr::AnonSub(body) => Ok(Value::Sub {
                 package: self.current_package.clone(),
                 name: String::new(),
+                param: None,
                 body: body.clone(),
+                env: self.env.clone(),
             }),
-            Expr::Lambda { .. } => Ok(Value::Nil),
+            Expr::Lambda { param, body } => Ok(Value::Sub {
+                package: self.current_package.clone(),
+                name: String::new(),
+                param: if param.is_empty() { None } else { Some(param.clone()) },
+                body: body.clone(),
+                env: self.env.clone(),
+            }),
             Expr::EnvIndex(key) => {
                 if let Some(value) = std::env::var_os(key) {
                     Ok(Value::Str(value.to_string_lossy().to_string()))
@@ -2280,6 +2389,42 @@ impl Interpreter {
                 }
             }
             Expr::MethodCall { target, name, args } => {
+                if let Expr::ArrayVar(var_name) = target.as_ref() {
+                    let key = format!("@{}", var_name);
+                    match name.as_str() {
+                        "push" => {
+                            let value = args
+                                .get(0)
+                                .map(|arg| self.eval_expr(arg).ok())
+                                .flatten()
+                                .unwrap_or(Value::Nil);
+                            if let Some(Value::Array(items)) = self.env.get_mut(&key) {
+                                items.push(value);
+                            } else {
+                                self.env.insert(key, Value::Array(vec![value]));
+                            }
+                            return Ok(Value::Nil);
+                        }
+                        "join" => {
+                            let sep = args
+                                .get(0)
+                                .map(|arg| self.eval_expr(arg).ok())
+                                .flatten()
+                                .map(|v| v.to_string_value())
+                                .unwrap_or_default();
+                            if let Some(Value::Array(items)) = self.env.get(&key) {
+                                let joined = items
+                                    .iter()
+                                    .map(|v| v.to_string_value())
+                                    .collect::<Vec<_>>()
+                                    .join(&sep);
+                                return Ok(Value::Str(joined));
+                            }
+                            return Ok(Value::Str(String::new()));
+                        }
+                        _ => {}
+                    }
+                }
                 let base = self.eval_expr(target)?;
                 match name.as_str() {
                     "parent" => {
@@ -2330,6 +2475,24 @@ impl Interpreter {
                         Value::Routine { name, .. } => Ok(Value::Str(name)),
                         Value::Package(name) => Ok(Value::Str(name)),
                         Value::Str(name) => Ok(Value::Str(name)),
+                        Value::Sub { name, .. } => Ok(Value::Str(name)),
+                        _ => Ok(Value::Nil),
+                    },
+                    "join" => match base {
+                        Value::Array(items) => {
+                            let sep = args
+                                .get(0)
+                                .map(|arg| self.eval_expr(arg).ok())
+                                .flatten()
+                                .map(|v| v.to_string_value())
+                                .unwrap_or_default();
+                            let joined = items
+                                .iter()
+                                .map(|v| v.to_string_value())
+                                .collect::<Vec<_>>()
+                                .join(&sep);
+                            Ok(Value::Str(joined))
+                        }
                         _ => Ok(Value::Nil),
                     },
                     _ => Ok(Value::Nil),
@@ -2339,12 +2502,47 @@ impl Interpreter {
                 Expr::EnvIndex(key) => Ok(Value::Bool(std::env::var_os(key).is_some())),
                 _ => Ok(Value::Bool(self.eval_expr(inner)?.truthy())),
             },
-            Expr::CallOn { target, args: _ } => {
+            Expr::CallOn { target, args } => {
                 let target_val = self.eval_expr(target)?;
-                if let Value::Sub { package, name, body } = target_val {
+                if let Value::Sub { package, name, param, body, env } = target_val {
+                    let saved_env = self.env.clone();
+                    let mut new_env = saved_env.clone();
+                    for (k, v) in env {
+                        if matches!(new_env.get(&k), Some(Value::Array(_)))
+                            && matches!(v, Value::Array(_))
+                        {
+                            continue;
+                        }
+                        new_env.insert(k, v);
+                    }
+                    let param_name = param.clone();
+                    if let Some(param_name) = param_name {
+                        if let Some(arg) = args.get(0) {
+                            if let Ok(value) = self.eval_expr(arg) {
+                                new_env.insert(param_name, value);
+                            }
+                        }
+                    }
+                    let block_sub = Value::Sub {
+                        package: package.clone(),
+                        name: name.clone(),
+                        param: param.clone(),
+                        body: body.clone(),
+                        env: new_env.clone(),
+                    };
+                    self.env = new_env;
                     self.routine_stack.push((package.clone(), name.clone()));
+                    self.block_stack.push(block_sub);
                     let result = self.eval_block_value(&body);
+                    self.block_stack.pop();
                     self.routine_stack.pop();
+                    let mut merged = saved_env;
+                    for (k, v) in self.env.iter() {
+                        if matches!(v, Value::Array(_)) {
+                            merged.insert(k.clone(), v.clone());
+                        }
+                    }
+                    self.env = merged;
                     return result;
                 }
                 Ok(Value::Nil)
@@ -2371,9 +2569,18 @@ impl Interpreter {
             }
             Expr::Call { name, args } => {
                 if let Some(def) = self.resolve_function(name) {
+                    let saved_env = self.env.clone();
+                    if let Some(param) = def.param.clone() {
+                        if let Some(arg) = args.get(0) {
+                            if let Ok(value) = self.eval_expr(arg) {
+                                self.env.insert(param, value);
+                            }
+                        }
+                    }
                     self.routine_stack.push((def.package.clone(), def.name.clone()));
                     let result = self.eval_block_value(&def.body);
                     self.routine_stack.pop();
+                    self.env = saved_env;
                     return result;
                 }
                 if name == "defined" {
@@ -2441,6 +2648,13 @@ impl Interpreter {
                     return Ok(Value::Str(rendered));
                 }
                 Ok(Value::Nil)
+            }
+            Expr::Ternary { cond, then_expr, else_expr } => {
+                if self.eval_expr(cond)?.truthy() {
+                    self.eval_expr(then_expr)
+                } else {
+                    self.eval_expr(else_expr)
+                }
             }
         }
     }
