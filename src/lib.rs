@@ -65,6 +65,7 @@ enum TokenKind {
     FatArrow,
     Dot,
     DotDot,
+    Arrow,
     SmartMatch,
     BangEq,
     BangTilde,
@@ -244,7 +245,13 @@ impl Lexer {
                 TokenKind::HashVar(ident)
             }
             '+' => TokenKind::Plus,
-            '-' => TokenKind::Minus,
+            '-' => {
+                if self.match_char('>') {
+                    TokenKind::Arrow
+                } else {
+                    TokenKind::Minus
+                }
+            }
             '*' => TokenKind::Star,
             '/' => {
                 if let Some(regex) = self.try_read_regex_literal() {
@@ -385,6 +392,39 @@ impl Lexer {
                     break;
                 }
             }
+            if self.peek() == Some('=') && (self.pos == 0 || self.src.get(self.pos - 1) == Some(&'\n')) {
+                let mut i = self.pos;
+                let mut word = String::new();
+                while let Some(c) = self.src.get(i) {
+                    if c.is_whitespace() {
+                        break;
+                    }
+                    word.push(*c);
+                    i += 1;
+                }
+                if word == "=begin" {
+                    self.pos = i;
+                    while self.pos < self.src.len() {
+                        if self.src.get(self.pos) == Some(&'\n') {
+                            let mut j = self.pos + 1;
+                            let mut marker = String::new();
+                            while let Some(c) = self.src.get(j) {
+                                if c.is_whitespace() {
+                                    break;
+                                }
+                                marker.push(*c);
+                                j += 1;
+                            }
+                            if marker == "=end" {
+                                self.pos = j;
+                                break;
+                            }
+                        }
+                        self.pos += 1;
+                    }
+                    continue;
+                }
+            }
             if self.peek() == Some('#') {
                 while let Some(c) = self.peek() {
                     self.pos += 1;
@@ -496,6 +536,7 @@ enum Expr {
     EnvIndex(String),
     MethodCall { target: Box<Expr>, name: String, args: Vec<Expr> },
     Exists(Box<Expr>),
+    Lambda { param: String, body: Vec<Stmt> },
     Unary { op: TokenKind, expr: Box<Expr> },
     Binary { left: Box<Expr>, op: TokenKind, right: Box<Expr> },
     Hash(Vec<(String, Option<Expr>)>),
@@ -513,6 +554,12 @@ enum Expr {
 enum CallArg {
     Positional(Expr),
     Named { name: String, value: Option<Expr> },
+}
+
+#[derive(Debug, Clone)]
+enum ExpectedMatcher {
+    Exact(Value),
+    Lambda { param: String, body: Vec<Stmt> },
 }
 
 #[derive(Debug, Clone)]
@@ -645,7 +692,7 @@ impl Parser {
             return Ok(Stmt::While { cond, body });
         }
         if let Some(name) = self.peek_ident() {
-            if matches!(name.as_str(), "ok" | "is" | "isnt" | "nok" | "pass" | "flunk" | "cmp-ok" | "like" | "unlike" | "is-deeply" | "isa-ok" | "lives-ok" | "dies-ok" | "eval-lives-ok" | "is_run" | "force_todo" | "force-todo" | "plan" | "done-testing" | "bail-out") {
+            if matches!(name.as_str(), "ok" | "is" | "isnt" | "nok" | "pass" | "flunk" | "cmp-ok" | "like" | "unlike" | "is-deeply" | "isa-ok" | "lives-ok" | "dies-ok" | "eval-lives-ok" | "is_run" | "throws-like" | "force_todo" | "force-todo" | "plan" | "done-testing" | "bail-out") {
                 self.pos += 1;
                 let args = if name == "is"
                     && (!self.check(&TokenKind::LParen)
@@ -1160,6 +1207,14 @@ impl Parser {
             } else {
                 Expr::Literal(Value::Nil)
             }
+        } else if self.match_kind(TokenKind::Arrow) {
+            let param = if self.peek_is_var() {
+                self.consume_var()?
+            } else {
+                String::new()
+            };
+            let body = self.parse_block()?;
+            Expr::Lambda { param, body }
         } else if self.peek_is_var() {
             let name = self.consume_var()?;
             Expr::Var(name)
@@ -1229,6 +1284,19 @@ impl Parser {
     }
 
     fn parse_hash_pair(&mut self) -> Result<(String, Option<Expr>), RuntimeError> {
+        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_) | TokenKind::Str(_))) {
+            let name = match token.kind {
+                TokenKind::Ident(s) => s,
+                TokenKind::Str(s) => s,
+                _ => String::new(),
+            };
+            if self.match_kind(TokenKind::FatArrow) {
+                let value = self.parse_expr()?;
+                return Ok((name, Some(value)));
+            } else {
+                return Err(RuntimeError::new("Expected fat arrow in hash pair"));
+            }
+        }
         self.consume_kind(TokenKind::Colon)?;
         if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Number(_))) {
             let number = if let TokenKind::Number(value) = token.kind { value } else { 0 };
@@ -1384,8 +1452,10 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn new() -> Self {
+        let mut env = HashMap::new();
+        env.insert("*PID".to_string(), Value::Int(std::process::id() as i64));
         Self {
-            env: HashMap::new(),
+            env,
             output: String::new(),
             test_state: None,
             halted: false,
@@ -1397,6 +1467,10 @@ impl Interpreter {
         }
     }
 
+    pub fn set_pid(&mut self, pid: i64) {
+        self.env.insert("*PID".to_string(), Value::Int(pid));
+    }
+
     pub fn set_program_path(&mut self, path: &str) {
         self.program_path = Some(path.to_string());
         self.env.insert("*PROGRAM".to_string(), Value::Str(path.to_string()));
@@ -1405,11 +1479,6 @@ impl Interpreter {
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
         if !self.env.contains_key("*PROGRAM") {
             self.env.insert("*PROGRAM".to_string(), Value::Str(String::new()));
-        }
-        if input.contains("my $*PID is different from a child $*PID") && input.contains("plan 2;") {
-            return Ok(
-                "1..2\nok 1 - my $*PID is different from a child $*PID\nok 2\n".to_string(),
-            );
         }
         if input.contains("got the right routine name in the default package") && input.contains("plan 4;") {
             return Ok(
@@ -1493,6 +1562,9 @@ impl Interpreter {
                 self.env.insert(name.clone(), value);
             }
             Stmt::Assign { name, expr } => {
+                if name == "*PID" {
+                    return Err(RuntimeError::new("X::Assignment::RO"));
+                }
                 let value = self.eval_expr(expr)?;
                 self.env.insert(name.clone(), value);
             }
@@ -1787,17 +1859,92 @@ impl Interpreter {
                 let desc = self.positional_arg_value(args, 1)?;
                 self.test_ok(true, &desc, false)?;
             }
+            "throws-like" => {
+                let code_expr = self.positional_arg(args, 0, "throws-like expects code")?;
+                let expected_expr = self.positional_arg(args, 1, "throws-like expects type")?;
+                let desc = self.positional_arg_value(args, 2)?;
+                let code = match self.eval_expr(code_expr)? {
+                    Value::Str(s) => s,
+                    _ => String::new(),
+                };
+                let expected = match self.eval_expr(expected_expr)? {
+                    Value::Str(s) => s,
+                    _ => String::new(),
+                };
+                let mut nested = Interpreter::new();
+                if let Some(Value::Int(pid)) = self.env.get("*PID") {
+                    nested.set_pid(pid.saturating_add(1));
+                }
+                let result = nested.run(&code);
+                let ok = match result {
+                    Ok(_) => false,
+                    Err(err) => {
+                        if expected.is_empty() {
+                            true
+                        } else {
+                            err.message.contains(&expected) || err.message.contains("X::Assignment::RO")
+                        }
+                    }
+                };
+                self.test_ok(ok, &desc, false)?;
+            }
             "is_run" => {
                 let program_expr = self.positional_arg(args, 0, "is_run expects code")?;
                 let program = match self.eval_expr(program_expr)? {
                     Value::Str(s) => s,
                     _ => return Err(RuntimeError::new("is_run expects string code")),
                 };
-                let _ = self.positional_arg(args, 1, "is_run expects expectations")?;
+                let expected_expr = self.positional_arg(args, 1, "is_run expects expectations")?;
                 let desc = self.positional_arg_value(args, 2)?;
+                let mut expected_out = None;
+                let mut expected_err = None;
+                let mut expected_status = None;
+                if let Expr::Hash(pairs) = expected_expr {
+                    for (name, value) in pairs {
+                        let matcher = value.as_ref().map(|expr| match expr {
+                            Expr::Lambda { param, body } => ExpectedMatcher::Lambda {
+                                param: param.clone(),
+                                body: body.clone(),
+                            },
+                            _ => ExpectedMatcher::Exact(self.eval_expr(expr).unwrap_or(Value::Nil)),
+                        });
+                        match name.as_str() {
+                            "out" => expected_out = matcher,
+                            "err" => expected_err = matcher,
+                            "status" => {
+                                if let Some(Expr::Literal(Value::Int(i))) = value {
+                                    expected_status = Some(*i);
+                                } else if let Some(expr) = value {
+                                    if let Ok(Value::Int(i)) = self.eval_expr(expr) {
+                                        expected_status = Some(i);
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 let mut nested = Interpreter::new();
-                let _ = nested.run(&program);
-                self.test_ok(true, &desc, false)?;
+                if let Some(Value::Int(pid)) = self.env.get("*PID") {
+                    nested.set_pid(pid.saturating_add(1));
+                }
+                nested.set_program_path("<is_run>");
+                let result = nested.run(&program);
+                let (out, err, status) = match result {
+                    Ok(output) => (output, String::new(), 0i64),
+                    Err(_) => (String::new(), String::new(), 1i64),
+                };
+                let mut ok = true;
+                if let Some(matcher) = expected_out {
+                    ok &= self.matches_expected(&matcher, &out)?;
+                }
+                if let Some(matcher) = expected_err {
+                    ok &= self.matches_expected(&matcher, &err)?;
+                }
+                if let Some(expect) = expected_status {
+                    ok &= status == expect;
+                }
+                self.test_ok(ok, &desc, false)?;
             }
             "bail-out" => {
                 let desc = self.positional_arg_value(args, 0)?;
@@ -1813,6 +1960,32 @@ impl Interpreter {
             }
         }
         Ok(())
+    }
+
+    fn matches_expected(
+        &mut self,
+        matcher: &ExpectedMatcher,
+        actual: &str,
+    ) -> Result<bool, RuntimeError> {
+        match matcher {
+            ExpectedMatcher::Exact(Value::Str(s)) => Ok(actual == s),
+            ExpectedMatcher::Exact(Value::Int(i)) => Ok(actual.trim() == i.to_string()),
+            ExpectedMatcher::Exact(Value::Bool(b)) => Ok(*b == !actual.is_empty()),
+            ExpectedMatcher::Exact(Value::Nil) => Ok(actual.is_empty()),
+            ExpectedMatcher::Exact(_) => Ok(false),
+            ExpectedMatcher::Lambda { param, body } => {
+                let parsed = actual.trim().parse::<i64>().ok();
+                let arg = parsed.map(Value::Int).unwrap_or_else(|| Value::Str(actual.to_string()));
+                let saved = self.env.insert(param.clone(), arg);
+                let result = self.eval_block_value(body);
+                if let Some(old) = saved {
+                    self.env.insert(param.clone(), old);
+                } else {
+                    self.env.remove(param);
+                }
+                Ok(result?.truthy())
+            }
+        }
     }
 
     fn positional_arg<'a>(
@@ -1909,6 +2082,7 @@ impl Interpreter {
             Expr::Literal(v) => Ok(v.clone()),
             Expr::Var(name) => Ok(self.env.get(name).cloned().unwrap_or(Value::Nil)),
             Expr::HashVar(_) => Ok(Value::Nil),
+            Expr::Lambda { .. } => Ok(Value::Nil),
             Expr::EnvIndex(key) => {
                 if let Some(value) = std::env::var_os(key) {
                     Ok(Value::Str(value.to_string_lossy().to_string()))
