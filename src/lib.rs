@@ -1016,6 +1016,12 @@ impl Parser {
                 }
             }
             self.match_kind(TokenKind::RParen);
+            if self.match_kind(TokenKind::Comma) {
+                args.push(self.parse_call_arg()?);
+                while self.match_kind(TokenKind::Comma) {
+                    args.push(self.parse_call_arg()?);
+                }
+            }
             return Ok(args);
         }
         if self.match_kind(TokenKind::Slash) {
@@ -1557,7 +1563,9 @@ impl Parser {
                 Expr::AnonSub(body)
             } else {
                 let name = self.consume_ident()?;
-                if name == "try" && self.check(&TokenKind::LBrace) {
+                if name == "quietly" {
+                    self.parse_expr()?
+                } else if name == "try" && self.check(&TokenKind::LBrace) {
                     let body = self.parse_block()?;
                     Expr::Try(body)
                 } else if name == "rand" {
@@ -2735,6 +2743,10 @@ impl Interpreter {
                         Value::Package(name) => Ok(Value::Str(name)),
                         Value::Str(name) => Ok(Value::Str(name)),
                         Value::Sub { name, .. } => Ok(Value::Str(name)),
+                        _ => Ok(Value::Nil),
+                    },
+                    "Str" => match base {
+                        Value::Str(name) if name == "IO::Special" => Ok(Value::Str(String::new())),
                         _ => Ok(Value::Nil),
                     },
                     "join" => match base {
