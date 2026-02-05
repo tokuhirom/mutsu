@@ -2,13 +2,31 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Value {
     Int(i64),
     Str(String),
     Bool(bool),
     Range(i64, i64),
+    Package(String),
+    Routine { package: String, name: String },
+    Sub { package: String, name: String, body: Vec<Stmt> },
     Nil,
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::Int(a), Value::Int(b)) => a == b,
+            (Value::Str(a), Value::Str(b)) => a == b,
+            (Value::Bool(a), Value::Bool(b)) => a == b,
+            (Value::Range(a1, b1), Value::Range(a2, b2)) => a1 == a2 && b1 == b2,
+            (Value::Package(a), Value::Package(b)) => a == b,
+            (Value::Routine { package: ap, name: an }, Value::Routine { package: bp, name: bn }) => ap == bp && an == bn,
+            (Value::Nil, Value::Nil) => true,
+            _ => false,
+        }
+    }
 }
 
 impl Value {
@@ -18,6 +36,9 @@ impl Value {
             Value::Int(i) => *i != 0,
             Value::Str(s) => !s.is_empty(),
             Value::Range(_, _) => true,
+            Value::Package(_) => true,
+            Value::Routine { .. } => true,
+            Value::Sub { .. } => true,
             Value::Nil => false,
         }
     }
@@ -29,6 +50,9 @@ impl Value {
             Value::Bool(true) => "True".to_string(),
             Value::Bool(false) => "False".to_string(),
             Value::Range(a, b) => format!("{}..{}", a, b),
+            Value::Package(s) => s.clone(),
+            Value::Routine { package, name } => format!("{}::{}", package, name),
+            Value::Sub { name, .. } => name.clone(),
             Value::Nil => "Nil".to_string(),
         }
     }
@@ -52,6 +76,7 @@ enum TokenKind {
     Ident(String),
     Var(String),
     HashVar(String),
+    RoutineMagic,
     True,
     False,
     Nil,
@@ -93,6 +118,13 @@ enum TokenKind {
 #[derive(Debug, Clone)]
 struct Token {
     kind: TokenKind,
+}
+
+#[derive(Debug, Clone)]
+struct FunctionDef {
+    package: String,
+    name: String,
+    body: Vec<Stmt>,
 }
 
 struct Lexer {
@@ -301,7 +333,16 @@ impl Lexer {
                 }
             }
             '&' => {
-                if self.match_char('&') {
+                if self.peek() == Some('?') {
+                    self.pos += 1;
+                    let first = self.bump();
+                    let ident = self.read_ident_start(first);
+                    if ident == "ROUTINE" {
+                        TokenKind::RoutineMagic
+                    } else {
+                        TokenKind::Ident(format!("?{}", ident))
+                    }
+                } else if self.match_char('&') {
                     TokenKind::AndAnd
                 } else {
                     TokenKind::Ampersand
@@ -323,6 +364,9 @@ impl Lexer {
             ',' => TokenKind::Comma,
             ':' => TokenKind::Colon,
             ';' => TokenKind::Semicolon,
+            '^' => {
+                continue;
+            }
             _ => {
                     if ch.is_ascii_alphabetic() || ch == '_' {
                         let ident = self.read_ident_start(ch);
@@ -536,6 +580,10 @@ enum Expr {
     EnvIndex(String),
     MethodCall { target: Box<Expr>, name: String, args: Vec<Expr> },
     Exists(Box<Expr>),
+    RoutineMagic,
+    Block(Vec<Stmt>),
+    AnonSub(Vec<Stmt>),
+    CallOn { target: Box<Expr>, args: Vec<Expr> },
     Lambda { param: String, body: Vec<Stmt> },
     Unary { op: TokenKind, expr: Box<Expr> },
     Binary { left: Box<Expr>, op: TokenKind, right: Box<Expr> },
@@ -567,6 +615,8 @@ enum Stmt {
     VarDecl { name: String, expr: Expr },
     Assign { name: String, expr: Expr },
     SubDecl { name: String, body: Vec<Stmt> },
+    Package { name: String, body: Vec<Stmt> },
+    Return(Expr),
     Say(Expr),
     Print(Expr),
     Call { name: String, args: Vec<CallArg> },
@@ -620,6 +670,11 @@ impl Parser {
             self.match_kind(TokenKind::Semicolon);
             return Ok(Stmt::Use { module, arg });
         }
+        if self.match_ident("package") {
+            let name = self.consume_ident()?;
+            let body = self.parse_block()?;
+            return Ok(Stmt::Package { name, body });
+        }
         if self.match_ident("sub") {
             let name = self.consume_ident()?;
             if self.match_kind(TokenKind::LParen) {
@@ -641,6 +696,11 @@ impl Parser {
                 return Ok(Stmt::SubDecl { name, body });
             }
             return Err(RuntimeError::new("Expected block for sub"));
+        }
+        if self.match_ident("return") {
+            let expr = self.parse_expr()?;
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::Return(expr));
         }
         if self.match_ident("subtest") {
             let name = self.parse_expr()?;
@@ -1186,6 +1246,14 @@ impl Parser {
                 self.consume_kind(TokenKind::LBrace)?;
                 self.skip_brace_block();
                 Expr::Literal(Value::Nil)
+            } else if name == "EVAL" && matches!(self.peek_next_kind(), Some(TokenKind::Str(_))) {
+                let name = self.consume_ident()?;
+                let arg = self.parse_expr()?;
+                Expr::Call { name, args: vec![arg] }
+            } else if name == "sub" && matches!(self.peek_next_kind(), Some(TokenKind::LBrace)) {
+                self.pos += 1;
+                let body = self.parse_block()?;
+                Expr::AnonSub(body)
             } else {
                 let name = self.consume_ident()?;
                 if name == "try" && self.check(&TokenKind::LBrace) {
@@ -1207,6 +1275,8 @@ impl Parser {
             } else {
                 Expr::Literal(Value::Nil)
             }
+        } else if self.match_kind(TokenKind::RoutineMagic) {
+            Expr::RoutineMagic
         } else if self.match_kind(TokenKind::Arrow) {
             let param = if self.peek_is_var() {
                 self.consume_var()?
@@ -1219,8 +1289,13 @@ impl Parser {
             let name = self.consume_var()?;
             Expr::Var(name)
         } else if self.match_kind(TokenKind::LBrace) {
-            let pairs = self.parse_hash_literal()?;
-            Expr::Hash(pairs)
+            if self.is_hash_literal_start() {
+                let pairs = self.parse_hash_literal()?;
+                Expr::Hash(pairs)
+            } else {
+                let body = self.parse_block_body()?;
+                Expr::Block(body)
+            }
         } else {
             return Err(RuntimeError::new(format!(
                 "Unexpected token in expression at {:?}",
@@ -1277,6 +1352,18 @@ impl Parser {
                     expr = Expr::Exists(Box::new(expr));
                     continue;
                 }
+            }
+            if self.match_kind(TokenKind::LParen) {
+                let mut args = Vec::new();
+                if !self.check(&TokenKind::RParen) {
+                    args.push(self.parse_expr_or_true());
+                    while self.match_kind(TokenKind::Comma) {
+                        args.push(self.parse_expr_or_true());
+                    }
+                }
+                self.consume_kind(TokenKind::RParen)?;
+                expr = Expr::CallOn { target: Box::new(expr), args };
+                continue;
             }
             break;
         }
@@ -1337,6 +1424,16 @@ impl Parser {
         }
         self.consume_kind(TokenKind::RBrace)?;
         Ok(pairs)
+    }
+
+    fn is_hash_literal_start(&self) -> bool {
+        if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Colon)) {
+            return true;
+        }
+        matches!(
+            self.tokens.get(self.pos).map(|t| &t.kind),
+            Some(TokenKind::Ident(_)) | Some(TokenKind::Str(_))
+        ) && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::FatArrow))
     }
 
     fn skip_brace_block(&mut self) {
@@ -1445,9 +1542,11 @@ pub struct Interpreter {
     halted: bool,
     forbid_skip_all: bool,
     loose_ok: bool,
-    functions: HashMap<String, Vec<Stmt>>,
+    functions: HashMap<String, FunctionDef>,
     lib_paths: Vec<String>,
     program_path: Option<String>,
+    current_package: String,
+    routine_stack: Vec<(String, String)>,
 }
 
 impl Interpreter {
@@ -1464,6 +1563,8 @@ impl Interpreter {
             functions: HashMap::new(),
             lib_paths: Vec::new(),
             program_path: None,
+            current_package: "GLOBAL".to_string(),
+            routine_stack: Vec::new(),
         }
     }
 
@@ -1476,15 +1577,13 @@ impl Interpreter {
         self.env.insert("*PROGRAM".to_string(), Value::Str(path.to_string()));
     }
 
+    pub fn output(&self) -> &str {
+        &self.output
+    }
+
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
         if !self.env.contains_key("*PROGRAM") {
             self.env.insert("*PROGRAM".to_string(), Value::Str(String::new()));
-        }
-        if input.contains("got the right routine name in the default package") && input.contains("plan 4;") {
-            return Ok(
-                "1..4\nok 1 - got the right routine name in the default package\nok 2 - got the right routine name outside the default package\nok 3 - got an empty string for an anon block\nok 4 - &?ROUTINE not available outside of a routine\n"
-                    .to_string(),
-            );
         }
         if input.contains("progname var matches test file path") && input.contains("plan 4;") {
             return Ok(
@@ -1569,8 +1668,21 @@ impl Interpreter {
                 self.env.insert(name.clone(), value);
             }
             Stmt::SubDecl { name, body } => {
-                self.functions.insert(name.clone(), body.clone());
+                let fq = format!("{}::{}", self.current_package, name);
+                let def = FunctionDef {
+                    package: self.current_package.clone(),
+                    name: name.clone(),
+                    body: body.clone(),
+                };
+                self.functions.insert(fq, def);
             }
+            Stmt::Package { name, body } => {
+                let saved = self.current_package.clone();
+                self.current_package = name.clone();
+                self.run_block(body)?;
+                self.current_package = saved;
+            }
+            Stmt::Return(_) => {}
             Stmt::Say(expr) => {
                 let value = self.eval_expr(expr)?;
                 self.output.push_str(&value.to_string_value());
@@ -1863,19 +1975,24 @@ impl Interpreter {
                 let code_expr = self.positional_arg(args, 0, "throws-like expects code")?;
                 let expected_expr = self.positional_arg(args, 1, "throws-like expects type")?;
                 let desc = self.positional_arg_value(args, 2)?;
-                let code = match self.eval_expr(code_expr)? {
-                    Value::Str(s) => s,
-                    _ => String::new(),
-                };
                 let expected = match self.eval_expr(expected_expr)? {
                     Value::Str(s) => s,
                     _ => String::new(),
                 };
-                let mut nested = Interpreter::new();
-                if let Some(Value::Int(pid)) = self.env.get("*PID") {
-                    nested.set_pid(pid.saturating_add(1));
-                }
-                let result = nested.run(&code);
+                let result = match code_expr {
+                    Expr::Block(body) => self.eval_block_value(body),
+                    _ => {
+                        let code = match self.eval_expr(code_expr)? {
+                            Value::Str(s) => s,
+                            _ => String::new(),
+                        };
+                        let mut nested = Interpreter::new();
+                        if let Some(Value::Int(pid)) = self.env.get("*PID") {
+                            nested.set_pid(pid.saturating_add(1));
+                        }
+                        nested.run(&code).map(|_| Value::Nil)
+                    }
+                };
                 let ok = match result {
                     Ok(_) => false,
                     Err(err) => {
@@ -1960,6 +2077,17 @@ impl Interpreter {
             }
         }
         Ok(())
+    }
+
+    fn resolve_function(&self, name: &str) -> Option<FunctionDef> {
+        if name.contains("::") {
+            return self.functions.get(name).cloned();
+        }
+        let local = format!("{}::{}", self.current_package, name);
+        self.functions
+            .get(&local)
+            .cloned()
+            .or_else(|| self.functions.get(&format!("GLOBAL::{}", name)).cloned())
     }
 
     fn matches_expected(
@@ -2082,6 +2210,19 @@ impl Interpreter {
             Expr::Literal(v) => Ok(v.clone()),
             Expr::Var(name) => Ok(self.env.get(name).cloned().unwrap_or(Value::Nil)),
             Expr::HashVar(_) => Ok(Value::Nil),
+            Expr::RoutineMagic => {
+                if let Some((package, name)) = self.routine_stack.last() {
+                    Ok(Value::Routine { package: package.clone(), name: name.clone() })
+                } else {
+                    Err(RuntimeError::new("X::Undeclared::Symbols"))
+                }
+            }
+            Expr::Block(body) => self.eval_block_value(body),
+            Expr::AnonSub(body) => Ok(Value::Sub {
+                package: self.current_package.clone(),
+                name: String::new(),
+                body: body.clone(),
+            }),
             Expr::Lambda { .. } => Ok(Value::Nil),
             Expr::EnvIndex(key) => {
                 if let Some(value) = std::env::var_os(key) {
@@ -2133,6 +2274,16 @@ impl Interpreter {
                         let joined = Path::new(&base.to_string_value()).join(segment);
                         Ok(Value::Str(joined.to_string_lossy().to_string()))
                     }
+                    "package" => match base {
+                        Value::Routine { package, .. } => Ok(Value::Package(package)),
+                        _ => Ok(Value::Nil),
+                    },
+                    "name" => match base {
+                        Value::Routine { name, .. } => Ok(Value::Str(name)),
+                        Value::Package(name) => Ok(Value::Str(name)),
+                        Value::Str(name) => Ok(Value::Str(name)),
+                        _ => Ok(Value::Nil),
+                    },
                     _ => Ok(Value::Nil),
                 }
             }
@@ -2140,6 +2291,16 @@ impl Interpreter {
                 Expr::EnvIndex(key) => Ok(Value::Bool(std::env::var_os(key).is_some())),
                 _ => Ok(Value::Bool(self.eval_expr(inner)?.truthy())),
             },
+            Expr::CallOn { target, args: _ } => {
+                let target_val = self.eval_expr(target)?;
+                if let Value::Sub { package, name, body } = target_val {
+                    self.routine_stack.push((package.clone(), name.clone()));
+                    let result = self.eval_block_value(&body);
+                    self.routine_stack.pop();
+                    return result;
+                }
+                Ok(Value::Nil)
+            }
             Expr::Unary { op, expr } => {
                 let value = self.eval_expr(expr)?;
                 match op {
@@ -2161,8 +2322,11 @@ impl Interpreter {
                 Ok(Value::Nil)
             }
             Expr::Call { name, args } => {
-                if let Some(body) = self.functions.get(name).cloned() {
-                    return self.eval_block_value(&body);
+                if let Some(def) = self.resolve_function(name) {
+                    self.routine_stack.push((def.package.clone(), def.name.clone()));
+                    let result = self.eval_block_value(&def.body);
+                    self.routine_stack.pop();
+                    return result;
                 }
                 if name == "defined" {
                     let _ = args;
@@ -2174,6 +2338,9 @@ impl Interpreter {
                     } else {
                         String::new()
                     };
+                    if code.contains("&?ROUTINE") && self.routine_stack.is_empty() {
+                        return Err(RuntimeError::new("X::Undeclared::Symbols"));
+                    }
                     return Ok(self.eval_eval_string(&code));
                 }
                 if name == "atan2" {
@@ -2290,6 +2457,9 @@ impl Interpreter {
         let mut last = Value::Nil;
         for stmt in body {
             match stmt {
+                Stmt::Return(expr) => {
+                    return self.eval_expr(expr);
+                }
                 Stmt::Expr(expr) => {
                     last = self.eval_expr(expr)?;
                 }
