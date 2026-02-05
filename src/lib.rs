@@ -69,6 +69,7 @@ enum TokenKind {
     LBrace,
     RBrace,
     Comma,
+    Colon,
     Semicolon,
     Eof,
 }
@@ -213,13 +214,14 @@ impl Lexer {
             '{' => TokenKind::LBrace,
             '}' => TokenKind::RBrace,
             ',' => TokenKind::Comma,
+            ':' => TokenKind::Colon,
             ';' => TokenKind::Semicolon,
             _ => {
                 if ch.is_ascii_alphabetic() || ch == '_' {
                     let mut ident = String::new();
                     ident.push(ch);
                     while let Some(c) = self.peek() {
-                        if c.is_ascii_alphanumeric() || c == '_' {
+                        if c.is_ascii_alphanumeric() || c == '_' || self.is_ident_hyphen(c) {
                             ident.push(c);
                             self.pos += 1;
                         } else {
@@ -243,7 +245,7 @@ impl Lexer {
     fn read_ident(&mut self) -> String {
         let mut ident = String::new();
         while let Some(c) = self.peek() {
-            if c.is_ascii_alphanumeric() || c == '_' {
+            if c.is_ascii_alphanumeric() || c == '_' || self.is_ident_hyphen(c) {
                 ident.push(c);
                 self.pos += 1;
             } else {
@@ -291,6 +293,14 @@ impl Lexer {
         self.src.get(self.pos).copied()
     }
 
+    fn peek_next(&self) -> Option<char> {
+        self.src.get(self.pos + 1).copied()
+    }
+
+    fn is_ident_hyphen(&self, c: char) -> bool {
+        c == '-' && self.peek_next().map(|n| n.is_ascii_alphabetic()).unwrap_or(false)
+    }
+
     fn match_char(&mut self, expected: char) -> bool {
         if self.peek() == Some(expected) {
             self.pos += 1;
@@ -310,12 +320,18 @@ enum Expr {
 }
 
 #[derive(Debug, Clone)]
+enum CallArg {
+    Positional(Expr),
+    Named { name: String, value: Option<Expr> },
+}
+
+#[derive(Debug, Clone)]
 enum Stmt {
     VarDecl { name: String, expr: Expr },
     Assign { name: String, expr: Expr },
     Say(Expr),
     Print(Expr),
-    Call { name: String, args: Vec<Expr> },
+    Call { name: String, args: Vec<CallArg> },
     Use { _module: String },
     If { cond: Expr, then_branch: Vec<Stmt>, else_branch: Vec<Stmt> },
     While { cond: Expr, body: Vec<Stmt> },
@@ -413,13 +429,13 @@ impl Parser {
         Ok(stmts)
     }
 
-    fn parse_call_args(&mut self) -> Result<Vec<Expr>, RuntimeError> {
+    fn parse_call_args(&mut self) -> Result<Vec<CallArg>, RuntimeError> {
         let mut args = Vec::new();
         if self.match_kind(TokenKind::LParen) {
             if !self.check(&TokenKind::RParen) {
-                args.push(self.parse_expr()?);
+                args.push(self.parse_call_arg()?);
                 while self.match_kind(TokenKind::Comma) {
-                    args.push(self.parse_expr()?);
+                    args.push(self.parse_call_arg()?);
                 }
             }
             self.consume_kind(TokenKind::RParen)?;
@@ -428,11 +444,24 @@ impl Parser {
         if self.check(&TokenKind::Semicolon) || self.check(&TokenKind::Eof) {
             return Ok(args);
         }
-        args.push(self.parse_expr()?);
+        args.push(self.parse_call_arg()?);
         while self.match_kind(TokenKind::Comma) {
-            args.push(self.parse_expr()?);
+            args.push(self.parse_call_arg()?);
         }
         Ok(args)
+    }
+
+    fn parse_call_arg(&mut self) -> Result<CallArg, RuntimeError> {
+        if self.match_kind(TokenKind::Colon) {
+            let name = self.consume_ident()?;
+            if self.match_kind(TokenKind::LParen) {
+                let value = self.parse_expr()?;
+                self.consume_kind(TokenKind::RParen)?;
+                return Ok(CallArg::Named { name, value: Some(value) });
+            }
+            return Ok(CallArg::Named { name, value: None });
+        }
+        Ok(CallArg::Positional(self.parse_expr()?))
     }
 
     fn parse_expr(&mut self) -> Result<Expr, RuntimeError> {
@@ -756,10 +785,10 @@ impl Interpreter {
         Ok(())
     }
 
-    fn exec_call(&mut self, name: &str, args: &[Expr]) -> Result<(), RuntimeError> {
+    fn exec_call(&mut self, name: &str, args: &[CallArg]) -> Result<(), RuntimeError> {
         match name {
             "plan" => {
-                let count = self.eval_expr(args.get(0).ok_or_else(|| RuntimeError::new("plan expects count"))?)?;
+                let count = self.eval_expr(self.positional_arg(args, 0, "plan expects count")?)?;
                 let planned = match count {
                     Value::Int(i) if i >= 0 => i as usize,
                     _ => return Err(RuntimeError::new("plan expects Int")),
@@ -767,24 +796,33 @@ impl Interpreter {
                 self.test_state.get_or_insert_with(TestState::new).planned = Some(planned);
                 self.output.push_str(&format!("1..{}\n", planned));
             }
+            "done-testing" => {
+                let state = self.test_state.get_or_insert_with(TestState::new);
+                if state.planned.is_none() {
+                    state.planned = Some(state.ran);
+                    self.output.push_str(&format!("1..{}\n", state.ran));
+                }
+            }
             "ok" => {
-                let value = self.eval_expr(args.get(0).ok_or_else(|| RuntimeError::new("ok expects condition"))?)?;
-                let desc = if let Some(expr) = args.get(1) {
-                    self.eval_expr(expr)?.to_string_value()
-                } else {
-                    String::new()
-                };
-                self.test_ok(value.truthy(), &desc)?;
+                let value = self.eval_expr(self.positional_arg(args, 0, "ok expects condition")?)?;
+                let desc = self.positional_arg_value(args, 1)?;
+                let todo = self.named_arg_bool(args, "todo")?;
+                self.test_ok(value.truthy(), &desc, todo)?;
             }
             "is" => {
-                let left = self.eval_expr(args.get(0).ok_or_else(|| RuntimeError::new("is expects left"))?)?;
-                let right = self.eval_expr(args.get(1).ok_or_else(|| RuntimeError::new("is expects right"))?)?;
-                let desc = if let Some(expr) = args.get(2) {
-                    self.eval_expr(expr)?.to_string_value()
-                } else {
-                    String::new()
-                };
-                self.test_ok(left == right, &desc)?;
+                let left = self.eval_expr(self.positional_arg(args, 0, "is expects left")?)?;
+                let right = self.eval_expr(self.positional_arg(args, 1, "is expects right")?)?;
+                let desc = self.positional_arg_value(args, 2)?;
+                let todo = self.named_arg_bool(args, "todo")?;
+                self.test_ok(left == right, &desc, todo)?;
+            }
+            "pass" => {
+                let desc = self.positional_arg_value(args, 0)?;
+                self.test_ok(true, &desc, false)?;
+            }
+            "flunk" => {
+                let desc = self.positional_arg_value(args, 0)?;
+                self.test_ok(false, &desc, false)?;
             }
             _ => {
                 return Err(RuntimeError::new(format!("Unknown call: {}", name)));
@@ -793,10 +831,55 @@ impl Interpreter {
         Ok(())
     }
 
-    fn test_ok(&mut self, success: bool, desc: &str) -> Result<(), RuntimeError> {
+    fn positional_arg<'a>(
+        &self,
+        args: &'a [CallArg],
+        index: usize,
+        message: &str,
+    ) -> Result<&'a Expr, RuntimeError> {
+        let mut count = 0;
+        for arg in args {
+            if let CallArg::Positional(expr) = arg {
+                if count == index {
+                    return Ok(expr);
+                }
+                count += 1;
+            }
+        }
+        Err(RuntimeError::new(message))
+    }
+
+    fn positional_arg_value(&mut self, args: &[CallArg], index: usize) -> Result<String, RuntimeError> {
+        let mut count = 0;
+        for arg in args {
+            if let CallArg::Positional(expr) = arg {
+                if count == index {
+                    return Ok(self.eval_expr(expr)?.to_string_value());
+                }
+                count += 1;
+            }
+        }
+        Ok(String::new())
+    }
+
+    fn named_arg_bool(&mut self, args: &[CallArg], name: &str) -> Result<bool, RuntimeError> {
+        for arg in args {
+            if let CallArg::Named { name: arg_name, value } = arg {
+                if arg_name == name {
+                    if let Some(expr) = value {
+                        return Ok(self.eval_expr(expr)?.truthy());
+                    }
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    fn test_ok(&mut self, success: bool, desc: &str, todo: bool) -> Result<(), RuntimeError> {
         let state = self.test_state.get_or_insert_with(TestState::new);
         state.ran += 1;
-        if !success {
+        if !success && !todo {
             state.failed += 1;
         }
         let mut line = String::new();
@@ -809,6 +892,9 @@ impl Interpreter {
         if !desc.is_empty() {
             line.push_str(" - ");
             line.push_str(desc);
+        }
+        if todo {
+            line.push_str(" # TODO");
         }
         line.push('\n');
         self.output.push_str(&line);
