@@ -808,6 +808,13 @@ impl Parser {
             self.match_kind(TokenKind::Semicolon);
             return Ok(Stmt::Use { module, arg });
         }
+        if self.match_ident("unit") {
+            if self.match_ident("module") {
+                let name = self.consume_ident()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::Package { name, body: Vec::new() });
+            }
+        }
         if self.match_ident("package") {
             let name = self.consume_ident()?;
             let body = self.parse_block()?;
@@ -1876,6 +1883,7 @@ pub struct Interpreter {
     current_package: String,
     routine_stack: Vec<(String, String)>,
     block_stack: Vec<Value>,
+    doc_comments: HashMap<String, String>,
 }
 
 impl Interpreter {
@@ -1896,6 +1904,7 @@ impl Interpreter {
             current_package: "GLOBAL".to_string(),
             routine_stack: Vec::new(),
             block_stack: Vec::new(),
+            doc_comments: HashMap::new(),
         }
     }
 
@@ -1918,10 +1927,55 @@ impl Interpreter {
         &self.output
     }
 
+    fn collect_doc_comments(&mut self, input: &str) {
+        self.doc_comments.clear();
+        let mut pending_before: Option<String> = None;
+        let mut last_unit_module: Option<String> = None;
+        for line in input.lines() {
+            let trimmed = line.trim_start();
+            if let Some(rest) = trimmed.strip_prefix("#|") {
+                pending_before = Some(rest.trim().to_string());
+                continue;
+            }
+            if let Some(rest) = trimmed.strip_prefix("unit module") {
+                let name = rest
+                    .trim_start()
+                    .split(|c: char| c.is_whitespace() || c == ';')
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
+                if !name.is_empty() {
+                    if let Some(before) = pending_before.take() {
+                        if !before.is_empty() {
+                            self.doc_comments.insert(name.clone(), before);
+                        }
+                    }
+                    last_unit_module = Some(name);
+                }
+                continue;
+            }
+            if let Some(rest) = trimmed.strip_prefix("#=") {
+                if let Some(name) = last_unit_module.take() {
+                    let after = rest.trim();
+                    if !after.is_empty() {
+                        let entry = self.doc_comments.entry(name).or_insert_with(String::new);
+                        if entry.is_empty() {
+                            entry.push_str(after);
+                        } else {
+                            entry.push('\n');
+                            entry.push_str(after);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
         if !self.env.contains_key("*PROGRAM") {
             self.env.insert("*PROGRAM".to_string(), Value::Str(String::new()));
         }
+        self.collect_doc_comments(input);
         self.loose_ok = false;
         let mut lexer = Lexer::new(input);
         let mut tokens = Vec::new();
@@ -2763,6 +2817,13 @@ impl Interpreter {
                                 .collect::<Vec<_>>()
                                 .join(&sep);
                             Ok(Value::Str(joined))
+                        }
+                        _ => Ok(Value::Nil),
+                    },
+                    "WHY" => match base {
+                        Value::Str(name) | Value::Package(name) => {
+                            let doc = self.doc_comments.get(&name).cloned().unwrap_or_default();
+                            Ok(Value::Str(doc))
                         }
                         _ => Ok(Value::Nil),
                     },
