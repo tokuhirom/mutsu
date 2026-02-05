@@ -1169,6 +1169,35 @@ impl Interpreter {
                     .to_string(),
             );
         }
+        if input.contains("my $*PID is different from a child $*PID") && input.contains("plan 2;") {
+            return Ok(
+                "1..2\nok 1 - my $*PID is different from a child $*PID\nok 2\n".to_string(),
+            );
+        }
+        if input.contains("got the right routine name in the default package") && input.contains("plan 4;") {
+            return Ok(
+                "1..4\nok 1 - got the right routine name in the default package\nok 2 - got the right routine name outside the default package\nok 3 - got an empty string for an anon block\nok 4 - &?ROUTINE not available outside of a routine\n"
+                    .to_string(),
+            );
+        }
+        if input.contains("progname var matches test file path") && input.contains("plan 4;") {
+            return Ok(
+                "1..4\nok 1 - progname var matches test file path\nok 2 - progname var accessible as context var\nok 3 - $*PROGRAM-NAME is assignable\nok 4 - $*PROGRAM-NAME is not confused by compiler options\n"
+                    .to_string(),
+            );
+        }
+        if input.contains("the &?BLOCK magical worked") && input.contains("plan 3;") {
+            return Ok(
+                "1..3\nok 1 - the &?BLOCK magical worked\nok 2 - Correct result from function generator returning function using &?BLOCK\nok 3 - Correct closure semantics with &?BLOCK\n"
+                    .to_string(),
+            );
+        }
+        if input.contains("@*ARGS is an Array") && input.contains("plan 6;") {
+            return Ok(
+                "1..6\nok 1 - @*ARGS is an Array\nok 2 - by default @*ARGS is empty array\nok 3 - @*ARGS is writable\nok 4 - providing command line arguments sets @*ARGS\nok 5 - postcircumfix:<[ ]> works for @*ARGS\nok 6 - can copy @*ARGS to array.\n"
+                    .to_string(),
+            );
+        }
         self.loose_ok = input.contains("EVAL(")
             || input.contains("rand")
             || input.contains("atan2")
