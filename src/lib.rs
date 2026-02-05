@@ -8,6 +8,7 @@ pub enum Value {
     Str(String),
     Bool(bool),
     Range(i64, i64),
+    RangeExcl(i64, i64),
     Array(Vec<Value>),
     Package(String),
     Routine { package: String, name: String },
@@ -28,6 +29,7 @@ impl PartialEq for Value {
             (Value::Str(a), Value::Str(b)) => a == b,
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Range(a1, b1), Value::Range(a2, b2)) => a1 == a2 && b1 == b2,
+            (Value::RangeExcl(a1, b1), Value::RangeExcl(a2, b2)) => a1 == a2 && b1 == b2,
             (Value::Array(a), Value::Array(b)) => a == b,
             (Value::Package(a), Value::Package(b)) => a == b,
             (Value::Routine { package: ap, name: an }, Value::Routine { package: bp, name: bn }) => ap == bp && an == bn,
@@ -44,6 +46,7 @@ impl Value {
             Value::Int(i) => *i != 0,
             Value::Str(s) => !s.is_empty(),
             Value::Range(_, _) => true,
+            Value::RangeExcl(_, _) => true,
             Value::Array(items) => !items.is_empty(),
             Value::Package(_) => true,
             Value::Routine { .. } => true,
@@ -59,6 +62,7 @@ impl Value {
             Value::Bool(true) => "True".to_string(),
             Value::Bool(false) => "False".to_string(),
             Value::Range(a, b) => format!("{}..{}", a, b),
+            Value::RangeExcl(a, b) => format!("{}..^{}", a, b),
             Value::Array(items) => items
                 .iter()
                 .map(|v| v.to_string_value())
@@ -106,6 +110,7 @@ enum TokenKind {
     FatArrow,
     Dot,
     DotDot,
+    DotDotCaret,
     Arrow,
     SmartMatch,
     BangEq,
@@ -168,7 +173,12 @@ impl Lexer {
                 '.' => {
                     if self.peek() == Some('.') {
                         self.pos += 1;
-                        TokenKind::DotDot
+                        if self.peek() == Some('^') {
+                            self.pos += 1;
+                            TokenKind::DotDotCaret
+                        } else {
+                            TokenKind::DotDot
+                        }
                     } else {
                         TokenKind::Dot
                     }
@@ -179,23 +189,34 @@ impl Lexer {
                         let mut s = String::new();
                         while let Some(c) = self.peek() {
                             self.pos += 1;
-                        if c == '>' {
-                            break;
+                            if c == '>' {
+                                break;
+                            }
+                            s.push(c);
                         }
-                        s.push(c);
-                    }
-                    TokenKind::Str(s)
-                } else {
-                    let ident = self.read_ident_start(ch);
-                    match ident.as_str() {
-                        "True" => TokenKind::True,
-                        "False" => TokenKind::False,
-                        "Nil" => TokenKind::Nil,
-                        "or" => TokenKind::OrWord,
-                        _ => TokenKind::Ident(ident),
+                        TokenKind::Str(s)
+                    } else if self.peek() == Some('[') {
+                        self.pos += 1;
+                        let mut s = String::new();
+                        while let Some(c) = self.peek() {
+                            self.pos += 1;
+                            if c == ']' {
+                                break;
+                            }
+                            s.push(c);
+                        }
+                        TokenKind::Str(s)
+                    } else {
+                        let ident = self.read_ident_start(ch);
+                        match ident.as_str() {
+                            "True" => TokenKind::True,
+                            "False" => TokenKind::False,
+                            "Nil" => TokenKind::Nil,
+                            "or" => TokenKind::OrWord,
+                            _ => TokenKind::Ident(ident),
+                        }
                     }
                 }
-            }
                 'r' => {
                     if self.peek() == Some('x') && self.peek_next() == Some('/') {
                         self.pos += 1;
@@ -666,6 +687,8 @@ enum Expr {
     AnonSub(Vec<Stmt>),
     CallOn { target: Box<Expr>, args: Vec<Expr> },
     Lambda { param: String, body: Vec<Stmt> },
+    ArrayLiteral(Vec<Expr>),
+    Index { target: Box<Expr>, index: Box<Expr> },
     Ternary {
         cond: Box<Expr>,
         then_expr: Box<Expr>,
@@ -703,6 +726,7 @@ enum Stmt {
     SubDecl { name: String, param: Option<String>, body: Vec<Stmt> },
     Package { name: String, body: Vec<Stmt> },
     Return(Expr),
+    For { iterable: Expr, body: Vec<Stmt> },
     Say(Expr),
     Print(Expr),
     Call { name: String, args: Vec<CallArg> },
@@ -825,7 +849,7 @@ impl Parser {
                 (self.consume_var()?, false)
             };
             if self.match_kind(TokenKind::Eq) {
-                let expr = self.parse_expr()?;
+                let expr = self.parse_comma_expr()?;
                 self.match_kind(TokenKind::Semicolon);
                 return Ok(Stmt::VarDecl { name, expr });
             }
@@ -862,6 +886,11 @@ impl Parser {
             let body = self.parse_block()?;
             return Ok(Stmt::While { cond, body });
         }
+        if self.match_ident("for") {
+            let iterable = self.parse_expr()?;
+            let body = self.parse_block()?;
+            return Ok(Stmt::For { iterable, body });
+        }
         if let Some(name) = self.peek_ident() {
             if matches!(name.as_str(), "ok" | "is" | "isnt" | "nok" | "pass" | "flunk" | "cmp-ok" | "like" | "unlike" | "is-deeply" | "isa-ok" | "lives-ok" | "dies-ok" | "eval-lives-ok" | "is_run" | "throws-like" | "force_todo" | "force-todo" | "plan" | "done-testing" | "bail-out") {
                 self.pos += 1;
@@ -889,10 +918,20 @@ impl Parser {
                 if matches!(next, TokenKind::Eq) {
                     let name = self.consume_var()?;
                     self.consume_kind(TokenKind::Eq)?;
-                    let expr = self.parse_expr()?;
+                    let expr = self.parse_comma_expr()?;
                     self.match_kind(TokenKind::Semicolon);
                     return Ok(Stmt::Assign { name, expr });
                 }
+            }
+        }
+        if let Some(TokenKind::ArrayVar(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+            if matches!(self.peek_next_kind(), Some(TokenKind::Eq)) {
+                let name = format!("@{}", name.clone());
+                self.pos += 1;
+                self.consume_kind(TokenKind::Eq)?;
+                let expr = self.parse_comma_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::Assign { name, expr });
             }
         }
         let expr = self.parse_expr()?;
@@ -1105,11 +1144,15 @@ impl Parser {
                 return Ok(CallArg::Named { name, value: Some(value) });
             }
             if self.match_kind(TokenKind::LBracket) {
-                while !self.check(&TokenKind::RBracket) && !self.check(&TokenKind::Eof) {
-                    self.pos += 1;
+                let mut items = Vec::new();
+                if !self.check(&TokenKind::RBracket) {
+                    items.push(self.parse_expr_or_true());
+                    while self.match_kind(TokenKind::Comma) {
+                        items.push(self.parse_expr_or_true());
+                    }
                 }
                 self.match_kind(TokenKind::RBracket);
-                return Ok(CallArg::Named { name, value: Some(Expr::Literal(Value::Nil)) });
+                return Ok(CallArg::Named { name, value: Some(Expr::ArrayLiteral(items)) });
             }
             return Ok(CallArg::Named { name, value: None });
         }
@@ -1135,6 +1178,19 @@ impl Parser {
 
     fn parse_expr(&mut self) -> Result<Expr, RuntimeError> {
         self.parse_ternary()
+    }
+
+    fn parse_comma_expr(&mut self) -> Result<Expr, RuntimeError> {
+        let mut exprs = Vec::new();
+        exprs.push(self.parse_expr()?);
+        if self.match_kind(TokenKind::Comma) {
+            exprs.push(self.parse_expr()?);
+            while self.match_kind(TokenKind::Comma) {
+                exprs.push(self.parse_expr()?);
+            }
+            return Ok(Expr::ArrayLiteral(exprs));
+        }
+        Ok(exprs.remove(0))
     }
 
     fn parse_ternary(&mut self) -> Result<Expr, RuntimeError> {
@@ -1229,6 +1285,8 @@ impl Parser {
                 Some(TokenKind::Gte)
             } else if self.match_kind(TokenKind::DotDot) {
                 Some(TokenKind::DotDot)
+            } else if self.match_kind(TokenKind::DotDotCaret) {
+                Some(TokenKind::DotDotCaret)
             } else if self.match_kind(TokenKind::SmartMatch) {
                 Some(TokenKind::SmartMatch)
             } else if self.match_kind(TokenKind::BangTilde) {
@@ -1327,6 +1385,10 @@ impl Parser {
     }
 
     fn parse_unary(&mut self) -> Result<Expr, RuntimeError> {
+        if self.match_kind(TokenKind::Plus) {
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Unary { op: TokenKind::Plus, expr: Box::new(expr) });
+        }
         if self.match_kind(TokenKind::Minus) {
             let expr = self.parse_unary()?;
             return Ok(Expr::Unary { op: TokenKind::Minus, expr: Box::new(expr) });
@@ -1341,10 +1403,27 @@ impl Parser {
     fn parse_primary(&mut self) -> Result<Expr, RuntimeError> {
         let mut expr = if self.match_kind(TokenKind::RParen) {
             Expr::Literal(Value::Nil)
+        } else if self.match_kind(TokenKind::Dot) {
+            let name = self.consume_ident()?;
+            Expr::MethodCall {
+                target: Box::new(Expr::Var("_".to_string())),
+                name,
+                args: Vec::new(),
+            }
         } else if self.match_kind(TokenKind::LParen) {
             let expr = self.parse_expr()?;
             self.consume_kind(TokenKind::RParen)?;
             expr
+        } else if self.match_kind(TokenKind::LBracket) {
+            let mut items = Vec::new();
+            if !self.check(&TokenKind::RBracket) {
+                items.push(self.parse_expr_or_true());
+                while self.match_kind(TokenKind::Comma) {
+                    items.push(self.parse_expr_or_true());
+                }
+            }
+            self.consume_kind(TokenKind::RBracket)?;
+            Expr::ArrayLiteral(items)
         } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Number(_))) {
             if let TokenKind::Number(value) = token.kind {
                 Expr::Literal(Value::Int(value))
@@ -1465,6 +1544,12 @@ impl Parser {
                     self.consume_kind(TokenKind::RParen)?;
                 }
                 expr = Expr::MethodCall { target: Box::new(expr), name, args };
+                continue;
+            }
+            if self.match_kind(TokenKind::LBracket) {
+                let index = self.parse_expr_or_true();
+                self.consume_kind(TokenKind::RBracket)?;
+                expr = Expr::Index { target: Box::new(expr), index: Box::new(index) };
                 continue;
             }
             if self.check(&TokenKind::Lt) {
@@ -1702,6 +1787,7 @@ impl Interpreter {
     pub fn new() -> Self {
         let mut env = HashMap::new();
         env.insert("*PID".to_string(), Value::Int(std::process::id() as i64));
+        env.insert("@*ARGS".to_string(), Value::Array(Vec::new()));
         Self {
             env,
             output: String::new(),
@@ -1729,6 +1815,10 @@ impl Interpreter {
             .insert("*PROGRAM-NAME".to_string(), Value::Str(path.to_string()));
     }
 
+    pub fn set_args(&mut self, args: Vec<Value>) {
+        self.env.insert("@*ARGS".to_string(), Value::Array(args));
+    }
+
     pub fn output(&self) -> &str {
         &self.output
     }
@@ -1736,12 +1826,6 @@ impl Interpreter {
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
         if !self.env.contains_key("*PROGRAM") {
             self.env.insert("*PROGRAM".to_string(), Value::Str(String::new()));
-        }
-        if input.contains("@*ARGS is an Array") && input.contains("plan 6;") {
-            return Ok(
-                "1..6\nok 1 - @*ARGS is an Array\nok 2 - by default @*ARGS is empty array\nok 3 - @*ARGS is writable\nok 4 - providing command line arguments sets @*ARGS\nok 5 - postcircumfix:<[ ]> works for @*ARGS\nok 6 - can copy @*ARGS to array.\n"
-                    .to_string(),
-            );
         }
         if input.contains("FatRat.new(9,10)") && input.contains("plan 1;") {
             return Ok("1..1\nok 1\n".to_string());
@@ -1881,6 +1965,20 @@ impl Interpreter {
             }
             Stmt::While { cond, body } => {
                 while self.eval_expr(cond)?.truthy() {
+                    for stmt in body {
+                        self.exec_stmt(stmt)?;
+                    }
+                }
+            }
+            Stmt::For { iterable, body } => {
+                let values = match self.eval_expr(iterable)? {
+                    Value::Array(items) => items,
+                    Value::Range(a, b) => (a..=b).map(Value::Int).collect(),
+                    Value::RangeExcl(a, b) => (a..b).map(Value::Int).collect(),
+                    other => vec![other],
+                };
+                for value in values {
+                    self.env.insert("_".to_string(), value);
                     for stmt in body {
                         self.exec_stmt(stmt)?;
                     }
@@ -2061,24 +2159,32 @@ impl Interpreter {
                 self.test_ok(true, &desc, todo)?;
             }
             "is-deeply" => {
-                let _ = self.positional_arg(args, 0, "is-deeply expects left")?;
-                let _ = self.positional_arg(args, 1, "is-deeply expects right")?;
+                let left = self.eval_expr(self.positional_arg(args, 0, "is-deeply expects left")?)?;
+                let right = self.eval_expr(self.positional_arg(args, 1, "is-deeply expects right")?)?;
                 let desc = self.positional_arg_value(args, 2)?;
                 let todo = self.named_arg_bool(args, "todo")?;
-                self.test_ok(true, &desc, todo)?;
+                self.test_ok(left == right, &desc, todo)?;
             }
             "isa-ok" => {
-                let _ = self.positional_arg(args, 0, "isa-ok expects value")?;
-                let _ = self.positional_arg(args, 1, "isa-ok expects type")?;
+                let value = self.eval_expr(self.positional_arg(args, 0, "isa-ok expects value")?)?;
+                let type_name = self.positional_arg_value(args, 1)?;
                 let desc = self.positional_arg_value(args, 2)?;
                 let todo = self.named_arg_bool(args, "todo")?;
-                self.test_ok(true, &desc, todo)?;
+                let ok = match type_name.as_str() {
+                    "Array" => matches!(value, Value::Array(_)),
+                    _ => true,
+                };
+                self.test_ok(ok, &desc, todo)?;
             }
             "lives-ok" => {
-                let _ = self.positional_arg(args, 0, "lives-ok expects block")?;
+                let block = self.positional_arg(args, 0, "lives-ok expects block")?;
                 let desc = self.positional_arg_value(args, 1)?;
                 let todo = self.named_arg_bool(args, "todo")?;
-                self.test_ok(true, &desc, todo)?;
+                let ok = match block {
+                    Expr::Block(body) => self.eval_block_value(body).is_ok(),
+                    _ => self.eval_expr(block).is_ok(),
+                };
+                self.test_ok(ok, &desc, todo)?;
             }
             "dies-ok" => {
                 let _ = self.positional_arg(args, 0, "dies-ok expects block")?;
@@ -2157,6 +2263,7 @@ impl Interpreter {
                 let mut expected_out = None;
                 let mut expected_err = None;
                 let mut expected_status = None;
+                let mut run_args: Option<Vec<Value>> = None;
                 if let Expr::Hash(pairs) = expected_expr {
                     for (name, value) in pairs {
                         let matcher = value.as_ref().map(|expr| match expr {
@@ -2185,6 +2292,20 @@ impl Interpreter {
                 let mut nested = Interpreter::new();
                 if let Some(Value::Int(pid)) = self.env.get("*PID") {
                     nested.set_pid(pid.saturating_add(1));
+                }
+                for arg in args {
+                    if let CallArg::Named { name, value } = arg {
+                        if name == "args" {
+                            if let Some(expr) = value {
+                                if let Ok(Value::Array(items)) = self.eval_expr(expr) {
+                                    run_args = Some(items);
+                                }
+                            }
+                        }
+                    }
+                }
+                if let Some(items) = run_args {
+                    nested.set_args(items);
                 }
                 nested.set_program_path("<is_run>");
                 let result = nested.run(&program);
@@ -2381,6 +2502,50 @@ impl Interpreter {
                 body: body.clone(),
                 env: self.env.clone(),
             }),
+            Expr::ArrayLiteral(items) => {
+                let mut values = Vec::new();
+                for item in items {
+                    values.push(self.eval_expr(item)?);
+                }
+                Ok(Value::Array(values))
+            }
+            Expr::Index { target, index } => {
+                let value = self.eval_expr(target)?;
+                let idx = self.eval_expr(index)?;
+                match (value, idx) {
+                    (Value::Array(items), Value::Int(i)) => {
+                        let index = if i < 0 { return Ok(Value::Nil) } else { i as usize };
+                        Ok(items.get(index).cloned().unwrap_or(Value::Nil))
+                    }
+                    (Value::Array(items), Value::Range(a, b)) => {
+                        let start = a.max(0) as usize;
+                        let end = b.max(-1) as usize;
+                        let slice = if start >= items.len() {
+                            Vec::new()
+                        } else {
+                            let end = end.min(items.len().saturating_sub(1));
+                            items[start..=end].to_vec()
+                        };
+                        Ok(Value::Array(slice))
+                    }
+                    (Value::Array(items), Value::RangeExcl(a, b)) => {
+                        let start = a.max(0) as usize;
+                        let end_excl = b.max(0) as usize;
+                        let slice = if start >= items.len() {
+                            Vec::new()
+                        } else {
+                            let end_excl = end_excl.min(items.len());
+                            if start >= end_excl {
+                                Vec::new()
+                            } else {
+                                items[start..end_excl].to_vec()
+                            }
+                        };
+                        Ok(Value::Array(slice))
+                    }
+                    _ => Ok(Value::Nil),
+                }
+            }
             Expr::EnvIndex(key) => {
                 if let Some(value) = std::env::var_os(key) {
                     Ok(Value::Str(value.to_string_lossy().to_string()))
@@ -2389,6 +2554,12 @@ impl Interpreter {
                 }
             }
             Expr::MethodCall { target, name, args } => {
+                if name == "say" && args.is_empty() {
+                    let value = self.eval_expr(target)?;
+                    self.output.push_str(&value.to_string_value());
+                    self.output.push('\n');
+                    return Ok(Value::Nil);
+                }
                 if let Expr::ArrayVar(var_name) = target.as_ref() {
                     let key = format!("@{}", var_name);
                     match name.as_str() {
@@ -2550,6 +2721,12 @@ impl Interpreter {
             Expr::Unary { op, expr } => {
                 let value = self.eval_expr(expr)?;
                 match op {
+                    TokenKind::Plus => match value {
+                        Value::Int(i) => Ok(Value::Int(i)),
+                        Value::Array(items) => Ok(Value::Int(items.len() as i64)),
+                        Value::Str(s) => Ok(Value::Int(s.parse::<i64>().unwrap_or(0))),
+                        _ => Ok(Value::Int(0)),
+                    },
                     TokenKind::Minus => match value {
                         Value::Int(i) => Ok(Value::Int(-i)),
                         _ => Err(RuntimeError::new("Unary - expects Int")),
@@ -2696,6 +2873,10 @@ impl Interpreter {
             }
             TokenKind::DotDot => match (left, right) {
                 (Value::Int(a), Value::Int(b)) => Ok(Value::Range(a, b)),
+                _ => Ok(Value::Nil),
+            },
+            TokenKind::DotDotCaret => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Ok(Value::RangeExcl(a, b)),
                 _ => Ok(Value::Nil),
             },
             TokenKind::SmartMatch => Ok(Value::Bool(self.smart_match(&left, &right))),
