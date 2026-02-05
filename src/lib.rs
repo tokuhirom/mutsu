@@ -116,6 +116,7 @@ enum TokenKind {
     Eq,
     EqEq,
     FatArrow,
+    MatchAssign,
     Dot,
     DotDot,
     DotDotCaret,
@@ -355,6 +356,8 @@ impl Lexer {
             '=' => {
                 if self.match_char('=') {
                     TokenKind::EqEq
+                } else if self.match_char('~') {
+                    TokenKind::MatchAssign
                 } else if self.match_char('>') {
                     TokenKind::FatArrow
                 } else {
@@ -738,7 +741,7 @@ enum ExpectedMatcher {
 #[derive(Debug, Clone)]
 enum Stmt {
     VarDecl { name: String, expr: Expr },
-    Assign { name: String, expr: Expr },
+    Assign { name: String, expr: Expr, op: AssignOp },
     SubDecl { name: String, param: Option<String>, body: Vec<Stmt> },
     Package { name: String, body: Vec<Stmt> },
     Return(Expr),
@@ -752,6 +755,13 @@ enum Stmt {
     If { cond: Expr, then_branch: Vec<Stmt>, else_branch: Vec<Stmt> },
     While { cond: Expr, body: Vec<Stmt> },
     Expr(Expr),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum AssignOp {
+    Assign,
+    Bind,
+    MatchAssign,
 }
 
 struct Parser {
@@ -790,6 +800,8 @@ impl Parser {
             let module = self.consume_ident().unwrap_or_else(|_| "unknown".to_string());
             let arg = if self.check(&TokenKind::Semicolon) {
                 None
+            } else if self.check(&TokenKind::Lt) {
+                Some(self.parse_angle_literal())
             } else {
                 Some(self.parse_expr()?)
             };
@@ -931,31 +943,37 @@ impl Parser {
         }
         if self.peek_is_var() {
             if let Some(next) = self.peek_next_kind() {
-                if matches!(next, TokenKind::Eq | TokenKind::Bind) {
+                if matches!(next, TokenKind::Eq | TokenKind::Bind | TokenKind::MatchAssign) {
                     let name = self.consume_var()?;
-                    if self.match_kind(TokenKind::Eq) {
-                        // ok
+                    let op = if self.match_kind(TokenKind::Eq) {
+                        AssignOp::Assign
+                    } else if self.match_kind(TokenKind::Bind) {
+                        AssignOp::Bind
                     } else {
-                        self.consume_kind(TokenKind::Bind)?;
-                    }
+                        self.consume_kind(TokenKind::MatchAssign)?;
+                        AssignOp::MatchAssign
+                    };
                     let expr = self.parse_comma_expr()?;
                     self.match_kind(TokenKind::Semicolon);
-                    return Ok(Stmt::Assign { name, expr });
+                    return Ok(Stmt::Assign { name, expr, op });
                 }
             }
         }
         if let Some(TokenKind::ArrayVar(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
-            if matches!(self.peek_next_kind(), Some(TokenKind::Eq | TokenKind::Bind)) {
+            if matches!(self.peek_next_kind(), Some(TokenKind::Eq | TokenKind::Bind | TokenKind::MatchAssign)) {
                 let name = format!("@{}", name.clone());
                 self.pos += 1;
-                if self.match_kind(TokenKind::Eq) {
-                    // ok
+                let op = if self.match_kind(TokenKind::Eq) {
+                    AssignOp::Assign
+                } else if self.match_kind(TokenKind::Bind) {
+                    AssignOp::Bind
                 } else {
-                    self.consume_kind(TokenKind::Bind)?;
-                }
+                    self.consume_kind(TokenKind::MatchAssign)?;
+                    AssignOp::MatchAssign
+                };
                 let expr = self.parse_comma_expr()?;
                 self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::Assign { name, expr });
+                return Ok(Stmt::Assign { name, expr, op });
             }
         }
         let expr = self.parse_expr()?;
@@ -1896,15 +1914,6 @@ impl Interpreter {
         if !self.env.contains_key("*PROGRAM") {
             self.env.insert("*PROGRAM".to_string(), Value::Str(String::new()));
         }
-        if input.contains("use isms <Perl5>") && input.contains("plan 2;") {
-            return Ok("1..2\nok 1 - does =~ survive?\nok 2 - did it actually do the assignment?\n".to_string());
-        }
-        if input.contains("IO::Special:U.Str does not crash") && input.contains("plan 1;") {
-            return Ok("1..1\nok 1 - IO::Special:U.Str does not crash\n".to_string());
-        }
-        if input.contains("module + semicolon trailing comment") && input.contains("plan 1;") {
-            return Ok("1..1\nok 1 - module + semicolon trailing comment\n".to_string());
-        }
         self.loose_ok = false;
         let mut lexer = Lexer::new(input);
         let mut tokens = Vec::new();
@@ -1945,11 +1954,15 @@ impl Interpreter {
                 let value = self.eval_expr(expr)?;
                 self.env.insert(name.clone(), value);
             }
-            Stmt::Assign { name, expr } => {
+            Stmt::Assign { name, expr, op } => {
                 if name == "*PID" {
                     return Err(RuntimeError::new("X::Assignment::RO"));
                 }
                 let value = self.eval_expr(expr)?;
+                let value = match op {
+                    AssignOp::Assign | AssignOp::Bind => value,
+                    AssignOp::MatchAssign => Value::Str(value.to_string_value()),
+                };
                 self.env.insert(name.clone(), value);
             }
             Stmt::SubDecl { name, param, body } => {
@@ -1990,7 +2003,11 @@ impl Interpreter {
                             self.lib_paths.push(path);
                         }
                     }
-                } else if module == "Test" || module.starts_with("Test::") || module == "customtrait" {
+                } else if module == "Test"
+                    || module.starts_with("Test::")
+                    || module == "customtrait"
+                    || module == "isms"
+                {
                     // Built-in test helpers are handled by the interpreter itself.
                 } else {
                     self.load_module(module)?;
