@@ -160,6 +160,17 @@ impl Lexer {
                 }
                 TokenKind::Str(s)
             }
+            '｢' => {
+                let mut s = String::new();
+                while let Some(c) = self.peek() {
+                    self.pos += 1;
+                    if c == '｣' {
+                        break;
+                    }
+                    s.push(c);
+                }
+                TokenKind::Str(s)
+            }
             '$' => {
                 let ident = self.read_ident();
                 TokenKind::Var(ident)
@@ -339,6 +350,7 @@ enum Stmt {
     Print(Expr),
     Call { name: String, args: Vec<CallArg> },
     Use { _module: String },
+    Subtest { name: Expr, body: Vec<Stmt>, is_sub: bool },
     If { cond: Expr, then_branch: Vec<Stmt>, else_branch: Vec<Stmt> },
     While { cond: Expr, body: Vec<Stmt> },
     Expr(Expr),
@@ -370,6 +382,23 @@ impl Parser {
             }
             self.match_kind(TokenKind::Semicolon);
             return Ok(Stmt::Use { _module: module });
+        }
+        if self.match_ident("subtest") {
+            let name = self.parse_expr()?;
+            if !self.match_kind(TokenKind::FatArrow) {
+                return Err(RuntimeError::new("Expected fat arrow after subtest name"));
+            }
+            if self.match_ident("sub") {
+                let body = self.parse_block()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::Subtest { name, body, is_sub: true });
+            }
+            if self.match_kind(TokenKind::LBrace) {
+                let body = self.parse_block_body()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::Subtest { name, body, is_sub: false });
+            }
+            return Err(RuntimeError::new("Expected sub or block for subtest"));
         }
         if self.match_ident("my") {
             let name = self.consume_var()?;
@@ -427,6 +456,10 @@ impl Parser {
 
     fn parse_block(&mut self) -> Result<Vec<Stmt>, RuntimeError> {
         self.consume_kind(TokenKind::LBrace)?;
+        self.parse_block_body()
+    }
+
+    fn parse_block_body(&mut self) -> Result<Vec<Stmt>, RuntimeError> {
         let mut stmts = Vec::new();
         while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
             stmts.push(self.parse_stmt()?);
@@ -619,14 +652,7 @@ impl Parser {
             return Ok(Expr::Literal(Value::Nil));
         }
         if self.match_kind(TokenKind::LBrace) {
-            let mut pairs = Vec::new();
-            if !self.check(&TokenKind::RBrace) {
-                pairs.push(self.parse_hash_pair()?);
-                while self.match_kind(TokenKind::Comma) {
-                    pairs.push(self.parse_hash_pair()?);
-                }
-            }
-            self.consume_kind(TokenKind::RBrace)?;
+            let pairs = self.parse_hash_literal()?;
             return Ok(Expr::Hash(pairs));
         }
         if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_))) {
@@ -660,6 +686,33 @@ impl Parser {
             return Ok((name, Some(value)));
         }
         Ok((name, None))
+    }
+
+    fn parse_hash_literal(&mut self) -> Result<Vec<(String, Option<Expr>)>, RuntimeError> {
+        let mut pairs = Vec::new();
+        let mut failed = false;
+        if !self.check(&TokenKind::RBrace) {
+            match self.parse_hash_pair() {
+                Ok(pair) => pairs.push(pair),
+                Err(_) => failed = true,
+            }
+            while !failed && self.match_kind(TokenKind::Comma) {
+                match self.parse_hash_pair() {
+                    Ok(pair) => pairs.push(pair),
+                    Err(_) => {
+                        failed = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if failed {
+            while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
+                self.pos += 1;
+            }
+        }
+        self.consume_kind(TokenKind::RBrace)?;
+        Ok(pairs)
     }
 
     fn consume_var(&mut self) -> Result<String, RuntimeError> {
@@ -748,11 +801,18 @@ pub struct Interpreter {
     output: String,
     test_state: Option<TestState>,
     halted: bool,
+    forbid_skip_all: bool,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self { env: HashMap::new(), output: String::new(), test_state: None, halted: false }
+        Self {
+            env: HashMap::new(),
+            output: String::new(),
+            test_state: None,
+            halted: false,
+            forbid_skip_all: false,
+        }
     }
 
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
@@ -768,22 +828,8 @@ impl Interpreter {
         }
         let mut parser = Parser::new(tokens);
         let stmts = parser.parse_program()?;
-        for stmt in stmts {
-            self.exec_stmt(&stmt)?;
-            if self.halted {
-                break;
-            }
-        }
-        if let Some(state) = &self.test_state {
-            if let Some(planned) = state.planned {
-                if planned != state.ran {
-                    return Err(RuntimeError::new("Planned test count does not match run count"));
-                }
-            }
-            if state.failed > 0 {
-                return Err(RuntimeError::new("Test failures"));
-            }
-        }
+        self.run_block(&stmts)?;
+        self.finish()?;
         Ok(self.output.clone())
     }
 
@@ -810,6 +856,15 @@ impl Interpreter {
                 self.exec_call(name, args)?;
             }
             Stmt::Use { .. } => {}
+            Stmt::Subtest { name, body, is_sub } => {
+                let name_value = self.eval_expr(name)?;
+                let label = name_value.to_string_value();
+                let mut child = Interpreter::new();
+                child.forbid_skip_all = !*is_sub;
+                child.run_block(body)?;
+                child.finish()?;
+                self.test_ok(true, &label, false)?;
+            }
             Stmt::If { cond, then_branch, else_branch } => {
                 if self.eval_expr(cond)?.truthy() {
                     for stmt in then_branch {
@@ -835,10 +890,37 @@ impl Interpreter {
         Ok(())
     }
 
+    fn run_block(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        for stmt in stmts {
+            self.exec_stmt(stmt)?;
+            if self.halted {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    fn finish(&self) -> Result<(), RuntimeError> {
+        if let Some(state) = &self.test_state {
+            if let Some(planned) = state.planned {
+                if planned != state.ran {
+                    return Err(RuntimeError::new("Planned test count does not match run count"));
+                }
+            }
+            if state.failed > 0 {
+                return Err(RuntimeError::new("Test failures"));
+            }
+        }
+        Ok(())
+    }
+
     fn exec_call(&mut self, name: &str, args: &[CallArg]) -> Result<(), RuntimeError> {
         match name {
             "plan" => {
                 if let Some(reason) = self.named_arg_value(args, "skip-all")? {
+                    if self.forbid_skip_all {
+                        return Err(RuntimeError::new("Subtest block cannot use plan skip-all"));
+                    }
                     self.test_state.get_or_insert_with(TestState::new).planned = Some(0);
                     if reason.is_empty() {
                         self.output.push_str("1..0 # SKIP\n");
