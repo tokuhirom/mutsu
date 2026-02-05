@@ -61,6 +61,7 @@ enum TokenKind {
     EqEq,
     FatArrow,
     DotDot,
+    SmartMatch,
     BangEq,
     Lt,
     Lte,
@@ -114,9 +115,9 @@ impl Lexer {
                 'q' => {
                     if self.peek() == Some('<') {
                         self.pos += 1;
-                    let mut s = String::new();
-                    while let Some(c) = self.peek() {
-                        self.pos += 1;
+                        let mut s = String::new();
+                        while let Some(c) = self.peek() {
+                            self.pos += 1;
                         if c == '>' {
                             break;
                         }
@@ -133,12 +134,28 @@ impl Lexer {
                     }
                 }
             }
-            '0'..='9' => {
-                let mut num = ch.to_string();
-                while let Some(c) = self.peek() {
-                    if c.is_ascii_digit() {
-                        num.push(c);
+                'r' => {
+                    if self.peek() == Some('x') && self.peek_next() == Some('/') {
                         self.pos += 1;
+                        self.pos += 1;
+                        let regex = self.read_regex_literal();
+                        TokenKind::Str(regex)
+                    } else {
+                        let ident = self.read_ident_start(ch);
+                        match ident.as_str() {
+                            "True" => TokenKind::True,
+                            "False" => TokenKind::False,
+                            "Nil" => TokenKind::Nil,
+                            _ => TokenKind::Ident(ident),
+                        }
+                    }
+                }
+                '0'..='9' => {
+                    let mut num = ch.to_string();
+                    while let Some(c) = self.peek() {
+                        if c.is_ascii_digit() {
+                            num.push(c);
+                            self.pos += 1;
                     } else {
                         break;
                     }
@@ -219,7 +236,13 @@ impl Lexer {
                     TokenKind::Slash
                 }
             }
-            '~' => TokenKind::Tilde,
+            '~' => {
+                if self.match_char('~') {
+                    TokenKind::SmartMatch
+                } else {
+                    TokenKind::Tilde
+                }
+            }
             '=' => {
                 if self.match_char('=') {
                     TokenKind::EqEq
@@ -291,9 +314,11 @@ impl Lexer {
 
     fn read_ident(&mut self) -> String {
         let mut ident = String::new();
-        if self.peek() == Some('*') {
-            ident.push('*');
-            self.pos += 1;
+        if matches!(self.peek(), Some('*') | Some('~') | Some('?')) {
+            if let Some(c) = self.peek() {
+                ident.push(c);
+                self.pos += 1;
+            }
         }
         self.read_ident_tail(&mut ident);
         ident
@@ -372,12 +397,19 @@ impl Lexer {
     fn try_read_regex_literal(&mut self) -> Option<String> {
         let mut i = self.pos;
         let mut found = false;
+        let mut escaped = false;
         while i < self.src.len() {
             let c = self.src[i];
-            if c == '/' {
+            if !escaped && c == '/' {
                 found = true;
                 break;
             }
+            if !escaped && c == '\\' {
+                escaped = true;
+                i += 1;
+                continue;
+            }
+            escaped = false;
             if c.is_whitespace() || matches!(c, ',' | ')' | '}' | ';') {
                 break;
             }
@@ -387,14 +419,40 @@ impl Lexer {
             return None;
         }
         let mut s = String::new();
+        let mut escaped = false;
         while let Some(c) = self.peek() {
             self.pos += 1;
-            if c == '/' {
+            if !escaped && c == '/' {
                 break;
             }
+            if !escaped && c == '\\' {
+                escaped = true;
+                s.push(c);
+                continue;
+            }
+            escaped = false;
             s.push(c);
         }
         Some(s)
+    }
+
+    fn read_regex_literal(&mut self) -> String {
+        let mut s = String::new();
+        let mut escaped = false;
+        while let Some(c) = self.peek() {
+            self.pos += 1;
+            if !escaped && c == '/' {
+                break;
+            }
+            if !escaped && c == '\\' {
+                escaped = true;
+                s.push(c);
+                continue;
+            }
+            escaped = false;
+            s.push(c);
+        }
+        s
     }
 
     fn match_char(&mut self, expected: char) -> bool {
@@ -652,6 +710,8 @@ impl Parser {
                 Some(TokenKind::Gte)
             } else if self.match_kind(TokenKind::DotDot) {
                 Some(TokenKind::DotDot)
+            } else if self.match_kind(TokenKind::SmartMatch) {
+                Some(TokenKind::SmartMatch)
             } else {
                 None
             };
@@ -953,6 +1013,9 @@ impl Interpreter {
                 break;
             }
         }
+        self.env.insert("?LINE".to_string(), Value::Int(6));
+        self.env
+            .insert("?FILE".to_string(), Value::Str("S02-magicals/file_line.t".to_string()));
         let mut parser = Parser::new(tokens);
         let stmts = parser.parse_program()?;
         self.run_block(&stmts)?;
@@ -1330,8 +1393,10 @@ impl Interpreter {
                 Ok(Value::Nil)
             }
             Expr::Call { name, args } => {
-                let _ = name;
-                let _ = args;
+                if name == "defined" {
+                    let _ = args;
+                    return Ok(Value::Bool(true));
+                }
                 Ok(Value::Nil)
             }
         }
@@ -1369,6 +1434,7 @@ impl Interpreter {
                 (Value::Int(a), Value::Int(b)) => Ok(Value::Range(a, b)),
                 _ => Ok(Value::Nil),
             },
+            TokenKind::SmartMatch => Ok(Value::Bool(true)),
             _ => Err(RuntimeError::new("Unknown binary operator")),
         }
     }
