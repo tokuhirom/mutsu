@@ -68,6 +68,7 @@ enum TokenKind {
     RParen,
     LBrace,
     RBrace,
+    Comma,
     Semicolon,
     Eof,
 }
@@ -122,6 +123,30 @@ impl Lexer {
                                 'n' => s.push('\n'),
                                 't' => s.push('\t'),
                                 '"' => s.push('"'),
+                                '\\' => s.push('\\'),
+                                _ => s.push(n),
+                            }
+                        }
+                    } else {
+                        s.push(c);
+                    }
+                }
+                TokenKind::Str(s)
+            }
+            '\'' => {
+                let mut s = String::new();
+                while let Some(c) = self.peek() {
+                    self.pos += 1;
+                    if c == '\'' {
+                        break;
+                    }
+                    if c == '\\' {
+                        if let Some(n) = self.peek() {
+                            self.pos += 1;
+                            match n {
+                                'n' => s.push('\n'),
+                                't' => s.push('\t'),
+                                '\'' => s.push('\''),
                                 '\\' => s.push('\\'),
                                 _ => s.push(n),
                             }
@@ -187,6 +212,7 @@ impl Lexer {
             ')' => TokenKind::RParen,
             '{' => TokenKind::LBrace,
             '}' => TokenKind::RBrace,
+            ',' => TokenKind::Comma,
             ';' => TokenKind::Semicolon,
             _ => {
                 if ch.is_ascii_alphabetic() || ch == '_' {
@@ -232,6 +258,8 @@ impl Lexer {
             while let Some(c) = self.peek() {
                 if c == '\n' {
                     self.line += 1;
+                    self.pos += 1;
+                } else if c == '\u{feff}' {
                     self.pos += 1;
                 } else if c.is_whitespace() {
                     self.pos += 1;
@@ -287,6 +315,8 @@ enum Stmt {
     Assign { name: String, expr: Expr },
     Say(Expr),
     Print(Expr),
+    Call { name: String, args: Vec<Expr> },
+    Use { _module: String },
     If { cond: Expr, then_branch: Vec<Stmt>, else_branch: Vec<Stmt> },
     While { cond: Expr, body: Vec<Stmt> },
     Expr(Expr),
@@ -311,6 +341,14 @@ impl Parser {
     }
 
     fn parse_stmt(&mut self) -> Result<Stmt, RuntimeError> {
+        if self.match_ident("use") {
+            let module = self.consume_ident().unwrap_or_else(|_| "unknown".to_string());
+            while !self.check(&TokenKind::Semicolon) && !self.check(&TokenKind::Eof) {
+                self.pos += 1;
+            }
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::Use { _module: module });
+        }
         if self.match_ident("my") {
             let name = self.consume_var()?;
             self.consume_kind(TokenKind::Eq)?;
@@ -343,6 +381,12 @@ impl Parser {
             let body = self.parse_block()?;
             return Ok(Stmt::While { cond, body });
         }
+        if let Some(name) = self.peek_ident() {
+            self.pos += 1;
+            let args = self.parse_call_args()?;
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::Call { name, args });
+        }
         if self.peek_is_var() {
             if let Some(next) = self.peek_next_kind() {
                 if matches!(next, TokenKind::Eq) {
@@ -367,6 +411,28 @@ impl Parser {
         }
         self.consume_kind(TokenKind::RBrace)?;
         Ok(stmts)
+    }
+
+    fn parse_call_args(&mut self) -> Result<Vec<Expr>, RuntimeError> {
+        let mut args = Vec::new();
+        if self.match_kind(TokenKind::LParen) {
+            if !self.check(&TokenKind::RParen) {
+                args.push(self.parse_expr()?);
+                while self.match_kind(TokenKind::Comma) {
+                    args.push(self.parse_expr()?);
+                }
+            }
+            self.consume_kind(TokenKind::RParen)?;
+            return Ok(args);
+        }
+        if self.check(&TokenKind::Semicolon) || self.check(&TokenKind::Eof) {
+            return Ok(args);
+        }
+        args.push(self.parse_expr()?);
+        while self.match_kind(TokenKind::Comma) {
+            args.push(self.parse_expr()?);
+        }
+        Ok(args)
     }
 
     fn parse_expr(&mut self) -> Result<Expr, RuntimeError> {
@@ -530,6 +596,15 @@ impl Parser {
         Err(RuntimeError::new("Expected variable"))
     }
 
+    fn consume_ident(&mut self) -> Result<String, RuntimeError> {
+        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_))) {
+            if let TokenKind::Ident(name) = token.kind {
+                return Ok(name);
+            }
+        }
+        Err(RuntimeError::new("Expected identifier"))
+    }
+
     fn match_ident(&mut self, ident: &str) -> bool {
         if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_))) {
             if let TokenKind::Ident(name) = token.kind {
@@ -581,6 +656,13 @@ impl Parser {
         matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Var(_)))
     }
 
+    fn peek_ident(&self) -> Option<String> {
+        match self.tokens.get(self.pos).map(|t| &t.kind) {
+            Some(TokenKind::Ident(name)) => Some(name.clone()),
+            _ => None,
+        }
+    }
+
     fn peek_next_kind(&self) -> Option<TokenKind> {
         self.tokens.get(self.pos + 1).map(|t| t.kind.clone())
     }
@@ -589,11 +671,12 @@ impl Parser {
 pub struct Interpreter {
     env: HashMap<String, Value>,
     output: String,
+    test_state: Option<TestState>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self { env: HashMap::new(), output: String::new() }
+        Self { env: HashMap::new(), output: String::new(), test_state: None }
     }
 
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
@@ -611,6 +694,16 @@ impl Interpreter {
         let stmts = parser.parse_program()?;
         for stmt in stmts {
             self.exec_stmt(&stmt)?;
+        }
+        if let Some(state) = &self.test_state {
+            if let Some(planned) = state.planned {
+                if planned != state.ran {
+                    return Err(RuntimeError::new("Planned test count does not match run count"));
+                }
+            }
+            if state.failed > 0 {
+                return Err(RuntimeError::new("Test failures"));
+            }
         }
         Ok(self.output.clone())
     }
@@ -634,6 +727,10 @@ impl Interpreter {
                 let value = self.eval_expr(expr)?;
                 self.output.push_str(&value.to_string_value());
             }
+            Stmt::Call { name, args } => {
+                self.exec_call(name, args)?;
+            }
+            Stmt::Use { .. } => {}
             Stmt::If { cond, then_branch, else_branch } => {
                 if self.eval_expr(cond)?.truthy() {
                     for stmt in then_branch {
@@ -656,6 +753,65 @@ impl Interpreter {
                 self.eval_expr(expr)?;
             }
         }
+        Ok(())
+    }
+
+    fn exec_call(&mut self, name: &str, args: &[Expr]) -> Result<(), RuntimeError> {
+        match name {
+            "plan" => {
+                let count = self.eval_expr(args.get(0).ok_or_else(|| RuntimeError::new("plan expects count"))?)?;
+                let planned = match count {
+                    Value::Int(i) if i >= 0 => i as usize,
+                    _ => return Err(RuntimeError::new("plan expects Int")),
+                };
+                self.test_state.get_or_insert_with(TestState::new).planned = Some(planned);
+                self.output.push_str(&format!("1..{}\n", planned));
+            }
+            "ok" => {
+                let value = self.eval_expr(args.get(0).ok_or_else(|| RuntimeError::new("ok expects condition"))?)?;
+                let desc = if let Some(expr) = args.get(1) {
+                    self.eval_expr(expr)?.to_string_value()
+                } else {
+                    String::new()
+                };
+                self.test_ok(value.truthy(), &desc)?;
+            }
+            "is" => {
+                let left = self.eval_expr(args.get(0).ok_or_else(|| RuntimeError::new("is expects left"))?)?;
+                let right = self.eval_expr(args.get(1).ok_or_else(|| RuntimeError::new("is expects right"))?)?;
+                let desc = if let Some(expr) = args.get(2) {
+                    self.eval_expr(expr)?.to_string_value()
+                } else {
+                    String::new()
+                };
+                self.test_ok(left == right, &desc)?;
+            }
+            _ => {
+                return Err(RuntimeError::new(format!("Unknown call: {}", name)));
+            }
+        }
+        Ok(())
+    }
+
+    fn test_ok(&mut self, success: bool, desc: &str) -> Result<(), RuntimeError> {
+        let state = self.test_state.get_or_insert_with(TestState::new);
+        state.ran += 1;
+        if !success {
+            state.failed += 1;
+        }
+        let mut line = String::new();
+        if success {
+            line.push_str("ok ");
+        } else {
+            line.push_str("not ok ");
+        }
+        line.push_str(&state.ran.to_string());
+        if !desc.is_empty() {
+            line.push_str(" - ");
+            line.push_str(desc);
+        }
+        line.push('\n');
+        self.output.push_str(&line);
         Ok(())
     }
 
@@ -726,6 +882,19 @@ impl Interpreter {
             }
             _ => Err(RuntimeError::new("Comparison expects matching types")),
         }
+    }
+}
+
+#[derive(Debug, Default)]
+struct TestState {
+    planned: Option<usize>,
+    ran: usize,
+    failed: usize,
+}
+
+impl TestState {
+    fn new() -> Self {
+        Self { planned: None, ran: 0, failed: 0 }
     }
 }
 
