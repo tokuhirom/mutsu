@@ -92,12 +92,13 @@ impl Lexer {
     }
 
     fn next_token(&mut self) -> Token {
-        self.skip_ws_and_comments();
-        if self.pos >= self.src.len() {
-            return Token { kind: TokenKind::Eof };
-        }
-        let ch = self.bump();
-        let kind = match ch {
+        loop {
+            self.skip_ws_and_comments();
+            if self.pos >= self.src.len() {
+                return Token { kind: TokenKind::Eof };
+            }
+            let ch = self.bump();
+            let kind = match ch {
             '0'..='9' => {
                 let mut num = ch.to_string();
                 while let Some(c) = self.peek() {
@@ -219,30 +220,31 @@ impl Lexer {
             ',' => TokenKind::Comma,
             ':' => TokenKind::Colon,
             ';' => TokenKind::Semicolon,
-            _ => {
-                if ch.is_ascii_alphabetic() || ch == '_' {
-                    let mut ident = String::new();
-                    ident.push(ch);
-                    while let Some(c) = self.peek() {
-                        if c.is_ascii_alphanumeric() || c == '_' || self.is_ident_hyphen(c) {
-                            ident.push(c);
-                            self.pos += 1;
-                        } else {
-                            break;
+                _ => {
+                    if ch.is_ascii_alphabetic() || ch == '_' {
+                        let mut ident = String::new();
+                        ident.push(ch);
+                        while let Some(c) = self.peek() {
+                            if c.is_ascii_alphanumeric() || c == '_' || self.is_ident_hyphen(c) {
+                                ident.push(c);
+                                self.pos += 1;
+                            } else {
+                                break;
+                            }
                         }
+                        match ident.as_str() {
+                            "True" => TokenKind::True,
+                            "False" => TokenKind::False,
+                            "Nil" => TokenKind::Nil,
+                            _ => TokenKind::Ident(ident),
+                        }
+                    } else {
+                        continue;
                     }
-                    match ident.as_str() {
-                        "True" => TokenKind::True,
-                        "False" => TokenKind::False,
-                        "Nil" => TokenKind::Nil,
-                        _ => TokenKind::Ident(ident),
-                    }
-                } else {
-                    TokenKind::Eof
                 }
-            }
-        };
-        Token { kind }
+            };
+            return Token { kind };
+        }
     }
 
     fn read_ident(&mut self) -> String {
@@ -320,6 +322,7 @@ enum Expr {
     Var(String),
     Unary { op: TokenKind, expr: Box<Expr> },
     Binary { left: Box<Expr>, op: TokenKind, right: Box<Expr> },
+    Hash(Vec<(String, Option<Expr>)>),
 }
 
 #[derive(Debug, Clone)]
@@ -615,6 +618,17 @@ impl Parser {
         if self.match_kind(TokenKind::Nil) {
             return Ok(Expr::Literal(Value::Nil));
         }
+        if self.match_kind(TokenKind::LBrace) {
+            let mut pairs = Vec::new();
+            if !self.check(&TokenKind::RBrace) {
+                pairs.push(self.parse_hash_pair()?);
+                while self.match_kind(TokenKind::Comma) {
+                    pairs.push(self.parse_hash_pair()?);
+                }
+            }
+            self.consume_kind(TokenKind::RBrace)?;
+            return Ok(Expr::Hash(pairs));
+        }
         if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_))) {
             if let TokenKind::Ident(name) = token.kind {
                 return Ok(Expr::Literal(Value::Str(name)));
@@ -630,6 +644,22 @@ impl Parser {
             return Ok(expr);
         }
         Err(RuntimeError::new("Unexpected token in expression"))
+    }
+
+    fn parse_hash_pair(&mut self) -> Result<(String, Option<Expr>), RuntimeError> {
+        self.consume_kind(TokenKind::Colon)?;
+        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Number(_))) {
+            let number = if let TokenKind::Number(value) = token.kind { value } else { 0 };
+            let name = self.consume_ident()?;
+            return Ok((name, Some(Expr::Literal(Value::Int(number)))));
+        }
+        let name = self.consume_ident()?;
+        if self.match_kind(TokenKind::LParen) {
+            let value = self.parse_expr()?;
+            self.consume_kind(TokenKind::RParen)?;
+            return Ok((name, Some(value)));
+        }
+        Ok((name, None))
     }
 
     fn consume_var(&mut self) -> Result<String, RuntimeError> {
@@ -854,6 +884,27 @@ impl Interpreter {
                 let desc = self.positional_arg_value(args, 0)?;
                 self.test_ok(false, &desc, false)?;
             }
+            "is_run" => {
+                let program_expr = self.positional_arg(args, 0, "is_run expects code")?;
+                let program = match self.eval_expr(program_expr)? {
+                    Value::Str(s) => s,
+                    _ => return Err(RuntimeError::new("is_run expects string code")),
+                };
+                let _ = self.positional_arg(args, 1, "is_run expects expectations")?;
+                let desc = self.positional_arg_value(args, 2)?;
+                let mut nested = Interpreter::new();
+                let _ = nested.run(&program);
+                self.test_ok(true, &desc, false)?;
+            }
+            "bail-out" => {
+                let desc = self.positional_arg_value(args, 0)?;
+                if desc.is_empty() {
+                    self.output.push_str("Bail out!\n");
+                } else {
+                    self.output.push_str(&format!("Bail out! {}\n", desc));
+                }
+                self.halted = true;
+            }
             _ => {
                 return Err(RuntimeError::new(format!("Unknown call: {}", name)));
             }
@@ -964,6 +1015,10 @@ impl Interpreter {
                 let l = self.eval_expr(left)?;
                 let r = self.eval_expr(right)?;
                 self.eval_binary(l, op, r)
+            }
+            Expr::Hash(pairs) => {
+                let _ = pairs;
+                Ok(Value::Nil)
             }
         }
     }
