@@ -7,6 +7,7 @@ fn roast_infixed_function() {
     let program = fs::read_to_string("../roast/S03-operators/infixed-function.t")
         .expect("read roast infixed-function test");
     let mut interp = Interpreter::new();
+    interp.set_program_path("../roast/S03-operators/infixed-function.t");
     let output = interp.run(&program).expect("run infixed-function test");
     let expected = "1..5\n"
         .to_string()

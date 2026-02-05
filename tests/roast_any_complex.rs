@@ -7,6 +7,7 @@ fn roast_any_complex() {
     let program = fs::read_to_string("../roast/S03-smartmatch/any-complex.t")
         .expect("read roast any-complex test");
     let mut interp = Interpreter::new();
+    interp.set_program_path("../roast/S03-smartmatch/any-complex.t");
     let output = interp.run(&program).expect("run any-complex test");
     let expected = "1..12\n"
         .to_string()

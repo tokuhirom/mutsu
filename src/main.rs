@@ -21,6 +21,11 @@ fn main() {
     };
 
     let mut interpreter = Interpreter::new();
+    if args.len() > 1 {
+        interpreter.set_program_path(&args[1]);
+    } else {
+        interpreter.set_program_path("<stdin>");
+    }
     match interpreter.run(&input) {
         Ok(output) => print!("{}", output),
         Err(err) => {

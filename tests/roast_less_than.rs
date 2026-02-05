@@ -7,6 +7,7 @@ fn roast_less_than() {
     let program = fs::read_to_string("../roast/S02-one-pass-parsing/less-than.t")
         .expect("read roast less-than test");
     let mut interp = Interpreter::new();
+    interp.set_program_path("../roast/S02-one-pass-parsing/less-than.t");
     let output = interp.run(&program).expect("run less-than test");
     let expected = "1..9\n"
         .to_string()

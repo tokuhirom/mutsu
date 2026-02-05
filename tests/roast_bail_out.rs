@@ -7,6 +7,7 @@ fn roast_bail_out() {
     let program = fs::read_to_string("../roast/S24-testing/7-bail_out.t")
         .expect("read roast bail_out test");
     let mut interp = Interpreter::new();
+    interp.set_program_path("../roast/S24-testing/7-bail_out.t");
     let output = interp.run(&program).expect("run bail_out test");
     let expected = "1..4\n"
         .to_string()

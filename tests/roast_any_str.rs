@@ -7,6 +7,7 @@ fn roast_any_str() {
     let program = fs::read_to_string("../roast/S03-smartmatch/any-str.t")
         .expect("read roast any-str test");
     let mut interp = Interpreter::new();
+    interp.set_program_path("../roast/S03-smartmatch/any-str.t");
     let output = interp.run(&program).expect("run any-str test");
     let expected = "1..5\n"
         .to_string()

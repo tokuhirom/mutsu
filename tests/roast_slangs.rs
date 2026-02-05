@@ -7,6 +7,7 @@ fn roast_slangs() {
     let program = fs::read_to_string("../roast/S28-named-variables/slangs.t")
         .expect("read roast slangs test");
     let mut interp = Interpreter::new();
+    interp.set_program_path("../roast/S28-named-variables/slangs.t");
     let output = interp.run(&program).expect("run slangs test");
     let expected = "1..4\n"
         .to_string()

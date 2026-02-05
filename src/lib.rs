@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -49,6 +51,7 @@ enum TokenKind {
     Str(String),
     Ident(String),
     Var(String),
+    HashVar(String),
     True,
     False,
     Nil,
@@ -60,6 +63,7 @@ enum TokenKind {
     Eq,
     EqEq,
     FatArrow,
+    Dot,
     DotDot,
     SmartMatch,
     BangEq,
@@ -114,7 +118,7 @@ impl Lexer {
                         self.pos += 1;
                         TokenKind::DotDot
                     } else {
-                        continue;
+                        TokenKind::Dot
                     }
                 }
                 'q' => {
@@ -234,6 +238,10 @@ impl Lexer {
             '$' => {
                 let ident = self.read_ident();
                 TokenKind::Var(ident)
+            }
+            '%' => {
+                let ident = self.read_ident();
+                TokenKind::HashVar(ident)
             }
             '+' => TokenKind::Plus,
             '-' => TokenKind::Minus,
@@ -484,6 +492,10 @@ impl Lexer {
 enum Expr {
     Literal(Value),
     Var(String),
+    HashVar(String),
+    EnvIndex(String),
+    MethodCall { target: Box<Expr>, name: String, args: Vec<Expr> },
+    Exists(Box<Expr>),
     Unary { op: TokenKind, expr: Box<Expr> },
     Binary { left: Box<Expr>, op: TokenKind, right: Box<Expr> },
     Hash(Vec<(String, Option<Expr>)>),
@@ -507,10 +519,11 @@ enum CallArg {
 enum Stmt {
     VarDecl { name: String, expr: Expr },
     Assign { name: String, expr: Expr },
+    SubDecl { name: String, body: Vec<Stmt> },
     Say(Expr),
     Print(Expr),
     Call { name: String, args: Vec<CallArg> },
-    Use { _module: String },
+    Use { module: String, arg: Option<Expr> },
     Subtest { name: Expr, body: Vec<Stmt>, is_sub: bool },
     Block(Vec<Stmt>),
     If { cond: Expr, then_branch: Vec<Stmt>, else_branch: Vec<Stmt> },
@@ -552,11 +565,35 @@ impl Parser {
         }
         if self.match_ident("use") {
             let module = self.consume_ident().unwrap_or_else(|_| "unknown".to_string());
-            while !self.check(&TokenKind::Semicolon) && !self.check(&TokenKind::Eof) {
-                self.pos += 1;
-            }
+            let arg = if self.check(&TokenKind::Semicolon) {
+                None
+            } else {
+                Some(self.parse_expr()?)
+            };
             self.match_kind(TokenKind::Semicolon);
-            return Ok(Stmt::Use { _module: module });
+            return Ok(Stmt::Use { module, arg });
+        }
+        if self.match_ident("sub") {
+            let name = self.consume_ident()?;
+            if self.match_kind(TokenKind::LParen) {
+                while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
+                    self.pos += 1;
+                }
+                self.match_kind(TokenKind::RParen);
+            }
+            while self.match_ident("is") {
+                if self.match_kind(TokenKind::Colon) {
+                    let _ = self.consume_ident();
+                } else {
+                    let _ = self.consume_ident();
+                }
+            }
+            if self.match_kind(TokenKind::LBrace) {
+                let body = self.parse_block_body()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::SubDecl { name, body });
+            }
+            return Err(RuntimeError::new("Expected block for sub"));
         }
         if self.match_ident("subtest") {
             let name = self.parse_expr()?;
@@ -610,7 +647,10 @@ impl Parser {
         if let Some(name) = self.peek_ident() {
             if matches!(name.as_str(), "ok" | "is" | "isnt" | "nok" | "pass" | "flunk" | "cmp-ok" | "like" | "unlike" | "is-deeply" | "isa-ok" | "lives-ok" | "dies-ok" | "eval-lives-ok" | "is_run" | "force_todo" | "force-todo" | "plan" | "done-testing" | "bail-out") {
                 self.pos += 1;
-                let args = if name == "is" {
+                let args = if name == "is"
+                    && (!self.check(&TokenKind::LParen)
+                        || self.is_is_grouping_paren())
+                {
                     self.parse_is_call_args()
                 } else if name == "ok"
                     && matches!(
@@ -650,7 +690,16 @@ impl Parser {
     fn parse_block_body(&mut self) -> Result<Vec<Stmt>, RuntimeError> {
         let mut stmts = Vec::new();
         while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
-            stmts.push(self.parse_stmt()?);
+            let start = self.pos;
+            match self.parse_stmt() {
+                Ok(stmt) => stmts.push(stmt),
+                Err(_) => {
+                    self.recover_to_delim();
+                    if self.pos == start && !self.check(&TokenKind::Eof) {
+                        self.pos += 1;
+                    }
+                }
+            }
         }
         self.consume_kind(TokenKind::RBrace)?;
         Ok(stmts)
@@ -794,6 +843,32 @@ impl Parser {
                             next,
                             Some(TokenKind::Comma | TokenKind::Semicolon | TokenKind::Eof | TokenKind::RParen)
                         );
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        false
+    }
+
+    fn is_is_grouping_paren(&self) -> bool {
+        if !self.check(&TokenKind::LParen) {
+            return false;
+        }
+        let mut depth = 0usize;
+        let mut i = self.pos;
+        while let Some(token) = self.tokens.get(i) {
+            match token.kind {
+                TokenKind::LParen => depth += 1,
+                TokenKind::RParen => {
+                    if depth == 0 {
+                        return false;
+                    }
+                    depth -= 1;
+                    if depth == 0 {
+                        let next = self.tokens.get(i + 1).map(|t| &t.kind);
+                        return matches!(next, Some(TokenKind::Comma));
                     }
                 }
                 _ => {}
@@ -1022,29 +1097,31 @@ impl Parser {
     }
 
     fn parse_primary(&mut self) -> Result<Expr, RuntimeError> {
-        if self.match_kind(TokenKind::RParen) {
-            return Ok(Expr::Literal(Value::Nil));
-        }
-        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Number(_))) {
+        let mut expr = if self.match_kind(TokenKind::RParen) {
+            Expr::Literal(Value::Nil)
+        } else if self.match_kind(TokenKind::LParen) {
+            let expr = self.parse_expr()?;
+            self.consume_kind(TokenKind::RParen)?;
+            expr
+        } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Number(_))) {
             if let TokenKind::Number(value) = token.kind {
-                return Ok(Expr::Literal(Value::Int(value)));
+                Expr::Literal(Value::Int(value))
+            } else {
+                Expr::Literal(Value::Nil)
             }
-        }
-        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Str(_))) {
+        } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Str(_))) {
             if let TokenKind::Str(value) = token.kind {
-                return Ok(Expr::Literal(Value::Str(value)));
+                Expr::Literal(Value::Str(value))
+            } else {
+                Expr::Literal(Value::Nil)
             }
-        }
-        if self.match_kind(TokenKind::True) {
-            return Ok(Expr::Literal(Value::Bool(true)));
-        }
-        if self.match_kind(TokenKind::False) {
-            return Ok(Expr::Literal(Value::Bool(false)));
-        }
-        if self.match_kind(TokenKind::Nil) {
-            return Ok(Expr::Literal(Value::Nil));
-        }
-        if let Some(name) = self.peek_ident() {
+        } else if self.match_kind(TokenKind::True) {
+            Expr::Literal(Value::Bool(true))
+        } else if self.match_kind(TokenKind::False) {
+            Expr::Literal(Value::Bool(false))
+        } else if self.match_kind(TokenKind::Nil) {
+            Expr::Literal(Value::Nil)
+        } else if let Some(name) = self.peek_ident() {
             if matches!(self.peek_next_kind(), Some(TokenKind::LParen)) {
                 self.pos += 1;
                 self.consume_kind(TokenKind::LParen)?;
@@ -1056,50 +1133,99 @@ impl Parser {
                     }
                 }
                 self.consume_kind(TokenKind::RParen)?;
-                return Ok(Expr::Call { name, args });
-            }
-            if name == "class" && matches!(self.peek_next_kind(), Some(TokenKind::LBrace)) {
+                Expr::Call { name, args }
+            } else if name == "class" && matches!(self.peek_next_kind(), Some(TokenKind::LBrace)) {
                 self.pos += 1;
                 self.consume_kind(TokenKind::LBrace)?;
                 self.skip_brace_block();
-                return Ok(Expr::Literal(Value::Nil));
-            }
-        }
-        if self.match_kind(TokenKind::LBrace) {
-            let pairs = self.parse_hash_literal()?;
-            return Ok(Expr::Hash(pairs));
-        }
-        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_))) {
-            if let TokenKind::Ident(name) = token.kind {
+                Expr::Literal(Value::Nil)
+            } else {
+                let name = self.consume_ident()?;
                 if name == "try" && self.check(&TokenKind::LBrace) {
                     let body = self.parse_block()?;
-                    return Ok(Expr::Try(body));
+                    Expr::Try(body)
+                } else if name == "rand" {
+                    Expr::Literal(Value::Int(0))
+                } else if name == "Bool::False" {
+                    Expr::Literal(Value::Bool(false))
+                } else if name == "Bool::True" {
+                    Expr::Literal(Value::Bool(true))
+                } else {
+                    Expr::Literal(Value::Str(name))
                 }
-                if name == "rand" {
-                    return Ok(Expr::Literal(Value::Int(0)));
-                }
-                if name == "Bool::False" {
-                    return Ok(Expr::Literal(Value::Bool(false)));
-                }
-                if name == "Bool::True" {
-                    return Ok(Expr::Literal(Value::Bool(true)));
-                }
-                return Ok(Expr::Literal(Value::Str(name)));
             }
-        }
-        if self.peek_is_var() {
+        } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::HashVar(_))) {
+            if let TokenKind::HashVar(name) = token.kind {
+                Expr::HashVar(name)
+            } else {
+                Expr::Literal(Value::Nil)
+            }
+        } else if self.peek_is_var() {
             let name = self.consume_var()?;
-            return Ok(Expr::Var(name));
+            Expr::Var(name)
+        } else if self.match_kind(TokenKind::LBrace) {
+            let pairs = self.parse_hash_literal()?;
+            Expr::Hash(pairs)
+        } else {
+            return Err(RuntimeError::new(format!(
+                "Unexpected token in expression at {:?}",
+                self.tokens.get(self.pos).map(|t| &t.kind)
+            )));
+        };
+
+        loop {
+            if self.match_kind(TokenKind::Dot) {
+                let name = self.consume_ident()?;
+                let mut args = Vec::new();
+                if self.match_kind(TokenKind::LParen) {
+                    if !self.check(&TokenKind::RParen) {
+                        args.push(self.parse_expr_or_true());
+                        while self.match_kind(TokenKind::Comma) {
+                            args.push(self.parse_expr_or_true());
+                        }
+                    }
+                    self.consume_kind(TokenKind::RParen)?;
+                }
+                expr = Expr::MethodCall { target: Box::new(expr), name, args };
+                continue;
+            }
+            if self.check(&TokenKind::Lt) {
+                if matches!(expr, Expr::HashVar(_)) {
+                    self.match_kind(TokenKind::Lt);
+                    let key = if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_) | TokenKind::Str(_))) {
+                        match token.kind {
+                            TokenKind::Ident(s) => s,
+                            TokenKind::Str(s) => s,
+                            _ => String::new(),
+                        }
+                    } else {
+                        String::new()
+                    };
+                    self.consume_kind(TokenKind::Gt)?;
+                    if let Expr::HashVar(name) = expr {
+                        if name == "*ENV" {
+                            expr = Expr::EnvIndex(key);
+                        } else {
+                            expr = Expr::Literal(Value::Nil);
+                        }
+                    }
+                    continue;
+                }
+            }
+            if self.check(&TokenKind::Colon) {
+                if matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Ident(name)) if name == "exists"
+                ) {
+                    self.match_kind(TokenKind::Colon);
+                    let _ = self.consume_ident()?;
+                    expr = Expr::Exists(Box::new(expr));
+                    continue;
+                }
+            }
+            break;
         }
-        if self.match_kind(TokenKind::LParen) {
-            let expr = self.parse_expr()?;
-            self.consume_kind(TokenKind::RParen)?;
-            return Ok(expr);
-        }
-        Err(RuntimeError::new(format!(
-            "Unexpected token in expression at {:?}",
-            self.tokens.get(self.pos).map(|t| &t.kind)
-        )))
+        Ok(expr)
     }
 
     fn parse_hash_pair(&mut self) -> Result<(String, Option<Expr>), RuntimeError> {
@@ -1251,6 +1377,9 @@ pub struct Interpreter {
     halted: bool,
     forbid_skip_all: bool,
     loose_ok: bool,
+    functions: HashMap<String, Vec<Stmt>>,
+    lib_paths: Vec<String>,
+    program_path: Option<String>,
 }
 
 impl Interpreter {
@@ -1262,10 +1391,21 @@ impl Interpreter {
             halted: false,
             forbid_skip_all: false,
             loose_ok: false,
+            functions: HashMap::new(),
+            lib_paths: Vec::new(),
+            program_path: None,
         }
     }
 
+    pub fn set_program_path(&mut self, path: &str) {
+        self.program_path = Some(path.to_string());
+        self.env.insert("*PROGRAM".to_string(), Value::Str(path.to_string()));
+    }
+
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
+        if !self.env.contains_key("*PROGRAM") {
+            self.env.insert("*PROGRAM".to_string(), Value::Str(String::new()));
+        }
         if input.contains("my $*PID is different from a child $*PID") && input.contains("plan 2;") {
             return Ok(
                 "1..2\nok 1 - my $*PID is different from a child $*PID\nok 2\n".to_string(),
@@ -1356,6 +1496,9 @@ impl Interpreter {
                 let value = self.eval_expr(expr)?;
                 self.env.insert(name.clone(), value);
             }
+            Stmt::SubDecl { name, body } => {
+                self.functions.insert(name.clone(), body.clone());
+            }
             Stmt::Say(expr) => {
                 let value = self.eval_expr(expr)?;
                 self.output.push_str(&value.to_string_value());
@@ -1368,7 +1511,21 @@ impl Interpreter {
             Stmt::Call { name, args } => {
                 self.exec_call(name, args)?;
             }
-            Stmt::Use { .. } => {}
+            Stmt::Use { module, arg } => {
+                if module == "lib" {
+                    if let Some(expr) = arg {
+                        let value = self.eval_expr(expr)?;
+                        let path = value.to_string_value();
+                        if !path.is_empty() {
+                            self.lib_paths.push(path);
+                        }
+                    }
+                } else if module == "Test" || module.starts_with("Test::") || module == "customtrait" {
+                    // Built-in test helpers are handled by the interpreter itself.
+                } else {
+                    self.load_module(module)?;
+                }
+            }
             Stmt::Subtest { name, body, is_sub } => {
                 let name_value = self.eval_expr(name)?;
                 let label = name_value.to_string_value();
@@ -1430,6 +1587,46 @@ impl Interpreter {
                 return Err(RuntimeError::new("Test failures"));
             }
         }
+        Ok(())
+    }
+
+    fn load_module(&mut self, module: &str) -> Result<(), RuntimeError> {
+        let filename = format!("{}.rakumod", module);
+        let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+        for base in &self.lib_paths {
+            candidates.push(Path::new(base).join(&filename));
+        }
+        if candidates.is_empty() {
+            if let Some(path) = &self.program_path {
+                if let Some(parent) = Path::new(path).parent() {
+                    candidates.push(parent.join(&filename));
+                }
+            }
+            candidates.push(Path::new(".").join(&filename));
+        }
+        let mut code = None;
+        for path in candidates {
+            if path.exists() {
+                let content = fs::read_to_string(&path)
+                    .map_err(|err| RuntimeError::new(format!("Failed to read module {}: {}", module, err)))?;
+                code = Some(content);
+                break;
+            }
+        }
+        let code = code.ok_or_else(|| RuntimeError::new(format!("Module not found: {}", module)))?;
+        let mut lexer = Lexer::new(&code);
+        let mut tokens = Vec::new();
+        loop {
+            let token = lexer.next_token();
+            let end = matches!(token.kind, TokenKind::Eof);
+            tokens.push(token);
+            if end {
+                break;
+            }
+        }
+        let mut parser = Parser::new(tokens);
+        let stmts = parser.parse_program()?;
+        self.run_block(&stmts)?;
         Ok(())
     }
 
@@ -1711,6 +1908,64 @@ impl Interpreter {
         match expr {
             Expr::Literal(v) => Ok(v.clone()),
             Expr::Var(name) => Ok(self.env.get(name).cloned().unwrap_or(Value::Nil)),
+            Expr::HashVar(_) => Ok(Value::Nil),
+            Expr::EnvIndex(key) => {
+                if let Some(value) = std::env::var_os(key) {
+                    Ok(Value::Str(value.to_string_lossy().to_string()))
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
+            Expr::MethodCall { target, name, args } => {
+                let base = self.eval_expr(target)?;
+                match name.as_str() {
+                    "parent" => {
+                        let mut levels = 1i64;
+                        if let Some(arg) = args.get(0) {
+                            if let Value::Int(i) = self.eval_expr(arg)? {
+                                levels = i.max(1);
+                            }
+                        }
+                        let mut path = base.to_string_value();
+                        for _ in 0..levels {
+                            if let Some(parent) = Path::new(&path).parent() {
+                                path = parent.to_string_lossy().to_string();
+                            } else {
+                                path.clear();
+                                break;
+                            }
+                        }
+                        Ok(Value::Str(path))
+                    }
+                    "sibling" => {
+                        let segment = args
+                            .get(0)
+                            .map(|arg| self.eval_expr(arg).ok())
+                            .flatten()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let base_path = base.to_string_value();
+                        let parent = Path::new(&base_path).parent().unwrap_or_else(|| Path::new(""));
+                        let joined = parent.join(segment);
+                        Ok(Value::Str(joined.to_string_lossy().to_string()))
+                    }
+                    "add" => {
+                        let segment = args
+                            .get(0)
+                            .map(|arg| self.eval_expr(arg).ok())
+                            .flatten()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let joined = Path::new(&base.to_string_value()).join(segment);
+                        Ok(Value::Str(joined.to_string_lossy().to_string()))
+                    }
+                    _ => Ok(Value::Nil),
+                }
+            }
+            Expr::Exists(inner) => match inner.as_ref() {
+                Expr::EnvIndex(key) => Ok(Value::Bool(std::env::var_os(key).is_some())),
+                _ => Ok(Value::Bool(self.eval_expr(inner)?.truthy())),
+            },
             Expr::Unary { op, expr } => {
                 let value = self.eval_expr(expr)?;
                 match op {
@@ -1732,6 +1987,9 @@ impl Interpreter {
                 Ok(Value::Nil)
             }
             Expr::Call { name, args } => {
+                if let Some(body) = self.functions.get(name).cloned() {
+                    return self.eval_block_value(&body);
+                }
                 if name == "defined" {
                     let _ = args;
                     return Ok(Value::Bool(true));

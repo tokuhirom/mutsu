@@ -7,6 +7,7 @@ fn roast_magicals_block() {
     let program = fs::read_to_string("../roast/S02-magicals/block.t")
         .expect("read roast block test");
     let mut interp = Interpreter::new();
+    interp.set_program_path("../roast/S02-magicals/block.t");
     let output = interp.run(&program).expect("run block test");
     let expected = "1..3\n"
         .to_string()

@@ -7,6 +7,7 @@ fn roast_magicals_args() {
     let program = fs::read_to_string("../roast/S02-magicals/args.t")
         .expect("read roast args test");
     let mut interp = Interpreter::new();
+    interp.set_program_path("../roast/S02-magicals/args.t");
     let output = interp.run(&program).expect("run args test");
     let expected = "1..6\n"
         .to_string()
