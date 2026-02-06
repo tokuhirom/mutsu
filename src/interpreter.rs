@@ -1177,7 +1177,7 @@ impl Interpreter {
                     if code.contains("&?ROUTINE") && self.routine_stack.is_empty() {
                         return Err(RuntimeError::new("X::Undeclared::Symbols"));
                     }
-                    return Ok(self.eval_eval_string(&code));
+                    return self.eval_eval_string(&code);
                 }
                 if name == "atan2" {
                     let a = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
@@ -1360,8 +1360,9 @@ impl Interpreter {
         Ok(last)
     }
 
-    fn eval_eval_string(&self, code: &str) -> Value {
+    fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
         let trimmed = code.trim();
+        // Handle angle-bracket word lists: <a b c>, ~<a b>, +<a b>, ?<a b>
         let (prefix, rest) = if let Some(pos) = trimmed.find('<') {
             (trimmed.chars().next().unwrap_or(' '), &trimmed[pos..])
         } else {
@@ -1369,17 +1370,33 @@ impl Interpreter {
         };
         let start = rest.find('<');
         let end = rest.rfind('>');
-        if let (Some(s), Some(e)) = (start, end) {
-            let inner = &rest[s + 1..e];
-            let words: Vec<&str> = inner.split_whitespace().collect();
-            match prefix {
-                '~' => Value::Str(words.join(" ")),
-                '+' => Value::Int(words.len() as i64),
-                '?' => Value::Bool(!words.is_empty()),
-                _ => Value::Str(words.join(" ")),
+        if prefix != ' ' || (start.is_some() && trimmed.starts_with('<')) {
+            if let (Some(s), Some(e)) = (start, end) {
+                let inner = &rest[s + 1..e];
+                let words: Vec<&str> = inner.split_whitespace().collect();
+                return Ok(match prefix {
+                    '~' => Value::Str(words.join(" ")),
+                    '+' => Value::Int(words.len() as i64),
+                    '?' => Value::Bool(!words.is_empty()),
+                    _ => Value::Str(words.join(" ")),
+                });
             }
-        } else {
-            Value::Nil
+        }
+        // General case: parse and evaluate as Raku code
+        let mut lexer = Lexer::new(trimmed);
+        let mut tokens = Vec::new();
+        loop {
+            let token = lexer.next_token();
+            let end = matches!(token.kind, TokenKind::Eof);
+            tokens.push(token);
+            if end {
+                break;
+            }
+        }
+        let mut parser = Parser::new(tokens);
+        match parser.parse_program() {
+            Ok(stmts) => self.eval_block_value(&stmts),
+            Err(e) => Err(e),
         }
     }
 
