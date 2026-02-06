@@ -214,8 +214,13 @@ impl Lexer {
                 TokenKind::Str(s)
             }
             '$' => {
-                let ident = self.read_ident();
-                TokenKind::Var(ident)
+                if self.peek() == Some('!') {
+                    self.pos += 1;
+                    TokenKind::Var("!".to_string())
+                } else {
+                    let ident = self.read_ident();
+                    TokenKind::Var(ident)
+                }
             }
             '@' => {
                 let ident = self.read_ident();

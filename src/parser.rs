@@ -186,6 +186,15 @@ impl Parser {
             let body = self.parse_block()?;
             return Ok(Stmt::Default(body));
         }
+        if self.match_ident("die") {
+            let expr = self.parse_expr()?;
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::Die(expr));
+        }
+        if self.match_ident("CATCH") {
+            let body = self.parse_block()?;
+            return Ok(Stmt::Catch(body));
+        }
         if let Some(name) = self.peek_ident() {
             if matches!(name.as_str(), "ok" | "is" | "isnt" | "nok" | "pass" | "flunk" | "cmp-ok" | "like" | "unlike" | "is-deeply" | "isa-ok" | "lives-ok" | "dies-ok" | "eval-lives-ok" | "is_run" | "throws-like" | "force_todo" | "force-todo" | "plan" | "done-testing" | "bail-out") {
                 self.pos += 1;
@@ -834,7 +843,7 @@ impl Parser {
                     self.parse_expr()?
                 } else if name == "try" && self.check(&TokenKind::LBrace) {
                     let body = self.parse_block()?;
-                    Expr::Try(body)
+                    Expr::Try { body, catch: None }
                 } else if name == "rand" {
                     Expr::Literal(Value::Int(0))
                 } else if name == "Bool::False" {

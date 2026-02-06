@@ -306,6 +306,13 @@ impl Interpreter {
                     }
                 }
             }
+            Stmt::Die(expr) => {
+                let msg = self.eval_expr(expr)?.to_string_value();
+                return Err(RuntimeError::new(&msg));
+            }
+            Stmt::Catch(_) => {
+                // CATCH blocks are handled by try expressions
+            }
             Stmt::Expr(expr) => {
                 self.eval_expr(expr)?;
             }
@@ -1188,10 +1195,52 @@ impl Interpreter {
                 }
                 Ok(Value::Nil)
             }
-            Expr::Try(body) => match self.eval_block_value(body) {
-                Ok(v) => Ok(v),
-                Err(_) => Ok(Value::Nil),
-            },
+            Expr::Try { body, catch } => {
+                // Extract CATCH blocks from body
+                let mut main_stmts = Vec::new();
+                let mut catch_stmts = catch.clone();
+                for stmt in body {
+                    if let Stmt::Catch(catch_body) = stmt {
+                        catch_stmts = Some(catch_body.clone());
+                    } else {
+                        main_stmts.push(stmt.clone());
+                    }
+                }
+                match self.eval_block_value(&main_stmts) {
+                    Ok(v) => Ok(v),
+                    Err(e) => {
+                        if let Some(catch_body) = catch_stmts {
+                            let err_val = Value::Str(e.message);
+                            let saved_err = self.env.get("!").cloned();
+                            let saved_topic = self.env.get("_").cloned();
+                            self.env.insert("!".to_string(), err_val.clone());
+                            self.env.insert("_".to_string(), err_val);
+                            let saved_when = self.when_matched;
+                            self.when_matched = false;
+                            for stmt in &catch_body {
+                                self.exec_stmt(stmt)?;
+                                if self.when_matched || self.halted {
+                                    break;
+                                }
+                            }
+                            self.when_matched = saved_when;
+                            if let Some(v) = saved_err {
+                                self.env.insert("!".to_string(), v);
+                            } else {
+                                self.env.remove("!");
+                            }
+                            if let Some(v) = saved_topic {
+                                self.env.insert("_".to_string(), v);
+                            } else {
+                                self.env.remove("_");
+                            }
+                            Ok(Value::Nil)
+                        } else {
+                            Ok(Value::Nil)
+                        }
+                    }
+                }
+            }
             Expr::InfixFunc { name, left, right, modifier } => {
                 let left_val = self.eval_expr(left)?;
                 let mut right_vals = Vec::new();

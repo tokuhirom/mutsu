@@ -36,7 +36,7 @@ pub(crate) enum Expr {
     Binary { left: Box<Expr>, op: TokenKind, right: Box<Expr> },
     Hash(Vec<(String, Option<Expr>)>),
     Call { name: String, args: Vec<Expr> },
-    Try(Vec<Stmt>),
+    Try { body: Vec<Stmt>, catch: Option<Vec<Stmt>> },
     InfixFunc {
         name: String,
         left: Box<Expr>,
@@ -76,6 +76,8 @@ pub(crate) enum Stmt {
     Given { topic: Expr, body: Vec<Stmt> },
     When { cond: Expr, body: Vec<Stmt> },
     Default(Vec<Stmt>),
+    Die(Expr),
+    Catch(Vec<Stmt>),
     Expr(Expr),
 }
 
