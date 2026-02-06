@@ -18,6 +18,9 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - Run: `cargo run -- <file.p6>`
 - Test: `cargo test`
 - Full test (cargo + prove): `make test`
+- Roast 全件実行: `tools/run_all_roast.sh` (KPI: pass数)
+  - `--save` を付けると `tools/roast_results.log` に結果を追記
+  - 機能追加後は `tools/run_all_roast.sh --save` を実行し、pass数の推移を記録すること
 
 ## Spec sources
 - Roast tests live at `../roast/`.
