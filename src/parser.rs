@@ -158,17 +158,113 @@ impl Parser {
         if self.match_ident("if") {
             let cond = self.parse_expr()?;
             let then_branch = self.parse_block()?;
-            let else_branch = if self.match_ident("else") {
+            let else_branch = if self.match_ident("elsif") {
+                // Desugar elsif into nested if
+                let elsif = self.parse_expr()?;
+                let elsif_branch = self.parse_block()?;
+                let inner_else = if self.match_ident("else") {
+                    self.parse_block()?
+                } else {
+                    Vec::new()
+                };
+                vec![Stmt::If { cond: elsif, then_branch: elsif_branch, else_branch: inner_else }]
+            } else if self.match_ident("else") {
                 self.parse_block()?
             } else {
                 Vec::new()
             };
             return Ok(Stmt::If { cond, then_branch, else_branch });
         }
+        if self.match_ident("unless") {
+            let cond = self.parse_expr()?;
+            let body = self.parse_block()?;
+            // unless is if with negated condition
+            return Ok(Stmt::If {
+                cond: Expr::Unary { op: TokenKind::Bang, expr: Box::new(cond) },
+                then_branch: body,
+                else_branch: Vec::new(),
+            });
+        }
         if self.match_ident("while") {
             let cond = self.parse_expr()?;
             let body = self.parse_block()?;
             return Ok(Stmt::While { cond, body });
+        }
+        if self.match_ident("until") {
+            let cond = self.parse_expr()?;
+            let body = self.parse_block()?;
+            // until is while with negated condition
+            return Ok(Stmt::While {
+                cond: Expr::Unary { op: TokenKind::Bang, expr: Box::new(cond) },
+                body,
+            });
+        }
+        if self.match_ident("loop") {
+            if self.check(&TokenKind::LParen) {
+                // C-style: loop (init; cond; step) { body }
+                if !self.match_kind(TokenKind::LParen) {
+                    return Err(RuntimeError::new("expected '(' after loop"));
+                }
+                // init
+                let init = if self.check(&TokenKind::Semicolon) {
+                    // empty init: consume the bare semicolon
+                    self.match_kind(TokenKind::Semicolon);
+                    None
+                } else {
+                    // parse_stmt consumes the trailing semicolon
+                    Some(Box::new(self.parse_stmt()?))
+                };
+                // cond
+                let cond = if self.check(&TokenKind::Semicolon) {
+                    None
+                } else {
+                    Some(self.parse_expr()?)
+                };
+                if !self.match_kind(TokenKind::Semicolon) {
+                    return Err(RuntimeError::new("expected ';' in loop"));
+                }
+                // step
+                let step = if self.check(&TokenKind::RParen) {
+                    None
+                } else {
+                    Some(self.parse_expr()?)
+                };
+                if !self.match_kind(TokenKind::RParen) {
+                    return Err(RuntimeError::new("expected ')' after loop"));
+                }
+                let body = self.parse_block()?;
+                return Ok(Stmt::Loop { init, cond, step, body });
+            } else {
+                // bare loop { body }
+                let body = self.parse_block()?;
+                return Ok(Stmt::Loop { init: None, cond: None, step: None, body });
+            }
+        }
+        if self.match_ident("last") {
+            if self.match_ident("if") {
+                let cond = self.parse_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::If {
+                    cond,
+                    then_branch: vec![Stmt::Last],
+                    else_branch: Vec::new(),
+                });
+            }
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::Last);
+        }
+        if self.match_ident("next") {
+            if self.match_ident("if") {
+                let cond = self.parse_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::If {
+                    cond,
+                    then_branch: vec![Stmt::Next],
+                    else_branch: Vec::new(),
+                });
+            }
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::Next);
         }
         if self.match_ident("for") {
             let iterable = self.parse_expr()?;
@@ -222,6 +318,27 @@ impl Parser {
         }
         if self.peek_is_var() {
             if let Some(next) = self.peek_next_kind() {
+                if matches!(next, TokenKind::PlusEq | TokenKind::MinusEq | TokenKind::TildeEq | TokenKind::StarEq) {
+                    let name = self.consume_var()?;
+                    let compound_op = if self.match_kind(TokenKind::PlusEq) {
+                        TokenKind::Plus
+                    } else if self.match_kind(TokenKind::MinusEq) {
+                        TokenKind::Minus
+                    } else if self.match_kind(TokenKind::TildeEq) {
+                        TokenKind::Tilde
+                    } else {
+                        self.match_kind(TokenKind::StarEq);
+                        TokenKind::Star
+                    };
+                    let rhs = self.parse_comma_expr()?;
+                    self.match_kind(TokenKind::Semicolon);
+                    let expr = Expr::Binary {
+                        left: Box::new(Expr::Var(name.clone())),
+                        op: compound_op,
+                        right: Box::new(rhs),
+                    };
+                    return Ok(Stmt::Assign { name, expr, op: AssignOp::Assign });
+                }
                 if matches!(next, TokenKind::Eq | TokenKind::Bind | TokenKind::MatchAssign) {
                     let name = self.consume_var()?;
                     let op = if self.match_kind(TokenKind::Eq) {
@@ -504,6 +621,15 @@ impl Parser {
     }
 
     fn parse_expr(&mut self) -> Result<Expr, RuntimeError> {
+        // Handle $var = expr as assignment expression
+        if let Some(TokenKind::Var(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+            if matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Eq)) {
+                let name = name.clone();
+                self.pos += 2;
+                let expr = self.parse_expr()?;
+                return Ok(Expr::AssignExpr { name, expr: Box::new(expr) });
+            }
+        }
         self.parse_ternary()
     }
 
@@ -793,6 +919,14 @@ impl Parser {
     }
 
     fn parse_unary(&mut self) -> Result<Expr, RuntimeError> {
+        if self.match_kind(TokenKind::PlusPlus) {
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Unary { op: TokenKind::PlusPlus, expr: Box::new(expr) });
+        }
+        if self.match_kind(TokenKind::MinusMinus) {
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Unary { op: TokenKind::MinusMinus, expr: Box::new(expr) });
+        }
         if self.match_kind(TokenKind::Plus) {
             let expr = self.parse_unary()?;
             return Ok(Expr::Unary { op: TokenKind::Plus, expr: Box::new(expr) });
@@ -952,6 +1086,14 @@ impl Parser {
         };
 
         loop {
+            if self.match_kind(TokenKind::PlusPlus) {
+                expr = Expr::PostfixOp { op: TokenKind::PlusPlus, expr: Box::new(expr) };
+                continue;
+            }
+            if self.match_kind(TokenKind::MinusMinus) {
+                expr = Expr::PostfixOp { op: TokenKind::MinusMinus, expr: Box::new(expr) };
+                continue;
+            }
             if self.match_kind(TokenKind::Dot) {
                 let name = self.consume_ident()?;
                 let mut args = Vec::new();

@@ -248,11 +248,46 @@ impl Interpreter {
                 }
             }
             Stmt::While { cond, body } => {
-                while self.eval_expr(cond)?.truthy() {
+                'while_loop: while self.eval_expr(cond)?.truthy() {
                     for stmt in body {
-                        self.exec_stmt(stmt)?;
+                        match self.exec_stmt(stmt) {
+                            Err(e) if e.is_last => break 'while_loop,
+                            Err(e) if e.is_next => continue 'while_loop,
+                            other => { other?; }
+                        }
                     }
                 }
+            }
+            Stmt::Loop { init, cond, step, body } => {
+                if let Some(init_stmt) = init {
+                    self.exec_stmt(init_stmt)?;
+                }
+                'c_loop: loop {
+                    if let Some(cond_expr) = cond {
+                        if !self.eval_expr(cond_expr)?.truthy() {
+                            break;
+                        }
+                    }
+                    let mut did_next = false;
+                    for stmt in body {
+                        match self.exec_stmt(stmt) {
+                            Err(e) if e.is_last => break 'c_loop,
+                            Err(e) if e.is_next => { did_next = true; break; }
+                            other => { other?; }
+                        }
+                    }
+                    // step runs even on next (continue expression)
+                    if let Some(step_expr) = step {
+                        self.eval_expr(step_expr)?;
+                    }
+                    let _ = did_next;
+                }
+            }
+            Stmt::Last => {
+                return Err(RuntimeError::last_signal());
+            }
+            Stmt::Next => {
+                return Err(RuntimeError::next_signal());
             }
             Stmt::Given { topic, body } => {
                 let topic_val = self.eval_expr(topic)?;
@@ -302,10 +337,14 @@ impl Interpreter {
                     Value::RangeExcl(a, b) => (a..b).map(Value::Int).collect(),
                     other => vec![other],
                 };
-                for value in values {
+                'for_loop: for value in values {
                     self.env.insert("_".to_string(), value);
                     for stmt in body {
-                        self.exec_stmt(stmt)?;
+                        match self.exec_stmt(stmt) {
+                            Err(e) if e.is_last => break 'for_loop,
+                            Err(e) if e.is_next => continue 'for_loop,
+                            other => { other?; }
+                        }
                     }
                 }
             }
@@ -1125,20 +1164,64 @@ impl Interpreter {
                 Ok(Value::Nil)
             }
             Expr::Unary { op, expr } => {
-                let value = self.eval_expr(expr)?;
                 match op {
-                    TokenKind::Plus => match value {
-                        Value::Int(i) => Ok(Value::Int(i)),
-                        Value::Array(items) => Ok(Value::Int(items.len() as i64)),
-                        Value::Str(s) => Ok(Value::Int(s.parse::<i64>().unwrap_or(0))),
-                        _ => Ok(Value::Int(0)),
-                    },
-                    TokenKind::Minus => match value {
-                        Value::Int(i) => Ok(Value::Int(-i)),
-                        _ => Err(RuntimeError::new("Unary - expects Int")),
-                    },
-                    TokenKind::Bang => Ok(Value::Bool(!value.truthy())),
-                    _ => Err(RuntimeError::new("Unknown unary operator")),
+                    TokenKind::PlusPlus => {
+                        if let Expr::Var(name) = expr.as_ref() {
+                            let val = self.env.get(name).cloned().unwrap_or(Value::Int(0));
+                            let new_val = match val {
+                                Value::Int(i) => Value::Int(i + 1),
+                                _ => Value::Int(1),
+                            };
+                            self.env.insert(name.clone(), new_val.clone());
+                            return Ok(new_val);
+                        }
+                        Ok(Value::Nil)
+                    }
+                    TokenKind::MinusMinus => {
+                        if let Expr::Var(name) = expr.as_ref() {
+                            let val = self.env.get(name).cloned().unwrap_or(Value::Int(0));
+                            let new_val = match val {
+                                Value::Int(i) => Value::Int(i - 1),
+                                _ => Value::Int(-1),
+                            };
+                            self.env.insert(name.clone(), new_val.clone());
+                            return Ok(new_val);
+                        }
+                        Ok(Value::Nil)
+                    }
+                    _ => {
+                        let value = self.eval_expr(expr)?;
+                        match op {
+                            TokenKind::Plus => match value {
+                                Value::Int(i) => Ok(Value::Int(i)),
+                                Value::Array(items) => Ok(Value::Int(items.len() as i64)),
+                                Value::Str(s) => Ok(Value::Int(s.parse::<i64>().unwrap_or(0))),
+                                _ => Ok(Value::Int(0)),
+                            },
+                            TokenKind::Minus => match value {
+                                Value::Int(i) => Ok(Value::Int(-i)),
+                                _ => Err(RuntimeError::new("Unary - expects Int")),
+                            },
+                            TokenKind::Bang => Ok(Value::Bool(!value.truthy())),
+                            _ => Err(RuntimeError::new("Unknown unary operator")),
+                        }
+                    }
+                }
+            }
+            Expr::PostfixOp { op, expr } => {
+                if let Expr::Var(name) = expr.as_ref() {
+                    let val = self.env.get(name).cloned().unwrap_or(Value::Int(0));
+                    let new_val = match (op, &val) {
+                        (TokenKind::PlusPlus, Value::Int(i)) => Value::Int(i + 1),
+                        (TokenKind::MinusMinus, Value::Int(i)) => Value::Int(i - 1),
+                        (TokenKind::PlusPlus, _) => Value::Int(1),
+                        (TokenKind::MinusMinus, _) => Value::Int(-1),
+                        _ => val.clone(),
+                    };
+                    self.env.insert(name.clone(), new_val);
+                    Ok(val) // postfix returns old value
+                } else {
+                    Ok(Value::Nil)
                 }
             }
             Expr::Binary { left, op, right } => {

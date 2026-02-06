@@ -97,14 +97,24 @@ impl Value {
 pub struct RuntimeError {
     pub message: String,
     pub return_value: Option<Value>,
+    pub is_last: bool,
+    pub is_next: bool,
 }
 
 impl RuntimeError {
     pub(crate) fn new(message: impl Into<String>) -> Self {
-        Self { message: message.into(), return_value: None }
+        Self { message: message.into(), return_value: None, is_last: false, is_next: false }
     }
 
     pub(crate) fn return_val(value: Value) -> Self {
-        Self { message: String::new(), return_value: Some(value) }
+        Self { message: String::new(), return_value: Some(value), is_last: false, is_next: false }
+    }
+
+    pub(crate) fn last_signal() -> Self {
+        Self { message: String::new(), return_value: None, is_last: true, is_next: false }
+    }
+
+    pub(crate) fn next_signal() -> Self {
+        Self { message: String::new(), return_value: None, is_last: false, is_next: true }
     }
 }

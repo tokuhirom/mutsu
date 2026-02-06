@@ -49,6 +49,12 @@ pub(crate) enum TokenKind {
     RBrace,
     Comma,
     Colon,
+    PlusPlus,
+    MinusMinus,
+    PlusEq,
+    MinusEq,
+    TildeEq,
+    StarEq,
     Bind,
     Semicolon,
     Eof,
@@ -239,16 +245,30 @@ impl Lexer {
                     TokenKind::Percent
                 }
             }
-            '+' => TokenKind::Plus,
+            '+' => {
+                if self.match_char('+') {
+                    TokenKind::PlusPlus
+                } else if self.match_char('=') {
+                    TokenKind::PlusEq
+                } else {
+                    TokenKind::Plus
+                }
+            }
             '-' => {
-                if self.match_char('>') {
+                if self.match_char('-') {
+                    TokenKind::MinusMinus
+                } else if self.match_char('>') {
                     TokenKind::Arrow
+                } else if self.match_char('=') {
+                    TokenKind::MinusEq
                 } else {
                     TokenKind::Minus
                 }
             }
             '*' => {
-                if self.match_char('*') {
+                if self.match_char('=') {
+                    TokenKind::StarEq
+                } else if self.match_char('*') {
                     TokenKind::StarStar
                 } else {
                     TokenKind::Star
@@ -264,6 +284,8 @@ impl Lexer {
             '~' => {
                 if self.match_char('~') {
                     TokenKind::SmartMatch
+                } else if self.match_char('=') {
+                    TokenKind::TildeEq
                 } else {
                     TokenKind::Tilde
                 }
