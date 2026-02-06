@@ -1310,6 +1310,21 @@ impl Interpreter {
                 (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a / b)),
                 _ => Err(RuntimeError::new("/ expects Int")),
             },
+            TokenKind::Percent => match (left, right) {
+                (Value::Int(_), Value::Int(0)) => Err(RuntimeError::new("Modulo by zero")),
+                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a % b)),
+                _ => Err(RuntimeError::new("% expects Int")),
+            },
+            TokenKind::PercentPercent => match (left, right) {
+                (Value::Int(_), Value::Int(0)) => Err(RuntimeError::new("Divisibility by zero")),
+                (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a % b == 0)),
+                _ => Err(RuntimeError::new("%% expects Int")),
+            },
+            TokenKind::StarStar => match (left, right) {
+                (Value::Int(a), Value::Int(b)) if b >= 0 => Ok(Value::Int(a.pow(b as u32))),
+                (Value::Int(_), Value::Int(_)) => Err(RuntimeError::new("Negative exponent")),
+                _ => Err(RuntimeError::new("** expects Int")),
+            },
             TokenKind::Tilde => Ok(Value::Str(format!("{}{}", left.to_string_value(), right.to_string_value()))),
             TokenKind::EqEq => Ok(Value::Bool(left == right)),
             TokenKind::BangEq => Ok(Value::Bool(left != right)),

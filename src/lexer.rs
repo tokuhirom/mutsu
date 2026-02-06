@@ -14,6 +14,9 @@ pub(crate) enum TokenKind {
     Plus,
     Minus,
     Star,
+    StarStar,
+    Percent,
+    PercentPercent,
     Slash,
     Tilde,
     Eq,
@@ -227,8 +230,14 @@ impl Lexer {
                 TokenKind::ArrayVar(ident)
             }
             '%' => {
-                let ident = self.read_ident();
-                TokenKind::HashVar(ident)
+                if self.match_char('%') {
+                    TokenKind::PercentPercent
+                } else if self.peek().map_or(true, |c| c.is_ascii_alphabetic() || c == '_' || c == '*') {
+                    let ident = self.read_ident();
+                    TokenKind::HashVar(ident)
+                } else {
+                    TokenKind::Percent
+                }
             }
             '+' => TokenKind::Plus,
             '-' => {
@@ -238,7 +247,13 @@ impl Lexer {
                     TokenKind::Minus
                 }
             }
-            '*' => TokenKind::Star,
+            '*' => {
+                if self.match_char('*') {
+                    TokenKind::StarStar
+                } else {
+                    TokenKind::Star
+                }
+            }
             '/' => {
                 if let Some(regex) = self.try_read_regex_literal() {
                     TokenKind::Str(regex)

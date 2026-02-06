@@ -724,23 +724,38 @@ impl Parser {
     }
 
     fn parse_factor(&mut self) -> Result<Expr, RuntimeError> {
-        let mut expr = self.parse_unary()?;
+        let mut expr = self.parse_power()?;
         loop {
             let op = if self.match_kind(TokenKind::Star) {
                 Some(TokenKind::Star)
             } else if self.match_kind(TokenKind::Slash) {
                 Some(TokenKind::Slash)
+            } else if self.match_kind(TokenKind::Percent) {
+                Some(TokenKind::Percent)
+            } else if self.match_kind(TokenKind::PercentPercent) {
+                Some(TokenKind::PercentPercent)
             } else {
                 None
             };
             if let Some(op) = op {
-                let right = self.parse_unary()?;
+                let right = self.parse_power()?;
                 expr = Expr::Binary { left: Box::new(expr), op, right: Box::new(right) };
             } else {
                 break;
             }
         }
         Ok(expr)
+    }
+
+    // Exponentiation (**) - right-associative, tighter than multiplicative
+    fn parse_power(&mut self) -> Result<Expr, RuntimeError> {
+        let base = self.parse_unary()?;
+        if self.match_kind(TokenKind::StarStar) {
+            let exp = self.parse_power()?; // right-associative
+            Ok(Expr::Binary { left: Box::new(base), op: TokenKind::StarStar, right: Box::new(exp) })
+        } else {
+            Ok(base)
+        }
     }
 
     fn parse_infix_func(&mut self, left: Expr) -> Result<Option<Expr>, RuntimeError> {
