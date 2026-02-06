@@ -18,16 +18,22 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - Run: `cargo run -- <file.p6>`
 - Test: `cargo test`
 - Full test (cargo + prove): `make test`
-- Roast 全件実行: `tools/run_all_roast.sh` (KPI: pass数)
-  - `--save` を付けると `tools/roast_results.log` に結果を追記
-  - 機能追加後は `tools/run_all_roast.sh --save` を実行し、pass数の推移を記録すること
+- Full roast run: `tools/run_all_roast.sh` (KPI: pass count)
+  - Pass `--save` to append results to `tools/roast_results.log`
+  - After adding features, run `tools/run_all_roast.sh --save` to record the pass count trend
 
 ## Spec sources
 - Roast tests live at `../roast/`.
 - Design docs live at `../old-design-docs/`.
 
+## Development workflow
+1. Implement Raku language features straightforwardly. Do not optimize specifically to increase the roast pass count.
+2. Write tests (prove-based) for every feature implemented.
+3. After a batch of features is done, run `tools/run_all_roast.sh --save` to check the KPI (pass count) trend.
+4. If the pass count increased, record it as progress. If it decreased, investigate and fix the regression.
+
 ## Conventions
 - Add small, focused tests for each new syntax feature.
 - Keep the parser and evaluator readable; comment only non-obvious logic.
-- テストは原則 prove (`tools/prove_existing_roast.sh`) で実装すること。`tests/*.rs` の Rust integration test は使わない。
-- 機能を追加したら必ずテストも実装すること。テストなしの機能追加は不完全とみなす。
+- Write tests using prove (`tools/prove_existing_roast.sh`). Do not use Rust integration tests in `tests/*.rs` for new coverage.
+- Every feature addition must include tests. A feature without tests is considered incomplete.
