@@ -204,6 +204,31 @@ impl Parser {
                 body,
             });
         }
+        if self.match_ident("repeat") {
+            let body = self.parse_block()?;
+            if self.match_ident("while") {
+                let cond = self.parse_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::Loop {
+                    init: None,
+                    cond: Some(cond),
+                    step: None,
+                    body,
+                    repeat: true,
+                });
+            } else if self.match_ident("until") {
+                let cond = self.parse_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::Loop {
+                    init: None,
+                    cond: Some(Expr::Unary { op: TokenKind::Bang, expr: Box::new(cond) }),
+                    step: None,
+                    body,
+                    repeat: true,
+                });
+            }
+            return Err(RuntimeError::new("Expected 'while' or 'until' after repeat block"));
+        }
         if self.match_ident("loop") {
             if self.check(&TokenKind::LParen) {
                 // C-style: loop (init; cond; step) { body }
@@ -238,11 +263,11 @@ impl Parser {
                     return Err(RuntimeError::new("expected ')' after loop"));
                 }
                 let body = self.parse_block()?;
-                return Ok(Stmt::Loop { init, cond, step, body });
+                return Ok(Stmt::Loop { init, cond, step, body, repeat: false });
             } else {
                 // bare loop { body }
                 let body = self.parse_block()?;
-                return Ok(Stmt::Loop { init: None, cond: None, step: None, body });
+                return Ok(Stmt::Loop { init: None, cond: None, step: None, body, repeat: false });
             }
         }
         if self.match_ident("last") {
@@ -273,8 +298,20 @@ impl Parser {
         }
         if self.match_ident("for") {
             let iterable = self.parse_expr()?;
+            let mut param = None;
+            if self.match_kind(TokenKind::Arrow) {
+                // Skip optional type annotation
+                if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
+                    && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
+                {
+                    self.pos += 1;
+                }
+                if self.peek_is_var() {
+                    param = Some(self.consume_var()?);
+                }
+            }
             let body = self.parse_block()?;
-            return Ok(Stmt::For { iterable, body });
+            return Ok(Stmt::For { iterable, param, body });
         }
         if self.match_ident("given") {
             let topic = self.parse_expr()?;
@@ -423,7 +460,7 @@ impl Parser {
         if self.match_ident("for") {
             let iterable = self.parse_expr()?;
             self.match_kind(TokenKind::Semicolon);
-            return Ok(Stmt::For { iterable, body: vec![stmt] });
+            return Ok(Stmt::For { iterable, param: None, body: vec![stmt] });
         }
         if self.match_ident("while") {
             let cond = self.parse_expr()?;
@@ -761,14 +798,19 @@ impl Parser {
 
     fn parse_or(&mut self) -> Result<Expr, RuntimeError> {
         let mut expr = self.parse_and()?;
-        while self.match_kind(TokenKind::OrOr) || self.match_kind(TokenKind::OrWord) {
-            let op = if self.tokens.get(self.pos - 1).map(|t| &t.kind) == Some(&TokenKind::OrWord) {
-                TokenKind::OrWord
+        loop {
+            if self.match_kind(TokenKind::OrOr) {
+                let right = self.parse_and()?;
+                expr = Expr::Binary { left: Box::new(expr), op: TokenKind::OrOr, right: Box::new(right) };
+            } else if self.match_kind(TokenKind::OrWord) {
+                let right = self.parse_and()?;
+                expr = Expr::Binary { left: Box::new(expr), op: TokenKind::OrWord, right: Box::new(right) };
+            } else if self.match_kind(TokenKind::SlashSlash) {
+                let right = self.parse_and()?;
+                expr = Expr::Binary { left: Box::new(expr), op: TokenKind::SlashSlash, right: Box::new(right) };
             } else {
-                TokenKind::OrOr
-            };
-            let right = self.parse_and()?;
-            expr = Expr::Binary { left: Box::new(expr), op, right: Box::new(right) };
+                break;
+            }
         }
         Ok(expr)
     }
@@ -920,6 +962,10 @@ impl Parser {
                 Some(TokenKind::Percent)
             } else if self.match_kind(TokenKind::PercentPercent) {
                 Some(TokenKind::PercentPercent)
+            } else if self.match_ident("div") {
+                Some(TokenKind::Ident("div".to_string()))
+            } else if self.match_ident("mod") {
+                Some(TokenKind::Ident("mod".to_string()))
             } else {
                 None
             };
@@ -1049,6 +1095,37 @@ impl Parser {
         } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Str(_))) {
             if let TokenKind::Str(value) = token.kind {
                 Expr::Literal(Value::Str(value))
+            } else {
+                Expr::Literal(Value::Nil)
+            }
+        } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::DStr(_))) {
+            if let TokenKind::DStr(parts) = token.kind {
+                use crate::lexer::DStrPart;
+                let mut exprs = Vec::new();
+                for part in parts {
+                    match part {
+                        DStrPart::Lit(s) => exprs.push(Expr::Literal(Value::Str(s))),
+                        DStrPart::Var(name) => {
+                            if name.starts_with('@') {
+                                exprs.push(Expr::ArrayVar(name[1..].to_string()));
+                            } else {
+                                exprs.push(Expr::Var(name));
+                            }
+                        }
+                        DStrPart::Block(code) => {
+                            exprs.push(Expr::Literal(Value::Str(code)));
+                        }
+                    }
+                }
+                if exprs.len() == 1 {
+                    if let Expr::Literal(Value::Str(_)) = &exprs[0] {
+                        exprs.remove(0)
+                    } else {
+                        Expr::StringInterpolation(exprs)
+                    }
+                } else {
+                    Expr::StringInterpolation(exprs)
+                }
             } else {
                 Expr::Literal(Value::Nil)
             }

@@ -258,13 +258,17 @@ impl Interpreter {
                     }
                 }
             }
-            Stmt::Loop { init, cond, step, body } => {
+            Stmt::Loop { init, cond, step, body, repeat } => {
                 if let Some(init_stmt) = init {
                     self.exec_stmt(init_stmt)?;
                 }
+                let mut first = true;
                 'c_loop: loop {
                     if let Some(cond_expr) = cond {
-                        if !self.eval_expr(cond_expr)?.truthy() {
+                        if *repeat && first {
+                            first = false;
+                            // skip condition check on first iteration for repeat
+                        } else if !self.eval_expr(cond_expr)?.truthy() {
                             break;
                         }
                     }
@@ -276,7 +280,6 @@ impl Interpreter {
                             other => { other?; }
                         }
                     }
-                    // step runs even on next (continue expression)
                     if let Some(step_expr) = step {
                         self.eval_expr(step_expr)?;
                     }
@@ -330,7 +333,7 @@ impl Interpreter {
                 }
                 self.when_matched = true;
             }
-            Stmt::For { iterable, body } => {
+            Stmt::For { iterable, param, body } => {
                 let values = match self.eval_expr(iterable)? {
                     Value::Array(items) => items,
                     Value::Range(a, b) => (a..=b).map(Value::Int).collect(),
@@ -338,7 +341,10 @@ impl Interpreter {
                     other => vec![other],
                 };
                 'for_loop: for value in values {
-                    self.env.insert("_".to_string(), value);
+                    self.env.insert("_".to_string(), value.clone());
+                    if let Some(p) = param {
+                        self.env.insert(p.clone(), value);
+                    }
                     for stmt in body {
                         match self.exec_stmt(stmt) {
                             Err(e) if e.is_last => break 'for_loop,
@@ -853,6 +859,14 @@ impl Interpreter {
     fn eval_expr(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
         match expr {
             Expr::Literal(v) => Ok(v.clone()),
+            Expr::StringInterpolation(parts) => {
+                let mut result = String::new();
+                for part in parts {
+                    let val = self.eval_expr(part)?;
+                    result.push_str(&val.to_string_value());
+                }
+                Ok(Value::Str(result))
+            }
             Expr::Var(name) => Ok(self.env.get(name).cloned().unwrap_or(Value::Nil)),
             Expr::ArrayVar(name) => Ok(self.env.get(&format!("@{}", name)).cloned().unwrap_or(Value::Nil)),
             Expr::HashVar(name) => {
@@ -1612,6 +1626,30 @@ impl Interpreter {
                 }
             }
             Expr::Binary { left, op, right } => {
+                // Short-circuit operators
+                match op {
+                    TokenKind::AndAnd => {
+                        let l = self.eval_expr(left)?;
+                        if !l.truthy() { return Ok(l); }
+                        return self.eval_expr(right);
+                    }
+                    TokenKind::OrOr => {
+                        let l = self.eval_expr(left)?;
+                        if l.truthy() { return Ok(l); }
+                        return self.eval_expr(right);
+                    }
+                    TokenKind::OrWord => {
+                        let l = self.eval_expr(left)?;
+                        if l.truthy() { return Ok(l); }
+                        return self.eval_expr(right);
+                    }
+                    TokenKind::SlashSlash => {
+                        let l = self.eval_expr(left)?;
+                        if !matches!(l, Value::Nil) { return Ok(l); }
+                        return self.eval_expr(right);
+                    }
+                    _ => {}
+                }
                 let l = self.eval_expr(left)?;
                 let r = self.eval_expr(right)?;
                 self.eval_binary(l, op, r)
@@ -1854,6 +1892,13 @@ impl Interpreter {
                     Ok(right)
                 }
             }
+            TokenKind::SlashSlash => {
+                if !matches!(left, Value::Nil) {
+                    Ok(left)
+                } else {
+                    Ok(right)
+                }
+            }
             TokenKind::DotDot => match (left, right) {
                 (Value::Int(a), Value::Int(b)) => Ok(Value::Range(a, b)),
                 _ => Ok(Value::Nil),
@@ -1864,6 +1909,16 @@ impl Interpreter {
             },
             TokenKind::SmartMatch => Ok(Value::Bool(self.smart_match(&left, &right))),
             TokenKind::BangTilde => Ok(Value::Bool(!self.smart_match(&left, &right))),
+            TokenKind::Ident(name) if name == "div" => match (left, right) {
+                (Value::Int(a), Value::Int(b)) if b != 0 => Ok(Value::Int(a.div_euclid(b))),
+                (Value::Int(_), Value::Int(_)) => Err(RuntimeError::new("Division by zero")),
+                _ => Err(RuntimeError::new("div expects Int")),
+            },
+            TokenKind::Ident(name) if name == "mod" => match (left, right) {
+                (Value::Int(a), Value::Int(b)) if b != 0 => Ok(Value::Int(a.rem_euclid(b))),
+                (Value::Int(_), Value::Int(_)) => Err(RuntimeError::new("Modulo by zero")),
+                _ => Err(RuntimeError::new("mod expects Int")),
+            },
             TokenKind::Ident(name) if name == "eq" => {
                 Ok(Value::Bool(left.to_string_value() == right.to_string_value()))
             }

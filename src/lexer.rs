@@ -1,8 +1,16 @@
 #[derive(Debug, Clone, PartialEq)]
+pub(crate) enum DStrPart {
+    Lit(String),
+    Var(String),
+    Block(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum TokenKind {
     Number(i64),
     Float(f64),
     Str(String),
+    DStr(Vec<DStrPart>),
     Ident(String),
     Var(String),
     HashVar(String),
@@ -56,6 +64,7 @@ pub(crate) enum TokenKind {
     MinusEq,
     TildeEq,
     StarEq,
+    SlashSlash,
     Bind,
     Semicolon,
     Eof,
@@ -222,28 +231,122 @@ impl Lexer {
                 }
             }
             '"' => {
-                let mut s = String::new();
+                let mut parts: Vec<DStrPart> = Vec::new();
+                let mut current = String::new();
+                let mut has_interp = false;
                 while let Some(c) = self.peek() {
-                    self.pos += 1;
                     if c == '"' {
+                        self.pos += 1;
                         break;
                     }
                     if c == '\\' {
+                        self.pos += 1;
                         if let Some(n) = self.peek() {
                             self.pos += 1;
                             match n {
-                                'n' => s.push('\n'),
-                                't' => s.push('\t'),
-                                '"' => s.push('"'),
-                                '\\' => s.push('\\'),
-                                _ => s.push(n),
+                                'n' => current.push('\n'),
+                                't' => current.push('\t'),
+                                '"' => current.push('"'),
+                                '\\' => current.push('\\'),
+                                '$' => current.push('$'),
+                                '{' => current.push('{'),
+                                _ => current.push(n),
                             }
                         }
+                    } else if c == '$' {
+                        self.pos += 1;
+                        if !current.is_empty() {
+                            parts.push(DStrPart::Lit(current.clone()));
+                            current.clear();
+                        }
+                        let mut var_name = String::new();
+                        // Handle twigils: $*FOO, $!foo, $?foo
+                        if matches!(self.peek(), Some('*') | Some('!') | Some('?')) {
+                            var_name.push(self.peek().unwrap());
+                            self.pos += 1;
+                        }
+                        while let Some(vc) = self.peek() {
+                            if vc.is_ascii_alphanumeric() || vc == '_' || self.is_ident_hyphen(vc) {
+                                var_name.push(vc);
+                                self.pos += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        if !var_name.is_empty() {
+                            parts.push(DStrPart::Var(var_name));
+                            has_interp = true;
+                        } else {
+                            current.push('$');
+                        }
+                    } else if c == '@' {
+                        self.pos += 1;
+                        if !current.is_empty() {
+                            parts.push(DStrPart::Lit(current.clone()));
+                            current.clear();
+                        }
+                        let mut var_name = String::new();
+                        if matches!(self.peek(), Some('*')) {
+                            var_name.push(self.peek().unwrap());
+                            self.pos += 1;
+                        }
+                        while let Some(vc) = self.peek() {
+                            if vc.is_ascii_alphanumeric() || vc == '_' || self.is_ident_hyphen(vc) {
+                                var_name.push(vc);
+                                self.pos += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        if !var_name.is_empty() {
+                            parts.push(DStrPart::Var(format!("@{}", var_name)));
+                            has_interp = true;
+                        } else {
+                            current.push('@');
+                        }
+                    } else if c == '{' {
+                        self.pos += 1;
+                        if !current.is_empty() {
+                            parts.push(DStrPart::Lit(current.clone()));
+                            current.clear();
+                        }
+                        let mut block = String::new();
+                        let mut depth = 1usize;
+                        while let Some(bc) = self.peek() {
+                            self.pos += 1;
+                            if bc == '{' {
+                                depth += 1;
+                                block.push(bc);
+                            } else if bc == '}' {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                                block.push(bc);
+                            } else {
+                                block.push(bc);
+                            }
+                        }
+                        parts.push(DStrPart::Block(block));
+                        has_interp = true;
                     } else {
-                        s.push(c);
+                        self.pos += 1;
+                        current.push(c);
                     }
                 }
-                TokenKind::Str(s)
+                if !current.is_empty() {
+                    parts.push(DStrPart::Lit(current));
+                }
+                if has_interp {
+                    TokenKind::DStr(parts)
+                } else {
+                    // No interpolation, just a plain string
+                    let s = parts.into_iter().map(|p| match p {
+                        DStrPart::Lit(s) => s,
+                        _ => String::new(),
+                    }).collect::<String>();
+                    TokenKind::Str(s)
+                }
             }
             '\'' => {
                 let mut s = String::new();
@@ -333,7 +436,9 @@ impl Lexer {
                 }
             }
             '/' => {
-                if let Some(regex) = self.try_read_regex_literal() {
+                if self.match_char('/') {
+                    TokenKind::SlashSlash
+                } else if let Some(regex) = self.try_read_regex_literal() {
                     TokenKind::Str(regex)
                 } else {
                     TokenKind::Slash

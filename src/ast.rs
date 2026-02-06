@@ -12,6 +12,7 @@ pub(crate) struct FunctionDef {
 #[derive(Debug, Clone)]
 pub(crate) enum Expr {
     Literal(Value),
+    StringInterpolation(Vec<Expr>),
     Var(String),
     ArrayVar(String),
     HashVar(String),
@@ -65,7 +66,7 @@ pub(crate) enum Stmt {
     SubDecl { name: String, params: Vec<String>, body: Vec<Stmt> },
     Package { name: String, body: Vec<Stmt> },
     Return(Expr),
-    For { iterable: Expr, body: Vec<Stmt> },
+    For { iterable: Expr, param: Option<String>, body: Vec<Stmt> },
     Say(Expr),
     Print(Expr),
     Call { name: String, args: Vec<CallArg> },
@@ -79,6 +80,7 @@ pub(crate) enum Stmt {
         cond: Option<Expr>,
         step: Option<Expr>,
         body: Vec<Stmt>,
+        repeat: bool,
     },
     Last,
     Next,
