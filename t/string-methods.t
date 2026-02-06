@@ -1,0 +1,23 @@
+use Test;
+plan 20;
+
+is "hello".chars, 5, ".chars";
+is "hello".uc, "HELLO", ".uc";
+is "HELLO".lc, "hello", ".lc";
+is "hello".tc, "Hello", ".tc";
+is "hello\n".chomp, "hello", ".chomp";
+is "hello".chop, "hell", ".chop";
+is "  hello  ".trim, "hello", ".trim";
+is "  hello  ".trim-leading, "hello  ", ".trim-leading";
+is "  hello  ".trim-trailing, "  hello", ".trim-trailing";
+is "hello".flip, "olleh", ".flip";
+ok "hello".contains("ell"), ".contains true";
+ok not "hello".contains("xyz"), ".contains false";
+ok "hello".starts-with("hel"), ".starts-with true";
+ok "hello".ends-with("llo"), ".ends-with true";
+is "hello".substr(1, 3), "ell", ".substr";
+is "hello".substr(2), "llo", ".substr no length";
+is "hello world".words.elems, 2, ".words.elems";
+is "hello".comb.elems, 5, ".comb.elems";
+is "a:b:c".split(":").elems, 3, ".split.elems";
+is "hello\nworld".lines.elems, 2, ".lines.elems";

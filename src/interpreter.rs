@@ -995,6 +995,22 @@ impl Interpreter {
                 }
                 let base = self.eval_expr(target)?;
                 match name.as_str() {
+                    "WHAT" => Ok(Value::Str(format!("({})", match &base {
+                        Value::Int(_) => "Int",
+                        Value::Num(_) => "Num",
+                        Value::Str(_) => "Str",
+                        Value::Bool(_) => "Bool",
+                        Value::Range(_, _) => "Range",
+                        Value::RangeExcl(_, _) => "Range",
+                        Value::Array(_) => "Array",
+                        Value::Hash(_) => "Hash",
+                        Value::FatRat(_, _) => "FatRat",
+                        Value::Nil => "Nil",
+                        Value::Package(_) => "Package",
+                        Value::Routine { .. } => "Routine",
+                        Value::Sub { .. } => "Sub",
+                        Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
+                    }))),
                     "defined" => Ok(Value::Bool(!matches!(base, Value::Nil))),
                     "parent" => {
                         let mut levels = 1i64;
@@ -1047,9 +1063,378 @@ impl Interpreter {
                         Value::Sub { name, .. } => Ok(Value::Str(name)),
                         _ => Ok(Value::Nil),
                     },
+                    "chars" => Ok(Value::Int(base.to_string_value().chars().count() as i64)),
+                    "uc" => Ok(Value::Str(base.to_string_value().to_uppercase())),
+                    "lc" => Ok(Value::Str(base.to_string_value().to_lowercase())),
+                    "tc" => {
+                        let s = base.to_string_value();
+                        let mut result = String::new();
+                        let mut capitalize = true;
+                        for ch in s.chars() {
+                            if capitalize {
+                                for c in ch.to_uppercase() {
+                                    result.push(c);
+                                }
+                                capitalize = false;
+                            } else {
+                                result.push(ch);
+                            }
+                        }
+                        Ok(Value::Str(result))
+                    }
+                    "tclc" => {
+                        let s = base.to_string_value();
+                        let mut result = String::new();
+                        let mut first = true;
+                        for ch in s.chars() {
+                            if first {
+                                for c in ch.to_uppercase() {
+                                    result.push(c);
+                                }
+                                first = false;
+                            } else {
+                                for c in ch.to_lowercase() {
+                                    result.push(c);
+                                }
+                            }
+                        }
+                        Ok(Value::Str(result))
+                    }
+                    "chomp" => {
+                        let s = base.to_string_value();
+                        Ok(Value::Str(s.trim_end_matches('\n').to_string()))
+                    }
+                    "chop" => {
+                        let mut s = base.to_string_value();
+                        s.pop();
+                        Ok(Value::Str(s))
+                    }
+                    "trim" => Ok(Value::Str(base.to_string_value().trim().to_string())),
+                    "trim-leading" => Ok(Value::Str(base.to_string_value().trim_start().to_string())),
+                    "trim-trailing" => Ok(Value::Str(base.to_string_value().trim_end().to_string())),
+                    "flip" => Ok(Value::Str(base.to_string_value().chars().rev().collect())),
+                    "contains" => {
+                        let needle = args.get(0)
+                            .map(|a| self.eval_expr(a).ok())
+                            .flatten()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        Ok(Value::Bool(base.to_string_value().contains(&needle)))
+                    }
+                    "starts-with" => {
+                        let needle = args.get(0)
+                            .map(|a| self.eval_expr(a).ok())
+                            .flatten()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        Ok(Value::Bool(base.to_string_value().starts_with(&needle)))
+                    }
+                    "ends-with" => {
+                        let needle = args.get(0)
+                            .map(|a| self.eval_expr(a).ok())
+                            .flatten()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        Ok(Value::Bool(base.to_string_value().ends_with(&needle)))
+                    }
+                    "substr" => {
+                        let s = base.to_string_value();
+                        let start = args.get(0)
+                            .map(|a| self.eval_expr(a).ok())
+                            .flatten()
+                            .and_then(|v| match v { Value::Int(i) => Some(i), _ => None })
+                            .unwrap_or(0);
+                        let chars: Vec<char> = s.chars().collect();
+                        let start = start.max(0) as usize;
+                        if let Some(len_expr) = args.get(1) {
+                            let len = self.eval_expr(len_expr)?;
+                            let len = match len { Value::Int(i) => i.max(0) as usize, _ => chars.len() };
+                            let end = (start + len).min(chars.len());
+                            Ok(Value::Str(chars[start..end].iter().collect()))
+                        } else {
+                            Ok(Value::Str(chars[start..].iter().collect()))
+                        }
+                    }
+                    "index" => {
+                        let s = base.to_string_value();
+                        let needle = args.get(0)
+                            .map(|a| self.eval_expr(a).ok())
+                            .flatten()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        match s.find(&needle) {
+                            Some(pos) => {
+                                let char_pos = s[..pos].chars().count();
+                                Ok(Value::Int(char_pos as i64))
+                            }
+                            None => Ok(Value::Nil),
+                        }
+                    }
+                    "split" => {
+                        let s = base.to_string_value();
+                        let sep = args.get(0)
+                            .map(|a| self.eval_expr(a).ok())
+                            .flatten()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let parts: Vec<Value> = s.split(&sep).map(|p| Value::Str(p.to_string())).collect();
+                        Ok(Value::Array(parts))
+                    }
+                    "words" => {
+                        let s = base.to_string_value();
+                        let parts: Vec<Value> = s.split_whitespace().map(|p| Value::Str(p.to_string())).collect();
+                        Ok(Value::Array(parts))
+                    }
+                    "comb" => {
+                        let s = base.to_string_value();
+                        let parts: Vec<Value> = s.chars().map(|c| Value::Str(c.to_string())).collect();
+                        Ok(Value::Array(parts))
+                    }
+                    "lines" => {
+                        let s = base.to_string_value();
+                        let parts: Vec<Value> = s.lines().map(|l| Value::Str(l.to_string())).collect();
+                        Ok(Value::Array(parts))
+                    }
+                    "Int" => match base {
+                        Value::Int(i) => Ok(Value::Int(i)),
+                        Value::Num(f) => Ok(Value::Int(f as i64)),
+                        Value::Str(s) => Ok(Value::Int(s.trim().parse::<i64>().unwrap_or(0))),
+                        Value::Bool(b) => Ok(Value::Int(if b { 1 } else { 0 })),
+                        _ => Ok(Value::Int(0)),
+                    },
+                    "Numeric" | "Num" => match base {
+                        Value::Int(i) => Ok(Value::Int(i)),
+                        Value::Num(f) => Ok(Value::Num(f)),
+                        Value::Str(s) => {
+                            if let Ok(i) = s.trim().parse::<i64>() {
+                                Ok(Value::Int(i))
+                            } else if let Ok(f) = s.trim().parse::<f64>() {
+                                Ok(Value::Num(f))
+                            } else {
+                                Ok(Value::Int(0))
+                            }
+                        }
+                        Value::Bool(b) => Ok(Value::Int(if b { 1 } else { 0 })),
+                        _ => Ok(Value::Int(0)),
+                    },
+                    "Bool" => Ok(Value::Bool(base.truthy())),
+                    "gist" | "raku" | "perl" => Ok(Value::Str(base.to_string_value())),
                     "Str" => match base {
                         Value::Str(name) if name == "IO::Special" => Ok(Value::Str(String::new())),
-                        _ => Ok(Value::Nil),
+                        _ => Ok(Value::Str(base.to_string_value())),
+                    },
+                    "elems" => match base {
+                        Value::Array(items) => Ok(Value::Int(items.len() as i64)),
+                        Value::Hash(items) => Ok(Value::Int(items.len() as i64)),
+                        _ => Ok(Value::Int(1)),
+                    },
+                    "end" => match base {
+                        Value::Array(items) => Ok(Value::Int(items.len() as i64 - 1)),
+                        _ => Ok(Value::Int(0)),
+                    },
+                    "keys" => match base {
+                        Value::Hash(items) => {
+                            let keys: Vec<Value> = items.keys().map(|k| Value::Str(k.clone())).collect();
+                            Ok(Value::Array(keys))
+                        }
+                        _ => Ok(Value::Array(Vec::new())),
+                    },
+                    "values" => match base {
+                        Value::Hash(items) => {
+                            let vals: Vec<Value> = items.values().cloned().collect();
+                            Ok(Value::Array(vals))
+                        }
+                        _ => Ok(Value::Array(Vec::new())),
+                    },
+                    "kv" => match base {
+                        Value::Hash(items) => {
+                            let mut kv = Vec::new();
+                            for (k, v) in &items {
+                                kv.push(Value::Str(k.clone()));
+                                kv.push(v.clone());
+                            }
+                            Ok(Value::Array(kv))
+                        }
+                        _ => Ok(Value::Array(Vec::new())),
+                    },
+                    "pairs" => match base {
+                        Value::Hash(items) => {
+                            let pairs: Vec<Value> = items.iter()
+                                .map(|(k, v)| Value::Str(format!("{}\t{}", k, v.to_string_value())))
+                                .collect();
+                            Ok(Value::Array(pairs))
+                        }
+                        _ => Ok(Value::Array(Vec::new())),
+                    },
+                    "sort" => match base {
+                        Value::Array(mut items) => {
+                            items.sort_by(|a, b| a.to_string_value().cmp(&b.to_string_value()));
+                            Ok(Value::Array(items))
+                        }
+                        _ => Ok(base),
+                    },
+                    "reverse" => match base {
+                        Value::Array(mut items) => {
+                            items.reverse();
+                            Ok(Value::Array(items))
+                        }
+                        Value::Str(s) => Ok(Value::Str(s.chars().rev().collect())),
+                        _ => Ok(base),
+                    },
+                    "unique" => match base {
+                        Value::Array(items) => {
+                            let mut seen = Vec::new();
+                            let mut result = Vec::new();
+                            for item in items {
+                                let s = item.to_string_value();
+                                if !seen.contains(&s) {
+                                    seen.push(s);
+                                    result.push(item);
+                                }
+                            }
+                            Ok(Value::Array(result))
+                        }
+                        _ => Ok(base),
+                    },
+                    "flat" => match base {
+                        Value::Array(items) => {
+                            let mut flat = Vec::new();
+                            for item in items {
+                                if let Value::Array(sub) = item {
+                                    flat.extend(sub);
+                                } else {
+                                    flat.push(item);
+                                }
+                            }
+                            Ok(Value::Array(flat))
+                        }
+                        _ => Ok(base),
+                    },
+                    "head" => match base {
+                        Value::Array(items) => Ok(items.into_iter().next().unwrap_or(Value::Nil)),
+                        _ => Ok(base),
+                    },
+                    "tail" => match base {
+                        Value::Array(items) => Ok(items.into_iter().last().unwrap_or(Value::Nil)),
+                        _ => Ok(base),
+                    },
+                    "first" => match base {
+                        Value::Array(items) => Ok(items.into_iter().next().unwrap_or(Value::Nil)),
+                        _ => Ok(base),
+                    },
+                    "min" => match base {
+                        Value::Array(items) => {
+                            Ok(items.into_iter().min_by(|a, b| {
+                                match (a, b) {
+                                    (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                                    _ => a.to_string_value().cmp(&b.to_string_value()),
+                                }
+                            }).unwrap_or(Value::Nil))
+                        }
+                        _ => Ok(base),
+                    },
+                    "max" => match base {
+                        Value::Array(items) => {
+                            Ok(items.into_iter().max_by(|a, b| {
+                                match (a, b) {
+                                    (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                                    _ => a.to_string_value().cmp(&b.to_string_value()),
+                                }
+                            }).unwrap_or(Value::Nil))
+                        }
+                        _ => Ok(base),
+                    },
+                    "map" => match base {
+                        Value::Array(items) => {
+                            if let Some(func_expr) = args.get(0) {
+                                let func = self.eval_expr(func_expr)?;
+                                if let Value::Sub { param, body, env, .. } = func {
+                                    let mut result = Vec::new();
+                                    for item in items {
+                                        let saved = self.env.clone();
+                                        for (k, v) in &env {
+                                            self.env.insert(k.clone(), v.clone());
+                                        }
+                                        if let Some(p) = &param {
+                                            self.env.insert(p.clone(), item.clone());
+                                        }
+                                        self.env.insert("_".to_string(), item);
+                                        let val = self.eval_block_value(&body)?;
+                                        self.env = saved;
+                                        result.push(val);
+                                    }
+                                    Ok(Value::Array(result))
+                                } else {
+                                    Ok(Value::Array(items))
+                                }
+                            } else {
+                                Ok(Value::Array(items))
+                            }
+                        }
+                        _ => Ok(base),
+                    },
+                    "grep" => match base {
+                        Value::Array(items) => {
+                            if let Some(func_expr) = args.get(0) {
+                                let func = self.eval_expr(func_expr)?;
+                                if let Value::Sub { param, body, env, .. } = func {
+                                    let mut result = Vec::new();
+                                    for item in items {
+                                        let saved = self.env.clone();
+                                        for (k, v) in &env {
+                                            self.env.insert(k.clone(), v.clone());
+                                        }
+                                        if let Some(p) = &param {
+                                            self.env.insert(p.clone(), item.clone());
+                                        }
+                                        self.env.insert("_".to_string(), item.clone());
+                                        let val = self.eval_block_value(&body)?;
+                                        self.env = saved;
+                                        if val.truthy() {
+                                            result.push(item);
+                                        }
+                                    }
+                                    Ok(Value::Array(result))
+                                } else {
+                                    Ok(Value::Array(items))
+                                }
+                            } else {
+                                Ok(Value::Array(items))
+                            }
+                        }
+                        _ => Ok(base),
+                    },
+                    "abs" => match base {
+                        Value::Int(i) => Ok(Value::Int(i.abs())),
+                        Value::Num(f) => Ok(Value::Num(f.abs())),
+                        _ => Ok(Value::Int(0)),
+                    },
+                    "sign" => match base {
+                        Value::Int(i) => Ok(Value::Int(i.signum())),
+                        Value::Num(f) => Ok(Value::Int(if f > 0.0 { 1 } else if f < 0.0 { -1 } else { 0 })),
+                        _ => Ok(Value::Int(0)),
+                    },
+                    "is-prime" => match base {
+                        Value::Int(n) => {
+                            let n = n.abs();
+                            let prime = if n < 2 { false }
+                                else if n < 4 { true }
+                                else if n % 2 == 0 || n % 3 == 0 { false }
+                                else {
+                                    let mut i = 5i64;
+                                    let mut result = true;
+                                    while i * i <= n {
+                                        if n % i == 0 || n % (i + 2) == 0 {
+                                            result = false;
+                                            break;
+                                        }
+                                        i += 6;
+                                    }
+                                    result
+                                };
+                            Ok(Value::Bool(prime))
+                        }
+                        _ => Ok(Value::Bool(false)),
                     },
                     "join" => match base {
                         Value::Array(items) => {
@@ -1200,9 +1585,11 @@ impl Interpreter {
                             },
                             TokenKind::Minus => match value {
                                 Value::Int(i) => Ok(Value::Int(-i)),
-                                _ => Err(RuntimeError::new("Unary - expects Int")),
+                                Value::Num(f) => Ok(Value::Num(-f)),
+                                _ => Err(RuntimeError::new("Unary - expects numeric")),
                             },
                             TokenKind::Bang => Ok(Value::Bool(!value.truthy())),
+                            TokenKind::Ident(name) if name == "so" => Ok(Value::Bool(value.truthy())),
                             _ => Err(RuntimeError::new("Unknown unary operator")),
                         }
                     }
@@ -1277,6 +1664,31 @@ impl Interpreter {
                     let a = match a { Some(Value::Int(i)) => i, _ => 0 };
                     let b = match b { Some(Value::Int(i)) => i, _ => 0 };
                     return Ok(Value::Str(format!("atan2({}, {})", a, b)));
+                }
+                if name == "elems" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    return Ok(match val {
+                        Some(Value::Array(items)) => Value::Int(items.len() as i64),
+                        Some(Value::Hash(items)) => Value::Int(items.len() as i64),
+                        Some(Value::Str(s)) => Value::Int(s.chars().count() as i64),
+                        _ => Value::Int(0),
+                    });
+                }
+                if name == "abs" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    return Ok(match val {
+                        Some(Value::Int(i)) => Value::Int(i.abs()),
+                        Some(Value::Num(f)) => Value::Num(f.abs()),
+                        _ => Value::Int(0),
+                    });
+                }
+                if name == "chars" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    return Ok(match val {
+                        Some(Value::Str(s)) => Value::Int(s.chars().count() as i64),
+                        Some(v) => Value::Int(v.to_string_value().chars().count() as i64),
+                        _ => Value::Int(0),
+                    });
                 }
                 if name == "sprintf" {
                     let fmt = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
@@ -1378,25 +1790,40 @@ impl Interpreter {
         match op {
             TokenKind::Plus => match (left, right) {
                 (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
-                _ => Err(RuntimeError::new("+ expects Int")),
+                (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a + b)),
+                (Value::Int(a), Value::Num(b)) => Ok(Value::Num(a as f64 + b)),
+                (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a + b as f64)),
+                _ => Err(RuntimeError::new("+ expects numeric")),
             },
             TokenKind::Minus => match (left, right) {
                 (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a - b)),
-                _ => Err(RuntimeError::new("- expects Int")),
+                (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a - b)),
+                (Value::Int(a), Value::Num(b)) => Ok(Value::Num(a as f64 - b)),
+                (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a - b as f64)),
+                _ => Err(RuntimeError::new("- expects numeric")),
             },
             TokenKind::Star => match (left, right) {
                 (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a * b)),
-                _ => Err(RuntimeError::new("* expects Int")),
+                (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a * b)),
+                (Value::Int(a), Value::Num(b)) => Ok(Value::Num(a as f64 * b)),
+                (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a * b as f64)),
+                _ => Err(RuntimeError::new("* expects numeric")),
             },
             TokenKind::Slash => match (left, right) {
                 (Value::Int(_), Value::Int(0)) => Err(RuntimeError::new("Division by zero")),
                 (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a / b)),
-                _ => Err(RuntimeError::new("/ expects Int")),
+                (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a / b)),
+                (Value::Int(a), Value::Num(b)) => Ok(Value::Num(a as f64 / b)),
+                (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a / b as f64)),
+                _ => Err(RuntimeError::new("/ expects numeric")),
             },
             TokenKind::Percent => match (left, right) {
                 (Value::Int(_), Value::Int(0)) => Err(RuntimeError::new("Modulo by zero")),
                 (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a % b)),
-                _ => Err(RuntimeError::new("% expects Int")),
+                (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a % b)),
+                (Value::Int(a), Value::Num(b)) => Ok(Value::Num(a as f64 % b)),
+                (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a % b as f64)),
+                _ => Err(RuntimeError::new("% expects numeric")),
             },
             TokenKind::PercentPercent => match (left, right) {
                 (Value::Int(_), Value::Int(0)) => Err(RuntimeError::new("Divisibility by zero")),
@@ -1405,8 +1832,11 @@ impl Interpreter {
             },
             TokenKind::StarStar => match (left, right) {
                 (Value::Int(a), Value::Int(b)) if b >= 0 => Ok(Value::Int(a.pow(b as u32))),
-                (Value::Int(_), Value::Int(_)) => Err(RuntimeError::new("Negative exponent")),
-                _ => Err(RuntimeError::new("** expects Int")),
+                (Value::Int(a), Value::Int(b)) => Ok(Value::Num((a as f64).powi(b as i32))),
+                (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a.powi(b as i32))),
+                (Value::Int(a), Value::Num(b)) => Ok(Value::Num((a as f64).powf(b))),
+                (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a.powf(b))),
+                _ => Err(RuntimeError::new("** expects numeric")),
             },
             TokenKind::Tilde => Ok(Value::Str(format!("{}{}", left.to_string_value(), right.to_string_value()))),
             TokenKind::EqEq => Ok(Value::Bool(left == right)),
@@ -1434,6 +1864,40 @@ impl Interpreter {
             },
             TokenKind::SmartMatch => Ok(Value::Bool(self.smart_match(&left, &right))),
             TokenKind::BangTilde => Ok(Value::Bool(!self.smart_match(&left, &right))),
+            TokenKind::Ident(name) if name == "eq" => {
+                Ok(Value::Bool(left.to_string_value() == right.to_string_value()))
+            }
+            TokenKind::Ident(name) if name == "ne" => {
+                Ok(Value::Bool(left.to_string_value() != right.to_string_value()))
+            }
+            TokenKind::Ident(name) if name == "lt" => {
+                Ok(Value::Bool(left.to_string_value() < right.to_string_value()))
+            }
+            TokenKind::Ident(name) if name == "le" => {
+                Ok(Value::Bool(left.to_string_value() <= right.to_string_value()))
+            }
+            TokenKind::Ident(name) if name == "gt" => {
+                Ok(Value::Bool(left.to_string_value() > right.to_string_value()))
+            }
+            TokenKind::Ident(name) if name == "ge" => {
+                Ok(Value::Bool(left.to_string_value() >= right.to_string_value()))
+            }
+            TokenKind::Ident(name) if name == "leg" => {
+                let ord = left.to_string_value().cmp(&right.to_string_value());
+                Ok(Value::Int(match ord {
+                    std::cmp::Ordering::Less => -1,
+                    std::cmp::Ordering::Equal => 0,
+                    std::cmp::Ordering::Greater => 1,
+                }))
+            }
+            TokenKind::Ident(name) if name == "cmp" => {
+                let ord = left.to_string_value().cmp(&right.to_string_value());
+                Ok(Value::Int(match ord {
+                    std::cmp::Ordering::Less => -1,
+                    std::cmp::Ordering::Equal => 0,
+                    std::cmp::Ordering::Greater => 1,
+                }))
+            }
             TokenKind::Ident(name) if name == "x" => {
                 let s = left.to_string_value();
                 let n = match right {
@@ -1570,6 +2034,20 @@ impl Interpreter {
         match (left, right) {
             (Value::Int(a), Value::Int(b)) => {
                 let ord = a.cmp(&b) as i32;
+                Ok(Value::Bool(f(ord)))
+            }
+            (Value::Num(a), Value::Num(b)) => {
+                let ord = a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal) as i32;
+                Ok(Value::Bool(f(ord)))
+            }
+            (Value::Int(a), Value::Num(b)) => {
+                let a = a as f64;
+                let ord = a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal) as i32;
+                Ok(Value::Bool(f(ord)))
+            }
+            (Value::Num(a), Value::Int(b)) => {
+                let b = b as f64;
+                let ord = a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal) as i32;
                 Ok(Value::Bool(f(ord)))
             }
             (Value::Str(a), Value::Str(b)) => {

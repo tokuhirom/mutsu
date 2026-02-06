@@ -147,13 +147,18 @@ impl Parser {
         }
         if self.match_ident("say") {
             let expr = self.parse_expr()?;
-            self.match_kind(TokenKind::Semicolon);
-            return Ok(Stmt::Say(expr));
+            let stmt = Stmt::Say(expr);
+            return self.parse_statement_modifier(stmt);
+        }
+        if self.match_ident("put") {
+            let expr = self.parse_expr()?;
+            let stmt = Stmt::Say(expr);
+            return self.parse_statement_modifier(stmt);
         }
         if self.match_ident("print") {
             let expr = self.parse_expr()?;
-            self.match_kind(TokenKind::Semicolon);
-            return Ok(Stmt::Print(expr));
+            let stmt = Stmt::Print(expr);
+            return self.parse_statement_modifier(stmt);
         }
         if self.match_ident("if") {
             let cond = self.parse_expr()?;
@@ -373,8 +378,8 @@ impl Parser {
             }
         }
         let expr = self.parse_expr()?;
-        self.match_kind(TokenKind::Semicolon);
-        Ok(Stmt::Expr(expr))
+        let stmt = Stmt::Expr(expr);
+        self.parse_statement_modifier(stmt)
     }
 
     pub(crate) fn parse_block(&mut self) -> Result<Vec<Stmt>, RuntimeError> {
@@ -398,6 +403,43 @@ impl Parser {
         }
         self.consume_kind(TokenKind::RBrace)?;
         Ok(stmts)
+    }
+
+    fn parse_statement_modifier(&mut self, stmt: Stmt) -> Result<Stmt, RuntimeError> {
+        if self.match_ident("if") {
+            let cond = self.parse_expr()?;
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::If { cond, then_branch: vec![stmt], else_branch: Vec::new() });
+        }
+        if self.match_ident("unless") {
+            let cond = self.parse_expr()?;
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::If {
+                cond: Expr::Unary { op: TokenKind::Bang, expr: Box::new(cond) },
+                then_branch: vec![stmt],
+                else_branch: Vec::new(),
+            });
+        }
+        if self.match_ident("for") {
+            let iterable = self.parse_expr()?;
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::For { iterable, body: vec![stmt] });
+        }
+        if self.match_ident("while") {
+            let cond = self.parse_expr()?;
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::While { cond, body: vec![stmt] });
+        }
+        if self.match_ident("until") {
+            let cond = self.parse_expr()?;
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::While {
+                cond: Expr::Unary { op: TokenKind::Bang, expr: Box::new(cond) },
+                body: vec![stmt],
+            });
+        }
+        self.match_kind(TokenKind::Semicolon);
+        Ok(stmt)
     }
 
     fn parse_call_args(&mut self) -> Result<Vec<CallArg>, RuntimeError> {
@@ -752,6 +794,12 @@ impl Parser {
                 let op = TokenKind::BangEq;
                 let right = self.parse_comparison()?;
                 expr = Expr::Binary { left: Box::new(expr), op, right: Box::new(right) };
+            } else if self.match_ident("eq") {
+                let right = self.parse_comparison()?;
+                expr = Expr::Binary { left: Box::new(expr), op: TokenKind::Ident("eq".to_string()), right: Box::new(right) };
+            } else if self.match_ident("ne") {
+                let right = self.parse_comparison()?;
+                expr = Expr::Binary { left: Box::new(expr), op: TokenKind::Ident("ne".to_string()), right: Box::new(right) };
             } else {
                 break;
             }
@@ -778,6 +826,18 @@ impl Parser {
                 Some(TokenKind::SmartMatch)
             } else if self.match_kind(TokenKind::BangTilde) {
                 Some(TokenKind::BangTilde)
+            } else if self.match_ident("lt") {
+                Some(TokenKind::Ident("lt".to_string()))
+            } else if self.match_ident("le") {
+                Some(TokenKind::Ident("le".to_string()))
+            } else if self.match_ident("gt") {
+                Some(TokenKind::Ident("gt".to_string()))
+            } else if self.match_ident("ge") {
+                Some(TokenKind::Ident("ge".to_string()))
+            } else if self.match_ident("leg") {
+                Some(TokenKind::Ident("leg".to_string()))
+            } else if self.match_ident("cmp") {
+                Some(TokenKind::Ident("cmp".to_string()))
             } else {
                 None
             };
@@ -939,6 +999,14 @@ impl Parser {
             let expr = self.parse_unary()?;
             return Ok(Expr::Unary { op: TokenKind::Bang, expr: Box::new(expr) });
         }
+        if self.match_ident("not") {
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Unary { op: TokenKind::Bang, expr: Box::new(expr) });
+        }
+        if self.match_ident("so") {
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Unary { op: TokenKind::Ident("so".to_string()), expr: Box::new(expr) });
+        }
         self.parse_primary()
     }
 
@@ -969,6 +1037,12 @@ impl Parser {
         } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Number(_))) {
             if let TokenKind::Number(value) = token.kind {
                 Expr::Literal(Value::Int(value))
+            } else {
+                Expr::Literal(Value::Nil)
+            }
+        } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Float(_))) {
+            if let TokenKind::Float(value) = token.kind {
+                Expr::Literal(Value::Num(value))
             } else {
                 Expr::Literal(Value::Nil)
             }

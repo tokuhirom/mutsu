@@ -6,6 +6,7 @@ use crate::ast::Stmt;
 #[derive(Debug, Clone)]
 pub enum Value {
     Int(i64),
+    Num(f64),
     Str(String),
     Bool(bool),
     Range(i64, i64),
@@ -30,6 +31,9 @@ impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Value::Int(a), Value::Int(b)) => a == b,
+            (Value::Num(a), Value::Num(b)) => a == b,
+            (Value::Int(a), Value::Num(b)) => (*a as f64) == *b,
+            (Value::Num(a), Value::Int(b)) => *a == (*b as f64),
             (Value::Str(a), Value::Str(b)) => a == b,
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Range(a1, b1), Value::Range(a2, b2)) => a1 == a2 && b1 == b2,
@@ -51,6 +55,7 @@ impl Value {
         match self {
             Value::Bool(b) => *b,
             Value::Int(i) => *i != 0,
+            Value::Num(f) => *f != 0.0 && !f.is_nan(),
             Value::Str(s) => !s.is_empty(),
             Value::Range(_, _) => true,
             Value::RangeExcl(_, _) => true,
@@ -68,6 +73,13 @@ impl Value {
     pub(crate) fn to_string_value(&self) -> String {
         match self {
             Value::Int(i) => i.to_string(),
+            Value::Num(f) => {
+                if f.fract() == 0.0 && f.is_finite() {
+                    format!("{}", *f as i64)
+                } else {
+                    format!("{}", f)
+                }
+            }
             Value::Str(s) => s.clone(),
             Value::Bool(true) => "True".to_string(),
             Value::Bool(false) => "False".to_string(),

@@ -1,6 +1,7 @@
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum TokenKind {
     Number(i64),
+    Float(f64),
     Str(String),
     Ident(String),
     Var(String),
@@ -150,18 +151,75 @@ impl Lexer {
             '0'..='9' => {
                 let mut num = ch.to_string();
                 while let Some(c) = self.peek() {
-                    if c.is_ascii_digit() {
-                        num.push(c);
+                    if c.is_ascii_digit() || c == '_' {
+                        if c != '_' { num.push(c); }
                         self.pos += 1;
                     } else {
                         break;
                     }
                 }
-                let value = num.parse::<i64>().unwrap_or(0);
-                if self.peek() == Some('i') {
+                // Check for decimal point
+                if self.peek() == Some('.') && self.peek_next().map_or(false, |c| c.is_ascii_digit()) {
+                    num.push('.');
                     self.pos += 1;
+                    while let Some(c) = self.peek() {
+                        if c.is_ascii_digit() || c == '_' {
+                            if c != '_' { num.push(c); }
+                            self.pos += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    // Check for exponent
+                    if matches!(self.peek(), Some('e') | Some('E')) {
+                        num.push('e');
+                        self.pos += 1;
+                        if matches!(self.peek(), Some('+') | Some('-')) {
+                            num.push(self.bump());
+                        }
+                        while let Some(c) = self.peek() {
+                            if c.is_ascii_digit() {
+                                num.push(c);
+                                self.pos += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    if self.peek() == Some('i') {
+                        self.pos += 1;
+                    }
+                    let value = num.parse::<f64>().unwrap_or(0.0);
+                    TokenKind::Float(value)
+                } else {
+                    // Check for exponent on integer (e.g. 1e10)
+                    if matches!(self.peek(), Some('e') | Some('E')) {
+                        num.push('e');
+                        self.pos += 1;
+                        if matches!(self.peek(), Some('+') | Some('-')) {
+                            num.push(self.bump());
+                        }
+                        while let Some(c) = self.peek() {
+                            if c.is_ascii_digit() {
+                                num.push(c);
+                                self.pos += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        if self.peek() == Some('i') {
+                            self.pos += 1;
+                        }
+                        let value = num.parse::<f64>().unwrap_or(0.0);
+                        TokenKind::Float(value)
+                    } else {
+                        let value = num.parse::<i64>().unwrap_or(0);
+                        if self.peek() == Some('i') {
+                            self.pos += 1;
+                        }
+                        TokenKind::Number(value)
+                    }
                 }
-                TokenKind::Number(value)
             }
             '"' => {
                 let mut s = String::new();
