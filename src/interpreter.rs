@@ -713,6 +713,52 @@ impl Interpreter {
                 }
                 self.test_ok(ok, &desc, false)?;
             }
+            "skip" => {
+                let desc = self.positional_arg_value(args, 0)?;
+                let count = {
+                    let mut positional_count = 0;
+                    let mut skip_count = 1usize;
+                    for arg in args {
+                        if let CallArg::Positional(expr) = arg {
+                            if positional_count == 1 {
+                                if let Ok(Value::Int(n)) = self.eval_expr(expr) {
+                                    skip_count = n.max(1) as usize;
+                                }
+                            }
+                            positional_count += 1;
+                        }
+                    }
+                    skip_count
+                };
+                let state = self.test_state.get_or_insert_with(TestState::new);
+                for _ in 0..count {
+                    state.ran += 1;
+                    self.output.push_str(&format!("ok {} - {} # SKIP\n", state.ran, desc));
+                }
+            }
+            "skip-rest" => {
+                let desc = self.positional_arg_value(args, 0)?;
+                let state = self.test_state.get_or_insert_with(TestState::new);
+                if let Some(planned) = state.planned {
+                    while state.ran < planned {
+                        state.ran += 1;
+                        if desc.is_empty() {
+                            self.output.push_str(&format!("ok {} # SKIP\n", state.ran));
+                        } else {
+                            self.output.push_str(&format!("ok {} - {} # SKIP\n", state.ran, desc));
+                        }
+                    }
+                }
+                self.halted = true;
+            }
+            "diag" => {
+                let msg = self.positional_arg_value(args, 0)?;
+                self.output.push_str(&format!("# {}\n", msg));
+            }
+            "todo" => {
+                // todo just sets a note that following tests are TODO
+                // For simplicity, we just consume and ignore it
+            }
             "bail-out" => {
                 let desc = self.positional_arg_value(args, 0)?;
                 if desc.is_empty() {
@@ -984,6 +1030,46 @@ impl Interpreter {
                                 items.push(value);
                             } else {
                                 self.env.insert(key, Value::Array(vec![value]));
+                            }
+                            return Ok(Value::Nil);
+                        }
+                        "pop" => {
+                            if let Some(Value::Array(items)) = self.env.get_mut(&key) {
+                                return Ok(items.pop().unwrap_or(Value::Nil));
+                            }
+                            return Ok(Value::Nil);
+                        }
+                        "shift" => {
+                            if let Some(Value::Array(items)) = self.env.get_mut(&key) {
+                                if items.is_empty() {
+                                    return Ok(Value::Nil);
+                                }
+                                return Ok(items.remove(0));
+                            }
+                            return Ok(Value::Nil);
+                        }
+                        "unshift" => {
+                            let value = args
+                                .get(0)
+                                .map(|arg| self.eval_expr(arg).ok())
+                                .flatten()
+                                .unwrap_or(Value::Nil);
+                            if let Some(Value::Array(items)) = self.env.get_mut(&key) {
+                                items.insert(0, value);
+                            }
+                            return Ok(Value::Nil);
+                        }
+                        "append" => {
+                            let mut new_items = Vec::new();
+                            for arg in args {
+                                let val = self.eval_expr(arg)?;
+                                match val {
+                                    Value::Array(items) => new_items.extend(items),
+                                    other => new_items.push(other),
+                                }
+                            }
+                            if let Some(Value::Array(items)) = self.env.get_mut(&key) {
+                                items.extend(new_items);
                             }
                             return Ok(Value::Nil);
                         }

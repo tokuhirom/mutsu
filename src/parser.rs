@@ -337,7 +337,7 @@ impl Parser {
             return Ok(Stmt::Catch(body));
         }
         if let Some(name) = self.peek_ident() {
-            if matches!(name.as_str(), "ok" | "is" | "isnt" | "nok" | "pass" | "flunk" | "cmp-ok" | "like" | "unlike" | "is-deeply" | "isa-ok" | "lives-ok" | "dies-ok" | "eval-lives-ok" | "is_run" | "throws-like" | "force_todo" | "force-todo" | "plan" | "done-testing" | "bail-out") {
+            if matches!(name.as_str(), "ok" | "is" | "isnt" | "nok" | "pass" | "flunk" | "cmp-ok" | "like" | "unlike" | "is-deeply" | "isa-ok" | "lives-ok" | "dies-ok" | "eval-lives-ok" | "is_run" | "throws-like" | "force_todo" | "force-todo" | "plan" | "done-testing" | "bail-out" | "skip" | "skip-rest" | "diag" | "todo") {
                 self.pos += 1;
                 let args = if name == "is"
                     && (!self.check(&TokenKind::LParen)
@@ -817,10 +817,13 @@ impl Parser {
 
     fn parse_and(&mut self) -> Result<Expr, RuntimeError> {
         let mut expr = self.parse_equality()?;
-        while self.match_kind(TokenKind::AndAnd) {
-            let op = TokenKind::AndAnd;
-            let right = self.parse_equality()?;
-            expr = Expr::Binary { left: Box::new(expr), op, right: Box::new(right) };
+        loop {
+            if self.match_kind(TokenKind::AndAnd) || self.match_ident("and") {
+                let right = self.parse_equality()?;
+                expr = Expr::Binary { left: Box::new(expr), op: TokenKind::AndAnd, right: Box::new(right) };
+            } else {
+                break;
+            }
         }
         Ok(expr)
     }
