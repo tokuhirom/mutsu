@@ -172,6 +172,20 @@ impl Parser {
             let body = self.parse_block()?;
             return Ok(Stmt::For { iterable, body });
         }
+        if self.match_ident("given") {
+            let topic = self.parse_expr()?;
+            let body = self.parse_block()?;
+            return Ok(Stmt::Given { topic, body });
+        }
+        if self.match_ident("when") {
+            let cond = self.parse_expr()?;
+            let body = self.parse_block()?;
+            return Ok(Stmt::When { cond, body });
+        }
+        if self.match_ident("default") {
+            let body = self.parse_block()?;
+            return Ok(Stmt::Default(body));
+        }
         if let Some(name) = self.peek_ident() {
             if matches!(name.as_str(), "ok" | "is" | "isnt" | "nok" | "pass" | "flunk" | "cmp-ok" | "like" | "unlike" | "is-deeply" | "isa-ok" | "lives-ok" | "dies-ok" | "eval-lives-ok" | "is_run" | "throws-like" | "force_todo" | "force-todo" | "plan" | "done-testing" | "bail-out") {
                 self.pos += 1;

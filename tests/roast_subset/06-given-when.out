@@ -1,0 +1,11 @@
+1..10
+ok 1 - basic given/when matches correct branch
+ok 2 - default branch when nothing matches
+ok 3 - given/when with string matching
+ok 4 - first matching when wins (breakout)
+ok 5 - $_ is set inside given block
+ok 6 - $_ is restored after given
+ok 7 - given/when with integer values
+ok 8 - no match and no default leaves result unchanged
+ok 9 - nested given/when works
+ok 10 - given/when with boolean values

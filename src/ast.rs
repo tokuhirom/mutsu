@@ -73,6 +73,9 @@ pub(crate) enum Stmt {
     Block(Vec<Stmt>),
     If { cond: Expr, then_branch: Vec<Stmt>, else_branch: Vec<Stmt> },
     While { cond: Expr, body: Vec<Stmt> },
+    Given { topic: Expr, body: Vec<Stmt> },
+    When { cond: Expr, body: Vec<Stmt> },
+    Default(Vec<Stmt>),
     Expr(Expr),
 }
 

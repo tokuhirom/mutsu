@@ -22,6 +22,7 @@ pub struct Interpreter {
     routine_stack: Vec<(String, String)>,
     block_stack: Vec<Value>,
     doc_comments: HashMap<String, String>,
+    when_matched: bool,
 }
 
 impl Interpreter {
@@ -44,6 +45,7 @@ impl Interpreter {
             routine_stack: Vec::new(),
             block_stack: Vec::new(),
             doc_comments: HashMap::new(),
+            when_matched: false,
         }
     }
 
@@ -248,6 +250,47 @@ impl Interpreter {
                         self.exec_stmt(stmt)?;
                     }
                 }
+            }
+            Stmt::Given { topic, body } => {
+                let topic_val = self.eval_expr(topic)?;
+                let saved_topic = self.env.get("_").cloned();
+                self.env.insert("_".to_string(), topic_val);
+                let saved_when = self.when_matched;
+                self.when_matched = false;
+                for stmt in body {
+                    self.exec_stmt(stmt)?;
+                    if self.when_matched || self.halted {
+                        break;
+                    }
+                }
+                self.when_matched = saved_when;
+                if let Some(v) = saved_topic {
+                    self.env.insert("_".to_string(), v);
+                } else {
+                    self.env.remove("_");
+                }
+            }
+            Stmt::When { cond, body } => {
+                let topic = self.env.get("_").cloned().unwrap_or(Value::Nil);
+                let cond_val = self.eval_expr(cond)?;
+                if self.smart_match(&topic, &cond_val) {
+                    for stmt in body {
+                        self.exec_stmt(stmt)?;
+                        if self.halted {
+                            break;
+                        }
+                    }
+                    self.when_matched = true;
+                }
+            }
+            Stmt::Default(body) => {
+                for stmt in body {
+                    self.exec_stmt(stmt)?;
+                    if self.halted {
+                        break;
+                    }
+                }
+                self.when_matched = true;
             }
             Stmt::For { iterable, body } => {
                 let values = match self.eval_expr(iterable)? {
