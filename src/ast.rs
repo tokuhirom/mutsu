@@ -5,7 +5,7 @@ use crate::value::Value;
 pub(crate) struct FunctionDef {
     pub(crate) package: String,
     pub(crate) name: String,
-    pub(crate) param: Option<String>,
+    pub(crate) params: Vec<String>,
     pub(crate) body: Vec<Stmt>,
 }
 
@@ -61,7 +61,7 @@ pub(crate) enum ExpectedMatcher {
 pub(crate) enum Stmt {
     VarDecl { name: String, expr: Expr },
     Assign { name: String, expr: Expr, op: AssignOp },
-    SubDecl { name: String, param: Option<String>, body: Vec<Stmt> },
+    SubDecl { name: String, params: Vec<String>, body: Vec<Stmt> },
     Package { name: String, body: Vec<Stmt> },
     Return(Expr),
     For { iterable: Expr, body: Vec<Stmt> },

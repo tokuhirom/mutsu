@@ -60,18 +60,21 @@ impl Parser {
         }
         if self.match_ident("sub") {
             let name = self.consume_ident()?;
-            let mut param = None;
+            let mut params = Vec::new();
             if self.match_kind(TokenKind::LParen) {
-                if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
-                    && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
-                {
-                    self.pos += 1;
-                }
-                if self.peek_is_var() {
-                    param = Some(self.consume_var()?);
-                }
                 while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
-                    self.pos += 1;
+                    // Skip optional type annotations (e.g., Int $x)
+                    if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
+                        && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
+                    {
+                        self.pos += 1;
+                    }
+                    if self.peek_is_var() {
+                        params.push(self.consume_var()?);
+                    } else {
+                        self.pos += 1;
+                    }
+                    self.match_kind(TokenKind::Comma);
                 }
                 self.match_kind(TokenKind::RParen);
             }
@@ -85,7 +88,7 @@ impl Parser {
             if self.match_kind(TokenKind::LBrace) {
                 let body = self.parse_block_body()?;
                 self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::SubDecl { name, param, body });
+                return Ok(Stmt::SubDecl { name, params, body });
             }
             return Err(RuntimeError::new("Expected block for sub"));
         }

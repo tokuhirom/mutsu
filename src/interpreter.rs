@@ -168,12 +168,12 @@ impl Interpreter {
                 };
                 self.env.insert(name.clone(), value);
             }
-            Stmt::SubDecl { name, param, body } => {
+            Stmt::SubDecl { name, params, body } => {
                 let fq = format!("{}::{}", self.current_package, name);
                 let def = FunctionDef {
                     package: self.current_package.clone(),
                     name: name.clone(),
-                    param: param.clone(),
+                    params: params.clone(),
                     body: body.clone(),
                 };
                 self.functions.insert(fq, def);
@@ -1161,10 +1161,10 @@ impl Interpreter {
             Expr::Call { name, args } => {
                 if let Some(def) = self.resolve_function(name) {
                     let saved_env = self.env.clone();
-                    if let Some(param) = def.param.clone() {
-                        if let Some(arg) = args.get(0) {
+                    for (i, param) in def.params.clone().iter().enumerate() {
+                        if let Some(arg) = args.get(i) {
                             if let Ok(value) = self.eval_expr(arg) {
-                                self.env.insert(param, value);
+                                self.env.insert(param.clone(), value);
                             }
                         }
                     }
