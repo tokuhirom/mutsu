@@ -96,10 +96,15 @@ impl Value {
 #[derive(Debug)]
 pub struct RuntimeError {
     pub message: String,
+    pub return_value: Option<Value>,
 }
 
 impl RuntimeError {
     pub(crate) fn new(message: impl Into<String>) -> Self {
-        Self { message: message.into() }
+        Self { message: message.into(), return_value: None }
+    }
+
+    pub(crate) fn return_val(value: Value) -> Self {
+        Self { message: String::new(), return_value: Some(value) }
     }
 }

@@ -184,7 +184,10 @@ impl Interpreter {
                 self.run_block(body)?;
                 self.current_package = saved;
             }
-            Stmt::Return(_) => {}
+            Stmt::Return(expr) => {
+                let val = self.eval_expr(expr)?;
+                return Err(RuntimeError::return_val(val));
+            }
             Stmt::Say(expr) => {
                 let value = self.eval_expr(expr)?;
                 self.output.push_str(&value.to_string_value());
@@ -1114,7 +1117,10 @@ impl Interpreter {
                         }
                     }
                     self.env = merged;
-                    return result;
+                    return match result {
+                        Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
+                        other => other,
+                    };
                 }
                 Ok(Value::Nil)
             }
@@ -1166,7 +1172,10 @@ impl Interpreter {
                     let result = self.eval_block_value(&def.body);
                     self.routine_stack.pop();
                     self.env = saved_env;
-                    return result;
+                    return match result {
+                        Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
+                        other => other,
+                    };
                 }
                 if name == "EVAL" {
                     let code = if let Some(arg) = args.get(0) {
