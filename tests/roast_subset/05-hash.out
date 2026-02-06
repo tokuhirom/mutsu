@@ -1,0 +1,11 @@
+1..10
+ok 1 - hash declaration
+ok 2 - hash literal assignment
+ok 3 - hash access with angle brackets
+ok 4 - hash access - green
+ok 5 - hash access - blue
+ok 6 - hash access with curly braces
+ok 7 - non-existent key returns undefined
+ok 8 - colon pair - verbose is True
+ok 9 - colon pair - debug is True
+ok 10 - empty hash is falsy

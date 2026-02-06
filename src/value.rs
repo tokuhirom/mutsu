@@ -11,6 +11,7 @@ pub enum Value {
     Range(i64, i64),
     RangeExcl(i64, i64),
     Array(Vec<Value>),
+    Hash(HashMap<String, Value>),
     FatRat(i64, i64),
     CompUnitDepSpec { short_name: String },
     Package(String),
@@ -34,6 +35,7 @@ impl PartialEq for Value {
             (Value::Range(a1, b1), Value::Range(a2, b2)) => a1 == a2 && b1 == b2,
             (Value::RangeExcl(a1, b1), Value::RangeExcl(a2, b2)) => a1 == a2 && b1 == b2,
             (Value::Array(a), Value::Array(b)) => a == b,
+            (Value::Hash(a), Value::Hash(b)) => a == b,
             (Value::FatRat(a1, b1), Value::FatRat(a2, b2)) => a1 == a2 && b1 == b2,
             (Value::CompUnitDepSpec { short_name: a }, Value::CompUnitDepSpec { short_name: b }) => a == b,
             (Value::Package(a), Value::Package(b)) => a == b,
@@ -53,6 +55,7 @@ impl Value {
             Value::Range(_, _) => true,
             Value::RangeExcl(_, _) => true,
             Value::Array(items) => !items.is_empty(),
+            Value::Hash(items) => !items.is_empty(),
             Value::FatRat(_, _) => true,
             Value::CompUnitDepSpec { .. } => true,
             Value::Package(_) => true,
@@ -75,6 +78,11 @@ impl Value {
                 .map(|v| v.to_string_value())
                 .collect::<Vec<_>>()
                 .join(" "),
+            Value::Hash(items) => items
+                .iter()
+                .map(|(k, v)| format!("{}\t{}", k, v.to_string_value()))
+                .collect::<Vec<_>>()
+                .join("\n"),
             Value::FatRat(a, b) => format!("{}/{}", a, b),
             Value::CompUnitDepSpec { short_name } => format!("CompUnit::DependencySpecification({})", short_name),
             Value::Package(s) => s.clone(),

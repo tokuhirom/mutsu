@@ -763,7 +763,10 @@ impl Interpreter {
             Expr::Literal(v) => Ok(v.clone()),
             Expr::Var(name) => Ok(self.env.get(name).cloned().unwrap_or(Value::Nil)),
             Expr::ArrayVar(name) => Ok(self.env.get(&format!("@{}", name)).cloned().unwrap_or(Value::Nil)),
-            Expr::HashVar(_) => Ok(Value::Nil),
+            Expr::HashVar(name) => {
+                let key = format!("%{}", name);
+                Ok(self.env.get(&key).cloned().unwrap_or(Value::Nil))
+            }
             Expr::RoutineMagic => {
                 if let Some((package, name)) = self.routine_stack.last() {
                     Ok(Value::Routine { package: package.clone(), name: name.clone() })
@@ -834,6 +837,12 @@ impl Interpreter {
                         };
                         Ok(Value::Array(slice))
                     }
+                    (Value::Hash(items), Value::Str(key)) => {
+                        Ok(items.get(&key).cloned().unwrap_or(Value::Nil))
+                    }
+                    (Value::Hash(items), Value::Int(key)) => {
+                        Ok(items.get(&key.to_string()).cloned().unwrap_or(Value::Nil))
+                    }
                     _ => Ok(Value::Nil),
                 }
             }
@@ -894,6 +903,7 @@ impl Interpreter {
                 }
                 let base = self.eval_expr(target)?;
                 match name.as_str() {
+                    "defined" => Ok(Value::Bool(!matches!(base, Value::Nil))),
                     "parent" => {
                         let mut levels = 1i64;
                         if let Some(arg) = args.get(0) {
@@ -1081,8 +1091,16 @@ impl Interpreter {
                 self.eval_binary(l, op, r)
             }
             Expr::Hash(pairs) => {
-                let _ = pairs;
-                Ok(Value::Nil)
+                let mut map = HashMap::new();
+                for (key, value_expr) in pairs {
+                    let value = if let Some(expr) = value_expr {
+                        self.eval_expr(expr)?
+                    } else {
+                        Value::Bool(true)
+                    };
+                    map.insert(key.clone(), value);
+                }
+                Ok(Value::Hash(map))
             }
             Expr::Call { name, args } => {
                 if let Some(def) = self.resolve_function(name) {
@@ -1099,10 +1117,6 @@ impl Interpreter {
                     self.routine_stack.pop();
                     self.env = saved_env;
                     return result;
-                }
-                if name == "defined" {
-                    let _ = args;
-                    return Ok(Value::Bool(true));
                 }
                 if name == "EVAL" {
                     let code = if let Some(arg) = args.get(0) {

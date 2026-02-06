@@ -112,14 +112,20 @@ impl Parser {
             return Err(RuntimeError::new("Expected sub or block for subtest"));
         }
         if self.match_ident("my") {
-            let (name, is_array) = if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_))) {
+            let (name, is_array, is_hash) = if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_))) {
                 if let TokenKind::ArrayVar(n) = token.kind {
-                    (format!("@{}", n), true)
+                    (format!("@{}", n), true, false)
                 } else {
-                    (String::new(), false)
+                    (String::new(), false, false)
+                }
+            } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::HashVar(_))) {
+                if let TokenKind::HashVar(n) = token.kind {
+                    (format!("%{}", n), false, true)
+                } else {
+                    (String::new(), false, false)
                 }
             } else {
-                (self.consume_var()?, false)
+                (self.consume_var()?, false, false)
             };
             if self.match_kind(TokenKind::Eq) || self.match_kind(TokenKind::Bind) {
                 let expr = self.parse_comma_expr()?;
@@ -129,6 +135,8 @@ impl Parser {
             self.match_kind(TokenKind::Semicolon);
             let expr = if is_array {
                 Expr::Literal(Value::Array(Vec::new()))
+            } else if is_hash {
+                Expr::Hash(Vec::new())
             } else {
                 Expr::Literal(Value::Nil)
             };
@@ -892,6 +900,13 @@ impl Parser {
                 expr = Expr::Index { target: Box::new(expr), index: Box::new(index) };
                 continue;
             }
+            if matches!(expr, Expr::HashVar(_)) && self.check(&TokenKind::LBrace) {
+                self.match_kind(TokenKind::LBrace);
+                let index = self.parse_expr()?;
+                self.consume_kind(TokenKind::RBrace)?;
+                expr = Expr::Index { target: Box::new(expr), index: Box::new(index) };
+                continue;
+            }
             if self.check(&TokenKind::Lt) {
                 if matches!(expr, Expr::HashVar(_)) {
                     self.match_kind(TokenKind::Lt);
@@ -909,7 +924,10 @@ impl Parser {
                         if name == "*ENV" {
                             expr = Expr::EnvIndex(key);
                         } else {
-                            expr = Expr::Literal(Value::Nil);
+                            expr = Expr::Index {
+                                target: Box::new(Expr::HashVar(name)),
+                                index: Box::new(Expr::Literal(Value::Str(key))),
+                            };
                         }
                     }
                     continue;
