@@ -1327,6 +1327,22 @@ impl Interpreter {
             },
             TokenKind::SmartMatch => Ok(Value::Bool(self.smart_match(&left, &right))),
             TokenKind::BangTilde => Ok(Value::Bool(!self.smart_match(&left, &right))),
+            TokenKind::Ident(name) if name == "x" => {
+                let s = left.to_string_value();
+                let n = match right {
+                    Value::Int(n) => n.max(0) as usize,
+                    _ => 0,
+                };
+                Ok(Value::Str(s.repeat(n)))
+            }
+            TokenKind::Ident(name) if name == "xx" => {
+                let n = match right {
+                    Value::Int(n) => n.max(0) as usize,
+                    _ => 0,
+                };
+                let items: Vec<Value> = std::iter::repeat(left).take(n).collect();
+                Ok(Value::Array(items))
+            }
             _ => Err(RuntimeError::new("Unknown binary operator")),
         }
     }

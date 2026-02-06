@@ -1,0 +1,9 @@
+1..8
+ok 1 - string x 3
+ok 2 - string x 1
+ok 3 - string x 0
+ok 4 - int x 2 stringifies
+ok 5 - xx replicates into list
+ok 6 - xx with string
+ok 7 - xx with 0 gives empty list
+ok 8 - x and ~ combined

@@ -662,19 +662,51 @@ impl Parser {
         Ok(expr)
     }
 
+    // Concatenation (~) - lowest of the arithmetic-like operators
     fn parse_term(&mut self) -> Result<Expr, RuntimeError> {
-        let mut expr = self.parse_factor()?;
+        let mut expr = self.parse_replication()?;
         loop {
             if let Some(infix) = self.parse_infix_func(expr.clone())? {
                 expr = infix;
                 continue;
             }
+            if self.match_kind(TokenKind::Tilde) {
+                let right = self.parse_replication()?;
+                expr = Expr::Binary { left: Box::new(expr), op: TokenKind::Tilde, right: Box::new(right) };
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
+    }
+
+    // Replication (x, xx) - between concatenation and additive
+    fn parse_replication(&mut self) -> Result<Expr, RuntimeError> {
+        let mut expr = self.parse_additive()?;
+        loop {
+            if self.match_ident("xx") {
+                let right = self.parse_additive()?;
+                expr = Expr::Binary { left: Box::new(expr), op: TokenKind::Ident("xx".to_string()), right: Box::new(right) };
+                continue;
+            }
+            if self.match_ident("x") {
+                let right = self.parse_additive()?;
+                expr = Expr::Binary { left: Box::new(expr), op: TokenKind::Ident("x".to_string()), right: Box::new(right) };
+                continue;
+            }
+            break;
+        }
+        Ok(expr)
+    }
+
+    // Additive (+, -) - between replication and multiplicative
+    fn parse_additive(&mut self) -> Result<Expr, RuntimeError> {
+        let mut expr = self.parse_factor()?;
+        loop {
             let op = if self.match_kind(TokenKind::Plus) {
                 Some(TokenKind::Plus)
             } else if self.match_kind(TokenKind::Minus) {
                 Some(TokenKind::Minus)
-            } else if self.match_kind(TokenKind::Tilde) {
-                Some(TokenKind::Tilde)
             } else {
                 None
             };
