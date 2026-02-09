@@ -9,6 +9,7 @@ pub(crate) enum DStrPart {
 pub(crate) enum TokenKind {
     Number(i64),
     Float(f64),
+    Imaginary(f64),
     Str(String),
     DStr(Vec<DStrPart>),
     Ident(String),
@@ -377,11 +378,13 @@ impl Lexer {
                             }
                         }
                     }
+                    let value = num.parse::<f64>().unwrap_or(0.0);
                     if self.peek() == Some('i') {
                         self.pos += 1;
+                        TokenKind::Imaginary(value)
+                    } else {
+                        TokenKind::Float(value)
                     }
-                    let value = num.parse::<f64>().unwrap_or(0.0);
-                    TokenKind::Float(value)
                 } else {
                     // Check for exponent on integer (e.g. 1e10)
                     if matches!(self.peek(), Some('e') | Some('E')) {
@@ -398,17 +401,21 @@ impl Lexer {
                                 break;
                             }
                         }
+                        let value = num.parse::<f64>().unwrap_or(0.0);
                         if self.peek() == Some('i') {
                             self.pos += 1;
+                            TokenKind::Imaginary(value)
+                        } else {
+                            TokenKind::Float(value)
                         }
-                        let value = num.parse::<f64>().unwrap_or(0.0);
-                        TokenKind::Float(value)
                     } else {
                         let value = num.parse::<i64>().unwrap_or(0);
                         if self.peek() == Some('i') {
                             self.pos += 1;
+                            TokenKind::Imaginary(value as f64)
+                        } else {
+                            TokenKind::Number(value)
                         }
-                        TokenKind::Number(value)
                     }
                 }
             }

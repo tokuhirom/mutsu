@@ -1390,6 +1390,12 @@ impl Parser {
             } else {
                 Expr::Literal(Value::Nil)
             }
+        } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Imaginary(_))) {
+            if let TokenKind::Imaginary(value) = token.kind {
+                Expr::Literal(Value::Complex(0.0, value))
+            } else {
+                Expr::Literal(Value::Nil)
+            }
         } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Str(_))) {
             if let TokenKind::Str(value) = token.kind {
                 Expr::Literal(Value::Str(value))

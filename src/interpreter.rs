@@ -699,6 +699,7 @@ impl Interpreter {
                     "Array" => matches!(value, Value::Array(_)),
                     "Rat" => matches!(value, Value::Rat(_, _)),
                     "FatRat" => matches!(value, Value::FatRat(_, _)),
+                    "Complex" => matches!(value, Value::Complex(_, _)),
                     _ => true,
                 };
                 self.test_ok(ok, &desc, todo)?;
@@ -1031,6 +1032,7 @@ impl Interpreter {
             Value::Pair(_, _) => "Pair",
             Value::Rat(_, _) => "Rat",
             Value::FatRat(_, _) => "FatRat",
+            Value::Complex(_, _) => "Complex",
             Value::Nil => "Any",
             Value::Sub { .. } => "Sub",
             Value::Routine { .. } => "Routine",
@@ -1048,13 +1050,13 @@ impl Interpreter {
             return true;
         }
         // Numeric hierarchy: Int is a Numeric, Num is a Numeric
-        if constraint == "Numeric" && matches!(value_type, "Int" | "Num" | "Rat" | "FatRat") {
+        if constraint == "Numeric" && matches!(value_type, "Int" | "Num" | "Rat" | "FatRat" | "Complex") {
             return true;
         }
         if constraint == "Real" && matches!(value_type, "Int" | "Num" | "Rat" | "FatRat") {
             return true;
         }
-        if constraint == "Cool" && matches!(value_type, "Int" | "Num" | "Str" | "Bool" | "Rat" | "FatRat") {
+        if constraint == "Cool" && matches!(value_type, "Int" | "Num" | "Str" | "Bool" | "Rat" | "FatRat" | "Complex") {
             return true;
         }
         if constraint == "Stringy" && matches!(value_type, "Str") {
@@ -1502,6 +1504,7 @@ impl Interpreter {
                         Value::Hash(_) => "Hash",
                         Value::Rat(_, _) => "Rat",
                         Value::FatRat(_, _) => "FatRat",
+                        Value::Complex(_, _) => "Complex",
                         Value::Pair(_, _) => "Pair",
                         Value::Enum { enum_type, .. } => enum_type.as_str(),
                         Value::Nil => "Nil",
@@ -1522,6 +1525,7 @@ impl Interpreter {
                             Value::Hash(_) => "Hash".to_string(),
                             Value::Rat(_, _) => "Rat".to_string(),
                             Value::FatRat(_, _) => "FatRat".to_string(),
+                            Value::Complex(_, _) => "Complex".to_string(),
                             Value::Pair(_, _) => "Pair".to_string(),
                             Value::Enum { enum_type, .. } => enum_type.clone(),
                             Value::Nil => "Nil".to_string(),
@@ -1792,6 +1796,7 @@ impl Interpreter {
                             if d == 0 { Err(RuntimeError::new("Cannot convert Inf/NaN Rat to Int")) }
                             else { Ok(Value::Int(n / d)) }
                         }
+                        Value::Complex(r, _) => Ok(Value::Int(r as i64)),
                         Value::Str(s) => Ok(Value::Int(s.trim().parse::<i64>().unwrap_or(0))),
                         Value::Bool(b) => Ok(Value::Int(if b { 1 } else { 0 })),
                         _ => Ok(Value::Int(0)),
@@ -1808,6 +1813,7 @@ impl Interpreter {
                                 Ok(Value::Num(n as f64 / d as f64))
                             }
                         }
+                        Value::Complex(r, _) => Ok(Value::Num(r)),
                         Value::Str(s) => {
                             if let Ok(i) = s.trim().parse::<i64>() {
                                 Ok(Value::Int(i))
@@ -1860,6 +1866,32 @@ impl Interpreter {
                         Value::Rat(0, 0) => Ok(Value::Bool(true)),
                         Value::Num(f) => Ok(Value::Bool(f.is_nan())),
                         _ => Ok(Value::Bool(false)),
+                    },
+                    "re" => match base {
+                        Value::Complex(r, _) => Ok(Value::Num(r)),
+                        Value::Int(i) => Ok(Value::Num(i as f64)),
+                        Value::Num(f) => Ok(Value::Num(f)),
+                        _ => Ok(Value::Num(0.0)),
+                    },
+                    "im" => match base {
+                        Value::Complex(_, i) => Ok(Value::Num(i)),
+                        _ => Ok(Value::Num(0.0)),
+                    },
+                    "conj" => match base {
+                        Value::Complex(r, i) => Ok(Value::Complex(r, -i)),
+                        Value::Int(i) => Ok(Value::Complex(i as f64, 0.0)),
+                        Value::Num(f) => Ok(Value::Complex(f, 0.0)),
+                        _ => Ok(Value::Complex(0.0, 0.0)),
+                    },
+                    "reals" => match base {
+                        Value::Complex(r, i) => Ok(Value::Array(vec![Value::Num(r), Value::Num(i)])),
+                        _ => Ok(Value::Array(vec![base.clone(), Value::Num(0.0)])),
+                    },
+                    "Complex" => match base {
+                        Value::Complex(_, _) => Ok(base),
+                        Value::Int(i) => Ok(Value::Complex(i as f64, 0.0)),
+                        Value::Num(f) => Ok(Value::Complex(f, 0.0)),
+                        _ => Ok(Value::Complex(0.0, 0.0)),
                     },
                     "Bool" => Ok(Value::Bool(base.truthy())),
                     "gist" | "raku" | "perl" => match base {
@@ -2192,6 +2224,7 @@ impl Interpreter {
                     "abs" => match base {
                         Value::Int(i) => Ok(Value::Int(i.abs())),
                         Value::Num(f) => Ok(Value::Num(f.abs())),
+                        Value::Complex(r, i) => Ok(Value::Num((r * r + i * i).sqrt())),
                         _ => Ok(Value::Int(0)),
                     },
                     "sign" => match base {
@@ -2425,6 +2458,21 @@ impl Interpreter {
                             let b = match b { Some(Value::Int(i)) => i, _ => 1 };
                             Ok(Value::FatRat(a, b))
                         }
+                        Value::Str(name) if name == "Complex" => {
+                            let a = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                            let b = args.get(1).map(|e| self.eval_expr(e).ok()).flatten();
+                            let re = match a {
+                                Some(Value::Int(i)) => i as f64,
+                                Some(Value::Num(f)) => f,
+                                _ => 0.0,
+                            };
+                            let im = match b {
+                                Some(Value::Int(i)) => i as f64,
+                                Some(Value::Num(f)) => f,
+                                _ => 0.0,
+                            };
+                            Ok(Value::Complex(re, im))
+                        }
                         Value::Str(name) if name == "CompUnit::DependencySpecification" => {
                             let mut short_name = None;
                             if let Some(arg) = args.get(0) {
@@ -2556,6 +2604,7 @@ impl Interpreter {
                                 Value::Int(i) => Ok(Value::Int(-i)),
                                 Value::Num(f) => Ok(Value::Num(-f)),
                                 Value::Rat(n, d) => Ok(Value::Rat(-n, d)),
+                                Value::Complex(r, i) => Ok(Value::Complex(-r, -i)),
                                 _ => Err(RuntimeError::new("Unary - expects numeric")),
                             },
                             TokenKind::Tilde => Ok(Value::Str(value.to_string_value())),
@@ -3048,6 +3097,11 @@ impl Interpreter {
         match op {
             TokenKind::Plus => {
                 let (l, r) = Self::coerce_numeric(left, right);
+                if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+                    let (ar, ai) = Self::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                    let (br, bi) = Self::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                    return Ok(Value::Complex(ar + br, ai + bi));
+                }
                 if let (Some((an, ad)), Some((bn, bd))) = (Self::to_rat_parts(&l), Self::to_rat_parts(&r)) {
                     if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
                         return Ok(make_rat(an * bd + bn * ad, ad * bd));
@@ -3063,6 +3117,11 @@ impl Interpreter {
             }
             TokenKind::Minus => {
                 let (l, r) = Self::coerce_numeric(left, right);
+                if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+                    let (ar, ai) = Self::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                    let (br, bi) = Self::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                    return Ok(Value::Complex(ar - br, ai - bi));
+                }
                 if let (Some((an, ad)), Some((bn, bd))) = (Self::to_rat_parts(&l), Self::to_rat_parts(&r)) {
                     if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
                         return Ok(make_rat(an * bd - bn * ad, ad * bd));
@@ -3078,6 +3137,12 @@ impl Interpreter {
             }
             TokenKind::Star => {
                 let (l, r) = Self::coerce_numeric(left, right);
+                if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+                    let (ar, ai) = Self::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                    let (br, bi) = Self::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                    // (a+bi)(c+di) = (ac-bd) + (ad+bc)i
+                    return Ok(Value::Complex(ar * br - ai * bi, ar * bi + ai * br));
+                }
                 if let (Some((an, ad)), Some((bn, bd))) = (Self::to_rat_parts(&l), Self::to_rat_parts(&r)) {
                     if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
                         return Ok(make_rat(an * bn, ad * bd));
@@ -3093,6 +3158,16 @@ impl Interpreter {
             }
             TokenKind::Slash => {
                 let (l, r) = Self::coerce_numeric(left, right);
+                if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+                    let (ar, ai) = Self::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                    let (br, bi) = Self::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                    // (a+bi)/(c+di) = ((ac+bd) + (bc-ad)i) / (c²+d²)
+                    let denom = br * br + bi * bi;
+                    if denom == 0.0 {
+                        return Err(RuntimeError::new("Division by zero"));
+                    }
+                    return Ok(Value::Complex((ar * br + ai * bi) / denom, (ai * br - ar * bi) / denom));
+                }
                 match (&l, &r) {
                     (Value::Rat(_, _), _) | (_, Value::Rat(_, _)) |
                     (Value::Int(_), Value::Int(_)) => {
@@ -3142,6 +3217,17 @@ impl Interpreter {
             }
             TokenKind::StarStar => {
                 let (l, r) = Self::coerce_numeric(left, right);
+                if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+                    let (ar, ai) = Self::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                    let (br, bi) = Self::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                    // z^w = e^(w * ln(z))
+                    let ln_r = (ar * ar + ai * ai).sqrt().ln();
+                    let ln_i = ai.atan2(ar);
+                    let wr = br * ln_r - bi * ln_i;
+                    let wi = br * ln_i + bi * ln_r;
+                    let mag = wr.exp();
+                    return Ok(Value::Complex(mag * wi.cos(), mag * wi.sin()));
+                }
                 match (l, r) {
                     (Value::Int(a), Value::Int(b)) if b >= 0 => Ok(Value::Int(a.pow(b as u32))),
                     (Value::Int(a), Value::Int(b)) => {
@@ -3710,7 +3796,7 @@ impl Interpreter {
 
     fn coerce_to_numeric(val: Value) -> Value {
         match val {
-            Value::Int(_) | Value::Num(_) | Value::Rat(_, _) | Value::FatRat(_, _) => val,
+            Value::Int(_) | Value::Num(_) | Value::Rat(_, _) | Value::FatRat(_, _) | Value::Complex(_, _) => val,
             Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
             Value::Enum { value, .. } => Value::Int(value),
             Value::Str(ref s) => {
@@ -3731,11 +3817,11 @@ impl Interpreter {
 
     fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
         let l = match &left {
-            Value::Int(_) | Value::Num(_) | Value::Rat(_, _) | Value::FatRat(_, _) => left,
+            Value::Int(_) | Value::Num(_) | Value::Rat(_, _) | Value::FatRat(_, _) | Value::Complex(_, _) => left,
             _ => Self::coerce_to_numeric(left),
         };
         let r = match &right {
-            Value::Int(_) | Value::Num(_) | Value::Rat(_, _) | Value::FatRat(_, _) => right,
+            Value::Int(_) | Value::Num(_) | Value::Rat(_, _) | Value::FatRat(_, _) | Value::Complex(_, _) => right,
             _ => Self::coerce_to_numeric(right),
         };
         (l, r)
@@ -3746,6 +3832,16 @@ impl Interpreter {
             Value::Int(i) => Some((*i, 1)),
             Value::Rat(n, d) => Some((*n, *d)),
             Value::FatRat(n, d) => Some((*n, *d)),
+            _ => None,
+        }
+    }
+
+    fn to_complex_parts(val: &Value) -> Option<(f64, f64)> {
+        match val {
+            Value::Complex(r, i) => Some((*r, *i)),
+            Value::Int(n) => Some((*n as f64, 0.0)),
+            Value::Num(f) => Some((*f, 0.0)),
+            Value::Rat(n, d) => if *d != 0 { Some((*n as f64 / *d as f64, 0.0)) } else { None },
             _ => None,
         }
     }
@@ -3772,6 +3868,7 @@ impl Interpreter {
             Value::Int(i) => *i,
             Value::Num(f) => *f as i64,
             Value::Rat(n, d) => if *d != 0 { n / d } else { 0 },
+            Value::Complex(r, _) => *r as i64,
             Value::Str(s) => s.parse().unwrap_or(0),
             _ => 0,
         }
