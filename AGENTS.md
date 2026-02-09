@@ -8,6 +8,7 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - Do not rewrite or reformat unrelated code.
 - Do not use stubs, hardcoded outputs, or early returns to make tests pass.
 - Commit directly to the main branch. Do not use feature branches.
+- Push to remote after completing work.
 - Write all documents (CLAUDE.md, TODO.md, etc.), code comments, and commit messages in English.
 
 ## Layout
