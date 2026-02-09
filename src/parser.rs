@@ -78,10 +78,14 @@ impl Parser {
                     if self.match_kind(TokenKind::Colon) {
                         is_named = true;
                     }
-                    // Skip optional type annotations (e.g., Int $x)
+                    // Parse optional type annotation (e.g., Int $x)
+                    let mut type_constraint = None;
                     if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
                         && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
                     {
+                        if let Some(TokenKind::Ident(ty)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+                            type_constraint = Some(ty.clone());
+                        }
                         self.pos += 1;
                     }
                     if self.peek_is_var() {
@@ -99,18 +103,18 @@ impl Parser {
                         self.match_kind(TokenKind::Question);
                         self.match_kind(TokenKind::Bang);
                         params.push(var.clone());
-                        param_defs.push(ParamDef { name: var, default, named: is_named, slurpy: is_slurpy });
+                        param_defs.push(ParamDef { name: var, default, named: is_named, slurpy: is_slurpy, type_constraint });
                     } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_))) {
                         if let TokenKind::ArrayVar(n) = token.kind {
                             let var = format!("@{}", n);
                             params.push(var.clone());
-                            param_defs.push(ParamDef { name: var, default: None, named: false, slurpy: is_slurpy });
+                            param_defs.push(ParamDef { name: var, default: None, named: false, slurpy: is_slurpy, type_constraint: None });
                         }
                     } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::HashVar(_))) {
                         if let TokenKind::HashVar(n) = token.kind {
                             let var = format!("%{}", n);
                             params.push(var.clone());
-                            param_defs.push(ParamDef { name: var, default: None, named: is_named || is_slurpy, slurpy: is_slurpy });
+                            param_defs.push(ParamDef { name: var, default: None, named: is_named || is_slurpy, slurpy: is_slurpy, type_constraint: None });
                         }
                     } else {
                         self.pos += 1;

@@ -194,8 +194,23 @@ impl Interpreter {
                 };
                 if *multi {
                     let arity = param_defs.iter().filter(|p| !p.slurpy && !p.named).count();
+                    let type_sig: Vec<&str> = param_defs.iter()
+                        .filter(|p| !p.slurpy && !p.named)
+                        .map(|p| p.type_constraint.as_deref().unwrap_or("Any"))
+                        .collect();
+                    let has_types = type_sig.iter().any(|t| *t != "Any");
+                    if has_types {
+                        let typed_fq = format!("{}::{}/{}:{}", self.current_package, name, arity, type_sig.join(","));
+                        self.functions.insert(typed_fq, def.clone());
+                    }
                     let fq = format!("{}::{}/{}", self.current_package, name, arity);
-                    self.functions.insert(fq, def);
+                    // Only insert arity-only key if no type constraints (fallback)
+                    if !has_types {
+                        self.functions.insert(fq, def);
+                    } else {
+                        // Don't overwrite if there's already an untyped variant
+                        self.functions.entry(fq).or_insert(def);
+                    }
                 } else {
                     let fq = format!("{}::{}", self.current_package, name);
                     self.functions.insert(fq, def);
@@ -881,17 +896,23 @@ impl Interpreter {
                 self.bailed_out = true;
             }
             _ => {
-                // Try user-defined function
-                let positional_count = args.iter().filter(|a| matches!(a, CallArg::Positional(_))).count();
-                if let Some(def) = self.resolve_function_with_arity(name, positional_count) {
+                // Try user-defined function with type-based dispatch
+                let call_args: Vec<Expr> = args.iter().filter_map(|a| {
+                    match a {
+                        CallArg::Positional(e) => Some(e.clone()),
+                        _ => None,
+                    }
+                }).collect();
+                let arg_values: Vec<Value> = call_args.iter()
+                    .filter_map(|a| self.eval_expr(a).ok())
+                    .collect();
+                let def_opt = self.resolve_function_with_types(name, &arg_values);
+                if let Some(def) = def_opt {
                     let saved_env = self.env.clone();
-                    let call_args: Vec<Expr> = args.iter().filter_map(|a| {
-                        match a {
-                            CallArg::Positional(e) => Some(e.clone()),
-                            _ => None,
-                        }
-                    }).collect();
-                    self.bind_function_args(&def.param_defs, &def.params, &call_args)?;
+                    let literal_args: Vec<Expr> = arg_values.into_iter()
+                        .map(|v| Expr::Literal(v))
+                        .collect();
+                    self.bind_function_args(&def.param_defs, &def.params, &literal_args)?;
                     self.routine_stack.push((def.package.clone(), def.name.clone()));
                     let result = self.run_block(&def.body);
                     self.routine_stack.pop();
@@ -935,6 +956,94 @@ impl Interpreter {
         }
         // Fall back to regular lookup
         self.resolve_function(name)
+    }
+
+    fn resolve_function_with_types(&self, name: &str, arg_values: &[Value]) -> Option<FunctionDef> {
+        if name.contains("::") {
+            return self.functions.get(name).cloned();
+        }
+        let arity = arg_values.len();
+        let type_sig: Vec<&str> = arg_values.iter().map(|v| Self::value_type_name(v)).collect();
+        let typed_key = format!("{}::{}/{}:{}", self.current_package, name, arity, type_sig.join(","));
+        if let Some(def) = self.functions.get(&typed_key) {
+            return Some(def.clone());
+        }
+        let typed_global = format!("GLOBAL::{}/{}:{}", name, arity, type_sig.join(","));
+        if let Some(def) = self.functions.get(&typed_global) {
+            return Some(def.clone());
+        }
+        // Try matching against all typed candidates for this name/arity
+        let prefix_local = format!("{}::{}/{}:", self.current_package, name, arity);
+        let prefix_global = format!("GLOBAL::{}/{}:", name, arity);
+        for (key, def) in &self.functions {
+            if key.starts_with(&prefix_local) || key.starts_with(&prefix_global) {
+                if self.args_match_param_types(arg_values, &def.param_defs) {
+                    return Some(def.clone());
+                }
+            }
+        }
+        // Fall back to arity-only
+        self.resolve_function_with_arity(name, arity)
+    }
+
+    fn value_type_name(value: &Value) -> &'static str {
+        match value {
+            Value::Int(_) => "Int",
+            Value::Num(_) => "Num",
+            Value::Str(_) => "Str",
+            Value::Bool(_) => "Bool",
+            Value::Array(_) => "Array",
+            Value::Hash(_) => "Hash",
+            Value::Range(_, _) | Value::RangeExcl(_, _) |
+            Value::RangeExclStart(_, _) | Value::RangeExclBoth(_, _) => "Range",
+            Value::Pair(_, _) => "Pair",
+            Value::FatRat(_, _) => "FatRat",
+            Value::Nil => "Any",
+            Value::Sub { .. } => "Sub",
+            Value::Routine { .. } => "Routine",
+            Value::Package(_) => "Package",
+            Value::CompUnitDepSpec { .. } => "Any",
+        }
+    }
+
+    fn type_matches(constraint: &str, value_type: &str) -> bool {
+        if constraint == "Any" || constraint == "Mu" {
+            return true;
+        }
+        if constraint == value_type {
+            return true;
+        }
+        // Numeric hierarchy: Int is a Numeric, Num is a Numeric
+        if constraint == "Numeric" && matches!(value_type, "Int" | "Num" | "FatRat") {
+            return true;
+        }
+        if constraint == "Real" && matches!(value_type, "Int" | "Num" | "FatRat") {
+            return true;
+        }
+        if constraint == "Cool" && matches!(value_type, "Int" | "Num" | "Str" | "Bool" | "FatRat") {
+            return true;
+        }
+        if constraint == "Stringy" && matches!(value_type, "Str") {
+            return true;
+        }
+        false
+    }
+
+    fn args_match_param_types(&self, args: &[Value], param_defs: &[ParamDef]) -> bool {
+        let positional_params: Vec<&ParamDef> = param_defs.iter()
+            .filter(|p| !p.slurpy && !p.named)
+            .collect();
+        for (i, pd) in positional_params.iter().enumerate() {
+            if let Some(constraint) = &pd.type_constraint {
+                if let Some(arg) = args.get(i) {
+                    let arg_type = Self::value_type_name(arg);
+                    if !Self::type_matches(constraint, arg_type) {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
     }
 
     fn matches_expected(
@@ -2307,9 +2416,16 @@ impl Interpreter {
                 Ok(Value::Hash(map))
             }
             Expr::Call { name, args } => {
-                if let Some(def) = self.resolve_function_with_arity(name, args.len()) {
+                // Try type-based multi dispatch first
+                let arg_values: Vec<Value> = args.iter()
+                    .filter_map(|a| self.eval_expr(a).ok())
+                    .collect();
+                if let Some(def) = self.resolve_function_with_types(name, &arg_values) {
                     let saved_env = self.env.clone();
-                    self.bind_function_args(&def.param_defs, &def.params, args)?;
+                    let literal_args: Vec<Expr> = arg_values.into_iter()
+                        .map(|v| Expr::Literal(v))
+                        .collect();
+                    self.bind_function_args(&def.param_defs, &def.params, &literal_args)?;
                     self.routine_stack.push((def.package.clone(), def.name.clone()));
                     let result = self.eval_block_value(&def.body);
                     self.routine_stack.pop();

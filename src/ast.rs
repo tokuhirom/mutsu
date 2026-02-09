@@ -7,6 +7,7 @@ pub(crate) struct ParamDef {
     pub(crate) default: Option<Expr>,
     pub(crate) named: bool,
     pub(crate) slurpy: bool,
+    pub(crate) type_constraint: Option<String>,
 }
 
 #[derive(Debug, Clone)]

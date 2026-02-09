@@ -112,7 +112,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] `return`
 - [x] Named parameters
 - [x] Default values
-- [ ] Type constraints (`Int $x`)
+- [x] Type constraints (`Int $x`)
 - [x] Slurpy parameters (`*@args`, `*%opts`)
 - [x] `multi sub`
 - [ ] `proto sub`
