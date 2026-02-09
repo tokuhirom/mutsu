@@ -24,6 +24,7 @@ pub struct Interpreter {
     doc_comments: HashMap<String, String>,
     when_matched: bool,
     gather_items: Vec<Vec<Value>>,
+    enum_types: HashMap<String, Vec<(String, i64)>>,
 }
 
 impl Interpreter {
@@ -48,6 +49,7 @@ impl Interpreter {
             doc_comments: HashMap::new(),
             when_matched: false,
             gather_items: Vec::new(),
+            enum_types: HashMap::new(),
         }
     }
 
@@ -473,6 +475,35 @@ impl Interpreter {
                 let val = self.eval_expr(expr)?;
                 if let Some(items) = self.gather_items.last_mut() {
                     items.push(val);
+                }
+            }
+            Stmt::EnumDecl { name, variants } => {
+                let mut enum_variants = Vec::new();
+                let mut next_value: i64 = 0;
+                for (key, value_expr) in variants {
+                    let val = if let Some(expr) = value_expr {
+                        let v = self.eval_expr(expr)?;
+                        match v {
+                            Value::Int(i) => i,
+                            _ => next_value,
+                        }
+                    } else {
+                        next_value
+                    };
+                    enum_variants.push((key.clone(), val));
+                    next_value = val + 1;
+                }
+                self.enum_types.insert(name.clone(), enum_variants.clone());
+                self.env.insert(name.clone(), Value::Str(name.clone()));
+                for (index, (key, val)) in enum_variants.iter().enumerate() {
+                    let enum_val = Value::Enum {
+                        enum_type: name.clone(),
+                        key: key.clone(),
+                        value: *val,
+                        index,
+                    };
+                    self.env.insert(format!("{}::{}", name, key), enum_val.clone());
+                    self.env.insert(key.clone(), enum_val);
                 }
             }
             Stmt::Expr(expr) => {
@@ -1003,6 +1034,7 @@ impl Interpreter {
             Value::Routine { .. } => "Routine",
             Value::Package(_) => "Package",
             Value::CompUnitDepSpec { .. } => "Any",
+            Value::Enum { .. } => "Int",
         }
     }
 
@@ -1163,7 +1195,17 @@ impl Interpreter {
 
     fn eval_expr(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
         match expr {
-            Expr::Literal(v) => Ok(v.clone()),
+            Expr::Literal(v) => {
+                // Check if string literal matches an enum value or type in env
+                if let Value::Str(name) = v {
+                    if let Some(val) = self.env.get(name.as_str()) {
+                        if matches!(val, Value::Enum { .. }) {
+                            return Ok(val.clone());
+                        }
+                    }
+                }
+                Ok(v.clone())
+            }
             Expr::StringInterpolation(parts) => {
                 let mut result = String::new();
                 for part in parts {
@@ -1394,6 +1436,59 @@ impl Interpreter {
                     }
                 }
                 let base = self.eval_expr(target)?;
+                // Handle enum-specific methods
+                if let Value::Enum { ref enum_type, ref key, value: enum_val, index } = base {
+                    match name.as_str() {
+                        "key" => return Ok(Value::Str(key.clone())),
+                        "value" | "Int" | "Numeric" => return Ok(Value::Int(enum_val)),
+                        "raku" | "perl" => return Ok(Value::Str(format!("{}::{}", enum_type, key))),
+                        "gist" | "Str" => return Ok(Value::Str(key.clone())),
+                        "kv" => return Ok(Value::Array(vec![Value::Str(key.clone()), Value::Int(enum_val)])),
+                        "pair" => return Ok(Value::Pair(key.clone(), Box::new(Value::Int(enum_val)))),
+                        "pred" => {
+                            if index == 0 {
+                                return Ok(Value::Nil);
+                            }
+                            if let Some(variants) = self.enum_types.get(enum_type) {
+                                if let Some((prev_key, prev_val)) = variants.get(index - 1) {
+                                    return Ok(Value::Enum {
+                                        enum_type: enum_type.clone(),
+                                        key: prev_key.clone(),
+                                        value: *prev_val,
+                                        index: index - 1,
+                                    });
+                                }
+                            }
+                            return Ok(Value::Nil);
+                        }
+                        "succ" => {
+                            if let Some(variants) = self.enum_types.get(enum_type) {
+                                if let Some((next_key, next_val)) = variants.get(index + 1) {
+                                    return Ok(Value::Enum {
+                                        enum_type: enum_type.clone(),
+                                        key: next_key.clone(),
+                                        value: *next_val,
+                                        index: index + 1,
+                                    });
+                                }
+                            }
+                            return Ok(Value::Nil);
+                        }
+                        _ => {} // fall through to generic methods
+                    }
+                }
+                // Handle Type.enums (bare identifier matching an enum type name)
+                if name == "enums" {
+                    if let Value::Str(ref type_name) = base {
+                        if let Some(variants) = self.enum_types.get(type_name) {
+                            let mut map = HashMap::new();
+                            for (k, v) in variants {
+                                map.insert(k.clone(), Value::Int(*v));
+                            }
+                            return Ok(Value::Hash(map));
+                        }
+                    }
+                }
                 match name.as_str() {
                     "WHAT" => Ok(Value::Str(format!("({})", match &base {
                         Value::Int(_) => "Int",
@@ -1406,6 +1501,7 @@ impl Interpreter {
                         Value::Hash(_) => "Hash",
                         Value::FatRat(_, _) => "FatRat",
                         Value::Pair(_, _) => "Pair",
+                        Value::Enum { enum_type, .. } => enum_type.as_str(),
                         Value::Nil => "Nil",
                         Value::Package(_) => "Package",
                         Value::Routine { .. } => "Routine",
@@ -1424,6 +1520,7 @@ impl Interpreter {
                             Value::Hash(_) => "Hash".to_string(),
                             Value::FatRat(_, _) => "FatRat".to_string(),
                             Value::Pair(_, _) => "Pair".to_string(),
+                            Value::Enum { enum_type, .. } => enum_type.clone(),
                             Value::Nil => "Nil".to_string(),
                             Value::Package(name) => name.clone(),
                             Value::Routine { .. } => "Routine".to_string(),
@@ -2364,6 +2461,7 @@ impl Interpreter {
                                 Value::Int(i) => Ok(Value::Int(i)),
                                 Value::Array(items) => Ok(Value::Int(items.len() as i64)),
                                 Value::Str(s) => Ok(Value::Int(s.parse::<i64>().unwrap_or(0))),
+                                Value::Enum { value, .. } => Ok(Value::Int(value)),
                                 _ => Ok(Value::Int(0)),
                             },
                             TokenKind::Minus => match value {
@@ -2371,6 +2469,7 @@ impl Interpreter {
                                 Value::Num(f) => Ok(Value::Num(-f)),
                                 _ => Err(RuntimeError::new("Unary - expects numeric")),
                             },
+                            TokenKind::Tilde => Ok(Value::Str(value.to_string_value())),
                             TokenKind::Bang => Ok(Value::Bool(!value.truthy())),
                             TokenKind::Question => Ok(Value::Bool(value.truthy())),
                             TokenKind::Caret => {
@@ -3475,6 +3574,7 @@ impl Interpreter {
         match val {
             Value::Int(_) | Value::Num(_) => val,
             Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
+            Value::Enum { value, .. } => Value::Int(value),
             Value::Str(ref s) => {
                 let s = s.trim();
                 if let Ok(i) = s.parse::<i64>() {

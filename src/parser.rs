@@ -160,6 +160,10 @@ impl Parser {
             return Err(RuntimeError::new("Expected sub or block for subtest"));
         }
         if self.match_ident("my") {
+            // my enum Foo <...> or my enum Foo (...)
+            if self.match_ident("enum") {
+                return self.parse_enum_decl();
+            }
             // Skip optional type annotation (e.g., my Str $a, my Int $b)
             if let Some(TokenKind::Ident(_)) = self.tokens.get(self.pos).map(|t| &t.kind) {
                 if let Some(TokenKind::Var(_) | TokenKind::ArrayVar(_) | TokenKind::HashVar(_)) = self.tokens.get(self.pos + 1).map(|t| &t.kind) {
@@ -201,6 +205,9 @@ impl Parser {
                 Expr::Literal(Value::Nil)
             };
             return Ok(Stmt::VarDecl { name, expr });
+        }
+        if self.match_ident("enum") {
+            return self.parse_enum_decl();
         }
         if self.match_ident("say") {
             let exprs = self.parse_expr_list()?;
@@ -579,6 +586,46 @@ impl Parser {
         let expr = self.parse_expr()?;
         let stmt = Stmt::Expr(expr);
         self.parse_statement_modifier(stmt)
+    }
+
+    fn parse_enum_decl(&mut self) -> Result<Stmt, RuntimeError> {
+        let name = self.consume_ident()?;
+        let variants = if self.check(&TokenKind::Lt) {
+            self.parse_enum_angle_variants()?
+        } else if self.match_kind(TokenKind::LParen) {
+            self.parse_enum_paren_variants()?
+        } else {
+            return Err(RuntimeError::new("Expected < or ( after enum name"));
+        };
+        self.match_kind(TokenKind::Semicolon);
+        Ok(Stmt::EnumDecl { name, variants })
+    }
+
+    fn parse_enum_angle_variants(&mut self) -> Result<Vec<(String, Option<Expr>)>, RuntimeError> {
+        self.consume_kind(TokenKind::Lt)?;
+        let mut variants = Vec::new();
+        while !self.check(&TokenKind::Gt) && !self.check(&TokenKind::Eof) {
+            let key = self.consume_ident()?;
+            variants.push((key, None));
+        }
+        self.consume_kind(TokenKind::Gt)?;
+        Ok(variants)
+    }
+
+    fn parse_enum_paren_variants(&mut self) -> Result<Vec<(String, Option<Expr>)>, RuntimeError> {
+        let mut variants = Vec::new();
+        while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
+            let key = self.consume_ident()?;
+            let value = if self.match_kind(TokenKind::FatArrow) {
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
+            variants.push((key, value));
+            self.match_kind(TokenKind::Comma);
+        }
+        self.consume_kind(TokenKind::RParen)?;
+        Ok(variants)
     }
 
     pub(crate) fn parse_block(&mut self) -> Result<Vec<Stmt>, RuntimeError> {
@@ -1277,6 +1324,10 @@ impl Parser {
         if self.match_kind(TokenKind::Minus) {
             let expr = self.parse_unary()?;
             return Ok(Expr::Unary { op: TokenKind::Minus, expr: Box::new(expr) });
+        }
+        if self.match_kind(TokenKind::Tilde) {
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Unary { op: TokenKind::Tilde, expr: Box::new(expr) });
         }
         if self.match_kind(TokenKind::Bang) {
             let expr = self.parse_unary()?;

@@ -2,9 +2,7 @@
 
 Goal: Build a practical Raku (Perl 6) runtime in Rust that is faster than MoarVM.
 
-KPI: Pass count of `tools/run_all_roast.sh --save` (currently 257/1427)
-
-Development policy: In Phases 1-2, prioritize feature implementation without running roast. From Phase 3 onward, run roast at each milestone to measure progress.
+Development policy: In Phases 1-4, prioritize feature implementation without running roast. From Phase 5 onward, run roast at each milestone to measure progress.
 
 ---
 

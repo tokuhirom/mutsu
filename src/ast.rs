@@ -107,6 +107,7 @@ pub(crate) enum Stmt {
     Die(Expr),
     Catch(Vec<Stmt>),
     Take(Expr),
+    EnumDecl { name: String, variants: Vec<(String, Option<Expr>)> },
     Expr(Expr),
 }
 
