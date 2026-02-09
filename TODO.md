@@ -1,18 +1,18 @@
 # mutsu - Roadmap
 
-Goal: MoarVM より高速で実用的な Raku (Perl 6) 処理系を Rust で実装する。
+Goal: Build a practical Raku (Perl 6) runtime in Rust that is faster than MoarVM.
 
-KPI: `tools/run_all_roast.sh --save` の pass 数 (現在 257/1427)
+KPI: Pass count of `tools/run_all_roast.sh --save` (currently 257/1427)
 
-開発方針: Phase 1-2 では機能実装を優先し、roast は実行しない。Phase 3 以降でマイルストーンごとに roast を実行して進捗を計測する。
+Development policy: In Phases 1-2, prioritize feature implementation without running roast. From Phase 3 onward, run roast at each milestone to measure progress.
 
 ---
 
-## Phase 1: 言語コア (現在ここ)
+## Phase 1: Language Core (current)
 
-最低限の Raku プログラムが動く状態。機能実装を優先する。
+Get minimal Raku programs running. Prioritize feature implementation.
 
-### 型システム
+### Type System
 - [x] Int
 - [x] Num (f64)
 - [x] Str
@@ -23,63 +23,63 @@ KPI: `tools/run_all_roast.sh --save` の pass 数 (現在 257/1427)
 - [x] Pair
 - [x] FatRat
 - [x] Nil
-- [ ] Rat (有理数)
+- [ ] Rat (rational number)
 - [ ] Complex
 - [ ] Set, Bag, Mix
 - [ ] Enum
 - [ ] Junction
 
-### リテラル
-- [x] 整数リテラル
-- [x] 浮動小数点リテラル
-- [x] 単一引用符文字列
-- [x] 二重引用符文字列 + 変数補間
-- [x] 角括弧ワードリスト `<a b c>`
-- [ ] 数値中アンダースコア (`1_000_000`)
-- [x] 基数表記 (`0x`, `0o`, `0b`)
-- [ ] 指数表記 (`1e10`)
-- [ ] Q/q/qq フォーム
-- [ ] ヒアドク (`q:to/END/`)
-- [ ] 正規表現リテラル
+### Literals
+- [x] Integer literals
+- [x] Floating-point literals
+- [x] Single-quoted strings
+- [x] Double-quoted strings + variable interpolation
+- [x] Angle-bracket word list `<a b c>`
+- [ ] Underscores in numeric literals (`1_000_000`)
+- [x] Radix notation (`0x`, `0o`, `0b`)
+- [ ] Exponential notation (`1e10`)
+- [ ] Q/q/qq forms
+- [ ] Heredoc (`q:to/END/`)
+- [ ] Regex literals
 
-### 変数
-- [x] `$` スカラー
-- [x] `@` 配列
-- [x] `%` ハッシュ
-- [x] `$_` トピック変数
-- [x] `$!` エラー変数
-- [x] `$*` 動的変数 (`$*PID`, `$*CWD`, etc.)
-- [ ] `&` コード変数
-- [ ] `$?FILE`, `$?LINE` コンパイル時変数
-- [ ] `$!` (属性アクセス)
-- [ ] `$.` (公開属性)
-- [ ] `$^` プレースホルダ変数
+### Variables
+- [x] `$` scalar
+- [x] `@` array
+- [x] `%` hash
+- [x] `$_` topic variable
+- [x] `$!` error variable
+- [x] `$*` dynamic variables (`$*PID`, `$*CWD`, etc.)
+- [ ] `&` code variable
+- [ ] `$?FILE`, `$?LINE` compile-time variables
+- [ ] `$!` (attribute access)
+- [ ] `$.` (public attribute)
+- [ ] `$^` placeholder variables
 
-### 演算子
-- [x] 算術: `+`, `-`, `*`, `/`, `%`, `%%`, `**`, `div`, `mod`
-- [x] 文字列: `~`, `x`, `xx`
-- [x] 比較: `==`, `!=`, `<`, `<=`, `>`, `>=`
-- [x] 文字列比較: `eq`, `ne`, `lt`, `le`, `gt`, `ge`
-- [x] 論理: `&&`, `||`, `!`, `//`, `and`, `or`, `not`
-- [x] 代入: `=`, `:=`, `+=`, `-=`, `~=`, `*=`
-- [x] インクリメント: `++`, `--` (前置/後置)
-- [x] 三項: `?? !!`
-- [x] スマートマッチ: `~~`
-- [x] 範囲: `..`, `..^`
-- [x] ペア: `=>`
+### Operators
+- [x] Arithmetic: `+`, `-`, `*`, `/`, `%`, `%%`, `**`, `div`, `mod`
+- [x] String: `~`, `x`, `xx`
+- [x] Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`
+- [x] String comparison: `eq`, `ne`, `lt`, `le`, `gt`, `ge`
+- [x] Logical: `&&`, `||`, `!`, `//`, `and`, `or`, `not`
+- [x] Assignment: `=`, `:=`, `+=`, `-=`, `~=`, `*=`
+- [x] Increment: `++`, `--` (prefix/postfix)
+- [x] Ternary: `?? !!`
+- [x] Smartmatch: `~~`
+- [x] Range: `..`, `..^`
+- [x] Pair: `=>`
 - [ ] `so` (loose bool coercion)
 - [ ] `^..`, `^..^` (range variants)
 - [x] `<=>`, `leg`, `cmp` (comparison returning Order)
 - [x] `eqv` (value equality)
 - [ ] `===` (identity equality)
 - [x] `?` (boolean context prefix)
-- [x] `^` (upto: `^10` → `0..^10`)
-- [ ] ビット演算: `+&`, `+|`, `+^`, `+<`, `+>`
-- [ ] Junction 演算子: `&`, `|`, `^`
-- [ ] メタ演算子: `R`, `X`, `Z`, `[op]`, `op=`
-- [ ] Hyper 演算子: `>>op<<`
+- [x] `^` (upto: `^10` -> `0..^10`)
+- [ ] Bitwise: `+&`, `+|`, `+^`, `+<`, `+>`
+- [ ] Junction operators: `&`, `|`, `^`
+- [ ] Meta operators: `R`, `X`, `Z`, `[op]`, `op=`
+- [ ] Hyper operators: `>>op<<`
 
-### 制御構文
+### Control Flow
 - [x] `if` / `elsif` / `else`
 - [x] `unless`
 - [x] `while`, `until`
@@ -96,29 +96,29 @@ KPI: `tools/run_all_roast.sh --save` の pass 数 (現在 257/1427)
 - [ ] `orwith`
 - [ ] `proceed`, `succeed`
 - [ ] `redo`
-- [ ] ラベル付きループ
+- [ ] Labeled loops
 - [ ] `CONTROL { }`
 - [x] `warn`
 - [ ] `fail`
-- [ ] `do { }` ブロック
+- [ ] `do { }` block
 - [ ] `gather` / `take`
-- [x] 文修飾子: `if`, `unless`, `for`, `while`, `until`, `given`, `when`, `with`, `without`
+- [x] Statement modifiers: `if`, `unless`, `for`, `while`, `until`, `given`, `when`, `with`, `without`
 
-### サブルーチン
-- [x] `sub` 宣言
-- [x] 複数パラメータ
-- [x] 無名 sub / ラムダ (`-> $x { }`)
+### Subroutines
+- [x] `sub` declaration
+- [x] Multiple parameters
+- [x] Anonymous sub / lambda (`-> $x { }`)
 - [x] `return`
-- [x] 名前付きパラメータ
-- [x] デフォルト値
-- [ ] 型制約 (`Int $x`)
-- [ ] Slurpy パラメータ (`*@args`, `*%opts`)
+- [x] Named parameters
+- [x] Default values
+- [ ] Type constraints (`Int $x`)
+- [ ] Slurpy parameters (`*@args`, `*%opts`)
 - [ ] `multi sub`
 - [ ] `proto sub`
 - [ ] `MAIN` sub
-- [ ] Closure (レキシカルキャプチャ)
+- [ ] Closure (lexical capture)
 
-### メソッド (組み込み)
+### Built-in Methods
 - [x] `.defined`, `.Bool`, `.Str`, `.Int`, `.Numeric`
 - [x] `.elems`, `.chars`, `.uc`, `.lc`
 - [x] `.push`, `.pop`, `.shift`, `.unshift`, `.reverse`, `.sort`
@@ -134,10 +134,10 @@ KPI: `tools/run_all_roast.sh --save` の pass 数 (現在 257/1427)
 - [ ] `.chomp`, `.chop`, `.trim`
 - [ ] `.abs`, `.sqrt`, `.ceiling`, `.floor`, `.round`
 - [ ] `.base`, `.parse-base`
-- [ ] `.Range` (型の範囲)
-- [ ] `.new` (コンストラクタ)
+- [ ] `.Range` (type range)
+- [ ] `.new` (constructor)
 
-### テストモジュール
+### Test Module
 - [x] `plan`, `done-testing`
 - [x] `ok`, `nok`, `is`, `isnt`
 - [x] `cmp-ok`, `like`, `unlike`
@@ -150,105 +150,105 @@ KPI: `tools/run_all_roast.sh --save` の pass 数 (現在 257/1427)
 - [x] `isa-ok`
 - [x] `does-ok`, `can-ok`
 
-### その他
+### Miscellaneous
 - [x] `EVAL`
-- [x] `use` (モジュールロード)
-- [x] コメント (`#`, 埋め込みコメント, POD)
-- [x] 文字列補間
-- [ ] 正規表現 (基本)
-- [ ] `say` のフォーマット改善 (.gist 準拠)
+- [x] `use` (module loading)
+- [x] Comments (`#`, embedded comments, POD)
+- [x] String interpolation
+- [ ] Regex (basic)
+- [ ] Improve `say` formatting (.gist compliant)
 
 ---
 
-## Phase 2: オブジェクトシステム
+## Phase 2: Object System
 
-Raku の OOP を実装。roast の S12 系テストを通す。
+Implement Raku OOP. Pass roast S12 tests.
 
-- [ ] `class` 宣言
-- [ ] `has` 属性 (`has $.name`, `has $!private`)
-- [ ] `method` 宣言
+- [ ] `class` declaration
+- [ ] `has` attributes (`has $.name`, `has $!private`)
+- [ ] `method` declaration
 - [ ] `self`
-- [ ] `new` コンストラクタ (自動生成)
-- [ ] 継承 (`is Parent`)
-- [ ] `role` 宣言と `does`
+- [ ] `new` constructor (auto-generated)
+- [ ] Inheritance (`is Parent`)
+- [ ] `role` declaration and `does`
 - [ ] `multi method`
-- [ ] `BUILD` / `TWEAK` サブメソッド
-- [ ] 型チェック
+- [ ] `BUILD` / `TWEAK` submethods
+- [ ] Type checking
 - [ ] Coercion (`Int(Str)` etc.)
 - [ ] `enum`
 - [ ] `subset`
-- [ ] メソッド解決順序 (MRO, C3)
+- [ ] Method resolution order (MRO, C3)
 
 ---
 
-## Phase 3: 正規表現とグラマー
+## Phase 3: Regex and Grammars
 
-Raku の regex/grammar を実装。roast の S05 系テストを通す。
+Implement Raku regex/grammar. Pass roast S05 tests.
 
-- [ ] 基本正規表現 (`/pattern/`)
-- [ ] `rx//` フォーム
-- [ ] `m//` マッチ演算子
-- [ ] `s///` 置換演算子
-- [ ] 文字クラス、量指定子、アンカー
-- [ ] 名前付きキャプチャ (`$<name>`)
-- [ ] `token`, `rule` 宣言
-- [ ] `grammar` 宣言
-- [ ] `proto token` と LTM
-- [ ] Action クラス
+- [ ] Basic regex (`/pattern/`)
+- [ ] `rx//` form
+- [ ] `m//` match operator
+- [ ] `s///` substitution operator
+- [ ] Character classes, quantifiers, anchors
+- [ ] Named captures (`$<name>`)
+- [ ] `token`, `rule` declarations
+- [ ] `grammar` declaration
+- [ ] `proto token` and LTM
+- [ ] Action classes
 - [ ] `make` / `made`
 
 ---
 
-## Phase 4: 高度な機能
+## Phase 4: Advanced Features
 
-- [ ] Phaser (`BEGIN`, `END`, `ENTER`, `LEAVE`, `FIRST`, `NEXT`, `LAST`)
-- [ ] `gather` / `take` (遅延リスト)
+- [ ] Phasers (`BEGIN`, `END`, `ENTER`, `LEAVE`, `FIRST`, `NEXT`, `LAST`)
+- [ ] `gather` / `take` (lazy lists)
 - [ ] Junction (`any`, `all`, `one`, `none`)
-- [ ] `Promise`, `Supply`, `Channel` (並行処理)
+- [ ] `Promise`, `Supply`, `Channel` (concurrency)
 - [ ] `react` / `whenever`
 - [ ] `Proc::Async`
-- [ ] `IO::Path` 完全版
-- [ ] モジュールシステム (`unit module`, `export`, `use`)
-- [ ] `MAIN` (コマンドライン引数解析)
-- [ ] `CATCH` 型マッチング (`when X::AdHoc`)
+- [ ] `IO::Path` full implementation
+- [ ] Module system (`unit module`, `export`, `use`)
+- [ ] `MAIN` (command-line argument parsing)
+- [ ] `CATCH` type matching (`when X::AdHoc`)
 - [ ] `use lib`
 - [ ] Precompilation
 
 ---
 
-## Phase 5: 性能と実用性
+## Phase 5: Performance and Practicality
 
-MoarVM を超える性能を目指す。
+Aim to exceed MoarVM performance.
 
-### コンパイラ基盤
-- [ ] AST → バイトコード コンパイル
-- [ ] レジスタベース VM or ネイティブコード生成
-- [ ] 定数畳み込み
-- [ ] インライン化
-- [ ] 型推論による最適化
+### Compiler Infrastructure
+- [ ] AST -> bytecode compilation
+- [ ] Register-based VM or native code generation
+- [ ] Constant folding
+- [ ] Inlining
+- [ ] Type inference optimization
 - [ ] Escape analysis
 
-### ランタイム
-- [ ] GC (世代別 or Reference counting + cycle detection)
-- [ ] Native int/num (ボックス化回避)
+### Runtime
+- [ ] GC (generational or reference counting + cycle detection)
+- [ ] Native int/num (avoid boxing)
 - [ ] String rope / CoW
-- [ ] Hash の最適化 (small hash optimization)
+- [ ] Hash optimization (small hash optimization)
 - [ ] Tail call optimization
 
-### 実用性
+### Practicality
 - [ ] REPL
-- [ ] デバッガ
-- [ ] エラーメッセージの改善 (位置情報付き)
-- [ ] `zef` パッケージマネージャ互換
-- [ ] Inline::Perl5 互換レイヤー
-- [ ] ネイティブバイナリ出力
+- [ ] Debugger
+- [ ] Improved error messages (with source location)
+- [ ] `zef` package manager compatibility
+- [ ] Inline::Perl5 compatibility layer
+- [ ] Native binary output
 
 ---
 
-## 設計方針
+## Design Principles
 
-1. **Tree-walking interpreter → バイトコード VM** の段階的移行
-2. **roast 互換性**を正の指標として使い、仕様準拠を測定
-3. **MoarVM のアーキテクチャを参考にしつつ**、Rust の強みを活かした設計
-4. **起動速度**を重視 (MoarVM の弱点)
-5. **段階的な最適化**: まず正しく動かし、次に速くする
+1. **Gradual migration from tree-walking interpreter to bytecode VM**
+2. **Use roast compatibility as a positive metric** to measure spec compliance
+3. **Learn from MoarVM architecture** while leveraging Rust's strengths
+4. **Prioritize startup speed** (a weakness of MoarVM)
+5. **Incremental optimization**: make it correct first, then make it fast

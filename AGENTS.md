@@ -7,6 +7,8 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - Prefer ASCII in source files unless a specific Unicode feature is required.
 - Do not rewrite or reformat unrelated code.
 - Do not use stubs, hardcoded outputs, or early returns to make tests pass.
+- Commit directly to the main branch. Do not use feature branches.
+- Write all documents (CLAUDE.md, TODO.md, etc.), code comments, and commit messages in English.
 
 ## Layout
 - `src/` holds the interpreter implementation.
@@ -35,5 +37,5 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 ## Conventions
 - Add small, focused tests for each new syntax feature.
 - Keep the parser and evaluator readable; comment only non-obvious logic.
-- Write tests using prove (`tools/prove_existing_roast.sh`). Do not use Rust integration tests in `tests/*.rs` for new coverage.
+- Write tests using prove. Do not use Rust integration tests in `tests/*.rs` for new coverage.
 - Every feature addition must include tests. A feature without tests is considered incomplete.

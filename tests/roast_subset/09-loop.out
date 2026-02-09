@@ -1,9 +1,0 @@
-1..8
-ok 1 - basic loop
-ok 2 - loop with last
-ok 3 - infinite loop with last
-ok 4 - bare loop exited after 3 iterations
-ok 5 - loop with variable declaration in init
-ok 6 - next performs continue expression
-ok 7 - until loop works
-ok 8 - unless works

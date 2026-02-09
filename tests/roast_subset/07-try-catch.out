@@ -1,9 +1,0 @@
-1..8
-ok 1 - die aborts execution
-ok 2 - try without CATCH returns Nil on error
-ok 3 - try without error returns block value
-ok 4 - CATCH default catches the error
-ok 5 - $! contains the error message
-ok 6 - CATCH when matches error message
-ok 7 - code after try runs normally
-ok 8 - nested try/CATCH works
