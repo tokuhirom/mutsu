@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::Stmt;
 
@@ -65,6 +65,9 @@ pub enum Value {
     Rat(i64, i64),
     FatRat(i64, i64),
     Complex(f64, f64),
+    Set(HashSet<String>),
+    Bag(HashMap<String, i64>),
+    Mix(HashMap<String, f64>),
     CompUnitDepSpec { short_name: String },
     Package(String),
     Routine { package: String, name: String },
@@ -121,6 +124,9 @@ impl PartialEq for Value {
                 *i == 0.0 && *r == *f
             }
             (Value::FatRat(a1, b1), Value::FatRat(a2, b2)) => a1 == a2 && b1 == b2,
+            (Value::Set(a), Value::Set(b)) => a == b,
+            (Value::Bag(a), Value::Bag(b)) => a == b,
+            (Value::Mix(a), Value::Mix(b)) => a == b,
             (Value::CompUnitDepSpec { short_name: a }, Value::CompUnitDepSpec { short_name: b }) => a == b,
             (Value::Package(a), Value::Package(b)) => a == b,
             (Value::Pair(ak, av), Value::Pair(bk, bv)) => ak == bk && av == bv,
@@ -148,6 +154,9 @@ impl Value {
             Value::Rat(n, _) => *n != 0,
             Value::FatRat(_, _) => true,
             Value::Complex(r, i) => *r != 0.0 || *i != 0.0,
+            Value::Set(s) => !s.is_empty(),
+            Value::Bag(b) => !b.is_empty(),
+            Value::Mix(m) => !m.is_empty(),
             Value::Pair(_, _) => true,
             Value::Enum { .. } => true,
             Value::CompUnitDepSpec { .. } => true,
@@ -207,6 +216,21 @@ impl Value {
             }
             Value::FatRat(a, b) => format!("{}/{}", a, b),
             Value::Complex(r, i) => format_complex(*r, *i),
+            Value::Set(s) => {
+                let mut keys: Vec<&String> = s.iter().collect();
+                keys.sort();
+                format!("set({})", keys.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(" "))
+            }
+            Value::Bag(b) => {
+                let mut keys: Vec<(&String, &i64)> = b.iter().collect();
+                keys.sort_by_key(|(k, _)| (*k).clone());
+                format!("bag({})", keys.iter().map(|(k, v)| format!("{}({})", k, v)).collect::<Vec<_>>().join(", "))
+            }
+            Value::Mix(m) => {
+                let mut keys: Vec<(&String, &f64)> = m.iter().collect();
+                keys.sort_by_key(|(k, _)| (*k).clone());
+                format!("mix({})", keys.iter().map(|(k, v)| format!("{}({})", k, v)).collect::<Vec<_>>().join(", "))
+            }
             Value::Pair(k, v) => format!("{}\t{}", k, v.to_string_value()),
             Value::Enum { key, .. } => key.clone(),
             Value::CompUnitDepSpec { short_name } => format!("CompUnit::DependencySpecification({})", short_name),

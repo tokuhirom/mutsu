@@ -1005,17 +1005,34 @@ impl Parser {
         if !self.match_kind(TokenKind::Lt) {
             return Expr::Literal(Value::Nil);
         }
-        let value = if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_) | TokenKind::Str(_))) {
-            match token.kind {
+        let mut words = Vec::new();
+        while let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_) | TokenKind::Str(_) | TokenKind::Number(_) | TokenKind::Float(_) | TokenKind::Minus)) {
+            let word = match token.kind {
                 TokenKind::Ident(s) => s,
                 TokenKind::Str(s) => s,
+                TokenKind::Number(n) => n.to_string(),
+                TokenKind::Float(f) => f.to_string(),
+                TokenKind::Minus => {
+                    if let Some(next) = self.advance_if(|k| matches!(k, TokenKind::Number(_) | TokenKind::Float(_))) {
+                        match next.kind {
+                            TokenKind::Number(n) => format!("-{}", n),
+                            TokenKind::Float(f) => format!("-{}", f),
+                            _ => "-".to_string(),
+                        }
+                    } else {
+                        "-".to_string()
+                    }
+                }
                 _ => String::new(),
-            }
-        } else {
-            String::new()
-        };
+            };
+            words.push(word);
+        }
         self.match_kind(TokenKind::Gt);
-        Expr::Literal(Value::Str(value))
+        if words.len() == 1 {
+            Expr::Literal(Value::Str(words.into_iter().next().unwrap()))
+        } else {
+            Expr::ArrayLiteral(words.into_iter().map(|w| Expr::Literal(Value::Str(w))).collect())
+        }
     }
 
     fn parse_ternary(&mut self) -> Result<Expr, RuntimeError> {
@@ -1556,6 +1573,8 @@ impl Parser {
                 let body = self.parse_block_body()?;
                 Expr::Block(body)
             }
+        } else if self.check(&TokenKind::Lt) {
+            self.parse_angle_literal()
         } else {
             return Err(RuntimeError::new(format!(
                 "Unexpected token in expression at {:?}",
@@ -1604,7 +1623,21 @@ impl Parser {
                 continue;
             }
             if self.check(&TokenKind::Lt) {
-                if matches!(expr, Expr::HashVar(_)) {
+                let is_postcircumfix = if matches!(expr, Expr::HashVar(_)) {
+                    true
+                } else if matches!(expr, Expr::Var(_)) {
+                    // Only treat <...> as postcircumfix subscript on $var if it looks like $var<ident>
+                    matches!(
+                        self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                        Some(TokenKind::Ident(_) | TokenKind::Str(_))
+                    ) && matches!(
+                        self.tokens.get(self.pos + 2).map(|t| &t.kind),
+                        Some(TokenKind::Gt)
+                    )
+                } else {
+                    false
+                };
+                if is_postcircumfix {
                     self.match_kind(TokenKind::Lt);
                     let key = if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_) | TokenKind::Str(_))) {
                         match token.kind {
@@ -1625,6 +1658,11 @@ impl Parser {
                                 index: Box::new(Expr::Literal(Value::Str(key))),
                             };
                         }
+                    } else {
+                        expr = Expr::Index {
+                            target: Box::new(expr),
+                            index: Box::new(Expr::Literal(Value::Str(key))),
+                        };
                     }
                     continue;
                 }

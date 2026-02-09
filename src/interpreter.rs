@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
@@ -700,6 +700,9 @@ impl Interpreter {
                     "Rat" => matches!(value, Value::Rat(_, _)),
                     "FatRat" => matches!(value, Value::FatRat(_, _)),
                     "Complex" => matches!(value, Value::Complex(_, _)),
+                    "Set" => matches!(value, Value::Set(_)),
+                    "Bag" => matches!(value, Value::Bag(_)),
+                    "Mix" => matches!(value, Value::Mix(_)),
                     _ => true,
                 };
                 self.test_ok(ok, &desc, todo)?;
@@ -1033,6 +1036,9 @@ impl Interpreter {
             Value::Rat(_, _) => "Rat",
             Value::FatRat(_, _) => "FatRat",
             Value::Complex(_, _) => "Complex",
+            Value::Set(_) => "Set",
+            Value::Bag(_) => "Bag",
+            Value::Mix(_) => "Mix",
             Value::Nil => "Any",
             Value::Sub { .. } => "Sub",
             Value::Routine { .. } => "Routine",
@@ -1340,6 +1346,24 @@ impl Interpreter {
                     (Value::Hash(items), Value::Int(key)) => {
                         Ok(items.get(&key.to_string()).cloned().unwrap_or(Value::Nil))
                     }
+                    (Value::Set(s), Value::Str(key)) => {
+                        Ok(Value::Bool(s.contains(&key)))
+                    }
+                    (Value::Set(s), idx) => {
+                        Ok(Value::Bool(s.contains(&idx.to_string_value())))
+                    }
+                    (Value::Bag(b), Value::Str(key)) => {
+                        Ok(Value::Int(*b.get(&key).unwrap_or(&0)))
+                    }
+                    (Value::Bag(b), idx) => {
+                        Ok(Value::Int(*b.get(&idx.to_string_value()).unwrap_or(&0)))
+                    }
+                    (Value::Mix(m), Value::Str(key)) => {
+                        Ok(Value::Num(*m.get(&key).unwrap_or(&0.0)))
+                    }
+                    (Value::Mix(m), idx) => {
+                        Ok(Value::Num(*m.get(&idx.to_string_value()).unwrap_or(&0.0)))
+                    }
                     _ => Ok(Value::Nil),
                 }
             }
@@ -1505,6 +1529,9 @@ impl Interpreter {
                         Value::Rat(_, _) => "Rat",
                         Value::FatRat(_, _) => "FatRat",
                         Value::Complex(_, _) => "Complex",
+                        Value::Set(_) => "Set",
+                        Value::Bag(_) => "Bag",
+                        Value::Mix(_) => "Mix",
                         Value::Pair(_, _) => "Pair",
                         Value::Enum { enum_type, .. } => enum_type.as_str(),
                         Value::Nil => "Nil",
@@ -1526,6 +1553,9 @@ impl Interpreter {
                             Value::Rat(_, _) => "Rat".to_string(),
                             Value::FatRat(_, _) => "FatRat".to_string(),
                             Value::Complex(_, _) => "Complex".to_string(),
+                            Value::Set(_) => "Set".to_string(),
+                            Value::Bag(_) => "Bag".to_string(),
+                            Value::Mix(_) => "Mix".to_string(),
                             Value::Pair(_, _) => "Pair".to_string(),
                             Value::Enum { enum_type, .. } => enum_type.clone(),
                             Value::Nil => "Nil".to_string(),
@@ -1893,6 +1923,82 @@ impl Interpreter {
                         Value::Num(f) => Ok(Value::Complex(f, 0.0)),
                         _ => Ok(Value::Complex(0.0, 0.0)),
                     },
+                    "Set" => {
+                        let mut elems = HashSet::new();
+                        match base {
+                            Value::Set(_) => return Ok(base),
+                            Value::Array(items) => {
+                                for item in items {
+                                    elems.insert(item.to_string_value());
+                                }
+                            }
+                            Value::Hash(items) => {
+                                for (k, v) in items {
+                                    if v.truthy() {
+                                        elems.insert(k);
+                                    }
+                                }
+                            }
+                            Value::Bag(b) => {
+                                for k in b.keys() {
+                                    elems.insert(k.clone());
+                                }
+                            }
+                            Value::Mix(m) => {
+                                for k in m.keys() {
+                                    elems.insert(k.clone());
+                                }
+                            }
+                            other => { elems.insert(other.to_string_value()); }
+                        }
+                        Ok(Value::Set(elems))
+                    },
+                    "Bag" => {
+                        let mut counts: HashMap<String, i64> = HashMap::new();
+                        match base {
+                            Value::Bag(_) => return Ok(base),
+                            Value::Array(items) => {
+                                for item in items {
+                                    *counts.entry(item.to_string_value()).or_insert(0) += 1;
+                                }
+                            }
+                            Value::Set(s) => {
+                                for k in s {
+                                    counts.insert(k, 1);
+                                }
+                            }
+                            Value::Mix(m) => {
+                                for (k, v) in m {
+                                    counts.insert(k, v as i64);
+                                }
+                            }
+                            other => { counts.insert(other.to_string_value(), 1); }
+                        }
+                        Ok(Value::Bag(counts))
+                    },
+                    "Mix" => {
+                        let mut weights: HashMap<String, f64> = HashMap::new();
+                        match base {
+                            Value::Mix(_) => return Ok(base),
+                            Value::Array(items) => {
+                                for item in items {
+                                    *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
+                                }
+                            }
+                            Value::Set(s) => {
+                                for k in s {
+                                    weights.insert(k, 1.0);
+                                }
+                            }
+                            Value::Bag(b) => {
+                                for (k, v) in b {
+                                    weights.insert(k, v as f64);
+                                }
+                            }
+                            other => { weights.insert(other.to_string_value(), 1.0); }
+                        }
+                        Ok(Value::Mix(weights))
+                    },
                     "Bool" => Ok(Value::Bool(base.truthy())),
                     "gist" | "raku" | "perl" => match base {
                         Value::Rat(n, d) => {
@@ -1924,6 +2030,15 @@ impl Interpreter {
                     "elems" => match base {
                         Value::Array(items) => Ok(Value::Int(items.len() as i64)),
                         Value::Hash(items) => Ok(Value::Int(items.len() as i64)),
+                        Value::Set(s) => Ok(Value::Int(s.len() as i64)),
+                        Value::Bag(b) => Ok(Value::Int(b.len() as i64)),
+                        Value::Mix(m) => Ok(Value::Int(m.len() as i64)),
+                        _ => Ok(Value::Int(1)),
+                    },
+                    "total" => match base {
+                        Value::Set(s) => Ok(Value::Int(s.len() as i64)),
+                        Value::Bag(b) => Ok(Value::Int(b.values().sum::<i64>())),
+                        Value::Mix(m) => Ok(Value::Num(m.values().sum::<f64>())),
                         _ => Ok(Value::Int(1)),
                     },
                     "end" => match base {
@@ -1935,12 +2050,33 @@ impl Interpreter {
                             let keys: Vec<Value> = items.keys().map(|k| Value::Str(k.clone())).collect();
                             Ok(Value::Array(keys))
                         }
+                        Value::Set(s) => {
+                            let keys: Vec<Value> = s.iter().map(|k| Value::Str(k.clone())).collect();
+                            Ok(Value::Array(keys))
+                        }
+                        Value::Bag(b) => {
+                            let keys: Vec<Value> = b.keys().map(|k| Value::Str(k.clone())).collect();
+                            Ok(Value::Array(keys))
+                        }
+                        Value::Mix(m) => {
+                            let keys: Vec<Value> = m.keys().map(|k| Value::Str(k.clone())).collect();
+                            Ok(Value::Array(keys))
+                        }
                         _ => Ok(Value::Array(Vec::new())),
                     },
                     "values" => match base {
                         Value::Hash(items) => {
                             let vals: Vec<Value> = items.values().cloned().collect();
                             Ok(Value::Array(vals))
+                        }
+                        Value::Set(s) => {
+                            Ok(Value::Array(s.iter().map(|_| Value::Bool(true)).collect()))
+                        }
+                        Value::Bag(b) => {
+                            Ok(Value::Array(b.values().map(|v| Value::Int(*v)).collect()))
+                        }
+                        Value::Mix(m) => {
+                            Ok(Value::Array(m.values().map(|v| Value::Num(*v)).collect()))
                         }
                         _ => Ok(Value::Array(Vec::new())),
                     },
@@ -1953,12 +2089,54 @@ impl Interpreter {
                             }
                             Ok(Value::Array(kv))
                         }
+                        Value::Set(s) => {
+                            let mut kv = Vec::new();
+                            for k in &s {
+                                kv.push(Value::Str(k.clone()));
+                                kv.push(Value::Bool(true));
+                            }
+                            Ok(Value::Array(kv))
+                        }
+                        Value::Bag(b) => {
+                            let mut kv = Vec::new();
+                            for (k, v) in &b {
+                                kv.push(Value::Str(k.clone()));
+                                kv.push(Value::Int(*v));
+                            }
+                            Ok(Value::Array(kv))
+                        }
+                        Value::Mix(m) => {
+                            let mut kv = Vec::new();
+                            for (k, v) in &m {
+                                kv.push(Value::Str(k.clone()));
+                                kv.push(Value::Num(*v));
+                            }
+                            Ok(Value::Array(kv))
+                        }
                         _ => Ok(Value::Array(Vec::new())),
                     },
                     "pairs" => match base {
                         Value::Hash(items) => {
                             let pairs: Vec<Value> = items.iter()
                                 .map(|(k, v)| Value::Str(format!("{}\t{}", k, v.to_string_value())))
+                                .collect();
+                            Ok(Value::Array(pairs))
+                        }
+                        Value::Set(s) => {
+                            let pairs: Vec<Value> = s.iter()
+                                .map(|k| Value::Pair(k.clone(), Box::new(Value::Bool(true))))
+                                .collect();
+                            Ok(Value::Array(pairs))
+                        }
+                        Value::Bag(b) => {
+                            let pairs: Vec<Value> = b.iter()
+                                .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Int(*v))))
+                                .collect();
+                            Ok(Value::Array(pairs))
+                        }
+                        Value::Mix(m) => {
+                            let pairs: Vec<Value> = m.iter()
+                                .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Num(*v))))
                                 .collect();
                             Ok(Value::Array(pairs))
                         }
@@ -2458,6 +2636,51 @@ impl Interpreter {
                             let b = match b { Some(Value::Int(i)) => i, _ => 1 };
                             Ok(Value::FatRat(a, b))
                         }
+                        Value::Str(name) if name == "Set" => {
+                            let mut elems = HashSet::new();
+                            for arg in args {
+                                let val = self.eval_expr(arg)?;
+                                match val {
+                                    Value::Array(items) => {
+                                        for item in items {
+                                            elems.insert(item.to_string_value());
+                                        }
+                                    }
+                                    other => { elems.insert(other.to_string_value()); }
+                                }
+                            }
+                            Ok(Value::Set(elems))
+                        }
+                        Value::Str(name) if name == "Bag" => {
+                            let mut counts: HashMap<String, i64> = HashMap::new();
+                            for arg in args {
+                                let val = self.eval_expr(arg)?;
+                                match val {
+                                    Value::Array(items) => {
+                                        for item in items {
+                                            *counts.entry(item.to_string_value()).or_insert(0) += 1;
+                                        }
+                                    }
+                                    other => { *counts.entry(other.to_string_value()).or_insert(0) += 1; }
+                                }
+                            }
+                            Ok(Value::Bag(counts))
+                        }
+                        Value::Str(name) if name == "Mix" => {
+                            let mut weights: HashMap<String, f64> = HashMap::new();
+                            for arg in args {
+                                let val = self.eval_expr(arg)?;
+                                match val {
+                                    Value::Array(items) => {
+                                        for item in items {
+                                            *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
+                                        }
+                                    }
+                                    other => { *weights.entry(other.to_string_value()).or_insert(0.0) += 1.0; }
+                                }
+                            }
+                            Ok(Value::Mix(weights))
+                        }
                         Value::Str(name) if name == "Complex" => {
                             let a = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
                             let b = args.get(1).map(|e| self.eval_expr(e).ok()).flatten();
@@ -2763,6 +2986,51 @@ impl Interpreter {
                         }
                         _ => Value::Str(String::new()),
                     });
+                }
+                if name == "set" {
+                    let mut elems = HashSet::new();
+                    for arg in args {
+                        let val = self.eval_expr(arg)?;
+                        match val {
+                            Value::Array(items) => {
+                                for item in items {
+                                    elems.insert(item.to_string_value());
+                                }
+                            }
+                            other => { elems.insert(other.to_string_value()); }
+                        }
+                    }
+                    return Ok(Value::Set(elems));
+                }
+                if name == "bag" {
+                    let mut counts: HashMap<String, i64> = HashMap::new();
+                    for arg in args {
+                        let val = self.eval_expr(arg)?;
+                        match val {
+                            Value::Array(items) => {
+                                for item in items {
+                                    *counts.entry(item.to_string_value()).or_insert(0) += 1;
+                                }
+                            }
+                            other => { *counts.entry(other.to_string_value()).or_insert(0) += 1; }
+                        }
+                    }
+                    return Ok(Value::Bag(counts));
+                }
+                if name == "mix" {
+                    let mut weights: HashMap<String, f64> = HashMap::new();
+                    for arg in args {
+                        let val = self.eval_expr(arg)?;
+                        match val {
+                            Value::Array(items) => {
+                                for item in items {
+                                    *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
+                                }
+                            }
+                            other => { *weights.entry(other.to_string_value()).or_insert(0.0) += 1.0; }
+                        }
+                    }
+                    return Ok(Value::Mix(weights));
                 }
                 if name == "flat" {
                     let mut result = Vec::new();
