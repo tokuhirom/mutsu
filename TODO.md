@@ -4,11 +4,13 @@ Goal: MoarVM より高速で実用的な Raku (Perl 6) 処理系を Rust で実�
 
 KPI: `tools/run_all_roast.sh --save` の pass 数 (現在 257/1427)
 
+開発方針: Phase 1-2 では機能実装を優先し、roast は実行しない。Phase 3 以降でマイルストーンごとに roast を実行して進捗を計測する。
+
 ---
 
 ## Phase 1: 言語コア (現在ここ)
 
-最低限の Raku プログラムが動く状態。roast pass 数を着実に増やす。
+最低限の Raku プログラムが動く状態。機能実装を優先する。
 
 ### 型システム
 - [x] Int
@@ -34,7 +36,7 @@ KPI: `tools/run_all_roast.sh --save` の pass 数 (現在 257/1427)
 - [x] 二重引用符文字列 + 変数補間
 - [x] 角括弧ワードリスト `<a b c>`
 - [ ] 数値中アンダースコア (`1_000_000`)
-- [ ] 基数表記 (`0x`, `0o`, `0b`)
+- [x] 基数表記 (`0x`, `0o`, `0b`)
 - [ ] 指数表記 (`1e10`)
 - [ ] Q/q/qq フォーム
 - [ ] ヒアドク (`q:to/END/`)
@@ -67,10 +69,11 @@ KPI: `tools/run_all_roast.sh --save` の pass 数 (現在 257/1427)
 - [x] ペア: `=>`
 - [ ] `so` (loose bool coercion)
 - [ ] `^..`, `^..^` (range variants)
-- [ ] `<=>`, `leg`, `cmp` (comparison returning Order)
-- [ ] `eqv`, `===` (value/identity equality)
-- [ ] `?` (boolean context prefix)
-- [ ] `^` (upto: `^10` → `0..^10`)
+- [x] `<=>`, `leg`, `cmp` (comparison returning Order)
+- [x] `eqv` (value equality)
+- [ ] `===` (identity equality)
+- [x] `?` (boolean context prefix)
+- [x] `^` (upto: `^10` → `0..^10`)
 - [ ] ビット演算: `+&`, `+|`, `+^`, `+<`, `+>`
 - [ ] Junction 演算子: `&`, `|`, `^`
 - [ ] メタ演算子: `R`, `X`, `Z`, `[op]`, `op=`
@@ -89,23 +92,25 @@ KPI: `tools/run_all_roast.sh --save` の pass 数 (現在 257/1427)
 - [x] `return`
 - [x] `die`
 - [x] `try` / `CATCH`
-- [ ] `with` / `without` / `orwith`
+- [x] `with` / `without`
+- [ ] `orwith`
 - [ ] `proceed`, `succeed`
 - [ ] `redo`
 - [ ] ラベル付きループ
 - [ ] `CONTROL { }`
-- [ ] `warn`, `fail`
+- [x] `warn`
+- [ ] `fail`
 - [ ] `do { }` ブロック
 - [ ] `gather` / `take`
-- [ ] 文修飾子: `if`, `unless`, `for`, `while`, `until`, `given`, `when`
+- [x] 文修飾子: `if`, `unless`, `for`, `while`, `until`, `given`, `when`, `with`, `without`
 
 ### サブルーチン
 - [x] `sub` 宣言
 - [x] 複数パラメータ
 - [x] 無名 sub / ラムダ (`-> $x { }`)
 - [x] `return`
-- [ ] 名前付きパラメータ
-- [ ] デフォルト値
+- [x] 名前付きパラメータ
+- [x] デフォルト値
 - [ ] 型制約 (`Int $x`)
 - [ ] Slurpy パラメータ (`*@args`, `*%opts`)
 - [ ] `multi sub`
@@ -143,7 +148,7 @@ KPI: `tools/run_all_roast.sh --save` の pass 数 (現在 257/1427)
 - [x] `throws-like`
 - [x] `is-deeply`
 - [x] `isa-ok`
-- [ ] `does-ok`, `can-ok`
+- [x] `does-ok`, `can-ok`
 
 ### その他
 - [x] `EVAL`

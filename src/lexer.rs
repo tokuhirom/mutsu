@@ -65,7 +65,11 @@ pub(crate) enum TokenKind {
     TildeEq,
     StarEq,
     SlashSlash,
+    DotEq,
     Bind,
+    Question,
+    Caret,
+    LtEqGt,
     Semicolon,
     Eof,
 }
@@ -103,6 +107,9 @@ impl Lexer {
                         } else {
                             TokenKind::DotDot
                         }
+                    } else if self.peek() == Some('=') {
+                        self.pos += 1;
+                        TokenKind::DotEq
                     } else {
                         TokenKind::Dot
                     }
@@ -135,7 +142,7 @@ impl Lexer {
                         match ident.as_str() {
                             "True" => TokenKind::True,
                             "False" => TokenKind::False,
-                            "Nil" => TokenKind::Nil,
+                            "Nil" | "Mu" | "Any" => TokenKind::Nil,
                             "or" => TokenKind::OrWord,
                             _ => TokenKind::Ident(ident),
                         }
@@ -152,12 +159,57 @@ impl Lexer {
                         match ident.as_str() {
                             "True" => TokenKind::True,
                             "False" => TokenKind::False,
-                            "Nil" => TokenKind::Nil,
+                            "Nil" | "Mu" | "Any" => TokenKind::Nil,
                             _ => TokenKind::Ident(ident),
                         }
                     }
                 }
             '0'..='9' => {
+                // Radix literals: 0x, 0o, 0b
+                if ch == '0' {
+                    if self.peek() == Some('x') || self.peek() == Some('X') {
+                        self.pos += 1;
+                        let mut hex = String::new();
+                        while let Some(c) = self.peek() {
+                            if c.is_ascii_hexdigit() || c == '_' {
+                                if c != '_' { hex.push(c); }
+                                self.pos += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        let value = i64::from_str_radix(&hex, 16).unwrap_or(0);
+                        return Token { kind: TokenKind::Number(value) };
+                    }
+                    if self.peek() == Some('o') || self.peek() == Some('O') {
+                        self.pos += 1;
+                        let mut oct = String::new();
+                        while let Some(c) = self.peek() {
+                            if c.is_ascii_digit() && c < '8' || c == '_' {
+                                if c != '_' { oct.push(c); }
+                                self.pos += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        let value = i64::from_str_radix(&oct, 8).unwrap_or(0);
+                        return Token { kind: TokenKind::Number(value) };
+                    }
+                    if self.peek() == Some('b') || self.peek() == Some('B') {
+                        self.pos += 1;
+                        let mut bin = String::new();
+                        while let Some(c) = self.peek() {
+                            if c == '0' || c == '1' || c == '_' {
+                                if c != '_' { bin.push(c); }
+                                self.pos += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        let value = i64::from_str_radix(&bin, 2).unwrap_or(0);
+                        return Token { kind: TokenKind::Number(value) };
+                    }
+                }
                 let mut num = ch.to_string();
                 while let Some(c) = self.peek() {
                     if c.is_ascii_digit() || c == '_' {
@@ -478,7 +530,11 @@ impl Lexer {
             }
             '<' => {
                 if self.match_char('=') {
-                    TokenKind::Lte
+                    if self.match_char('>') {
+                        TokenKind::LtEqGt
+                    } else {
+                        TokenKind::Lte
+                    }
                 } else {
                     TokenKind::Lt
                 }
@@ -512,7 +568,7 @@ impl Lexer {
                 if self.match_char('?') {
                     TokenKind::QuestionQuestion
                 } else {
-                    continue;
+                    TokenKind::Question
                 }
             }
             '|' => {
@@ -538,7 +594,7 @@ impl Lexer {
             },
             ';' => TokenKind::Semicolon,
             '^' => {
-                continue;
+                TokenKind::Caret
             }
             _ => {
                     if ch.is_ascii_alphabetic() || ch == '_' {
@@ -546,7 +602,7 @@ impl Lexer {
                         match ident.as_str() {
                             "True" => TokenKind::True,
                             "False" => TokenKind::False,
-                            "Nil" => TokenKind::Nil,
+                            "Nil" | "Mu" | "Any" => TokenKind::Nil,
                             "or" => TokenKind::OrWord,
                             _ => TokenKind::Ident(ident),
                         }

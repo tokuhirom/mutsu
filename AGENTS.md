@@ -29,8 +29,8 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 ## Development workflow
 1. Implement Raku language features straightforwardly. Do not optimize specifically to increase the roast pass count.
 2. Write tests (prove-based) for every feature implemented.
-3. After a batch of features is done, run `tools/run_all_roast.sh --save` to check the KPI (pass count) trend.
-4. If the pass count increased, record it as progress. If it decreased, investigate and fix the regression.
+3. Focus on rapid feature development in early phases. Do not run roast after every change.
+4. Roast runs (`tools/run_all_roast.sh --save`) are for milestone checks only (e.g., end of a phase or major batch of features).
 
 ## Conventions
 - Add small, focused tests for each new syntax feature.

@@ -2,10 +2,19 @@ use crate::lexer::TokenKind;
 use crate::value::Value;
 
 #[derive(Debug, Clone)]
+pub(crate) struct ParamDef {
+    pub(crate) name: String,
+    pub(crate) default: Option<Expr>,
+    pub(crate) named: bool,
+    pub(crate) slurpy: bool,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct FunctionDef {
     pub(crate) package: String,
     pub(crate) name: String,
     pub(crate) params: Vec<String>,
+    pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) body: Vec<Stmt>,
 }
 
@@ -39,6 +48,7 @@ pub(crate) enum Expr {
     Hash(Vec<(String, Option<Expr>)>),
     Call { name: String, args: Vec<Expr> },
     Try { body: Vec<Stmt>, catch: Option<Vec<Stmt>> },
+    Gather(Vec<Stmt>),
     InfixFunc {
         name: String,
         left: Box<Expr>,
@@ -63,12 +73,12 @@ pub(crate) enum ExpectedMatcher {
 pub(crate) enum Stmt {
     VarDecl { name: String, expr: Expr },
     Assign { name: String, expr: Expr, op: AssignOp },
-    SubDecl { name: String, params: Vec<String>, body: Vec<Stmt> },
+    SubDecl { name: String, params: Vec<String>, param_defs: Vec<ParamDef>, body: Vec<Stmt> },
     Package { name: String, body: Vec<Stmt> },
     Return(Expr),
     For { iterable: Expr, param: Option<String>, body: Vec<Stmt> },
-    Say(Expr),
-    Print(Expr),
+    Say(Vec<Expr>),
+    Print(Vec<Expr>),
     Call { name: String, args: Vec<CallArg> },
     Use { module: String, arg: Option<Expr> },
     Subtest { name: Expr, body: Vec<Stmt>, is_sub: bool },
@@ -89,6 +99,7 @@ pub(crate) enum Stmt {
     Default(Vec<Stmt>),
     Die(Expr),
     Catch(Vec<Stmt>),
+    Take(Expr),
     Expr(Expr),
 }
 

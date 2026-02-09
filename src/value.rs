@@ -17,6 +17,7 @@ pub enum Value {
     CompUnitDepSpec { short_name: String },
     Package(String),
     Routine { package: String, name: String },
+    Pair(String, Box<Value>),
     Sub {
         package: String,
         name: String,
@@ -43,6 +44,7 @@ impl PartialEq for Value {
             (Value::FatRat(a1, b1), Value::FatRat(a2, b2)) => a1 == a2 && b1 == b2,
             (Value::CompUnitDepSpec { short_name: a }, Value::CompUnitDepSpec { short_name: b }) => a == b,
             (Value::Package(a), Value::Package(b)) => a == b,
+            (Value::Pair(ak, av), Value::Pair(bk, bv)) => ak == bk && av == bv,
             (Value::Routine { package: ap, name: an }, Value::Routine { package: bp, name: bn }) => ap == bp && an == bn,
             (Value::Nil, Value::Nil) => true,
             _ => false,
@@ -62,6 +64,7 @@ impl Value {
             Value::Array(items) => !items.is_empty(),
             Value::Hash(items) => !items.is_empty(),
             Value::FatRat(_, _) => true,
+            Value::Pair(_, _) => true,
             Value::CompUnitDepSpec { .. } => true,
             Value::Package(_) => true,
             Value::Routine { .. } => true,
@@ -96,6 +99,7 @@ impl Value {
                 .collect::<Vec<_>>()
                 .join("\n"),
             Value::FatRat(a, b) => format!("{}/{}", a, b),
+            Value::Pair(k, v) => format!("{}\t{}", k, v.to_string_value()),
             Value::CompUnitDepSpec { short_name } => format!("CompUnit::DependencySpecification({})", short_name),
             Value::Package(s) => s.clone(),
             Value::Routine { package, name } => format!("{}::{}", package, name),

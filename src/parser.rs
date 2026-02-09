@@ -1,4 +1,4 @@
-use crate::ast::{AssignOp, CallArg, Expr, Stmt};
+use crate::ast::{AssignOp, CallArg, Expr, ParamDef, Stmt};
 use crate::lexer::{Token, TokenKind};
 use crate::value::{RuntimeError, Value};
 
@@ -61,8 +61,19 @@ impl Parser {
         if self.match_ident("sub") {
             let name = self.consume_ident()?;
             let mut params = Vec::new();
+            let mut param_defs = Vec::new();
             if self.match_kind(TokenKind::LParen) {
                 while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
+                    let mut is_named = false;
+                    let mut is_slurpy = false;
+                    // Check for slurpy *@args or *%opts
+                    if self.match_kind(TokenKind::Star) {
+                        is_slurpy = true;
+                    }
+                    // Check for named parameter :$name
+                    if self.match_kind(TokenKind::Colon) {
+                        is_named = true;
+                    }
                     // Skip optional type annotations (e.g., Int $x)
                     if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
                         && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
@@ -70,7 +81,33 @@ impl Parser {
                         self.pos += 1;
                     }
                     if self.peek_is_var() {
-                        params.push(self.consume_var()?);
+                        let var = self.consume_var()?;
+                        // Check for default value
+                        let default = if self.match_kind(TokenKind::Eq) {
+                            Some(self.parse_expr()?)
+                        } else if self.match_kind(TokenKind::QuestionQuestion) {
+                            // Handle ?? !! ternary in default - skip for now
+                            None
+                        } else {
+                            None
+                        };
+                        // Check for ? (optional) or ! (required) suffix
+                        self.match_kind(TokenKind::Question);
+                        self.match_kind(TokenKind::Bang);
+                        params.push(var.clone());
+                        param_defs.push(ParamDef { name: var, default, named: is_named, slurpy: is_slurpy });
+                    } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_))) {
+                        if let TokenKind::ArrayVar(n) = token.kind {
+                            let var = format!("@{}", n);
+                            params.push(var.clone());
+                            param_defs.push(ParamDef { name: var, default: None, named: false, slurpy: is_slurpy });
+                        }
+                    } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::HashVar(_))) {
+                        if let TokenKind::HashVar(n) = token.kind {
+                            let var = format!("%{}", n);
+                            params.push(var.clone());
+                            param_defs.push(ParamDef { name: var, default: None, named: is_named || is_slurpy, slurpy: is_slurpy });
+                        }
                     } else {
                         self.pos += 1;
                     }
@@ -88,7 +125,7 @@ impl Parser {
             if self.match_kind(TokenKind::LBrace) {
                 let body = self.parse_block_body()?;
                 self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::SubDecl { name, params, body });
+                return Ok(Stmt::SubDecl { name, params, param_defs, body });
             }
             return Err(RuntimeError::new("Expected block for sub"));
         }
@@ -115,6 +152,12 @@ impl Parser {
             return Err(RuntimeError::new("Expected sub or block for subtest"));
         }
         if self.match_ident("my") {
+            // Skip optional type annotation (e.g., my Str $a, my Int $b)
+            if let Some(TokenKind::Ident(_)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+                if let Some(TokenKind::Var(_) | TokenKind::ArrayVar(_) | TokenKind::HashVar(_)) = self.tokens.get(self.pos + 1).map(|t| &t.kind) {
+                    self.pos += 1; // skip the type name
+                }
+            }
             let (name, is_array, is_hash) = if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_))) {
                 if let TokenKind::ArrayVar(n) = token.kind {
                     (format!("@{}", n), true, false)
@@ -146,18 +189,18 @@ impl Parser {
             return Ok(Stmt::VarDecl { name, expr });
         }
         if self.match_ident("say") {
-            let expr = self.parse_expr()?;
-            let stmt = Stmt::Say(expr);
+            let exprs = self.parse_expr_list()?;
+            let stmt = Stmt::Say(exprs);
             return self.parse_statement_modifier(stmt);
         }
         if self.match_ident("put") {
-            let expr = self.parse_expr()?;
-            let stmt = Stmt::Say(expr);
+            let exprs = self.parse_expr_list()?;
+            let stmt = Stmt::Say(exprs);
             return self.parse_statement_modifier(stmt);
         }
         if self.match_ident("print") {
-            let expr = self.parse_expr()?;
-            let stmt = Stmt::Print(expr);
+            let exprs = self.parse_expr_list()?;
+            let stmt = Stmt::Print(exprs);
             return self.parse_statement_modifier(stmt);
         }
         if self.match_ident("if") {
@@ -186,6 +229,40 @@ impl Parser {
             // unless is if with negated condition
             return Ok(Stmt::If {
                 cond: Expr::Unary { op: TokenKind::Bang, expr: Box::new(cond) },
+                then_branch: body,
+                else_branch: Vec::new(),
+            });
+        }
+        if self.match_ident("with") {
+            let cond = self.parse_expr()?;
+            let then_branch = self.parse_block()?;
+            let else_branch = if self.match_ident("else") {
+                self.parse_block()?
+            } else {
+                Vec::new()
+            };
+            return Ok(Stmt::If {
+                cond: Expr::MethodCall {
+                    target: Box::new(cond),
+                    name: "defined".to_string(),
+                    args: Vec::new(),
+                },
+                then_branch,
+                else_branch,
+            });
+        }
+        if self.match_ident("without") {
+            let cond = self.parse_expr()?;
+            let body = self.parse_block()?;
+            return Ok(Stmt::If {
+                cond: Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(Expr::MethodCall {
+                        target: Box::new(cond),
+                        name: "defined".to_string(),
+                        args: Vec::new(),
+                    }),
+                },
                 then_branch: body,
                 else_branch: Vec::new(),
             });
@@ -336,8 +413,19 @@ impl Parser {
             let body = self.parse_block()?;
             return Ok(Stmt::Catch(body));
         }
+        if self.match_ident("take") {
+            let expr = self.parse_expr()?;
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::Take(expr));
+        }
+        if self.match_ident("warn") {
+            let expr = self.parse_expr()?;
+            self.match_kind(TokenKind::Semicolon);
+            // warn just outputs to stderr/diag; treat as no-op for now
+            return Ok(Stmt::Expr(expr));
+        }
         if let Some(name) = self.peek_ident() {
-            if matches!(name.as_str(), "ok" | "is" | "isnt" | "nok" | "pass" | "flunk" | "cmp-ok" | "like" | "unlike" | "is-deeply" | "isa-ok" | "lives-ok" | "dies-ok" | "eval-lives-ok" | "is_run" | "throws-like" | "force_todo" | "force-todo" | "plan" | "done-testing" | "bail-out" | "skip" | "skip-rest" | "diag" | "todo") {
+            if matches!(name.as_str(), "ok" | "is" | "isnt" | "nok" | "pass" | "flunk" | "cmp-ok" | "like" | "unlike" | "is-deeply" | "isa-ok" | "lives-ok" | "dies-ok" | "eval-lives-ok" | "is_run" | "throws-like" | "force_todo" | "force-todo" | "plan" | "done-testing" | "bail-out" | "skip" | "skip-rest" | "diag" | "todo" | "does-ok" | "can-ok") {
                 self.pos += 1;
                 let args = if name == "is"
                     && (!self.check(&TokenKind::LParen)
@@ -360,6 +448,28 @@ impl Parser {
         }
         if self.peek_is_var() {
             if let Some(next) = self.peek_next_kind() {
+                if matches!(next, TokenKind::DotEq) {
+                    let name = self.consume_var()?;
+                    self.match_kind(TokenKind::DotEq);
+                    let method_name = self.consume_ident()?;
+                    let mut method_args = Vec::new();
+                    if self.match_kind(TokenKind::LParen) {
+                        if !self.check(&TokenKind::RParen) {
+                            method_args.push(self.parse_method_arg());
+                            while self.match_kind(TokenKind::Comma) {
+                                method_args.push(self.parse_method_arg());
+                            }
+                        }
+                        self.consume_kind(TokenKind::RParen)?;
+                    }
+                    self.match_kind(TokenKind::Semicolon);
+                    let expr = Expr::MethodCall {
+                        target: Box::new(Expr::Var(name.clone())),
+                        name: method_name,
+                        args: method_args,
+                    };
+                    return Ok(Stmt::Assign { name, expr, op: AssignOp::Assign });
+                }
                 if matches!(next, TokenKind::PlusEq | TokenKind::MinusEq | TokenKind::TildeEq | TokenKind::StarEq) {
                     let name = self.consume_var()?;
                     let compound_op = if self.match_kind(TokenKind::PlusEq) {
@@ -474,6 +584,40 @@ impl Parser {
                 cond: Expr::Unary { op: TokenKind::Bang, expr: Box::new(cond) },
                 body: vec![stmt],
             });
+        }
+        if self.match_ident("with") {
+            let cond = self.parse_expr()?;
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::If {
+                cond: Expr::MethodCall {
+                    target: Box::new(cond),
+                    name: "defined".to_string(),
+                    args: Vec::new(),
+                },
+                then_branch: vec![stmt],
+                else_branch: Vec::new(),
+            });
+        }
+        if self.match_ident("without") {
+            let cond = self.parse_expr()?;
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::If {
+                cond: Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(Expr::MethodCall {
+                        target: Box::new(cond),
+                        name: "defined".to_string(),
+                        args: Vec::new(),
+                    }),
+                },
+                then_branch: vec![stmt],
+                else_branch: Vec::new(),
+            });
+        }
+        if self.match_ident("given") {
+            let topic = self.parse_expr()?;
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::Given { topic, body: vec![stmt] });
         }
         self.match_kind(TokenKind::Semicolon);
         Ok(stmt)
@@ -725,6 +869,21 @@ impl Parser {
         Ok(exprs.remove(0))
     }
 
+    fn parse_expr_list(&mut self) -> Result<Vec<Expr>, RuntimeError> {
+        let first = self.parse_expr()?;
+        let mut exprs = vec![first];
+        while self.match_kind(TokenKind::Comma) {
+            // Stop if next token looks like a statement modifier keyword
+            if let Some(TokenKind::Ident(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+                if matches!(name.as_str(), "if" | "unless" | "for" | "while" | "until") {
+                    break;
+                }
+            }
+            exprs.push(self.parse_expr()?);
+        }
+        Ok(exprs)
+    }
+
     fn parse_method_arg(&mut self) -> Expr {
         if self.match_kind(TokenKind::Colon) {
             let name = self.consume_ident().unwrap_or_default();
@@ -879,10 +1038,14 @@ impl Parser {
                 Some(TokenKind::Ident("gt".to_string()))
             } else if self.match_ident("ge") {
                 Some(TokenKind::Ident("ge".to_string()))
+            } else if self.match_kind(TokenKind::LtEqGt) {
+                Some(TokenKind::LtEqGt)
             } else if self.match_ident("leg") {
                 Some(TokenKind::Ident("leg".to_string()))
             } else if self.match_ident("cmp") {
                 Some(TokenKind::Ident("cmp".to_string()))
+            } else if self.match_ident("eqv") {
+                Some(TokenKind::Ident("eqv".to_string()))
             } else {
                 None
             };
@@ -1056,6 +1219,14 @@ impl Parser {
             let expr = self.parse_unary()?;
             return Ok(Expr::Unary { op: TokenKind::Ident("so".to_string()), expr: Box::new(expr) });
         }
+        if self.match_kind(TokenKind::Question) {
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Unary { op: TokenKind::Question, expr: Box::new(expr) });
+        }
+        if self.match_kind(TokenKind::Caret) {
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Unary { op: TokenKind::Caret, expr: Box::new(expr) });
+        }
         self.parse_primary()
     }
 
@@ -1177,8 +1348,25 @@ impl Parser {
                 Expr::AnonSub(body)
             } else {
                 let name = self.consume_ident()?;
-                if name == "quietly" {
+                if name == "do" && self.check(&TokenKind::LBrace) {
+                    let body = self.parse_block()?;
+                    Expr::Block(body)
+                } else if name == "so" {
+                    let inner = self.parse_expr()?;
+                    Expr::Unary { op: TokenKind::Bang, expr: Box::new(
+                        Expr::Unary { op: TokenKind::Bang, expr: Box::new(inner) }
+                    )}
+                } else if name == "quietly" {
                     self.parse_expr()?
+                } else if name == "eager" {
+                    self.parse_expr()?
+                } else if name == "gather" && self.check(&TokenKind::LBrace) {
+                    let body = self.parse_block()?;
+                    Expr::Gather(body)
+                } else if name == "gather" {
+                    // gather for ... { take ... }
+                    let inner = self.parse_stmt()?;
+                    Expr::Gather(vec![inner])
                 } else if name == "try" && self.check(&TokenKind::LBrace) {
                     let body = self.parse_block()?;
                     Expr::Try { body, catch: None }
@@ -1249,7 +1437,10 @@ impl Parser {
                 continue;
             }
             if self.match_kind(TokenKind::Dot) {
+                // Handle .^name (meta-method call) - treat ^ as prefix to method name
+                let is_meta = self.match_kind(TokenKind::Caret);
                 let name = self.consume_ident()?;
+                let full_name = if is_meta { format!("^{}", name) } else { name };
                 let mut args = Vec::new();
                 if self.match_kind(TokenKind::LParen) {
                     if !self.check(&TokenKind::RParen) {
@@ -1260,7 +1451,7 @@ impl Parser {
                     }
                     self.consume_kind(TokenKind::RParen)?;
                 }
-                expr = Expr::MethodCall { target: Box::new(expr), name, args };
+                expr = Expr::MethodCall { target: Box::new(expr), name: full_name, args };
                 continue;
             }
             if self.match_kind(TokenKind::LBracket) {

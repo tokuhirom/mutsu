@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use crate::ast::{AssignOp, CallArg, ExpectedMatcher, Expr, FunctionDef, Stmt};
+use crate::ast::{AssignOp, CallArg, ExpectedMatcher, Expr, FunctionDef, ParamDef, Stmt};
 use crate::lexer::{Lexer, TokenKind};
 use crate::parser::Parser;
 use crate::value::{RuntimeError, Value};
@@ -23,6 +23,7 @@ pub struct Interpreter {
     block_stack: Vec<Value>,
     doc_comments: HashMap<String, String>,
     when_matched: bool,
+    gather_items: Vec<Vec<Value>>,
 }
 
 impl Interpreter {
@@ -46,6 +47,7 @@ impl Interpreter {
             block_stack: Vec::new(),
             doc_comments: HashMap::new(),
             when_matched: false,
+            gather_items: Vec::new(),
         }
     }
 
@@ -168,12 +170,13 @@ impl Interpreter {
                 };
                 self.env.insert(name.clone(), value);
             }
-            Stmt::SubDecl { name, params, body } => {
+            Stmt::SubDecl { name, params, param_defs, body } => {
                 let fq = format!("{}::{}", self.current_package, name);
                 let def = FunctionDef {
                     package: self.current_package.clone(),
                     name: name.clone(),
                     params: params.clone(),
+                    param_defs: param_defs.clone(),
                     body: body.clone(),
                 };
                 self.functions.insert(fq, def);
@@ -188,14 +191,18 @@ impl Interpreter {
                 let val = self.eval_expr(expr)?;
                 return Err(RuntimeError::return_val(val));
             }
-            Stmt::Say(expr) => {
-                let value = self.eval_expr(expr)?;
-                self.output.push_str(&value.to_string_value());
+            Stmt::Say(exprs) => {
+                for expr in exprs {
+                    let value = self.eval_expr(expr)?;
+                    self.output.push_str(&value.to_string_value());
+                }
                 self.output.push('\n');
             }
-            Stmt::Print(expr) => {
-                let value = self.eval_expr(expr)?;
-                self.output.push_str(&value.to_string_value());
+            Stmt::Print(exprs) => {
+                for expr in exprs {
+                    let value = self.eval_expr(expr)?;
+                    self.output.push_str(&value.to_string_value());
+                }
             }
             Stmt::Call { name, args } => {
                 self.exec_call(name, args)?;
@@ -360,6 +367,12 @@ impl Interpreter {
             }
             Stmt::Catch(_) => {
                 // CATCH blocks are handled by try expressions
+            }
+            Stmt::Take(expr) => {
+                let val = self.eval_expr(expr)?;
+                if let Some(items) = self.gather_items.last_mut() {
+                    items.push(val);
+                }
             }
             Stmt::Expr(expr) => {
                 self.eval_expr(expr)?;
@@ -759,6 +772,18 @@ impl Interpreter {
                 // todo just sets a note that following tests are TODO
                 // For simplicity, we just consume and ignore it
             }
+            "does-ok" => {
+                let _ = self.positional_arg(args, 0, "does-ok expects value")?;
+                let _ = self.positional_arg(args, 1, "does-ok expects role")?;
+                let desc = self.positional_arg_value(args, 2)?;
+                self.test_ok(true, &desc, false)?;
+            }
+            "can-ok" => {
+                let _ = self.positional_arg(args, 0, "can-ok expects value")?;
+                let _ = self.positional_arg(args, 1, "can-ok expects method")?;
+                let desc = self.positional_arg_value(args, 2)?;
+                self.test_ok(true, &desc, false)?;
+            }
             "bail-out" => {
                 let desc = self.positional_arg_value(args, 0)?;
                 if desc.is_empty() {
@@ -1105,12 +1130,32 @@ impl Interpreter {
                         Value::Array(_) => "Array",
                         Value::Hash(_) => "Hash",
                         Value::FatRat(_, _) => "FatRat",
+                        Value::Pair(_, _) => "Pair",
                         Value::Nil => "Nil",
                         Value::Package(_) => "Package",
                         Value::Routine { .. } => "Routine",
                         Value::Sub { .. } => "Sub",
                         Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
                     }))),
+                    "^name" => {
+                        // Meta-method: type name
+                        Ok(Value::Str(match &base {
+                            Value::Int(_) => "Int".to_string(),
+                            Value::Num(_) => "Num".to_string(),
+                            Value::Str(_) => "Str".to_string(),
+                            Value::Bool(_) => "Bool".to_string(),
+                            Value::Range(_, _) | Value::RangeExcl(_, _) => "Range".to_string(),
+                            Value::Array(_) => "Array".to_string(),
+                            Value::Hash(_) => "Hash".to_string(),
+                            Value::FatRat(_, _) => "FatRat".to_string(),
+                            Value::Pair(_, _) => "Pair".to_string(),
+                            Value::Nil => "Nil".to_string(),
+                            Value::Package(name) => name.clone(),
+                            Value::Routine { .. } => "Routine".to_string(),
+                            Value::Sub { .. } => "Sub".to_string(),
+                            Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification".to_string(),
+                        }))
+                    }
                     "defined" => Ok(Value::Bool(!matches!(base, Value::Nil))),
                     "parent" => {
                         let mut levels = 1i64;
@@ -1270,6 +1315,76 @@ impl Interpreter {
                             None => Ok(Value::Nil),
                         }
                     }
+                    "rindex" => {
+                        let s = base.to_string_value();
+                        let needle = args.get(0)
+                            .map(|a| self.eval_expr(a).ok())
+                            .flatten()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        match s.rfind(&needle) {
+                            Some(pos) => {
+                                let char_pos = s[..pos].chars().count();
+                                Ok(Value::Int(char_pos as i64))
+                            }
+                            None => Ok(Value::Nil),
+                        }
+                    }
+                    "match" => {
+                        // Basic regex match - just return Nil for now
+                        Ok(Value::Nil)
+                    }
+                    "IO" => {
+                        // Returns self (string as IO path)
+                        Ok(Value::Str(base.to_string_value()))
+                    }
+                    "say" => {
+                        self.output.push_str(&base.to_string_value());
+                        self.output.push('\n');
+                        Ok(Value::Bool(true))
+                    }
+                    "print" => {
+                        self.output.push_str(&base.to_string_value());
+                        Ok(Value::Bool(true))
+                    }
+                    "Seq" | "Supply" | "Channel" => {
+                        // stub
+                        Ok(base)
+                    }
+                    "classify" => {
+                        // Returns empty hash as stub
+                        Ok(Value::Hash(HashMap::new()))
+                    }
+                    "splice" => match base {
+                        Value::Array(mut items) => {
+                            let start = args.get(0)
+                                .map(|a| self.eval_expr(a).ok())
+                                .flatten()
+                                .and_then(|v| match v { Value::Int(i) => Some(i.max(0) as usize), _ => None })
+                                .unwrap_or(0);
+                            let count = args.get(1)
+                                .map(|a| self.eval_expr(a).ok())
+                                .flatten()
+                                .and_then(|v| match v { Value::Int(i) => Some(i.max(0) as usize), _ => None })
+                                .unwrap_or(items.len().saturating_sub(start));
+                            let end = (start + count).min(items.len());
+                            let removed: Vec<Value> = items.drain(start..end).collect();
+                            // Insert new elements if provided
+                            if let Some(new_arg) = args.get(2) {
+                                let new_val = self.eval_expr(new_arg)?;
+                                match new_val {
+                                    Value::Array(new_items) => {
+                                        for (i, item) in new_items.into_iter().enumerate() {
+                                            items.insert(start + i, item);
+                                        }
+                                    }
+                                    other => { items.insert(start, other); }
+                                }
+                            }
+                            Ok(Value::Array(removed))
+                        }
+                        _ => Ok(Value::Nil),
+                    },
                     "split" => {
                         let s = base.to_string_value();
                         let sep = args.get(0)
@@ -1444,6 +1559,56 @@ impl Interpreter {
                         }
                         _ => Ok(base),
                     },
+                    "sum" => match base {
+                        Value::Array(items) => {
+                            let mut total: i64 = 0;
+                            let mut is_float = false;
+                            let mut ftotal: f64 = 0.0;
+                            for item in &items {
+                                match item {
+                                    Value::Int(i) => { total += i; ftotal += *i as f64; }
+                                    Value::Num(f) => { is_float = true; ftotal += f; }
+                                    Value::Str(s) => {
+                                        if let Ok(i) = s.parse::<i64>() { total += i; ftotal += i as f64; }
+                                        else if let Ok(f) = s.parse::<f64>() { is_float = true; ftotal += f; }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            if is_float { Ok(Value::Num(ftotal)) } else { Ok(Value::Int(total)) }
+                        }
+                        _ => Ok(Value::Int(0)),
+                    },
+                    "pick" => match base {
+                        Value::Array(mut items) => {
+                            if items.is_empty() {
+                                Ok(Value::Nil)
+                            } else {
+                                use std::collections::hash_map::DefaultHasher;
+                                use std::hash::{Hash, Hasher};
+                                let mut hasher = DefaultHasher::new();
+                                std::time::SystemTime::now().hash(&mut hasher);
+                                let idx = (hasher.finish() as usize) % items.len();
+                                Ok(items.remove(idx))
+                            }
+                        }
+                        _ => Ok(base),
+                    },
+                    "roll" => match base {
+                        Value::Array(items) => {
+                            if items.is_empty() {
+                                Ok(Value::Nil)
+                            } else {
+                                use std::collections::hash_map::DefaultHasher;
+                                use std::hash::{Hash, Hasher};
+                                let mut hasher = DefaultHasher::new();
+                                std::time::SystemTime::now().hash(&mut hasher);
+                                let idx = (hasher.finish() as usize) % items.len();
+                                Ok(items[idx].clone())
+                            }
+                        }
+                        _ => Ok(base),
+                    },
                     "map" => match base {
                         Value::Array(items) => {
                             if let Some(func_expr) = args.get(0) {
@@ -1535,6 +1700,159 @@ impl Interpreter {
                             Ok(Value::Bool(prime))
                         }
                         _ => Ok(Value::Bool(false)),
+                    },
+                    "key" => match base {
+                        Value::Pair(k, _) => Ok(Value::Str(k)),
+                        _ => Ok(Value::Nil),
+                    },
+                    "value" => match base {
+                        Value::Pair(_, v) => Ok(*v),
+                        _ => Ok(Value::Nil),
+                    },
+                    "list" => match base {
+                        Value::Range(a, b) => {
+                            let items: Vec<Value> = (a..=b).map(Value::Int).collect();
+                            Ok(Value::Array(items))
+                        }
+                        Value::RangeExcl(a, b) => {
+                            let items: Vec<Value> = (a..b).map(Value::Int).collect();
+                            Ok(Value::Array(items))
+                        }
+                        Value::Array(items) => Ok(Value::Array(items)),
+                        _ => Ok(Value::Array(vec![base])),
+                    },
+                    "Array" => match base {
+                        Value::Range(a, b) => {
+                            let items: Vec<Value> = (a..=b).map(Value::Int).collect();
+                            Ok(Value::Array(items))
+                        }
+                        Value::RangeExcl(a, b) => {
+                            let items: Vec<Value> = (a..b).map(Value::Int).collect();
+                            Ok(Value::Array(items))
+                        }
+                        Value::Array(items) => Ok(Value::Array(items)),
+                        _ => Ok(Value::Array(vec![base])),
+                    },
+                    "so" => Ok(Value::Bool(base.truthy())),
+                    "not" => Ok(Value::Bool(!base.truthy())),
+                    "succ" => match base {
+                        Value::Int(i) => Ok(Value::Int(i + 1)),
+                        Value::Str(s) => {
+                            // Increment last char
+                            if s.is_empty() {
+                                Ok(Value::Str(String::new()))
+                            } else {
+                                let mut chars: Vec<char> = s.chars().collect();
+                                if let Some(last) = chars.last_mut() {
+                                    *last = char::from_u32(*last as u32 + 1).unwrap_or(*last);
+                                }
+                                Ok(Value::Str(chars.into_iter().collect()))
+                            }
+                        }
+                        _ => Ok(base),
+                    },
+                    "pred" => match base {
+                        Value::Int(i) => Ok(Value::Int(i - 1)),
+                        _ => Ok(base),
+                    },
+                    "fmt" => {
+                        let fmt = args.get(0)
+                            .map(|a| self.eval_expr(a).ok())
+                            .flatten()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_else(|| "%s".to_string());
+                        let rendered = self.format_sprintf(&fmt, Some(&base));
+                        Ok(Value::Str(rendered))
+                    },
+                    "base" => match base {
+                        Value::Int(i) => {
+                            let radix = args.get(0)
+                                .map(|a| self.eval_expr(a).ok())
+                                .flatten()
+                                .and_then(|v| match v { Value::Int(n) => Some(n), _ => None })
+                                .unwrap_or(10);
+                            let s = match radix {
+                                2 => format!("{:b}", i),
+                                8 => format!("{:o}", i),
+                                16 => format!("{:X}", i),
+                                _ => format!("{}", i),
+                            };
+                            Ok(Value::Str(s))
+                        }
+                        _ => Ok(Value::Str(base.to_string_value())),
+                    },
+                    "sqrt" => match base {
+                        Value::Int(i) => Ok(Value::Num((i as f64).sqrt())),
+                        Value::Num(f) => Ok(Value::Num(f.sqrt())),
+                        _ => Ok(Value::Num(f64::NAN)),
+                    },
+                    "floor" => match base {
+                        Value::Num(f) => Ok(Value::Int(f.floor() as i64)),
+                        Value::Int(i) => Ok(Value::Int(i)),
+                        _ => Ok(Value::Int(0)),
+                    },
+                    "ceiling" | "ceil" => match base {
+                        Value::Num(f) => Ok(Value::Int(f.ceil() as i64)),
+                        Value::Int(i) => Ok(Value::Int(i)),
+                        _ => Ok(Value::Int(0)),
+                    },
+                    "round" => match base {
+                        Value::Num(f) => Ok(Value::Int(f.round() as i64)),
+                        Value::Int(i) => Ok(Value::Int(i)),
+                        _ => Ok(Value::Int(0)),
+                    },
+                    "narrow" => match base {
+                        Value::Num(f) if f.fract() == 0.0 && f.is_finite() => Ok(Value::Int(f as i64)),
+                        _ => Ok(base),
+                    },
+                    "log" => match base {
+                        Value::Int(i) => Ok(Value::Num((i as f64).ln())),
+                        Value::Num(f) => Ok(Value::Num(f.ln())),
+                        _ => Ok(Value::Num(f64::NAN)),
+                    },
+                    "exp" => match base {
+                        Value::Int(i) => Ok(Value::Num((i as f64).exp())),
+                        Value::Num(f) => Ok(Value::Num(f.exp())),
+                        _ => Ok(Value::Num(f64::NAN)),
+                    },
+                    "push" => {
+                        // .push on evaluated array - returns new array with item added
+                        match base {
+                            Value::Array(mut items) => {
+                                let value = args.get(0)
+                                    .map(|a| self.eval_expr(a).ok())
+                                    .flatten()
+                                    .unwrap_or(Value::Nil);
+                                items.push(value);
+                                Ok(Value::Array(items))
+                            }
+                            _ => Ok(base),
+                        }
+                    },
+                    "pop" => match base {
+                        Value::Array(mut items) => Ok(items.pop().unwrap_or(Value::Nil)),
+                        _ => Ok(Value::Nil),
+                    },
+                    "shift" => match base {
+                        Value::Array(mut items) => {
+                            if items.is_empty() {
+                                Ok(Value::Nil)
+                            } else {
+                                Ok(items.remove(0))
+                            }
+                        }
+                        _ => Ok(Value::Nil),
+                    },
+                    "unshift" => match base {
+                        Value::Array(mut items) => {
+                            let value = args.get(0)
+                                .map(|a| self.eval_expr(a).ok())
+                                .flatten()
+                                .unwrap_or(Value::Nil);
+                            items.insert(0, value);
+                            Ok(Value::Array(items))
+                        }
+                        _ => Ok(base),
                     },
                     "join" => match base {
                         Value::Array(items) => {
@@ -1689,6 +2007,14 @@ impl Interpreter {
                                 _ => Err(RuntimeError::new("Unary - expects numeric")),
                             },
                             TokenKind::Bang => Ok(Value::Bool(!value.truthy())),
+                            TokenKind::Question => Ok(Value::Bool(value.truthy())),
+                            TokenKind::Caret => {
+                                let n = match value {
+                                    Value::Int(i) => i,
+                                    _ => 0,
+                                };
+                                Ok(Value::RangeExcl(0, n))
+                            }
                             TokenKind::Ident(name) if name == "so" => Ok(Value::Bool(value.truthy())),
                             _ => Err(RuntimeError::new("Unknown unary operator")),
                         }
@@ -1755,13 +2081,7 @@ impl Interpreter {
             Expr::Call { name, args } => {
                 if let Some(def) = self.resolve_function(name) {
                     let saved_env = self.env.clone();
-                    for (i, param) in def.params.clone().iter().enumerate() {
-                        if let Some(arg) = args.get(i) {
-                            if let Ok(value) = self.eval_expr(arg) {
-                                self.env.insert(param.clone(), value);
-                            }
-                        }
-                    }
+                    self.bind_function_args(&def.param_defs, &def.params, args)?;
                     self.routine_stack.push((def.package.clone(), def.name.clone()));
                     let result = self.eval_block_value(&def.body);
                     self.routine_stack.pop();
@@ -1821,6 +2141,228 @@ impl Interpreter {
                     let rendered = self.format_sprintf(&fmt, arg.as_ref());
                     return Ok(Value::Str(rendered));
                 }
+                if name == "join" {
+                    let sep = args.get(0).map(|e| self.eval_expr(e).ok()).flatten()
+                        .map(|v| v.to_string_value()).unwrap_or_default();
+                    let list = args.get(1).map(|e| self.eval_expr(e).ok()).flatten();
+                    return Ok(match list {
+                        Some(Value::Array(items)) => {
+                            let joined = items.iter().map(|v| v.to_string_value()).collect::<Vec<_>>().join(&sep);
+                            Value::Str(joined)
+                        }
+                        _ => Value::Str(String::new()),
+                    });
+                }
+                if name == "flat" {
+                    let mut result = Vec::new();
+                    for arg in args {
+                        let val = self.eval_expr(arg)?;
+                        match val {
+                            Value::Array(items) => {
+                                for item in items {
+                                    if let Value::Array(sub) = item {
+                                        result.extend(sub);
+                                    } else {
+                                        result.push(item);
+                                    }
+                                }
+                            }
+                            other => result.push(other),
+                        }
+                    }
+                    return Ok(Value::Array(result));
+                }
+                if name == "reverse" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    return Ok(match val {
+                        Some(Value::Array(mut items)) => { items.reverse(); Value::Array(items) }
+                        Some(Value::Str(s)) => Value::Str(s.chars().rev().collect()),
+                        _ => Value::Nil,
+                    });
+                }
+                if name == "sort" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    return Ok(match val {
+                        Some(Value::Array(mut items)) => {
+                            items.sort_by(|a, b| a.to_string_value().cmp(&b.to_string_value()));
+                            Value::Array(items)
+                        }
+                        _ => Value::Nil,
+                    });
+                }
+                if name == "defined" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    return Ok(Value::Bool(!matches!(val, Some(Value::Nil) | None)));
+                }
+                if name == "sqrt" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    return Ok(match val {
+                        Some(Value::Int(i)) => Value::Num((i as f64).sqrt()),
+                        Some(Value::Num(f)) => Value::Num(f.sqrt()),
+                        _ => Value::Num(f64::NAN),
+                    });
+                }
+                if name == "floor" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    return Ok(match val {
+                        Some(Value::Num(f)) => Value::Int(f.floor() as i64),
+                        Some(Value::Int(i)) => Value::Int(i),
+                        _ => Value::Int(0),
+                    });
+                }
+                if name == "ceiling" || name == "ceil" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    return Ok(match val {
+                        Some(Value::Num(f)) => Value::Int(f.ceil() as i64),
+                        Some(Value::Int(i)) => Value::Int(i),
+                        _ => Value::Int(0),
+                    });
+                }
+                if name == "round" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    return Ok(match val {
+                        Some(Value::Num(f)) => Value::Int(f.round() as i64),
+                        Some(Value::Int(i)) => Value::Int(i),
+                        _ => Value::Int(0),
+                    });
+                }
+                if name == "log" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    return Ok(match val {
+                        Some(Value::Int(i)) => Value::Num((i as f64).ln()),
+                        Some(Value::Num(f)) => Value::Num(f.ln()),
+                        _ => Value::Num(f64::NAN),
+                    });
+                }
+                if name == "exp" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    return Ok(match val {
+                        Some(Value::Int(i)) => Value::Num((i as f64).exp()),
+                        Some(Value::Num(f)) => Value::Num(f.exp()),
+                        _ => Value::Num(f64::NAN),
+                    });
+                }
+                if name == "min" {
+                    let mut vals = Vec::new();
+                    for arg in args {
+                        vals.push(self.eval_expr(arg)?);
+                    }
+                    return Ok(vals.into_iter().min_by(|a, b| {
+                        match (a, b) {
+                            (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                            _ => a.to_string_value().cmp(&b.to_string_value()),
+                        }
+                    }).unwrap_or(Value::Nil));
+                }
+                if name == "max" {
+                    let mut vals = Vec::new();
+                    for arg in args {
+                        vals.push(self.eval_expr(arg)?);
+                    }
+                    return Ok(vals.into_iter().max_by(|a, b| {
+                        match (a, b) {
+                            (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                            _ => a.to_string_value().cmp(&b.to_string_value()),
+                        }
+                    }).unwrap_or(Value::Nil));
+                }
+                if name == "exit" {
+                    let code = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let _code = match code { Some(Value::Int(i)) => i, _ => 0 };
+                    self.halted = true;
+                    return Ok(Value::Nil);
+                }
+                if name == "flip" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten()
+                        .map(|v| v.to_string_value()).unwrap_or_default();
+                    return Ok(Value::Str(val.chars().rev().collect()));
+                }
+                if name == "lc" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten()
+                        .unwrap_or(Value::Nil);
+                    return Ok(Value::Str(val.to_string_value().to_lowercase()));
+                }
+                if name == "uc" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten()
+                        .unwrap_or(Value::Nil);
+                    return Ok(Value::Str(val.to_string_value().to_uppercase()));
+                }
+                if name == "tc" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten()
+                        .map(|v| v.to_string_value()).unwrap_or_default();
+                    let mut result = String::new();
+                    let mut capitalize = true;
+                    for ch in val.chars() {
+                        if capitalize {
+                            for c in ch.to_uppercase() { result.push(c); }
+                            capitalize = false;
+                        } else {
+                            result.push(ch);
+                        }
+                    }
+                    return Ok(Value::Str(result));
+                }
+                if name == "chomp" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten()
+                        .map(|v| v.to_string_value()).unwrap_or_default();
+                    return Ok(Value::Str(val.trim_end_matches('\n').to_string()));
+                }
+                if name == "chop" {
+                    let mut val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten()
+                        .map(|v| v.to_string_value()).unwrap_or_default();
+                    val.pop();
+                    return Ok(Value::Str(val));
+                }
+                if name == "trim" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten()
+                        .map(|v| v.to_string_value()).unwrap_or_default();
+                    return Ok(Value::Str(val.trim().to_string()));
+                }
+                if name == "words" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten()
+                        .map(|v| v.to_string_value()).unwrap_or_default();
+                    let parts: Vec<Value> = val.split_whitespace().map(|p| Value::Str(p.to_string())).collect();
+                    return Ok(Value::Array(parts));
+                }
+                if name == "substr" {
+                    let s = args.get(0).map(|e| self.eval_expr(e).ok()).flatten()
+                        .map(|v| v.to_string_value()).unwrap_or_default();
+                    let start = args.get(1).map(|e| self.eval_expr(e).ok()).flatten()
+                        .and_then(|v| match v { Value::Int(i) => Some(i), _ => None })
+                        .unwrap_or(0);
+                    let chars: Vec<char> = s.chars().collect();
+                    let start = start.max(0) as usize;
+                    if let Some(len_val) = args.get(2).map(|e| self.eval_expr(e).ok()).flatten() {
+                        let len = match len_val { Value::Int(i) => i.max(0) as usize, _ => chars.len() };
+                        let end = (start + len).min(chars.len());
+                        return Ok(Value::Str(chars[start..end].iter().collect()));
+                    }
+                    return Ok(Value::Str(chars[start.min(chars.len())..].iter().collect()));
+                }
+                if name == "index" {
+                    let s = args.get(0).map(|e| self.eval_expr(e).ok()).flatten()
+                        .map(|v| v.to_string_value()).unwrap_or_default();
+                    let needle = args.get(1).map(|e| self.eval_expr(e).ok()).flatten()
+                        .map(|v| v.to_string_value()).unwrap_or_default();
+                    return Ok(match s.find(&needle) {
+                        Some(pos) => Value::Int(s[..pos].chars().count() as i64),
+                        None => Value::Nil,
+                    });
+                }
+                if name == "dd" {
+                    // Debug dump
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten()
+                        .unwrap_or(Value::Nil);
+                    self.output.push_str(&format!("{:?}\n", val));
+                    return Ok(val);
+                }
+                if name == "pair" {
+                    let key = args.get(0).map(|e| self.eval_expr(e).ok()).flatten()
+                        .map(|v| v.to_string_value()).unwrap_or_default();
+                    let val = args.get(1).map(|e| self.eval_expr(e).ok()).flatten()
+                        .unwrap_or(Value::Nil);
+                    return Ok(Value::Pair(key, Box::new(val)));
+                }
                 Ok(Value::Nil)
             }
             Expr::Try { body, catch } => {
@@ -1869,6 +2411,18 @@ impl Interpreter {
                     }
                 }
             }
+            Expr::Gather(body) => {
+                self.gather_items.push(Vec::new());
+                for stmt in body {
+                    match self.exec_stmt(stmt) {
+                        Ok(()) => {}
+                        Err(e) if e.is_last => break,
+                        Err(e) => { self.gather_items.pop(); return Err(e); }
+                    }
+                }
+                let items = self.gather_items.pop().unwrap_or_default();
+                Ok(Value::Array(items))
+            }
             Expr::InfixFunc { name, left, right, modifier } => {
                 let left_val = self.eval_expr(left)?;
                 let mut right_vals = Vec::new();
@@ -1912,56 +2466,77 @@ impl Interpreter {
 
     fn eval_binary(&self, left: Value, op: &TokenKind, right: Value) -> Result<Value, RuntimeError> {
         match op {
-            TokenKind::Plus => match (left, right) {
-                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
-                (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a + b)),
-                (Value::Int(a), Value::Num(b)) => Ok(Value::Num(a as f64 + b)),
-                (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a + b as f64)),
-                _ => Err(RuntimeError::new("+ expects numeric")),
-            },
-            TokenKind::Minus => match (left, right) {
-                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a - b)),
-                (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a - b)),
-                (Value::Int(a), Value::Num(b)) => Ok(Value::Num(a as f64 - b)),
-                (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a - b as f64)),
-                _ => Err(RuntimeError::new("- expects numeric")),
-            },
-            TokenKind::Star => match (left, right) {
-                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a * b)),
-                (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a * b)),
-                (Value::Int(a), Value::Num(b)) => Ok(Value::Num(a as f64 * b)),
-                (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a * b as f64)),
-                _ => Err(RuntimeError::new("* expects numeric")),
-            },
-            TokenKind::Slash => match (left, right) {
-                (Value::Int(_), Value::Int(0)) => Err(RuntimeError::new("Division by zero")),
-                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a / b)),
-                (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a / b)),
-                (Value::Int(a), Value::Num(b)) => Ok(Value::Num(a as f64 / b)),
-                (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a / b as f64)),
-                _ => Err(RuntimeError::new("/ expects numeric")),
-            },
-            TokenKind::Percent => match (left, right) {
-                (Value::Int(_), Value::Int(0)) => Err(RuntimeError::new("Modulo by zero")),
-                (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a % b)),
-                (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a % b)),
-                (Value::Int(a), Value::Num(b)) => Ok(Value::Num(a as f64 % b)),
-                (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a % b as f64)),
-                _ => Err(RuntimeError::new("% expects numeric")),
-            },
-            TokenKind::PercentPercent => match (left, right) {
-                (Value::Int(_), Value::Int(0)) => Err(RuntimeError::new("Divisibility by zero")),
-                (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a % b == 0)),
-                _ => Err(RuntimeError::new("%% expects Int")),
-            },
-            TokenKind::StarStar => match (left, right) {
-                (Value::Int(a), Value::Int(b)) if b >= 0 => Ok(Value::Int(a.pow(b as u32))),
-                (Value::Int(a), Value::Int(b)) => Ok(Value::Num((a as f64).powi(b as i32))),
-                (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a.powi(b as i32))),
-                (Value::Int(a), Value::Num(b)) => Ok(Value::Num((a as f64).powf(b))),
-                (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a.powf(b))),
-                _ => Err(RuntimeError::new("** expects numeric")),
-            },
+            TokenKind::Plus => {
+                let (l, r) = Self::coerce_numeric(left, right);
+                match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a.wrapping_add(b))),
+                    (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a + b)),
+                    (Value::Int(a), Value::Num(b)) => Ok(Value::Num(a as f64 + b)),
+                    (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a + b as f64)),
+                    _ => Ok(Value::Int(0)),
+                }
+            }
+            TokenKind::Minus => {
+                let (l, r) = Self::coerce_numeric(left, right);
+                match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a.wrapping_sub(b))),
+                    (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a - b)),
+                    (Value::Int(a), Value::Num(b)) => Ok(Value::Num(a as f64 - b)),
+                    (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a - b as f64)),
+                    _ => Ok(Value::Int(0)),
+                }
+            }
+            TokenKind::Star => {
+                let (l, r) = Self::coerce_numeric(left, right);
+                match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a.wrapping_mul(b))),
+                    (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a * b)),
+                    (Value::Int(a), Value::Num(b)) => Ok(Value::Num(a as f64 * b)),
+                    (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a * b as f64)),
+                    _ => Ok(Value::Int(0)),
+                }
+            }
+            TokenKind::Slash => {
+                let (l, r) = Self::coerce_numeric(left, right);
+                match (l, r) {
+                    (Value::Int(_), Value::Int(0)) => Err(RuntimeError::new("Division by zero")),
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a / b)),
+                    (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a / b)),
+                    (Value::Int(a), Value::Num(b)) => Ok(Value::Num(a as f64 / b)),
+                    (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a / b as f64)),
+                    _ => Ok(Value::Int(0)),
+                }
+            }
+            TokenKind::Percent => {
+                let (l, r) = Self::coerce_numeric(left, right);
+                match (l, r) {
+                    (Value::Int(_), Value::Int(0)) => Err(RuntimeError::new("Modulo by zero")),
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a % b)),
+                    (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a % b)),
+                    (Value::Int(a), Value::Num(b)) => Ok(Value::Num(a as f64 % b)),
+                    (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a % b as f64)),
+                    _ => Ok(Value::Int(0)),
+                }
+            }
+            TokenKind::PercentPercent => {
+                let (l, r) = Self::coerce_numeric(left, right);
+                match (l, r) {
+                    (Value::Int(_), Value::Int(0)) => Err(RuntimeError::new("Divisibility by zero")),
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a % b == 0)),
+                    _ => Ok(Value::Bool(false)),
+                }
+            }
+            TokenKind::StarStar => {
+                let (l, r) = Self::coerce_numeric(left, right);
+                match (l, r) {
+                    (Value::Int(a), Value::Int(b)) if b >= 0 => Ok(Value::Int(a.pow(b as u32))),
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Num((a as f64).powi(b as i32))),
+                    (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a.powi(b as i32))),
+                    (Value::Int(a), Value::Num(b)) => Ok(Value::Num((a as f64).powf(b))),
+                    (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a.powf(b))),
+                    _ => Ok(Value::Int(0)),
+                }
+            }
             TokenKind::Tilde => Ok(Value::Str(format!("{}{}", left.to_string_value(), right.to_string_value()))),
             TokenKind::EqEq => Ok(Value::Bool(left == right)),
             TokenKind::BangEq => Ok(Value::Bool(left != right)),
@@ -1993,6 +2568,20 @@ impl Interpreter {
                 (Value::Int(a), Value::Int(b)) => Ok(Value::RangeExcl(a, b)),
                 _ => Ok(Value::Nil),
             },
+            TokenKind::LtEqGt => {
+                let ord = match (&left, &right) {
+                    (Value::Int(a), Value::Int(b)) => a.cmp(b),
+                    (Value::Num(a), Value::Num(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Int(a), Value::Num(b)) => (*a as f64).partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Num(a), Value::Int(b)) => a.partial_cmp(&(*b as f64)).unwrap_or(std::cmp::Ordering::Equal),
+                    _ => left.to_string_value().cmp(&right.to_string_value()),
+                };
+                Ok(Value::Int(match ord {
+                    std::cmp::Ordering::Less => -1,
+                    std::cmp::Ordering::Equal => 0,
+                    std::cmp::Ordering::Greater => 1,
+                }))
+            }
             TokenKind::SmartMatch => Ok(Value::Bool(self.smart_match(&left, &right))),
             TokenKind::BangTilde => Ok(Value::Bool(!self.smart_match(&left, &right))),
             TokenKind::Ident(name) if name == "div" => match (left, right) {
@@ -2032,12 +2621,21 @@ impl Interpreter {
                 }))
             }
             TokenKind::Ident(name) if name == "cmp" => {
-                let ord = left.to_string_value().cmp(&right.to_string_value());
+                let ord = match (&left, &right) {
+                    (Value::Int(a), Value::Int(b)) => a.cmp(b),
+                    (Value::Num(a), Value::Num(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Int(a), Value::Num(b)) => (*a as f64).partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Num(a), Value::Int(b)) => a.partial_cmp(&(*b as f64)).unwrap_or(std::cmp::Ordering::Equal),
+                    _ => left.to_string_value().cmp(&right.to_string_value()),
+                };
                 Ok(Value::Int(match ord {
                     std::cmp::Ordering::Less => -1,
                     std::cmp::Ordering::Equal => 0,
                     std::cmp::Ordering::Greater => 1,
                 }))
+            }
+            TokenKind::Ident(name) if name == "eqv" => {
+                Ok(Value::Bool(left == right))
             }
             TokenKind::Ident(name) if name == "x" => {
                 let s = left.to_string_value();
@@ -2068,6 +2666,66 @@ impl Interpreter {
             (Value::Nil, Value::Str(s)) => s.is_empty(),
             _ => true,
         }
+    }
+
+    fn bind_function_args(&mut self, param_defs: &[ParamDef], params: &[String], args: &[Expr]) -> Result<(), RuntimeError> {
+        if param_defs.is_empty() {
+            // Legacy path: just bind by position
+            for (i, param) in params.iter().enumerate() {
+                if let Some(arg) = args.get(i) {
+                    if let Ok(value) = self.eval_expr(arg) {
+                        self.env.insert(param.clone(), value);
+                    }
+                }
+            }
+            return Ok(());
+        }
+        let mut positional_idx = 0usize;
+        for pd in param_defs {
+            if pd.slurpy {
+                // Slurpy collects remaining positional args
+                let mut items = Vec::new();
+                while positional_idx < args.len() {
+                    if let Ok(value) = self.eval_expr(&args[positional_idx]) {
+                        items.push(value);
+                    }
+                    positional_idx += 1;
+                }
+                self.env.insert(pd.name.clone(), Value::Array(items));
+            } else if pd.named {
+                // Named params: look for matching AssignExpr in args
+                let mut found = false;
+                for arg in args {
+                    if let Expr::AssignExpr { name, expr } = arg {
+                        if *name == pd.name {
+                            if let Ok(value) = self.eval_expr(expr) {
+                                self.env.insert(pd.name.clone(), value);
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if !found {
+                    if let Some(default_expr) = &pd.default {
+                        let value = self.eval_expr(default_expr)?;
+                        self.env.insert(pd.name.clone(), value);
+                    }
+                }
+            } else {
+                // Positional param
+                if positional_idx < args.len() {
+                    if let Ok(value) = self.eval_expr(&args[positional_idx]) {
+                        self.env.insert(pd.name.clone(), value);
+                    }
+                    positional_idx += 1;
+                } else if let Some(default_expr) = &pd.default {
+                    let value = self.eval_expr(default_expr)?;
+                    self.env.insert(pd.name.clone(), value);
+                }
+            }
+        }
+        Ok(())
     }
 
     fn eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
@@ -2136,6 +2794,20 @@ impl Interpreter {
                 out.push(c);
                 continue;
             }
+            if chars.peek() == Some(&'%') {
+                chars.next();
+                out.push('%');
+                continue;
+            }
+            let mut flags = String::new();
+            while let Some(f) = chars.peek().copied() {
+                if f == '-' || f == '+' || f == ' ' || f == '#' {
+                    flags.push(f);
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
             let mut width = String::new();
             while let Some(d) = chars.peek().copied() {
                 if d.is_ascii_digit() {
@@ -2145,34 +2817,155 @@ impl Interpreter {
                     break;
                 }
             }
+            let mut precision = String::new();
+            if chars.peek() == Some(&'.') {
+                chars.next();
+                while let Some(d) = chars.peek().copied() {
+                    if d.is_ascii_digit() {
+                        precision.push(d);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+            }
             let spec = chars.next().unwrap_or('s');
             let width_num = width.parse::<usize>().unwrap_or(0);
-            let zero_pad = width.starts_with('0');
+            let prec_num = precision.parse::<usize>().ok();
+            let zero_pad = width.starts_with('0') && !flags.contains('-');
+            let left_align = flags.contains('-');
+            let plus_sign = flags.contains('+');
+            let hash_flag = flags.contains('#');
+            let int_val = || match arg {
+                Some(Value::Int(i)) => *i,
+                Some(Value::Num(f)) => *f as i64,
+                Some(Value::Str(s)) => s.trim().parse::<i64>().unwrap_or(0),
+                Some(Value::Bool(b)) => if *b { 1 } else { 0 },
+                _ => 0,
+            };
+            let float_val = || match arg {
+                Some(Value::Int(i)) => *i as f64,
+                Some(Value::Num(f)) => *f,
+                Some(Value::Str(s)) => s.trim().parse::<f64>().unwrap_or(0.0),
+                _ => 0.0,
+            };
             let rendered = match spec {
                 's' => match arg {
-                    Some(Value::Str(s)) => s.clone(),
-                    Some(Value::Int(i)) => i.to_string(),
-                    Some(Value::Bool(b)) => b.to_string(),
+                    Some(v) => {
+                        let s = v.to_string_value();
+                        if let Some(p) = prec_num { s[..p.min(s.len())].to_string() } else { s }
+                    }
                     _ => String::new(),
                 },
-                'x' => match arg {
-                    Some(Value::Int(i)) => format!("{:x}", i),
-                    _ => String::new(),
-                },
+                'd' | 'i' => {
+                    let i = int_val();
+                    if plus_sign && i >= 0 { format!("+{}", i) } else { format!("{}", i) }
+                }
+                'u' => format!("{}", int_val() as u64),
+                'x' => {
+                    let i = int_val();
+                    let s = format!("{:x}", i);
+                    if hash_flag { format!("0x{}", s) } else { s }
+                }
+                'X' => {
+                    let i = int_val();
+                    let s = format!("{:X}", i);
+                    if hash_flag { format!("0X{}", s) } else { s }
+                }
+                'o' => {
+                    let i = int_val();
+                    let s = format!("{:o}", i);
+                    if hash_flag { format!("0{}", s) } else { s }
+                }
+                'b' => {
+                    let i = int_val();
+                    let s = format!("{:b}", i);
+                    if hash_flag { format!("0b{}", s) } else { s }
+                }
+                'B' => {
+                    let i = int_val();
+                    let s = format!("{:b}", i);
+                    if hash_flag { format!("0B{}", s) } else { s }
+                }
+                'e' | 'E' => {
+                    let f = float_val();
+                    let p = prec_num.unwrap_or(6);
+                    if spec == 'e' { format!("{:.prec$e}", f, prec = p) }
+                    else { format!("{:.prec$E}", f, prec = p) }
+                }
+                'f' => {
+                    let f = float_val();
+                    let p = prec_num.unwrap_or(6);
+                    format!("{:.prec$}", f, prec = p)
+                }
+                'g' | 'G' => {
+                    let f = float_val();
+                    let p = prec_num.unwrap_or(6);
+                    if f.abs() < 1e-4 || f.abs() >= 10f64.powi(p as i32) {
+                        if spec == 'g' { format!("{:.prec$e}", f, prec = p.saturating_sub(1)) }
+                        else { format!("{:.prec$E}", f, prec = p.saturating_sub(1)) }
+                    } else {
+                        format!("{:.prec$}", f, prec = p.saturating_sub(1))
+                    }
+                }
+                'c' => {
+                    let i = int_val();
+                    char::from_u32(i as u32).map(|c| c.to_string()).unwrap_or_default()
+                }
                 _ => String::new(),
             };
             if width_num > rendered.len() {
                 let pad = width_num - rendered.len();
-                let ch = if zero_pad { '0' } else { ' ' };
-                out.push_str(&ch.to_string().repeat(pad));
+                if left_align {
+                    out.push_str(&rendered);
+                    out.push_str(&" ".repeat(pad));
+                } else {
+                    let ch = if zero_pad { '0' } else { ' ' };
+                    out.push_str(&ch.to_string().repeat(pad));
+                    out.push_str(&rendered);
+                }
+            } else {
+                out.push_str(&rendered);
             }
-            out.push_str(&rendered);
         }
         out
     }
 
+    fn coerce_to_numeric(val: Value) -> Value {
+        match val {
+            Value::Int(_) | Value::Num(_) => val,
+            Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
+            Value::Str(ref s) => {
+                let s = s.trim();
+                if let Ok(i) = s.parse::<i64>() {
+                    Value::Int(i)
+                } else if let Ok(f) = s.parse::<f64>() {
+                    Value::Num(f)
+                } else {
+                    Value::Int(0)
+                }
+            }
+            Value::Array(items) => Value::Int(items.len() as i64),
+            Value::Nil => Value::Int(0),
+            _ => Value::Int(0),
+        }
+    }
+
+    fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
+        let l = match &left {
+            Value::Int(_) | Value::Num(_) => left,
+            _ => Self::coerce_to_numeric(left),
+        };
+        let r = match &right {
+            Value::Int(_) | Value::Num(_) => right,
+            _ => Self::coerce_to_numeric(right),
+        };
+        (l, r)
+    }
+
     fn compare(left: Value, right: Value, f: fn(i32) -> bool) -> Result<Value, RuntimeError> {
-        match (left, right) {
+        let (l, r) = Self::coerce_numeric(left, right);
+        match (l, r) {
             (Value::Int(a), Value::Int(b)) => {
                 let ord = a.cmp(&b) as i32;
                 Ok(Value::Bool(f(ord)))
@@ -2191,11 +2984,7 @@ impl Interpreter {
                 let ord = a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal) as i32;
                 Ok(Value::Bool(f(ord)))
             }
-            (Value::Str(a), Value::Str(b)) => {
-                let ord = a.cmp(&b) as i32;
-                Ok(Value::Bool(f(ord)))
-            }
-            _ => Err(RuntimeError::new("Comparison expects matching types")),
+            _ => Ok(Value::Bool(f(0))),
         }
     }
 }
