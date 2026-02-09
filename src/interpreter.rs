@@ -170,8 +170,7 @@ impl Interpreter {
                 };
                 self.env.insert(name.clone(), value);
             }
-            Stmt::SubDecl { name, params, param_defs, body } => {
-                let fq = format!("{}::{}", self.current_package, name);
+            Stmt::SubDecl { name, params, param_defs, body, multi } => {
                 let def = FunctionDef {
                     package: self.current_package.clone(),
                     name: name.clone(),
@@ -179,7 +178,14 @@ impl Interpreter {
                     param_defs: param_defs.clone(),
                     body: body.clone(),
                 };
-                self.functions.insert(fq, def);
+                if *multi {
+                    let arity = param_defs.iter().filter(|p| !p.slurpy && !p.named).count();
+                    let fq = format!("{}::{}/{}", self.current_package, name, arity);
+                    self.functions.insert(fq, def);
+                } else {
+                    let fq = format!("{}::{}", self.current_package, name);
+                    self.functions.insert(fq, def);
+                }
             }
             Stmt::Package { name, body } => {
                 let saved = self.current_package.clone();
@@ -797,7 +803,29 @@ impl Interpreter {
                 self.bailed_out = true;
             }
             _ => {
-                return Err(RuntimeError::new(format!("Unknown call: {}", name)));
+                // Try user-defined function
+                let positional_count = args.iter().filter(|a| matches!(a, CallArg::Positional(_))).count();
+                if let Some(def) = self.resolve_function_with_arity(name, positional_count) {
+                    let saved_env = self.env.clone();
+                    let call_args: Vec<Expr> = args.iter().filter_map(|a| {
+                        match a {
+                            CallArg::Positional(e) => Some(e.clone()),
+                            _ => None,
+                        }
+                    }).collect();
+                    self.bind_function_args(&def.param_defs, &def.params, &call_args)?;
+                    self.routine_stack.push((def.package.clone(), def.name.clone()));
+                    let result = self.run_block(&def.body);
+                    self.routine_stack.pop();
+                    self.env = saved_env;
+                    match result {
+                        Err(e) if e.return_value.is_some() => {}
+                        Err(e) => return Err(e),
+                        Ok(_) => {}
+                    }
+                } else {
+                    return Err(RuntimeError::new(format!("Unknown call: {}", name)));
+                }
             }
         }
         Ok(())
@@ -812,6 +840,23 @@ impl Interpreter {
             .get(&local)
             .cloned()
             .or_else(|| self.functions.get(&format!("GLOBAL::{}", name)).cloned())
+    }
+
+    fn resolve_function_with_arity(&self, name: &str, arity: usize) -> Option<FunctionDef> {
+        if name.contains("::") {
+            return self.functions.get(name).cloned();
+        }
+        // Try multi-dispatch with arity first
+        let multi_local = format!("{}::{}/{}", self.current_package, name, arity);
+        if let Some(def) = self.functions.get(&multi_local) {
+            return Some(def.clone());
+        }
+        let multi_global = format!("GLOBAL::{}/{}", name, arity);
+        if let Some(def) = self.functions.get(&multi_global) {
+            return Some(def.clone());
+        }
+        // Fall back to regular lookup
+        self.resolve_function(name)
     }
 
     fn matches_expected(
@@ -1513,6 +1558,36 @@ impl Interpreter {
                         }
                         _ => Ok(base),
                     },
+                    "squish" => match base {
+                        Value::Array(items) => {
+                            let mut result = Vec::new();
+                            let mut last: Option<String> = None;
+                            for item in items {
+                                let s = item.to_string_value();
+                                if last.as_ref() != Some(&s) {
+                                    last = Some(s);
+                                    result.push(item);
+                                }
+                            }
+                            Ok(Value::Array(result))
+                        }
+                        _ => Ok(base),
+                    },
+                    "minmax" => match base {
+                        Value::Array(items) if !items.is_empty() => {
+                            let mut min = &items[0];
+                            let mut max = &items[0];
+                            for item in &items[1..] {
+                                if Self::compare_values(item, min) < 0 { min = item; }
+                                if Self::compare_values(item, max) > 0 { max = item; }
+                            }
+                            Ok(Value::Range(
+                                Self::to_int(min),
+                                Self::to_int(max),
+                            ))
+                        }
+                        _ => Ok(Value::Nil),
+                    },
                     "flat" => match base {
                         Value::Array(items) => {
                             let mut flat = Vec::new();
@@ -1778,6 +1853,18 @@ impl Interpreter {
                             Ok(Value::Str(s))
                         }
                         _ => Ok(Value::Str(base.to_string_value())),
+                    },
+                    "parse-base" => {
+                        let radix = args.get(0)
+                            .map(|a| self.eval_expr(a).ok())
+                            .flatten()
+                            .and_then(|v| match v { Value::Int(n) => Some(n as u32), _ => None })
+                            .unwrap_or(10);
+                        let s = base.to_string_value();
+                        match i64::from_str_radix(&s, radix) {
+                            Ok(n) => Ok(Value::Int(n)),
+                            Err(_) => Err(RuntimeError::new(format!("Cannot parse '{}' as base {}", s, radix))),
+                        }
                     },
                     "sqrt" => match base {
                         Value::Int(i) => Ok(Value::Num((i as f64).sqrt())),
@@ -2077,7 +2164,7 @@ impl Interpreter {
                 Ok(Value::Hash(map))
             }
             Expr::Call { name, args } => {
-                if let Some(def) = self.resolve_function(name) {
+                if let Some(def) = self.resolve_function_with_arity(name, args.len()) {
                     let saved_env = self.env.clone();
                     self.bind_function_args(&def.param_defs, &def.params, args)?;
                     self.routine_stack.push((def.package.clone(), def.name.clone()));
@@ -2968,6 +3055,25 @@ impl Interpreter {
             _ => Self::coerce_to_numeric(right),
         };
         (l, r)
+    }
+
+    fn compare_values(a: &Value, b: &Value) -> i32 {
+        match (a, b) {
+            (Value::Int(a), Value::Int(b)) => a.cmp(b) as i32,
+            (Value::Num(a), Value::Num(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal) as i32,
+            (Value::Int(a), Value::Num(b)) => (*a as f64).partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal) as i32,
+            (Value::Num(a), Value::Int(b)) => a.partial_cmp(&(*b as f64)).unwrap_or(std::cmp::Ordering::Equal) as i32,
+            _ => a.to_string_value().cmp(&b.to_string_value()) as i32,
+        }
+    }
+
+    fn to_int(v: &Value) -> i64 {
+        match v {
+            Value::Int(i) => *i,
+            Value::Num(f) => *f as i64,
+            Value::Str(s) => s.parse().unwrap_or(0),
+            _ => 0,
+        }
     }
 
     fn compare(left: Value, right: Value, f: fn(i32) -> bool) -> Result<Value, RuntimeError> {

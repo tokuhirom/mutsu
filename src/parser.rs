@@ -58,7 +58,11 @@ impl Parser {
             let body = self.parse_block()?;
             return Ok(Stmt::Package { name, body });
         }
-        if self.match_ident("sub") {
+        let is_multi = self.match_ident("multi");
+        if is_multi {
+            self.match_ident("sub"); // optional 'sub' after 'multi'
+        }
+        if is_multi || self.match_ident("sub") {
             let name = self.consume_ident()?;
             let mut params = Vec::new();
             let mut param_defs = Vec::new();
@@ -125,7 +129,7 @@ impl Parser {
             if self.match_kind(TokenKind::LBrace) {
                 let body = self.parse_block_body()?;
                 self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::SubDecl { name, params, param_defs, body });
+                return Ok(Stmt::SubDecl { name, params, param_defs, body, multi: is_multi });
             }
             return Err(RuntimeError::new("Expected block for sub"));
         }
@@ -421,7 +425,7 @@ impl Parser {
             let body = self.parse_block()?;
             return Ok(Stmt::Default(body));
         }
-        if self.match_ident("die") {
+        if self.match_ident("die") || self.match_ident("fail") {
             let expr = self.parse_expr()?;
             self.match_kind(TokenKind::Semicolon);
             return Ok(Stmt::Die(expr));

@@ -73,7 +73,7 @@ pub(crate) enum ExpectedMatcher {
 pub(crate) enum Stmt {
     VarDecl { name: String, expr: Expr },
     Assign { name: String, expr: Expr, op: AssignOp },
-    SubDecl { name: String, params: Vec<String>, param_defs: Vec<ParamDef>, body: Vec<Stmt> },
+    SubDecl { name: String, params: Vec<String>, param_defs: Vec<ParamDef>, body: Vec<Stmt>, multi: bool },
     Package { name: String, body: Vec<Stmt> },
     Return(Expr),
     For { iterable: Expr, param: Option<String>, body: Vec<Stmt> },
