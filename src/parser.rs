@@ -1501,7 +1501,7 @@ impl Parser {
                 } else if name == "Bool::True" {
                     Expr::Literal(Value::Bool(true))
                 } else {
-                    Expr::Literal(Value::Str(name))
+                    Expr::BareWord(name)
                 }
             }
         } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::HashVar(_))) {

@@ -22,6 +22,7 @@ pub(crate) struct FunctionDef {
 #[derive(Debug, Clone)]
 pub(crate) enum Expr {
     Literal(Value),
+    BareWord(String),
     StringInterpolation(Vec<Expr>),
     Var(String),
     ArrayVar(String),

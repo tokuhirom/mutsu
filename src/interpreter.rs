@@ -1197,16 +1197,15 @@ impl Interpreter {
 
     fn eval_expr(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
         match expr {
-            Expr::Literal(v) => {
-                // Check if string literal matches an enum value or type in env
-                if let Value::Str(name) = v {
-                    if let Some(val) = self.env.get(name.as_str()) {
-                        if matches!(val, Value::Enum { .. }) {
-                            return Ok(val.clone());
-                        }
+            Expr::Literal(v) => Ok(v.clone()),
+            Expr::BareWord(name) => {
+                // Check if bare word matches an enum value or type in env
+                if let Some(val) = self.env.get(name.as_str()) {
+                    if matches!(val, Value::Enum { .. }) {
+                        return Ok(val.clone());
                     }
                 }
-                Ok(v.clone())
+                Ok(Value::Str(name.clone()))
             }
             Expr::StringInterpolation(parts) => {
                 let mut result = String::new();
