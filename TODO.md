@@ -1,369 +1,249 @@
-# TODO - Raku Language Features
+# mutsu - Roadmap
 
-Based on design docs:
-- `/home/tokuhirom/work/old-design-docs/S02-bits.pod`
-- `/home/tokuhirom/work/old-design-docs/S03-operators.pod`
-- `/home/tokuhirom/work/old-design-docs/S04-control.pod`
+Goal: MoarVM より高速で実用的な Raku (Perl 6) 処理系を Rust で実装する。
 
-## Legend
-- [x] Implemented
-- [ ] Not implemented
-- [~] Partially implemented
+KPI: `tools/run_all_roast.sh --save` の pass 数 (現在 257/1427)
 
 ---
 
-## S02: Lexical Conventions
+## Phase 1: 言語コア (現在ここ)
 
-### Comments
-- [x] Single-line comments (`#`)
-- [x] Embedded comments (`#`(...)`, `#`[...]`, etc.)
-- [ ] Multiline POD comments (`=begin comment` ... `=end comment`)
-- [ ] Single paragraph POD comments (`=comment`)
+最低限の Raku プログラムが動く状態。roast pass 数を着実に増やす。
 
-### Brackets and Whitespace
-- [x] Basic bracketing characters (`()`, `{}`, `[]`, `<>`)
-- [x] Unicode brackets for embedded comments
-- [ ] User-selected brackets (multiple identical brackets like `<<<...>>>`)
-- [ ] Unspaces (`\` to continue across whitespace)
-
-### Built-In Data Types
-
-#### Numeric Types
+### 型システム
 - [x] Int
-- [x] FatRat
-- [ ] Rat (rational numbers)
-- [ ] Num (floating point)
-- [ ] Complex
-
-#### Other Types
+- [x] Num (f64)
 - [x] Str
 - [x] Bool
 - [x] Array
+- [x] Hash
 - [x] Range (`..`, `..^`)
-- [ ] Hash
+- [x] Pair
+- [x] FatRat
+- [x] Nil
+- [ ] Rat (有理数)
+- [ ] Complex
 - [ ] Set, Bag, Mix
-- [~] Nil (partial)
+- [ ] Enum
+- [ ] Junction
 
-### Literals
+### リテラル
+- [x] 整数リテラル
+- [x] 浮動小数点リテラル
+- [x] 単一引用符文字列
+- [x] 二重引用符文字列 + 変数補間
+- [x] 角括弧ワードリスト `<a b c>`
+- [ ] 数値中アンダースコア (`1_000_000`)
+- [ ] 基数表記 (`0x`, `0o`, `0b`)
+- [ ] 指数表記 (`1e10`)
+- [ ] Q/q/qq フォーム
+- [ ] ヒアドク (`q:to/END/`)
+- [ ] 正規表現リテラル
 
-#### Numeric Literals
-- [x] Integer literals
-- [ ] Underscores in numbers (`1_000_000`)
-- [ ] Radix markers (`0x`, `0o`, `0b`)
-- [ ] General radices (`:16<DEAD_BEEF>`)
-- [ ] Exponentials (`1e10`)
-- [ ] Rational literals (`1/3`)
-- [ ] Complex literals (`1+2i`)
+### 変数
+- [x] `$` スカラー
+- [x] `@` 配列
+- [x] `%` ハッシュ
+- [x] `$_` トピック変数
+- [x] `$!` エラー変数
+- [x] `$*` 動的変数 (`$*PID`, `$*CWD`, etc.)
+- [ ] `&` コード変数
+- [ ] `$?FILE`, `$?LINE` コンパイル時変数
+- [ ] `$!` (属性アクセス)
+- [ ] `$.` (公開属性)
+- [ ] `$^` プレースホルダ変数
 
-#### String Literals
-- [x] Double-quoted strings with interpolation
-- [x] Single-quoted strings
-- [ ] Q forms (`Q`, `q`, `qq`)
-- [ ] Heredocs (`q:to/END/`)
-- [ ] Angle quotes (`<word list>`)
+### 演算子
+- [x] 算術: `+`, `-`, `*`, `/`, `%`, `%%`, `**`, `div`, `mod`
+- [x] 文字列: `~`, `x`, `xx`
+- [x] 比較: `==`, `!=`, `<`, `<=`, `>`, `>=`
+- [x] 文字列比較: `eq`, `ne`, `lt`, `le`, `gt`, `ge`
+- [x] 論理: `&&`, `||`, `!`, `//`, `and`, `or`, `not`
+- [x] 代入: `=`, `:=`, `+=`, `-=`, `~=`, `*=`
+- [x] インクリメント: `++`, `--` (前置/後置)
+- [x] 三項: `?? !!`
+- [x] スマートマッチ: `~~`
+- [x] 範囲: `..`, `..^`
+- [x] ペア: `=>`
+- [ ] `so` (loose bool coercion)
+- [ ] `^..`, `^..^` (range variants)
+- [ ] `<=>`, `leg`, `cmp` (comparison returning Order)
+- [ ] `eqv`, `===` (value/identity equality)
+- [ ] `?` (boolean context prefix)
+- [ ] `^` (upto: `^10` → `0..^10`)
+- [ ] ビット演算: `+&`, `+|`, `+^`, `+<`, `+>`
+- [ ] Junction 演算子: `&`, `|`, `^`
+- [ ] メタ演算子: `R`, `X`, `Z`, `[op]`, `op=`
+- [ ] Hyper 演算子: `>>op<<`
 
-### Variables and Names
-
-#### Sigils
-- [x] `$` (scalar)
-- [x] `@` (array)
-- [ ] `%` (hash)
-- [ ] `&` (code)
-
-#### Twigils
-- [x] `*` (dynamic/global: `$*PID`, `$*USER`, etc.)
-- [ ] `?` (compile-time: `$?FILE`, `$?LINE`)
-- [ ] `!` (attribute)
-- [ ] `.` (public attribute)
-- [ ] `^` (placeholder/positional)
-- [ ] `:` (placeholder/named)
-
----
-
-## S03: Operators (by precedence, tightest to loosest)
-
-### Terms
-- [x] Int/Num literals
-- [x] String literals
-- [x] Variables (`$x`, `@y`)
-- [x] Array composer (`[1,2,3]`)
-- [ ] Hash composer (`{ a => 1 }`)
-- [ ] Closure (`{ ... }`)
-- [ ] Capture composer (`\(...)`)
-- [ ] Pair composers (`:key(value)`, `:!verbose`)
-
-### Method Postfix (.meth)
-- [~] Standard method calls (`$obj.meth`)
-- [ ] Method variants (`.+meth`, `.?meth`, `.*meth`)
-- [ ] Class-qualified (`$obj.::Class::meth`)
-- [ ] Mutating method (`.=meth`)
-- [ ] Meta-method (`.^meth`)
-- [x] Subscripts (`.[]`, `.{}`)
-
-### Autoincrement
-- [x] `++` (prefix and postfix)
-- [x] `--` (prefix and postfix)
-
-### Exponentiation
-- [x] `**`
-
-### Symbolic Unary
-- [x] `!` (boolean negation)
-- [x] `+` (numeric context)
-- [x] `-` (numeric negation)
-- [x] `~` (string context)
-- [ ] `?` (boolean context)
-- [ ] `|` (flatten into arglist)
-- [ ] `||` (flatten into semicolon list)
-- [ ] `+^` (numeric bitwise negation)
-- [ ] `~^` (string bitwise negation)
-- [ ] `?^` (boolean negation, same as `!`)
-- [ ] `^` (upto operator: `^$n` means `0..^$n`)
-
-### Multiplicative
-- [x] `*`
-- [x] `/`
-- [x] `%` (modulo)
-- [ ] `%%` (divisible by)
-- [ ] `div` (integer division)
-- [ ] `mod` (integer modulo)
-- [ ] `+&` (numeric bitwise AND)
-- [ ] `+<` (numeric shift left)
-- [ ] `+>` (numeric shift right)
-- [ ] `~&`, `~<`, `~>` (buffer bitwise ops)
-- [ ] `?&` (boolean AND)
-- [ ] `gcd` (greatest common divisor)
-- [ ] `lcm` (least common multiple)
-
-### Additive
-- [x] `+`
-- [x] `-`
-- [ ] `+|` (numeric bitwise OR)
-- [ ] `+^` (numeric bitwise XOR)
-- [ ] `~|`, `~^` (buffer bitwise ops)
-- [ ] `?|` (boolean OR)
-- [ ] `?^` (boolean XOR)
-
-### Replication
-- [ ] `x` (string replication)
-- [ ] `xx` (list replication)
-
-### Concatenation
-- [x] `~` (string concatenation)
-
-### Junctive AND
-- [ ] `&` (all junction)
-- [ ] `(&)`, `∩` (set intersection)
-
-### Junctive OR
-- [ ] `|` (any junction)
-- [ ] `^` (one junction)
-- [ ] `(|)`, `∪` (set union)
-
-### Named Unary
-- [ ] `temp`
-- [ ] `let`
-
-### Structural Infix (non-chaining)
-- [ ] `but` (mixin)
-- [ ] `does` (mixin)
-- [ ] `<=>` (numeric comparison, returns Order)
-- [ ] `leg` (string comparison, returns Order)
-- [ ] `cmp` (generic comparison, returns Order)
-- [x] `..` (range, inclusive)
-- [x] `..^` (range, excluding end)
-- [ ] `^..` (range, excluding start)
-- [ ] `^..^` (range, excluding both)
-
-### Chaining Infix (comparison)
-- [x] `==`, `!=`
-- [x] `<`, `<=`, `>`, `>=`
-- [x] `eq`, `ne`
-- [x] `lt`, `le`, `gt`, `ge`
-- [x] `~~` (smartmatch)
-- [ ] `!~~` (negated smartmatch)
-- [ ] `===` (value identity)
-- [ ] `eqv` (canonical equivalence)
-- [ ] `=:=` (container identity)
-- [ ] `before`, `after` (generic ordering)
-
-### Tight AND
-- [x] `&&`
-
-### Tight OR
-- [x] `||`
-- [ ] `^^` (exclusive or)
-- [x] `//` (defined-or)
-- [ ] `min`, `max`
-
-### Conditional
-- [ ] `?? !!` (ternary)
-- [ ] `ff`, `fff` (flipflop)
-
-### Item Assignment
-- [x] `=`
-- [x] `=>` (Pair constructor)
-- [~] Assignment operators (`+=`, `-=`, `~=`, etc.)
-- [ ] `.=` (mutating method)
-
-### Loose Unary
-- [x] `not`
-- [ ] `so`
-
-### Comma
-- [x] `,` (list separator)
-- [ ] `:` (invocant marker)
-
-### List Infix
-- [ ] `Z` (zip)
-- [ ] `X` (cross)
-- [ ] `...` (sequence)
-- [ ] `minmax`
-
-### List Prefix
-- [x] `print`, `say`
-- [ ] `push`, `pop`, `shift`, `unshift`
-- [ ] `map`, `grep`, `sort`
-- [ ] `join`, `split`
-- [ ] `die`, `warn`, `fail`
-- [ ] Reduce operators (`[+]`, `[*]`, etc.)
-- [ ] `any`, `all`, `one`, `none` (junctions)
-
-### Loose AND
-- [x] `and`
-- [ ] `andthen`
-- [ ] `notandthen`
-
-### Loose OR
-- [x] `or`
-- [ ] `xor`
-- [ ] `orelse`
-
-### Metaoperators
-- [ ] Negation (`!op`: `!eq`, `!~~`)
-- [ ] Assignment (`op=`: `+=`, `~=`)
-- [ ] Hyper (`>>op<<`, `»op«`)
-- [ ] Reduce (`[op]`: `[+]`, `[*]`)
-- [ ] Cross (`Xop`: `X~`, `X*`)
-- [ ] Zip (`Zop`: `Z~`, `Z*`)
-- [ ] Sequence (`S` for sequential evaluation)
-
----
-
-## S04: Control Flow
-
-### Conditional Statements
+### 制御構文
 - [x] `if` / `elsif` / `else`
 - [x] `unless`
-- [ ] `with` / `orwith` / `else` (definedness test)
-- [ ] `without`
-- [ ] Parameter binding (`if expr -> $x { }`)
-
-### Loop Statements
-- [x] `while`
-- [x] `until`
-- [ ] `repeat while` / `repeat until`
-- [x] `loop` (C-style for)
+- [x] `while`, `until`
+- [x] `loop` (C-style)
+- [x] `repeat while` / `repeat until`
 - [x] `for`
-- [ ] `for` with multiple parameters (`for %h.kv -> $k, $v`)
-- [ ] `for` with `Z` (zip)
-- [ ] Lazy iteration
-
-### Loop Control
-- [x] `next`
-- [x] `last`
+- [x] `for` with pointy block (`-> $x`)
+- [x] `given` / `when` / `default`
+- [x] `last`, `next`
+- [x] `return`
+- [x] `die`
+- [x] `try` / `CATCH`
+- [ ] `with` / `without` / `orwith`
+- [ ] `proceed`, `succeed`
 - [ ] `redo`
-- [ ] Labeled loops (`LABEL: for ...`)
-- [ ] `LABEL.next`, `LABEL.last`
-
-### Switch Statements
-- [ ] `given` / `when` / `default`
-- [ ] `proceed` (continue to next when)
-- [ ] `succeed` (break with value)
-
-### Exception Handling
-- [ ] `try { }`
-- [ ] `CATCH { }`
+- [ ] ラベル付きループ
 - [ ] `CONTROL { }`
-- [ ] `die`, `warn`, `fail`
-- [ ] Resumable exceptions
-- [ ] `use fatal`
-
-### Phasers
-- [ ] `BEGIN` (compile time, ASAP)
-- [ ] `CHECK` (compile time, ALAP)
-- [ ] `INIT` (run time, ASAP)
-- [ ] `END` (run time, ALAP)
-- [ ] `ENTER` (block entry)
-- [ ] `LEAVE` (block exit)
-- [ ] `KEEP` (successful exit)
-- [ ] `UNDO` (unsuccessful exit)
-- [ ] `FIRST` (loop init)
-- [ ] `NEXT` (loop continuation)
-- [ ] `LAST` (loop termination)
-- [ ] `PRE` / `POST` (assertions)
-
-### Statement Prefixes
-- [ ] `do { }`
+- [ ] `warn`, `fail`
+- [ ] `do { }` ブロック
 - [ ] `gather` / `take`
-- [ ] `lazy`
-- [ ] `eager`
-- [ ] `sink`
-- [ ] `quietly`
-- [ ] `once`
-- [ ] `start` (promises)
+- [ ] 文修飾子: `if`, `unless`, `for`, `while`, `until`, `given`, `when`
 
-### Other Control
-- [ ] `return`
-- [ ] `leave`
-- [ ] `goto`
+### サブルーチン
+- [x] `sub` 宣言
+- [x] 複数パラメータ
+- [x] 無名 sub / ラムダ (`-> $x { }`)
+- [x] `return`
+- [ ] 名前付きパラメータ
+- [ ] デフォルト値
+- [ ] 型制約 (`Int $x`)
+- [ ] Slurpy パラメータ (`*@args`, `*%opts`)
+- [ ] `multi sub`
+- [ ] `proto sub`
+- [ ] `MAIN` sub
+- [ ] Closure (レキシカルキャプチャ)
+
+### メソッド (組み込み)
+- [x] `.defined`, `.Bool`, `.Str`, `.Int`, `.Numeric`
+- [x] `.elems`, `.chars`, `.uc`, `.lc`
+- [x] `.push`, `.pop`, `.shift`, `.unshift`, `.reverse`, `.sort`
+- [x] `.keys`, `.values`, `.kv`, `.pairs`, `.exists`
+- [x] `.split`, `.join`
+- [x] `.WHAT`, `.perl`, `.gist`
+- [ ] `.map`, `.grep`, `.first`
+- [ ] `.flat`, `.unique`, `.squish`
+- [ ] `.min`, `.max`, `.minmax`
+- [ ] `.sum`, `.pick`, `.roll`
+- [ ] `.comb`, `.contains`, `.starts-with`, `.ends-with`
+- [ ] `.substr`, `.index`, `.rindex`
+- [ ] `.chomp`, `.chop`, `.trim`
+- [ ] `.abs`, `.sqrt`, `.ceiling`, `.floor`, `.round`
+- [ ] `.base`, `.parse-base`
+- [ ] `.Range` (型の範囲)
+- [ ] `.new` (コンストラクタ)
+
+### テストモジュール
+- [x] `plan`, `done-testing`
+- [x] `ok`, `nok`, `is`, `isnt`
+- [x] `cmp-ok`, `like`, `unlike`
+- [x] `skip`, `skip-rest`, `todo`, `bail-out`
+- [x] `subtest`
+- [x] `lives-ok`, `dies-ok`
+- [x] `eval-lives-ok`
+- [x] `throws-like`
+- [x] `is-deeply`
+- [x] `isa-ok`
+- [ ] `does-ok`, `can-ok`
+
+### その他
+- [x] `EVAL`
+- [x] `use` (モジュールロード)
+- [x] コメント (`#`, 埋め込みコメント, POD)
+- [x] 文字列補間
+- [ ] 正規表現 (基本)
+- [ ] `say` のフォーマット改善 (.gist 準拠)
 
 ---
 
-## Testing (Test module)
+## Phase 2: オブジェクトシステム
 
-- [x] `plan`
-- [x] `ok`, `nok`
-- [x] `is`, `isnt`
-- [x] `cmp-ok`
-- [x] `like`, `unlike`
-- [x] `done-testing`
-- [x] `skip`, `skip-rest`
-- [x] `todo`
-- [x] `bail-out`
-- [ ] `subtest`
-- [ ] `throws-like`
-- [ ] `lives-ok`, `dies-ok`
-- [ ] `eval-lives-ok`, `eval-dies-ok`
-- [ ] `is-deeply`
-- [ ] `isa-ok`
-- [ ] `does-ok`
-- [ ] `can-ok`
+Raku の OOP を実装。roast の S12 系テストを通す。
+
+- [ ] `class` 宣言
+- [ ] `has` 属性 (`has $.name`, `has $!private`)
+- [ ] `method` 宣言
+- [ ] `self`
+- [ ] `new` コンストラクタ (自動生成)
+- [ ] 継承 (`is Parent`)
+- [ ] `role` 宣言と `does`
+- [ ] `multi method`
+- [ ] `BUILD` / `TWEAK` サブメソッド
+- [ ] 型チェック
+- [ ] Coercion (`Int(Str)` etc.)
+- [ ] `enum`
+- [ ] `subset`
+- [ ] メソッド解決順序 (MRO, C3)
 
 ---
 
-## Priority for Roast Compatibility
+## Phase 3: 正規表現とグラマー
 
-### High Priority
-1. Hash support (`%`)
-2. Ternary operator (`?? !!`)
-3. `given` / `when` / `default`
-4. `try` / `CATCH`
-5. `throws-like`, `lives-ok`, `dies-ok`
-6. `EVAL`
-7. Method chaining improvements
-8. `subtest`
+Raku の regex/grammar を実装。roast の S05 系テストを通す。
 
-### Medium Priority
-1. Junctions (`any`, `all`, `one`, `none`)
-2. `gather` / `take`
-3. Reduce operators (`[+]`, `[*]`)
-4. `x` and `xx` replication
-5. Metaoperators
+- [ ] 基本正規表現 (`/pattern/`)
+- [ ] `rx//` フォーム
+- [ ] `m//` マッチ演算子
+- [ ] `s///` 置換演算子
+- [ ] 文字クラス、量指定子、アンカー
+- [ ] 名前付きキャプチャ (`$<name>`)
+- [ ] `token`, `rule` 宣言
+- [ ] `grammar` 宣言
+- [ ] `proto token` と LTM
+- [ ] Action クラス
+- [ ] `make` / `made`
 
-### Lower Priority
-1. Phasers (BEGIN, END, etc.)
-2. Unicode operators
-3. Set/Bag/Mix types
-4. Complex numbers
-5. Bitwise operators
+---
+
+## Phase 4: 高度な機能
+
+- [ ] Phaser (`BEGIN`, `END`, `ENTER`, `LEAVE`, `FIRST`, `NEXT`, `LAST`)
+- [ ] `gather` / `take` (遅延リスト)
+- [ ] Junction (`any`, `all`, `one`, `none`)
+- [ ] `Promise`, `Supply`, `Channel` (並行処理)
+- [ ] `react` / `whenever`
+- [ ] `Proc::Async`
+- [ ] `IO::Path` 完全版
+- [ ] モジュールシステム (`unit module`, `export`, `use`)
+- [ ] `MAIN` (コマンドライン引数解析)
+- [ ] `CATCH` 型マッチング (`when X::AdHoc`)
+- [ ] `use lib`
+- [ ] Precompilation
+
+---
+
+## Phase 5: 性能と実用性
+
+MoarVM を超える性能を目指す。
+
+### コンパイラ基盤
+- [ ] AST → バイトコード コンパイル
+- [ ] レジスタベース VM or ネイティブコード生成
+- [ ] 定数畳み込み
+- [ ] インライン化
+- [ ] 型推論による最適化
+- [ ] Escape analysis
+
+### ランタイム
+- [ ] GC (世代別 or Reference counting + cycle detection)
+- [ ] Native int/num (ボックス化回避)
+- [ ] String rope / CoW
+- [ ] Hash の最適化 (small hash optimization)
+- [ ] Tail call optimization
+
+### 実用性
+- [ ] REPL
+- [ ] デバッガ
+- [ ] エラーメッセージの改善 (位置情報付き)
+- [ ] `zef` パッケージマネージャ互換
+- [ ] Inline::Perl5 互換レイヤー
+- [ ] ネイティブバイナリ出力
+
+---
+
+## 設計方針
+
+1. **Tree-walking interpreter → バイトコード VM** の段階的移行
+2. **roast 互換性**を正の指標として使い、仕様準拠を測定
+3. **MoarVM のアーキテクチャを参考にしつつ**、Rust の強みを活かした設計
+4. **起動速度**を重視 (MoarVM の弱点)
+5. **段階的な最適化**: まず正しく動かし、次に速くする
