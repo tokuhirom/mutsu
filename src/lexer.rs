@@ -166,16 +166,14 @@ impl Lexer {
                             if matches!(delim, '/' | '(' | '[' | '{' | '<') {
                                 self.pos += 1; // skip second 'q'
                                 self.pos += 1; // skip delimiter
-                                let s = if matches!(delim, '(' | '[' | '{' | '<') {
+                                if matches!(delim, '(' | '[' | '{' | '<') {
                                     let close = match delim {
                                         '(' => ')', '[' => ']', '{' => '}', '<' => '>', _ => '/',
                                     };
-                                    self.read_bracketed_string(delim, close)
+                                    self.read_interpolated_string(close, Some(delim))
                                 } else {
-                                    self.read_delimited_string(delim)
-                                };
-                                // TODO: qq should support interpolation
-                                TokenKind::Str(s)
+                                    self.read_interpolated_string(delim, None)
+                                }
                             } else {
                                 let ident = self.read_ident_start(ch);
                                 match ident.as_str() {
@@ -1075,6 +1073,101 @@ impl Lexer {
             s.push(c);
         }
         s
+    }
+
+    fn read_interpolated_string(&mut self, close: char, open: Option<char>) -> TokenKind {
+        let mut parts: Vec<DStrPart> = Vec::new();
+        let mut current = String::new();
+        let mut has_interp = false;
+        let mut depth = 1usize;
+        while let Some(c) = self.peek() {
+            if let Some(o) = open {
+                if c == o { depth += 1; self.pos += 1; current.push(c); continue; }
+                if c == close { depth -= 1; if depth == 0 { self.pos += 1; break; } self.pos += 1; current.push(c); continue; }
+            } else {
+                if c == close { self.pos += 1; break; }
+            }
+            if c == '\\' {
+                self.pos += 1;
+                if let Some(n) = self.peek() {
+                    self.pos += 1;
+                    match n {
+                        'n' => current.push('\n'),
+                        't' => current.push('\t'),
+                        '\\' => current.push('\\'),
+                        '$' => current.push('$'),
+                        '{' => current.push('{'),
+                        _ => { if n == close { current.push(n); } else { current.push('\\'); current.push(n); } }
+                    }
+                }
+            } else if c == '$' {
+                self.pos += 1;
+                if !current.is_empty() {
+                    parts.push(DStrPart::Lit(current.clone()));
+                    current.clear();
+                }
+                let mut var_name = String::new();
+                if matches!(self.peek(), Some('*') | Some('!') | Some('?')) {
+                    var_name.push(self.peek().unwrap());
+                    self.pos += 1;
+                }
+                while let Some(vc) = self.peek() {
+                    if vc.is_ascii_alphanumeric() || vc == '_' || self.is_ident_hyphen(vc) {
+                        var_name.push(vc);
+                        self.pos += 1;
+                    } else {
+                        break;
+                    }
+                }
+                if !var_name.is_empty() {
+                    parts.push(DStrPart::Var(var_name));
+                    has_interp = true;
+                } else {
+                    current.push('$');
+                }
+            } else if c == '@' {
+                self.pos += 1;
+                if !current.is_empty() {
+                    parts.push(DStrPart::Lit(current.clone()));
+                    current.clear();
+                }
+                let mut var_name = String::new();
+                if matches!(self.peek(), Some('*')) {
+                    var_name.push(self.peek().unwrap());
+                    self.pos += 1;
+                }
+                while let Some(vc) = self.peek() {
+                    if vc.is_ascii_alphanumeric() || vc == '_' || self.is_ident_hyphen(vc) {
+                        var_name.push(vc);
+                        self.pos += 1;
+                    } else {
+                        break;
+                    }
+                }
+                if !var_name.is_empty() {
+                    parts.push(DStrPart::Var(format!("@{}", var_name)));
+                    has_interp = true;
+                } else {
+                    current.push('@');
+                }
+            } else {
+                self.pos += 1;
+                if c == '\n' { self.line += 1; }
+                current.push(c);
+            }
+        }
+        if !current.is_empty() {
+            parts.push(DStrPart::Lit(current));
+        }
+        if has_interp {
+            TokenKind::DStr(parts)
+        } else {
+            let s = parts.into_iter().map(|p| match p {
+                DStrPart::Lit(s) => s,
+                _ => String::new(),
+            }).collect::<String>();
+            TokenKind::Str(s)
+        }
     }
 
     fn read_bracketed_string(&mut self, open: char, close: char) -> String {
