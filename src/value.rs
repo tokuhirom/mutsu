@@ -11,6 +11,8 @@ pub enum Value {
     Bool(bool),
     Range(i64, i64),
     RangeExcl(i64, i64),
+    RangeExclStart(i64, i64),
+    RangeExclBoth(i64, i64),
     Array(Vec<Value>),
     Hash(HashMap<String, Value>),
     FatRat(i64, i64),
@@ -39,6 +41,8 @@ impl PartialEq for Value {
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Range(a1, b1), Value::Range(a2, b2)) => a1 == a2 && b1 == b2,
             (Value::RangeExcl(a1, b1), Value::RangeExcl(a2, b2)) => a1 == a2 && b1 == b2,
+            (Value::RangeExclStart(a1, b1), Value::RangeExclStart(a2, b2)) => a1 == a2 && b1 == b2,
+            (Value::RangeExclBoth(a1, b1), Value::RangeExclBoth(a2, b2)) => a1 == a2 && b1 == b2,
             (Value::Array(a), Value::Array(b)) => a == b,
             (Value::Hash(a), Value::Hash(b)) => a == b,
             (Value::FatRat(a1, b1), Value::FatRat(a2, b2)) => a1 == a2 && b1 == b2,
@@ -61,6 +65,8 @@ impl Value {
             Value::Str(s) => !s.is_empty(),
             Value::Range(_, _) => true,
             Value::RangeExcl(_, _) => true,
+            Value::RangeExclStart(_, _) => true,
+            Value::RangeExclBoth(_, _) => true,
             Value::Array(items) => !items.is_empty(),
             Value::Hash(items) => !items.is_empty(),
             Value::FatRat(_, _) => true,
@@ -88,6 +94,8 @@ impl Value {
             Value::Bool(false) => "False".to_string(),
             Value::Range(a, b) => format!("{}..{}", a, b),
             Value::RangeExcl(a, b) => format!("{}..^{}", a, b),
+            Value::RangeExclStart(a, b) => format!("^{}..{}", a, b),
+            Value::RangeExclBoth(a, b) => format!("^{}..^{}", a, b),
             Value::Array(items) => items
                 .iter()
                 .map(|v| v.to_string_value())

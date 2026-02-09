@@ -35,9 +35,9 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] Single-quoted strings
 - [x] Double-quoted strings + variable interpolation
 - [x] Angle-bracket word list `<a b c>`
-- [ ] Underscores in numeric literals (`1_000_000`)
+- [x] Underscores in numeric literals (`1_000_000`)
 - [x] Radix notation (`0x`, `0o`, `0b`)
-- [ ] Exponential notation (`1e10`)
+- [x] Exponential notation (`1e10`)
 - [ ] Q/q/qq forms
 - [ ] Heredoc (`q:to/END/`)
 - [ ] Regex literals
@@ -50,7 +50,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] `$!` error variable
 - [x] `$*` dynamic variables (`$*PID`, `$*CWD`, etc.)
 - [ ] `&` code variable
-- [ ] `$?FILE`, `$?LINE` compile-time variables
+- [x] `$?FILE`, `$?LINE` compile-time variables
 - [ ] `$!` (attribute access)
 - [ ] `$.` (public attribute)
 - [ ] `$^` placeholder variables
@@ -67,11 +67,11 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] Smartmatch: `~~`
 - [x] Range: `..`, `..^`
 - [x] Pair: `=>`
-- [ ] `so` (loose bool coercion)
-- [ ] `^..`, `^..^` (range variants)
+- [x] `so` (loose bool coercion)
+- [x] `^..`, `^..^` (range variants)
 - [x] `<=>`, `leg`, `cmp` (comparison returning Order)
 - [x] `eqv` (value equality)
-- [ ] `===` (identity equality)
+- [x] `===` (identity equality)
 - [x] `?` (boolean context prefix)
 - [x] `^` (upto: `^10` -> `0..^10`)
 - [ ] Bitwise: `+&`, `+|`, `+^`, `+<`, `+>`
@@ -93,15 +93,15 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] `die`
 - [x] `try` / `CATCH`
 - [x] `with` / `without`
-- [ ] `orwith`
+- [x] `orwith`
 - [ ] `proceed`, `succeed`
 - [ ] `redo`
 - [ ] Labeled loops
 - [ ] `CONTROL { }`
 - [x] `warn`
 - [ ] `fail`
-- [ ] `do { }` block
-- [ ] `gather` / `take`
+- [x] `do { }` block
+- [x] `gather` / `take`
 - [x] Statement modifiers: `if`, `unless`, `for`, `while`, `until`, `given`, `when`, `with`, `without`
 
 ### Subroutines
@@ -125,15 +125,18 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] `.keys`, `.values`, `.kv`, `.pairs`, `.exists`
 - [x] `.split`, `.join`
 - [x] `.WHAT`, `.perl`, `.gist`
-- [ ] `.map`, `.grep`, `.first`
-- [ ] `.flat`, `.unique`, `.squish`
-- [ ] `.min`, `.max`, `.minmax`
-- [ ] `.sum`, `.pick`, `.roll`
-- [ ] `.comb`, `.contains`, `.starts-with`, `.ends-with`
-- [ ] `.substr`, `.index`, `.rindex`
-- [ ] `.chomp`, `.chop`, `.trim`
-- [ ] `.abs`, `.sqrt`, `.ceiling`, `.floor`, `.round`
-- [ ] `.base`, `.parse-base`
+- [x] `.map`, `.grep`, `.first`
+- [x] `.flat`, `.unique`
+- [ ] `.squish`
+- [x] `.min`, `.max`
+- [ ] `.minmax`
+- [x] `.sum`, `.pick`, `.roll`
+- [x] `.comb`, `.contains`, `.starts-with`, `.ends-with`
+- [x] `.substr`, `.index`, `.rindex`
+- [x] `.chomp`, `.chop`, `.trim`
+- [x] `.abs`, `.sqrt`, `.ceiling`, `.floor`, `.round`
+- [x] `.base`
+- [ ] `.parse-base`
 - [ ] `.Range` (type range)
 - [ ] `.new` (constructor)
 

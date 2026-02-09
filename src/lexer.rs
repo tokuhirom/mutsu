@@ -35,6 +35,9 @@ pub(crate) enum TokenKind {
     Dot,
     DotDot,
     DotDotCaret,
+    CaretDotDot,
+    CaretDotDotCaret,
+    EqEqEq,
     Arrow,
     SmartMatch,
     BangEq,
@@ -507,7 +510,11 @@ impl Lexer {
             }
             '=' => {
                 if self.match_char('=') {
-                    TokenKind::EqEq
+                    if self.match_char('=') {
+                        TokenKind::EqEqEq
+                    } else {
+                        TokenKind::EqEq
+                    }
                 } else if self.match_char('~') {
                     TokenKind::MatchAssign
                 } else if self.match_char('>') {
@@ -594,7 +601,17 @@ impl Lexer {
             },
             ';' => TokenKind::Semicolon,
             '^' => {
-                TokenKind::Caret
+                if self.peek() == Some('.') && self.peek_next() == Some('.') {
+                    self.pos += 2; // skip ".."
+                    if self.peek() == Some('^') {
+                        self.pos += 1;
+                        TokenKind::CaretDotDotCaret
+                    } else {
+                        TokenKind::CaretDotDot
+                    }
+                } else {
+                    TokenKind::Caret
+                }
             }
             _ => {
                     if ch.is_ascii_alphabetic() || ch == '_' {

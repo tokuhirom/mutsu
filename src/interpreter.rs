@@ -130,9 +130,9 @@ impl Interpreter {
                 break;
             }
         }
-        self.env.insert("?LINE".to_string(), Value::Int(6));
-        self.env
-            .insert("?FILE".to_string(), Value::Str("S02-magicals/file_line.t".to_string()));
+        let file_name = self.program_path.clone().unwrap_or_else(|| "<unknown>".to_string());
+        self.env.insert("?FILE".to_string(), Value::Str(file_name));
+        self.env.insert("?LINE".to_string(), Value::Int(1));
         let mut parser = Parser::new(tokens);
         let stmts = parser.parse_program()?;
         self.run_block(&stmts)?;
@@ -345,6 +345,8 @@ impl Interpreter {
                     Value::Array(items) => items,
                     Value::Range(a, b) => (a..=b).map(Value::Int).collect(),
                     Value::RangeExcl(a, b) => (a..b).map(Value::Int).collect(),
+                    Value::RangeExclStart(a, b) => (a+1..=b).map(Value::Int).collect(),
+                    Value::RangeExclBoth(a, b) => (a+1..b).map(Value::Int).collect(),
                     other => vec![other],
                 };
                 'for_loop: for value in values {
@@ -1126,7 +1128,7 @@ impl Interpreter {
                         Value::Str(_) => "Str",
                         Value::Bool(_) => "Bool",
                         Value::Range(_, _) => "Range",
-                        Value::RangeExcl(_, _) => "Range",
+                        Value::RangeExcl(_, _) | Value::RangeExclStart(_, _) | Value::RangeExclBoth(_, _) => "Range",
                         Value::Array(_) => "Array",
                         Value::Hash(_) => "Hash",
                         Value::FatRat(_, _) => "FatRat",
@@ -1144,7 +1146,7 @@ impl Interpreter {
                             Value::Num(_) => "Num".to_string(),
                             Value::Str(_) => "Str".to_string(),
                             Value::Bool(_) => "Bool".to_string(),
-                            Value::Range(_, _) | Value::RangeExcl(_, _) => "Range".to_string(),
+                            Value::Range(_, _) | Value::RangeExcl(_, _) | Value::RangeExclStart(_, _) | Value::RangeExclBoth(_, _) => "Range".to_string(),
                             Value::Array(_) => "Array".to_string(),
                             Value::Hash(_) => "Hash".to_string(),
                             Value::FatRat(_, _) => "FatRat".to_string(),
@@ -1709,7 +1711,7 @@ impl Interpreter {
                         Value::Pair(_, v) => Ok(*v),
                         _ => Ok(Value::Nil),
                     },
-                    "list" => match base {
+                    "list" | "Array" => match base {
                         Value::Range(a, b) => {
                             let items: Vec<Value> = (a..=b).map(Value::Int).collect();
                             Ok(Value::Array(items))
@@ -1718,16 +1720,12 @@ impl Interpreter {
                             let items: Vec<Value> = (a..b).map(Value::Int).collect();
                             Ok(Value::Array(items))
                         }
-                        Value::Array(items) => Ok(Value::Array(items)),
-                        _ => Ok(Value::Array(vec![base])),
-                    },
-                    "Array" => match base {
-                        Value::Range(a, b) => {
-                            let items: Vec<Value> = (a..=b).map(Value::Int).collect();
+                        Value::RangeExclStart(a, b) => {
+                            let items: Vec<Value> = (a+1..=b).map(Value::Int).collect();
                             Ok(Value::Array(items))
                         }
-                        Value::RangeExcl(a, b) => {
-                            let items: Vec<Value> = (a..b).map(Value::Int).collect();
+                        Value::RangeExclBoth(a, b) => {
+                            let items: Vec<Value> = (a+1..b).map(Value::Int).collect();
                             Ok(Value::Array(items))
                         }
                         Value::Array(items) => Ok(Value::Array(items)),
@@ -2539,6 +2537,7 @@ impl Interpreter {
             }
             TokenKind::Tilde => Ok(Value::Str(format!("{}{}", left.to_string_value(), right.to_string_value()))),
             TokenKind::EqEq => Ok(Value::Bool(left == right)),
+            TokenKind::EqEqEq => Ok(Value::Bool(left == right)),
             TokenKind::BangEq => Ok(Value::Bool(left != right)),
             TokenKind::Lt => Self::compare(left, right, |o| o < 0),
             TokenKind::Lte => Self::compare(left, right, |o| o <= 0),
@@ -2566,6 +2565,14 @@ impl Interpreter {
             },
             TokenKind::DotDotCaret => match (left, right) {
                 (Value::Int(a), Value::Int(b)) => Ok(Value::RangeExcl(a, b)),
+                _ => Ok(Value::Nil),
+            },
+            TokenKind::CaretDotDot => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Ok(Value::RangeExclStart(a, b)),
+                _ => Ok(Value::Nil),
+            },
+            TokenKind::CaretDotDotCaret => match (left, right) {
+                (Value::Int(a), Value::Int(b)) => Ok(Value::RangeExclBoth(a, b)),
                 _ => Ok(Value::Nil),
             },
             TokenKind::LtEqGt => {

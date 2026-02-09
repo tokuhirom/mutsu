@@ -236,7 +236,24 @@ impl Parser {
         if self.match_ident("with") {
             let cond = self.parse_expr()?;
             let then_branch = self.parse_block()?;
-            let else_branch = if self.match_ident("else") {
+            let else_branch = if self.match_ident("orwith") {
+                let orwith_cond = self.parse_expr()?;
+                let orwith_body = self.parse_block()?;
+                let orwith_else = if self.match_ident("else") {
+                    self.parse_block()?
+                } else {
+                    Vec::new()
+                };
+                vec![Stmt::If {
+                    cond: Expr::MethodCall {
+                        target: Box::new(orwith_cond),
+                        name: "defined".to_string(),
+                        args: Vec::new(),
+                    },
+                    then_branch: orwith_body,
+                    else_branch: orwith_else,
+                }]
+            } else if self.match_ident("else") {
                 self.parse_block()?
             } else {
                 Vec::new()
@@ -994,6 +1011,10 @@ impl Parser {
                 let op = TokenKind::EqEq;
                 let right = self.parse_comparison()?;
                 expr = Expr::Binary { left: Box::new(expr), op, right: Box::new(right) };
+            } else if self.match_kind(TokenKind::EqEqEq) {
+                let op = TokenKind::EqEqEq;
+                let right = self.parse_comparison()?;
+                expr = Expr::Binary { left: Box::new(expr), op, right: Box::new(right) };
             } else if self.match_kind(TokenKind::BangEq) {
                 let op = TokenKind::BangEq;
                 let right = self.parse_comparison()?;
@@ -1026,6 +1047,10 @@ impl Parser {
                 Some(TokenKind::DotDot)
             } else if self.match_kind(TokenKind::DotDotCaret) {
                 Some(TokenKind::DotDotCaret)
+            } else if self.match_kind(TokenKind::CaretDotDot) {
+                Some(TokenKind::CaretDotDot)
+            } else if self.match_kind(TokenKind::CaretDotDotCaret) {
+                Some(TokenKind::CaretDotDotCaret)
             } else if self.match_kind(TokenKind::SmartMatch) {
                 Some(TokenKind::SmartMatch)
             } else if self.match_kind(TokenKind::BangTilde) {
