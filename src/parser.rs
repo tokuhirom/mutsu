@@ -178,6 +178,12 @@ impl Parser {
                 } else {
                     (String::new(), false, false)
                 }
+            } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::CodeVar(_))) {
+                if let TokenKind::CodeVar(n) = token.kind {
+                    (format!("&{}", n), false, false)
+                } else {
+                    (String::new(), false, false)
+                }
             } else {
                 (self.consume_var()?, false, false)
             };
@@ -1456,6 +1462,12 @@ impl Parser {
         } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_))) {
             if let TokenKind::ArrayVar(name) = token.kind {
                 Expr::ArrayVar(name)
+            } else {
+                Expr::Literal(Value::Nil)
+            }
+        } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::CodeVar(_))) {
+            if let TokenKind::CodeVar(name) = token.kind {
+                Expr::CodeVar(name)
             } else {
                 Expr::Literal(Value::Nil)
             }

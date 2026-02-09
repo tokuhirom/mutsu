@@ -26,6 +26,7 @@ pub(crate) enum Expr {
     Var(String),
     ArrayVar(String),
     HashVar(String),
+    CodeVar(String),
     EnvIndex(String),
     MethodCall { target: Box<Expr>, name: String, args: Vec<Expr> },
     Exists(Box<Expr>),

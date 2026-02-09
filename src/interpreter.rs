@@ -1178,6 +1178,34 @@ impl Interpreter {
                 let key = format!("%{}", name);
                 Ok(self.env.get(&key).cloned().unwrap_or(Value::Nil))
             }
+            Expr::CodeVar(name) => {
+                // Check if stored as a variable first (my &f = ...)
+                let var_key = format!("&{}", name);
+                if let Some(val) = self.env.get(&var_key) {
+                    return Ok(val.clone());
+                }
+                // Look up as a function reference (including multi subs)
+                let def = self.resolve_function(name)
+                    .or_else(|| {
+                        // Try multi subs: search for any name/arity variant
+                        let prefix_local = format!("{}::{}/", self.current_package, name);
+                        let prefix_global = format!("GLOBAL::{}/", name);
+                        self.functions.iter()
+                            .find(|(k, _)| k.starts_with(&prefix_local) || k.starts_with(&prefix_global))
+                            .map(|(_, v)| v.clone())
+                    });
+                if let Some(def) = def {
+                    Ok(Value::Sub {
+                        package: def.package,
+                        name: def.name,
+                        param: def.params.first().cloned(),
+                        body: def.body,
+                        env: self.env.clone(),
+                    })
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
             Expr::RoutineMagic => {
                 if let Some((package, name)) = self.routine_stack.last() {
                     Ok(Value::Routine { package: package.clone(), name: name.clone() })
@@ -3665,6 +3693,7 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             for s in body { collect_ph_stmt(s, out); }
             if let Some(c) = catch { for s in c { collect_ph_stmt(s, out); } }
         }
+        Expr::CodeVar(_) => {}
         Expr::Reduction { expr, .. } => collect_ph_expr(expr, out),
         Expr::InfixFunc { left, right, .. } => {
             collect_ph_expr(left, out);

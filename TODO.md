@@ -49,7 +49,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] `$_` topic variable
 - [x] `$!` error variable
 - [x] `$*` dynamic variables (`$*PID`, `$*CWD`, etc.)
-- [ ] `&` code variable
+- [x] `&` code variable
 - [x] `$?FILE`, `$?LINE` compile-time variables
 - [ ] `$!` (attribute access)
 - [ ] `$.` (public attribute)

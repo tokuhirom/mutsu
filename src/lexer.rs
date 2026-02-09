@@ -17,6 +17,7 @@ pub(crate) enum TokenKind {
     RoutineMagic,
     BlockMagic,
     ArrayVar(String),
+    CodeVar(String),
     True,
     False,
     Nil,
@@ -703,6 +704,17 @@ impl Lexer {
                     }
                 } else if self.match_char('&') {
                     TokenKind::AndAnd
+                } else if self.peek().map_or(false, |c| c.is_ascii_alphabetic() || c == '_') {
+                    let mut name = String::new();
+                    while let Some(c) = self.peek() {
+                        if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                            name.push(c);
+                            self.pos += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    TokenKind::CodeVar(name)
                 } else {
                     TokenKind::Ampersand
                 }
