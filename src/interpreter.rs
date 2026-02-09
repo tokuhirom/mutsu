@@ -2651,6 +2651,24 @@ impl Interpreter {
                 let items = self.gather_items.pop().unwrap_or_default();
                 Ok(Value::Array(items))
             }
+            Expr::Reduction { op, expr } => {
+                let list = match self.eval_expr(expr)? {
+                    Value::Array(items) => items,
+                    Value::Range(a, b) => (a..=b).map(Value::Int).collect(),
+                    Value::RangeExcl(a, b) => (a..b).map(Value::Int).collect(),
+                    Value::RangeExclStart(a, b) => (a+1..=b).map(Value::Int).collect(),
+                    Value::RangeExclBoth(a, b) => (a+1..b).map(Value::Int).collect(),
+                    other => vec![other],
+                };
+                if list.is_empty() {
+                    return Ok(self.reduction_identity(op));
+                }
+                let mut acc = list[0].clone();
+                for item in &list[1..] {
+                    acc = self.apply_reduction_op(op, &acc, item)?;
+                }
+                Ok(acc)
+            }
             Expr::InfixFunc { name, left, right, modifier } => {
                 let left_val = self.eval_expr(left)?;
                 let mut right_vals = Vec::new();
@@ -2937,6 +2955,112 @@ impl Interpreter {
             (Value::Str(a), Value::Int(b)) => *a == b.to_string(),
             (Value::Nil, Value::Str(s)) => s.is_empty(),
             _ => true,
+        }
+    }
+
+    fn reduction_identity(&self, op: &str) -> Value {
+        match op {
+            "+" => Value::Int(0),
+            "*" => Value::Int(1),
+            "~" => Value::Str(String::new()),
+            "&&" | "and" => Value::Bool(true),
+            "||" | "or" => Value::Bool(false),
+            "//" => Value::Nil,
+            "min" => Value::Num(f64::INFINITY),
+            "max" => Value::Num(f64::NEG_INFINITY),
+            _ => Value::Nil,
+        }
+    }
+
+    fn apply_reduction_op(&self, op: &str, left: &Value, right: &Value) -> Result<Value, RuntimeError> {
+        let to_num = |v: &Value| -> f64 {
+            match v {
+                Value::Int(i) => *i as f64,
+                Value::Num(f) => *f,
+                Value::Str(s) => s.parse::<f64>().unwrap_or(0.0),
+                Value::Bool(b) => if *b { 1.0 } else { 0.0 },
+                _ => 0.0,
+            }
+        };
+        let to_int = |v: &Value| -> i64 {
+            match v {
+                Value::Int(i) => *i,
+                Value::Num(f) => *f as i64,
+                Value::Str(s) => s.parse::<i64>().unwrap_or(0),
+                Value::Bool(b) => if *b { 1 } else { 0 },
+                _ => 0,
+            }
+        };
+        match op {
+            "+" => {
+                if matches!(left, Value::Num(_)) || matches!(right, Value::Num(_)) {
+                    Ok(Value::Num(to_num(left) + to_num(right)))
+                } else {
+                    Ok(Value::Int(to_int(left) + to_int(right)))
+                }
+            }
+            "-" => {
+                if matches!(left, Value::Num(_)) || matches!(right, Value::Num(_)) {
+                    Ok(Value::Num(to_num(left) - to_num(right)))
+                } else {
+                    Ok(Value::Int(to_int(left) - to_int(right)))
+                }
+            }
+            "*" => {
+                if matches!(left, Value::Num(_)) || matches!(right, Value::Num(_)) {
+                    Ok(Value::Num(to_num(left) * to_num(right)))
+                } else {
+                    Ok(Value::Int(to_int(left) * to_int(right)))
+                }
+            }
+            "/" => Ok(Value::Num(to_num(left) / to_num(right))),
+            "**" => Ok(Value::Num(to_num(left).powf(to_num(right)))),
+            "~" => Ok(Value::Str(format!("{}{}", left.to_string_value(), right.to_string_value()))),
+            "&&" | "and" => {
+                if !left.truthy() { Ok(left.clone()) } else { Ok(right.clone()) }
+            }
+            "||" | "or" => {
+                if left.truthy() { Ok(left.clone()) } else { Ok(right.clone()) }
+            }
+            "//" => {
+                if !matches!(left, Value::Nil) { Ok(left.clone()) } else { Ok(right.clone()) }
+            }
+            "min" => {
+                if to_num(left) <= to_num(right) { Ok(left.clone()) } else { Ok(right.clone()) }
+            }
+            "max" => {
+                if to_num(left) >= to_num(right) { Ok(left.clone()) } else { Ok(right.clone()) }
+            }
+            "+&" => Ok(Value::Int(to_int(left) & to_int(right))),
+            "+|" => Ok(Value::Int(to_int(left) | to_int(right))),
+            "+^" => Ok(Value::Int(to_int(left) ^ to_int(right))),
+            "==" => Ok(Value::Bool(to_num(left) == to_num(right))),
+            "!=" => Ok(Value::Bool(to_num(left) != to_num(right))),
+            "<" => Ok(Value::Bool(to_num(left) < to_num(right))),
+            ">" => Ok(Value::Bool(to_num(left) > to_num(right))),
+            "<=" => Ok(Value::Bool(to_num(left) <= to_num(right))),
+            ">=" => Ok(Value::Bool(to_num(left) >= to_num(right))),
+            "eq" => Ok(Value::Bool(left.to_string_value() == right.to_string_value())),
+            "ne" => Ok(Value::Bool(left.to_string_value() != right.to_string_value())),
+            "lt" => Ok(Value::Bool(left.to_string_value() < right.to_string_value())),
+            "gt" => Ok(Value::Bool(left.to_string_value() > right.to_string_value())),
+            "le" => Ok(Value::Bool(left.to_string_value() <= right.to_string_value())),
+            "ge" => Ok(Value::Bool(left.to_string_value() >= right.to_string_value())),
+            "gcd" => {
+                let (mut a, mut b) = (to_int(left).abs(), to_int(right).abs());
+                while b != 0 { let t = b; b = a % b; a = t; }
+                Ok(Value::Int(a))
+            }
+            "lcm" => {
+                let (a, b) = (to_int(left).abs(), to_int(right).abs());
+                if a == 0 && b == 0 { Ok(Value::Int(0)) }
+                else {
+                    let mut ga = a; let mut gb = b;
+                    while gb != 0 { let t = gb; gb = ga % gb; ga = t; }
+                    Ok(Value::Int(a / ga * b))
+                }
+            }
+            _ => Err(RuntimeError::new(format!("Unsupported reduction operator: {}", op))),
         }
     }
 
@@ -3425,6 +3549,7 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             for s in body { collect_ph_stmt(s, out); }
             if let Some(c) = catch { for s in c { collect_ph_stmt(s, out); } }
         }
+        Expr::Reduction { expr, .. } => collect_ph_expr(expr, out),
         Expr::InfixFunc { left, right, .. } => {
             collect_ph_expr(left, out);
             for e in right { collect_ph_expr(e, out); }

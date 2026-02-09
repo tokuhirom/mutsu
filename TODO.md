@@ -38,7 +38,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] Underscores in numeric literals (`1_000_000`)
 - [x] Radix notation (`0x`, `0o`, `0b`)
 - [x] Exponential notation (`1e10`)
-- [ ] Q/q/qq forms
+- [x] Q/q/qq forms
 - [x] Heredoc (`q:to/END/`)
 - [ ] Regex literals
 
@@ -53,7 +53,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] `$?FILE`, `$?LINE` compile-time variables
 - [ ] `$!` (attribute access)
 - [ ] `$.` (public attribute)
-- [ ] `$^` placeholder variables
+- [x] `$^` placeholder variables
 
 ### Operators
 - [x] Arithmetic: `+`, `-`, `*`, `/`, `%`, `%%`, `**`, `div`, `mod`
@@ -76,7 +76,8 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] `^` (upto: `^10` -> `0..^10`)
 - [x] Bitwise: `+&`, `+|`, `+^`, `+<`, `+>`
 - [ ] Junction operators: `&`, `|`, `^`
-- [ ] Meta operators: `R`, `X`, `Z`, `[op]`, `op=`
+- [x] `[op]` reduction meta operator
+- [ ] Meta operators: `R`, `X`, `Z`, `op=`
 - [ ] Hyper operators: `>>op<<`
 
 ### Control Flow
@@ -94,9 +95,9 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] `try` / `CATCH`
 - [x] `with` / `without`
 - [x] `orwith`
-- [ ] `proceed`, `succeed`
-- [ ] `redo`
-- [ ] Labeled loops
+- [x] `proceed`, `succeed`
+- [x] `redo`
+- [x] Labeled loops
 - [ ] `CONTROL { }`
 - [x] `warn`
 - [x] `fail`
@@ -115,7 +116,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] Slurpy parameters (`*@args`, `*%opts`)
 - [x] `multi sub`
 - [ ] `proto sub`
-- [ ] `MAIN` sub
+- [x] `MAIN` sub
 - [x] Closure (lexical capture)
 
 ### Built-in Methods

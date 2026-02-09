@@ -49,6 +49,7 @@ pub(crate) enum Expr {
     Call { name: String, args: Vec<Expr> },
     Try { body: Vec<Stmt>, catch: Option<Vec<Stmt>> },
     Gather(Vec<Stmt>),
+    Reduction { op: String, expr: Box<Expr> },
     InfixFunc {
         name: String,
         left: Box<Expr>,

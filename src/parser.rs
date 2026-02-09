@@ -1305,6 +1305,8 @@ impl Parser {
             let expr = self.parse_expr()?;
             self.consume_kind(TokenKind::RParen)?;
             expr
+        } else if self.check(&TokenKind::LBracket) && self.is_reduction_op() {
+            self.parse_reduction()?
         } else if self.match_kind(TokenKind::LBracket) {
             let mut items = Vec::new();
             if !self.check(&TokenKind::RBracket) {
@@ -1844,5 +1846,60 @@ impl Parser {
             return Err(RuntimeError::new("Expected 'while' or 'until' after repeat block"));
         }
         Err(RuntimeError::new("Expected loop keyword after label"))
+    }
+
+    fn is_reduction_op(&self) -> bool {
+        if !matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::LBracket)) {
+            return false;
+        }
+        if !matches!(self.tokens.get(self.pos + 2).map(|t| &t.kind), Some(TokenKind::RBracket)) {
+            return false;
+        }
+        match self.tokens.get(self.pos + 1).map(|t| &t.kind) {
+            Some(TokenKind::Plus | TokenKind::Minus | TokenKind::Star |
+                 TokenKind::Slash | TokenKind::StarStar | TokenKind::Tilde |
+                 TokenKind::AndAnd | TokenKind::OrOr | TokenKind::SlashSlash |
+                 TokenKind::Comma | TokenKind::LtEqGt | TokenKind::EqEq |
+                 TokenKind::BangEq | TokenKind::Lt | TokenKind::Gt |
+                 TokenKind::Lte | TokenKind::Gte |
+                 TokenKind::BitAnd | TokenKind::BitOr | TokenKind::BitXor) => true,
+            Some(TokenKind::Ident(name)) => matches!(name.as_str(),
+                "min" | "max" | "leg" | "cmp" | "eq" | "ne" | "lt" | "gt" |
+                "le" | "ge" | "lcm" | "gcd" | "and" | "or" | "x"
+            ),
+            _ => false,
+        }
+    }
+
+    fn parse_reduction(&mut self) -> Result<Expr, RuntimeError> {
+        self.consume_kind(TokenKind::LBracket)?;
+        let op_name = match self.tokens.get(self.pos).map(|t| &t.kind) {
+            Some(TokenKind::Plus) => "+".to_string(),
+            Some(TokenKind::Minus) => "-".to_string(),
+            Some(TokenKind::Star) => "*".to_string(),
+            Some(TokenKind::Slash) => "/".to_string(),
+            Some(TokenKind::StarStar) => "**".to_string(),
+            Some(TokenKind::Tilde) => "~".to_string(),
+            Some(TokenKind::AndAnd) => "&&".to_string(),
+            Some(TokenKind::OrOr) => "||".to_string(),
+            Some(TokenKind::SlashSlash) => "//".to_string(),
+            Some(TokenKind::Comma) => ",".to_string(),
+            Some(TokenKind::LtEqGt) => "<=>".to_string(),
+            Some(TokenKind::EqEq) => "==".to_string(),
+            Some(TokenKind::BangEq) => "!=".to_string(),
+            Some(TokenKind::Lt) => "<".to_string(),
+            Some(TokenKind::Gt) => ">".to_string(),
+            Some(TokenKind::Lte) => "<=".to_string(),
+            Some(TokenKind::Gte) => ">=".to_string(),
+            Some(TokenKind::BitAnd) => "+&".to_string(),
+            Some(TokenKind::BitOr) => "+|".to_string(),
+            Some(TokenKind::BitXor) => "+^".to_string(),
+            Some(TokenKind::Ident(name)) => name.clone(),
+            _ => return Err(RuntimeError::new("Expected operator in reduction")),
+        };
+        self.pos += 1;
+        self.consume_kind(TokenKind::RBracket)?;
+        let expr = self.parse_comma_expr()?;
+        Ok(Expr::Reduction { op: op_name, expr: Box::new(expr) })
     }
 }
