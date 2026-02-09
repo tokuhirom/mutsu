@@ -21,7 +21,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] Pair
 - [x] FatRat
 - [x] Nil
-- [ ] Rat (rational number)
+- [x] Rat (rational number)
 - [ ] Complex
 - [ ] Set, Bag, Mix
 - [ ] Enum

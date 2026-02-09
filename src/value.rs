@@ -2,6 +2,36 @@ use std::collections::HashMap;
 
 use crate::ast::Stmt;
 
+fn gcd(mut a: i64, mut b: i64) -> i64 {
+    a = a.abs();
+    b = b.abs();
+    while b != 0 {
+        let t = b;
+        b = a % b;
+        a = t;
+    }
+    a
+}
+
+pub fn make_rat(num: i64, den: i64) -> Value {
+    if den == 0 {
+        if num == 0 {
+            return Value::Rat(0, 0); // NaN
+        } else if num > 0 {
+            return Value::Rat(1, 0); // Inf
+        } else {
+            return Value::Rat(-1, 0); // -Inf
+        }
+    }
+    let g = gcd(num, den);
+    let (mut n, mut d) = (num / g, den / g);
+    if d < 0 {
+        n = -n;
+        d = -d;
+    }
+    Value::Rat(n, d)
+}
+
 #[allow(private_interfaces)]
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -15,6 +45,7 @@ pub enum Value {
     RangeExclBoth(i64, i64),
     Array(Vec<Value>),
     Hash(HashMap<String, Value>),
+    Rat(i64, i64),
     FatRat(i64, i64),
     CompUnitDepSpec { short_name: String },
     Package(String),
@@ -51,6 +82,19 @@ impl PartialEq for Value {
             (Value::RangeExclBoth(a1, b1), Value::RangeExclBoth(a2, b2)) => a1 == a2 && b1 == b2,
             (Value::Array(a), Value::Array(b)) => a == b,
             (Value::Hash(a), Value::Hash(b)) => a == b,
+            (Value::Rat(a1, b1), Value::Rat(a2, b2)) => {
+                if *b1 == 0 && *b2 == 0 && *a1 == 0 && *a2 == 0 {
+                    return false; // NaN != NaN
+                }
+                a1 == a2 && b1 == b2
+            }
+            (Value::Rat(n, d), Value::Int(i)) | (Value::Int(i), Value::Rat(n, d)) => {
+                *d != 0 && *n == *i * *d
+            }
+            (Value::Rat(n, d), Value::Num(f)) | (Value::Num(f), Value::Rat(n, d)) => {
+                if *d == 0 { return false; }
+                (*n as f64 / *d as f64) == *f
+            }
             (Value::FatRat(a1, b1), Value::FatRat(a2, b2)) => a1 == a2 && b1 == b2,
             (Value::CompUnitDepSpec { short_name: a }, Value::CompUnitDepSpec { short_name: b }) => a == b,
             (Value::Package(a), Value::Package(b)) => a == b,
@@ -76,6 +120,7 @@ impl Value {
             Value::RangeExclBoth(_, _) => true,
             Value::Array(items) => !items.is_empty(),
             Value::Hash(items) => !items.is_empty(),
+            Value::Rat(n, _) => *n != 0,
             Value::FatRat(_, _) => true,
             Value::Pair(_, _) => true,
             Value::Enum { .. } => true,
@@ -114,6 +159,26 @@ impl Value {
                 .map(|(k, v)| format!("{}\t{}", k, v.to_string_value()))
                 .collect::<Vec<_>>()
                 .join("\n"),
+            Value::Rat(n, d) => {
+                if *d == 0 {
+                    if *n == 0 { "NaN".to_string() }
+                    else if *n > 0 { "Inf".to_string() }
+                    else { "-Inf".to_string() }
+                } else {
+                    let whole = *n as f64 / *d as f64;
+                    // Check if it can be represented as exact decimal
+                    let mut dd = *d;
+                    while dd % 2 == 0 { dd /= 2; }
+                    while dd % 5 == 0 { dd /= 5; }
+                    if dd == 1 {
+                        // Exact decimal representation
+                        let s = format!("{}", whole);
+                        if s.contains('.') { s } else { format!("{}.0", whole) }
+                    } else {
+                        format!("{:.6}", whole)
+                    }
+                }
+            }
             Value::FatRat(a, b) => format!("{}/{}", a, b),
             Value::Pair(k, v) => format!("{}\t{}", k, v.to_string_value()),
             Value::Enum { key, .. } => key.clone(),

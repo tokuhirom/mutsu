@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::ast::{AssignOp, CallArg, ExpectedMatcher, Expr, FunctionDef, ParamDef, Stmt};
 use crate::lexer::{Lexer, TokenKind};
 use crate::parser::Parser;
-use crate::value::{RuntimeError, Value};
+use crate::value::{make_rat, RuntimeError, Value};
 
 pub struct Interpreter {
     env: HashMap<String, Value>,
@@ -697,6 +697,7 @@ impl Interpreter {
                 let todo = self.named_arg_bool(args, "todo")?;
                 let ok = match type_name.as_str() {
                     "Array" => matches!(value, Value::Array(_)),
+                    "Rat" => matches!(value, Value::Rat(_, _)),
                     "FatRat" => matches!(value, Value::FatRat(_, _)),
                     _ => true,
                 };
@@ -1028,6 +1029,7 @@ impl Interpreter {
             Value::Range(_, _) | Value::RangeExcl(_, _) |
             Value::RangeExclStart(_, _) | Value::RangeExclBoth(_, _) => "Range",
             Value::Pair(_, _) => "Pair",
+            Value::Rat(_, _) => "Rat",
             Value::FatRat(_, _) => "FatRat",
             Value::Nil => "Any",
             Value::Sub { .. } => "Sub",
@@ -1046,13 +1048,13 @@ impl Interpreter {
             return true;
         }
         // Numeric hierarchy: Int is a Numeric, Num is a Numeric
-        if constraint == "Numeric" && matches!(value_type, "Int" | "Num" | "FatRat") {
+        if constraint == "Numeric" && matches!(value_type, "Int" | "Num" | "Rat" | "FatRat") {
             return true;
         }
-        if constraint == "Real" && matches!(value_type, "Int" | "Num" | "FatRat") {
+        if constraint == "Real" && matches!(value_type, "Int" | "Num" | "Rat" | "FatRat") {
             return true;
         }
-        if constraint == "Cool" && matches!(value_type, "Int" | "Num" | "Str" | "Bool" | "FatRat") {
+        if constraint == "Cool" && matches!(value_type, "Int" | "Num" | "Str" | "Bool" | "Rat" | "FatRat") {
             return true;
         }
         if constraint == "Stringy" && matches!(value_type, "Str") {
@@ -1499,6 +1501,7 @@ impl Interpreter {
                         Value::RangeExcl(_, _) | Value::RangeExclStart(_, _) | Value::RangeExclBoth(_, _) => "Range",
                         Value::Array(_) => "Array",
                         Value::Hash(_) => "Hash",
+                        Value::Rat(_, _) => "Rat",
                         Value::FatRat(_, _) => "FatRat",
                         Value::Pair(_, _) => "Pair",
                         Value::Enum { enum_type, .. } => enum_type.as_str(),
@@ -1518,6 +1521,7 @@ impl Interpreter {
                             Value::Range(_, _) | Value::RangeExcl(_, _) | Value::RangeExclStart(_, _) | Value::RangeExclBoth(_, _) => "Range".to_string(),
                             Value::Array(_) => "Array".to_string(),
                             Value::Hash(_) => "Hash".to_string(),
+                            Value::Rat(_, _) => "Rat".to_string(),
                             Value::FatRat(_, _) => "FatRat".to_string(),
                             Value::Pair(_, _) => "Pair".to_string(),
                             Value::Enum { enum_type, .. } => enum_type.clone(),
@@ -1785,6 +1789,10 @@ impl Interpreter {
                     "Int" => match base {
                         Value::Int(i) => Ok(Value::Int(i)),
                         Value::Num(f) => Ok(Value::Int(f as i64)),
+                        Value::Rat(n, d) => {
+                            if d == 0 { Err(RuntimeError::new("Cannot convert Inf/NaN Rat to Int")) }
+                            else { Ok(Value::Int(n / d)) }
+                        }
                         Value::Str(s) => Ok(Value::Int(s.trim().parse::<i64>().unwrap_or(0))),
                         Value::Bool(b) => Ok(Value::Int(if b { 1 } else { 0 })),
                         _ => Ok(Value::Int(0)),
@@ -1792,6 +1800,15 @@ impl Interpreter {
                     "Numeric" | "Num" => match base {
                         Value::Int(i) => Ok(Value::Int(i)),
                         Value::Num(f) => Ok(Value::Num(f)),
+                        Value::Rat(n, d) => {
+                            if d == 0 {
+                                if n == 0 { Ok(Value::Num(f64::NAN)) }
+                                else if n > 0 { Ok(Value::Num(f64::INFINITY)) }
+                                else { Ok(Value::Num(f64::NEG_INFINITY)) }
+                            } else {
+                                Ok(Value::Num(n as f64 / d as f64))
+                            }
+                        }
                         Value::Str(s) => {
                             if let Ok(i) = s.trim().parse::<i64>() {
                                 Ok(Value::Int(i))
@@ -1804,8 +1821,71 @@ impl Interpreter {
                         Value::Bool(b) => Ok(Value::Int(if b { 1 } else { 0 })),
                         _ => Ok(Value::Int(0)),
                     },
+                    "Rat" => match base {
+                        Value::Rat(_, _) => Ok(base),
+                        Value::Int(i) => Ok(make_rat(i, 1)),
+                        Value::Num(f) => {
+                            // Simple conversion: approximate as rational
+                            let denom = 1_000_000i64;
+                            let numer = (f * denom as f64).round() as i64;
+                            Ok(make_rat(numer, denom))
+                        }
+                        Value::FatRat(n, d) => Ok(make_rat(n, d)),
+                        _ => Ok(make_rat(0, 1)),
+                    },
+                    "FatRat" => match base {
+                        Value::FatRat(_, _) => Ok(base),
+                        Value::Rat(n, d) => Ok(Value::FatRat(n, d)),
+                        Value::Int(i) => Ok(Value::FatRat(i, 1)),
+                        _ => Ok(Value::FatRat(0, 1)),
+                    },
+                    "nude" => match base {
+                        Value::Rat(n, d) => Ok(Value::Array(vec![Value::Int(n), Value::Int(d)])),
+                        Value::FatRat(n, d) => Ok(Value::Array(vec![Value::Int(n), Value::Int(d)])),
+                        Value::Int(i) => Ok(Value::Array(vec![Value::Int(i), Value::Int(1)])),
+                        _ => Ok(Value::Array(vec![Value::Int(0), Value::Int(1)])),
+                    },
+                    "numerator" => match base {
+                        Value::Rat(n, _) => Ok(Value::Int(n)),
+                        Value::FatRat(n, _) => Ok(Value::Int(n)),
+                        Value::Int(i) => Ok(Value::Int(i)),
+                        _ => Ok(Value::Int(0)),
+                    },
+                    "denominator" => match base {
+                        Value::Rat(_, d) => Ok(Value::Int(d)),
+                        Value::FatRat(_, d) => Ok(Value::Int(d)),
+                        Value::Int(_) => Ok(Value::Int(1)),
+                        _ => Ok(Value::Int(1)),
+                    },
+                    "isNaN" => match base {
+                        Value::Rat(0, 0) => Ok(Value::Bool(true)),
+                        Value::Num(f) => Ok(Value::Bool(f.is_nan())),
+                        _ => Ok(Value::Bool(false)),
+                    },
                     "Bool" => Ok(Value::Bool(base.truthy())),
-                    "gist" | "raku" | "perl" => Ok(Value::Str(base.to_string_value())),
+                    "gist" | "raku" | "perl" => match base {
+                        Value::Rat(n, d) => {
+                            if d == 0 {
+                                if n == 0 { Ok(Value::Str("NaN".to_string())) }
+                                else if n > 0 { Ok(Value::Str("Inf".to_string())) }
+                                else { Ok(Value::Str("-Inf".to_string())) }
+                            } else {
+                                // For .raku: exact decimal or <n/d> form
+                                let mut dd = d;
+                                while dd % 2 == 0 { dd /= 2; }
+                                while dd % 5 == 0 { dd /= 5; }
+                                if dd == 1 {
+                                    let val = n as f64 / d as f64;
+                                    let s = format!("{}", val);
+                                    if s.contains('.') { Ok(Value::Str(s)) }
+                                    else { Ok(Value::Str(format!("{}.0", val))) }
+                                } else {
+                                    Ok(Value::Str(format!("<{}/{}>", n, d)))
+                                }
+                            }
+                        }
+                        _ => Ok(Value::Str(base.to_string_value())),
+                    },
                     "Str" => match base {
                         Value::Str(name) if name == "IO::Special" => Ok(Value::Str(String::new())),
                         _ => Ok(Value::Str(base.to_string_value())),
@@ -2332,6 +2412,13 @@ impl Interpreter {
                         _ => Ok(Value::Nil),
                     },
                     "new" => match base {
+                        Value::Str(name) if name == "Rat" => {
+                            let a = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                            let b = args.get(1).map(|e| self.eval_expr(e).ok()).flatten();
+                            let a = match a { Some(Value::Int(i)) => i, _ => 0 };
+                            let b = match b { Some(Value::Int(i)) => i, _ => 1 };
+                            Ok(make_rat(a, b))
+                        }
                         Value::Str(name) if name == "FatRat" => {
                             let a = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
                             let b = args.get(1).map(|e| self.eval_expr(e).ok()).flatten();
@@ -2435,6 +2522,7 @@ impl Interpreter {
                             let val = self.env.get(name).cloned().unwrap_or(Value::Int(0));
                             let new_val = match val {
                                 Value::Int(i) => Value::Int(i + 1),
+                                Value::Rat(n, d) => make_rat(n + d, d),
                                 _ => Value::Int(1),
                             };
                             self.env.insert(name.clone(), new_val.clone());
@@ -2447,6 +2535,7 @@ impl Interpreter {
                             let val = self.env.get(name).cloned().unwrap_or(Value::Int(0));
                             let new_val = match val {
                                 Value::Int(i) => Value::Int(i - 1),
+                                Value::Rat(n, d) => make_rat(n - d, d),
                                 _ => Value::Int(-1),
                             };
                             self.env.insert(name.clone(), new_val.clone());
@@ -2467,6 +2556,7 @@ impl Interpreter {
                             TokenKind::Minus => match value {
                                 Value::Int(i) => Ok(Value::Int(-i)),
                                 Value::Num(f) => Ok(Value::Num(-f)),
+                                Value::Rat(n, d) => Ok(Value::Rat(-n, d)),
                                 _ => Err(RuntimeError::new("Unary - expects numeric")),
                             },
                             TokenKind::Tilde => Ok(Value::Str(value.to_string_value())),
@@ -2491,6 +2581,8 @@ impl Interpreter {
                     let new_val = match (op, &val) {
                         (TokenKind::PlusPlus, Value::Int(i)) => Value::Int(i + 1),
                         (TokenKind::MinusMinus, Value::Int(i)) => Value::Int(i - 1),
+                        (TokenKind::PlusPlus, Value::Rat(n, d)) => make_rat(n + d, *d),
+                        (TokenKind::MinusMinus, Value::Rat(n, d)) => make_rat(n - d, *d),
                         (TokenKind::PlusPlus, _) => Value::Int(1),
                         (TokenKind::MinusMinus, _) => Value::Int(-1),
                         _ => val.clone(),
@@ -2957,6 +3049,11 @@ impl Interpreter {
         match op {
             TokenKind::Plus => {
                 let (l, r) = Self::coerce_numeric(left, right);
+                if let (Some((an, ad)), Some((bn, bd))) = (Self::to_rat_parts(&l), Self::to_rat_parts(&r)) {
+                    if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
+                        return Ok(make_rat(an * bd + bn * ad, ad * bd));
+                    }
+                }
                 match (l, r) {
                     (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a.wrapping_add(b))),
                     (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a + b)),
@@ -2967,6 +3064,11 @@ impl Interpreter {
             }
             TokenKind::Minus => {
                 let (l, r) = Self::coerce_numeric(left, right);
+                if let (Some((an, ad)), Some((bn, bd))) = (Self::to_rat_parts(&l), Self::to_rat_parts(&r)) {
+                    if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
+                        return Ok(make_rat(an * bd - bn * ad, ad * bd));
+                    }
+                }
                 match (l, r) {
                     (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a.wrapping_sub(b))),
                     (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a - b)),
@@ -2977,6 +3079,11 @@ impl Interpreter {
             }
             TokenKind::Star => {
                 let (l, r) = Self::coerce_numeric(left, right);
+                if let (Some((an, ad)), Some((bn, bd))) = (Self::to_rat_parts(&l), Self::to_rat_parts(&r)) {
+                    if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
+                        return Ok(make_rat(an * bn, ad * bd));
+                    }
+                }
                 match (l, r) {
                     (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a.wrapping_mul(b))),
                     (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a * b)),
@@ -2987,17 +3094,36 @@ impl Interpreter {
             }
             TokenKind::Slash => {
                 let (l, r) = Self::coerce_numeric(left, right);
-                match (l, r) {
-                    (Value::Int(_), Value::Int(0)) => Err(RuntimeError::new("Division by zero")),
-                    (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a / b)),
+                match (&l, &r) {
+                    (Value::Rat(_, _), _) | (_, Value::Rat(_, _)) |
+                    (Value::Int(_), Value::Int(_)) => {
+                        let (an, ad) = Self::to_rat_parts(&l).unwrap_or((0, 1));
+                        let (bn, bd) = Self::to_rat_parts(&r).unwrap_or((0, 1));
+                        if bn == 0 {
+                            return Err(RuntimeError::new("Division by zero"));
+                        }
+                        Ok(make_rat(an * bd, ad * bn))
+                    }
                     (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a / b)),
-                    (Value::Int(a), Value::Num(b)) => Ok(Value::Num(a as f64 / b)),
-                    (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a / b as f64)),
+                    (Value::Int(a), Value::Num(b)) => Ok(Value::Num(*a as f64 / b)),
+                    (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a / *b as f64)),
                     _ => Ok(Value::Int(0)),
                 }
             }
             TokenKind::Percent => {
                 let (l, r) = Self::coerce_numeric(left, right);
+                if let (Some((an, ad)), Some((bn, bd))) = (Self::to_rat_parts(&l), Self::to_rat_parts(&r)) {
+                    if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
+                        if bn == 0 {
+                            return Err(RuntimeError::new("Modulo by zero"));
+                        }
+                        // (an/ad) % (bn/bd) = remainder
+                        let lf = an as f64 / ad as f64;
+                        let rf = bn as f64 / bd as f64;
+                        let result = lf % rf;
+                        return Ok(Value::Num(result));
+                    }
+                }
                 match (l, r) {
                     (Value::Int(_), Value::Int(0)) => Err(RuntimeError::new("Modulo by zero")),
                     (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a % b)),
@@ -3019,7 +3145,20 @@ impl Interpreter {
                 let (l, r) = Self::coerce_numeric(left, right);
                 match (l, r) {
                     (Value::Int(a), Value::Int(b)) if b >= 0 => Ok(Value::Int(a.pow(b as u32))),
-                    (Value::Int(a), Value::Int(b)) => Ok(Value::Num((a as f64).powi(b as i32))),
+                    (Value::Int(a), Value::Int(b)) => {
+                        // Negative integer exponent: a ** -n = 1/(a**n) -> Rat
+                        let pos = (-b) as u32;
+                        let base = a.pow(pos);
+                        Ok(make_rat(1, base))
+                    }
+                    (Value::Rat(n, d), Value::Int(b)) if b >= 0 => {
+                        let p = b as u32;
+                        Ok(make_rat(n.pow(p), d.pow(p)))
+                    }
+                    (Value::Rat(n, d), Value::Int(b)) => {
+                        let p = (-b) as u32;
+                        Ok(make_rat(d.pow(p), n.pow(p)))
+                    }
                     (Value::Num(a), Value::Int(b)) => Ok(Value::Num(a.powi(b as i32))),
                     (Value::Int(a), Value::Num(b)) => Ok(Value::Num((a as f64).powf(b))),
                     (Value::Num(a), Value::Num(b)) => Ok(Value::Num(a.powf(b))),
@@ -3572,7 +3711,7 @@ impl Interpreter {
 
     fn coerce_to_numeric(val: Value) -> Value {
         match val {
-            Value::Int(_) | Value::Num(_) => val,
+            Value::Int(_) | Value::Num(_) | Value::Rat(_, _) | Value::FatRat(_, _) => val,
             Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
             Value::Enum { value, .. } => Value::Int(value),
             Value::Str(ref s) => {
@@ -3593,14 +3732,23 @@ impl Interpreter {
 
     fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
         let l = match &left {
-            Value::Int(_) | Value::Num(_) => left,
+            Value::Int(_) | Value::Num(_) | Value::Rat(_, _) | Value::FatRat(_, _) => left,
             _ => Self::coerce_to_numeric(left),
         };
         let r = match &right {
-            Value::Int(_) | Value::Num(_) => right,
+            Value::Int(_) | Value::Num(_) | Value::Rat(_, _) | Value::FatRat(_, _) => right,
             _ => Self::coerce_to_numeric(right),
         };
         (l, r)
+    }
+
+    fn to_rat_parts(val: &Value) -> Option<(i64, i64)> {
+        match val {
+            Value::Int(i) => Some((*i, 1)),
+            Value::Rat(n, d) => Some((*n, *d)),
+            Value::FatRat(n, d) => Some((*n, *d)),
+            _ => None,
+        }
     }
 
     fn compare_values(a: &Value, b: &Value) -> i32 {
@@ -3609,7 +3757,14 @@ impl Interpreter {
             (Value::Num(a), Value::Num(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal) as i32,
             (Value::Int(a), Value::Num(b)) => (*a as f64).partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal) as i32,
             (Value::Num(a), Value::Int(b)) => a.partial_cmp(&(*b as f64)).unwrap_or(std::cmp::Ordering::Equal) as i32,
-            _ => a.to_string_value().cmp(&b.to_string_value()) as i32,
+            _ => {
+                if let (Some((an, ad)), Some((bn, bd))) = (Self::to_rat_parts(a), Self::to_rat_parts(b)) {
+                    let lhs = an as i128 * bd as i128;
+                    let rhs = bn as i128 * ad as i128;
+                    return lhs.cmp(&rhs) as i32;
+                }
+                a.to_string_value().cmp(&b.to_string_value()) as i32
+            }
         }
     }
 
@@ -3617,6 +3772,7 @@ impl Interpreter {
         match v {
             Value::Int(i) => *i,
             Value::Num(f) => *f as i64,
+            Value::Rat(n, d) => if *d != 0 { n / d } else { 0 },
             Value::Str(s) => s.parse().unwrap_or(0),
             _ => 0,
         }
@@ -3624,6 +3780,13 @@ impl Interpreter {
 
     fn compare(left: Value, right: Value, f: fn(i32) -> bool) -> Result<Value, RuntimeError> {
         let (l, r) = Self::coerce_numeric(left, right);
+        if let (Some((an, ad)), Some((bn, bd))) = (Self::to_rat_parts(&l), Self::to_rat_parts(&r)) {
+            if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
+                let lhs = an as i128 * bd as i128;
+                let rhs = bn as i128 * ad as i128;
+                return Ok(Value::Bool(f(lhs.cmp(&rhs) as i32)));
+            }
+        }
         match (l, r) {
             (Value::Int(a), Value::Int(b)) => {
                 let ord = a.cmp(&b) as i32;
