@@ -1133,6 +1133,16 @@ impl Parser {
                 Some(TokenKind::Plus)
             } else if self.match_kind(TokenKind::Minus) {
                 Some(TokenKind::Minus)
+            } else if self.match_kind(TokenKind::BitAnd) {
+                Some(TokenKind::BitAnd)
+            } else if self.match_kind(TokenKind::BitOr) {
+                Some(TokenKind::BitOr)
+            } else if self.match_kind(TokenKind::BitXor) {
+                Some(TokenKind::BitXor)
+            } else if self.match_kind(TokenKind::BitShiftLeft) {
+                Some(TokenKind::BitShiftLeft)
+            } else if self.match_kind(TokenKind::BitShiftRight) {
+                Some(TokenKind::BitShiftRight)
             } else {
                 None
             };

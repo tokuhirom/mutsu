@@ -39,7 +39,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] Radix notation (`0x`, `0o`, `0b`)
 - [x] Exponential notation (`1e10`)
 - [ ] Q/q/qq forms
-- [ ] Heredoc (`q:to/END/`)
+- [x] Heredoc (`q:to/END/`)
 - [ ] Regex literals
 
 ### Variables
@@ -74,7 +74,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] `===` (identity equality)
 - [x] `?` (boolean context prefix)
 - [x] `^` (upto: `^10` -> `0..^10`)
-- [ ] Bitwise: `+&`, `+|`, `+^`, `+<`, `+>`
+- [x] Bitwise: `+&`, `+|`, `+^`, `+<`, `+>`
 - [ ] Junction operators: `&`, `|`, `^`
 - [ ] Meta operators: `R`, `X`, `Z`, `[op]`, `op=`
 - [ ] Hyper operators: `>>op<<`
@@ -99,7 +99,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [ ] Labeled loops
 - [ ] `CONTROL { }`
 - [x] `warn`
-- [ ] `fail`
+- [x] `fail`
 - [x] `do { }` block
 - [x] `gather` / `take`
 - [x] Statement modifiers: `if`, `unless`, `for`, `while`, `until`, `given`, `when`, `with`, `without`
@@ -112,11 +112,11 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] Named parameters
 - [x] Default values
 - [ ] Type constraints (`Int $x`)
-- [ ] Slurpy parameters (`*@args`, `*%opts`)
-- [ ] `multi sub`
+- [x] Slurpy parameters (`*@args`, `*%opts`)
+- [x] `multi sub`
 - [ ] `proto sub`
 - [ ] `MAIN` sub
-- [ ] Closure (lexical capture)
+- [x] Closure (lexical capture)
 
 ### Built-in Methods
 - [x] `.defined`, `.Bool`, `.Str`, `.Int`, `.Numeric`
@@ -127,16 +127,16 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] `.WHAT`, `.perl`, `.gist`
 - [x] `.map`, `.grep`, `.first`
 - [x] `.flat`, `.unique`
-- [ ] `.squish`
+- [x] `.squish`
 - [x] `.min`, `.max`
-- [ ] `.minmax`
+- [x] `.minmax`
 - [x] `.sum`, `.pick`, `.roll`
 - [x] `.comb`, `.contains`, `.starts-with`, `.ends-with`
 - [x] `.substr`, `.index`, `.rindex`
 - [x] `.chomp`, `.chop`, `.trim`
 - [x] `.abs`, `.sqrt`, `.ceiling`, `.floor`, `.round`
 - [x] `.base`
-- [ ] `.parse-base`
+- [x] `.parse-base`
 - [ ] `.Range` (type range)
 - [ ] `.new` (constructor)
 

@@ -72,6 +72,11 @@ pub(crate) enum TokenKind {
     Bind,
     Question,
     Caret,
+    BitAnd,
+    BitOr,
+    BitXor,
+    BitShiftLeft,
+    BitShiftRight,
     LtEqGt,
     Semicolon,
     Eof,
@@ -140,6 +145,84 @@ impl Lexer {
                             s.push(c);
                         }
                         TokenKind::Str(s)
+                    } else if self.peek() == Some(':') || (self.peek() == Some('q') && self.peek_next() == Some(':')) {
+                        // q:to/MARKER/ or qq:to/MARKER/ heredoc
+                        let is_qq = self.peek() == Some('q');
+                        if is_qq { self.pos += 1; } // skip second 'q'
+                        self.pos += 1; // skip ':'
+                        // Read the adverb (e.g., "to")
+                        let mut adverb = String::new();
+                        while let Some(c) = self.peek() {
+                            if c == '/' || c == '(' || c == '[' || c == '<' {
+                                break;
+                            }
+                            adverb.push(c);
+                            self.pos += 1;
+                        }
+                        if adverb == "to" || adverb == "heredoc" {
+                            // Read delimiter
+                            let open = self.peek().unwrap_or('/');
+                            let close = match open {
+                                '/' => '/',
+                                '(' => ')',
+                                '[' => ']',
+                                '<' => '>',
+                                _ => '/',
+                            };
+                            self.pos += 1;
+                            let mut marker = String::new();
+                            while let Some(c) = self.peek() {
+                                if c == close {
+                                    self.pos += 1;
+                                    break;
+                                }
+                                marker.push(c);
+                                self.pos += 1;
+                            }
+                            // Skip to end of current line
+                            while let Some(c) = self.peek() {
+                                self.pos += 1;
+                                if c == '\n' {
+                                    self.line += 1;
+                                    break;
+                                }
+                            }
+                            // Read lines until marker
+                            let mut body = String::new();
+                            loop {
+                                let mut line = String::new();
+                                let mut at_eof = true;
+                                while let Some(c) = self.peek() {
+                                    self.pos += 1;
+                                    at_eof = false;
+                                    if c == '\n' {
+                                        self.line += 1;
+                                        break;
+                                    }
+                                    line.push(c);
+                                }
+                                if line.trim() == marker {
+                                    break;
+                                }
+                                body.push_str(&line);
+                                body.push('\n');
+                                if at_eof { break; }
+                            }
+                            // Remove trailing newline if present
+                            if body.ends_with('\n') {
+                                body.pop();
+                            }
+                            if is_qq {
+                                // qq heredoc: for now treat as plain string
+                                TokenKind::Str(body)
+                            } else {
+                                TokenKind::Str(body)
+                            }
+                        } else {
+                            // Unknown adverb, treat as identifier
+                            let ident = format!("q:{}", adverb);
+                            TokenKind::Ident(ident)
+                        }
                     } else {
                         let ident = self.read_ident_start(ch);
                         match ident.as_str() {
@@ -466,6 +549,16 @@ impl Lexer {
                     TokenKind::PlusPlus
                 } else if self.match_char('=') {
                     TokenKind::PlusEq
+                } else if self.match_char('&') {
+                    TokenKind::BitAnd
+                } else if self.match_char('|') {
+                    TokenKind::BitOr
+                } else if self.match_char('^') {
+                    TokenKind::BitXor
+                } else if self.match_char('<') {
+                    TokenKind::BitShiftLeft
+                } else if self.match_char('>') {
+                    TokenKind::BitShiftRight
                 } else {
                     TokenKind::Plus
                 }

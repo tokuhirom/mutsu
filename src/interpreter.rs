@@ -2622,6 +2622,41 @@ impl Interpreter {
                     _ => Ok(Value::Int(0)),
                 }
             }
+            TokenKind::BitAnd => {
+                let (l, r) = Self::coerce_numeric(left, right);
+                match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a & b)),
+                    _ => Ok(Value::Int(0)),
+                }
+            }
+            TokenKind::BitOr => {
+                let (l, r) = Self::coerce_numeric(left, right);
+                match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a | b)),
+                    _ => Ok(Value::Int(0)),
+                }
+            }
+            TokenKind::BitXor => {
+                let (l, r) = Self::coerce_numeric(left, right);
+                match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a ^ b)),
+                    _ => Ok(Value::Int(0)),
+                }
+            }
+            TokenKind::BitShiftLeft => {
+                let (l, r) = Self::coerce_numeric(left, right);
+                match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a << b)),
+                    _ => Ok(Value::Int(0)),
+                }
+            }
+            TokenKind::BitShiftRight => {
+                let (l, r) = Self::coerce_numeric(left, right);
+                match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a >> b)),
+                    _ => Ok(Value::Int(0)),
+                }
+            }
             TokenKind::Tilde => Ok(Value::Str(format!("{}{}", left.to_string_value(), right.to_string_value()))),
             TokenKind::EqEq => Ok(Value::Bool(left == right)),
             TokenKind::EqEqEq => Ok(Value::Bool(left == right)),
