@@ -145,6 +145,51 @@ impl Lexer {
                             s.push(c);
                         }
                         TokenKind::Str(s)
+                    } else if self.peek() == Some('/') {
+                        // q/string/
+                        self.pos += 1;
+                        let s = self.read_delimited_string('/');
+                        TokenKind::Str(s)
+                    } else if self.peek() == Some('(') {
+                        // q(string)
+                        self.pos += 1;
+                        let s = self.read_bracketed_string('(', ')');
+                        TokenKind::Str(s)
+                    } else if self.peek() == Some('{') {
+                        // q{string}
+                        self.pos += 1;
+                        let s = self.read_bracketed_string('{', '}');
+                        TokenKind::Str(s)
+                    } else if self.peek() == Some('q') && !matches!(self.peek_next(), Some(':')) {
+                        // qq form: qq/string/, qq(string), qq[string], qq<string>, qq{string}
+                        if let Some(delim) = self.src.get(self.pos + 1).copied() {
+                            if matches!(delim, '/' | '(' | '[' | '{' | '<') {
+                                self.pos += 1; // skip second 'q'
+                                self.pos += 1; // skip delimiter
+                                let s = if matches!(delim, '(' | '[' | '{' | '<') {
+                                    let close = match delim {
+                                        '(' => ')', '[' => ']', '{' => '}', '<' => '>', _ => '/',
+                                    };
+                                    self.read_bracketed_string(delim, close)
+                                } else {
+                                    self.read_delimited_string(delim)
+                                };
+                                // TODO: qq should support interpolation
+                                TokenKind::Str(s)
+                            } else {
+                                let ident = self.read_ident_start(ch);
+                                match ident.as_str() {
+                                    "True" => TokenKind::True,
+                                    "False" => TokenKind::False,
+                                    "Nil" | "Mu" | "Any" => TokenKind::Nil,
+                                    "or" => TokenKind::OrWord,
+                                    _ => TokenKind::Ident(ident),
+                                }
+                            }
+                        } else {
+                            let ident = self.read_ident_start(ch);
+                            TokenKind::Ident(ident)
+                        }
                     } else if self.peek() == Some(':') || (self.peek() == Some('q') && self.peek_next() == Some(':')) {
                         // q:to/MARKER/ or qq:to/MARKER/ heredoc
                         let is_qq = self.peek() == Some('q');
@@ -727,7 +772,7 @@ impl Lexer {
 
     fn read_ident(&mut self) -> String {
         let mut ident = String::new();
-        if matches!(self.peek(), Some('*') | Some('~') | Some('?')) {
+        if matches!(self.peek(), Some('*') | Some('~') | Some('?') | Some('^')) {
             if let Some(c) = self.peek() {
                 ident.push(c);
                 self.pos += 1;
@@ -1005,5 +1050,52 @@ impl Lexer {
         } else {
             false
         }
+    }
+
+    fn read_delimited_string(&mut self, delim: char) -> String {
+        let mut s = String::new();
+        while let Some(c) = self.peek() {
+            self.pos += 1;
+            if c == '\\' {
+                if let Some(n) = self.peek() {
+                    self.pos += 1;
+                    if n == delim {
+                        s.push(n);
+                    } else {
+                        s.push('\\');
+                        s.push(n);
+                    }
+                    continue;
+                }
+            }
+            if c == delim {
+                break;
+            }
+            if c == '\n' { self.line += 1; }
+            s.push(c);
+        }
+        s
+    }
+
+    fn read_bracketed_string(&mut self, open: char, close: char) -> String {
+        let mut s = String::new();
+        let mut depth = 1usize;
+        while let Some(c) = self.peek() {
+            self.pos += 1;
+            if c == open {
+                depth += 1;
+                s.push(c);
+            } else if c == close {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+                s.push(c);
+            } else {
+                if c == '\n' { self.line += 1; }
+                s.push(c);
+            }
+        }
+        s
     }
 }

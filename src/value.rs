@@ -123,22 +123,38 @@ pub struct RuntimeError {
     pub return_value: Option<Value>,
     pub is_last: bool,
     pub is_next: bool,
+    pub is_redo: bool,
+    pub is_proceed: bool,
+    pub is_succeed: bool,
+    pub label: Option<String>,
 }
 
 impl RuntimeError {
     pub(crate) fn new(message: impl Into<String>) -> Self {
-        Self { message: message.into(), return_value: None, is_last: false, is_next: false }
+        Self { message: message.into(), return_value: None, is_last: false, is_next: false, is_redo: false, is_proceed: false, is_succeed: false, label: None }
     }
 
     pub(crate) fn return_val(value: Value) -> Self {
-        Self { message: String::new(), return_value: Some(value), is_last: false, is_next: false }
+        Self { message: String::new(), return_value: Some(value), is_last: false, is_next: false, is_redo: false, is_proceed: false, is_succeed: false, label: None }
     }
 
     pub(crate) fn last_signal() -> Self {
-        Self { message: String::new(), return_value: None, is_last: true, is_next: false }
+        Self { message: String::new(), return_value: None, is_last: true, is_next: false, is_redo: false, is_proceed: false, is_succeed: false, label: None }
     }
 
     pub(crate) fn next_signal() -> Self {
-        Self { message: String::new(), return_value: None, is_last: false, is_next: true }
+        Self { message: String::new(), return_value: None, is_last: false, is_next: true, is_redo: false, is_proceed: false, is_succeed: false, label: None }
+    }
+
+    pub(crate) fn redo_signal() -> Self {
+        Self { message: String::new(), return_value: None, is_last: false, is_next: false, is_redo: true, is_proceed: false, is_succeed: false, label: None }
+    }
+
+    pub(crate) fn proceed_signal() -> Self {
+        Self { message: String::new(), return_value: None, is_last: false, is_next: false, is_redo: false, is_proceed: true, is_succeed: false, label: None }
+    }
+
+    pub(crate) fn succeed_signal() -> Self {
+        Self { message: String::new(), return_value: None, is_last: false, is_next: false, is_redo: false, is_proceed: false, is_succeed: true, label: None }
     }
 }

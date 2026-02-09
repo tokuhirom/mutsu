@@ -136,6 +136,20 @@ impl Interpreter {
         let mut parser = Parser::new(tokens);
         let stmts = parser.parse_program()?;
         self.run_block(&stmts)?;
+        // Auto-call MAIN sub if defined
+        if let Some(main_def) = self.resolve_function("MAIN") {
+            let args_val = self.env.get("@*ARGS").cloned().unwrap_or(Value::Array(Vec::new()));
+            let args_list = if let Value::Array(items) = args_val { items } else { Vec::new() };
+            let arg_exprs: Vec<Expr> = args_list.into_iter().map(|v| Expr::Literal(v)).collect();
+            self.bind_function_args(&main_def.param_defs, &main_def.params, &arg_exprs)?;
+            let body = main_def.body.clone();
+            match self.run_block(&body) {
+                Err(e) if e.return_value.is_some() => {}
+                Err(e) if e.message.is_empty() => {}
+                Err(e) => return Err(e),
+                Ok(()) => {}
+            }
+        }
         self.finish()?;
         Ok(self.output.clone())
     }
@@ -260,18 +274,33 @@ impl Interpreter {
                     }
                 }
             }
-            Stmt::While { cond, body } => {
+            Stmt::While { cond, body, label } => {
                 'while_loop: while self.eval_expr(cond)?.truthy() {
-                    for stmt in body {
-                        match self.exec_stmt(stmt) {
-                            Err(e) if e.is_last => break 'while_loop,
-                            Err(e) if e.is_next => continue 'while_loop,
-                            other => { other?; }
+                    loop {
+                        let mut should_redo = false;
+                        for stmt in body {
+                            match self.exec_stmt(stmt) {
+                                Err(e) if e.is_last => {
+                                    if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                        break 'while_loop;
+                                    }
+                                    return Err(e);
+                                }
+                                Err(e) if e.is_next => {
+                                    if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                        continue 'while_loop;
+                                    }
+                                    return Err(e);
+                                }
+                                Err(e) if e.is_redo => { should_redo = true; break; }
+                                other => { other?; }
+                            }
                         }
+                        if !should_redo { break; }
                     }
                 }
             }
-            Stmt::Loop { init, cond, step, body, repeat } => {
+            Stmt::Loop { init, cond, step, body, repeat, label } => {
                 if let Some(init_stmt) = init {
                     self.exec_stmt(init_stmt)?;
                 }
@@ -280,30 +309,57 @@ impl Interpreter {
                     if let Some(cond_expr) = cond {
                         if *repeat && first {
                             first = false;
-                            // skip condition check on first iteration for repeat
                         } else if !self.eval_expr(cond_expr)?.truthy() {
                             break;
                         }
                     }
-                    let mut did_next = false;
-                    for stmt in body {
-                        match self.exec_stmt(stmt) {
-                            Err(e) if e.is_last => break 'c_loop,
-                            Err(e) if e.is_next => { did_next = true; break; }
-                            other => { other?; }
+                    loop {
+                        let mut should_redo = false;
+                        let mut did_next = false;
+                        for stmt in body {
+                            match self.exec_stmt(stmt) {
+                                Err(e) if e.is_last => {
+                                    if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                        break 'c_loop;
+                                    }
+                                    return Err(e);
+                                }
+                                Err(e) if e.is_next => {
+                                    if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                        did_next = true; break;
+                                    }
+                                    return Err(e);
+                                }
+                                Err(e) if e.is_redo => { should_redo = true; break; }
+                                other => { other?; }
+                            }
                         }
+                        if !should_redo { break; }
+                        let _ = did_next;
                     }
                     if let Some(step_expr) = step {
                         self.eval_expr(step_expr)?;
                     }
-                    let _ = did_next;
                 }
             }
-            Stmt::Last => {
-                return Err(RuntimeError::last_signal());
+            Stmt::Last(label) => {
+                let mut sig = RuntimeError::last_signal();
+                sig.label = label.clone();
+                return Err(sig);
             }
-            Stmt::Next => {
-                return Err(RuntimeError::next_signal());
+            Stmt::Next(label) => {
+                let mut sig = RuntimeError::next_signal();
+                sig.label = label.clone();
+                return Err(sig);
+            }
+            Stmt::Redo => {
+                return Err(RuntimeError::redo_signal());
+            }
+            Stmt::Proceed => {
+                return Err(RuntimeError::proceed_signal());
+            }
+            Stmt::Succeed => {
+                return Err(RuntimeError::succeed_signal());
             }
             Stmt::Given { topic, body } => {
                 let topic_val = self.eval_expr(topic)?;
@@ -328,13 +384,20 @@ impl Interpreter {
                 let topic = self.env.get("_").cloned().unwrap_or(Value::Nil);
                 let cond_val = self.eval_expr(cond)?;
                 if self.smart_match(&topic, &cond_val) {
+                    let mut did_proceed = false;
                     for stmt in body {
-                        self.exec_stmt(stmt)?;
+                        match self.exec_stmt(stmt) {
+                            Err(e) if e.is_proceed => { did_proceed = true; break; }
+                            Err(e) if e.is_succeed => { break; }
+                            other => { other?; }
+                        }
                         if self.halted {
                             break;
                         }
                     }
-                    self.when_matched = true;
+                    if !did_proceed {
+                        self.when_matched = true;
+                    }
                 }
             }
             Stmt::Default(body) => {
@@ -346,7 +409,7 @@ impl Interpreter {
                 }
                 self.when_matched = true;
             }
-            Stmt::For { iterable, param, body } => {
+            Stmt::For { iterable, param, body, label } => {
                 let values = match self.eval_expr(iterable)? {
                     Value::Array(items) => items,
                     Value::Range(a, b) => (a..=b).map(Value::Int).collect(),
@@ -360,12 +423,27 @@ impl Interpreter {
                     if let Some(p) = param {
                         self.env.insert(p.clone(), value);
                     }
-                    for stmt in body {
-                        match self.exec_stmt(stmt) {
-                            Err(e) if e.is_last => break 'for_loop,
-                            Err(e) if e.is_next => continue 'for_loop,
-                            other => { other?; }
+                    loop {
+                        let mut should_redo = false;
+                        for stmt in body {
+                            match self.exec_stmt(stmt) {
+                                Err(e) if e.is_last => {
+                                    if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                        break 'for_loop;
+                                    }
+                                    return Err(e);
+                                }
+                                Err(e) if e.is_next => {
+                                    if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                        continue 'for_loop;
+                                    }
+                                    return Err(e);
+                                }
+                                Err(e) if e.is_redo => { should_redo = true; break; }
+                                other => { other?; }
+                            }
                         }
+                        if !should_redo { break; }
                     }
                 }
             }
@@ -1005,7 +1083,20 @@ impl Interpreter {
                     Err(RuntimeError::new("X::Undeclared::Symbols"))
                 }
             }
-            Expr::Block(body) => self.eval_block_value(body),
+            Expr::Block(body) => {
+                let placeholders = collect_placeholders(body);
+                if !placeholders.is_empty() {
+                    Ok(Value::Sub {
+                        package: self.current_package.clone(),
+                        name: String::new(),
+                        param: None,
+                        body: body.clone(),
+                        env: self.env.clone(),
+                    })
+                } else {
+                    self.eval_block_value(body)
+                }
+            }
             Expr::AnonSub(body) => Ok(Value::Sub {
                 package: self.current_package.clone(),
                 name: String::new(),
@@ -1530,8 +1621,39 @@ impl Interpreter {
                     },
                     "sort" => match base {
                         Value::Array(mut items) => {
-                            items.sort_by(|a, b| a.to_string_value().cmp(&b.to_string_value()));
-                            Ok(Value::Array(items))
+                            if let Some(func_expr) = args.get(0) {
+                                let func = self.eval_expr(func_expr)?;
+                                if let Value::Sub { param, body, env, .. } = func {
+                                    let placeholders = collect_placeholders(&body);
+                                    items.sort_by(|a, b| {
+                                        let saved = self.env.clone();
+                                        for (k, v) in &env {
+                                            self.env.insert(k.clone(), v.clone());
+                                        }
+                                        if let Some(p) = &param {
+                                            self.env.insert(p.clone(), a.clone());
+                                        }
+                                        if placeholders.len() >= 2 {
+                                            self.env.insert(placeholders[0].clone(), a.clone());
+                                            self.env.insert(placeholders[1].clone(), b.clone());
+                                        }
+                                        self.env.insert("_".to_string(), a.clone());
+                                        let result = self.eval_block_value(&body).unwrap_or(Value::Int(0));
+                                        self.env = saved;
+                                        match result {
+                                            Value::Int(n) => n.cmp(&0),
+                                            _ => std::cmp::Ordering::Equal,
+                                        }
+                                    });
+                                    Ok(Value::Array(items))
+                                } else {
+                                    items.sort_by(|a, b| a.to_string_value().cmp(&b.to_string_value()));
+                                    Ok(Value::Array(items))
+                                }
+                            } else {
+                                items.sort_by(|a, b| a.to_string_value().cmp(&b.to_string_value()));
+                                Ok(Value::Array(items))
+                            }
                         }
                         _ => Ok(base),
                     },
@@ -1691,6 +1813,7 @@ impl Interpreter {
                             if let Some(func_expr) = args.get(0) {
                                 let func = self.eval_expr(func_expr)?;
                                 if let Value::Sub { param, body, env, .. } = func {
+                                    let placeholders = collect_placeholders(&body);
                                     let mut result = Vec::new();
                                     for item in items {
                                         let saved = self.env.clone();
@@ -1699,6 +1822,9 @@ impl Interpreter {
                                         }
                                         if let Some(p) = &param {
                                             self.env.insert(p.clone(), item.clone());
+                                        }
+                                        if let Some(ph) = placeholders.first() {
+                                            self.env.insert(ph.clone(), item.clone());
                                         }
                                         self.env.insert("_".to_string(), item);
                                         let val = self.eval_block_value(&body)?;
@@ -1720,6 +1846,7 @@ impl Interpreter {
                             if let Some(func_expr) = args.get(0) {
                                 let func = self.eval_expr(func_expr)?;
                                 if let Value::Sub { param, body, env, .. } = func {
+                                    let placeholders = collect_placeholders(&body);
                                     let mut result = Vec::new();
                                     for item in items {
                                         let saved = self.env.clone();
@@ -1728,6 +1855,9 @@ impl Interpreter {
                                         }
                                         if let Some(p) = &param {
                                             self.env.insert(p.clone(), item.clone());
+                                        }
+                                        if let Some(ph) = placeholders.first() {
+                                            self.env.insert(ph.clone(), item.clone());
                                         }
                                         self.env.insert("_".to_string(), item.clone());
                                         let val = self.eval_block_value(&body)?;
@@ -2021,6 +2151,19 @@ impl Interpreter {
                         if let Some(arg) = args.get(0) {
                             if let Ok(value) = self.eval_expr(arg) {
                                 new_env.insert(param_name, value);
+                            }
+                        }
+                    }
+                    // Bind placeholder variables ($^a, $^b, ...)
+                    let placeholders = collect_placeholders(&body);
+                    if !placeholders.is_empty() {
+                        let mut eval_args = Vec::new();
+                        for arg in args {
+                            eval_args.push(self.eval_expr(arg)?);
+                        }
+                        for (i, ph) in placeholders.iter().enumerate() {
+                            if let Some(val) = eval_args.get(i) {
+                                new_env.insert(ph.clone(), val.clone());
                             }
                         }
                     }
@@ -3185,5 +3328,112 @@ mod tests {
             .run("my $x = 0; while $x < 3 { say $x; $x = $x + 1; }")
             .unwrap();
         assert_eq!(output, "0\n1\n2\n");
+    }
+}
+
+// Helper functions for placeholder variable collection
+
+fn collect_placeholders(stmts: &[Stmt]) -> Vec<String> {
+    let mut names = Vec::new();
+    for stmt in stmts {
+        collect_ph_stmt(stmt, &mut names);
+    }
+    names.sort();
+    names.dedup();
+    names
+}
+
+fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
+    match stmt {
+        Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Take(e) => collect_ph_expr(e, out),
+        Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => collect_ph_expr(expr, out),
+        Stmt::Say(es) | Stmt::Print(es) => {
+            for e in es { collect_ph_expr(e, out); }
+        }
+        Stmt::If { cond, then_branch, else_branch } => {
+            collect_ph_expr(cond, out);
+            for s in then_branch { collect_ph_stmt(s, out); }
+            for s in else_branch { collect_ph_stmt(s, out); }
+        }
+        Stmt::While { cond, body, .. } => {
+            collect_ph_expr(cond, out);
+            for s in body { collect_ph_stmt(s, out); }
+        }
+        Stmt::For { iterable, body, .. } => {
+            collect_ph_expr(iterable, out);
+            for s in body { collect_ph_stmt(s, out); }
+        }
+        Stmt::Loop { body, .. } => {
+            for s in body { collect_ph_stmt(s, out); }
+        }
+        Stmt::Block(body) | Stmt::Default(body) | Stmt::Catch(body) => {
+            for s in body { collect_ph_stmt(s, out); }
+        }
+        Stmt::Given { topic, body } => {
+            collect_ph_expr(topic, out);
+            for s in body { collect_ph_stmt(s, out); }
+        }
+        Stmt::When { cond, body } => {
+            collect_ph_expr(cond, out);
+            for s in body { collect_ph_stmt(s, out); }
+        }
+        _ => {}
+    }
+}
+
+fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
+    match expr {
+        Expr::Var(name) if name.starts_with('^') => {
+            if !out.contains(name) { out.push(name.clone()); }
+        }
+        Expr::Binary { left, right, .. } => {
+            collect_ph_expr(left, out);
+            collect_ph_expr(right, out);
+        }
+        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => collect_ph_expr(expr, out),
+        Expr::MethodCall { target, args, .. } => {
+            collect_ph_expr(target, out);
+            for a in args { collect_ph_expr(a, out); }
+        }
+        Expr::Call { args, .. } => {
+            for a in args { collect_ph_expr(a, out); }
+        }
+        Expr::CallOn { target, args } => {
+            collect_ph_expr(target, out);
+            for a in args { collect_ph_expr(a, out); }
+        }
+        Expr::Index { target, index } => {
+            collect_ph_expr(target, out);
+            collect_ph_expr(index, out);
+        }
+        Expr::Ternary { cond, then_expr, else_expr } => {
+            collect_ph_expr(cond, out);
+            collect_ph_expr(then_expr, out);
+            collect_ph_expr(else_expr, out);
+        }
+        Expr::AssignExpr { expr, .. } | Expr::Exists(expr) => collect_ph_expr(expr, out),
+        Expr::ArrayLiteral(es) | Expr::StringInterpolation(es) => {
+            for e in es { collect_ph_expr(e, out); }
+        }
+        Expr::Block(stmts) | Expr::AnonSub(stmts) | Expr::Gather(stmts) => {
+            for s in stmts { collect_ph_stmt(s, out); }
+        }
+        Expr::Lambda { body, .. } => {
+            for s in body { collect_ph_stmt(s, out); }
+        }
+        Expr::Try { body, catch } => {
+            for s in body { collect_ph_stmt(s, out); }
+            if let Some(c) = catch { for s in c { collect_ph_stmt(s, out); } }
+        }
+        Expr::InfixFunc { left, right, .. } => {
+            collect_ph_expr(left, out);
+            for e in right { collect_ph_expr(e, out); }
+        }
+        Expr::Hash(pairs) => {
+            for (_, v) in pairs {
+                if let Some(e) = v { collect_ph_expr(e, out); }
+            }
+        }
+        _ => {}
     }
 }

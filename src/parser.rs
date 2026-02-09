@@ -288,18 +288,29 @@ impl Parser {
                 else_branch: Vec::new(),
             });
         }
+        // Labeled loop detection: LABEL: for/while/loop/...
+        if let Some(label_name) = self.peek_ident() {
+            if matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Colon)) {
+                if let Some(TokenKind::Ident(kw)) = self.tokens.get(self.pos + 2).map(|t| &t.kind) {
+                    if matches!(kw.as_str(), "for" | "while" | "until" | "loop" | "repeat") {
+                        self.pos += 2; // skip label and colon
+                        return self.parse_labeled_loop(Some(label_name));
+                    }
+                }
+            }
+        }
         if self.match_ident("while") {
             let cond = self.parse_expr()?;
             let body = self.parse_block()?;
-            return Ok(Stmt::While { cond, body });
+            return Ok(Stmt::While { cond, body, label: None });
         }
         if self.match_ident("until") {
             let cond = self.parse_expr()?;
             let body = self.parse_block()?;
-            // until is while with negated condition
             return Ok(Stmt::While {
                 cond: Expr::Unary { op: TokenKind::Bang, expr: Box::new(cond) },
                 body,
+                label: None,
             });
         }
         if self.match_ident("repeat") {
@@ -313,6 +324,7 @@ impl Parser {
                     step: None,
                     body,
                     repeat: true,
+                    label: None,
                 });
             } else if self.match_ident("until") {
                 let cond = self.parse_expr()?;
@@ -323,26 +335,22 @@ impl Parser {
                     step: None,
                     body,
                     repeat: true,
+                    label: None,
                 });
             }
             return Err(RuntimeError::new("Expected 'while' or 'until' after repeat block"));
         }
         if self.match_ident("loop") {
             if self.check(&TokenKind::LParen) {
-                // C-style: loop (init; cond; step) { body }
                 if !self.match_kind(TokenKind::LParen) {
                     return Err(RuntimeError::new("expected '(' after loop"));
                 }
-                // init
                 let init = if self.check(&TokenKind::Semicolon) {
-                    // empty init: consume the bare semicolon
                     self.match_kind(TokenKind::Semicolon);
                     None
                 } else {
-                    // parse_stmt consumes the trailing semicolon
                     Some(Box::new(self.parse_stmt()?))
                 };
-                // cond
                 let cond = if self.check(&TokenKind::Semicolon) {
                     None
                 } else {
@@ -351,7 +359,6 @@ impl Parser {
                 if !self.match_kind(TokenKind::Semicolon) {
                     return Err(RuntimeError::new("expected ';' in loop"));
                 }
-                // step
                 let step = if self.check(&TokenKind::RParen) {
                     None
                 } else {
@@ -361,38 +368,40 @@ impl Parser {
                     return Err(RuntimeError::new("expected ')' after loop"));
                 }
                 let body = self.parse_block()?;
-                return Ok(Stmt::Loop { init, cond, step, body, repeat: false });
+                return Ok(Stmt::Loop { init, cond, step, body, repeat: false, label: None });
             } else {
-                // bare loop { body }
                 let body = self.parse_block()?;
-                return Ok(Stmt::Loop { init: None, cond: None, step: None, body, repeat: false });
+                return Ok(Stmt::Loop { init: None, cond: None, step: None, body, repeat: false, label: None });
             }
         }
         if self.match_ident("last") {
+            // Check for label: last LABEL [if cond]
+            let label = self.try_consume_loop_label();
             if self.match_ident("if") {
                 let cond = self.parse_expr()?;
                 self.match_kind(TokenKind::Semicolon);
                 return Ok(Stmt::If {
                     cond,
-                    then_branch: vec![Stmt::Last],
+                    then_branch: vec![Stmt::Last(label)],
                     else_branch: Vec::new(),
                 });
             }
             self.match_kind(TokenKind::Semicolon);
-            return Ok(Stmt::Last);
+            return Ok(Stmt::Last(label));
         }
         if self.match_ident("next") {
+            let label = self.try_consume_loop_label();
             if self.match_ident("if") {
                 let cond = self.parse_expr()?;
                 self.match_kind(TokenKind::Semicolon);
                 return Ok(Stmt::If {
                     cond,
-                    then_branch: vec![Stmt::Next],
+                    then_branch: vec![Stmt::Next(label)],
                     else_branch: Vec::new(),
                 });
             }
             self.match_kind(TokenKind::Semicolon);
-            return Ok(Stmt::Next);
+            return Ok(Stmt::Next(label));
         }
         if self.match_ident("for") {
             let iterable = self.parse_expr()?;
@@ -409,7 +418,7 @@ impl Parser {
                 }
             }
             let body = self.parse_block()?;
-            return Ok(Stmt::For { iterable, param, body });
+            return Ok(Stmt::For { iterable, param, body, label: None });
         }
         if self.match_ident("given") {
             let topic = self.parse_expr()?;
@@ -433,6 +442,18 @@ impl Parser {
         if self.match_ident("CATCH") {
             let body = self.parse_block()?;
             return Ok(Stmt::Catch(body));
+        }
+        if self.match_ident("proceed") {
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::Proceed);
+        }
+        if self.match_ident("succeed") {
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::Succeed);
+        }
+        if self.match_ident("redo") {
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::Redo);
         }
         if self.match_ident("take") {
             let expr = self.parse_expr()?;
@@ -591,12 +612,12 @@ impl Parser {
         if self.match_ident("for") {
             let iterable = self.parse_expr()?;
             self.match_kind(TokenKind::Semicolon);
-            return Ok(Stmt::For { iterable, param: None, body: vec![stmt] });
+            return Ok(Stmt::For { iterable, param: None, body: vec![stmt], label: None });
         }
         if self.match_ident("while") {
             let cond = self.parse_expr()?;
             self.match_kind(TokenKind::Semicolon);
-            return Ok(Stmt::While { cond, body: vec![stmt] });
+            return Ok(Stmt::While { cond, body: vec![stmt], label: None });
         }
         if self.match_ident("until") {
             let cond = self.parse_expr()?;
@@ -604,6 +625,7 @@ impl Parser {
             return Ok(Stmt::While {
                 cond: Expr::Unary { op: TokenKind::Bang, expr: Box::new(cond) },
                 body: vec![stmt],
+                label: None,
             });
         }
         if self.match_ident("with") {
@@ -1722,5 +1744,105 @@ impl Parser {
 
     fn peek_next_kind(&self) -> Option<TokenKind> {
         self.tokens.get(self.pos + 1).map(|t| t.kind.clone())
+    }
+
+    fn try_consume_loop_label(&mut self) -> Option<String> {
+        // Check if next token is an identifier that's NOT a keyword
+        if let Some(TokenKind::Ident(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+            if !matches!(name.as_str(), "if" | "unless" | "while" | "until" | "for" | "given" | "when" | "with" | "without") {
+                let label = name.clone();
+                self.pos += 1;
+                return Some(label);
+            }
+        }
+        None
+    }
+
+    fn parse_labeled_loop(&mut self, label: Option<String>) -> Result<Stmt, RuntimeError> {
+        if self.match_ident("for") {
+            let iterable = self.parse_expr()?;
+            let mut param = None;
+            if self.match_kind(TokenKind::Arrow) {
+                if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
+                    && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
+                {
+                    self.pos += 1;
+                }
+                if self.peek_is_var() {
+                    param = Some(self.consume_var()?);
+                }
+            }
+            let body = self.parse_block()?;
+            return Ok(Stmt::For { iterable, param, body, label });
+        }
+        if self.match_ident("while") {
+            let cond = self.parse_expr()?;
+            let body = self.parse_block()?;
+            return Ok(Stmt::While { cond, body, label });
+        }
+        if self.match_ident("until") {
+            let cond = self.parse_expr()?;
+            let body = self.parse_block()?;
+            return Ok(Stmt::While {
+                cond: Expr::Unary { op: TokenKind::Bang, expr: Box::new(cond) },
+                body,
+                label,
+            });
+        }
+        if self.match_ident("loop") {
+            if self.check(&TokenKind::LParen) {
+                if !self.match_kind(TokenKind::LParen) {
+                    return Err(RuntimeError::new("expected '(' after loop"));
+                }
+                let init = if self.check(&TokenKind::Semicolon) {
+                    self.match_kind(TokenKind::Semicolon);
+                    None
+                } else {
+                    Some(Box::new(self.parse_stmt()?))
+                };
+                let cond = if self.check(&TokenKind::Semicolon) {
+                    None
+                } else {
+                    Some(self.parse_expr()?)
+                };
+                if !self.match_kind(TokenKind::Semicolon) {
+                    return Err(RuntimeError::new("expected ';' in loop"));
+                }
+                let step = if self.check(&TokenKind::RParen) {
+                    None
+                } else {
+                    Some(self.parse_expr()?)
+                };
+                if !self.match_kind(TokenKind::RParen) {
+                    return Err(RuntimeError::new("expected ')' after loop"));
+                }
+                let body = self.parse_block()?;
+                return Ok(Stmt::Loop { init, cond, step, body, repeat: false, label });
+            } else {
+                let body = self.parse_block()?;
+                return Ok(Stmt::Loop { init: None, cond: None, step: None, body, repeat: false, label });
+            }
+        }
+        if self.match_ident("repeat") {
+            let body = self.parse_block()?;
+            if self.match_ident("while") {
+                let cond = self.parse_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::Loop { init: None, cond: Some(cond), step: None, body, repeat: true, label });
+            } else if self.match_ident("until") {
+                let cond = self.parse_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::Loop {
+                    init: None,
+                    cond: Some(Expr::Unary { op: TokenKind::Bang, expr: Box::new(cond) }),
+                    step: None,
+                    body,
+                    repeat: true,
+                    label,
+                });
+            }
+            return Err(RuntimeError::new("Expected 'while' or 'until' after repeat block"));
+        }
+        Err(RuntimeError::new("Expected loop keyword after label"))
     }
 }
