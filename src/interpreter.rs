@@ -7,7 +7,8 @@ use std::os::unix::fs::{self as unix_fs, PermissionsExt};
 #[cfg(windows)]
 use std::os::windows::fs as windows_fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::ast::{
     AssignOp, CallArg, ExpectedMatcher, Expr, FunctionDef, ParamDef, PhaserKind, Stmt,
@@ -6017,6 +6018,38 @@ impl Interpreter {
                 if name == "made" {
                     return Ok(self.env.get("made").cloned().unwrap_or(Value::Nil));
                 }
+                if name == "callframe" {
+                    let depth = args
+                        .get(0)
+                        .map(|e| self.eval_expr(e).ok())
+                        .flatten()
+                        .and_then(|v| match v {
+                            Value::Int(i) if i >= 0 => Some(i as usize),
+                            Value::Num(f) if f >= 0.0 => Some(f as usize),
+                            _ => None,
+                        })
+                        .unwrap_or(0);
+                    if let Some(frame) = self.callframe_value(depth) {
+                        return Ok(frame);
+                    }
+                    return Ok(Value::Nil);
+                }
+                if name == "caller" {
+                    let depth = args
+                        .get(0)
+                        .map(|e| self.eval_expr(e).ok())
+                        .flatten()
+                        .and_then(|v| match v {
+                            Value::Int(i) if i >= 0 => Some(i as usize),
+                            Value::Num(f) if f >= 0.0 => Some(f as usize),
+                            _ => None,
+                        })
+                        .unwrap_or(1);
+                    if let Some(frame) = self.callframe_value(depth) {
+                        return Ok(frame);
+                    }
+                    return Ok(Value::Nil);
+                }
                 if matches!(name.as_str(), "Int" | "Num" | "Str" | "Bool") {
                     if let Some(arg) = args.get(0) {
                         let value = self.eval_expr(arg)?;
@@ -6098,6 +6131,18 @@ impl Interpreter {
                         "No matching candidates for proto sub: {}",
                         name
                     )));
+                }
+                if name == "EVALFILE" {
+                    let path = args
+                        .get(0)
+                        .map(|e| self.eval_expr(e).ok())
+                        .flatten()
+                        .map(|v| v.to_string_value())
+                        .ok_or_else(|| RuntimeError::new("EVALFILE requires a filename"))?;
+                    let code = fs::read_to_string(&path).map_err(|err| {
+                        RuntimeError::new(format!("Failed to read {}: {}", path, err))
+                    })?;
+                    return self.eval_eval_string(&code);
                 }
                 if name == "EVAL" {
                     let code = if let Some(arg) = args.get(0) {
@@ -6232,6 +6277,59 @@ impl Interpreter {
                     }
                     return Ok(Value::Mix(weights));
                 }
+                if name == "hash" {
+                    let mut flat_values = Vec::new();
+                    for arg in args {
+                        let val = self.eval_expr(arg)?;
+                        flat_values.extend(self.value_to_list(&val));
+                    }
+                    let mut map = HashMap::new();
+                    let mut iter = flat_values.into_iter();
+                    while let Some(item) = iter.next() {
+                        match item {
+                            Value::Pair(key, boxed_val) => {
+                                map.insert(key, *boxed_val);
+                            }
+                            other => {
+                                let key = other.to_string_value();
+                                let value = iter.next().unwrap_or(Value::Nil);
+                                map.insert(key, value);
+                            }
+                        }
+                    }
+                    return Ok(Value::Hash(map));
+                }
+                if name == "sleep" {
+                    let arg_val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let duration =
+                        Self::duration_from_seconds(Self::seconds_from_value(arg_val.clone()));
+                    thread::sleep(duration);
+                    return Ok(Value::Nil);
+                }
+                if name == "sleep-timer" {
+                    let arg_val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let duration =
+                        Self::duration_from_seconds(Self::seconds_from_value(arg_val.clone()));
+                    let start = Instant::now();
+                    thread::sleep(duration);
+                    let elapsed = start.elapsed();
+                    let remaining = duration.checked_sub(elapsed).unwrap_or_default();
+                    return Ok(Value::Num(remaining.as_secs_f64()));
+                }
+                if name == "sleep-till" {
+                    let arg_val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    if let Some(target_time) = Self::system_time_from_value(arg_val) {
+                        let now = SystemTime::now();
+                        if target_time <= now {
+                            return Ok(Value::Bool(false));
+                        }
+                        if let Ok(diff) = target_time.duration_since(now) {
+                            thread::sleep(diff);
+                            return Ok(Value::Bool(true));
+                        }
+                    }
+                    return Ok(Value::Bool(false));
+                }
                 if name == "any" || name == "all" || name == "one" || name == "none" {
                     let kind = match name.as_str() {
                         "any" => JunctionKind::Any,
@@ -6251,6 +6349,27 @@ impl Interpreter {
                         kind,
                         values: elems,
                     });
+                }
+                if name == "item" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    return Ok(val.unwrap_or(Value::Nil));
+                }
+                if name == "list" {
+                    let mut result = Vec::new();
+                    for arg in args {
+                        let val = self.eval_expr(arg)?;
+                        for item in self.value_to_list(&val) {
+                            result.push(item);
+                        }
+                    }
+                    return Ok(Value::Array(result));
+                }
+                if name == "lol" {
+                    let mut result = Vec::new();
+                    for arg in args {
+                        result.push(self.eval_expr(arg)?);
+                    }
+                    return Ok(Value::Array(result));
                 }
                 if name == "flat" {
                     let mut result = Vec::new();
@@ -6378,6 +6497,54 @@ impl Interpreter {
                     };
                     self.halted = true;
                     return Ok(Value::Nil);
+                }
+                if name == "chr" {
+                    if let Some(Value::Int(i)) =
+                        args.get(0).map(|e| self.eval_expr(e).ok()).flatten()
+                    {
+                        if i >= 0 {
+                            if let Some(ch) = std::char::from_u32(i as u32) {
+                                return Ok(Value::Str(ch.to_string()));
+                            }
+                        }
+                    }
+                    return Ok(Value::Str(String::new()));
+                }
+                if name == "ord" {
+                    if let Some(val) = args.get(0).map(|e| self.eval_expr(e).ok()).flatten() {
+                        if let Some(ch) = val.to_string_value().chars().next() {
+                            return Ok(Value::Int(ch as u32 as i64));
+                        }
+                    }
+                    return Ok(Value::Nil);
+                }
+                if name == "chrs" {
+                    let mut result = String::new();
+                    for arg in args {
+                        let val = self.eval_expr(arg)?;
+                        for item in self.value_to_list(&val) {
+                            if let Value::Int(i) = item {
+                                if i >= 0 && (i as u64) <= 0x10ffff {
+                                    if let Some(ch) = std::char::from_u32(i as u32) {
+                                        result.push(ch);
+                                        continue;
+                                    }
+                                }
+                            }
+                            result.push_str(&item.to_string_value());
+                        }
+                    }
+                    return Ok(Value::Str(result));
+                }
+                if name == "ords" {
+                    if let Some(val) = args.get(0).map(|e| self.eval_expr(e).ok()).flatten() {
+                        let mut codes = Vec::new();
+                        for ch in val.to_string_value().chars() {
+                            codes.push(Value::Int(ch as u32 as i64));
+                        }
+                        return Ok(Value::Array(codes));
+                    }
+                    return Ok(Value::Array(Vec::new()));
                 }
                 if name == "flip" {
                     let val = args
@@ -6511,6 +6678,14 @@ impl Interpreter {
                         Some(pos) => Value::Int(s[..pos].chars().count() as i64),
                         None => Value::Nil,
                     });
+                }
+                if name == "gist" {
+                    let val = args
+                        .get(0)
+                        .map(|e| self.eval_expr(e).ok())
+                        .flatten()
+                        .unwrap_or(Value::Nil);
+                    return Ok(Value::Str(val.to_string_value()));
                 }
                 if name == "dd" {
                     // Debug dump
@@ -8971,6 +9146,35 @@ impl Interpreter {
             }
             _ => None,
         }
+    }
+
+    fn callframe_value(&self, depth: usize) -> Option<Value> {
+        self.routine_stack
+            .len()
+            .checked_sub(1 + depth)
+            .and_then(|idx| self.routine_stack.get(idx))
+            .map(|(package, name)| {
+                let mut info = HashMap::new();
+                info.insert("package".to_string(), Value::Str(package.clone()));
+                info.insert("name".to_string(), Value::Str(name.clone()));
+                info.insert("depth".to_string(), Value::Int(depth as i64));
+                Value::Hash(info)
+            })
+    }
+
+    fn seconds_from_value(val: Option<Value>) -> Option<f64> {
+        val.and_then(|v| Self::to_float_value(&v))
+    }
+
+    fn duration_from_seconds(secs: Option<f64>) -> Duration {
+        let secs = secs.unwrap_or(0.0).max(0.0);
+        Duration::from_secs_f64(secs)
+    }
+
+    fn system_time_from_value(val: Option<Value>) -> Option<SystemTime> {
+        let secs = Self::seconds_from_value(val)?;
+        let secs = secs.max(0.0);
+        Some(UNIX_EPOCH + Duration::from_secs_f64(secs))
     }
 
     fn merge_junction(kind: JunctionKind, left: Value, right: Value) -> Value {

@@ -26,13 +26,13 @@ Covers built-in functions in CORE scope.
 - [ ] `bless` - create object from Capture
 - [x] `chr($codepoint)` - codepoint to character (partial)
 - [x] `ord($char)` - character to codepoint (partial)
-- [ ] `chrs(@codepoints)` - multiple codepoints to string
-- [ ] `ords($string)` - string to codepoints
-- [ ] `item($x)` - impose item context
-- [ ] `list($x)` - impose list context
+- [x] `chrs(@codepoints)` - multiple codepoints to string
+- [x] `ords($string)` - string to codepoints
+- [x] `item($x)` - impose item context
+- [x] `list($x)` - impose list context
 - [x] `flat(@nested)` - flatten nested lists
-- [ ] `lol(@lists)` - preserve list-of-lists
-- [ ] `hash(@pairs)` - create hash from pairs
+- [x] `lol(@lists)` - preserve list-of-lists
+- [x] `hash(@pairs)` - create hash from pairs
 - [x] `.gist` - human-readable form
 - [ ] Radix conversions: `:16($str)`, `:8($str)`, `:2($str)`, `:10($str)`
 
