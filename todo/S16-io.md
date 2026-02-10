@@ -103,8 +103,8 @@ Covers file I/O, path manipulation, and standard handles.
 ### File Operations
 - [ ] `open($path, :r, :w, :a)` - open file
 - [ ] `close($handle)` - close handle
-- [ ] `slurp($path)` - read entire file
-- [ ] `spurt($path, $content)` - write file
+- [x] `slurp($path)` - read entire file
+- [x] `spurt($path, $content)` - write file
 - [ ] `dir($path)` - list directory
 
 ### Directory Operations
@@ -119,7 +119,7 @@ Covers file I/O, path manipulation, and standard handles.
 - [ ] `copy($src, $dest)` - copy file
 - [ ] `rename($src, $dest)` - rename/move file
 - [ ] `move($src, $dest)` - move file
-- [ ] `unlink($path)` - delete file
+- [x] `unlink($path)` - delete file
 - [ ] `chmod($mode, $path)` - change permissions
 - [ ] `link($target, $name)` - create hard link
 - [ ] `symlink($target, $name)` - create symbolic link

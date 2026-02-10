@@ -4537,6 +4537,33 @@ impl Interpreter {
                         .unwrap_or(Value::Nil);
                     return Ok(Value::Pair(key, Box::new(val)));
                 }
+                if name == "slurp" {
+                    let path = args.get(0).map(|e| self.eval_expr(e).ok()).flatten()
+                        .map(|v| v.to_string_value())
+                        .ok_or_else(|| RuntimeError::new("slurp requires a path argument"))?;
+                    let content = fs::read_to_string(&path)
+                        .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
+                    return Ok(Value::Str(content));
+                }
+                if name == "spurt" {
+                    let path = args.get(0).map(|e| self.eval_expr(e).ok()).flatten()
+                        .map(|v| v.to_string_value())
+                        .ok_or_else(|| RuntimeError::new("spurt requires a path argument"))?;
+                    let content = args.get(1).map(|e| self.eval_expr(e).ok()).flatten()
+                        .map(|v| v.to_string_value())
+                        .ok_or_else(|| RuntimeError::new("spurt requires a content argument"))?;
+                    fs::write(&path, &content)
+                        .map_err(|err| RuntimeError::new(format!("Failed to spurt '{}': {}", path, err)))?;
+                    return Ok(Value::Bool(true));
+                }
+                if name == "unlink" {
+                    let path = args.get(0).map(|e| self.eval_expr(e).ok()).flatten()
+                        .map(|v| v.to_string_value())
+                        .ok_or_else(|| RuntimeError::new("unlink requires a path argument"))?;
+                    fs::remove_file(&path)
+                        .map_err(|err| RuntimeError::new(format!("Failed to unlink '{}': {}", path, err)))?;
+                    return Ok(Value::Bool(true));
+                }
                 Ok(Value::Nil)
             }
             Expr::Try { body, catch } => {
