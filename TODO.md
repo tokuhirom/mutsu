@@ -175,7 +175,7 @@ Implement Raku OOP.
 - [x] `multi method`
 - [x] `BUILD` / `TWEAK` submethods
 - [x] Type checking
-- [ ] Coercion (`Int(Str)` etc.)
+- [x] Coercion (`Int(Str)` etc.)
 - [x] `enum`
 - [ ] `subset`
 - [ ] Method resolution order (MRO, C3)
