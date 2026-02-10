@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::Stmt;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum JunctionKind {
@@ -102,7 +104,15 @@ pub enum Value {
         kind: JunctionKind,
         values: Vec<Value>,
     },
+    LazyList(Rc<LazyList>),
     Nil,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct LazyList {
+    pub(crate) body: Vec<Stmt>,
+    pub(crate) env: HashMap<String, Value>,
+    pub(crate) cache: RefCell<Option<Vec<Value>>>,
 }
 
 impl PartialEq for Value {
@@ -152,6 +162,7 @@ impl PartialEq for Value {
             (Value::Routine { package: ap, name: an }, Value::Routine { package: bp, name: bn }) => ap == bp && an == bn,
             (Value::Instance { class_name: a, attributes: aa }, Value::Instance { class_name: b, attributes: ba }) => a == b && aa == ba,
             (Value::Junction { kind: ak, values: av }, Value::Junction { kind: bk, values: bv }) => ak == bk && av == bv,
+            (Value::LazyList(a), Value::LazyList(b)) => Rc::ptr_eq(a, b),
             (Value::Nil, Value::Nil) => true,
             _ => false,
         }
@@ -190,6 +201,7 @@ impl Value {
                 JunctionKind::One => values.iter().filter(|v| v.truthy()).count() == 1,
                 JunctionKind::None => values.iter().all(|v| !v.truthy()),
             },
+            Value::LazyList(_) => true,
             Value::Regex(_) => true,
             Value::Nil => false,
         }
@@ -217,6 +229,7 @@ impl Value {
                 .map(|v| v.to_string_value())
                 .collect::<Vec<_>>()
                 .join(" "),
+            Value::LazyList(_) => "LazyList".to_string(),
             Value::Hash(items) => items
                 .iter()
                 .map(|(k, v)| format!("{}\t{}", k, v.to_string_value()))

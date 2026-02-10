@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::ast::{AssignOp, CallArg, ExpectedMatcher, Expr, FunctionDef, ParamDef, PhaserKind, Stmt};
 use crate::lexer::{Lexer, TokenKind};
 use crate::parser::Parser;
-use crate::value::{make_rat, JunctionKind, RuntimeError, Value};
+use crate::value::{make_rat, JunctionKind, LazyList, RuntimeError, Value};
 
 #[derive(Debug, Clone)]
 struct ClassDef {
@@ -563,14 +563,8 @@ impl Interpreter {
                 self.when_matched = true;
             }
             Stmt::For { iterable, param, body, label } => {
-                let values = match self.eval_expr(iterable)? {
-                    Value::Array(items) => items,
-                    Value::Range(a, b) => (a..=b).map(Value::Int).collect(),
-                    Value::RangeExcl(a, b) => (a..b).map(Value::Int).collect(),
-                    Value::RangeExclStart(a, b) => (a+1..=b).map(Value::Int).collect(),
-                    Value::RangeExclBoth(a, b) => (a+1..b).map(Value::Int).collect(),
-                    other => vec![other],
-                };
+                let iterable_val = self.eval_expr(iterable)?;
+                let values = self.list_from_value(iterable_val)?;
                 let (enter_ph, leave_ph, first_ph, next_ph, last_ph, body_main) = self.split_loop_phasers(body);
                 let mut iter_idx = 0usize;
                 'for_loop: for value in values {
@@ -1342,6 +1336,41 @@ impl Interpreter {
         }
     }
 
+    fn force_lazy_list(&mut self, list: &LazyList) -> Result<Vec<Value>, RuntimeError> {
+        if let Some(cached) = list.cache.borrow().clone() {
+            return Ok(cached);
+        }
+        let saved_env = self.env.clone();
+        let saved_len = self.gather_items.len();
+        self.env = list.env.clone();
+        self.gather_items.push(Vec::new());
+        let run_res = self.run_block(&list.body);
+        let items = self.gather_items.pop().unwrap_or_default();
+        while self.gather_items.len() > saved_len {
+            self.gather_items.pop();
+        }
+        let mut merged_env = saved_env;
+        for (k, v) in self.env.iter() {
+            merged_env.insert(k.clone(), v.clone());
+        }
+        self.env = merged_env;
+        run_res?;
+        *list.cache.borrow_mut() = Some(items.clone());
+        Ok(items)
+    }
+
+    fn list_from_value(&mut self, value: Value) -> Result<Vec<Value>, RuntimeError> {
+        Ok(match value {
+            Value::Array(items) => items,
+            Value::Range(a, b) => (a..=b).map(Value::Int).collect(),
+            Value::RangeExcl(a, b) => (a..b).map(Value::Int).collect(),
+            Value::RangeExclStart(a, b) => (a+1..=b).map(Value::Int).collect(),
+            Value::RangeExclBoth(a, b) => (a+1..b).map(Value::Int).collect(),
+            Value::LazyList(list) => self.force_lazy_list(&list)?,
+            other => vec![other],
+        })
+    }
+
     fn split_block_phasers(&self, stmts: &[Stmt]) -> (Vec<Stmt>, Vec<Stmt>, Vec<Stmt>) {
         let mut enter_ph = Vec::new();
         let mut leave_ph = Vec::new();
@@ -1582,6 +1611,7 @@ impl Interpreter {
             Value::Str(_) => "Str",
             Value::Bool(_) => "Bool",
             Value::Array(_) => "Array",
+            Value::LazyList(_) => "Array",
             Value::Hash(_) => "Hash",
             Value::Range(_, _) | Value::RangeExcl(_, _) |
             Value::RangeExclStart(_, _) | Value::RangeExclBoth(_, _) => "Range",
@@ -1908,7 +1938,10 @@ impl Interpreter {
                 Ok(Value::Array(values))
             }
             Expr::Index { target, index } => {
-                let value = self.eval_expr(target)?;
+                let mut value = self.eval_expr(target)?;
+                if let Value::LazyList(list) = &value {
+                    value = Value::Array(self.force_lazy_list(list)?);
+                }
                 let idx = self.eval_expr(index)?;
                 match (value, idx) {
                     (Value::Array(items), Value::Int(i)) => {
@@ -2171,7 +2204,10 @@ impl Interpreter {
                         _ => {}
                     }
                 }
-                let base = self.eval_expr(target)?;
+                let mut base = self.eval_expr(target)?;
+                if let Value::LazyList(list) = &base {
+                    base = Value::Array(self.force_lazy_list(list)?);
+                }
                 // Handle enum-specific methods
                 if let Value::Enum { ref enum_type, ref key, value: enum_val, index } = base {
                     match name.as_str() {
@@ -2234,6 +2270,7 @@ impl Interpreter {
                         Value::Range(_, _) => "Range",
                         Value::RangeExcl(_, _) | Value::RangeExclStart(_, _) | Value::RangeExclBoth(_, _) => "Range",
                         Value::Array(_) => "Array",
+                        Value::LazyList(_) => "Array",
                         Value::Hash(_) => "Hash",
                         Value::Rat(_, _) => "Rat",
                         Value::FatRat(_, _) => "FatRat",
@@ -2261,6 +2298,7 @@ impl Interpreter {
                             Value::Bool(_) => "Bool".to_string(),
                             Value::Range(_, _) | Value::RangeExcl(_, _) | Value::RangeExclStart(_, _) | Value::RangeExclBoth(_, _) => "Range".to_string(),
                             Value::Array(_) => "Array".to_string(),
+                            Value::LazyList(_) => "Array".to_string(),
                             Value::Hash(_) => "Hash".to_string(),
                             Value::Rat(_, _) => "Rat".to_string(),
                             Value::FatRat(_, _) => "FatRat".to_string(),
@@ -3729,6 +3767,7 @@ impl Interpreter {
                     let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
                     return Ok(match val {
                         Some(Value::Array(items)) => Value::Int(items.len() as i64),
+                        Some(Value::LazyList(list)) => Value::Int(self.force_lazy_list(&list)?.len() as i64),
                         Some(Value::Hash(items)) => Value::Int(items.len() as i64),
                         Some(Value::Str(s)) => Value::Int(s.chars().count() as i64),
                         _ => Value::Int(0),
@@ -4107,26 +4146,16 @@ impl Interpreter {
                 }
             }
             Expr::Gather(body) => {
-                self.gather_items.push(Vec::new());
-                for stmt in body {
-                    match self.exec_stmt(stmt) {
-                        Ok(()) => {}
-                        Err(e) if e.is_last => break,
-                        Err(e) => { self.gather_items.pop(); return Err(e); }
-                    }
-                }
-                let items = self.gather_items.pop().unwrap_or_default();
-                Ok(Value::Array(items))
+                let list = LazyList {
+                    body: body.clone(),
+                    env: self.env.clone(),
+                    cache: std::cell::RefCell::new(None),
+                };
+                Ok(Value::LazyList(std::rc::Rc::new(list)))
             }
             Expr::Reduction { op, expr } => {
-                let list = match self.eval_expr(expr)? {
-                    Value::Array(items) => items,
-                    Value::Range(a, b) => (a..=b).map(Value::Int).collect(),
-                    Value::RangeExcl(a, b) => (a..b).map(Value::Int).collect(),
-                    Value::RangeExclStart(a, b) => (a+1..=b).map(Value::Int).collect(),
-                    Value::RangeExclBoth(a, b) => (a+1..b).map(Value::Int).collect(),
-                    other => vec![other],
-                };
+                let list_value = self.eval_expr(expr)?;
+                let list = self.list_from_value(list_value)?;
                 if list.is_empty() {
                     return Ok(self.reduction_identity(op));
                 }
