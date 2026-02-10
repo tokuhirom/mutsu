@@ -173,7 +173,7 @@ Implement Raku OOP.
 - [x] Inheritance (`is Parent`)
 - [x] `role` declaration and `does`
 - [x] `multi method`
-- [ ] `BUILD` / `TWEAK` submethods
+- [x] `BUILD` / `TWEAK` submethods
 - [ ] Type checking
 - [ ] Coercion (`Int(Str)` etc.)
 - [x] `enum`

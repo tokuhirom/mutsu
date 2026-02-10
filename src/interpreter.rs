@@ -1211,6 +1211,47 @@ impl Interpreter {
         None
     }
 
+    fn run_instance_method(
+        &mut self,
+        class_name: &str,
+        mut attributes: HashMap<String, Value>,
+        method_name: &str,
+        args: Vec<Value>,
+    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+        let method_def = self.resolve_method(class_name, method_name, &args)
+            .ok_or_else(|| RuntimeError::new(format!("No matching candidates for method: {}", method_name)))?;
+        let base = Value::Instance { class_name: class_name.to_string(), attributes: attributes.clone() };
+        let saved_env = self.env.clone();
+        self.env.insert("self".to_string(), base.clone());
+        for (attr_name, attr_val) in &attributes {
+            self.env.insert(format!("!{}", attr_name), attr_val.clone());
+            self.env.insert(format!(".{}", attr_name), attr_val.clone());
+        }
+        for (i, param) in method_def.params.iter().enumerate() {
+            if let Some(val) = args.get(i) {
+                self.env.insert(param.clone(), val.clone());
+            } else if let Some(pd) = method_def.param_defs.get(i) {
+                if let Some(default_expr) = &pd.default {
+                    let val = self.eval_expr(default_expr)?;
+                    self.env.insert(param.clone(), val);
+                }
+            }
+        }
+        let result = match self.run_block(&method_def.body) {
+            Ok(()) => Ok(Value::Nil),
+            Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
+            Err(e) => Err(e),
+        };
+        for attr_name in attributes.keys().cloned().collect::<Vec<_>>() {
+            let env_key = format!("!{}", attr_name);
+            if let Some(val) = self.env.get(&env_key) {
+                attributes.insert(attr_name, val.clone());
+            }
+        }
+        self.env = saved_env;
+        result.map(|v| (v, attributes))
+    }
+
     fn resolve_function_with_arity(&self, name: &str, arity: usize) -> Option<FunctionDef> {
         if name.contains("::") {
             return self.functions.get(name).cloned();
@@ -1689,6 +1730,14 @@ impl Interpreter {
                                 if let Value::Pair(k, v) = val {
                                     attrs.insert(k.clone(), *v.clone());
                                 }
+                            }
+                            if class_def.methods.contains_key("BUILD") {
+                                let (_v, updated) = self.run_instance_method(class_name, attrs, "BUILD", Vec::new())?;
+                                attrs = updated;
+                            }
+                            if class_def.methods.contains_key("TWEAK") {
+                                let (_v, updated) = self.run_instance_method(class_name, attrs, "TWEAK", Vec::new())?;
+                                attrs = updated;
                             }
                             return Ok(Value::Instance {
                                 class_name: class_name.clone(),
