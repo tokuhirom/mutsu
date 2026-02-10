@@ -40,6 +40,7 @@ pub(crate) enum Expr {
     HashVar(String),
     CodeVar(String),
     EnvIndex(String),
+    Subst { pattern: String, replacement: String },
     MethodCall { target: Box<Expr>, name: String, args: Vec<Expr> },
     Exists(Box<Expr>),
     RoutineMagic,

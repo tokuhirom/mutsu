@@ -188,8 +188,8 @@ Implement Raku regex/grammar.
 
 - [x] Basic regex (`/pattern/`)
 - [x] `rx//` form
-- [ ] `m//` match operator
-- [ ] `s///` substitution operator
+- [x] `m//` match operator
+- [x] `s///` substitution operator
 - [ ] Character classes, quantifiers, anchors
 - [ ] Named captures (`$<name>`)
 - [ ] `token`, `rule` declarations

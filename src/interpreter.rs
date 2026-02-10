@@ -3780,6 +3780,23 @@ impl Interpreter {
                 Expr::EnvIndex(key) => Ok(Value::Bool(std::env::var_os(key).is_some())),
                 _ => Ok(Value::Bool(self.eval_expr(inner)?.truthy())),
             },
+            Expr::Subst { pattern, replacement } => {
+                let target = self.env.get("_").cloned().unwrap_or(Value::Nil);
+                let text = target.to_string_value();
+                if let Some((start, end)) = self.regex_find_first(pattern, &text) {
+                    let start_b = Self::char_idx_to_byte(&text, start);
+                    let end_b = Self::char_idx_to_byte(&text, end);
+                    let mut out = String::new();
+                    out.push_str(&text[..start_b]);
+                    out.push_str(replacement);
+                    out.push_str(&text[end_b..]);
+                    let result = Value::Str(out.clone());
+                    self.env.insert("_".to_string(), result.clone());
+                    Ok(result)
+                } else {
+                    Ok(Value::Str(text))
+                }
+            }
             Expr::CallOn { target, args } => {
                 let target_val = self.eval_expr(target)?;
                 if let Value::Sub { package, name, param, body, env } = target_val {
@@ -5036,6 +5053,93 @@ impl Interpreter {
             }
         }
         false
+    }
+
+    fn regex_find_first(&self, pattern: &str, text: &str) -> Option<(usize, usize)> {
+        let parsed = self.parse_regex(pattern)?;
+        let chars: Vec<char> = text.chars().collect();
+        if parsed.anchor_start {
+            return self.regex_match_end_from(&parsed, &chars, 0).map(|end| (0, end));
+        }
+        for start in 0..=chars.len() {
+            if let Some(end) = self.regex_match_end_from(&parsed, &chars, start) {
+                return Some((start, end));
+            }
+        }
+        None
+    }
+
+    fn regex_match_end_from(&self, pattern: &RegexPattern, chars: &[char], start: usize) -> Option<usize> {
+        let mut stack = Vec::new();
+        stack.push((0usize, start));
+        while let Some((idx, pos)) = stack.pop() {
+            if idx == pattern.tokens.len() {
+                if pattern.anchor_end {
+                    if pos == chars.len() {
+                        return Some(pos);
+                    }
+                } else {
+                    return Some(pos);
+                }
+                continue;
+            }
+            let token = &pattern.tokens[idx];
+            match token.quant {
+                RegexQuant::One => {
+                    if let Some(next) = self.regex_match_atom(&token.atom, chars, pos) {
+                        stack.push((idx + 1, next));
+                    }
+                }
+                RegexQuant::ZeroOrOne => {
+                    if let Some(next) = self.regex_match_atom(&token.atom, chars, pos) {
+                        stack.push((idx + 1, next));
+                    }
+                    stack.push((idx + 1, pos));
+                }
+                RegexQuant::ZeroOrMore => {
+                    let mut positions = Vec::new();
+                    positions.push(pos);
+                    let mut current = pos;
+                    while let Some(next) = self.regex_match_atom(&token.atom, chars, current) {
+                        positions.push(next);
+                        current = next;
+                    }
+                    for p in positions.into_iter().rev() {
+                        stack.push((idx + 1, p));
+                    }
+                }
+                RegexQuant::OneOrMore => {
+                    let mut positions = Vec::new();
+                    let mut current = match self.regex_match_atom(&token.atom, chars, pos) {
+                        Some(next) => next,
+                        None => continue,
+                    };
+                    positions.push(current);
+                    while let Some(next) = self.regex_match_atom(&token.atom, chars, current) {
+                        positions.push(next);
+                        current = next;
+                    }
+                    for p in positions.into_iter().rev() {
+                        stack.push((idx + 1, p));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn char_idx_to_byte(text: &str, idx: usize) -> usize {
+        if idx == 0 {
+            return 0;
+        }
+        let mut count = 0usize;
+        for (b, _) in text.char_indices() {
+            if count == idx {
+                return b;
+            }
+            count += 1;
+        }
+        text.len()
     }
 
     fn regex_match_from(&self, pattern: &RegexPattern, chars: &[char], start: usize) -> bool {

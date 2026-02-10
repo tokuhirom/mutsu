@@ -13,6 +13,7 @@ pub(crate) enum TokenKind {
     Str(String),
     DStr(Vec<DStrPart>),
     Regex(String),
+    Subst { pattern: String, replacement: String },
     Ident(String),
     Var(String),
     HashVar(String),
@@ -138,7 +139,7 @@ impl Lexer {
                         TokenKind::Dot
                     }
                 }
-                'q' => {
+            'q' => {
                     if self.peek() == Some('<') {
                         self.pos += 1;
                         let mut s = String::new();
@@ -292,23 +293,58 @@ impl Lexer {
                             _ => TokenKind::Ident(ident),
                         }
                     }
-                }
-                'r' => {
-                    if self.peek() == Some('x') && self.peek_next() == Some('/') {
-                        self.pos += 1;
-                        self.pos += 1;
-                        let regex = self.read_regex_literal();
-                        TokenKind::Regex(regex)
-                    } else {
-                        let ident = self.read_ident_start(ch);
-                        match ident.as_str() {
-                            "True" => TokenKind::True,
-                            "False" => TokenKind::False,
-                            "Nil" | "Mu" | "Any" => TokenKind::Nil,
-                            _ => TokenKind::Ident(ident),
-                        }
+            }
+            'm' => {
+                if self.peek() == Some('/') {
+                    self.pos += 1;
+                    let regex = self.read_regex_literal();
+                    TokenKind::Regex(regex)
+                } else {
+                    let ident = self.read_ident_start(ch);
+                    match ident.as_str() {
+                        "True" => TokenKind::True,
+                        "False" => TokenKind::False,
+                        "Nil" | "Mu" | "Any" => TokenKind::Nil,
+                        _ => TokenKind::Ident(ident),
                     }
                 }
+            }
+            'r' => {
+                if self.peek() == Some('x') && self.peek_next() == Some('/') {
+                    self.pos += 1;
+                    self.pos += 1;
+                    let regex = self.read_regex_literal();
+                    TokenKind::Regex(regex)
+                } else if self.peek() == Some('/') {
+                    self.pos += 1;
+                    let regex = self.read_regex_literal();
+                    TokenKind::Regex(regex)
+                } else {
+                    let ident = self.read_ident_start(ch);
+                    match ident.as_str() {
+                        "True" => TokenKind::True,
+                        "False" => TokenKind::False,
+                        "Nil" | "Mu" | "Any" => TokenKind::Nil,
+                        _ => TokenKind::Ident(ident),
+                    }
+                }
+            }
+            's' => {
+                if self.peek() == Some('/') {
+                    self.pos += 1;
+                    let pattern = self.read_regex_literal();
+                    let replacement = self.read_delimited_string('/');
+                    TokenKind::Subst { pattern, replacement }
+                } else {
+                    let ident = self.read_ident_start(ch);
+                    match ident.as_str() {
+                        "True" => TokenKind::True,
+                        "False" => TokenKind::False,
+                        "Nil" | "Mu" | "Any" => TokenKind::Nil,
+                        _ => TokenKind::Ident(ident),
+                    }
+                }
+            }
             '0'..='9' => {
                 // Radix literals: 0x, 0o, 0b
                 if ch == '0' {

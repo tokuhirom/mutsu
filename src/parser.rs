@@ -1895,6 +1895,12 @@ impl Parser {
             } else {
                 Expr::Literal(Value::Nil)
             }
+        } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Subst { .. })) {
+            if let TokenKind::Subst { pattern, replacement } = token.kind {
+                Expr::Subst { pattern, replacement }
+            } else {
+                Expr::Literal(Value::Nil)
+            }
         } else if self.match_kind(TokenKind::True) {
             Expr::Literal(Value::Bool(true))
         } else if self.match_kind(TokenKind::False) {
