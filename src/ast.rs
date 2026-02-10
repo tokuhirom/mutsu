@@ -121,6 +121,8 @@ pub(crate) enum Stmt {
         repeat: bool,
         label: Option<String>,
     },
+    React { body: Vec<Stmt> },
+    Whenever { supply: Expr, param: Option<String>, body: Vec<Stmt> },
     Last(Option<String>),
     Next(Option<String>),
     Redo,

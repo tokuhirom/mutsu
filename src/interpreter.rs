@@ -514,6 +514,36 @@ impl Interpreter {
                     self.run_block(&last_ph)?;
                 }
             }
+            Stmt::React { body } => {
+                self.run_block(body)?;
+            }
+            Stmt::Whenever { supply, param, body } => {
+                let supply_val = self.eval_expr(supply)?;
+                if let Value::Instance { class_name, attributes } = supply_val {
+                    if class_name == "Supply" {
+                        let tap_sub = Value::Sub {
+                            package: self.current_package.clone(),
+                            name: String::new(),
+                            param: param.clone(),
+                            body: body.clone(),
+                            env: self.env.clone(),
+                        };
+                        let mut attrs = attributes.clone();
+                        if let Some(Value::Array(items)) = attrs.get_mut("taps") {
+                            items.push(tap_sub.clone());
+                        } else {
+                            attrs.insert("taps".to_string(), Value::Array(vec![tap_sub.clone()]));
+                        }
+                        if let Some(Value::Array(values)) = attrs.get("values") {
+                            for v in values {
+                                let _ = self.call_sub_value(tap_sub.clone(), vec![v.clone()], true);
+                            }
+                        }
+                        let updated = Value::Instance { class_name: class_name.clone(), attributes: attrs };
+                        self.update_instance_target(supply, updated);
+                    }
+                }
+            }
             Stmt::Last(label) => {
                 let mut sig = RuntimeError::last_signal();
                 sig.label = label.clone();
@@ -5900,6 +5930,13 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
             for s in body { collect_ph_stmt(s, out); }
         }
         Stmt::Loop { body, .. } => {
+            for s in body { collect_ph_stmt(s, out); }
+        }
+        Stmt::React { body } => {
+            for s in body { collect_ph_stmt(s, out); }
+        }
+        Stmt::Whenever { supply, body, .. } => {
+            collect_ph_expr(supply, out);
             for s in body { collect_ph_stmt(s, out); }
         }
         Stmt::Block(body) | Stmt::Default(body) | Stmt::Catch(body) | Stmt::Control(body) | Stmt::RoleDecl { body, .. } => {

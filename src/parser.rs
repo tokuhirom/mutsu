@@ -603,6 +603,26 @@ impl Parser {
             self.match_kind(TokenKind::Semicolon);
             return Ok(Stmt::Redo);
         }
+        if self.match_ident("react") {
+            let body = self.parse_block()?;
+            return Ok(Stmt::React { body });
+        }
+        if self.match_ident("whenever") {
+            let supply = self.parse_expr()?;
+            let mut param = None;
+            if self.match_kind(TokenKind::Arrow) {
+                if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
+                    && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
+                {
+                    self.pos += 1;
+                }
+                if self.peek_is_var() {
+                    param = Some(self.consume_var()?);
+                }
+            }
+            let body = self.parse_block()?;
+            return Ok(Stmt::Whenever { supply, param, body });
+        }
         if self.match_ident("take") {
             let expr = self.parse_expr()?;
             self.match_kind(TokenKind::Semicolon);
