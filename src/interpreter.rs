@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::net::ToSocketAddrs;
 #[cfg(unix)]
 use std::os::unix::fs::{self as unix_fs, PermissionsExt};
 #[cfg(windows)]
@@ -6300,6 +6301,16 @@ impl Interpreter {
                     }
                     return Ok(Value::Hash(map));
                 }
+                if name == "gethost" {
+                    let host_str = args
+                        .get(0)
+                        .map(|expr| self.eval_expr(expr).ok())
+                        .flatten()
+                        .map(|val| val.to_string_value());
+                    let hostname = host_str.unwrap_or_else(|| Self::hostname());
+                    let addrs = Self::resolve_host(&hostname);
+                    return Ok(Self::make_os_name_value(hostname, addrs));
+                }
                 if name == "kill" {
                     let mut iter = args.iter();
                     let signal = iter
@@ -9204,6 +9215,45 @@ impl Interpreter {
         let secs = Self::seconds_from_value(val)?;
         let secs = secs.max(0.0);
         Some(UNIX_EPOCH + Duration::from_secs_f64(secs))
+    }
+
+    fn hostname() -> String {
+        env::var("HOSTNAME")
+            .ok()
+            .or_else(|| env::var("COMPUTERNAME").ok())
+            .or_else(|| {
+                Command::new("hostname")
+                    .output()
+                    .ok()
+                    .and_then(|output| String::from_utf8(output.stdout).ok())
+                    .map(|s| s.trim().to_string())
+            })
+            .unwrap_or_else(|| "localhost".to_string())
+    }
+
+    fn resolve_host(name: &str) -> Vec<String> {
+        format!("{}:0", name)
+            .to_socket_addrs()
+            .map(|addrs| {
+                addrs
+                    .map(|addr| addr.ip().to_string())
+                    .filter(|ip| !ip.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn make_os_name_value(name: String, mut addresses: Vec<String>) -> Value {
+        if addresses.is_empty() {
+            addresses.push("127.0.0.1".to_string());
+        }
+        let mut info = HashMap::new();
+        info.insert("name".to_string(), Value::Str(name.clone()));
+        info.insert("addr".to_string(), Value::Str(addresses[0].clone()));
+        info.insert("aliases".to_string(), Value::Array(Vec::new()));
+        let addrs_values = addresses.into_iter().map(Value::Str).collect();
+        info.insert("addrs".to_string(), Value::Array(addrs_values));
+        Value::Hash(info)
     }
 
     fn get_login_name() -> Option<String> {

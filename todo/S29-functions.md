@@ -40,7 +40,7 @@ Covers built-in functions in CORE scope.
 
 ## OS Functions
 
-- [ ] `gethost` - hostname lookup
+- [x] `gethost` - hostname lookup
 - [ ] `chroot($dir)` - change root directory
 - [x] `getlogin` - current login name
 - [x] `kill($signal, @pids)` - send signal
