@@ -36,6 +36,7 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - Do not add a roast test to the whitelist unless `prove -e 'cargo run --' <file>` exits cleanly (all subtests pass).
 - Roast tests may use constructs the interpreter does not yet support. Prefer fixing the interpreter over skipping tests.
 - Never add special-case logic, hardcoded results, or test-specific hacks just to pass a roast test. Every fix must be a genuine, general-purpose improvement to the interpreter.
+- When the expected behavior of a roast test is unclear, consult `./old-design-docs/` for the original Raku language specification before implementing.
 
 ## Conventions
 - Add small, focused tests for each new syntax feature.
