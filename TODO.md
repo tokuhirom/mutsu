@@ -25,7 +25,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] Complex
 - [x] Set, Bag, Mix
 - [x] Enum
-- [ ] Junction
+- [x] Junction
 
 ### Literals
 - [x] Integer literals
@@ -205,7 +205,7 @@ Implement Raku regex/grammar. Pass roast S05 tests.
 
 - [ ] Phasers (`BEGIN`, `END`, `ENTER`, `LEAVE`, `FIRST`, `NEXT`, `LAST`)
 - [ ] `gather` / `take` (lazy lists)
-- [ ] Junction (`any`, `all`, `one`, `none`)
+- [x] Junction (`any`, `all`, `one`, `none`)
 - [ ] `Promise`, `Supply`, `Channel` (concurrency)
 - [ ] `react` / `whenever`
 - [ ] `Proc::Async`

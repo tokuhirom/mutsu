@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::ast::{AssignOp, CallArg, ExpectedMatcher, Expr, FunctionDef, ParamDef, Stmt};
 use crate::lexer::{Lexer, TokenKind};
 use crate::parser::Parser;
-use crate::value::{make_rat, RuntimeError, Value};
+use crate::value::{make_rat, JunctionKind, RuntimeError, Value};
 
 #[derive(Debug, Clone)]
 struct ClassDef {
@@ -1115,6 +1115,7 @@ impl Interpreter {
             Value::CompUnitDepSpec { .. } => "Any",
             Value::Enum { .. } => "Int",
             Value::Instance { .. } => "Any",
+            Value::Junction { .. } => "Junction",
         }
     }
 
@@ -1713,6 +1714,7 @@ impl Interpreter {
                         Value::Sub { .. } => "Sub",
                         Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
                         Value::Instance { class_name, .. } => class_name.as_str(),
+                        Value::Junction { .. } => "Junction",
                     }))),
                     "^name" => {
                         // Meta-method: type name
@@ -1738,6 +1740,7 @@ impl Interpreter {
                             Value::Sub { .. } => "Sub".to_string(),
                             Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification".to_string(),
                             Value::Instance { class_name, .. } => class_name.clone(),
+                            Value::Junction { .. } => "Junction".to_string(),
                         }))
                     }
                     "defined" => Ok(Value::Bool(!matches!(base, Value::Nil))),
@@ -2208,6 +2211,7 @@ impl Interpreter {
                         Value::Set(s) => Ok(Value::Int(s.len() as i64)),
                         Value::Bag(b) => Ok(Value::Int(b.len() as i64)),
                         Value::Mix(m) => Ok(Value::Int(m.len() as i64)),
+                        Value::Junction { values, .. } => Ok(Value::Int(values.len() as i64)),
                         _ => Ok(Value::Int(1)),
                     },
                     "total" => match base {
@@ -3207,6 +3211,23 @@ impl Interpreter {
                     }
                     return Ok(Value::Mix(weights));
                 }
+                if name == "any" || name == "all" || name == "one" || name == "none" {
+                    let kind = match name.as_str() {
+                        "any" => JunctionKind::Any,
+                        "all" => JunctionKind::All,
+                        "one" => JunctionKind::One,
+                        _ => JunctionKind::None,
+                    };
+                    let mut elems = Vec::new();
+                    for arg in args {
+                        let val = self.eval_expr(arg)?;
+                        match val {
+                            Value::Array(items) => elems.extend(items),
+                            other => elems.push(other),
+                        }
+                    }
+                    return Ok(Value::Junction { kind, values: elems });
+                }
                 if name == "flat" {
                     let mut result = Vec::new();
                     for arg in args {
@@ -3542,6 +3563,23 @@ impl Interpreter {
     }
 
     fn eval_binary(&self, left: Value, op: &TokenKind, right: Value) -> Result<Value, RuntimeError> {
+        // Junction auto-threading for comparison operators
+        if let Value::Junction { kind, values } = &left {
+            if Self::is_threadable_op(op) {
+                let results: Result<Vec<Value>, RuntimeError> = values.iter()
+                    .map(|v| self.eval_binary(v.clone(), op, right.clone()))
+                    .collect();
+                return Ok(Value::Junction { kind: kind.clone(), values: results? });
+            }
+        }
+        if let Value::Junction { kind, values } = &right {
+            if Self::is_threadable_op(op) {
+                let results: Result<Vec<Value>, RuntimeError> = values.iter()
+                    .map(|v| self.eval_binary(left.clone(), op, v.clone()))
+                    .collect();
+                return Ok(Value::Junction { kind: kind.clone(), values: results? });
+            }
+        }
         match op {
             TokenKind::Plus => {
                 let (l, r) = Self::coerce_numeric(left, right);
@@ -4541,6 +4579,16 @@ impl Interpreter {
             Value::Complex(r, _) => *r as i64,
             Value::Str(s) => s.parse().unwrap_or(0),
             _ => 0,
+        }
+    }
+
+    fn is_threadable_op(op: &TokenKind) -> bool {
+        match op {
+            TokenKind::EqEq | TokenKind::BangEq |
+            TokenKind::Lt | TokenKind::Lte | TokenKind::Gt | TokenKind::Gte |
+            TokenKind::SmartMatch | TokenKind::BangTilde => true,
+            TokenKind::Ident(s) if s == "eq" || s == "ne" || s == "lt" || s == "le" || s == "gt" || s == "ge" => true,
+            _ => false,
         }
     }
 

@@ -2,6 +2,14 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ast::Stmt;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum JunctionKind {
+    Any,
+    All,
+    One,
+    None,
+}
+
 fn gcd(mut a: i64, mut b: i64) -> i64 {
     a = a.abs();
     b = b.abs();
@@ -89,6 +97,10 @@ pub enum Value {
         class_name: String,
         attributes: HashMap<String, Value>,
     },
+    Junction {
+        kind: JunctionKind,
+        values: Vec<Value>,
+    },
     Nil,
 }
 
@@ -137,6 +149,7 @@ impl PartialEq for Value {
             (Value::Enum { enum_type: at, key: ak, .. }, Value::Enum { enum_type: bt, key: bk, .. }) => at == bt && ak == bk,
             (Value::Routine { package: ap, name: an }, Value::Routine { package: bp, name: bn }) => ap == bp && an == bn,
             (Value::Instance { class_name: a, attributes: aa }, Value::Instance { class_name: b, attributes: ba }) => a == b && aa == ba,
+            (Value::Junction { kind: ak, values: av }, Value::Junction { kind: bk, values: bv }) => ak == bk && av == bv,
             (Value::Nil, Value::Nil) => true,
             _ => false,
         }
@@ -169,6 +182,12 @@ impl Value {
             Value::Routine { .. } => true,
             Value::Sub { .. } => true,
             Value::Instance { .. } => true,
+            Value::Junction { kind, values } => match kind {
+                JunctionKind::Any => values.iter().any(|v| v.truthy()),
+                JunctionKind::All => values.iter().all(|v| v.truthy()),
+                JunctionKind::One => values.iter().filter(|v| v.truthy()).count() == 1,
+                JunctionKind::None => values.iter().all(|v| !v.truthy()),
+            },
             Value::Nil => false,
         }
     }
@@ -244,6 +263,16 @@ impl Value {
             Value::Routine { package, name } => format!("{}::{}", package, name),
             Value::Sub { name, .. } => name.clone(),
             Value::Instance { class_name, .. } => format!("{}()", class_name),
+            Value::Junction { kind, values } => {
+                let kind_str = match kind {
+                    JunctionKind::Any => "any",
+                    JunctionKind::All => "all",
+                    JunctionKind::One => "one",
+                    JunctionKind::None => "none",
+                };
+                let elems = values.iter().map(|v| v.to_string_value()).collect::<Vec<_>>().join(", ");
+                format!("{}({})", kind_str, elems)
+            }
             Value::Nil => "Nil".to_string(),
         }
     }
