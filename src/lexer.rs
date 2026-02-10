@@ -1092,7 +1092,12 @@ impl Lexer {
             '{' => Some('}'),
             '[' => Some(']'),
             '<' => Some('>'),
-            '\u{ff62}' => Some('\u{ff63}'), // Japanese corner brackets
+            '\u{ff08}' => Some('\u{ff09}'), // fullwidth parenthesis
+            '\u{ff3b}' => Some('\u{ff3d}'), // fullwidth square brackets
+            '\u{ff5b}' => Some('\u{ff5d}'), // fullwidth curly brackets
+            '\u{ff62}' => Some('\u{ff63}'), // halfwidth corner brackets
+            '\u{3008}' => Some('\u{3009}'), // CJK angle brackets
+            '\u{300a}' => Some('\u{300b}'), // CJK double angle brackets
             '\u{300c}' => Some('\u{300d}'), // CJK corner brackets
             '\u{300e}' => Some('\u{300f}'), // CJK white corner brackets
             '\u{3010}' => Some('\u{3011}'), // CJK black lenticular brackets
@@ -1103,6 +1108,29 @@ impl Lexer {
             '\u{00ab}' => Some('\u{00bb}'), // guillemets
             '\u{2018}' => Some('\u{2019}'), // single quotes
             '\u{201c}' => Some('\u{201d}'), // double quotes
+            '\u{169b}' => Some('\u{169c}'), // ogham feather mark
+            '\u{2045}' => Some('\u{2046}'), // square bracket with quill
+            '\u{207d}' => Some('\u{207e}'), // superscript parenthesis
+            '\u{208d}' => Some('\u{208e}'), // subscript parenthesis
+            '\u{2768}' => Some('\u{2769}'), // medium parenthesis ornament
+            '\u{276a}' => Some('\u{276b}'), // medium flattened parenthesis ornament
+            '\u{276c}' => Some('\u{276d}'), // medium pointing angle bracket ornament
+            '\u{276e}' => Some('\u{276f}'), // heavy pointing angle quotation mark ornament
+            '\u{2770}' => Some('\u{2771}'), // heavy pointing angle bracket ornament
+            '\u{2772}' => Some('\u{2773}'), // light tortoise shell bracket ornament
+            '\u{2774}' => Some('\u{2775}'), // medium curly bracket ornament
+            '\u{27e6}' => Some('\u{27e7}'), // mathematical white square bracket
+            '\u{27e8}' => Some('\u{27e9}'), // mathematical angle bracket
+            '\u{27ea}' => Some('\u{27eb}'), // mathematical double angle bracket
+            '\u{2983}' => Some('\u{2984}'), // white curly bracket
+            '\u{2985}' => Some('\u{2986}'), // white parenthesis
+            '\u{2987}' => Some('\u{2988}'), // z notation image bracket
+            '\u{2989}' => Some('\u{298a}'), // z notation binding bracket
+            '\u{2991}' => Some('\u{2992}'), // left/right angle bracket with dot
+            '\u{2993}' => Some('\u{2994}'), // left/right arc less/greater-than bracket
+            '\u{2995}' => Some('\u{2996}'), // double left/right arc greater/less-than bracket
+            '\u{2997}' => Some('\u{2998}'), // left/right black tortoise shell bracket
+            '\u{29fc}' => Some('\u{29fd}'), // left/right-pointing curved angle bracket
             _ => None,
         }
     }

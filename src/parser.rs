@@ -1036,6 +1036,7 @@ impl Parser {
         let mut last_str = None;
         while let Some(token) = self.tokens.get(self.pos) {
             match token.kind {
+                TokenKind::Eof => break,
                 TokenKind::LParen | TokenKind::LBrace => depth += 1,
                 TokenKind::RParen | TokenKind::RBrace => {
                     if depth > 0 {
@@ -1088,6 +1089,7 @@ impl Parser {
         let mut depth = 0usize;
         while let Some(token) = self.tokens.get(self.pos) {
             match token.kind {
+                TokenKind::Eof => break,
                 TokenKind::LParen | TokenKind::LBracket | TokenKind::LBrace => depth += 1,
                 TokenKind::RParen | TokenKind::RBracket | TokenKind::RBrace => {
                     if depth > 0 {
@@ -2678,7 +2680,10 @@ impl Parser {
     }
 
     fn check(&self, kind: &TokenKind) -> bool {
-        self.tokens.get(self.pos).map(|t| &t.kind) == Some(kind)
+        match self.tokens.get(self.pos) {
+            Some(t) => &t.kind == kind,
+            None => *kind == TokenKind::Eof,
+        }
     }
 
     fn advance_if<F>(&mut self, predicate: F) -> Option<Token>
