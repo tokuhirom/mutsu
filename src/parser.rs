@@ -1,4 +1,4 @@
-use crate::ast::{AssignOp, CallArg, Expr, ParamDef, Stmt};
+use crate::ast::{AssignOp, CallArg, Expr, ParamDef, PhaserKind, Stmt};
 use crate::lexer::{Token, TokenKind};
 use crate::value::{RuntimeError, Value};
 
@@ -562,6 +562,34 @@ impl Parser {
         if self.match_ident("CONTROL") {
             let body = self.parse_block()?;
             return Ok(Stmt::Control(body));
+        }
+        if self.match_ident("BEGIN") {
+            let body = self.parse_block()?;
+            return Ok(Stmt::Phaser { kind: PhaserKind::Begin, body });
+        }
+        if self.match_ident("END") {
+            let body = self.parse_block()?;
+            return Ok(Stmt::Phaser { kind: PhaserKind::End, body });
+        }
+        if self.match_ident("ENTER") {
+            let body = self.parse_block()?;
+            return Ok(Stmt::Phaser { kind: PhaserKind::Enter, body });
+        }
+        if self.match_ident("LEAVE") {
+            let body = self.parse_block()?;
+            return Ok(Stmt::Phaser { kind: PhaserKind::Leave, body });
+        }
+        if self.match_ident("FIRST") {
+            let body = self.parse_block()?;
+            return Ok(Stmt::Phaser { kind: PhaserKind::First, body });
+        }
+        if self.match_ident("NEXT") {
+            let body = self.parse_block()?;
+            return Ok(Stmt::Phaser { kind: PhaserKind::Next, body });
+        }
+        if self.match_ident("LAST") {
+            let body = self.parse_block()?;
+            return Ok(Stmt::Phaser { kind: PhaserKind::Last, body });
         }
         if self.match_ident("proceed") {
             self.match_kind(TokenKind::Semicolon);

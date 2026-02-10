@@ -19,6 +19,17 @@ pub(crate) struct FunctionDef {
     pub(crate) body: Vec<Stmt>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PhaserKind {
+    Begin,
+    End,
+    Enter,
+    Leave,
+    First,
+    Next,
+    Last,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) enum Expr {
     Literal(Value),
@@ -129,6 +140,7 @@ pub(crate) enum Stmt {
     RoleDecl { name: String, body: Vec<Stmt> },
     DoesDecl { name: String },
     SubsetDecl { name: String, base: String, predicate: Expr },
+    Phaser { kind: PhaserKind, body: Vec<Stmt> },
     ProtoDecl { name: String, params: Vec<String>, param_defs: Vec<ParamDef> },
     Expr(Expr),
 }

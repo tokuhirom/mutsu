@@ -202,7 +202,7 @@ Implement Raku regex/grammar.
 
 ## Phase 4: Advanced Features
 
-- [ ] Phasers (`BEGIN`, `END`, `ENTER`, `LEAVE`, `FIRST`, `NEXT`, `LAST`)
+- [x] Phasers (`BEGIN`, `END`, `ENTER`, `LEAVE`, `FIRST`, `NEXT`, `LAST`)
 - [ ] `gather` / `take` (lazy lists)
 - [x] Junction (`any`, `all`, `one`, `none`)
 - [ ] `Promise`, `Supply`, `Channel` (concurrency)

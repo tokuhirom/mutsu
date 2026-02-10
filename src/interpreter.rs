@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
-use crate::ast::{AssignOp, CallArg, ExpectedMatcher, Expr, FunctionDef, ParamDef, Stmt};
+use crate::ast::{AssignOp, CallArg, ExpectedMatcher, Expr, FunctionDef, ParamDef, PhaserKind, Stmt};
 use crate::lexer::{Lexer, TokenKind};
 use crate::parser::Parser;
 use crate::value::{make_rat, JunctionKind, RuntimeError, Value};
@@ -102,6 +102,7 @@ pub struct Interpreter {
     roles: HashMap<String, RoleDef>,
     subsets: HashMap<String, SubsetDef>,
     proto_subs: HashSet<String>,
+    end_phasers: Vec<Vec<Stmt>>,
 }
 
 impl Interpreter {
@@ -131,6 +132,7 @@ impl Interpreter {
             roles: HashMap::new(),
             subsets: HashMap::new(),
             proto_subs: HashSet::new(),
+            end_phasers: Vec::new(),
         }
     }
 
@@ -362,12 +364,7 @@ impl Interpreter {
                 self.test_ok(true, &label, false)?;
             }
             Stmt::Block(body) => {
-                for stmt in body {
-                    self.exec_stmt(stmt)?;
-                    if self.halted {
-                        break;
-                    }
-                }
+                self.run_block(body)?;
             }
             Stmt::If { cond, then_branch, else_branch } => {
                 if self.eval_expr(cond)?.truthy() {
@@ -381,29 +378,55 @@ impl Interpreter {
                 }
             }
             Stmt::While { cond, body, label } => {
+                let mut iter_idx = 0usize;
+                let (enter_ph, leave_ph, first_ph, next_ph, last_ph, body_main) = self.split_loop_phasers(body);
                 'while_loop: while self.eval_expr(cond)?.truthy() {
                     loop {
                         let mut should_redo = false;
-                        for stmt in body {
+                        let mut control: Option<RuntimeError> = None;
+                        self.run_block(&enter_ph)?;
+                        if iter_idx == 0 {
+                            self.run_block(&first_ph)?;
+                        } else {
+                            self.run_block(&next_ph)?;
+                        }
+                        for stmt in &body_main {
                             match self.exec_stmt(stmt) {
-                                Err(e) if e.is_last => {
-                                    if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                                        break 'while_loop;
-                                    }
-                                    return Err(e);
-                                }
-                                Err(e) if e.is_next => {
-                                    if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                                        continue 'while_loop;
-                                    }
-                                    return Err(e);
-                                }
                                 Err(e) if e.is_redo => { should_redo = true; break; }
-                                other => { other?; }
+                                Err(e) => { control = Some(e); break; }
+                                Ok(()) => {}
                             }
                         }
-                        if !should_redo { break; }
+                        if should_redo {
+                            continue;
+                        }
+                        let leave_res = self.run_block(&leave_ph);
+                        if let Err(e) = leave_res {
+                            if control.is_none() {
+                                return Err(e);
+                            }
+                        }
+                        if let Some(e) = control {
+                            if e.is_last {
+                                if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                    break 'while_loop;
+                                }
+                                return Err(e);
+                            }
+                            if e.is_next {
+                                if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                    break;
+                                }
+                                return Err(e);
+                            }
+                            return Err(e);
+                        }
+                        break;
                     }
+                    iter_idx += 1;
+                }
+                if iter_idx > 0 {
+                    self.run_block(&last_ph)?;
                 }
             }
             Stmt::Loop { init, cond, step, body, repeat, label } => {
@@ -411,6 +434,8 @@ impl Interpreter {
                     self.exec_stmt(init_stmt)?;
                 }
                 let mut first = true;
+                let mut iter_idx = 0usize;
+                let (enter_ph, leave_ph, first_ph, next_ph, last_ph, body_main) = self.split_loop_phasers(body);
                 'c_loop: loop {
                     if let Some(cond_expr) = cond {
                         if *repeat && first {
@@ -421,31 +446,53 @@ impl Interpreter {
                     }
                     loop {
                         let mut should_redo = false;
-                        let mut did_next = false;
-                        for stmt in body {
+                        let mut control: Option<RuntimeError> = None;
+                        self.run_block(&enter_ph)?;
+                        if iter_idx == 0 {
+                            self.run_block(&first_ph)?;
+                        } else {
+                            self.run_block(&next_ph)?;
+                        }
+                        for stmt in &body_main {
                             match self.exec_stmt(stmt) {
-                                Err(e) if e.is_last => {
-                                    if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                                        break 'c_loop;
-                                    }
-                                    return Err(e);
-                                }
-                                Err(e) if e.is_next => {
-                                    if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                                        did_next = true; break;
-                                    }
-                                    return Err(e);
-                                }
                                 Err(e) if e.is_redo => { should_redo = true; break; }
-                                other => { other?; }
+                                Err(e) => { control = Some(e); break; }
+                                Ok(()) => {}
                             }
                         }
-                        if !should_redo { break; }
-                        let _ = did_next;
+                        if should_redo {
+                            continue;
+                        }
+                        let leave_res = self.run_block(&leave_ph);
+                        if let Err(e) = leave_res {
+                            if control.is_none() {
+                                return Err(e);
+                            }
+                        }
+                        if let Some(e) = control {
+                            if e.is_last {
+                                if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                    break 'c_loop;
+                                }
+                                return Err(e);
+                            }
+                            if e.is_next {
+                                if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                    break;
+                                }
+                                return Err(e);
+                            }
+                            return Err(e);
+                        }
+                        break;
                     }
                     if let Some(step_expr) = step {
                         self.eval_expr(step_expr)?;
                     }
+                    iter_idx += 1;
+                }
+                if iter_idx > 0 {
+                    self.run_block(&last_ph)?;
                 }
             }
             Stmt::Last(label) => {
@@ -524,6 +571,8 @@ impl Interpreter {
                     Value::RangeExclBoth(a, b) => (a+1..b).map(Value::Int).collect(),
                     other => vec![other],
                 };
+                let (enter_ph, leave_ph, first_ph, next_ph, last_ph, body_main) = self.split_loop_phasers(body);
+                let mut iter_idx = 0usize;
                 'for_loop: for value in values {
                     self.env.insert("_".to_string(), value.clone());
                     if let Some(p) = param {
@@ -531,26 +580,50 @@ impl Interpreter {
                     }
                     loop {
                         let mut should_redo = false;
-                        for stmt in body {
+                        let mut control: Option<RuntimeError> = None;
+                        self.run_block(&enter_ph)?;
+                        if iter_idx == 0 {
+                            self.run_block(&first_ph)?;
+                        } else {
+                            self.run_block(&next_ph)?;
+                        }
+                        for stmt in &body_main {
                             match self.exec_stmt(stmt) {
-                                Err(e) if e.is_last => {
-                                    if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                                        break 'for_loop;
-                                    }
-                                    return Err(e);
-                                }
-                                Err(e) if e.is_next => {
-                                    if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                                        continue 'for_loop;
-                                    }
-                                    return Err(e);
-                                }
                                 Err(e) if e.is_redo => { should_redo = true; break; }
-                                other => { other?; }
+                                Err(e) => { control = Some(e); break; }
+                                Ok(()) => {}
                             }
                         }
-                        if !should_redo { break; }
+                        if should_redo {
+                            continue;
+                        }
+                        let leave_res = self.run_block(&leave_ph);
+                        if let Err(e) = leave_res {
+                            if control.is_none() {
+                                return Err(e);
+                            }
+                        }
+                        if let Some(e) = control {
+                            if e.is_last {
+                                if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                    break 'for_loop;
+                                }
+                                return Err(e);
+                            }
+                            if e.is_next {
+                                if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                    break;
+                                }
+                                return Err(e);
+                            }
+                            return Err(e);
+                        }
+                        break;
                     }
+                    iter_idx += 1;
+                }
+                if iter_idx > 0 {
+                    self.run_block(&last_ph)?;
                 }
             }
             Stmt::Die(expr) => {
@@ -567,6 +640,17 @@ impl Interpreter {
                 let val = self.eval_expr(expr)?;
                 if let Some(items) = self.gather_items.last_mut() {
                     items.push(val);
+                }
+            }
+            Stmt::Phaser { kind, body } => {
+                match kind {
+                    PhaserKind::Begin => {
+                        self.run_block(body)?;
+                    }
+                    PhaserKind::End => {
+                        self.end_phasers.push(body.clone());
+                    }
+                    _ => {}
                 }
             }
             Stmt::EnumDecl { name, variants } => {
@@ -694,6 +778,26 @@ impl Interpreter {
     }
 
     fn run_block(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        let (enter_ph, leave_ph, body_main) = self.split_block_phasers(stmts);
+        self.run_block_raw(&enter_ph)?;
+        let mut result = Ok(());
+        for stmt in &body_main {
+            if let Err(e) = self.exec_stmt(stmt) {
+                result = Err(e);
+                break;
+            }
+            if self.halted {
+                break;
+            }
+        }
+        let leave_res = self.run_block_raw(&leave_ph);
+        if leave_res.is_err() && result.is_ok() {
+            return leave_res;
+        }
+        result
+    }
+
+    fn run_block_raw(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
         for stmt in stmts {
             self.exec_stmt(stmt)?;
             if self.halted {
@@ -703,7 +807,13 @@ impl Interpreter {
         Ok(())
     }
 
-    fn finish(&self) -> Result<(), RuntimeError> {
+    fn finish(&mut self) -> Result<(), RuntimeError> {
+        if !self.end_phasers.is_empty() {
+            let phasers = self.end_phasers.clone();
+            for body in phasers.iter().rev() {
+                self.run_block(body)?;
+            }
+        }
         if self.bailed_out {
             return Ok(());
         }
@@ -1230,6 +1340,48 @@ impl Interpreter {
             }
             Err(_) => vec![class_name.to_string()],
         }
+    }
+
+    fn split_block_phasers(&self, stmts: &[Stmt]) -> (Vec<Stmt>, Vec<Stmt>, Vec<Stmt>) {
+        let mut enter_ph = Vec::new();
+        let mut leave_ph = Vec::new();
+        let mut body_main = Vec::new();
+        for stmt in stmts {
+            if let Stmt::Phaser { kind, body } = stmt {
+                match kind {
+                    PhaserKind::Enter => enter_ph.push(Stmt::Block(body.clone())),
+                    PhaserKind::Leave => leave_ph.push(Stmt::Block(body.clone())),
+                    _ => body_main.push(stmt.clone()),
+                }
+            } else {
+                body_main.push(stmt.clone());
+            }
+        }
+        (enter_ph, leave_ph, body_main)
+    }
+
+    fn split_loop_phasers(&self, stmts: &[Stmt]) -> (Vec<Stmt>, Vec<Stmt>, Vec<Stmt>, Vec<Stmt>, Vec<Stmt>, Vec<Stmt>) {
+        let mut enter_ph = Vec::new();
+        let mut leave_ph = Vec::new();
+        let mut first_ph = Vec::new();
+        let mut next_ph = Vec::new();
+        let mut last_ph = Vec::new();
+        let mut body_main = Vec::new();
+        for stmt in stmts {
+            if let Stmt::Phaser { kind, body } = stmt {
+                match kind {
+                    PhaserKind::Enter => enter_ph.push(Stmt::Block(body.clone())),
+                    PhaserKind::Leave => leave_ph.push(Stmt::Block(body.clone())),
+                    PhaserKind::First => first_ph.push(Stmt::Block(body.clone())),
+                    PhaserKind::Next => next_ph.push(Stmt::Block(body.clone())),
+                    PhaserKind::Last => last_ph.push(Stmt::Block(body.clone())),
+                    _ => body_main.push(stmt.clone()),
+                }
+            } else {
+                body_main.push(stmt.clone());
+            }
+        }
+        (enter_ph, leave_ph, first_ph, next_ph, last_ph, body_main)
     }
 
     fn compute_class_mro(&mut self, class_name: &str, stack: &mut Vec<String>) -> Result<Vec<String>, RuntimeError> {
@@ -5046,21 +5198,42 @@ impl Interpreter {
     }
 
     fn eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
+        let (enter_ph, leave_ph, body_main) = self.split_block_phasers(body);
+        self.run_block_raw(&enter_ph)?;
         let mut last = Value::Nil;
-        for stmt in body {
+        let mut result = Ok(());
+        for stmt in &body_main {
             match stmt {
                 Stmt::Return(expr) => {
-                    return self.eval_expr(expr);
+                    result = Err(RuntimeError::return_val(self.eval_expr(expr)?));
+                    break;
                 }
                 Stmt::Expr(expr) => {
-                    last = self.eval_expr(expr)?;
+                    if let Ok(v) = self.eval_expr(expr) {
+                        last = v;
+                    }
                 }
                 _ => {
-                    self.exec_stmt(stmt)?;
+                    if let Err(e) = self.exec_stmt(stmt) {
+                        result = Err(e);
+                        break;
+                    }
                 }
             }
+            if self.halted {
+                break;
+            }
         }
-        Ok(last)
+        let leave_res = self.run_block_raw(&leave_ph);
+        if let Err(e) = leave_res {
+            if result.is_ok() {
+                return Err(e);
+            }
+        }
+        match result {
+            Ok(()) => Ok(last),
+            Err(e) => Err(e),
+        }
     }
 
     fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
@@ -5489,6 +5662,9 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
             for s in body { collect_ph_stmt(s, out); }
         }
         Stmt::Block(body) | Stmt::Default(body) | Stmt::Catch(body) | Stmt::Control(body) | Stmt::RoleDecl { body, .. } => {
+            for s in body { collect_ph_stmt(s, out); }
+        }
+        Stmt::Phaser { body, .. } => {
             for s in body { collect_ph_stmt(s, out); }
         }
         Stmt::Given { topic, body } => {
