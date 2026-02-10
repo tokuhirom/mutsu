@@ -1193,6 +1193,26 @@ impl Parser {
                 Some(TokenKind::Ident("cmp".to_string()))
             } else if self.match_ident("eqv") {
                 Some(TokenKind::Ident("eqv".to_string()))
+            } else if self.match_kind(TokenKind::SetElem) {
+                Some(TokenKind::SetElem)
+            } else if self.match_kind(TokenKind::SetCont) {
+                Some(TokenKind::SetCont)
+            } else if self.match_kind(TokenKind::SetSubset) {
+                Some(TokenKind::SetSubset)
+            } else if self.match_kind(TokenKind::SetSuperset) {
+                Some(TokenKind::SetSuperset)
+            } else if self.match_kind(TokenKind::SetStrictSubset) {
+                Some(TokenKind::SetStrictSubset)
+            } else if self.match_kind(TokenKind::SetStrictSuperset) {
+                Some(TokenKind::SetStrictSuperset)
+            } else if self.match_kind(TokenKind::SetUnion) {
+                Some(TokenKind::SetUnion)
+            } else if self.match_kind(TokenKind::SetIntersect) {
+                Some(TokenKind::SetIntersect)
+            } else if self.match_kind(TokenKind::SetDiff) {
+                Some(TokenKind::SetDiff)
+            } else if self.match_kind(TokenKind::SetSymDiff) {
+                Some(TokenKind::SetSymDiff)
             } else {
                 None
             };

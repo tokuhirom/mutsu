@@ -3857,6 +3857,144 @@ impl Interpreter {
                 let key = left.to_string_value();
                 Ok(Value::Pair(key, Box::new(right)))
             }
+            // Set operators
+            TokenKind::SetElem => {
+                let key = left.to_string_value();
+                let result = match &right {
+                    Value::Set(s) => s.contains(&key),
+                    Value::Bag(b) => b.contains_key(&key),
+                    Value::Mix(m) => m.contains_key(&key),
+                    _ => false,
+                };
+                Ok(Value::Bool(result))
+            }
+            TokenKind::SetCont => {
+                let key = right.to_string_value();
+                let result = match &left {
+                    Value::Set(s) => s.contains(&key),
+                    Value::Bag(b) => b.contains_key(&key),
+                    Value::Mix(m) => m.contains_key(&key),
+                    _ => false,
+                };
+                Ok(Value::Bool(result))
+            }
+            TokenKind::SetUnion => {
+                match (left, right) {
+                    (Value::Set(mut a), Value::Set(b)) => {
+                        for elem in b { a.insert(elem); }
+                        Ok(Value::Set(a))
+                    }
+                    (Value::Bag(mut a), Value::Bag(b)) => {
+                        for (k, v) in b { let e = a.entry(k).or_insert(0); *e = (*e).max(v); }
+                        Ok(Value::Bag(a))
+                    }
+                    (Value::Mix(mut a), Value::Mix(b)) => {
+                        for (k, v) in b { let e = a.entry(k).or_insert(0.0); *e = e.max(v); }
+                        Ok(Value::Mix(a))
+                    }
+                    (Value::Set(a), Value::Bag(mut b)) => {
+                        for elem in a { b.entry(elem).or_insert(1); }
+                        Ok(Value::Bag(b))
+                    }
+                    (Value::Bag(mut a), Value::Set(b)) => {
+                        for elem in b { a.entry(elem).or_insert(1); }
+                        Ok(Value::Bag(a))
+                    }
+                    (l, r) => {
+                        let a = Self::coerce_to_set(&l);
+                        let b = Self::coerce_to_set(&r);
+                        let mut result = a;
+                        for elem in b { result.insert(elem); }
+                        Ok(Value::Set(result))
+                    }
+                }
+            }
+            TokenKind::SetIntersect => {
+                match (left, right) {
+                    (Value::Set(a), Value::Set(b)) => {
+                        Ok(Value::Set(a.intersection(&b).cloned().collect()))
+                    }
+                    (Value::Bag(a), Value::Bag(b)) => {
+                        let mut result = HashMap::new();
+                        for (k, v) in &a {
+                            if let Some(bv) = b.get(k) { result.insert(k.clone(), (*v).min(*bv)); }
+                        }
+                        Ok(Value::Bag(result))
+                    }
+                    (Value::Mix(a), Value::Mix(b)) => {
+                        let mut result = HashMap::new();
+                        for (k, v) in &a {
+                            if let Some(bv) = b.get(k) { result.insert(k.clone(), v.min(*bv)); }
+                        }
+                        Ok(Value::Mix(result))
+                    }
+                    (l, r) => {
+                        let a = Self::coerce_to_set(&l);
+                        let b = Self::coerce_to_set(&r);
+                        Ok(Value::Set(a.intersection(&b).cloned().collect()))
+                    }
+                }
+            }
+            TokenKind::SetDiff => {
+                match (left, right) {
+                    (Value::Set(a), Value::Set(b)) => {
+                        Ok(Value::Set(a.difference(&b).cloned().collect()))
+                    }
+                    (Value::Bag(a), Value::Bag(b)) => {
+                        let mut result = HashMap::new();
+                        for (k, v) in a {
+                            let bv = b.get(&k).copied().unwrap_or(0);
+                            if v > bv { result.insert(k, v - bv); }
+                        }
+                        Ok(Value::Bag(result))
+                    }
+                    (Value::Mix(a), Value::Mix(b)) => {
+                        let mut result = HashMap::new();
+                        for (k, v) in a {
+                            let bv = b.get(&k).copied().unwrap_or(0.0);
+                            if v > bv { result.insert(k, v - bv); }
+                        }
+                        Ok(Value::Mix(result))
+                    }
+                    (l, r) => {
+                        let a = Self::coerce_to_set(&l);
+                        let b = Self::coerce_to_set(&r);
+                        Ok(Value::Set(a.difference(&b).cloned().collect()))
+                    }
+                }
+            }
+            TokenKind::SetSymDiff => {
+                match (left, right) {
+                    (Value::Set(a), Value::Set(b)) => {
+                        Ok(Value::Set(a.symmetric_difference(&b).cloned().collect()))
+                    }
+                    (l, r) => {
+                        let a = Self::coerce_to_set(&l);
+                        let b = Self::coerce_to_set(&r);
+                        Ok(Value::Set(a.symmetric_difference(&b).cloned().collect()))
+                    }
+                }
+            }
+            TokenKind::SetSubset => {
+                let a = Self::coerce_to_set(&left);
+                let b = Self::coerce_to_set(&right);
+                Ok(Value::Bool(a.is_subset(&b)))
+            }
+            TokenKind::SetSuperset => {
+                let a = Self::coerce_to_set(&left);
+                let b = Self::coerce_to_set(&right);
+                Ok(Value::Bool(a.is_superset(&b)))
+            }
+            TokenKind::SetStrictSubset => {
+                let a = Self::coerce_to_set(&left);
+                let b = Self::coerce_to_set(&right);
+                Ok(Value::Bool(a.is_subset(&b) && a.len() < b.len()))
+            }
+            TokenKind::SetStrictSuperset => {
+                let a = Self::coerce_to_set(&left);
+                let b = Self::coerce_to_set(&right);
+                Ok(Value::Bool(a.is_superset(&b) && a.len() > b.len()))
+            }
             _ => Err(RuntimeError::new("Unknown binary operator")),
         }
     }
@@ -4259,6 +4397,21 @@ impl Interpreter {
             Value::Array(items) => Value::Int(items.len() as i64),
             Value::Nil => Value::Int(0),
             _ => Value::Int(0),
+        }
+    }
+
+    fn coerce_to_set(val: &Value) -> HashSet<String> {
+        match val {
+            Value::Set(s) => s.clone(),
+            Value::Bag(b) => b.keys().cloned().collect(),
+            Value::Mix(m) => m.keys().cloned().collect(),
+            Value::Array(items) => items.iter().map(|v| v.to_string_value()).collect(),
+            _ => {
+                let mut s = HashSet::new();
+                let sv = val.to_string_value();
+                if !sv.is_empty() { s.insert(sv); }
+                s
+            }
         }
     }
 

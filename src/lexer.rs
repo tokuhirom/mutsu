@@ -80,6 +80,16 @@ pub(crate) enum TokenKind {
     BitShiftLeft,
     BitShiftRight,
     LtEqGt,
+    SetUnion,          // (|) ∪
+    SetIntersect,      // (&) ∩
+    SetDiff,           // (-)
+    SetSymDiff,        // (^)
+    SetElem,           // (elem) ∈
+    SetCont,           // (cont)
+    SetSubset,         // (<=) ⊆
+    SetSuperset,       // (>=) ⊇
+    SetStrictSubset,   // (<) ⊂
+    SetStrictSuperset, // (>) ⊃
     Semicolon,
     Eof,
 }
@@ -757,7 +767,19 @@ impl Lexer {
                     TokenKind::OrOr
                 }
             }
-            '(' => TokenKind::LParen,
+            '(' => {
+                if self.try_match_str("elem)") { TokenKind::SetElem }
+                else if self.try_match_str("cont)") { TokenKind::SetCont }
+                else if self.try_match_str("<=)") { TokenKind::SetSubset }
+                else if self.try_match_str(">=)") { TokenKind::SetSuperset }
+                else if self.try_match_str("|)") { TokenKind::SetUnion }
+                else if self.try_match_str("&)") { TokenKind::SetIntersect }
+                else if self.try_match_str("-)") { TokenKind::SetDiff }
+                else if self.try_match_str("^)") { TokenKind::SetSymDiff }
+                else if self.try_match_str("<)") { TokenKind::SetStrictSubset }
+                else if self.try_match_str(">)") { TokenKind::SetStrictSuperset }
+                else { TokenKind::LParen }
+            }
             ')' => TokenKind::RParen,
             '[' => TokenKind::LBracket,
             ']' => TokenKind::RBracket,
@@ -785,6 +807,17 @@ impl Lexer {
                     TokenKind::Caret
                 }
             }
+            '\u{2208}' => TokenKind::SetElem,        // ∈
+            '\u{2209}' => TokenKind::SetElem,        // ∉ (handled as negated in parser)
+            '\u{220B}' => TokenKind::SetCont,        // ∋
+            '\u{222A}' => TokenKind::SetUnion,       // ∪
+            '\u{2229}' => TokenKind::SetIntersect,   // ∩
+            '\u{2216}' => TokenKind::SetDiff,        // ∖
+            '\u{2296}' => TokenKind::SetSymDiff,     // ⊖
+            '\u{2286}' => TokenKind::SetSubset,      // ⊆
+            '\u{2287}' => TokenKind::SetSuperset,    // ⊇
+            '\u{2282}' => TokenKind::SetStrictSubset,  // ⊂
+            '\u{2283}' => TokenKind::SetStrictSuperset, // ⊃
             _ => {
                     if ch.is_ascii_alphabetic() || ch == '_' {
                         let ident = self.read_ident_start(ch);
@@ -1084,6 +1117,20 @@ impl Lexer {
         } else {
             false
         }
+    }
+
+    fn try_match_str(&mut self, expected: &str) -> bool {
+        let chars: Vec<char> = expected.chars().collect();
+        if self.pos + chars.len() > self.src.len() {
+            return false;
+        }
+        for (i, c) in chars.iter().enumerate() {
+            if self.src[self.pos + i] != *c {
+                return false;
+            }
+        }
+        self.pos += chars.len();
+        true
     }
 
     fn read_delimited_string(&mut self, delim: char) -> String {
