@@ -1547,7 +1547,8 @@ impl Interpreter {
                 // DoesDecl outside a class is a no-op (handled during ClassDecl)
             }
             Stmt::Expr(expr) => {
-                self.eval_expr(expr)?;
+                let value = self.eval_expr(expr)?;
+                self.env.insert("_".to_string(), value);
             }
         }
         Ok(())
@@ -1775,12 +1776,12 @@ impl Interpreter {
                 } else {
                     let got =
                         self.eval_expr(self.positional_arg(args, 0, "is-approx expects got")?)?;
-                    let expected =
-                        self.eval_expr(self.positional_arg(args, 1, "is-approx expects expected")?)?;
-                    let ok = match (
-                        Self::to_float_value(&got),
-                        Self::to_float_value(&expected),
-                    ) {
+                    let expected = self.eval_expr(self.positional_arg(
+                        args,
+                        1,
+                        "is-approx expects expected",
+                    )?)?;
+                    let ok = match (Self::to_float_value(&got), Self::to_float_value(&expected)) {
                         (Some(g), Some(e)) => (g - e).abs() <= 1e-5,
                         _ => false,
                     };
@@ -2549,8 +2550,10 @@ impl Interpreter {
                 }
             }
         }
-        let result = match self.run_block(&method_def.body) {
-            Ok(()) => Ok(Value::Nil),
+        let block_result = self.run_block(&method_def.body);
+        let implicit_return = self.env.get("_").cloned();
+        let result = match block_result {
+            Ok(()) => Ok(implicit_return.unwrap_or(Value::Nil)),
             Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
             Err(e) => Err(e),
         };
@@ -3798,6 +3801,37 @@ impl Interpreter {
                                 return Ok(self.make_promise_instance("Kept", Value::Int(0)));
                             }
                         }
+                        let mut attrs = attributes.clone();
+                        if name == "clone" {
+                            for arg in args {
+                                let val = self.eval_expr(arg)?;
+                                if let Value::Pair(key, boxed) = val {
+                                    attrs.insert(key, *boxed);
+                                }
+                            }
+                            return Ok(Value::Instance {
+                                class_name: class_name.clone(),
+                                attributes: attrs,
+                            });
+                        }
+                        if name == "isa" {
+                            let target = args
+                                .get(0)
+                                .map(|arg| self.eval_expr(arg).ok())
+                                .flatten()
+                                .unwrap_or(Value::Nil);
+                            let target_name = match target {
+                                Value::Package(name) => name,
+                                Value::Str(name) => name,
+                                Value::Instance { class_name, .. } => class_name,
+                                other => other.to_string_value(),
+                            };
+                            let ok = self.class_mro(class_name).contains(&target_name);
+                            return Ok(Value::Bool(ok));
+                        }
+                        if name == "raku" || name == "perl" {
+                            return Ok(Value::Str(format!("{}.new()", class_name)));
+                        }
                         if class_name == "IO::Path" {
                             let p = attributes
                                 .get("path")
@@ -4150,8 +4184,10 @@ impl Interpreter {
                                     }
                                 }
                             }
-                            let result = match self.run_block(&method_def.body) {
-                                Ok(()) => Ok(Value::Nil),
+                            let block_result = self.run_block(&method_def.body);
+                            let implicit_return = self.env.get("_").cloned();
+                            let result = match block_result {
+                                Ok(()) => Ok(implicit_return.unwrap_or(Value::Nil)),
                                 Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
                                 Err(e) => Err(e),
                             };
