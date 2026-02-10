@@ -190,7 +190,7 @@ Implement Raku regex/grammar.
 - [x] `rx//` form
 - [x] `m//` match operator
 - [x] `s///` substitution operator
-- [ ] Character classes, quantifiers, anchors
+- [x] Character classes, quantifiers, anchors
 - [ ] Named captures (`$<name>`)
 - [ ] `token`, `rule` declarations
 - [ ] `grammar` declaration

@@ -1,5 +1,5 @@
 use Test;
-plan 13;
+plan 16;
 
 ok "abc" ~~ /abc/, 'literal match';
 ok "abc" ~~ /b/, 'substring match';
@@ -14,3 +14,6 @@ ok "a1_" ~~ /\w+/, 'word class';
 ok "a b" ~~ /\s/, 'space class';
 ok "abc".match(/b/), '.match uses regex';
 ok "abc" ~~ rx/ab/, 'rx// literal match';
+ok "b" ~~ /a?b/, 'question quantifier';
+ok "b" ~~ /[a-c]/, 'char class range';
+nok "b" ~~ /[^a-c]/, 'negated class fails on range';
