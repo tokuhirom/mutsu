@@ -4831,11 +4831,19 @@ impl Interpreter {
                 for arg in args {
                     if let Expr::AssignExpr { name, expr } = arg {
                         if *name == pd.name {
-                            if let Ok(value) = self.eval_expr(expr) {
-                                self.env.insert(pd.name.clone(), value);
-                                found = true;
-                                break;
+                            let value = self.eval_expr(expr)?;
+                            if let Some(constraint) = &pd.type_constraint {
+                                let value_type = Self::value_type_name(&value);
+                                if !Self::type_matches(constraint, value_type) {
+                                    return Err(RuntimeError::new(format!(
+                                        "Type check failed for {}: expected {}, got {}",
+                                        pd.name, constraint, value_type
+                                    )));
+                                }
                             }
+                            self.env.insert(pd.name.clone(), value);
+                            found = true;
+                            break;
                         }
                     }
                 }
@@ -4848,9 +4856,17 @@ impl Interpreter {
             } else {
                 // Positional param
                 if positional_idx < args.len() {
-                    if let Ok(value) = self.eval_expr(&args[positional_idx]) {
-                        self.env.insert(pd.name.clone(), value);
+                    let value = self.eval_expr(&args[positional_idx])?;
+                    if let Some(constraint) = &pd.type_constraint {
+                        let value_type = Self::value_type_name(&value);
+                        if !Self::type_matches(constraint, value_type) {
+                            return Err(RuntimeError::new(format!(
+                                "Type check failed for {}: expected {}, got {}",
+                                pd.name, constraint, value_type
+                            )));
+                        }
                     }
+                    self.env.insert(pd.name.clone(), value);
                     positional_idx += 1;
                 } else if let Some(default_expr) = &pd.default {
                     let value = self.eval_expr(default_expr)?;

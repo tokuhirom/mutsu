@@ -174,7 +174,7 @@ Implement Raku OOP.
 - [x] `role` declaration and `does`
 - [x] `multi method`
 - [x] `BUILD` / `TWEAK` submethods
-- [ ] Type checking
+- [x] Type checking
 - [ ] Coercion (`Int(Str)` etc.)
 - [x] `enum`
 - [ ] `subset`
