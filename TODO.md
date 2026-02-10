@@ -207,7 +207,7 @@ Implement Raku regex/grammar.
 - [x] Junction (`any`, `all`, `one`, `none`)
 - [x] `Promise`, `Supply`, `Channel` (concurrency)
 - [x] `react` / `whenever`
-- [ ] `Proc::Async`
+- [x] `Proc::Async`
 - [ ] `IO::Path` full implementation
 - [ ] Module system (`unit module`, `export`, `use`)
 - [ ] `MAIN` (command-line argument parsing)

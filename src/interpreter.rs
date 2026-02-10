@@ -129,6 +129,12 @@ impl Interpreter {
             methods: HashMap::new(),
             mro: vec!["Supply".to_string()],
         });
+        classes.insert("Proc::Async".to_string(), ClassDef {
+            parents: Vec::new(),
+            attributes: Vec::new(),
+            methods: HashMap::new(),
+            mro: vec!["Proc::Async".to_string()],
+        });
         Self {
             env,
             output: String::new(),
@@ -1468,6 +1474,20 @@ impl Interpreter {
         }
     }
 
+    fn make_promise_instance(&self, status: &str, result: Value) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("status".to_string(), Value::Str(status.to_string()));
+        attrs.insert("result".to_string(), result);
+        Value::Instance { class_name: "Promise".to_string(), attributes: attrs }
+    }
+
+    fn make_supply_instance(&self) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("values".to_string(), Value::Array(Vec::new()));
+        attrs.insert("taps".to_string(), Value::Array(Vec::new()));
+        Value::Instance { class_name: "Supply".to_string(), attributes: attrs }
+    }
+
     fn call_sub_value(&mut self, func: Value, args: Vec<Value>, merge_all: bool) -> Result<Value, RuntimeError> {
         if let Value::Sub { package, name, param, body, env } = func {
             let saved_env = self.env.clone();
@@ -2145,10 +2165,7 @@ impl Interpreter {
                     let base = self.eval_expr(target)?;
                     if let Value::Package(class_name) = &base {
                         if class_name == "Promise" {
-                            let mut attrs = HashMap::new();
-                            attrs.insert("status".to_string(), Value::Str("Planned".to_string()));
-                            attrs.insert("result".to_string(), Value::Nil);
-                            return Ok(Value::Instance { class_name: class_name.clone(), attributes: attrs });
+                            return Ok(self.make_promise_instance("Planned", Value::Nil));
                         }
                         if class_name == "Channel" {
                             let mut attrs = HashMap::new();
@@ -2157,9 +2174,19 @@ impl Interpreter {
                             return Ok(Value::Instance { class_name: class_name.clone(), attributes: attrs });
                         }
                         if class_name == "Supply" {
+                            return Ok(self.make_supply_instance());
+                        }
+                        if class_name == "Proc::Async" {
+                            let mut cmd = Vec::new();
+                            for arg in args {
+                                let value = self.eval_expr(arg)?;
+                                cmd.push(value);
+                            }
                             let mut attrs = HashMap::new();
-                            attrs.insert("values".to_string(), Value::Array(Vec::new()));
-                            attrs.insert("taps".to_string(), Value::Array(Vec::new()));
+                            attrs.insert("cmd".to_string(), Value::Array(cmd));
+                            attrs.insert("started".to_string(), Value::Bool(false));
+                            attrs.insert("stdout".to_string(), self.make_supply_instance());
+                            attrs.insert("stderr".to_string(), self.make_supply_instance());
                             return Ok(Value::Instance { class_name: class_name.clone(), attributes: attrs });
                         }
                         if self.classes.contains_key(class_name) {
@@ -2224,15 +2251,9 @@ impl Interpreter {
                                 if matches!(status, Value::Str(ref s) if s == "Kept") {
                                     let value = attributes.get("result").cloned().unwrap_or(Value::Nil);
                                     let result = self.call_sub_value(block, vec![value], false)?;
-                                    let mut attrs = HashMap::new();
-                                    attrs.insert("status".to_string(), Value::Str("Kept".to_string()));
-                                    attrs.insert("result".to_string(), result);
-                                    return Ok(Value::Instance { class_name: class_name.clone(), attributes: attrs });
+                                    return Ok(self.make_promise_instance("Kept", result));
                                 }
-                                let mut attrs = HashMap::new();
-                                attrs.insert("status".to_string(), Value::Str("Planned".to_string()));
-                                attrs.insert("result".to_string(), Value::Nil);
-                                return Ok(Value::Instance { class_name: class_name.clone(), attributes: attrs });
+                                return Ok(self.make_promise_instance("Planned", Value::Nil));
                             }
                         }
                         if class_name == "Channel" {
@@ -2304,6 +2325,27 @@ impl Interpreter {
                                 let updated = Value::Instance { class_name: class_name.clone(), attributes: attrs };
                                 self.update_instance_target(target.as_ref(), updated);
                                 return Ok(Value::Nil);
+                            }
+                        }
+                        if class_name == "Proc::Async" {
+                            if name == "command" && args.is_empty() {
+                                return Ok(attributes.get("cmd").cloned().unwrap_or(Value::Array(Vec::new())));
+                            }
+                            if name == "started" && args.is_empty() {
+                                return Ok(attributes.get("started").cloned().unwrap_or(Value::Bool(false)));
+                            }
+                            if name == "stdout" && args.is_empty() {
+                                return Ok(attributes.get("stdout").cloned().unwrap_or(Value::Nil));
+                            }
+                            if name == "stderr" && args.is_empty() {
+                                return Ok(attributes.get("stderr").cloned().unwrap_or(Value::Nil));
+                            }
+                            if name == "start" && args.is_empty() {
+                                let mut attrs = attributes.clone();
+                                attrs.insert("started".to_string(), Value::Bool(true));
+                                let updated = Value::Instance { class_name: class_name.clone(), attributes: attrs };
+                                self.update_instance_target(target.as_ref(), updated);
+                                return Ok(self.make_promise_instance("Kept", Value::Int(0)));
                             }
                         }
                         // Check for accessor methods (public attributes)
