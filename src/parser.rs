@@ -64,6 +64,11 @@ impl Parser {
         if self.match_ident("role") {
             return self.parse_role_decl();
         }
+        if self.match_ident("grammar") {
+            let name = self.consume_ident()?;
+            let body = self.parse_block()?;
+            return Ok(Stmt::Package { name, body });
+        }
         if self.match_ident("subset") {
             let name = self.consume_ident()?;
             let mut base = "Any".to_string();
@@ -79,6 +84,54 @@ impl Parser {
         }
         if self.match_ident("has") {
             return self.parse_has_decl();
+        }
+        if self.match_ident("token") || self.match_ident("rule") {
+            let name = self.consume_ident()?;
+            let mut params = Vec::new();
+            let mut param_defs = Vec::new();
+            if self.match_kind(TokenKind::LParen) {
+                while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
+                    let mut is_named = false;
+                    let mut is_slurpy = false;
+                    if self.match_kind(TokenKind::Star) {
+                        is_slurpy = true;
+                    }
+                    if self.match_kind(TokenKind::Colon) {
+                        is_named = true;
+                    }
+                    let mut type_constraint = None;
+                    if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
+                        && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
+                    {
+                        if let Some(TokenKind::Ident(ty)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+                            type_constraint = Some(ty.clone());
+                        }
+                        self.pos += 1;
+                    }
+                    if self.peek_is_var() {
+                        let var = self.consume_var()?;
+                        let default = if self.match_kind(TokenKind::Eq) {
+                            Some(self.parse_expr()?)
+                        } else {
+                            None
+                        };
+                        self.match_kind(TokenKind::Question);
+                        self.match_kind(TokenKind::Bang);
+                        params.push(var.clone());
+                        param_defs.push(ParamDef { name: var, default, named: is_named, slurpy: is_slurpy, type_constraint });
+                    } else {
+                        self.pos += 1;
+                    }
+                    self.match_kind(TokenKind::Comma);
+                }
+                self.match_kind(TokenKind::RParen);
+            }
+            if self.match_kind(TokenKind::LBrace) {
+                let body = self.parse_block_body()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::SubDecl { name, params, param_defs, body, multi: false });
+            }
+            return Err(RuntimeError::new("Expected block for token/rule"));
         }
         let mut is_multi = false;
         if self.match_ident("multi") {
