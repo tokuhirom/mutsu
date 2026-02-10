@@ -15,6 +15,12 @@ struct ClassDef {
 }
 
 #[derive(Debug, Clone)]
+struct RoleDef {
+    attributes: Vec<(String, bool, Option<Expr>)>,
+    methods: HashMap<String, Vec<MethodDef>>,
+}
+
+#[derive(Debug, Clone)]
 struct MethodDef {
     params: Vec<String>,
     param_defs: Vec<ParamDef>,
@@ -86,6 +92,7 @@ pub struct Interpreter {
     gather_items: Vec<Vec<Value>>,
     enum_types: HashMap<String, Vec<(String, i64)>>,
     classes: HashMap<String, ClassDef>,
+    roles: HashMap<String, RoleDef>,
     proto_subs: HashSet<String>,
 }
 
@@ -113,6 +120,7 @@ impl Interpreter {
             gather_items: Vec::new(),
             enum_types: HashMap::new(),
             classes: HashMap::new(),
+            roles: HashMap::new(),
             proto_subs: HashSet::new(),
         }
     }
@@ -612,6 +620,18 @@ impl Interpreter {
                                 class_def.methods.insert(method_name.clone(), vec![def]);
                             }
                         }
+                        Stmt::DoesDecl { name: role_name } => {
+                            let role = self.roles.get(role_name).cloned()
+                                .ok_or_else(|| RuntimeError::new(format!("Unknown role: {}", role_name)))?;
+                            for attr in &role.attributes {
+                                if !class_def.attributes.iter().any(|(n, _, _)| n == &attr.0) {
+                                    class_def.attributes.push(attr.clone());
+                                }
+                            }
+                            for (mname, overloads) in role.methods {
+                                class_def.methods.entry(mname).or_insert_with(Vec::new).extend(overloads);
+                            }
+                        }
                         _ => {
                             // Execute other statements in class scope
                             self.exec_stmt(stmt)?;
@@ -620,11 +640,43 @@ impl Interpreter {
                 }
                 self.classes.insert(name.clone(), class_def);
             }
+            Stmt::RoleDecl { name, body } => {
+                let mut role_def = RoleDef {
+                    attributes: Vec::new(),
+                    methods: HashMap::new(),
+                };
+                for stmt in body {
+                    match stmt {
+                        Stmt::HasDecl { name: attr_name, is_public, default } => {
+                            role_def.attributes.push((attr_name.clone(), *is_public, default.clone()));
+                        }
+                        Stmt::MethodDecl { name: method_name, params, param_defs, body: method_body, multi } => {
+                            let def = MethodDef {
+                                params: params.clone(),
+                                param_defs: param_defs.clone(),
+                                body: method_body.clone(),
+                            };
+                            if *multi {
+                                role_def.methods.entry(method_name.clone()).or_insert_with(Vec::new).push(def);
+                            } else {
+                                role_def.methods.insert(method_name.clone(), vec![def]);
+                            }
+                        }
+                        _ => {
+                            self.exec_stmt(stmt)?;
+                        }
+                    }
+                }
+                self.roles.insert(name.clone(), role_def);
+            }
             Stmt::HasDecl { .. } => {
                 // HasDecl outside a class is a no-op (handled during ClassDecl)
             }
             Stmt::MethodDecl { .. } => {
                 // MethodDecl outside a class is a no-op (handled during ClassDecl)
+            }
+            Stmt::DoesDecl { .. } => {
+                // DoesDecl outside a class is a no-op (handled during ClassDecl)
             }
             Stmt::Expr(expr) => {
                 self.eval_expr(expr)?;
@@ -5203,7 +5255,7 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
         Stmt::Loop { body, .. } => {
             for s in body { collect_ph_stmt(s, out); }
         }
-        Stmt::Block(body) | Stmt::Default(body) | Stmt::Catch(body) | Stmt::Control(body) => {
+        Stmt::Block(body) | Stmt::Default(body) | Stmt::Catch(body) | Stmt::Control(body) | Stmt::RoleDecl { body, .. } => {
             for s in body { collect_ph_stmt(s, out); }
         }
         Stmt::Given { topic, body } => {
@@ -5215,6 +5267,7 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
             for s in body { collect_ph_stmt(s, out); }
         }
         Stmt::ProtoDecl { .. } => {}
+        Stmt::DoesDecl { .. } => {}
         _ => {}
     }
 }

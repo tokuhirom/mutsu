@@ -126,6 +126,8 @@ pub(crate) enum Stmt {
     ClassDecl { name: String, parent: Option<String>, body: Vec<Stmt> },
     HasDecl { name: String, is_public: bool, default: Option<Expr> },
     MethodDecl { name: String, params: Vec<String>, param_defs: Vec<ParamDef>, body: Vec<Stmt>, multi: bool },
+    RoleDecl { name: String, body: Vec<Stmt> },
+    DoesDecl { name: String },
     ProtoDecl { name: String, params: Vec<String>, param_defs: Vec<ParamDef> },
     Expr(Expr),
 }

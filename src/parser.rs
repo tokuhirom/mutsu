@@ -61,6 +61,9 @@ impl Parser {
         if self.match_ident("class") {
             return self.parse_class_decl();
         }
+        if self.match_ident("role") {
+            return self.parse_role_decl();
+        }
         if self.match_ident("has") {
             return self.parse_has_decl();
         }
@@ -528,6 +531,11 @@ impl Parser {
         if self.match_ident("default") {
             let body = self.parse_block()?;
             return Ok(Stmt::Default(body));
+        }
+        if self.match_ident("does") {
+            let name = self.consume_ident()?;
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::DoesDecl { name });
         }
         if self.match_ident("die") || self.match_ident("fail") {
             let expr = self.parse_expr()?;
@@ -2383,6 +2391,18 @@ impl Parser {
         self.consume_kind(TokenKind::RBrace)?;
         self.match_kind(TokenKind::Semicolon);
         Ok(Stmt::ClassDecl { name, parent, body })
+    }
+
+    fn parse_role_decl(&mut self) -> Result<Stmt, RuntimeError> {
+        let name = self.consume_ident()?;
+        self.consume_kind(TokenKind::LBrace)?;
+        let mut body = Vec::new();
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
+            body.push(self.parse_stmt()?);
+        }
+        self.consume_kind(TokenKind::RBrace)?;
+        self.match_kind(TokenKind::Semicolon);
+        Ok(Stmt::RoleDecl { name, body })
     }
 
     fn parse_has_decl(&mut self) -> Result<Stmt, RuntimeError> {
