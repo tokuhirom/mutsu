@@ -34,6 +34,12 @@ fn main() {
         Ok(output) => print!("{}", output),
         Err(err) => {
             eprintln!("Runtime error: {}", err.message);
+            let output_buf = interpreter.output();
+            if !output_buf.is_empty() {
+                eprintln!("--- buffered TAP output ---");
+                print!("{}", output_buf);
+                eprintln!("--- end buffered TAP output ---");
+            }
             std::process::exit(1);
         }
     }

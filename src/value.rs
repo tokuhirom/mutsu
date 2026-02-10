@@ -78,9 +78,14 @@ pub enum Value {
     Set(HashSet<String>),
     Bag(HashMap<String, i64>),
     Mix(HashMap<String, f64>),
-    CompUnitDepSpec { short_name: String },
+    CompUnitDepSpec {
+        short_name: String,
+    },
     Package(String),
-    Routine { package: String, name: String },
+    Routine {
+        package: String,
+        name: String,
+    },
     Pair(String, Box<Value>),
     Enum {
         enum_type: String,
@@ -140,7 +145,9 @@ impl PartialEq for Value {
                 *d != 0 && *n == *i * *d
             }
             (Value::Rat(n, d), Value::Num(f)) | (Value::Num(f), Value::Rat(n, d)) => {
-                if *d == 0 { return false; }
+                if *d == 0 {
+                    return false;
+                }
                 (*n as f64 / *d as f64) == *f
             }
             (Value::Complex(r1, i1), Value::Complex(r2, i2)) => r1 == r2 && i1 == i2,
@@ -154,14 +161,55 @@ impl PartialEq for Value {
             (Value::Set(a), Value::Set(b)) => a == b,
             (Value::Bag(a), Value::Bag(b)) => a == b,
             (Value::Mix(a), Value::Mix(b)) => a == b,
-            (Value::CompUnitDepSpec { short_name: a }, Value::CompUnitDepSpec { short_name: b }) => a == b,
+            (
+                Value::CompUnitDepSpec { short_name: a },
+                Value::CompUnitDepSpec { short_name: b },
+            ) => a == b,
             (Value::Package(a), Value::Package(b)) => a == b,
             (Value::Pair(ak, av), Value::Pair(bk, bv)) => ak == bk && av == bv,
-            (Value::Enum { enum_type: at, key: ak, .. }, Value::Enum { enum_type: bt, key: bk, .. }) => at == bt && ak == bk,
+            (
+                Value::Enum {
+                    enum_type: at,
+                    key: ak,
+                    ..
+                },
+                Value::Enum {
+                    enum_type: bt,
+                    key: bk,
+                    ..
+                },
+            ) => at == bt && ak == bk,
             (Value::Regex(a), Value::Regex(b)) => a == b,
-            (Value::Routine { package: ap, name: an }, Value::Routine { package: bp, name: bn }) => ap == bp && an == bn,
-            (Value::Instance { class_name: a, attributes: aa }, Value::Instance { class_name: b, attributes: ba }) => a == b && aa == ba,
-            (Value::Junction { kind: ak, values: av }, Value::Junction { kind: bk, values: bv }) => ak == bk && av == bv,
+            (
+                Value::Routine {
+                    package: ap,
+                    name: an,
+                },
+                Value::Routine {
+                    package: bp,
+                    name: bn,
+                },
+            ) => ap == bp && an == bn,
+            (
+                Value::Instance {
+                    class_name: a,
+                    attributes: aa,
+                },
+                Value::Instance {
+                    class_name: b,
+                    attributes: ba,
+                },
+            ) => a == b && aa == ba,
+            (
+                Value::Junction {
+                    kind: ak,
+                    values: av,
+                },
+                Value::Junction {
+                    kind: bk,
+                    values: bv,
+                },
+            ) => ak == bk && av == bv,
             (Value::LazyList(a), Value::LazyList(b)) => Rc::ptr_eq(a, b),
             (Value::Nil, Value::Nil) => true,
             _ => false,
@@ -237,19 +285,31 @@ impl Value {
                 .join("\n"),
             Value::Rat(n, d) => {
                 if *d == 0 {
-                    if *n == 0 { "NaN".to_string() }
-                    else if *n > 0 { "Inf".to_string() }
-                    else { "-Inf".to_string() }
+                    if *n == 0 {
+                        "NaN".to_string()
+                    } else if *n > 0 {
+                        "Inf".to_string()
+                    } else {
+                        "-Inf".to_string()
+                    }
                 } else {
                     let whole = *n as f64 / *d as f64;
                     // Check if it can be represented as exact decimal
                     let mut dd = *d;
-                    while dd % 2 == 0 { dd /= 2; }
-                    while dd % 5 == 0 { dd /= 5; }
+                    while dd % 2 == 0 {
+                        dd /= 2;
+                    }
+                    while dd % 5 == 0 {
+                        dd /= 5;
+                    }
                     if dd == 1 {
                         // Exact decimal representation
                         let s = format!("{}", whole);
-                        if s.contains('.') { s } else { format!("{}.0", whole) }
+                        if s.contains('.') {
+                            s
+                        } else {
+                            format!("{}.0", whole)
+                        }
                     } else {
                         format!("{:.6}", whole)
                     }
@@ -260,21 +320,41 @@ impl Value {
             Value::Set(s) => {
                 let mut keys: Vec<&String> = s.iter().collect();
                 keys.sort();
-                format!("set({})", keys.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(" "))
+                format!(
+                    "set({})",
+                    keys.iter()
+                        .map(|k| k.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                )
             }
             Value::Bag(b) => {
                 let mut keys: Vec<(&String, &i64)> = b.iter().collect();
                 keys.sort_by_key(|(k, _)| (*k).clone());
-                format!("bag({})", keys.iter().map(|(k, v)| format!("{}({})", k, v)).collect::<Vec<_>>().join(", "))
+                format!(
+                    "bag({})",
+                    keys.iter()
+                        .map(|(k, v)| format!("{}({})", k, v))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
             }
             Value::Mix(m) => {
                 let mut keys: Vec<(&String, &f64)> = m.iter().collect();
                 keys.sort_by_key(|(k, _)| (*k).clone());
-                format!("mix({})", keys.iter().map(|(k, v)| format!("{}({})", k, v)).collect::<Vec<_>>().join(", "))
+                format!(
+                    "mix({})",
+                    keys.iter()
+                        .map(|(k, v)| format!("{}({})", k, v))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
             }
             Value::Pair(k, v) => format!("{}\t{}", k, v.to_string_value()),
             Value::Enum { key, .. } => key.clone(),
-            Value::CompUnitDepSpec { short_name } => format!("CompUnit::DependencySpecification({})", short_name),
+            Value::CompUnitDepSpec { short_name } => {
+                format!("CompUnit::DependencySpecification({})", short_name)
+            }
             Value::Package(s) => s.clone(),
             Value::Routine { package, name } => format!("{}::{}", package, name),
             Value::Sub { name, .. } => name.clone(),
@@ -286,7 +366,11 @@ impl Value {
                     JunctionKind::One => "one",
                     JunctionKind::None => "none",
                 };
-                let elems = values.iter().map(|v| v.to_string_value()).collect::<Vec<_>>().join(", ");
+                let elems = values
+                    .iter()
+                    .map(|v| v.to_string_value())
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 format!("{}({})", kind_str, elems)
             }
             Value::Regex(pattern) => format!("/{}/", pattern),
@@ -309,30 +393,93 @@ pub struct RuntimeError {
 
 impl RuntimeError {
     pub(crate) fn new(message: impl Into<String>) -> Self {
-        Self { message: message.into(), return_value: None, is_last: false, is_next: false, is_redo: false, is_proceed: false, is_succeed: false, label: None }
+        Self {
+            message: message.into(),
+            return_value: None,
+            is_last: false,
+            is_next: false,
+            is_redo: false,
+            is_proceed: false,
+            is_succeed: false,
+            label: None,
+        }
     }
 
     pub(crate) fn return_val(value: Value) -> Self {
-        Self { message: String::new(), return_value: Some(value), is_last: false, is_next: false, is_redo: false, is_proceed: false, is_succeed: false, label: None }
+        Self {
+            message: String::new(),
+            return_value: Some(value),
+            is_last: false,
+            is_next: false,
+            is_redo: false,
+            is_proceed: false,
+            is_succeed: false,
+            label: None,
+        }
     }
 
     pub(crate) fn last_signal() -> Self {
-        Self { message: String::new(), return_value: None, is_last: true, is_next: false, is_redo: false, is_proceed: false, is_succeed: false, label: None }
+        Self {
+            message: String::new(),
+            return_value: None,
+            is_last: true,
+            is_next: false,
+            is_redo: false,
+            is_proceed: false,
+            is_succeed: false,
+            label: None,
+        }
     }
 
     pub(crate) fn next_signal() -> Self {
-        Self { message: String::new(), return_value: None, is_last: false, is_next: true, is_redo: false, is_proceed: false, is_succeed: false, label: None }
+        Self {
+            message: String::new(),
+            return_value: None,
+            is_last: false,
+            is_next: true,
+            is_redo: false,
+            is_proceed: false,
+            is_succeed: false,
+            label: None,
+        }
     }
 
     pub(crate) fn redo_signal() -> Self {
-        Self { message: String::new(), return_value: None, is_last: false, is_next: false, is_redo: true, is_proceed: false, is_succeed: false, label: None }
+        Self {
+            message: String::new(),
+            return_value: None,
+            is_last: false,
+            is_next: false,
+            is_redo: true,
+            is_proceed: false,
+            is_succeed: false,
+            label: None,
+        }
     }
 
     pub(crate) fn proceed_signal() -> Self {
-        Self { message: String::new(), return_value: None, is_last: false, is_next: false, is_redo: false, is_proceed: true, is_succeed: false, label: None }
+        Self {
+            message: String::new(),
+            return_value: None,
+            is_last: false,
+            is_next: false,
+            is_redo: false,
+            is_proceed: true,
+            is_succeed: false,
+            label: None,
+        }
     }
 
     pub(crate) fn succeed_signal() -> Self {
-        Self { message: String::new(), return_value: None, is_last: false, is_next: false, is_redo: false, is_proceed: false, is_succeed: true, label: None }
+        Self {
+            message: String::new(),
+            return_value: None,
+            is_last: false,
+            is_next: false,
+            is_redo: false,
+            is_proceed: false,
+            is_succeed: true,
+            label: None,
+        }
     }
 }
