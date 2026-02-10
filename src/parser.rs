@@ -67,6 +67,69 @@ impl Parser {
         if self.match_ident("method") {
             return self.parse_method_decl();
         }
+        if self.match_ident("proto") {
+            self.match_ident("sub");
+            let name = self.consume_ident()?;
+            let mut params = Vec::new();
+            let mut param_defs = Vec::new();
+            if self.match_kind(TokenKind::LParen) {
+                while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
+                    let mut is_named = false;
+                    let mut is_slurpy = false;
+                    if self.match_kind(TokenKind::Star) {
+                        is_slurpy = true;
+                    }
+                    if self.match_kind(TokenKind::Colon) {
+                        is_named = true;
+                    }
+                    let mut type_constraint = None;
+                    if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
+                        && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
+                    {
+                        if let Some(TokenKind::Ident(ty)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+                            type_constraint = Some(ty.clone());
+                        }
+                        self.pos += 1;
+                    }
+                    if self.peek_is_var() {
+                        let var = self.consume_var()?;
+                        let default = if self.match_kind(TokenKind::Eq) {
+                            Some(self.parse_expr()?)
+                        } else if self.match_kind(TokenKind::QuestionQuestion) {
+                            None
+                        } else {
+                            None
+                        };
+                        self.match_kind(TokenKind::Question);
+                        self.match_kind(TokenKind::Bang);
+                        params.push(var.clone());
+                        param_defs.push(ParamDef { name: var, default, named: is_named, slurpy: is_slurpy, type_constraint });
+                    } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_))) {
+                        if let TokenKind::ArrayVar(n) = token.kind {
+                            let var = format!("@{}", n);
+                            params.push(var.clone());
+                            param_defs.push(ParamDef { name: var, default: None, named: false, slurpy: is_slurpy, type_constraint: None });
+                        }
+                    } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::HashVar(_))) {
+                        if let TokenKind::HashVar(n) = token.kind {
+                            let var = format!("%{}", n);
+                            params.push(var.clone());
+                            param_defs.push(ParamDef { name: var, default: None, named: is_named || is_slurpy, slurpy: is_slurpy, type_constraint: None });
+                        }
+                    }
+                    if !self.match_kind(TokenKind::Comma) {
+                        break;
+                    }
+                }
+                self.consume_kind(TokenKind::RParen)?;
+            }
+            if self.check(&TokenKind::LBrace) {
+                let _ = self.parse_block()?;
+            } else {
+                self.match_kind(TokenKind::Semicolon);
+            }
+            return Ok(Stmt::ProtoDecl { name, params, param_defs });
+        }
         let is_multi = self.match_ident("multi");
         if is_multi {
             self.match_ident("sub"); // optional 'sub' after 'multi'
@@ -469,6 +532,10 @@ impl Parser {
             let body = self.parse_block()?;
             return Ok(Stmt::Catch(body));
         }
+        if self.match_ident("CONTROL") {
+            let body = self.parse_block()?;
+            return Ok(Stmt::Control(body));
+        }
         if self.match_ident("proceed") {
             self.match_kind(TokenKind::Semicolon);
             return Ok(Stmt::Proceed);
@@ -559,6 +626,24 @@ impl Parser {
                     };
                     return Ok(Stmt::Assign { name, expr, op: AssignOp::Assign });
                 }
+                if matches!(next, TokenKind::LBracket) {
+                    let name = self.consume_var()?;
+                    if let Some((meta, op, consumed)) = self.try_bracket_meta_op_at(self.pos) {
+                        self.pos += consumed;
+                        if self.match_kind(TokenKind::Eq) {
+                            let rhs = self.parse_comma_expr()?;
+                            self.match_kind(TokenKind::Semicolon);
+                            let expr = Expr::MetaOp {
+                                meta,
+                                op,
+                                left: Box::new(Expr::Var(name.clone())),
+                                right: Box::new(rhs),
+                            };
+                            return Ok(Stmt::Assign { name, expr, op: AssignOp::Assign });
+                        }
+                    }
+                    self.pos -= 1;
+                }
                 if matches!(next, TokenKind::Eq | TokenKind::Bind | TokenKind::MatchAssign) {
                     let name = self.consume_var()?;
                     let op = if self.match_kind(TokenKind::Eq) {
@@ -576,8 +661,28 @@ impl Parser {
             }
         }
         if let Some(TokenKind::ArrayVar(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+            let name = name.clone();
+            if matches!(self.peek_next_kind(), Some(TokenKind::LBracket)) {
+                let name = format!("@{}", name);
+                self.pos += 1;
+                if let Some((meta, op, consumed)) = self.try_bracket_meta_op_at(self.pos) {
+                    self.pos += consumed;
+                    if self.match_kind(TokenKind::Eq) {
+                        let rhs = self.parse_comma_expr()?;
+                        self.match_kind(TokenKind::Semicolon);
+                        let expr = Expr::MetaOp {
+                            meta,
+                            op,
+                            left: Box::new(Expr::ArrayVar(name[1..].to_string())),
+                            right: Box::new(rhs),
+                        };
+                        return Ok(Stmt::Assign { name, expr, op: AssignOp::Assign });
+                    }
+                }
+                self.pos -= 1;
+            }
             if matches!(self.peek_next_kind(), Some(TokenKind::Eq | TokenKind::Bind | TokenKind::MatchAssign)) {
-                let name = format!("@{}", name.clone());
+                let name = format!("@{}", name);
                 self.pos += 1;
                 let op = if self.match_kind(TokenKind::Eq) {
                     AssignOp::Assign
@@ -1296,6 +1401,56 @@ impl Parser {
                     && matches!(op, "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "min" | "max" | "x" | "xx" | "cmp" | "leg")
                 {
                     return Some((meta.to_string(), op.to_string(), 1));
+                }
+            }
+        }
+        None
+    }
+
+    fn try_bracket_meta_op_at(&self, pos: usize) -> Option<(String, String, usize)> {
+        if !matches!(self.tokens.get(pos).map(|t| &t.kind), Some(TokenKind::LBracket)) {
+            return None;
+        }
+        let op_from_kind = |kind: &TokenKind| -> Option<String> {
+            match kind {
+                TokenKind::Plus => Some("+".to_string()),
+                TokenKind::Minus => Some("-".to_string()),
+                TokenKind::Star => Some("*".to_string()),
+                TokenKind::StarStar => Some("**".to_string()),
+                TokenKind::Slash => Some("/".to_string()),
+                TokenKind::Percent => Some("%".to_string()),
+                TokenKind::Tilde => Some("~".to_string()),
+                TokenKind::EqEq => Some("==".to_string()),
+                TokenKind::BangEq => Some("!=".to_string()),
+                TokenKind::Lt => Some("<".to_string()),
+                TokenKind::Gt => Some(">".to_string()),
+                TokenKind::Lte => Some("<=".to_string()),
+                TokenKind::Gte => Some(">=".to_string()),
+                TokenKind::BitAnd => Some("+&".to_string()),
+                TokenKind::BitOr => Some("+|".to_string()),
+                TokenKind::BitXor => Some("+^".to_string()),
+                TokenKind::Ident(s) if matches!(s.as_str(), "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "min" | "max" | "x" | "xx" | "cmp" | "leg") => Some(s.clone()),
+                _ => None,
+            }
+        };
+        if let Some(TokenKind::Ident(name)) = self.tokens.get(pos + 1).map(|t| &t.kind) {
+            if matches!(name.as_str(), "R" | "X" | "Z") {
+                let meta = name.clone();
+                if let Some(kind) = self.tokens.get(pos + 2).map(|t| &t.kind) {
+                    if let Some(op) = op_from_kind(kind) {
+                        if matches!(self.tokens.get(pos + 3).map(|t| &t.kind), Some(TokenKind::RBracket)) {
+                            return Some((meta, op, 4));
+                        }
+                    }
+                }
+            }
+            if name.len() > 1 {
+                let (meta, op) = name.split_at(1);
+                if matches!(meta, "R" | "X" | "Z")
+                    && matches!(op, "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "min" | "max" | "x" | "xx" | "cmp" | "leg")
+                    && matches!(self.tokens.get(pos + 2).map(|t| &t.kind), Some(TokenKind::RBracket))
+                {
+                    return Some((meta.to_string(), op.to_string(), 3));
                 }
             }
         }

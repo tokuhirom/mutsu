@@ -74,7 +74,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] Junction operators: `&`, `|`, `^`
 - [x] `[op]` reduction meta operator
 - [x] Meta operators: `R`, `X`, `Z`
-- [ ] Meta operators: `op=`
+- [x] Meta operators: `op=`
 - [x] Hyper operators: `>>op<<`
 
 ### Control Flow
@@ -95,7 +95,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] `proceed`, `succeed`
 - [x] `redo`
 - [x] Labeled loops
-- [ ] `CONTROL { }`
+- [x] `CONTROL { }`
 - [x] `warn`
 - [x] `fail`
 - [x] `do { }` block
@@ -112,7 +112,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] Type constraints (`Int $x`)
 - [x] Slurpy parameters (`*@args`, `*%opts`)
 - [x] `multi sub`
-- [ ] `proto sub`
+- [x] `proto sub`
 - [x] `MAIN` sub
 - [x] Closure (lexical capture)
 

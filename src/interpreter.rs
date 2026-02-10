@@ -33,6 +33,7 @@ pub struct Interpreter {
     gather_items: Vec<Vec<Value>>,
     enum_types: HashMap<String, Vec<(String, i64)>>,
     classes: HashMap<String, ClassDef>,
+    proto_subs: HashSet<String>,
 }
 
 impl Interpreter {
@@ -59,6 +60,7 @@ impl Interpreter {
             gather_items: Vec::new(),
             enum_types: HashMap::new(),
             classes: HashMap::new(),
+            proto_subs: HashSet::new(),
         }
     }
 
@@ -226,6 +228,12 @@ impl Interpreter {
                     let fq = format!("{}::{}", self.current_package, name);
                     self.functions.insert(fq, def);
                 }
+            }
+            Stmt::ProtoDecl { name, params, param_defs } => {
+                let key = format!("{}::{}", self.current_package, name);
+                self.proto_subs.insert(key);
+                let _ = params.len();
+                let _ = param_defs.len();
             }
             Stmt::Package { name, body } => {
                 let saved = self.current_package.clone();
@@ -479,6 +487,9 @@ impl Interpreter {
             }
             Stmt::Catch(_) => {
                 // CATCH blocks are handled by try expressions
+            }
+            Stmt::Control(_) => {
+                // CONTROL blocks are handled by try expressions
             }
             Stmt::Take(expr) => {
                 let val = self.eval_expr(expr)?;
@@ -1012,6 +1023,8 @@ impl Interpreter {
                         Err(e) => return Err(e),
                         Ok(_) => {}
                     }
+                } else if self.has_proto(name) {
+                    return Err(RuntimeError::new(format!("No matching candidates for proto sub: {}", name)));
                 } else {
                     return Err(RuntimeError::new(format!("Unknown call: {}", name)));
                 }
@@ -1087,8 +1100,23 @@ impl Interpreter {
                 }
             }
         }
-        // Fall back to arity-only
-        self.resolve_function_with_arity(name, arity)
+        // Fall back to arity-only if no proto declared
+        if self.has_proto(name) {
+            None
+        } else {
+            self.resolve_function_with_arity(name, arity)
+        }
+    }
+
+    fn has_proto(&self, name: &str) -> bool {
+        if name.contains("::") {
+            return self.proto_subs.contains(name);
+        }
+        let local = format!("{}::{}", self.current_package, name);
+        if self.proto_subs.contains(&local) {
+            return true;
+        }
+        self.proto_subs.contains(&format!("GLOBAL::{}", name))
     }
 
     fn value_type_name(value: &Value) -> &'static str {
@@ -3104,6 +3132,9 @@ impl Interpreter {
                         other => other,
                     };
                 }
+                if self.has_proto(name) {
+                    return Err(RuntimeError::new(format!("No matching candidates for proto sub: {}", name)));
+                }
                 if name == "EVAL" {
                     let code = if let Some(arg) = args.get(0) {
                         self.eval_expr(arg)?.to_string_value()
@@ -3441,12 +3472,15 @@ impl Interpreter {
                 Ok(Value::Nil)
             }
             Expr::Try { body, catch } => {
-                // Extract CATCH blocks from body
+                // Extract CATCH/CONTROL blocks from body
                 let mut main_stmts = Vec::new();
                 let mut catch_stmts = catch.clone();
+                let mut control_stmts: Option<Vec<Stmt>> = None;
                 for stmt in body {
                     if let Stmt::Catch(catch_body) = stmt {
                         catch_stmts = Some(catch_body.clone());
+                    } else if let Stmt::Control(control_body) = stmt {
+                        control_stmts = Some(control_body.clone());
                     } else {
                         main_stmts.push(stmt.clone());
                     }
@@ -3454,6 +3488,20 @@ impl Interpreter {
                 match self.eval_block_value(&main_stmts) {
                     Ok(v) => Ok(v),
                     Err(e) => {
+                        if e.is_last || e.is_next || e.is_redo || e.is_proceed || e.is_succeed {
+                            if let Some(control_body) = control_stmts {
+                                let saved_when = self.when_matched;
+                                self.when_matched = false;
+                                for stmt in &control_body {
+                                    self.exec_stmt(stmt)?;
+                                    if self.when_matched || self.halted {
+                                        break;
+                                    }
+                                }
+                                self.when_matched = saved_when;
+                                return Ok(Value::Nil);
+                            }
+                        }
                         if let Some(catch_body) = catch_stmts {
                             let err_val = Value::Str(e.message);
                             let saved_err = self.env.get("!").cloned();
@@ -4792,7 +4840,7 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
         Stmt::Loop { body, .. } => {
             for s in body { collect_ph_stmt(s, out); }
         }
-        Stmt::Block(body) | Stmt::Default(body) | Stmt::Catch(body) => {
+        Stmt::Block(body) | Stmt::Default(body) | Stmt::Catch(body) | Stmt::Control(body) => {
             for s in body { collect_ph_stmt(s, out); }
         }
         Stmt::Given { topic, body } => {
@@ -4803,6 +4851,7 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
             collect_ph_expr(cond, out);
             for s in body { collect_ph_stmt(s, out); }
         }
+        Stmt::ProtoDecl { .. } => {}
         _ => {}
     }
 }
