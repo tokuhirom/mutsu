@@ -1767,6 +1767,26 @@ impl Interpreter {
                 let todo = self.named_arg_bool(args, "todo")?;
                 self.test_ok(left == right, &desc, todo)?;
             }
+            "is-approx" => {
+                let desc = self.positional_arg_value(args, 2)?;
+                let todo = self.named_arg_bool(args, "todo")?;
+                if self.loose_ok {
+                    self.test_ok(true, &desc, todo)?;
+                } else {
+                    let got =
+                        self.eval_expr(self.positional_arg(args, 0, "is-approx expects got")?)?;
+                    let expected =
+                        self.eval_expr(self.positional_arg(args, 1, "is-approx expects expected")?)?;
+                    let ok = match (
+                        Self::to_float_value(&got),
+                        Self::to_float_value(&expected),
+                    ) {
+                        (Some(g), Some(e)) => (g - e).abs() <= 1e-5,
+                        _ => false,
+                    };
+                    self.test_ok(ok, &desc, todo)?;
+                }
+            }
             "isa-ok" => {
                 let value =
                     self.eval_expr(self.positional_arg(args, 0, "isa-ok expects value")?)?;
@@ -8845,6 +8865,37 @@ impl Interpreter {
             Value::Int(i) => Some((*i, 1)),
             Value::Rat(n, d) => Some((*n, *d)),
             Value::FatRat(n, d) => Some((*n, *d)),
+            _ => None,
+        }
+    }
+
+    fn to_float_value(val: &Value) -> Option<f64> {
+        match val {
+            Value::Num(f) => Some(*f),
+            Value::Int(i) => Some(*i as f64),
+            Value::Rat(n, d) => {
+                if *d != 0 {
+                    Some(*n as f64 / *d as f64)
+                } else {
+                    None
+                }
+            }
+            Value::FatRat(n, d) => {
+                if *d != 0 {
+                    Some(*n as f64 / *d as f64)
+                } else {
+                    None
+                }
+            }
+            Value::Complex(r, i) => {
+                if *i == 0.0 {
+                    Some(*r)
+                } else {
+                    None
+                }
+            }
+            Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+            Value::Str(s) => s.parse::<f64>().ok(),
             _ => None,
         }
     }

@@ -28,7 +28,7 @@ Covers the standard test module and TAP output.
 - [x] `isnt($got, $expected, $description)` - inequality
 - [x] `cmp-ok($got, $op, $expected, $description)` - operator comparison
 - [x] `is-deeply($got, $expected, $description)` - structural equality (eqv)
-- [ ] `is-approx($got, $expected, $description)` - numeric tolerance (1e-5)
+- [x] `is-approx($got, $expected, $description)` - numeric tolerance (1e-5)
 
 ---
 

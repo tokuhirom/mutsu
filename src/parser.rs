@@ -526,7 +526,7 @@ impl Parser {
             return Ok(Stmt::Expr(expr));
         }
         if let Some(name) = self.peek_ident() {
-            if matches!(name.as_str(), "ok" | "is" | "isnt" | "nok" | "pass" | "flunk" | "cmp-ok" | "like" | "unlike" | "is-deeply" | "isa-ok" | "lives-ok" | "dies-ok" | "eval-lives-ok" | "is_run" | "throws-like" | "force_todo" | "force-todo" | "plan" | "done-testing" | "bail-out" | "skip" | "skip-rest" | "diag" | "todo" | "does-ok" | "can-ok") {
+            if matches!(name.as_str(), "ok" | "is" | "isnt" | "nok" | "pass" | "flunk" | "cmp-ok" | "like" | "unlike" | "is-deeply" | "is-approx" | "isa-ok" | "lives-ok" | "dies-ok" | "eval-lives-ok" | "is_run" | "throws-like" | "force_todo" | "force-todo" | "plan" | "done-testing" | "bail-out" | "skip" | "skip-rest" | "diag" | "todo" | "does-ok" | "can-ok") {
                 self.pos += 1;
                 let args = if name == "is"
                     && (!self.check(&TokenKind::LParen)
