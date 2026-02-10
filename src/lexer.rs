@@ -90,6 +90,8 @@ pub(crate) enum TokenKind {
     SetSuperset,       // (>=) ⊇
     SetStrictSubset,   // (<) ⊂
     SetStrictSuperset, // (>) ⊃
+    HyperLeft,         // << or «
+    HyperRight,        // >> or »
     Semicolon,
     Eof,
 }
@@ -633,9 +635,11 @@ impl Lexer {
                     TokenKind::BitOr
                 } else if self.match_char('^') {
                     TokenKind::BitXor
-                } else if self.match_char('<') {
+                } else if self.peek() == Some('<') && self.peek_next() != Some('<') {
+                    self.pos += 1;
                     TokenKind::BitShiftLeft
-                } else if self.match_char('>') {
+                } else if self.peek() == Some('>') && self.peek_next() != Some('>') {
+                    self.pos += 1;
                     TokenKind::BitShiftRight
                 } else {
                     TokenKind::Plus
@@ -707,7 +711,9 @@ impl Lexer {
                 }
             }
             '<' => {
-                if self.match_char('=') {
+                if self.match_char('<') {
+                    TokenKind::HyperLeft
+                } else if self.match_char('=') {
                     if self.match_char('>') {
                         TokenKind::LtEqGt
                     } else {
@@ -718,7 +724,9 @@ impl Lexer {
                 }
             }
             '>' => {
-                if self.match_char('=') {
+                if self.match_char('>') {
+                    TokenKind::HyperRight
+                } else if self.match_char('=') {
                     TokenKind::Gte
                 } else {
                     TokenKind::Gt
@@ -818,6 +826,8 @@ impl Lexer {
             '\u{2287}' => TokenKind::SetSuperset,    // ⊇
             '\u{2282}' => TokenKind::SetStrictSubset,  // ⊂
             '\u{2283}' => TokenKind::SetStrictSuperset, // ⊃
+            '\u{00ab}' => TokenKind::HyperLeft,    // «
+            '\u{00bb}' => TokenKind::HyperRight,   // »
             _ => {
                     if ch.is_ascii_alphabetic() || ch == '_' {
                         let ident = self.read_ident_start(ch);

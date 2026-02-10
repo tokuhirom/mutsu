@@ -3495,6 +3495,11 @@ impl Interpreter {
                 }
                 Ok(acc)
             }
+            Expr::HyperOp { op, left, right, dwim_left, dwim_right } => {
+                let left_val = self.eval_expr(left)?;
+                let right_val = self.eval_expr(right)?;
+                self.eval_hyper_op(op, &left_val, &right_val, *dwim_left, *dwim_right)
+            }
             Expr::InfixFunc { name, left, right, modifier } => {
                 let left_val = self.eval_expr(left)?;
                 let mut right_vals = Vec::new();
@@ -4066,6 +4071,13 @@ impl Interpreter {
                 }
             }
             "/" => Ok(Value::Num(to_num(left) / to_num(right))),
+            "%" => {
+                if matches!(left, Value::Num(_)) || matches!(right, Value::Num(_)) {
+                    Ok(Value::Num(to_num(left) % to_num(right)))
+                } else {
+                    Ok(Value::Int(to_int(left) % to_int(right)))
+                }
+            }
             "**" => Ok(Value::Num(to_num(left).powf(to_num(right)))),
             "~" => Ok(Value::Str(format!("{}{}", left.to_string_value(), right.to_string_value()))),
             "&&" | "and" => {
@@ -4114,6 +4126,64 @@ impl Interpreter {
             }
             _ => Err(RuntimeError::new(format!("Unsupported reduction operator: {}", op))),
         }
+    }
+
+    fn value_to_list(&self, val: &Value) -> Vec<Value> {
+        match val {
+            Value::Array(items) => items.clone(),
+            Value::Range(a, b) => (*a..=*b).map(Value::Int).collect(),
+            Value::RangeExcl(a, b) => (*a..*b).map(Value::Int).collect(),
+            Value::RangeExclStart(a, b) => (*a+1..=*b).map(Value::Int).collect(),
+            Value::RangeExclBoth(a, b) => (*a+1..*b).map(Value::Int).collect(),
+            other => vec![other.clone()],
+        }
+    }
+
+    fn eval_hyper_op(&self, op: &str, left: &Value, right: &Value, dwim_left: bool, dwim_right: bool) -> Result<Value, RuntimeError> {
+        let left_list = self.value_to_list(left);
+        let right_list = self.value_to_list(right);
+        let left_len = left_list.len();
+        let right_len = right_list.len();
+
+        if left_len == 0 && right_len == 0 {
+            return Ok(Value::Array(Vec::new()));
+        }
+
+        // Determine result length based on DWIM semantics
+        let result_len = if !dwim_left && !dwim_right {
+            // >>op<< strict: lengths must match
+            if left_len != right_len {
+                return Err(RuntimeError::new(format!(
+                    "Non-dwimmy hyper operator: left has {} elements, right has {}", left_len, right_len
+                )));
+            }
+            left_len
+        } else if dwim_left && dwim_right {
+            // <<op>> both DWIM: shorter extends to match longer
+            std::cmp::max(left_len, right_len)
+        } else if dwim_right {
+            // >>op>> right extends to match left
+            left_len
+        } else {
+            // <<op<< left extends to match right
+            right_len
+        };
+
+        let mut results = Vec::with_capacity(result_len);
+        for i in 0..result_len {
+            let l = if left_len == 0 {
+                &Value::Int(0)
+            } else {
+                &left_list[i % left_len]
+            };
+            let r = if right_len == 0 {
+                &Value::Int(0)
+            } else {
+                &right_list[i % right_len]
+            };
+            results.push(self.apply_reduction_op(op, l, r)?);
+        }
+        Ok(Value::Array(results))
     }
 
     fn bind_function_args(&mut self, param_defs: &[ParamDef], params: &[String], args: &[Expr]) -> Result<(), RuntimeError> {
@@ -4654,6 +4724,10 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
         }
         Expr::CodeVar(_) => {}
         Expr::Reduction { expr, .. } => collect_ph_expr(expr, out),
+        Expr::HyperOp { left, right, .. } => {
+            collect_ph_expr(left, out);
+            collect_ph_expr(right, out);
+        }
         Expr::InfixFunc { left, right, .. } => {
             collect_ph_expr(left, out);
             for e in right { collect_ph_expr(e, out); }

@@ -59,6 +59,13 @@ pub(crate) enum Expr {
         right: Vec<Expr>,
         modifier: Option<String>,
     },
+    HyperOp {
+        op: String,
+        left: Box<Expr>,
+        right: Box<Expr>,
+        dwim_left: bool,
+        dwim_right: bool,
+    },
 }
 
 #[derive(Debug, Clone)]

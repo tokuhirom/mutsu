@@ -1155,7 +1155,7 @@ impl Parser {
     }
 
     fn parse_comparison(&mut self) -> Result<Expr, RuntimeError> {
-        let mut expr = self.parse_term()?;
+        let mut expr = self.parse_hyper()?;
         loop {
             let op = if self.match_kind(TokenKind::Lt) {
                 Some(TokenKind::Lt)
@@ -1217,13 +1217,85 @@ impl Parser {
                 None
             };
             if let Some(op) = op {
-                let right = self.parse_term()?;
+                let right = self.parse_hyper()?;
                 expr = Expr::Binary { left: Box::new(expr), op, right: Box::new(right) };
             } else {
                 break;
             }
         }
         Ok(expr)
+    }
+
+    fn parse_hyper(&mut self) -> Result<Expr, RuntimeError> {
+        let mut expr = self.parse_term()?;
+        while self.is_hyper_op() {
+            let dwim_left = self.check(&TokenKind::HyperLeft);
+            // consume opener (<< or >>)
+            self.pos += 1;
+            let op = self.consume_hyper_inner_op()?;
+            let dwim_right = self.check(&TokenKind::HyperRight);
+            // consume closer (>> or <<)
+            self.pos += 1;
+            let right = self.parse_term()?;
+            expr = Expr::HyperOp {
+                op,
+                left: Box::new(expr),
+                right: Box::new(right),
+                dwim_left,
+                dwim_right,
+            };
+        }
+        Ok(expr)
+    }
+
+    fn is_hyper_op(&self) -> bool {
+        let opener = self.tokens.get(self.pos).map(|t| &t.kind);
+        if !matches!(opener, Some(TokenKind::HyperLeft) | Some(TokenKind::HyperRight)) {
+            return false;
+        }
+        // Look ahead for op + closer pattern
+        let mut i = self.pos + 1;
+        // skip inner op token(s) — some ops are two tokens (e.g. Star Star for **)
+        if let Some(t) = self.tokens.get(i).map(|t| &t.kind) {
+            match t {
+                TokenKind::Star | TokenKind::StarStar
+                | TokenKind::EqEq | TokenKind::BangEq | TokenKind::Lte | TokenKind::Gte
+                | TokenKind::Plus | TokenKind::Minus | TokenKind::Slash
+                | TokenKind::Tilde | TokenKind::Percent
+                | TokenKind::BitAnd | TokenKind::BitOr | TokenKind::BitXor
+                | TokenKind::Lt | TokenKind::Gt => {
+                    i += 1;
+                }
+                _ => return false,
+            }
+        } else {
+            return false;
+        }
+        matches!(self.tokens.get(i).map(|t| &t.kind), Some(TokenKind::HyperLeft) | Some(TokenKind::HyperRight))
+    }
+
+    fn consume_hyper_inner_op(&mut self) -> Result<String, RuntimeError> {
+        let kind = self.tokens.get(self.pos).map(|t| &t.kind);
+        let op = match kind {
+            Some(TokenKind::Plus) => { self.pos += 1; "+".to_string() }
+            Some(TokenKind::Minus) => { self.pos += 1; "-".to_string() }
+            Some(TokenKind::StarStar) => { self.pos += 1; "**".to_string() }
+            Some(TokenKind::Star) => { self.pos += 1; "*".to_string() }
+            Some(TokenKind::Slash) => { self.pos += 1; "/".to_string() }
+            Some(TokenKind::Tilde) => { self.pos += 1; "~".to_string() }
+            Some(TokenKind::Percent) => { self.pos += 1; "%".to_string() }
+            Some(TokenKind::EqEq) => { self.pos += 1; "==".to_string() }
+            Some(TokenKind::BangEq) => { self.pos += 1; "!=".to_string() }
+            Some(TokenKind::Lt) => { self.pos += 1; "<".to_string() }
+            Some(TokenKind::Gt) => { self.pos += 1; ">".to_string() }
+            Some(TokenKind::Lte) => { self.pos += 1; "<=".to_string() }
+            Some(TokenKind::Gte) => { self.pos += 1; ">=".to_string() }
+            Some(TokenKind::BitAnd) => { self.pos += 1; "+&".to_string() }
+            Some(TokenKind::BitOr) => { self.pos += 1; "+|".to_string() }
+            Some(TokenKind::BitXor) => { self.pos += 1; "+^".to_string() }
+            _ => return Err(RuntimeError::new("Expected operator inside hyper markers".to_string())),
+        };
+        Ok(op)
     }
 
     // Concatenation (~) - lowest of the arithmetic-like operators
