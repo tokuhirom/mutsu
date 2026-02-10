@@ -1508,7 +1508,9 @@ impl Interpreter {
                         }
                         // Look up method in class hierarchy
                         if let Some((method_params, method_param_defs, method_body)) = self.find_method(class_name, name) {
-                            let saved_env = self.env.clone();
+                            let class_name_owned = class_name.clone();
+                            let original_attrs = attributes.clone();
+                            let mut saved_env = self.env.clone();
                             // Bind self
                             self.env.insert("self".to_string(), base.clone());
                             // Bind attributes as $!name and $.name
@@ -1536,6 +1538,21 @@ impl Interpreter {
                                 Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
                                 Err(e) => Err(e),
                             };
+                            // Propagate $!attr mutations back to the instance
+                            let mut updated_attrs = original_attrs;
+                            for attr_name in updated_attrs.keys().cloned().collect::<Vec<_>>() {
+                                let env_key = format!("!{}", attr_name);
+                                if let Some(val) = self.env.get(&env_key) {
+                                    updated_attrs.insert(attr_name, val.clone());
+                                }
+                            }
+                            let updated_instance = Value::Instance {
+                                class_name: class_name_owned,
+                                attributes: updated_attrs,
+                            };
+                            if let Expr::Var(var_name) = target.as_ref() {
+                                saved_env.insert(var_name.clone(), updated_instance);
+                            }
                             self.env = saved_env;
                             return result;
                         }
