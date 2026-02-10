@@ -246,10 +246,12 @@ impl Interpreter {
                 return Err(RuntimeError::return_val(val));
             }
             Stmt::Say(exprs) => {
+                let mut parts = Vec::new();
                 for expr in exprs {
                     let value = self.eval_expr(expr)?;
-                    self.output.push_str(&value.to_string_value());
+                    parts.push(self.gist_value(&value));
                 }
+                self.output.push_str(&parts.join(" "));
                 self.output.push('\n');
             }
             Stmt::Print(exprs) => {
@@ -1042,6 +1044,41 @@ impl Interpreter {
             .get(&local)
             .cloned()
             .or_else(|| self.functions.get(&format!("GLOBAL::{}", name)).cloned())
+    }
+
+    fn gist_value(&self, value: &Value) -> String {
+        match value {
+            Value::Rat(n, d) => {
+                if *d == 0 {
+                    if *n == 0 { "NaN".to_string() }
+                    else if *n > 0 { "Inf".to_string() }
+                    else { "-Inf".to_string() }
+                } else {
+                    let mut dd = *d;
+                    while dd % 2 == 0 { dd /= 2; }
+                    while dd % 5 == 0 { dd /= 5; }
+                    if dd == 1 {
+                        let val = *n as f64 / *d as f64;
+                        let s = format!("{}", val);
+                        if s.contains('.') { s } else { format!("{}.0", val) }
+                    } else {
+                        format!("<{}/{}>", n, d)
+                    }
+                }
+            }
+            Value::Array(items) => items
+                .iter()
+                .map(|v| self.gist_value(v))
+                .collect::<Vec<_>>()
+                .join(" "),
+            Value::Hash(items) => items
+                .iter()
+                .map(|(k, v)| format!("{}\t{}", k, self.gist_value(v)))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            Value::Pair(k, v) => format!("{}\t{}", k, self.gist_value(v)),
+            _ => value.to_string_value(),
+        }
     }
 
     fn find_method(&self, class_name: &str, method_name: &str) -> Option<(Vec<String>, Vec<ParamDef>, Vec<Stmt>)> {
@@ -2015,6 +2052,15 @@ impl Interpreter {
                         let parts: Vec<Value> = s.split_whitespace().map(|p| Value::Str(p.to_string())).collect();
                         Ok(Value::Array(parts))
                     }
+                    "Range" => match base {
+                        Value::Array(items) => Ok(Value::RangeExcl(0, items.len() as i64)),
+                        Value::Str(s) => Ok(Value::RangeExcl(0, s.chars().count() as i64)),
+                        Value::Range(_, _) |
+                        Value::RangeExcl(_, _) |
+                        Value::RangeExclStart(_, _) |
+                        Value::RangeExclBoth(_, _) => Ok(base),
+                        _ => Ok(Value::Nil),
+                    },
                     "comb" => {
                         let s = base.to_string_value();
                         let parts: Vec<Value> = s.chars().map(|c| Value::Str(c.to_string())).collect();

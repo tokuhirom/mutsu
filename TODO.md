@@ -135,7 +135,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] `.abs`, `.sqrt`, `.ceiling`, `.floor`, `.round`
 - [x] `.base`
 - [x] `.parse-base`
-- [ ] `.Range` (type range)
+- [x] `.Range` (type range)
 - [ ] `.new` (constructor)
 
 ### Test Module
@@ -157,7 +157,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] Comments (`#`, embedded comments, POD)
 - [x] String interpolation
 - [ ] Regex (basic)
-- [ ] Improve `say` formatting (.gist compliant)
+- [x] Improve `say` formatting (.gist compliant)
 
 ---
 
