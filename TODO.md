@@ -205,7 +205,7 @@ Implement Raku regex/grammar.
 - [x] Phasers (`BEGIN`, `END`, `ENTER`, `LEAVE`, `FIRST`, `NEXT`, `LAST`)
 - [x] `gather` / `take` (lazy lists)
 - [x] Junction (`any`, `all`, `one`, `none`)
-- [ ] `Promise`, `Supply`, `Channel` (concurrency)
+- [x] `Promise`, `Supply`, `Channel` (concurrency)
 - [ ] `react` / `whenever`
 - [ ] `Proc::Async`
 - [ ] `IO::Path` full implementation

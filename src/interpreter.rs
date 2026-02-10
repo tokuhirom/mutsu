@@ -110,6 +110,25 @@ impl Interpreter {
         let mut env = HashMap::new();
         env.insert("*PID".to_string(), Value::Int(std::process::id() as i64));
         env.insert("@*ARGS".to_string(), Value::Array(Vec::new()));
+        let mut classes = HashMap::new();
+        classes.insert("Promise".to_string(), ClassDef {
+            parents: Vec::new(),
+            attributes: Vec::new(),
+            methods: HashMap::new(),
+            mro: vec!["Promise".to_string()],
+        });
+        classes.insert("Channel".to_string(), ClassDef {
+            parents: Vec::new(),
+            attributes: Vec::new(),
+            methods: HashMap::new(),
+            mro: vec!["Channel".to_string()],
+        });
+        classes.insert("Supply".to_string(), ClassDef {
+            parents: Vec::new(),
+            attributes: Vec::new(),
+            methods: HashMap::new(),
+            mro: vec!["Supply".to_string()],
+        });
         Self {
             env,
             output: String::new(),
@@ -128,7 +147,7 @@ impl Interpreter {
             when_matched: false,
             gather_items: Vec::new(),
             enum_types: HashMap::new(),
-            classes: HashMap::new(),
+            classes,
             roles: HashMap::new(),
             subsets: HashMap::new(),
             proto_subs: HashSet::new(),
@@ -1413,6 +1432,77 @@ impl Interpreter {
         (enter_ph, leave_ph, first_ph, next_ph, last_ph, body_main)
     }
 
+    fn update_instance_target(&mut self, target: &Expr, instance: Value) {
+        if let Expr::Var(name) = target {
+            self.env.insert(name.clone(), instance);
+        }
+    }
+
+    fn call_sub_value(&mut self, func: Value, args: Vec<Value>, merge_all: bool) -> Result<Value, RuntimeError> {
+        if let Value::Sub { package, name, param, body, env } = func {
+            let saved_env = self.env.clone();
+            let mut new_env = saved_env.clone();
+            for (k, v) in env {
+                if merge_all {
+                    if !new_env.contains_key(&k) {
+                        new_env.insert(k, v);
+                    }
+                    continue;
+                }
+                if matches!(new_env.get(&k), Some(Value::Array(_)))
+                    && matches!(v, Value::Array(_))
+                {
+                    continue;
+                }
+                new_env.insert(k, v);
+            }
+            if let Some(param_name) = param {
+                if let Some(value) = args.get(0) {
+                    new_env.insert(param_name, value.clone());
+                }
+            }
+            let placeholders = collect_placeholders(&body);
+            if !placeholders.is_empty() {
+                for (i, ph) in placeholders.iter().enumerate() {
+                    if let Some(val) = args.get(i) {
+                        new_env.insert(ph.clone(), val.clone());
+                    }
+                }
+            }
+            let block_sub = Value::Sub {
+                package: package.clone(),
+                name: name.clone(),
+                param: None,
+                body: body.clone(),
+                env: new_env.clone(),
+            };
+            self.env = new_env;
+            self.routine_stack.push((package.clone(), name.clone()));
+            self.block_stack.push(block_sub);
+            let result = self.eval_block_value(&body);
+            self.block_stack.pop();
+            self.routine_stack.pop();
+            let mut merged = saved_env;
+            if merge_all {
+                for (k, v) in self.env.iter() {
+                    merged.insert(k.clone(), v.clone());
+                }
+            } else {
+                for (k, v) in self.env.iter() {
+                    if matches!(v, Value::Array(_)) {
+                        merged.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+            self.env = merged;
+            return match result {
+                Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
+                other => other,
+            };
+        }
+        Err(RuntimeError::new("Callable expected"))
+    }
+
     fn compute_class_mro(&mut self, class_name: &str, stack: &mut Vec<String>) -> Result<Vec<String>, RuntimeError> {
         if stack.iter().any(|name| name == class_name) {
             return Err(RuntimeError::new(format!("C3 MRO cycle detected at {}", class_name)));
@@ -2024,6 +2114,24 @@ impl Interpreter {
                 if name == "new" {
                     let base = self.eval_expr(target)?;
                     if let Value::Package(class_name) = &base {
+                        if class_name == "Promise" {
+                            let mut attrs = HashMap::new();
+                            attrs.insert("status".to_string(), Value::Str("Planned".to_string()));
+                            attrs.insert("result".to_string(), Value::Nil);
+                            return Ok(Value::Instance { class_name: class_name.clone(), attributes: attrs });
+                        }
+                        if class_name == "Channel" {
+                            let mut attrs = HashMap::new();
+                            attrs.insert("queue".to_string(), Value::Array(Vec::new()));
+                            attrs.insert("closed".to_string(), Value::Bool(false));
+                            return Ok(Value::Instance { class_name: class_name.clone(), attributes: attrs });
+                        }
+                        if class_name == "Supply" {
+                            let mut attrs = HashMap::new();
+                            attrs.insert("values".to_string(), Value::Array(Vec::new()));
+                            attrs.insert("taps".to_string(), Value::Array(Vec::new()));
+                            return Ok(Value::Instance { class_name: class_name.clone(), attributes: attrs });
+                        }
                         if self.classes.contains_key(class_name) {
                             let mut attrs = HashMap::new();
                             // Set defaults
@@ -2064,6 +2172,110 @@ impl Interpreter {
                 {
                     let base = self.eval_expr(target)?;
                     if let Value::Instance { class_name, attributes } = &base {
+                        if class_name == "Promise" {
+                            if name == "keep" {
+                                let value = args.get(0).map(|arg| self.eval_expr(arg).ok()).flatten().unwrap_or(Value::Nil);
+                                let mut attrs = attributes.clone();
+                                attrs.insert("result".to_string(), value);
+                                attrs.insert("status".to_string(), Value::Str("Kept".to_string()));
+                                let updated = Value::Instance { class_name: class_name.clone(), attributes: attrs };
+                                self.update_instance_target(target.as_ref(), updated);
+                                return Ok(Value::Nil);
+                            }
+                            if name == "result" && args.is_empty() {
+                                return Ok(attributes.get("result").cloned().unwrap_or(Value::Nil));
+                            }
+                            if name == "status" && args.is_empty() {
+                                return Ok(attributes.get("status").cloned().unwrap_or(Value::Str("Planned".to_string())));
+                            }
+                            if name == "then" {
+                                let block = args.get(0).map(|arg| self.eval_expr(arg).ok()).flatten().unwrap_or(Value::Nil);
+                                let status = attributes.get("status").cloned().unwrap_or(Value::Str("Planned".to_string()));
+                                if matches!(status, Value::Str(ref s) if s == "Kept") {
+                                    let value = attributes.get("result").cloned().unwrap_or(Value::Nil);
+                                    let result = self.call_sub_value(block, vec![value], false)?;
+                                    let mut attrs = HashMap::new();
+                                    attrs.insert("status".to_string(), Value::Str("Kept".to_string()));
+                                    attrs.insert("result".to_string(), result);
+                                    return Ok(Value::Instance { class_name: class_name.clone(), attributes: attrs });
+                                }
+                                let mut attrs = HashMap::new();
+                                attrs.insert("status".to_string(), Value::Str("Planned".to_string()));
+                                attrs.insert("result".to_string(), Value::Nil);
+                                return Ok(Value::Instance { class_name: class_name.clone(), attributes: attrs });
+                            }
+                        }
+                        if class_name == "Channel" {
+                            if name == "send" {
+                                let value = args.get(0).map(|arg| self.eval_expr(arg).ok()).flatten().unwrap_or(Value::Nil);
+                                let mut attrs = attributes.clone();
+                                match attrs.get_mut("queue") {
+                                    Some(Value::Array(items)) => items.push(value),
+                                    _ => { attrs.insert("queue".to_string(), Value::Array(vec![value])); }
+                                }
+                                let updated = Value::Instance { class_name: class_name.clone(), attributes: attrs };
+                                self.update_instance_target(target.as_ref(), updated);
+                                return Ok(Value::Nil);
+                            }
+                            if name == "receive" && args.is_empty() {
+                                let mut attrs = attributes.clone();
+                                let mut value = Value::Nil;
+                                if let Some(Value::Array(items)) = attrs.get_mut("queue") {
+                                    if !items.is_empty() {
+                                        value = items.remove(0);
+                                    }
+                                }
+                                let updated = Value::Instance { class_name: class_name.clone(), attributes: attrs };
+                                self.update_instance_target(target.as_ref(), updated);
+                                return Ok(value);
+                            }
+                            if name == "close" && args.is_empty() {
+                                let mut attrs = attributes.clone();
+                                attrs.insert("closed".to_string(), Value::Bool(true));
+                                let updated = Value::Instance { class_name: class_name.clone(), attributes: attrs };
+                                self.update_instance_target(target.as_ref(), updated);
+                                return Ok(Value::Nil);
+                            }
+                            if name == "closed" && args.is_empty() {
+                                return Ok(attributes.get("closed").cloned().unwrap_or(Value::Bool(false)));
+                            }
+                        }
+                        if class_name == "Supply" {
+                            if name == "emit" {
+                                let value = args.get(0).map(|arg| self.eval_expr(arg).ok()).flatten().unwrap_or(Value::Nil);
+                                let mut attrs = attributes.clone();
+                                if let Some(Value::Array(items)) = attrs.get_mut("values") {
+                                    items.push(value.clone());
+                                } else {
+                                    attrs.insert("values".to_string(), Value::Array(vec![value.clone()]));
+                                }
+                                if let Some(Value::Array(taps)) = attrs.get_mut("taps") {
+                                    for tap in taps.clone() {
+                                        let _ = self.call_sub_value(tap, vec![value.clone()], true);
+                                    }
+                                }
+                                let updated = Value::Instance { class_name: class_name.clone(), attributes: attrs };
+                                self.update_instance_target(target.as_ref(), updated);
+                                return Ok(Value::Nil);
+                            }
+                            if name == "tap" {
+                                let tap = args.get(0).map(|arg| self.eval_expr(arg).ok()).flatten().unwrap_or(Value::Nil);
+                                let mut attrs = attributes.clone();
+                                if let Some(Value::Array(items)) = attrs.get_mut("taps") {
+                                    items.push(tap.clone());
+                                } else {
+                                    attrs.insert("taps".to_string(), Value::Array(vec![tap.clone()]));
+                                }
+                                if let Some(Value::Array(values)) = attrs.get("values") {
+                                    for v in values {
+                                        let _ = self.call_sub_value(tap.clone(), vec![v.clone()], true);
+                                    }
+                                }
+                                let updated = Value::Instance { class_name: class_name.clone(), attributes: attrs };
+                                self.update_instance_target(target.as_ref(), updated);
+                                return Ok(Value::Nil);
+                            }
+                        }
                         // Check for accessor methods (public attributes)
                         if args.is_empty() {
                             for (attr_name, is_public, _) in self.collect_class_attributes(class_name) {
