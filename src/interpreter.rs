@@ -148,6 +148,7 @@ pub struct Interpreter {
     proto_subs: HashSet<String>,
     proto_tokens: HashSet<String>,
     end_phasers: Vec<Vec<Stmt>>,
+    chroot_root: Option<PathBuf>,
 }
 
 impl Interpreter {
@@ -220,6 +221,7 @@ impl Interpreter {
             proto_subs: HashSet::new(),
             proto_tokens: HashSet::new(),
             end_phasers: Vec::new(),
+            chroot_root: None,
         };
         interpreter.init_io_environment();
         interpreter
@@ -616,11 +618,29 @@ impl Interpreter {
     fn resolve_path(&self, path: &str) -> PathBuf {
         let pb = PathBuf::from(path);
         if pb.is_absolute() {
-            pb
+            self.apply_chroot(pb)
         } else {
             let cwd = self.get_cwd_path();
-            cwd.join(pb)
+            self.apply_chroot(cwd.join(pb))
         }
+    }
+
+    fn apply_chroot(&self, path: PathBuf) -> PathBuf {
+        if let Some(root) = &self.chroot_root {
+            if path.starts_with(root) {
+                return path;
+            }
+            if path.is_absolute() {
+                if let Ok(stripped_root) = path.strip_prefix(root) {
+                    return root.join(stripped_root);
+                }
+                if let Ok(stripped_slash) = path.strip_prefix("/") {
+                    return root.join(stripped_slash);
+                }
+                return root.join(path);
+            }
+        }
+        path
     }
 
     fn stringify_path(path: &Path) -> String {
@@ -6301,6 +6321,32 @@ impl Interpreter {
                     }
                     return Ok(Value::Hash(map));
                 }
+                if name == "chroot" {
+                    let path_str = args
+                        .get(0)
+                        .map(|expr| self.eval_expr(expr).ok())
+                        .flatten()
+                        .map(|val| val.to_string_value())
+                        .or_else(|| {
+                            self.get_dynamic_string("$*CWD")
+                                .or_else(|| self.get_dynamic_string("$*CHROOT"))
+                        })
+                        .unwrap_or_else(|| ".".to_string());
+                    let path_buf = PathBuf::from(path_str.clone());
+                    if !path_buf.is_dir() {
+                        return Ok(Value::Bool(false));
+                    }
+                    let canonical = path_buf.canonicalize().unwrap_or_else(|_| path_buf.clone());
+                    if std::env::set_current_dir(&canonical).is_err() {
+                        return Ok(Value::Bool(false));
+                    }
+                    self.chroot_root = Some(canonical.clone());
+                    let repr = Self::stringify_path(&canonical);
+                    self.env
+                        .insert("$*CHROOT".to_string(), Value::Str(repr.clone()));
+                    self.env.insert("$*CWD".to_string(), Value::Str(repr));
+                    return Ok(Value::Bool(true));
+                }
                 if name == "gethost" {
                     let host_str = args
                         .get(0)
@@ -6334,6 +6380,77 @@ impl Interpreter {
                         success = false;
                     }
                     return Ok(Value::Bool(success));
+                }
+                if name == "shell" {
+                    let command_str = args
+                        .get(0)
+                        .map(|expr| self.eval_expr(expr).ok())
+                        .flatten()
+                        .map(|val| val.to_string_value())
+                        .unwrap_or_default();
+                    if command_str.is_empty() {
+                        return Ok(Value::Bool(false));
+                    }
+                    let mut opts = HashMap::new();
+                    let mut cwd_opt: Option<String> = None;
+                    for expr in args.iter().skip(1) {
+                        if let Value::Hash(map) = self.eval_expr(expr)? {
+                            for (key, value) in map {
+                                match key.as_str() {
+                                    "cwd" => {
+                                        cwd_opt = Some(value.to_string_value());
+                                    }
+                                    "env" => {
+                                        if let Value::Hash(env_map) = value {
+                                            for (ek, ev) in env_map {
+                                                opts.insert(ek, ev.to_string_value());
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                    let mut command = if cfg!(windows) {
+                        let mut cmd = Command::new("cmd");
+                        cmd.arg("/C").arg(&command_str);
+                        cmd
+                    } else {
+                        let mut cmd = Command::new("sh");
+                        cmd.arg("-c").arg(&command_str);
+                        cmd
+                    };
+                    if let Some(cwd) = cwd_opt {
+                        command.current_dir(cwd);
+                    }
+                    for (k, v) in opts {
+                        command.env(k, v);
+                    }
+                    let status = command
+                        .status()
+                        .map(|status| status.success())
+                        .unwrap_or(false);
+                    return Ok(Value::Bool(status));
+                }
+                if name == "syscall" {
+                    let num_val = args.get(0).map(|expr| self.eval_expr(expr).ok()).flatten();
+                    if let Some(val) = num_val {
+                        let num = Self::to_int(&val);
+                        if num == 0 {
+                            let pid = self
+                                .env
+                                .get("*PID")
+                                .and_then(|v| match v {
+                                    Value::Int(i) => Some(*i),
+                                    _ => None,
+                                })
+                                .unwrap_or_else(|| std::process::id() as i64);
+                            return Ok(Value::Int(pid));
+                        }
+                        return Ok(Value::Int(-1));
+                    }
+                    return Ok(Value::Nil);
                 }
                 if name == "getlogin" {
                     let login = Self::get_login_name().unwrap_or_default();

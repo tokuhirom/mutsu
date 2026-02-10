@@ -45,8 +45,8 @@ Covers built-in functions in CORE scope.
 - [x] `getlogin` - current login name
 - [x] `kill($signal, @pids)` - send signal
 - [x] `run($cmd, @args)` - run external command (via Proc::Async)
-- [ ] `shell($cmd)` - run via shell
-- [ ] `syscall($num, @args)` - raw system call
+- [x] `shell($cmd)` - run via shell
+- [x] `syscall($num, @args)` - raw system call
 
 ---
 
