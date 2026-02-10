@@ -178,7 +178,7 @@ Implement Raku OOP.
 - [x] Coercion (`Int(Str)` etc.)
 - [x] `enum`
 - [x] `subset`
-- [ ] Method resolution order (MRO, C3)
+- [x] Method resolution order (MRO, C3)
 
 ---
 

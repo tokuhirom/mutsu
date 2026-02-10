@@ -2392,9 +2392,9 @@ impl Parser {
 
     fn parse_class_decl(&mut self) -> Result<Stmt, RuntimeError> {
         let name = self.consume_ident()?;
-        let mut parent = None;
-        if self.match_ident("is") {
-            parent = Some(self.consume_ident()?);
+        let mut parents = Vec::new();
+        while self.match_ident("is") {
+            parents.push(self.consume_ident()?);
         }
         self.consume_kind(TokenKind::LBrace)?;
         let mut body = Vec::new();
@@ -2403,7 +2403,7 @@ impl Parser {
         }
         self.consume_kind(TokenKind::RBrace)?;
         self.match_kind(TokenKind::Semicolon);
-        Ok(Stmt::ClassDecl { name, parent, body })
+        Ok(Stmt::ClassDecl { name, parents, body })
     }
 
     fn parse_role_decl(&mut self) -> Result<Stmt, RuntimeError> {

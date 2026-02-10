@@ -9,9 +9,10 @@ use crate::value::{make_rat, JunctionKind, RuntimeError, Value};
 
 #[derive(Debug, Clone)]
 struct ClassDef {
-    parent: Option<String>,
+    parents: Vec<String>,
     attributes: Vec<(String, bool, Option<Expr>)>, // (name, is_public, default)
     methods: HashMap<String, Vec<MethodDef>>, // name -> overloads
+    mro: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -597,19 +598,13 @@ impl Interpreter {
                     self.env.insert(key.clone(), enum_val);
                 }
             }
-            Stmt::ClassDecl { name, parent, body } => {
+            Stmt::ClassDecl { name, parents, body } => {
                 let mut class_def = ClassDef {
-                    parent: parent.clone(),
+                    parents: parents.clone(),
                     attributes: Vec::new(),
                     methods: HashMap::new(),
+                    mro: Vec::new(),
                 };
-                // If there's a parent, inherit its attributes and methods
-                if let Some(parent_name) = parent {
-                    if let Some(parent_class) = self.classes.get(parent_name).cloned() {
-                        class_def.attributes = parent_class.attributes.clone();
-                        class_def.methods = parent_class.methods.clone();
-                    }
-                }
                 // Process class body to collect attributes and methods
                 for stmt in body {
                     match stmt {
@@ -647,6 +642,8 @@ impl Interpreter {
                     }
                 }
                 self.classes.insert(name.clone(), class_def);
+                let mut stack = Vec::new();
+                let _ = self.compute_class_mro(name, &mut stack)?;
             }
             Stmt::RoleDecl { name, body } => {
                 let mut role_def = RoleDef {
@@ -1204,9 +1201,8 @@ impl Interpreter {
     }
 
     fn resolve_method(&mut self, class_name: &str, method_name: &str, arg_values: &[Value]) -> Option<MethodDef> {
-        let mut current = Some(class_name.to_string());
-        while let Some(cn) = current {
-            let parent = self.classes.get(&cn).and_then(|c| c.parent.clone());
+        let mro = self.class_mro(class_name);
+        for cn in mro {
             if let Some(overloads) = self.classes.get(&cn).and_then(|c| c.methods.get(method_name)).cloned() {
                 for def in overloads {
                     if self.method_args_match(arg_values, &def.param_defs) {
@@ -1214,12 +1210,114 @@ impl Interpreter {
                     }
                 }
             }
-            if parent.is_none() && !self.classes.contains_key(&cn) {
-                break;
-            }
-            current = parent;
         }
         None
+    }
+
+    fn class_mro(&mut self, class_name: &str) -> Vec<String> {
+        if let Some(class_def) = self.classes.get(class_name) {
+            if !class_def.mro.is_empty() {
+                return class_def.mro.clone();
+            }
+        }
+        let mut stack = Vec::new();
+        match self.compute_class_mro(class_name, &mut stack) {
+            Ok(mro) => {
+                if let Some(class_def) = self.classes.get_mut(class_name) {
+                    class_def.mro = mro.clone();
+                }
+                mro
+            }
+            Err(_) => vec![class_name.to_string()],
+        }
+    }
+
+    fn compute_class_mro(&mut self, class_name: &str, stack: &mut Vec<String>) -> Result<Vec<String>, RuntimeError> {
+        if stack.iter().any(|name| name == class_name) {
+            return Err(RuntimeError::new(format!("C3 MRO cycle detected at {}", class_name)));
+        }
+        if let Some(class_def) = self.classes.get(class_name) {
+            if !class_def.mro.is_empty() {
+                return Ok(class_def.mro.clone());
+            }
+        }
+        stack.push(class_name.to_string());
+        let parents = self.classes
+            .get(class_name)
+            .map(|c| c.parents.clone())
+            .unwrap_or_default();
+        let mut seqs: Vec<Vec<String>> = Vec::new();
+        for parent in &parents {
+            if self.classes.contains_key(parent) {
+                let mro = self.compute_class_mro(parent, stack)?;
+                seqs.push(mro);
+            } else {
+                seqs.push(vec![parent.clone()]);
+            }
+        }
+        seqs.push(parents.clone());
+        let mut result = vec![class_name.to_string()];
+        while seqs.iter().any(|s| !s.is_empty()) {
+            let mut candidate = None;
+            for seq in &seqs {
+                if seq.is_empty() {
+                    continue;
+                }
+                let head = &seq[0];
+                let mut in_tail = false;
+                for other in &seqs {
+                    if other.len() > 1 && other[1..].contains(head) {
+                        in_tail = true;
+                        break;
+                    }
+                }
+                if !in_tail {
+                    candidate = Some(head.clone());
+                    break;
+                }
+            }
+            if let Some(head) = candidate {
+                result.push(head.clone());
+                for seq in seqs.iter_mut() {
+                    if !seq.is_empty() && seq[0] == head {
+                        seq.remove(0);
+                    }
+                }
+            } else {
+                stack.pop();
+                return Err(RuntimeError::new(format!("Inconsistent class hierarchy for {}", class_name)));
+            }
+        }
+        stack.pop();
+        Ok(result)
+    }
+
+    fn class_has_method(&mut self, class_name: &str, method_name: &str) -> bool {
+        let mro = self.class_mro(class_name);
+        for cn in mro {
+            if let Some(class_def) = self.classes.get(&cn) {
+                if class_def.methods.contains_key(method_name) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn collect_class_attributes(&mut self, class_name: &str) -> Vec<(String, bool, Option<Expr>)> {
+        let mro = self.class_mro(class_name);
+        let mut attrs: Vec<(String, bool, Option<Expr>)> = Vec::new();
+        for cn in mro.iter().rev() {
+            if let Some(class_def) = self.classes.get(cn) {
+                for attr in &class_def.attributes {
+                    if let Some(pos) = attrs.iter().position(|(n, _, _)| n == &attr.0) {
+                        attrs.remove(pos);
+                    }
+                    attrs.push(attr.clone());
+                }
+            }
+        }
+        attrs
     }
 
     fn run_instance_method(
@@ -1741,16 +1839,16 @@ impl Interpreter {
                 if name == "new" {
                     let base = self.eval_expr(target)?;
                     if let Value::Package(class_name) = &base {
-                        if let Some(class_def) = self.classes.get(class_name).cloned() {
+                        if self.classes.contains_key(class_name) {
                             let mut attrs = HashMap::new();
                             // Set defaults
-                            for (attr_name, _is_public, default) in &class_def.attributes {
+                            for (attr_name, _is_public, default) in self.collect_class_attributes(class_name) {
                                 let val = if let Some(expr) = default {
-                                    self.eval_expr(expr)?
+                                    self.eval_expr(&expr)?
                                 } else {
                                     Value::Nil
                                 };
-                                attrs.insert(attr_name.clone(), val);
+                                attrs.insert(attr_name, val);
                             }
                             // Apply named arguments from constructor
                             let mut eval_args = Vec::new();
@@ -1762,11 +1860,11 @@ impl Interpreter {
                                     attrs.insert(k.clone(), *v.clone());
                                 }
                             }
-                            if class_def.methods.contains_key("BUILD") {
+                            if self.class_has_method(class_name, "BUILD") {
                                 let (_v, updated) = self.run_instance_method(class_name, attrs, "BUILD", Vec::new())?;
                                 attrs = updated;
                             }
-                            if class_def.methods.contains_key("TWEAK") {
+                            if self.class_has_method(class_name, "TWEAK") {
                                 let (_v, updated) = self.run_instance_method(class_name, attrs, "TWEAK", Vec::new())?;
                                 attrs = updated;
                             }
@@ -1783,11 +1881,9 @@ impl Interpreter {
                     if let Value::Instance { class_name, attributes } = &base {
                         // Check for accessor methods (public attributes)
                         if args.is_empty() {
-                            if let Some(class_def) = self.classes.get(class_name) {
-                                for (attr_name, is_public, _) in &class_def.attributes {
-                                    if *is_public && attr_name == name {
-                                        return Ok(attributes.get(name).cloned().unwrap_or(Value::Nil));
-                                    }
+                            for (attr_name, is_public, _) in self.collect_class_attributes(class_name) {
+                                if is_public && attr_name == *name {
+                                    return Ok(attributes.get(name).cloned().unwrap_or(Value::Nil));
                                 }
                             }
                         }
@@ -1841,10 +1937,8 @@ impl Interpreter {
                             self.env = saved_env;
                             return result;
                         }
-                        if let Some(class_def) = self.classes.get(class_name) {
-                            if class_def.methods.contains_key(name) {
-                                return Err(RuntimeError::new(format!("No matching candidates for method: {}", name)));
-                            }
+                        if self.class_has_method(class_name, name) {
+                            return Err(RuntimeError::new(format!("No matching candidates for method: {}", name)));
                         }
                         // Fall through to generic method handling (WHAT, defined, etc.)
                     }
