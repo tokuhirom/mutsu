@@ -16,6 +16,7 @@ pub(crate) enum TokenKind {
     Subst { pattern: String, replacement: String },
     Ident(String),
     Var(String),
+    CaptureVar(String),
     HashVar(String),
     RoutineMagic,
     BlockMagic,
@@ -623,7 +624,18 @@ impl Lexer {
                 TokenKind::Str(s)
             }
             '$' => {
-                if self.peek() == Some('!') {
+                if self.peek() == Some('<') {
+                    self.pos += 1;
+                    let mut name = String::new();
+                    while let Some(c) = self.peek() {
+                        self.pos += 1;
+                        if c == '>' {
+                            break;
+                        }
+                        name.push(c);
+                    }
+                    TokenKind::CaptureVar(name)
+                } else if self.peek() == Some('!') {
                     // Check if $!attr (attribute access) vs $! (error variable)
                     if self.src.get(self.pos + 1).map_or(false, |c| c.is_ascii_alphabetic() || *c == '_') {
                         self.pos += 1; // skip '!'

@@ -36,6 +36,7 @@ pub(crate) enum Expr {
     BareWord(String),
     StringInterpolation(Vec<Expr>),
     Var(String),
+    CaptureVar(String),
     ArrayVar(String),
     HashVar(String),
     CodeVar(String),

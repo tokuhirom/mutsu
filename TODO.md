@@ -191,7 +191,7 @@ Implement Raku regex/grammar.
 - [x] `m//` match operator
 - [x] `s///` substitution operator
 - [x] Character classes, quantifiers, anchors
-- [ ] Named captures (`$<name>`)
+- [x] Named captures (`$<name>`)
 - [ ] `token`, `rule` declarations
 - [ ] `grammar` declaration
 - [ ] `proto token` and LTM

@@ -1981,6 +1981,12 @@ impl Parser {
             } else {
                 Expr::Literal(Value::Nil)
             }
+        } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::CaptureVar(_))) {
+            if let TokenKind::CaptureVar(name) = token.kind {
+                Expr::CaptureVar(name)
+            } else {
+                Expr::Literal(Value::Nil)
+            }
         } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_))) {
             if let TokenKind::ArrayVar(name) = token.kind {
                 Expr::ArrayVar(name)
