@@ -6177,19 +6177,6 @@ impl Interpreter {
                     }
                     return self.eval_eval_string(&code);
                 }
-                if name == "atan2" {
-                    let a = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
-                    let b = args.get(1).map(|e| self.eval_expr(e).ok()).flatten();
-                    let a = match a {
-                        Some(Value::Int(i)) => i,
-                        _ => 0,
-                    };
-                    let b = match b {
-                        Some(Value::Int(i)) => i,
-                        _ => 0,
-                    };
-                    return Ok(Value::Str(format!("atan2({}, {})", a, b)));
-                }
                 if name == "elems" {
                     let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
                     return Ok(match val {
@@ -6606,11 +6593,68 @@ impl Interpreter {
                 }
                 if name == "log" {
                     let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
-                    return Ok(match val {
-                        Some(Value::Int(i)) => Value::Num((i as f64).ln()),
-                        Some(Value::Num(f)) => Value::Num(f.ln()),
-                        _ => Value::Num(f64::NAN),
-                    });
+                    let x = val
+                        .and_then(|v| Self::to_float_value(&v))
+                        .unwrap_or(f64::NAN);
+                    if args.len() > 1 {
+                        let base = args
+                            .get(1)
+                            .map(|e| self.eval_expr(e).ok())
+                            .flatten()
+                            .and_then(|v| Self::to_float_value(&v))
+                            .unwrap_or(f64::NAN);
+                        if base.is_finite() && base > 0.0 && base != 1.0 && x > 0.0 {
+                            let result = x.ln() / base.ln();
+                            return Ok(Value::Num(result));
+                        }
+                        return Ok(Value::Num(f64::NAN));
+                    }
+                    return Ok(Value::Num(x.ln()));
+                }
+                if name == "sin"
+                    || name == "cos"
+                    || name == "tan"
+                    || name == "asin"
+                    || name == "acos"
+                    || name == "atan"
+                {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let x = val.and_then(|v| Self::to_float_value(&v)).unwrap_or(0.0);
+                    let result = match name.as_str() {
+                        "sin" => x.sin(),
+                        "cos" => x.cos(),
+                        "tan" => x.tan(),
+                        "asin" => x.asin(),
+                        "acos" => x.acos(),
+                        "atan" => x.atan(),
+                        _ => 0.0,
+                    };
+                    return Ok(Value::Num(result));
+                }
+                if name == "atan2" {
+                    let y = args
+                        .get(0)
+                        .map(|e| self.eval_expr(e).ok())
+                        .flatten()
+                        .and_then(|v| Self::to_float_value(&v))
+                        .unwrap_or(0.0);
+                    let x = args
+                        .get(1)
+                        .map(|e| self.eval_expr(e).ok())
+                        .flatten()
+                        .and_then(|v| Self::to_float_value(&v))
+                        .unwrap_or(0.0);
+                    return Ok(Value::Num(y.atan2(x)));
+                }
+                if name == "truncate" {
+                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    if let Some(num) = val.as_ref().and_then(|v| Self::to_float_value(v)) {
+                        return Ok(Value::Int(num.trunc() as i64));
+                    }
+                    if let Some(v) = val {
+                        return Ok(Value::Int(Self::to_int(&v)));
+                    }
+                    return Ok(Value::Int(0));
                 }
                 if name == "exp" {
                     let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
@@ -7445,24 +7489,15 @@ impl Interpreter {
                     right_vals.push(self.eval_expr(expr)?);
                 }
                 if name == "atan2" {
-                    let (a, b) = match right_vals.as_slice() {
-                        [Value::Int(r)] => (left_val, Value::Int(*r)),
-                        _ => (left_val, Value::Int(0)),
-                    };
-                    let (a, b) = if modifier.as_deref() == Some("R") {
-                        (b, a)
-                    } else {
-                        (a, b)
-                    };
-                    let a = match a {
-                        Value::Int(i) => i,
-                        _ => 0,
-                    };
-                    let b = match b {
-                        Value::Int(i) => i,
-                        _ => 0,
-                    };
-                    return Ok(Value::Str(format!("atan2({}, {})", a, b)));
+                    let mut x = right_vals
+                        .get(0)
+                        .and_then(|v| Self::to_float_value(v))
+                        .unwrap_or(0.0);
+                    let mut y = Self::to_float_value(&left_val).unwrap_or(0.0);
+                    if modifier.as_deref() == Some("R") {
+                        std::mem::swap(&mut x, &mut y);
+                    }
+                    return Ok(Value::Num(y.atan2(x)));
                 }
                 if name == "sprintf" {
                     let fmt = match left_val {

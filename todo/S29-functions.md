@@ -60,10 +60,10 @@ Covers built-in functions in CORE scope.
 - [x] `sign($x)` - sign (-1, 0, 1)
 - [x] `exp($x)` - e^x
 - [x] `log($x)` - natural logarithm
-- [ ] `log($x, $base)` - logarithm with base
-- [ ] `sin`, `cos`, `tan` - trigonometric functions
-- [ ] `asin`, `acos`, `atan`, `atan2` - inverse trig
-- [ ] `truncate($x)` - truncate toward zero
+- [x] `log($x, $base)` - logarithm with base
+- [x] `sin`, `cos`, `tan` - trigonometric functions
+- [x] `asin`, `acos`, `atan`, `atan2` - inverse trig
+- [x] `truncate($x)` - truncate toward zero
 - [ ] `rand` - random number [0, 1)
 - [ ] `srand($seed)` - seed random generator
 
