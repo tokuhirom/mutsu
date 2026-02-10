@@ -77,7 +77,7 @@ Covers built-in functions in CORE scope.
 - [x] `lc($str)` - lowercase
 - [x] `uc($str)` - uppercase
 - [x] `tc($str)` - titlecase first char
-- [ ] `tclc($str)` - titlecase first, lowercase rest
+- [x] `tclc($str)` - titlecase first, lowercase rest
 - [x] `flip($str)` - reverse string
 - [x] `index($str, $substr)` - find substring
 - [x] `rindex($str, $substr)` - find last substring
@@ -85,7 +85,7 @@ Covers built-in functions in CORE scope.
 - [x] `join($sep, @list)` - join list
 - [x] `substr($str, $pos, $len)` - substring
 - [x] `trim($str)` - remove leading/trailing whitespace
-- [ ] `trim-leading($str)` / `trim-trailing($str)`
+- [x] `trim-leading($str)` / `trim-trailing($str)`
 - [x] `contains($str, $substr)` - containment check
 
 ---
@@ -104,8 +104,8 @@ Covers built-in functions in CORE scope.
 - [x] `minmax(@list)` - both extremes
 - [x] `sum(@list)` - sum
 - [x] `pick($n, @list)` / `roll($n, @list)` - random selection
-- [ ] `classify(&func, @list)` - categorize elements
-- [ ] `categorize(&func, @list)` - multi-categorize
+- [x] `classify(&func, @list)` - categorize elements
+- [x] `categorize(&func, @list)` - multi-categorize
 - [ ] `reduce(&func, @list)` - fold
 - [ ] `produce(&func, @list)` - running fold
 - [ ] `combinations($n, @list)` - combinations

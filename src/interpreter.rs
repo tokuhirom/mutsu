@@ -6534,6 +6534,43 @@ impl Interpreter {
                     }
                     return Ok(Value::Array(result));
                 }
+                if name == "classify" || name == "categorize" {
+                    let func_expr = match args.get(0) {
+                        Some(expr) => expr,
+                        None => return Ok(Value::Hash(HashMap::new())),
+                    };
+                    let func = self.eval_expr(func_expr)?;
+                    let mut buckets: HashMap<String, Vec<Value>> = HashMap::new();
+                    for expr in args.iter().skip(1) {
+                        let item = self.eval_expr(expr)?;
+                        let keys = match self.call_lambda_with_arg(&func, item.clone()) {
+                            Ok(Value::Array(values)) => values,
+                            Ok(value) => vec![value],
+                            Err(_) => vec![Value::Nil],
+                        };
+                        let target_keys = if name == "classify" {
+                            if keys.is_empty() {
+                                vec![Value::Nil]
+                            } else {
+                                vec![keys[0].clone()]
+                            }
+                        } else {
+                            keys
+                        };
+                        for key in target_keys {
+                            let bucket_key = key.to_string_value();
+                            buckets
+                                .entry(bucket_key)
+                                .or_insert_with(Vec::new)
+                                .push(item.clone());
+                        }
+                    }
+                    let hash_map = buckets
+                        .into_iter()
+                        .map(|(k, v)| (k, Value::Array(v)))
+                        .collect();
+                    return Ok(Value::Hash(hash_map));
+                }
                 if name == "reverse" {
                     let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
                     return Ok(match val {
@@ -9352,6 +9389,30 @@ impl Interpreter {
                 info.insert("depth".to_string(), Value::Int(depth as i64));
                 Value::Hash(info)
             })
+    }
+
+    fn call_lambda_with_arg(&mut self, func: &Value, item: Value) -> Result<Value, RuntimeError> {
+        if let Value::Sub {
+            param, body, env, ..
+        } = func
+        {
+            let saved_env = self.env.clone();
+            for (k, v) in env {
+                self.env.insert(k.clone(), v.clone());
+            }
+            if let Some(p) = param {
+                self.env.insert(p.clone(), item.clone());
+            }
+            let placeholders = collect_placeholders(body);
+            if let Some(ph) = placeholders.first() {
+                self.env.insert(ph.clone(), item.clone());
+            }
+            self.env.insert("_".to_string(), item.clone());
+            let result = self.eval_block_value(body);
+            self.env = saved_env;
+            return result;
+        }
+        Err(RuntimeError::new("Expected callable"))
     }
 
     fn seconds_from_value(val: Option<Value>) -> Option<f64> {
