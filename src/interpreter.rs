@@ -7,6 +7,7 @@ use std::os::unix::fs::{self as unix_fs, PermissionsExt};
 #[cfg(windows)]
 use std::os::windows::fs as windows_fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -6299,6 +6300,34 @@ impl Interpreter {
                     }
                     return Ok(Value::Hash(map));
                 }
+                if name == "kill" {
+                    let mut iter = args.iter();
+                    let signal = iter
+                        .next()
+                        .map(|expr| self.eval_expr(expr).ok())
+                        .flatten()
+                        .map(|val| Self::to_int(&val))
+                        .unwrap_or(15);
+                    let mut success = true;
+                    let mut had_pid = false;
+                    for expr in iter {
+                        if let Ok(val) = self.eval_expr(expr) {
+                            had_pid = true;
+                            let pid = Self::to_int(&val);
+                            success &= Self::send_signal(pid, signal);
+                        } else {
+                            success = false;
+                        }
+                    }
+                    if !had_pid {
+                        success = false;
+                    }
+                    return Ok(Value::Bool(success));
+                }
+                if name == "getlogin" {
+                    let login = Self::get_login_name().unwrap_or_default();
+                    return Ok(Value::Str(login));
+                }
                 if name == "sleep" {
                     let arg_val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
                     let duration =
@@ -9175,6 +9204,37 @@ impl Interpreter {
         let secs = Self::seconds_from_value(val)?;
         let secs = secs.max(0.0);
         Some(UNIX_EPOCH + Duration::from_secs_f64(secs))
+    }
+
+    fn get_login_name() -> Option<String> {
+        env::var("LOGNAME")
+            .ok()
+            .or_else(|| env::var("USER").ok())
+            .or_else(|| env::var("USERNAME").ok())
+    }
+
+    fn send_signal(pid: i64, signal: i64) -> bool {
+        if pid == 0 {
+            return false;
+        }
+        let pid_str = pid.to_string();
+        #[cfg(unix)]
+        {
+            let mut cmd = Command::new("kill");
+            cmd.arg(format!("-{}", signal));
+            cmd.arg(&pid_str);
+            cmd.status().map(|status| status.success()).unwrap_or(false)
+        }
+        #[cfg(windows)]
+        {
+            let mut cmd = Command::new("taskkill");
+            cmd.args(["/PID", &pid_str, "/F"]);
+            cmd.status().map(|status| status.success()).unwrap_or(false)
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            false
+        }
     }
 
     fn merge_junction(kind: JunctionKind, left: Value, right: Value) -> Value {

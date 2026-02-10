@@ -8,14 +8,14 @@ Covers built-in functions in CORE scope.
 
 ## Context Functions
 
-- [ ] `caller` - caller information
-- [ ] `callframe` - call frame navigation
+- [x] `caller` - caller information
+- [x] `callframe` - call frame navigation
 - [x] `EVAL($code)` - evaluate code string
-- [ ] `EVALFILE($path)` - evaluate file
+- [x] `EVALFILE($path)` - evaluate file
 - [x] `exit($code)` - exit program
-- [ ] `sleep($seconds)` - pause execution
-- [ ] `sleep-timer($seconds)` - sleep returning remaining time
-- [ ] `sleep-till($instant)` - sleep until specific time
+- [x] `sleep($seconds)` - pause execution
+- [x] `sleep-timer($seconds)` - sleep returning remaining time
+- [x] `sleep-till($instant)` - sleep until specific time
 - [x] `die($message)` - throw exception
 - [x] `fail($message)` - lazy exception
 
@@ -42,8 +42,8 @@ Covers built-in functions in CORE scope.
 
 - [ ] `gethost` - hostname lookup
 - [ ] `chroot($dir)` - change root directory
-- [ ] `getlogin` - current login name
-- [ ] `kill($signal, @pids)` - send signal
+- [x] `getlogin` - current login name
+- [x] `kill($signal, @pids)` - send signal
 - [x] `run($cmd, @args)` - run external command (via Proc::Async)
 - [ ] `shell($cmd)` - run via shell
 - [ ] `syscall($num, @args)` - raw system call
