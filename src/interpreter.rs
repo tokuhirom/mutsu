@@ -3521,6 +3521,37 @@ impl Interpreter {
                 let right_val = self.eval_expr(right)?;
                 self.eval_hyper_op(op, &left_val, &right_val, *dwim_left, *dwim_right)
             }
+            Expr::MetaOp { meta, op, left, right } => {
+                let left_val = self.eval_expr(left)?;
+                let right_val = self.eval_expr(right)?;
+                match meta.as_str() {
+                    "R" => {
+                        self.apply_reduction_op(op, &right_val, &left_val)
+                    }
+                    "X" => {
+                        let left_list = self.value_to_list(&left_val);
+                        let right_list = self.value_to_list(&right_val);
+                        let mut results = Vec::new();
+                        for l in &left_list {
+                            for r in &right_list {
+                                results.push(self.apply_reduction_op(op, l, r)?);
+                            }
+                        }
+                        Ok(Value::Array(results))
+                    }
+                    "Z" => {
+                        let left_list = self.value_to_list(&left_val);
+                        let right_list = self.value_to_list(&right_val);
+                        let len = left_list.len().min(right_list.len());
+                        let mut results = Vec::new();
+                        for i in 0..len {
+                            results.push(self.apply_reduction_op(op, &left_list[i], &right_list[i])?);
+                        }
+                        Ok(Value::Array(results))
+                    }
+                    _ => Err(RuntimeError::new(format!("Unknown meta operator: {}", meta))),
+                }
+            }
             Expr::InfixFunc { name, left, right, modifier } => {
                 let left_val = self.eval_expr(left)?;
                 let mut right_vals = Vec::new();
@@ -4108,7 +4139,16 @@ impl Interpreter {
                     Ok(Value::Int(to_int(left) * to_int(right)))
                 }
             }
-            "/" => Ok(Value::Num(to_num(left) / to_num(right))),
+            "/" => {
+                if let (Value::Int(a), Value::Int(b)) = (left, right) {
+                    if *b == 0 {
+                        return Err(RuntimeError::new("Division by zero"));
+                    }
+                    Ok(Value::Int(a / b))
+                } else {
+                    Ok(Value::Num(to_num(left) / to_num(right)))
+                }
+            }
             "%" => {
                 if matches!(left, Value::Num(_)) || matches!(right, Value::Num(_)) {
                     Ok(Value::Num(to_num(left) % to_num(right)))
@@ -4148,6 +4188,28 @@ impl Interpreter {
             "gt" => Ok(Value::Bool(left.to_string_value() > right.to_string_value())),
             "le" => Ok(Value::Bool(left.to_string_value() <= right.to_string_value())),
             "ge" => Ok(Value::Bool(left.to_string_value() >= right.to_string_value())),
+            "leg" => {
+                let ord = left.to_string_value().cmp(&right.to_string_value());
+                Ok(Value::Int(match ord {
+                    std::cmp::Ordering::Less => -1,
+                    std::cmp::Ordering::Equal => 0,
+                    std::cmp::Ordering::Greater => 1,
+                }))
+            }
+            "cmp" => {
+                let ord = match (left, right) {
+                    (Value::Int(a), Value::Int(b)) => a.cmp(b),
+                    (Value::Num(a), Value::Num(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Int(a), Value::Num(b)) => (*a as f64).partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Num(a), Value::Int(b)) => a.partial_cmp(&(*b as f64)).unwrap_or(std::cmp::Ordering::Equal),
+                    _ => left.to_string_value().cmp(&right.to_string_value()),
+                };
+                Ok(Value::Int(match ord {
+                    std::cmp::Ordering::Less => -1,
+                    std::cmp::Ordering::Equal => 0,
+                    std::cmp::Ordering::Greater => 1,
+                }))
+            }
             "gcd" => {
                 let (mut a, mut b) = (to_int(left).abs(), to_int(right).abs());
                 while b != 0 { let t = b; b = a % b; a = t; }
@@ -4772,7 +4834,7 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
         }
         Expr::CodeVar(_) => {}
         Expr::Reduction { expr, .. } => collect_ph_expr(expr, out),
-        Expr::HyperOp { left, right, .. } => {
+        Expr::HyperOp { left, right, .. } | Expr::MetaOp { left, right, .. } => {
             collect_ph_expr(left, out);
             collect_ph_expr(right, out);
         }

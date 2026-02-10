@@ -23,7 +23,7 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - Full test (cargo + prove): `make test`
 
 ## Spec sources
-- Design docs live at `old-design-docs/`.
+- Design docs live at `./old-design-docs/`.
 
 ## Conventions
 - Add small, focused tests for each new syntax feature.

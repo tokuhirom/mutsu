@@ -66,6 +66,12 @@ pub(crate) enum Expr {
         dwim_left: bool,
         dwim_right: bool,
     },
+    MetaOp {
+        meta: String, // "R", "X", "Z"
+        op: String,
+        left: Box<Expr>,
+        right: Box<Expr>,
+    },
 }
 
 #[derive(Debug, Clone)]

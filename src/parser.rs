@@ -973,6 +973,21 @@ impl Parser {
             while self.match_kind(TokenKind::Comma) {
                 exprs.push(self.parse_expr()?);
             }
+            if matches!(exprs.last(), Some(Expr::MetaOp { .. })) {
+                if let Some(Expr::MetaOp { meta, op, left, right }) = exprs.pop() {
+                    if meta == "X" || meta == "Z" {
+                        let mut items = exprs;
+                        items.push(*left);
+                        return Ok(Expr::MetaOp {
+                            meta,
+                            op,
+                            left: Box::new(Expr::ArrayLiteral(items)),
+                            right,
+                        });
+                    }
+                    exprs.push(Expr::MetaOp { meta, op, left, right });
+                }
+            }
             return Ok(Expr::ArrayLiteral(exprs));
         }
         Ok(exprs.remove(0))
@@ -1155,7 +1170,7 @@ impl Parser {
     }
 
     fn parse_comparison(&mut self) -> Result<Expr, RuntimeError> {
-        let mut expr = self.parse_hyper()?;
+        let mut expr = self.parse_meta_op()?;
         loop {
             let op = if self.match_kind(TokenKind::Lt) {
                 Some(TokenKind::Lt)
@@ -1217,8 +1232,66 @@ impl Parser {
                 None
             };
             if let Some(op) = op {
-                let right = self.parse_hyper()?;
+                let right = self.parse_meta_op()?;
                 expr = Expr::Binary { left: Box::new(expr), op, right: Box::new(right) };
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
+    }
+
+    fn try_meta_op(&self) -> Option<(String, String, usize)> {
+        if let Some(TokenKind::Ident(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+            if matches!(name.as_str(), "R" | "X" | "Z") {
+                let meta = name.clone();
+                // Look ahead for operator token
+                let op = match self.tokens.get(self.pos + 1).map(|t| &t.kind) {
+                    Some(TokenKind::Plus) => "+",
+                    Some(TokenKind::Minus) => "-",
+                    Some(TokenKind::Star) => "*",
+                    Some(TokenKind::StarStar) => "**",
+                    Some(TokenKind::Slash) => "/",
+                    Some(TokenKind::Percent) => "%",
+                    Some(TokenKind::Tilde) => "~",
+                    Some(TokenKind::EqEq) => "==",
+                    Some(TokenKind::BangEq) => "!=",
+                    Some(TokenKind::Lt) => "<",
+                    Some(TokenKind::Gt) => ">",
+                    Some(TokenKind::Lte) => "<=",
+                    Some(TokenKind::Gte) => ">=",
+                    Some(TokenKind::BitAnd) => "+&",
+                    Some(TokenKind::BitOr) => "+|",
+                    Some(TokenKind::BitXor) => "+^",
+                    Some(TokenKind::Ident(s)) if matches!(s.as_str(), "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "min" | "max" | "x" | "xx" | "cmp" | "leg") => s.as_str(),
+                    _ => return None,
+                };
+                return Some((meta, op.to_string(), 2));
+            }
+            if name.len() > 1 {
+                let (meta, op) = name.split_at(1);
+                if matches!(meta, "R" | "X" | "Z")
+                    && matches!(op, "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "min" | "max" | "x" | "xx" | "cmp" | "leg")
+                {
+                    return Some((meta.to_string(), op.to_string(), 1));
+                }
+            }
+        }
+        None
+    }
+
+    fn parse_meta_op(&mut self) -> Result<Expr, RuntimeError> {
+        let mut expr = self.parse_hyper()?;
+        loop {
+            if let Some((meta, op, consumed)) = self.try_meta_op() {
+                self.pos += consumed;
+                let right = self.parse_hyper()?;
+                expr = Expr::MetaOp {
+                    meta,
+                    op,
+                    left: Box::new(expr),
+                    right: Box::new(right),
+                };
             } else {
                 break;
             }

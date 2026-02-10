@@ -1,0 +1,3 @@
+[submodule "old-design-docs"]
+	path = old-design-docs
+	url = git@github.com:Raku/old-design-docs.git
