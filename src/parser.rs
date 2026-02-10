@@ -35,7 +35,9 @@ impl Parser {
             return Ok(Stmt::Block(body));
         }
         if self.match_ident("use") {
-            let module = self.consume_ident().unwrap_or_else(|_| "unknown".to_string());
+            let module = self
+                .consume_ident()
+                .unwrap_or_else(|_| "unknown".to_string());
             let arg = if self.check(&TokenKind::Semicolon) {
                 None
             } else if self.check(&TokenKind::Lt) {
@@ -50,7 +52,10 @@ impl Parser {
             if self.match_ident("module") {
                 let name = self.consume_ident()?;
                 self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::Package { name, body: Vec::new() });
+                return Ok(Stmt::Package {
+                    name,
+                    body: Vec::new(),
+                });
             }
         }
         if self.match_ident("package") {
@@ -80,7 +85,11 @@ impl Parser {
             }
             let predicate = self.parse_expr()?;
             self.match_kind(TokenKind::Semicolon);
-            return Ok(Stmt::SubsetDecl { name, base, predicate });
+            return Ok(Stmt::SubsetDecl {
+                name,
+                base,
+                predicate,
+            });
         }
         if self.match_ident("has") {
             return self.parse_has_decl();
@@ -106,6 +115,9 @@ impl Parser {
                 return self.parse_method_decl(true);
             }
             if self.match_ident("sub") {
+                return self.parse_sub_decl(true);
+            }
+            if self.peek_ident().is_some() {
                 return self.parse_sub_decl(true);
             }
             return Err(RuntimeError::new("Expected method or sub after multi"));
@@ -135,12 +147,20 @@ impl Parser {
             if self.match_ident("sub") {
                 let body = self.parse_block()?;
                 self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::Subtest { name, body, is_sub: true });
+                return Ok(Stmt::Subtest {
+                    name,
+                    body,
+                    is_sub: true,
+                });
             }
             if self.match_kind(TokenKind::LBrace) {
                 let body = self.parse_block_body()?;
                 self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::Subtest { name, body, is_sub: false });
+                return Ok(Stmt::Subtest {
+                    name,
+                    body,
+                    is_sub: false,
+                });
             }
             return Err(RuntimeError::new("Expected sub or block for subtest"));
         }
@@ -151,11 +171,15 @@ impl Parser {
             }
             // Skip optional type annotation (e.g., my Str $a, my Int $b)
             if let Some(TokenKind::Ident(_)) = self.tokens.get(self.pos).map(|t| &t.kind) {
-                if let Some(TokenKind::Var(_) | TokenKind::ArrayVar(_) | TokenKind::HashVar(_)) = self.tokens.get(self.pos + 1).map(|t| &t.kind) {
+                if let Some(TokenKind::Var(_) | TokenKind::ArrayVar(_) | TokenKind::HashVar(_)) =
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind)
+                {
                     self.pos += 1; // skip the type name
                 }
             }
-            let (name, is_array, is_hash) = if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_))) {
+            let (name, is_array, is_hash) = if let Some(token) =
+                self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_)))
+            {
                 if let TokenKind::ArrayVar(n) = token.kind {
                     (format!("@{}", n), true, false)
                 } else {
@@ -221,20 +245,31 @@ impl Parser {
                 } else {
                     Vec::new()
                 };
-                vec![Stmt::If { cond: elsif, then_branch: elsif_branch, else_branch: inner_else }]
+                vec![Stmt::If {
+                    cond: elsif,
+                    then_branch: elsif_branch,
+                    else_branch: inner_else,
+                }]
             } else if self.match_ident("else") {
                 self.parse_block()?
             } else {
                 Vec::new()
             };
-            return Ok(Stmt::If { cond, then_branch, else_branch });
+            return Ok(Stmt::If {
+                cond,
+                then_branch,
+                else_branch,
+            });
         }
         if self.match_ident("unless") {
             let cond = self.parse_expr()?;
             let body = self.parse_block()?;
             // unless is if with negated condition
             return Ok(Stmt::If {
-                cond: Expr::Unary { op: TokenKind::Bang, expr: Box::new(cond) },
+                cond: Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(cond),
+                },
                 then_branch: body,
                 else_branch: Vec::new(),
             });
@@ -292,7 +327,10 @@ impl Parser {
         }
         // Labeled loop detection: LABEL: for/while/loop/...
         if let Some(label_name) = self.peek_ident() {
-            if matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Colon)) {
+            if matches!(
+                self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                Some(TokenKind::Colon)
+            ) {
                 if let Some(TokenKind::Ident(kw)) = self.tokens.get(self.pos + 2).map(|t| &t.kind) {
                     if matches!(kw.as_str(), "for" | "while" | "until" | "loop" | "repeat") {
                         self.pos += 2; // skip label and colon
@@ -304,13 +342,20 @@ impl Parser {
         if self.match_ident("while") {
             let cond = self.parse_expr()?;
             let body = self.parse_block()?;
-            return Ok(Stmt::While { cond, body, label: None });
+            return Ok(Stmt::While {
+                cond,
+                body,
+                label: None,
+            });
         }
         if self.match_ident("until") {
             let cond = self.parse_expr()?;
             let body = self.parse_block()?;
             return Ok(Stmt::While {
-                cond: Expr::Unary { op: TokenKind::Bang, expr: Box::new(cond) },
+                cond: Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(cond),
+                },
                 body,
                 label: None,
             });
@@ -333,14 +378,19 @@ impl Parser {
                 self.match_kind(TokenKind::Semicolon);
                 return Ok(Stmt::Loop {
                     init: None,
-                    cond: Some(Expr::Unary { op: TokenKind::Bang, expr: Box::new(cond) }),
+                    cond: Some(Expr::Unary {
+                        op: TokenKind::Bang,
+                        expr: Box::new(cond),
+                    }),
                     step: None,
                     body,
                     repeat: true,
                     label: None,
                 });
             }
-            return Err(RuntimeError::new("Expected 'while' or 'until' after repeat block"));
+            return Err(RuntimeError::new(
+                "Expected 'while' or 'until' after repeat block",
+            ));
         }
         if self.match_ident("loop") {
             if self.check(&TokenKind::LParen) {
@@ -370,10 +420,24 @@ impl Parser {
                     return Err(RuntimeError::new("expected ')' after loop"));
                 }
                 let body = self.parse_block()?;
-                return Ok(Stmt::Loop { init, cond, step, body, repeat: false, label: None });
+                return Ok(Stmt::Loop {
+                    init,
+                    cond,
+                    step,
+                    body,
+                    repeat: false,
+                    label: None,
+                });
             } else {
                 let body = self.parse_block()?;
-                return Ok(Stmt::Loop { init: None, cond: None, step: None, body, repeat: false, label: None });
+                return Ok(Stmt::Loop {
+                    init: None,
+                    cond: None,
+                    step: None,
+                    body,
+                    repeat: false,
+                    label: None,
+                });
             }
         }
         if self.match_ident("last") {
@@ -410,9 +474,13 @@ impl Parser {
             let mut param = None;
             if self.match_kind(TokenKind::Arrow) {
                 // Skip optional type annotation
-                if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
-                    && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
-                {
+                if matches!(
+                    self.tokens.get(self.pos).map(|t| &t.kind),
+                    Some(TokenKind::Ident(_))
+                ) && matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Var(_))
+                ) {
                     self.pos += 1;
                 }
                 if self.peek_is_var() {
@@ -420,7 +488,12 @@ impl Parser {
                 }
             }
             let body = self.parse_block()?;
-            return Ok(Stmt::For { iterable, param, body, label: None });
+            return Ok(Stmt::For {
+                iterable,
+                param,
+                body,
+                label: None,
+            });
         }
         if self.match_ident("given") {
             let topic = self.parse_expr()?;
@@ -456,31 +529,52 @@ impl Parser {
         }
         if self.match_ident("BEGIN") {
             let body = self.parse_block()?;
-            return Ok(Stmt::Phaser { kind: PhaserKind::Begin, body });
+            return Ok(Stmt::Phaser {
+                kind: PhaserKind::Begin,
+                body,
+            });
         }
         if self.match_ident("END") {
             let body = self.parse_block()?;
-            return Ok(Stmt::Phaser { kind: PhaserKind::End, body });
+            return Ok(Stmt::Phaser {
+                kind: PhaserKind::End,
+                body,
+            });
         }
         if self.match_ident("ENTER") {
             let body = self.parse_block()?;
-            return Ok(Stmt::Phaser { kind: PhaserKind::Enter, body });
+            return Ok(Stmt::Phaser {
+                kind: PhaserKind::Enter,
+                body,
+            });
         }
         if self.match_ident("LEAVE") {
             let body = self.parse_block()?;
-            return Ok(Stmt::Phaser { kind: PhaserKind::Leave, body });
+            return Ok(Stmt::Phaser {
+                kind: PhaserKind::Leave,
+                body,
+            });
         }
         if self.match_ident("FIRST") {
             let body = self.parse_block()?;
-            return Ok(Stmt::Phaser { kind: PhaserKind::First, body });
+            return Ok(Stmt::Phaser {
+                kind: PhaserKind::First,
+                body,
+            });
         }
         if self.match_ident("NEXT") {
             let body = self.parse_block()?;
-            return Ok(Stmt::Phaser { kind: PhaserKind::Next, body });
+            return Ok(Stmt::Phaser {
+                kind: PhaserKind::Next,
+                body,
+            });
         }
         if self.match_ident("LAST") {
             let body = self.parse_block()?;
-            return Ok(Stmt::Phaser { kind: PhaserKind::Last, body });
+            return Ok(Stmt::Phaser {
+                kind: PhaserKind::Last,
+                body,
+            });
         }
         if self.match_ident("proceed") {
             self.match_kind(TokenKind::Semicolon);
@@ -502,9 +596,13 @@ impl Parser {
             let supply = self.parse_expr()?;
             let mut param = None;
             if self.match_kind(TokenKind::Arrow) {
-                if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
-                    && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
-                {
+                if matches!(
+                    self.tokens.get(self.pos).map(|t| &t.kind),
+                    Some(TokenKind::Ident(_))
+                ) && matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Var(_))
+                ) {
                     self.pos += 1;
                 }
                 if self.peek_is_var() {
@@ -512,7 +610,11 @@ impl Parser {
                 }
             }
             let body = self.parse_block()?;
-            return Ok(Stmt::Whenever { supply, param, body });
+            return Ok(Stmt::Whenever {
+                supply,
+                param,
+                body,
+            });
         }
         if self.match_ident("take") {
             let expr = self.parse_expr()?;
@@ -526,11 +628,39 @@ impl Parser {
             return Ok(Stmt::Expr(expr));
         }
         if let Some(name) = self.peek_ident() {
-            if matches!(name.as_str(), "ok" | "is" | "isnt" | "nok" | "pass" | "flunk" | "cmp-ok" | "like" | "unlike" | "is-deeply" | "is-approx" | "isa-ok" | "lives-ok" | "dies-ok" | "eval-lives-ok" | "is_run" | "throws-like" | "force_todo" | "force-todo" | "plan" | "done-testing" | "bail-out" | "skip" | "skip-rest" | "diag" | "todo" | "does-ok" | "can-ok") {
+            if matches!(
+                name.as_str(),
+                "ok" | "is"
+                    | "isnt"
+                    | "nok"
+                    | "pass"
+                    | "flunk"
+                    | "cmp-ok"
+                    | "like"
+                    | "unlike"
+                    | "is-deeply"
+                    | "is-approx"
+                    | "isa-ok"
+                    | "lives-ok"
+                    | "dies-ok"
+                    | "eval-lives-ok"
+                    | "is_run"
+                    | "throws-like"
+                    | "force_todo"
+                    | "force-todo"
+                    | "plan"
+                    | "done-testing"
+                    | "bail-out"
+                    | "skip"
+                    | "skip-rest"
+                    | "diag"
+                    | "todo"
+                    | "does-ok"
+                    | "can-ok"
+            ) {
                 self.pos += 1;
                 let args = if name == "is"
-                    && (!self.check(&TokenKind::LParen)
-                        || self.is_is_grouping_paren())
+                    && (!self.check(&TokenKind::LParen) || self.is_is_grouping_paren())
                 {
                     self.parse_is_call_args()
                 } else if name == "ok"
@@ -569,9 +699,16 @@ impl Parser {
                         name: method_name,
                         args: method_args,
                     };
-                    return Ok(Stmt::Assign { name, expr, op: AssignOp::Assign });
+                    return Ok(Stmt::Assign {
+                        name,
+                        expr,
+                        op: AssignOp::Assign,
+                    });
                 }
-                if matches!(next, TokenKind::PlusEq | TokenKind::MinusEq | TokenKind::TildeEq | TokenKind::StarEq) {
+                if matches!(
+                    next,
+                    TokenKind::PlusEq | TokenKind::MinusEq | TokenKind::TildeEq | TokenKind::StarEq
+                ) {
                     let name = self.consume_var()?;
                     let compound_op = if self.match_kind(TokenKind::PlusEq) {
                         TokenKind::Plus
@@ -590,7 +727,11 @@ impl Parser {
                         op: compound_op,
                         right: Box::new(rhs),
                     };
-                    return Ok(Stmt::Assign { name, expr, op: AssignOp::Assign });
+                    return Ok(Stmt::Assign {
+                        name,
+                        expr,
+                        op: AssignOp::Assign,
+                    });
                 }
                 if matches!(next, TokenKind::LBracket) {
                     let name = self.consume_var()?;
@@ -605,12 +746,19 @@ impl Parser {
                                 left: Box::new(Expr::Var(name.clone())),
                                 right: Box::new(rhs),
                             };
-                            return Ok(Stmt::Assign { name, expr, op: AssignOp::Assign });
+                            return Ok(Stmt::Assign {
+                                name,
+                                expr,
+                                op: AssignOp::Assign,
+                            });
                         }
                     }
                     self.pos -= 1;
                 }
-                if matches!(next, TokenKind::Eq | TokenKind::Bind | TokenKind::MatchAssign) {
+                if matches!(
+                    next,
+                    TokenKind::Eq | TokenKind::Bind | TokenKind::MatchAssign
+                ) {
                     let name = self.consume_var()?;
                     let op = if self.match_kind(TokenKind::Eq) {
                         AssignOp::Assign
@@ -642,12 +790,19 @@ impl Parser {
                             left: Box::new(Expr::ArrayVar(name[1..].to_string())),
                             right: Box::new(rhs),
                         };
-                        return Ok(Stmt::Assign { name, expr, op: AssignOp::Assign });
+                        return Ok(Stmt::Assign {
+                            name,
+                            expr,
+                            op: AssignOp::Assign,
+                        });
                     }
                 }
                 self.pos -= 1;
             }
-            if matches!(self.peek_next_kind(), Some(TokenKind::Eq | TokenKind::Bind | TokenKind::MatchAssign)) {
+            if matches!(
+                self.peek_next_kind(),
+                Some(TokenKind::Eq | TokenKind::Bind | TokenKind::MatchAssign)
+            ) {
                 let name = format!("@{}", name);
                 self.pos += 1;
                 let op = if self.match_kind(TokenKind::Eq) {
@@ -735,13 +890,20 @@ impl Parser {
         if self.match_ident("if") {
             let cond = self.parse_expr()?;
             self.match_kind(TokenKind::Semicolon);
-            return Ok(Stmt::If { cond, then_branch: vec![stmt], else_branch: Vec::new() });
+            return Ok(Stmt::If {
+                cond,
+                then_branch: vec![stmt],
+                else_branch: Vec::new(),
+            });
         }
         if self.match_ident("unless") {
             let cond = self.parse_expr()?;
             self.match_kind(TokenKind::Semicolon);
             return Ok(Stmt::If {
-                cond: Expr::Unary { op: TokenKind::Bang, expr: Box::new(cond) },
+                cond: Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(cond),
+                },
                 then_branch: vec![stmt],
                 else_branch: Vec::new(),
             });
@@ -749,18 +911,30 @@ impl Parser {
         if self.match_ident("for") {
             let iterable = self.parse_expr()?;
             self.match_kind(TokenKind::Semicolon);
-            return Ok(Stmt::For { iterable, param: None, body: vec![stmt], label: None });
+            return Ok(Stmt::For {
+                iterable,
+                param: None,
+                body: vec![stmt],
+                label: None,
+            });
         }
         if self.match_ident("while") {
             let cond = self.parse_expr()?;
             self.match_kind(TokenKind::Semicolon);
-            return Ok(Stmt::While { cond, body: vec![stmt], label: None });
+            return Ok(Stmt::While {
+                cond,
+                body: vec![stmt],
+                label: None,
+            });
         }
         if self.match_ident("until") {
             let cond = self.parse_expr()?;
             self.match_kind(TokenKind::Semicolon);
             return Ok(Stmt::While {
-                cond: Expr::Unary { op: TokenKind::Bang, expr: Box::new(cond) },
+                cond: Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(cond),
+                },
                 body: vec![stmt],
                 label: None,
             });
@@ -797,7 +971,10 @@ impl Parser {
         if self.match_ident("given") {
             let topic = self.parse_expr()?;
             self.match_kind(TokenKind::Semicolon);
-            return Ok(Stmt::Given { topic, body: vec![stmt] });
+            return Ok(Stmt::Given {
+                topic,
+                body: vec![stmt],
+            });
         }
         self.match_kind(TokenKind::Semicolon);
         Ok(stmt)
@@ -925,9 +1102,13 @@ impl Parser {
             self.pos += 1;
         }
         let mut slice = self.tokens[start..self.pos].to_vec();
-        slice.push(Token { kind: TokenKind::Eof });
+        slice.push(Token {
+            kind: TokenKind::Eof,
+        });
         let mut parser = Parser::new(slice);
-        parser.parse_expr().unwrap_or(Expr::Literal(Value::Bool(true)))
+        parser
+            .parse_expr()
+            .unwrap_or(Expr::Literal(Value::Bool(true)))
     }
 
     fn is_call_paren(&self) -> bool {
@@ -945,7 +1126,12 @@ impl Parser {
                         let next = self.tokens.get(i + 1).map(|t| &t.kind);
                         return matches!(
                             next,
-                            Some(TokenKind::Comma | TokenKind::Semicolon | TokenKind::Eof | TokenKind::RParen)
+                            Some(
+                                TokenKind::Comma
+                                    | TokenKind::Semicolon
+                                    | TokenKind::Eof
+                                    | TokenKind::RParen
+                            )
                         );
                     }
                 }
@@ -988,7 +1174,10 @@ impl Parser {
             if self.match_kind(TokenKind::LParen) {
                 let value = self.parse_expr()?;
                 self.consume_kind(TokenKind::RParen)?;
-                return Ok(CallArg::Named { name, value: Some(value) });
+                return Ok(CallArg::Named {
+                    name,
+                    value: Some(value),
+                });
             }
             if self.match_kind(TokenKind::LBracket) {
                 let mut items = Vec::new();
@@ -999,7 +1188,10 @@ impl Parser {
                     }
                 }
                 self.match_kind(TokenKind::RBracket);
-                return Ok(CallArg::Named { name, value: Some(Expr::ArrayLiteral(items)) });
+                return Ok(CallArg::Named {
+                    name,
+                    value: Some(Expr::ArrayLiteral(items)),
+                });
             }
             return Ok(CallArg::Named { name, value: None });
         }
@@ -1008,7 +1200,10 @@ impl Parser {
                 self.pos += 1;
                 self.consume_kind(TokenKind::FatArrow)?;
                 let value = self.parse_expr()?;
-                return Ok(CallArg::Named { name, value: Some(value) });
+                return Ok(CallArg::Named {
+                    name,
+                    value: Some(value),
+                });
             }
         }
         match self.parse_expr() {
@@ -1026,11 +1221,17 @@ impl Parser {
     fn parse_expr(&mut self) -> Result<Expr, RuntimeError> {
         // Handle $var = expr as assignment expression
         if let Some(TokenKind::Var(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
-            if matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Eq)) {
+            if matches!(
+                self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                Some(TokenKind::Eq)
+            ) {
                 let name = name.clone();
                 self.pos += 2;
                 let expr = self.parse_expr()?;
-                return Ok(Expr::AssignExpr { name, expr: Box::new(expr) });
+                return Ok(Expr::AssignExpr {
+                    name,
+                    expr: Box::new(expr),
+                });
             }
         }
         self.parse_ternary()
@@ -1045,7 +1246,13 @@ impl Parser {
                 exprs.push(self.parse_expr()?);
             }
             if matches!(exprs.last(), Some(Expr::MetaOp { .. })) {
-                if let Some(Expr::MetaOp { meta, op, left, right }) = exprs.pop() {
+                if let Some(Expr::MetaOp {
+                    meta,
+                    op,
+                    left,
+                    right,
+                }) = exprs.pop()
+                {
                     if meta == "X" || meta == "Z" {
                         let mut items = exprs;
                         items.push(*left);
@@ -1056,7 +1263,12 @@ impl Parser {
                             right,
                         });
                     }
-                    exprs.push(Expr::MetaOp { meta, op, left, right });
+                    exprs.push(Expr::MetaOp {
+                        meta,
+                        op,
+                        left,
+                        right,
+                    });
                 }
             }
             return Ok(Expr::ArrayLiteral(exprs));
@@ -1091,7 +1303,10 @@ impl Parser {
             } else {
                 self.parse_expr_or_true()
             };
-            return Expr::AssignExpr { name, expr: Box::new(value) };
+            return Expr::AssignExpr {
+                name,
+                expr: Box::new(value),
+            };
         }
         // Handle name => value (pair/named arg syntax)
         if let Some(name) = self.peek_ident() {
@@ -1114,14 +1329,25 @@ impl Parser {
             return Expr::Literal(Value::Nil);
         }
         let mut words = Vec::new();
-        while let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_) | TokenKind::Str(_) | TokenKind::Number(_) | TokenKind::Float(_) | TokenKind::Minus)) {
+        while let Some(token) = self.advance_if(|k| {
+            matches!(
+                k,
+                TokenKind::Ident(_)
+                    | TokenKind::Str(_)
+                    | TokenKind::Number(_)
+                    | TokenKind::Float(_)
+                    | TokenKind::Minus
+            )
+        }) {
             let word = match token.kind {
                 TokenKind::Ident(s) => s,
                 TokenKind::Str(s) => s,
                 TokenKind::Number(n) => n.to_string(),
                 TokenKind::Float(f) => f.to_string(),
                 TokenKind::Minus => {
-                    if let Some(next) = self.advance_if(|k| matches!(k, TokenKind::Number(_) | TokenKind::Float(_))) {
+                    if let Some(next) =
+                        self.advance_if(|k| matches!(k, TokenKind::Number(_) | TokenKind::Float(_)))
+                    {
                         match next.kind {
                             TokenKind::Number(n) => format!("-{}", n),
                             TokenKind::Float(f) => format!("-{}", f),
@@ -1139,7 +1365,12 @@ impl Parser {
         if words.len() == 1 {
             Expr::Literal(Value::Str(words.into_iter().next().unwrap()))
         } else {
-            Expr::ArrayLiteral(words.into_iter().map(|w| Expr::Literal(Value::Str(w))).collect())
+            Expr::ArrayLiteral(
+                words
+                    .into_iter()
+                    .map(|w| Expr::Literal(Value::Str(w)))
+                    .collect(),
+            )
         }
     }
 
@@ -1185,13 +1416,25 @@ impl Parser {
         loop {
             if self.match_kind(TokenKind::OrOr) {
                 let right = self.parse_and()?;
-                expr = Expr::Binary { left: Box::new(expr), op: TokenKind::OrOr, right: Box::new(right) };
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op: TokenKind::OrOr,
+                    right: Box::new(right),
+                };
             } else if self.match_kind(TokenKind::OrWord) {
                 let right = self.parse_and()?;
-                expr = Expr::Binary { left: Box::new(expr), op: TokenKind::OrWord, right: Box::new(right) };
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op: TokenKind::OrWord,
+                    right: Box::new(right),
+                };
             } else if self.match_kind(TokenKind::SlashSlash) {
                 let right = self.parse_and()?;
-                expr = Expr::Binary { left: Box::new(expr), op: TokenKind::SlashSlash, right: Box::new(right) };
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op: TokenKind::SlashSlash,
+                    right: Box::new(right),
+                };
             } else {
                 break;
             }
@@ -1204,7 +1447,11 @@ impl Parser {
         loop {
             if self.match_kind(TokenKind::AndAnd) || self.match_ident("and") {
                 let right = self.parse_equality()?;
-                expr = Expr::Binary { left: Box::new(expr), op: TokenKind::AndAnd, right: Box::new(right) };
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op: TokenKind::AndAnd,
+                    right: Box::new(right),
+                };
             } else {
                 break;
             }
@@ -1226,7 +1473,11 @@ impl Parser {
             };
             if let Some(op) = op {
                 let right = self.parse_comparison()?;
-                expr = Expr::Binary { left: Box::new(expr), op, right: Box::new(right) };
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op,
+                    right: Box::new(right),
+                };
             } else {
                 break;
             }
@@ -1240,21 +1491,41 @@ impl Parser {
             if self.match_kind(TokenKind::EqEq) {
                 let op = TokenKind::EqEq;
                 let right = self.parse_junction()?;
-                expr = Expr::Binary { left: Box::new(expr), op, right: Box::new(right) };
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op,
+                    right: Box::new(right),
+                };
             } else if self.match_kind(TokenKind::EqEqEq) {
                 let op = TokenKind::EqEqEq;
                 let right = self.parse_junction()?;
-                expr = Expr::Binary { left: Box::new(expr), op, right: Box::new(right) };
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op,
+                    right: Box::new(right),
+                };
             } else if self.match_kind(TokenKind::BangEq) {
                 let op = TokenKind::BangEq;
                 let right = self.parse_junction()?;
-                expr = Expr::Binary { left: Box::new(expr), op, right: Box::new(right) };
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op,
+                    right: Box::new(right),
+                };
             } else if self.match_ident("eq") {
                 let right = self.parse_junction()?;
-                expr = Expr::Binary { left: Box::new(expr), op: TokenKind::Ident("eq".to_string()), right: Box::new(right) };
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op: TokenKind::Ident("eq".to_string()),
+                    right: Box::new(right),
+                };
             } else if self.match_ident("ne") {
                 let right = self.parse_junction()?;
-                expr = Expr::Binary { left: Box::new(expr), op: TokenKind::Ident("ne".to_string()), right: Box::new(right) };
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op: TokenKind::Ident("ne".to_string()),
+                    right: Box::new(right),
+                };
             } else {
                 break;
             }
@@ -1326,7 +1597,11 @@ impl Parser {
             };
             if let Some(op) = op {
                 let right = self.parse_meta_op()?;
-                expr = Expr::Binary { left: Box::new(expr), op, right: Box::new(right) };
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op,
+                    right: Box::new(right),
+                };
             } else {
                 break;
             }
@@ -1356,7 +1631,24 @@ impl Parser {
                     Some(TokenKind::BitAnd) => "+&",
                     Some(TokenKind::BitOr) => "+|",
                     Some(TokenKind::BitXor) => "+^",
-                    Some(TokenKind::Ident(s)) if matches!(s.as_str(), "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "min" | "max" | "x" | "xx" | "cmp" | "leg") => s.as_str(),
+                    Some(TokenKind::Ident(s))
+                        if matches!(
+                            s.as_str(),
+                            "eq" | "ne"
+                                | "lt"
+                                | "le"
+                                | "gt"
+                                | "ge"
+                                | "min"
+                                | "max"
+                                | "x"
+                                | "xx"
+                                | "cmp"
+                                | "leg"
+                        ) =>
+                    {
+                        s.as_str()
+                    }
                     _ => return None,
                 };
                 return Some((meta, op.to_string(), 2));
@@ -1364,7 +1656,20 @@ impl Parser {
             if name.len() > 1 {
                 let (meta, op) = name.split_at(1);
                 if matches!(meta, "R" | "X" | "Z")
-                    && matches!(op, "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "min" | "max" | "x" | "xx" | "cmp" | "leg")
+                    && matches!(
+                        op,
+                        "eq" | "ne"
+                            | "lt"
+                            | "le"
+                            | "gt"
+                            | "ge"
+                            | "min"
+                            | "max"
+                            | "x"
+                            | "xx"
+                            | "cmp"
+                            | "leg"
+                    )
                 {
                     return Some((meta.to_string(), op.to_string(), 1));
                 }
@@ -1374,7 +1679,10 @@ impl Parser {
     }
 
     fn try_bracket_meta_op_at(&self, pos: usize) -> Option<(String, String, usize)> {
-        if !matches!(self.tokens.get(pos).map(|t| &t.kind), Some(TokenKind::LBracket)) {
+        if !matches!(
+            self.tokens.get(pos).map(|t| &t.kind),
+            Some(TokenKind::LBracket)
+        ) {
             return None;
         }
         let op_from_kind = |kind: &TokenKind| -> Option<String> {
@@ -1395,7 +1703,24 @@ impl Parser {
                 TokenKind::BitAnd => Some("+&".to_string()),
                 TokenKind::BitOr => Some("+|".to_string()),
                 TokenKind::BitXor => Some("+^".to_string()),
-                TokenKind::Ident(s) if matches!(s.as_str(), "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "min" | "max" | "x" | "xx" | "cmp" | "leg") => Some(s.clone()),
+                TokenKind::Ident(s)
+                    if matches!(
+                        s.as_str(),
+                        "eq" | "ne"
+                            | "lt"
+                            | "le"
+                            | "gt"
+                            | "ge"
+                            | "min"
+                            | "max"
+                            | "x"
+                            | "xx"
+                            | "cmp"
+                            | "leg"
+                    ) =>
+                {
+                    Some(s.clone())
+                }
                 _ => None,
             }
         };
@@ -1404,7 +1729,10 @@ impl Parser {
                 let meta = name.clone();
                 if let Some(kind) = self.tokens.get(pos + 2).map(|t| &t.kind) {
                     if let Some(op) = op_from_kind(kind) {
-                        if matches!(self.tokens.get(pos + 3).map(|t| &t.kind), Some(TokenKind::RBracket)) {
+                        if matches!(
+                            self.tokens.get(pos + 3).map(|t| &t.kind),
+                            Some(TokenKind::RBracket)
+                        ) {
                             return Some((meta, op, 4));
                         }
                     }
@@ -1413,8 +1741,24 @@ impl Parser {
             if name.len() > 1 {
                 let (meta, op) = name.split_at(1);
                 if matches!(meta, "R" | "X" | "Z")
-                    && matches!(op, "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "min" | "max" | "x" | "xx" | "cmp" | "leg")
-                    && matches!(self.tokens.get(pos + 2).map(|t| &t.kind), Some(TokenKind::RBracket))
+                    && matches!(
+                        op,
+                        "eq" | "ne"
+                            | "lt"
+                            | "le"
+                            | "gt"
+                            | "ge"
+                            | "min"
+                            | "max"
+                            | "x"
+                            | "xx"
+                            | "cmp"
+                            | "leg"
+                    )
+                    && matches!(
+                        self.tokens.get(pos + 2).map(|t| &t.kind),
+                        Some(TokenKind::RBracket)
+                    )
                 {
                     return Some((meta.to_string(), op.to_string(), 3));
                 }
@@ -1466,7 +1810,10 @@ impl Parser {
 
     fn is_hyper_op(&self) -> bool {
         let opener = self.tokens.get(self.pos).map(|t| &t.kind);
-        if !matches!(opener, Some(TokenKind::HyperLeft) | Some(TokenKind::HyperRight)) {
+        if !matches!(
+            opener,
+            Some(TokenKind::HyperLeft) | Some(TokenKind::HyperRight)
+        ) {
             return false;
         }
         // Look ahead for op + closer pattern
@@ -1474,12 +1821,22 @@ impl Parser {
         // skip inner op token(s) — some ops are two tokens (e.g. Star Star for **)
         if let Some(t) = self.tokens.get(i).map(|t| &t.kind) {
             match t {
-                TokenKind::Star | TokenKind::StarStar
-                | TokenKind::EqEq | TokenKind::BangEq | TokenKind::Lte | TokenKind::Gte
-                | TokenKind::Plus | TokenKind::Minus | TokenKind::Slash
-                | TokenKind::Tilde | TokenKind::Percent
-                | TokenKind::BitAnd | TokenKind::BitOr | TokenKind::BitXor
-                | TokenKind::Lt | TokenKind::Gt => {
+                TokenKind::Star
+                | TokenKind::StarStar
+                | TokenKind::EqEq
+                | TokenKind::BangEq
+                | TokenKind::Lte
+                | TokenKind::Gte
+                | TokenKind::Plus
+                | TokenKind::Minus
+                | TokenKind::Slash
+                | TokenKind::Tilde
+                | TokenKind::Percent
+                | TokenKind::BitAnd
+                | TokenKind::BitOr
+                | TokenKind::BitXor
+                | TokenKind::Lt
+                | TokenKind::Gt => {
                     i += 1;
                 }
                 _ => return false,
@@ -1487,29 +1844,84 @@ impl Parser {
         } else {
             return false;
         }
-        matches!(self.tokens.get(i).map(|t| &t.kind), Some(TokenKind::HyperLeft) | Some(TokenKind::HyperRight))
+        matches!(
+            self.tokens.get(i).map(|t| &t.kind),
+            Some(TokenKind::HyperLeft) | Some(TokenKind::HyperRight)
+        )
     }
 
     fn consume_hyper_inner_op(&mut self) -> Result<String, RuntimeError> {
         let kind = self.tokens.get(self.pos).map(|t| &t.kind);
         let op = match kind {
-            Some(TokenKind::Plus) => { self.pos += 1; "+".to_string() }
-            Some(TokenKind::Minus) => { self.pos += 1; "-".to_string() }
-            Some(TokenKind::StarStar) => { self.pos += 1; "**".to_string() }
-            Some(TokenKind::Star) => { self.pos += 1; "*".to_string() }
-            Some(TokenKind::Slash) => { self.pos += 1; "/".to_string() }
-            Some(TokenKind::Tilde) => { self.pos += 1; "~".to_string() }
-            Some(TokenKind::Percent) => { self.pos += 1; "%".to_string() }
-            Some(TokenKind::EqEq) => { self.pos += 1; "==".to_string() }
-            Some(TokenKind::BangEq) => { self.pos += 1; "!=".to_string() }
-            Some(TokenKind::Lt) => { self.pos += 1; "<".to_string() }
-            Some(TokenKind::Gt) => { self.pos += 1; ">".to_string() }
-            Some(TokenKind::Lte) => { self.pos += 1; "<=".to_string() }
-            Some(TokenKind::Gte) => { self.pos += 1; ">=".to_string() }
-            Some(TokenKind::BitAnd) => { self.pos += 1; "+&".to_string() }
-            Some(TokenKind::BitOr) => { self.pos += 1; "+|".to_string() }
-            Some(TokenKind::BitXor) => { self.pos += 1; "+^".to_string() }
-            _ => return Err(RuntimeError::new("Expected operator inside hyper markers".to_string())),
+            Some(TokenKind::Plus) => {
+                self.pos += 1;
+                "+".to_string()
+            }
+            Some(TokenKind::Minus) => {
+                self.pos += 1;
+                "-".to_string()
+            }
+            Some(TokenKind::StarStar) => {
+                self.pos += 1;
+                "**".to_string()
+            }
+            Some(TokenKind::Star) => {
+                self.pos += 1;
+                "*".to_string()
+            }
+            Some(TokenKind::Slash) => {
+                self.pos += 1;
+                "/".to_string()
+            }
+            Some(TokenKind::Tilde) => {
+                self.pos += 1;
+                "~".to_string()
+            }
+            Some(TokenKind::Percent) => {
+                self.pos += 1;
+                "%".to_string()
+            }
+            Some(TokenKind::EqEq) => {
+                self.pos += 1;
+                "==".to_string()
+            }
+            Some(TokenKind::BangEq) => {
+                self.pos += 1;
+                "!=".to_string()
+            }
+            Some(TokenKind::Lt) => {
+                self.pos += 1;
+                "<".to_string()
+            }
+            Some(TokenKind::Gt) => {
+                self.pos += 1;
+                ">".to_string()
+            }
+            Some(TokenKind::Lte) => {
+                self.pos += 1;
+                "<=".to_string()
+            }
+            Some(TokenKind::Gte) => {
+                self.pos += 1;
+                ">=".to_string()
+            }
+            Some(TokenKind::BitAnd) => {
+                self.pos += 1;
+                "+&".to_string()
+            }
+            Some(TokenKind::BitOr) => {
+                self.pos += 1;
+                "+|".to_string()
+            }
+            Some(TokenKind::BitXor) => {
+                self.pos += 1;
+                "+^".to_string()
+            }
+            _ => {
+                return Err(RuntimeError::new(
+                    "Expected operator inside hyper markers".to_string(),
+                ));
+            }
         };
         Ok(op)
     }
@@ -1524,7 +1936,11 @@ impl Parser {
             }
             if self.match_kind(TokenKind::Tilde) {
                 let right = self.parse_replication()?;
-                expr = Expr::Binary { left: Box::new(expr), op: TokenKind::Tilde, right: Box::new(right) };
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op: TokenKind::Tilde,
+                    right: Box::new(right),
+                };
             } else {
                 break;
             }
@@ -1538,12 +1954,20 @@ impl Parser {
         loop {
             if self.match_ident("xx") {
                 let right = self.parse_additive()?;
-                expr = Expr::Binary { left: Box::new(expr), op: TokenKind::Ident("xx".to_string()), right: Box::new(right) };
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op: TokenKind::Ident("xx".to_string()),
+                    right: Box::new(right),
+                };
                 continue;
             }
             if self.match_ident("x") {
                 let right = self.parse_additive()?;
-                expr = Expr::Binary { left: Box::new(expr), op: TokenKind::Ident("x".to_string()), right: Box::new(right) };
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op: TokenKind::Ident("x".to_string()),
+                    right: Box::new(right),
+                };
                 continue;
             }
             break;
@@ -1574,7 +1998,11 @@ impl Parser {
             };
             if let Some(op) = op {
                 let right = self.parse_factor()?;
-                expr = Expr::Binary { left: Box::new(expr), op, right: Box::new(right) };
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op,
+                    right: Box::new(right),
+                };
             } else {
                 break;
             }
@@ -1602,7 +2030,11 @@ impl Parser {
             };
             if let Some(op) = op {
                 let right = self.parse_power()?;
-                expr = Expr::Binary { left: Box::new(expr), op, right: Box::new(right) };
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op,
+                    right: Box::new(right),
+                };
             } else {
                 break;
             }
@@ -1615,7 +2047,11 @@ impl Parser {
         let base = self.parse_unary()?;
         if self.match_kind(TokenKind::StarStar) {
             let exp = self.parse_power()?; // right-associative
-            Ok(Expr::Binary { left: Box::new(base), op: TokenKind::StarStar, right: Box::new(exp) })
+            Ok(Expr::Binary {
+                left: Box::new(base),
+                op: TokenKind::StarStar,
+                right: Box::new(exp),
+            })
         } else {
             Ok(base)
         }
@@ -1658,43 +2094,73 @@ impl Parser {
     fn parse_unary(&mut self) -> Result<Expr, RuntimeError> {
         if self.match_kind(TokenKind::PlusPlus) {
             let expr = self.parse_unary()?;
-            return Ok(Expr::Unary { op: TokenKind::PlusPlus, expr: Box::new(expr) });
+            return Ok(Expr::Unary {
+                op: TokenKind::PlusPlus,
+                expr: Box::new(expr),
+            });
         }
         if self.match_kind(TokenKind::MinusMinus) {
             let expr = self.parse_unary()?;
-            return Ok(Expr::Unary { op: TokenKind::MinusMinus, expr: Box::new(expr) });
+            return Ok(Expr::Unary {
+                op: TokenKind::MinusMinus,
+                expr: Box::new(expr),
+            });
         }
         if self.match_kind(TokenKind::Plus) {
             let expr = self.parse_unary()?;
-            return Ok(Expr::Unary { op: TokenKind::Plus, expr: Box::new(expr) });
+            return Ok(Expr::Unary {
+                op: TokenKind::Plus,
+                expr: Box::new(expr),
+            });
         }
         if self.match_kind(TokenKind::Minus) {
             let expr = self.parse_unary()?;
-            return Ok(Expr::Unary { op: TokenKind::Minus, expr: Box::new(expr) });
+            return Ok(Expr::Unary {
+                op: TokenKind::Minus,
+                expr: Box::new(expr),
+            });
         }
         if self.match_kind(TokenKind::Tilde) {
             let expr = self.parse_unary()?;
-            return Ok(Expr::Unary { op: TokenKind::Tilde, expr: Box::new(expr) });
+            return Ok(Expr::Unary {
+                op: TokenKind::Tilde,
+                expr: Box::new(expr),
+            });
         }
         if self.match_kind(TokenKind::Bang) {
             let expr = self.parse_unary()?;
-            return Ok(Expr::Unary { op: TokenKind::Bang, expr: Box::new(expr) });
+            return Ok(Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(expr),
+            });
         }
         if self.match_ident("not") {
             let expr = self.parse_unary()?;
-            return Ok(Expr::Unary { op: TokenKind::Bang, expr: Box::new(expr) });
+            return Ok(Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(expr),
+            });
         }
         if self.match_ident("so") {
             let expr = self.parse_unary()?;
-            return Ok(Expr::Unary { op: TokenKind::Ident("so".to_string()), expr: Box::new(expr) });
+            return Ok(Expr::Unary {
+                op: TokenKind::Ident("so".to_string()),
+                expr: Box::new(expr),
+            });
         }
         if self.match_kind(TokenKind::Question) {
             let expr = self.parse_unary()?;
-            return Ok(Expr::Unary { op: TokenKind::Question, expr: Box::new(expr) });
+            return Ok(Expr::Unary {
+                op: TokenKind::Question,
+                expr: Box::new(expr),
+            });
         }
         if self.match_kind(TokenKind::Caret) {
             let expr = self.parse_unary()?;
-            return Ok(Expr::Unary { op: TokenKind::Caret, expr: Box::new(expr) });
+            return Ok(Expr::Unary {
+                op: TokenKind::Caret,
+                expr: Box::new(expr),
+            });
         }
         self.parse_primary()
     }
@@ -1787,8 +2253,15 @@ impl Parser {
                 Expr::Literal(Value::Nil)
             }
         } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Subst { .. })) {
-            if let TokenKind::Subst { pattern, replacement } = token.kind {
-                Expr::Subst { pattern, replacement }
+            if let TokenKind::Subst {
+                pattern,
+                replacement,
+            } = token.kind
+            {
+                Expr::Subst {
+                    pattern,
+                    replacement,
+                }
             } else {
                 Expr::Literal(Value::Nil)
             }
@@ -1812,20 +2285,29 @@ impl Parser {
                 self.consume_kind(TokenKind::RParen)?;
                 Expr::Call { name, args }
             } else if name == "my"
-                && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
+                && matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Var(_))
+                )
             {
                 self.pos += 1;
                 let var_name = self.consume_var()?;
                 if self.match_kind(TokenKind::Eq) || self.match_kind(TokenKind::Bind) {
                     let expr = self.parse_comma_expr()?;
-                    Expr::AssignExpr { name: var_name, expr: Box::new(expr) }
+                    Expr::AssignExpr {
+                        name: var_name,
+                        expr: Box::new(expr),
+                    }
                 } else {
                     Expr::Literal(Value::Nil)
                 }
             } else if name == "EVAL" && matches!(self.peek_next_kind(), Some(TokenKind::Str(_))) {
                 let name = self.consume_ident()?;
                 let arg = self.parse_expr()?;
-                Expr::Call { name, args: vec![arg] }
+                Expr::Call {
+                    name,
+                    args: vec![arg],
+                }
             } else if name == "sub" && matches!(self.peek_next_kind(), Some(TokenKind::LBrace)) {
                 self.pos += 1;
                 let body = self.parse_block()?;
@@ -1837,9 +2319,13 @@ impl Parser {
                     Expr::Block(body)
                 } else if name == "so" {
                     let inner = self.parse_expr()?;
-                    Expr::Unary { op: TokenKind::Bang, expr: Box::new(
-                        Expr::Unary { op: TokenKind::Bang, expr: Box::new(inner) }
-                    )}
+                    Expr::Unary {
+                        op: TokenKind::Bang,
+                        expr: Box::new(Expr::Unary {
+                            op: TokenKind::Bang,
+                            expr: Box::new(inner),
+                        }),
+                    }
                 } else if name == "quietly" {
                     self.parse_expr()?
                 } else if name == "eager" {
@@ -1895,9 +2381,13 @@ impl Parser {
         } else if self.match_kind(TokenKind::BlockMagic) {
             Expr::BlockMagic
         } else if self.match_kind(TokenKind::Arrow) {
-            if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
-                && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
-            {
+            if matches!(
+                self.tokens.get(self.pos).map(|t| &t.kind),
+                Some(TokenKind::Ident(_))
+            ) && matches!(
+                self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                Some(TokenKind::Var(_))
+            ) {
                 self.pos += 1;
             }
             let param = if self.peek_is_var() {
@@ -1929,11 +2419,17 @@ impl Parser {
 
         loop {
             if self.match_kind(TokenKind::PlusPlus) {
-                expr = Expr::PostfixOp { op: TokenKind::PlusPlus, expr: Box::new(expr) };
+                expr = Expr::PostfixOp {
+                    op: TokenKind::PlusPlus,
+                    expr: Box::new(expr),
+                };
                 continue;
             }
             if self.match_kind(TokenKind::MinusMinus) {
-                expr = Expr::PostfixOp { op: TokenKind::MinusMinus, expr: Box::new(expr) };
+                expr = Expr::PostfixOp {
+                    op: TokenKind::MinusMinus,
+                    expr: Box::new(expr),
+                };
                 continue;
             }
             if self.match_kind(TokenKind::Dot) {
@@ -1951,20 +2447,30 @@ impl Parser {
                     }
                     self.consume_kind(TokenKind::RParen)?;
                 }
-                expr = Expr::MethodCall { target: Box::new(expr), name: full_name, args };
+                expr = Expr::MethodCall {
+                    target: Box::new(expr),
+                    name: full_name,
+                    args,
+                };
                 continue;
             }
             if self.match_kind(TokenKind::LBracket) {
                 let index = self.parse_expr_or_true();
                 self.consume_kind(TokenKind::RBracket)?;
-                expr = Expr::Index { target: Box::new(expr), index: Box::new(index) };
+                expr = Expr::Index {
+                    target: Box::new(expr),
+                    index: Box::new(index),
+                };
                 continue;
             }
             if matches!(expr, Expr::HashVar(_)) && self.check(&TokenKind::LBrace) {
                 self.match_kind(TokenKind::LBrace);
                 let index = self.parse_expr()?;
                 self.consume_kind(TokenKind::RBrace)?;
-                expr = Expr::Index { target: Box::new(expr), index: Box::new(index) };
+                expr = Expr::Index {
+                    target: Box::new(expr),
+                    index: Box::new(index),
+                };
                 continue;
             }
             if self.check(&TokenKind::Lt) {
@@ -1984,7 +2490,9 @@ impl Parser {
                 };
                 if is_postcircumfix {
                     self.match_kind(TokenKind::Lt);
-                    let key = if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_) | TokenKind::Str(_))) {
+                    let key = if let Some(token) =
+                        self.advance_if(|k| matches!(k, TokenKind::Ident(_) | TokenKind::Str(_)))
+                    {
                         match token.kind {
                             TokenKind::Ident(s) => s,
                             TokenKind::Str(s) => s,
@@ -2032,7 +2540,10 @@ impl Parser {
                     }
                 }
                 self.consume_kind(TokenKind::RParen)?;
-                expr = Expr::CallOn { target: Box::new(expr), args };
+                expr = Expr::CallOn {
+                    target: Box::new(expr),
+                    args,
+                };
                 continue;
             }
             break;
@@ -2041,7 +2552,9 @@ impl Parser {
     }
 
     fn parse_hash_pair(&mut self) -> Result<(String, Option<Expr>), RuntimeError> {
-        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_) | TokenKind::Str(_))) {
+        if let Some(token) =
+            self.advance_if(|k| matches!(k, TokenKind::Ident(_) | TokenKind::Str(_)))
+        {
             let name = match token.kind {
                 TokenKind::Ident(s) => s,
                 TokenKind::Str(s) => s,
@@ -2056,7 +2569,11 @@ impl Parser {
         }
         self.consume_kind(TokenKind::Colon)?;
         if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Number(_))) {
-            let number = if let TokenKind::Number(value) = token.kind { value } else { 0 };
+            let number = if let TokenKind::Number(value) = token.kind {
+                value
+            } else {
+                0
+            };
             let name = self.consume_ident()?;
             return Ok((name, Some(Expr::Literal(Value::Int(number)))));
         }
@@ -2097,13 +2614,19 @@ impl Parser {
     }
 
     fn is_hash_literal_start(&self) -> bool {
-        if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Colon)) {
+        if matches!(
+            self.tokens.get(self.pos).map(|t| &t.kind),
+            Some(TokenKind::Colon)
+        ) {
             return true;
         }
         matches!(
             self.tokens.get(self.pos).map(|t| &t.kind),
             Some(TokenKind::Ident(_)) | Some(TokenKind::Str(_))
-        ) && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::FatArrow))
+        ) && matches!(
+            self.tokens.get(self.pos + 1).map(|t| &t.kind),
+            Some(TokenKind::FatArrow)
+        )
     }
 
     fn consume_var(&mut self) -> Result<String, RuntimeError> {
@@ -2172,7 +2695,10 @@ impl Parser {
     }
 
     fn peek_is_var(&self) -> bool {
-        matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Var(_)))
+        matches!(
+            self.tokens.get(self.pos).map(|t| &t.kind),
+            Some(TokenKind::Var(_))
+        )
     }
 
     fn peek_ident(&self) -> Option<String> {
@@ -2189,7 +2715,10 @@ impl Parser {
     fn try_consume_loop_label(&mut self) -> Option<String> {
         // Check if next token is an identifier that's NOT a keyword
         if let Some(TokenKind::Ident(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
-            if !matches!(name.as_str(), "if" | "unless" | "while" | "until" | "for" | "given" | "when" | "with" | "without") {
+            if !matches!(
+                name.as_str(),
+                "if" | "unless" | "while" | "until" | "for" | "given" | "when" | "with" | "without"
+            ) {
                 let label = name.clone();
                 self.pos += 1;
                 return Some(label);
@@ -2203,9 +2732,13 @@ impl Parser {
             let iterable = self.parse_expr()?;
             let mut param = None;
             if self.match_kind(TokenKind::Arrow) {
-                if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
-                    && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
-                {
+                if matches!(
+                    self.tokens.get(self.pos).map(|t| &t.kind),
+                    Some(TokenKind::Ident(_))
+                ) && matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Var(_))
+                ) {
                     self.pos += 1;
                 }
                 if self.peek_is_var() {
@@ -2213,7 +2746,12 @@ impl Parser {
                 }
             }
             let body = self.parse_block()?;
-            return Ok(Stmt::For { iterable, param, body, label });
+            return Ok(Stmt::For {
+                iterable,
+                param,
+                body,
+                label,
+            });
         }
         if self.match_ident("while") {
             let cond = self.parse_expr()?;
@@ -2224,7 +2762,10 @@ impl Parser {
             let cond = self.parse_expr()?;
             let body = self.parse_block()?;
             return Ok(Stmt::While {
-                cond: Expr::Unary { op: TokenKind::Bang, expr: Box::new(cond) },
+                cond: Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(cond),
+                },
                 body,
                 label,
             });
@@ -2257,10 +2798,24 @@ impl Parser {
                     return Err(RuntimeError::new("expected ')' after loop"));
                 }
                 let body = self.parse_block()?;
-                return Ok(Stmt::Loop { init, cond, step, body, repeat: false, label });
+                return Ok(Stmt::Loop {
+                    init,
+                    cond,
+                    step,
+                    body,
+                    repeat: false,
+                    label,
+                });
             } else {
                 let body = self.parse_block()?;
-                return Ok(Stmt::Loop { init: None, cond: None, step: None, body, repeat: false, label });
+                return Ok(Stmt::Loop {
+                    init: None,
+                    cond: None,
+                    step: None,
+                    body,
+                    repeat: false,
+                    label,
+                });
             }
         }
         if self.match_ident("repeat") {
@@ -2268,42 +2823,89 @@ impl Parser {
             if self.match_ident("while") {
                 let cond = self.parse_expr()?;
                 self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::Loop { init: None, cond: Some(cond), step: None, body, repeat: true, label });
+                return Ok(Stmt::Loop {
+                    init: None,
+                    cond: Some(cond),
+                    step: None,
+                    body,
+                    repeat: true,
+                    label,
+                });
             } else if self.match_ident("until") {
                 let cond = self.parse_expr()?;
                 self.match_kind(TokenKind::Semicolon);
                 return Ok(Stmt::Loop {
                     init: None,
-                    cond: Some(Expr::Unary { op: TokenKind::Bang, expr: Box::new(cond) }),
+                    cond: Some(Expr::Unary {
+                        op: TokenKind::Bang,
+                        expr: Box::new(cond),
+                    }),
                     step: None,
                     body,
                     repeat: true,
                     label,
                 });
             }
-            return Err(RuntimeError::new("Expected 'while' or 'until' after repeat block"));
+            return Err(RuntimeError::new(
+                "Expected 'while' or 'until' after repeat block",
+            ));
         }
         Err(RuntimeError::new("Expected loop keyword after label"))
     }
 
     fn is_reduction_op(&self) -> bool {
-        if !matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::LBracket)) {
+        if !matches!(
+            self.tokens.get(self.pos).map(|t| &t.kind),
+            Some(TokenKind::LBracket)
+        ) {
             return false;
         }
-        if !matches!(self.tokens.get(self.pos + 2).map(|t| &t.kind), Some(TokenKind::RBracket)) {
+        if !matches!(
+            self.tokens.get(self.pos + 2).map(|t| &t.kind),
+            Some(TokenKind::RBracket)
+        ) {
             return false;
         }
         match self.tokens.get(self.pos + 1).map(|t| &t.kind) {
-            Some(TokenKind::Plus | TokenKind::Minus | TokenKind::Star |
-                 TokenKind::Slash | TokenKind::StarStar | TokenKind::Tilde |
-                 TokenKind::AndAnd | TokenKind::OrOr | TokenKind::SlashSlash |
-                 TokenKind::Comma | TokenKind::LtEqGt | TokenKind::EqEq |
-                 TokenKind::BangEq | TokenKind::Lt | TokenKind::Gt |
-                 TokenKind::Lte | TokenKind::Gte |
-                 TokenKind::BitAnd | TokenKind::BitOr | TokenKind::BitXor) => true,
-            Some(TokenKind::Ident(name)) => matches!(name.as_str(),
-                "min" | "max" | "leg" | "cmp" | "eq" | "ne" | "lt" | "gt" |
-                "le" | "ge" | "lcm" | "gcd" | "and" | "or" | "x"
+            Some(
+                TokenKind::Plus
+                | TokenKind::Minus
+                | TokenKind::Star
+                | TokenKind::Slash
+                | TokenKind::StarStar
+                | TokenKind::Tilde
+                | TokenKind::AndAnd
+                | TokenKind::OrOr
+                | TokenKind::SlashSlash
+                | TokenKind::Comma
+                | TokenKind::LtEqGt
+                | TokenKind::EqEq
+                | TokenKind::BangEq
+                | TokenKind::Lt
+                | TokenKind::Gt
+                | TokenKind::Lte
+                | TokenKind::Gte
+                | TokenKind::BitAnd
+                | TokenKind::BitOr
+                | TokenKind::BitXor,
+            ) => true,
+            Some(TokenKind::Ident(name)) => matches!(
+                name.as_str(),
+                "min"
+                    | "max"
+                    | "leg"
+                    | "cmp"
+                    | "eq"
+                    | "ne"
+                    | "lt"
+                    | "gt"
+                    | "le"
+                    | "ge"
+                    | "lcm"
+                    | "gcd"
+                    | "and"
+                    | "or"
+                    | "x"
             ),
             _ => false,
         }
@@ -2338,7 +2940,10 @@ impl Parser {
         self.pos += 1;
         self.consume_kind(TokenKind::RBracket)?;
         let expr = self.parse_comma_expr()?;
-        Ok(Expr::Reduction { op: op_name, expr: Box::new(expr) })
+        Ok(Expr::Reduction {
+            op: op_name,
+            expr: Box::new(expr),
+        })
     }
 
     fn parse_class_decl(&mut self) -> Result<Stmt, RuntimeError> {
@@ -2354,7 +2959,11 @@ impl Parser {
         }
         self.consume_kind(TokenKind::RBrace)?;
         self.match_kind(TokenKind::Semicolon);
-        Ok(Stmt::ClassDecl { name, parents, body })
+        Ok(Stmt::ClassDecl {
+            name,
+            parents,
+            body,
+        })
     }
 
     fn parse_role_decl(&mut self) -> Result<Stmt, RuntimeError> {
@@ -2371,9 +2980,13 @@ impl Parser {
 
     fn parse_has_decl(&mut self) -> Result<Stmt, RuntimeError> {
         // Skip optional type annotation
-        if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
-            && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
-        {
+        if matches!(
+            self.tokens.get(self.pos).map(|t| &t.kind),
+            Some(TokenKind::Ident(_))
+        ) && matches!(
+            self.tokens.get(self.pos + 1).map(|t| &t.kind),
+            Some(TokenKind::Var(_))
+        ) {
             self.pos += 1;
         }
         let var = self.consume_var()?;
@@ -2391,7 +3004,11 @@ impl Parser {
             None
         };
         self.match_kind(TokenKind::Semicolon);
-        Ok(Stmt::HasDecl { name: attr_name, is_public, default })
+        Ok(Stmt::HasDecl {
+            name: attr_name,
+            is_public,
+            default,
+        })
     }
 
     fn parse_method_decl(&mut self, multi: bool) -> Result<Stmt, RuntimeError> {
@@ -2409,9 +3026,13 @@ impl Parser {
                     is_named = true;
                 }
                 let mut type_constraint = None;
-                if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
-                    && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
-                {
+                if matches!(
+                    self.tokens.get(self.pos).map(|t| &t.kind),
+                    Some(TokenKind::Ident(_))
+                ) && matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Var(_))
+                ) {
                     if let Some(TokenKind::Ident(ty)) = self.tokens.get(self.pos).map(|t| &t.kind) {
                         type_constraint = Some(ty.clone());
                     }
@@ -2425,7 +3046,14 @@ impl Parser {
                         None
                     };
                     params.push(var.clone());
-                    param_defs.push(ParamDef { name: var, default, named: is_named, slurpy: is_slurpy, type_constraint });
+                    param_defs.push(ParamDef {
+                        name: var,
+                        default,
+                        named: is_named,
+                        slurpy: is_slurpy,
+                        type_constraint,
+                        literal_value: None,
+                    });
                 } else {
                     self.pos += 1;
                 }
@@ -2436,7 +3064,13 @@ impl Parser {
         if self.match_kind(TokenKind::LBrace) {
             let body = self.parse_block_body()?;
             self.match_kind(TokenKind::Semicolon);
-            return Ok(Stmt::MethodDecl { name, params, param_defs, body, multi });
+            return Ok(Stmt::MethodDecl {
+                name,
+                params,
+                param_defs,
+                body,
+                multi,
+            });
         }
         Err(RuntimeError::new("Expected block for method"))
     }
@@ -2456,9 +3090,13 @@ impl Parser {
                     is_named = true;
                 }
                 let mut type_constraint = None;
-                if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
-                    && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
-                {
+                if matches!(
+                    self.tokens.get(self.pos).map(|t| &t.kind),
+                    Some(TokenKind::Ident(_))
+                ) && matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Var(_))
+                ) {
                     if let Some(TokenKind::Ident(ty)) = self.tokens.get(self.pos).map(|t| &t.kind) {
                         type_constraint = Some(ty.clone());
                     }
@@ -2474,7 +3112,14 @@ impl Parser {
                     self.match_kind(TokenKind::Question);
                     self.match_kind(TokenKind::Bang);
                     params.push(var.clone());
-                    param_defs.push(ParamDef { name: var, default, named: is_named, slurpy: is_slurpy, type_constraint });
+                    param_defs.push(ParamDef {
+                        name: var,
+                        default,
+                        named: is_named,
+                        slurpy: is_slurpy,
+                        type_constraint,
+                        literal_value: None,
+                    });
                 } else {
                     self.pos += 1;
                 }
@@ -2486,9 +3131,21 @@ impl Parser {
             let body = self.parse_block_body()?;
             self.match_kind(TokenKind::Semicolon);
             if is_rule {
-                return Ok(Stmt::RuleDecl { name, params, param_defs, body, multi });
+                return Ok(Stmt::RuleDecl {
+                    name,
+                    params,
+                    param_defs,
+                    body,
+                    multi,
+                });
             }
-            return Ok(Stmt::TokenDecl { name, params, param_defs, body, multi });
+            return Ok(Stmt::TokenDecl {
+                name,
+                params,
+                param_defs,
+                body,
+                multi,
+            });
         }
         Err(RuntimeError::new("Expected block for token/rule"))
     }
@@ -2500,9 +3157,13 @@ impl Parser {
                 if self.match_kind(TokenKind::Star) || self.match_kind(TokenKind::Colon) {
                     // ignore modifiers
                 }
-                if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
-                    && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
-                {
+                if matches!(
+                    self.tokens.get(self.pos).map(|t| &t.kind),
+                    Some(TokenKind::Ident(_))
+                ) && matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Var(_))
+                ) {
                     self.pos += 1;
                 }
                 if self.peek_is_var() {
@@ -2553,9 +3214,13 @@ impl Parser {
                     is_named = true;
                 }
                 let mut type_constraint = None;
-                if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
-                    && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
-                {
+                if matches!(
+                    self.tokens.get(self.pos).map(|t| &t.kind),
+                    Some(TokenKind::Ident(_))
+                ) && matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Var(_))
+                ) {
                     if let Some(TokenKind::Ident(ty)) = self.tokens.get(self.pos).map(|t| &t.kind) {
                         type_constraint = Some(ty.clone());
                     }
@@ -2573,18 +3238,41 @@ impl Parser {
                     self.match_kind(TokenKind::Question);
                     self.match_kind(TokenKind::Bang);
                     params.push(var.clone());
-                    param_defs.push(ParamDef { name: var, default, named: is_named, slurpy: is_slurpy, type_constraint });
-                } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_))) {
+                    param_defs.push(ParamDef {
+                        name: var,
+                        default,
+                        named: is_named,
+                        slurpy: is_slurpy,
+                        type_constraint,
+                        literal_value: None,
+                    });
+                } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_)))
+                {
                     if let TokenKind::ArrayVar(n) = token.kind {
                         let var = format!("@{}", n);
                         params.push(var.clone());
-                        param_defs.push(ParamDef { name: var, default: None, named: false, slurpy: is_slurpy, type_constraint: None });
+                        param_defs.push(ParamDef {
+                            name: var,
+                            default: None,
+                            named: false,
+                            slurpy: is_slurpy,
+                            type_constraint: None,
+                            literal_value: None,
+                        });
                     }
-                } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::HashVar(_))) {
+                } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::HashVar(_)))
+                {
                     if let TokenKind::HashVar(n) = token.kind {
                         let var = format!("%{}", n);
                         params.push(var.clone());
-                        param_defs.push(ParamDef { name: var, default: None, named: is_named || is_slurpy, slurpy: is_slurpy, type_constraint: None });
+                        param_defs.push(ParamDef {
+                            name: var,
+                            default: None,
+                            named: is_named || is_slurpy,
+                            slurpy: is_slurpy,
+                            type_constraint: None,
+                            literal_value: None,
+                        });
                     }
                 }
                 if !self.match_kind(TokenKind::Comma) {
@@ -2598,7 +3286,11 @@ impl Parser {
         } else {
             self.match_kind(TokenKind::Semicolon);
         }
-        Ok(Stmt::ProtoDecl { name, params, param_defs })
+        Ok(Stmt::ProtoDecl {
+            name,
+            params,
+            param_defs,
+        })
     }
 
     fn parse_sub_decl(&mut self, is_multi: bool) -> Result<Stmt, RuntimeError> {
@@ -2616,14 +3308,19 @@ impl Parser {
                     is_named = true;
                 }
                 let mut type_constraint = None;
-                if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
-                    && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
-                {
+                if matches!(
+                    self.tokens.get(self.pos).map(|t| &t.kind),
+                    Some(TokenKind::Ident(_))
+                ) && matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Var(_))
+                ) {
                     if let Some(TokenKind::Ident(ty)) = self.tokens.get(self.pos).map(|t| &t.kind) {
                         type_constraint = Some(ty.clone());
                     }
                     self.pos += 1;
                 }
+                let mut param_added = false;
                 if self.peek_is_var() {
                     let var = self.consume_var()?;
                     let default = if self.match_kind(TokenKind::Eq) {
@@ -2636,19 +3333,59 @@ impl Parser {
                     self.match_kind(TokenKind::Question);
                     self.match_kind(TokenKind::Bang);
                     params.push(var.clone());
-                    param_defs.push(ParamDef { name: var, default, named: is_named, slurpy: is_slurpy, type_constraint });
-                } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_))) {
+                    param_defs.push(ParamDef {
+                        name: var,
+                        default,
+                        named: is_named,
+                        slurpy: is_slurpy,
+                        type_constraint,
+                        literal_value: None,
+                    });
+                    param_added = true;
+                } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_)))
+                {
                     if let TokenKind::ArrayVar(n) = token.kind {
                         let var = format!("@{}", n);
                         params.push(var.clone());
-                        param_defs.push(ParamDef { name: var, default: None, named: false, slurpy: is_slurpy, type_constraint: None });
+                        param_defs.push(ParamDef {
+                            name: var,
+                            default: None,
+                            named: false,
+                            slurpy: is_slurpy,
+                            type_constraint: None,
+                            literal_value: None,
+                        });
+                        param_added = true;
                     }
-                } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::HashVar(_))) {
+                } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::HashVar(_)))
+                {
                     if let TokenKind::HashVar(n) = token.kind {
                         let var = format!("%{}", n);
                         params.push(var.clone());
-                        param_defs.push(ParamDef { name: var, default: None, named: is_named || is_slurpy, slurpy: is_slurpy, type_constraint: None });
+                        param_defs.push(ParamDef {
+                            name: var,
+                            default: None,
+                            named: is_named || is_slurpy,
+                            slurpy: is_slurpy,
+                            type_constraint: None,
+                            literal_value: None,
+                        });
+                        param_added = true;
                     }
+                } else if let Some(literal_value) = self.parse_literal_param_value() {
+                    params.push(String::new());
+                    param_defs.push(ParamDef {
+                        name: String::new(),
+                        default: None,
+                        named: false,
+                        slurpy: false,
+                        type_constraint: None,
+                        literal_value: Some(literal_value),
+                    });
+                    param_added = true;
+                }
+                if !param_added {
+                    break;
                 }
                 if !self.match_kind(TokenKind::Comma) {
                     break;
@@ -2663,8 +3400,42 @@ impl Parser {
         if self.match_kind(TokenKind::LBrace) {
             let body = self.parse_block_body()?;
             self.match_kind(TokenKind::Semicolon);
-            return Ok(Stmt::SubDecl { name, params, param_defs, body, multi: is_multi });
+            return Ok(Stmt::SubDecl {
+                name,
+                params,
+                param_defs,
+                body,
+                multi: is_multi,
+            });
         }
         Err(RuntimeError::new("Expected block for sub"))
+    }
+
+    fn parse_literal_param_value(&mut self) -> Option<Value> {
+        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Number(_))) {
+            if let TokenKind::Number(value) = token.kind {
+                return Some(Value::Int(value));
+            }
+        }
+        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Float(_))) {
+            if let TokenKind::Float(value) = token.kind {
+                return Some(Value::Num(value));
+            }
+        }
+        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Str(_))) {
+            if let TokenKind::Str(value) = token.kind {
+                return Some(Value::Str(value));
+            }
+        }
+        if self.match_kind(TokenKind::True) {
+            return Some(Value::Bool(true));
+        }
+        if self.match_kind(TokenKind::False) {
+            return Some(Value::Bool(false));
+        }
+        if self.match_kind(TokenKind::Nil) {
+            return Some(Value::Nil);
+        }
+        None
     }
 }

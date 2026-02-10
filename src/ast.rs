@@ -8,6 +8,7 @@ pub(crate) struct ParamDef {
     pub(crate) named: bool,
     pub(crate) slurpy: bool,
     pub(crate) type_constraint: Option<String>,
+    pub(crate) literal_value: Option<Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,31 +42,69 @@ pub(crate) enum Expr {
     HashVar(String),
     CodeVar(String),
     EnvIndex(String),
-    Subst { pattern: String, replacement: String },
-    MethodCall { target: Box<Expr>, name: String, args: Vec<Expr> },
+    Subst {
+        pattern: String,
+        replacement: String,
+    },
+    MethodCall {
+        target: Box<Expr>,
+        name: String,
+        args: Vec<Expr>,
+    },
     Exists(Box<Expr>),
     RoutineMagic,
     BlockMagic,
     Block(Vec<Stmt>),
     AnonSub(Vec<Stmt>),
-    CallOn { target: Box<Expr>, args: Vec<Expr> },
-    Lambda { param: String, body: Vec<Stmt> },
+    CallOn {
+        target: Box<Expr>,
+        args: Vec<Expr>,
+    },
+    Lambda {
+        param: String,
+        body: Vec<Stmt>,
+    },
     ArrayLiteral(Vec<Expr>),
-    Index { target: Box<Expr>, index: Box<Expr> },
+    Index {
+        target: Box<Expr>,
+        index: Box<Expr>,
+    },
     Ternary {
         cond: Box<Expr>,
         then_expr: Box<Expr>,
         else_expr: Box<Expr>,
     },
-    AssignExpr { name: String, expr: Box<Expr> },
-    Unary { op: TokenKind, expr: Box<Expr> },
-    PostfixOp { op: TokenKind, expr: Box<Expr> },
-    Binary { left: Box<Expr>, op: TokenKind, right: Box<Expr> },
+    AssignExpr {
+        name: String,
+        expr: Box<Expr>,
+    },
+    Unary {
+        op: TokenKind,
+        expr: Box<Expr>,
+    },
+    PostfixOp {
+        op: TokenKind,
+        expr: Box<Expr>,
+    },
+    Binary {
+        left: Box<Expr>,
+        op: TokenKind,
+        right: Box<Expr>,
+    },
     Hash(Vec<(String, Option<Expr>)>),
-    Call { name: String, args: Vec<Expr> },
-    Try { body: Vec<Stmt>, catch: Option<Vec<Stmt>> },
+    Call {
+        name: String,
+        args: Vec<Expr>,
+    },
+    Try {
+        body: Vec<Stmt>,
+        catch: Option<Vec<Stmt>>,
+    },
     Gather(Vec<Stmt>),
-    Reduction { op: String, expr: Box<Expr> },
+    Reduction {
+        op: String,
+        expr: Box<Expr>,
+    },
     InfixFunc {
         name: String,
         left: Box<Expr>,
@@ -101,23 +140,76 @@ pub(crate) enum ExpectedMatcher {
 
 #[derive(Debug, Clone)]
 pub(crate) enum Stmt {
-    VarDecl { name: String, expr: Expr },
-    Assign { name: String, expr: Expr, op: AssignOp },
-    SubDecl { name: String, params: Vec<String>, param_defs: Vec<ParamDef>, body: Vec<Stmt>, multi: bool },
-    TokenDecl { name: String, params: Vec<String>, param_defs: Vec<ParamDef>, body: Vec<Stmt>, multi: bool },
-    RuleDecl { name: String, params: Vec<String>, param_defs: Vec<ParamDef>, body: Vec<Stmt>, multi: bool },
-    ProtoToken { name: String },
-    Package { name: String, body: Vec<Stmt> },
+    VarDecl {
+        name: String,
+        expr: Expr,
+    },
+    Assign {
+        name: String,
+        expr: Expr,
+        op: AssignOp,
+    },
+    SubDecl {
+        name: String,
+        params: Vec<String>,
+        param_defs: Vec<ParamDef>,
+        body: Vec<Stmt>,
+        multi: bool,
+    },
+    TokenDecl {
+        name: String,
+        params: Vec<String>,
+        param_defs: Vec<ParamDef>,
+        body: Vec<Stmt>,
+        multi: bool,
+    },
+    RuleDecl {
+        name: String,
+        params: Vec<String>,
+        param_defs: Vec<ParamDef>,
+        body: Vec<Stmt>,
+        multi: bool,
+    },
+    ProtoToken {
+        name: String,
+    },
+    Package {
+        name: String,
+        body: Vec<Stmt>,
+    },
     Return(Expr),
-    For { iterable: Expr, param: Option<String>, body: Vec<Stmt>, label: Option<String> },
+    For {
+        iterable: Expr,
+        param: Option<String>,
+        body: Vec<Stmt>,
+        label: Option<String>,
+    },
     Say(Vec<Expr>),
     Print(Vec<Expr>),
-    Call { name: String, args: Vec<CallArg> },
-    Use { module: String, arg: Option<Expr> },
-    Subtest { name: Expr, body: Vec<Stmt>, is_sub: bool },
+    Call {
+        name: String,
+        args: Vec<CallArg>,
+    },
+    Use {
+        module: String,
+        arg: Option<Expr>,
+    },
+    Subtest {
+        name: Expr,
+        body: Vec<Stmt>,
+        is_sub: bool,
+    },
     Block(Vec<Stmt>),
-    If { cond: Expr, then_branch: Vec<Stmt>, else_branch: Vec<Stmt> },
-    While { cond: Expr, body: Vec<Stmt>, label: Option<String> },
+    If {
+        cond: Expr,
+        then_branch: Vec<Stmt>,
+        else_branch: Vec<Stmt>,
+    },
+    While {
+        cond: Expr,
+        body: Vec<Stmt>,
+        label: Option<String>,
+    },
     Loop {
         init: Option<Box<Stmt>>,
         cond: Option<Expr>,
@@ -126,29 +218,74 @@ pub(crate) enum Stmt {
         repeat: bool,
         label: Option<String>,
     },
-    React { body: Vec<Stmt> },
-    Whenever { supply: Expr, param: Option<String>, body: Vec<Stmt> },
+    React {
+        body: Vec<Stmt>,
+    },
+    Whenever {
+        supply: Expr,
+        param: Option<String>,
+        body: Vec<Stmt>,
+    },
     Last(Option<String>),
     Next(Option<String>),
     Redo,
     Proceed,
     Succeed,
-    Given { topic: Expr, body: Vec<Stmt> },
-    When { cond: Expr, body: Vec<Stmt> },
+    Given {
+        topic: Expr,
+        body: Vec<Stmt>,
+    },
+    When {
+        cond: Expr,
+        body: Vec<Stmt>,
+    },
     Default(Vec<Stmt>),
     Die(Expr),
     Catch(Vec<Stmt>),
     Control(Vec<Stmt>),
     Take(Expr),
-    EnumDecl { name: String, variants: Vec<(String, Option<Expr>)> },
-    ClassDecl { name: String, parents: Vec<String>, body: Vec<Stmt> },
-    HasDecl { name: String, is_public: bool, default: Option<Expr> },
-    MethodDecl { name: String, params: Vec<String>, param_defs: Vec<ParamDef>, body: Vec<Stmt>, multi: bool },
-    RoleDecl { name: String, body: Vec<Stmt> },
-    DoesDecl { name: String },
-    SubsetDecl { name: String, base: String, predicate: Expr },
-    Phaser { kind: PhaserKind, body: Vec<Stmt> },
-    ProtoDecl { name: String, params: Vec<String>, param_defs: Vec<ParamDef> },
+    EnumDecl {
+        name: String,
+        variants: Vec<(String, Option<Expr>)>,
+    },
+    ClassDecl {
+        name: String,
+        parents: Vec<String>,
+        body: Vec<Stmt>,
+    },
+    HasDecl {
+        name: String,
+        is_public: bool,
+        default: Option<Expr>,
+    },
+    MethodDecl {
+        name: String,
+        params: Vec<String>,
+        param_defs: Vec<ParamDef>,
+        body: Vec<Stmt>,
+        multi: bool,
+    },
+    RoleDecl {
+        name: String,
+        body: Vec<Stmt>,
+    },
+    DoesDecl {
+        name: String,
+    },
+    SubsetDecl {
+        name: String,
+        base: String,
+        predicate: Expr,
+    },
+    Phaser {
+        kind: PhaserKind,
+        body: Vec<Stmt>,
+    },
+    ProtoDecl {
+        name: String,
+        params: Vec<String>,
+        param_defs: Vec<ParamDef>,
+    },
     Expr(Expr),
 }
 

@@ -1,5 +1,5 @@
 use Test;
-plan 30;
+plan 25;
 
 # Basic class declaration and instantiation
 class Point {

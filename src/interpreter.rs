@@ -2804,6 +2804,15 @@ impl Interpreter {
             .filter(|p| !p.slurpy && !p.named)
             .collect();
         for (i, pd) in positional_params.iter().enumerate() {
+            if let Some(literal) = &pd.literal_value {
+                if let Some(arg) = args.get(i) {
+                    if arg != literal {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            }
             if let Some(constraint) = &pd.type_constraint {
                 if let Some(arg) = args.get(i) {
                     if !self.type_matches_value(constraint, arg) {
@@ -8533,7 +8542,9 @@ impl Interpreter {
                     }
                     positional_idx += 1;
                 }
-                self.env.insert(pd.name.clone(), Value::Array(items));
+                if !pd.name.is_empty() {
+                    self.env.insert(pd.name.clone(), Value::Array(items));
+                }
             } else if pd.named {
                 // Named params: look for matching AssignExpr in args
                 let mut found = false;
@@ -8551,7 +8562,9 @@ impl Interpreter {
                                     )));
                                 }
                             }
-                            self.env.insert(pd.name.clone(), value);
+                            if !pd.name.is_empty() {
+                                self.env.insert(pd.name.clone(), value);
+                            }
                             found = true;
                             break;
                         }
@@ -8560,7 +8573,9 @@ impl Interpreter {
                 if !found {
                     if let Some(default_expr) = &pd.default {
                         let value = self.eval_expr(default_expr)?;
-                        self.env.insert(pd.name.clone(), value);
+                        if !pd.name.is_empty() {
+                            self.env.insert(pd.name.clone(), value);
+                        }
                     }
                 }
             } else {
@@ -8577,11 +8592,15 @@ impl Interpreter {
                             )));
                         }
                     }
-                    self.env.insert(pd.name.clone(), value);
+                    if !pd.name.is_empty() {
+                        self.env.insert(pd.name.clone(), value);
+                    }
                     positional_idx += 1;
                 } else if let Some(default_expr) = &pd.default {
                     let value = self.eval_expr(default_expr)?;
-                    self.env.insert(pd.name.clone(), value);
+                    if !pd.name.is_empty() {
+                        self.env.insert(pd.name.clone(), value);
+                    }
                 }
             }
         }
@@ -8599,11 +8618,13 @@ impl Interpreter {
                     result = Err(RuntimeError::return_val(self.eval_expr(expr)?));
                     break;
                 }
-                Stmt::Expr(expr) => {
-                    if let Ok(v) = self.eval_expr(expr) {
-                        last = v;
+                Stmt::Expr(expr) => match self.eval_expr(expr) {
+                    Ok(v) => last = v,
+                    Err(e) => {
+                        result = Err(e);
+                        break;
                     }
-                }
+                },
                 _ => {
                     if let Err(e) = self.exec_stmt(stmt) {
                         result = Err(e);
