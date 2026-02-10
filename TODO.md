@@ -36,7 +36,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] Exponential notation (`1e10`)
 - [x] Q/q/qq forms
 - [x] Heredoc (`q:to/END/`)
-- [ ] Regex literals
+- [x] Regex literals
 
 ### Variables
 - [x] `$` scalar
@@ -156,7 +156,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] `use` (module loading)
 - [x] Comments (`#`, embedded comments, POD)
 - [x] String interpolation
-- [ ] Regex (basic)
+- [x] Regex (basic)
 - [x] Improve `say` formatting (.gist compliant)
 
 ---

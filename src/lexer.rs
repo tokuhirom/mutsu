@@ -12,6 +12,7 @@ pub(crate) enum TokenKind {
     Imaginary(f64),
     Str(String),
     DStr(Vec<DStrPart>),
+    Regex(String),
     Ident(String),
     Var(String),
     HashVar(String),
@@ -670,7 +671,7 @@ impl Lexer {
                 if self.match_char('/') {
                     TokenKind::SlashSlash
                 } else if let Some(regex) = self.try_read_regex_literal() {
-                    TokenKind::Str(regex)
+                    TokenKind::Regex(regex)
                 } else {
                     TokenKind::Slash
                 }

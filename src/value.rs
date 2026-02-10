@@ -86,6 +86,7 @@ pub enum Value {
         value: i64,
         index: usize,
     },
+    Regex(String),
     Sub {
         package: String,
         name: String,
@@ -147,6 +148,7 @@ impl PartialEq for Value {
             (Value::Package(a), Value::Package(b)) => a == b,
             (Value::Pair(ak, av), Value::Pair(bk, bv)) => ak == bk && av == bv,
             (Value::Enum { enum_type: at, key: ak, .. }, Value::Enum { enum_type: bt, key: bk, .. }) => at == bt && ak == bk,
+            (Value::Regex(a), Value::Regex(b)) => a == b,
             (Value::Routine { package: ap, name: an }, Value::Routine { package: bp, name: bn }) => ap == bp && an == bn,
             (Value::Instance { class_name: a, attributes: aa }, Value::Instance { class_name: b, attributes: ba }) => a == b && aa == ba,
             (Value::Junction { kind: ak, values: av }, Value::Junction { kind: bk, values: bv }) => ak == bk && av == bv,
@@ -188,6 +190,7 @@ impl Value {
                 JunctionKind::One => values.iter().filter(|v| v.truthy()).count() == 1,
                 JunctionKind::None => values.iter().all(|v| !v.truthy()),
             },
+            Value::Regex(_) => true,
             Value::Nil => false,
         }
     }
@@ -273,6 +276,7 @@ impl Value {
                 let elems = values.iter().map(|v| v.to_string_value()).collect::<Vec<_>>().join(", ");
                 format!("{}({})", kind_str, elems)
             }
+            Value::Regex(pattern) => format!("/{}/", pattern),
             Value::Nil => "Nil".to_string(),
         }
     }

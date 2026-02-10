@@ -1814,6 +1814,12 @@ impl Parser {
             } else {
                 Expr::Literal(Value::Nil)
             }
+        } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Regex(_))) {
+            if let TokenKind::Regex(pattern) = token.kind {
+                Expr::Literal(Value::Regex(pattern))
+            } else {
+                Expr::Literal(Value::Nil)
+            }
         } else if self.match_kind(TokenKind::True) {
             Expr::Literal(Value::Bool(true))
         } else if self.match_kind(TokenKind::False) {

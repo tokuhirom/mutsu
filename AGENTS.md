@@ -4,6 +4,7 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 
 ## Working agreements
 - Keep changes small and well-documented
+- Perl 6 (Raku) regex is not compatible with Perl 5 regex; never assume Perl 5 compatibility.
 - Prefer ASCII in source files unless a specific Unicode feature is required.
 - Do not rewrite or reformat unrelated code.
 - Do not use stubs, hardcoded outputs, or early returns to make tests pass.

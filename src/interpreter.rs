@@ -14,6 +14,52 @@ struct ClassDef {
     methods: HashMap<String, (Vec<String>, Vec<ParamDef>, Vec<Stmt>)>, // name -> (params, param_defs, body)
 }
 
+#[derive(Clone)]
+struct RegexPattern {
+    tokens: Vec<RegexToken>,
+    anchor_start: bool,
+    anchor_end: bool,
+}
+
+#[derive(Clone)]
+struct RegexToken {
+    atom: RegexAtom,
+    quant: RegexQuant,
+}
+
+#[derive(Clone)]
+enum RegexAtom {
+    Literal(char),
+    Any,
+    CharClass(CharClass),
+    Digit,
+    Word,
+    Space,
+}
+
+#[derive(Clone)]
+enum RegexQuant {
+    One,
+    ZeroOrMore,
+    OneOrMore,
+    ZeroOrOne,
+}
+
+#[derive(Clone)]
+struct CharClass {
+    negated: bool,
+    items: Vec<ClassItem>,
+}
+
+#[derive(Clone)]
+enum ClassItem {
+    Range(char, char),
+    Char(char),
+    Digit,
+    Word,
+    Space,
+}
+
 pub struct Interpreter {
     env: HashMap<String, Value>,
     output: String,
@@ -1181,6 +1227,7 @@ impl Interpreter {
             Value::Enum { .. } => "Int",
             Value::Instance { .. } => "Any",
             Value::Junction { .. } => "Junction",
+            Value::Regex(_) => "Regex",
         }
     }
 
@@ -1780,6 +1827,7 @@ impl Interpreter {
                         Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
                         Value::Instance { class_name, .. } => class_name.as_str(),
                         Value::Junction { .. } => "Junction",
+                        Value::Regex(_) => "Regex",
                     }))),
                     "^name" => {
                         // Meta-method: type name
@@ -1806,6 +1854,7 @@ impl Interpreter {
                             Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification".to_string(),
                             Value::Instance { class_name, .. } => class_name.clone(),
                             Value::Junction { .. } => "Junction".to_string(),
+                            Value::Regex(_) => "Regex".to_string(),
                         }))
                     }
                     "defined" => Ok(Value::Bool(!matches!(base, Value::Nil))),
@@ -1983,8 +2032,17 @@ impl Interpreter {
                         }
                     }
                     "match" => {
-                        // Basic regex match - just return Nil for now
-                        Ok(Value::Nil)
+                        if let Some(arg) = args.get(0) {
+                            let target = base.to_string_value();
+                            let pat_val = self.eval_expr(arg)?;
+                            match pat_val {
+                                Value::Regex(pat) => Ok(Value::Bool(self.regex_is_match(&pat, &target))),
+                                Value::Str(pat) => Ok(Value::Bool(self.regex_is_match(&pat, &target))),
+                                _ => Ok(Value::Nil),
+                            }
+                        } else {
+                            Ok(Value::Nil)
+                        }
                     }
                     "IO" => {
                         // Returns self (string as IO path)
@@ -4172,6 +4230,7 @@ impl Interpreter {
 
     fn smart_match(&self, left: &Value, right: &Value) -> bool {
         match (left, right) {
+            (_, Value::Regex(pat)) => self.regex_is_match(pat, &left.to_string_value()),
             (Value::Int(a), Value::Int(b)) => a == b,
             (Value::Str(a), Value::Str(b)) => a == b,
             (Value::Int(a), Value::Str(b)) => a.to_string() == *b,
@@ -4179,6 +4238,219 @@ impl Interpreter {
             (Value::Nil, Value::Str(s)) => s.is_empty(),
             _ => true,
         }
+    }
+
+    fn regex_is_match(&self, pattern: &str, text: &str) -> bool {
+        let parsed = match self.parse_regex(pattern) {
+            Some(p) => p,
+            None => return false,
+        };
+        let chars: Vec<char> = text.chars().collect();
+        if parsed.anchor_start {
+            return self.regex_match_from(&parsed, &chars, 0);
+        }
+        for start in 0..=chars.len() {
+            if self.regex_match_from(&parsed, &chars, start) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn regex_match_from(&self, pattern: &RegexPattern, chars: &[char], start: usize) -> bool {
+        let mut stack = Vec::new();
+        stack.push((0usize, start));
+        while let Some((idx, pos)) = stack.pop() {
+            if idx == pattern.tokens.len() {
+                if pattern.anchor_end {
+                    if pos == chars.len() {
+                        return true;
+                    }
+                } else {
+                    return true;
+                }
+                continue;
+            }
+            let token = &pattern.tokens[idx];
+            match token.quant {
+                RegexQuant::One => {
+                    if let Some(next) = self.regex_match_atom(&token.atom, chars, pos) {
+                        stack.push((idx + 1, next));
+                    }
+                }
+                RegexQuant::ZeroOrOne => {
+                    if let Some(next) = self.regex_match_atom(&token.atom, chars, pos) {
+                        stack.push((idx + 1, next));
+                    }
+                    stack.push((idx + 1, pos));
+                }
+                RegexQuant::ZeroOrMore => {
+                    let mut positions = Vec::new();
+                    positions.push(pos);
+                    let mut current = pos;
+                    while let Some(next) = self.regex_match_atom(&token.atom, chars, current) {
+                        positions.push(next);
+                        current = next;
+                    }
+                    for p in positions.into_iter().rev() {
+                        stack.push((idx + 1, p));
+                    }
+                }
+                RegexQuant::OneOrMore => {
+                    let mut positions = Vec::new();
+                    let mut current = match self.regex_match_atom(&token.atom, chars, pos) {
+                        Some(next) => next,
+                        None => continue,
+                    };
+                    positions.push(current);
+                    while let Some(next) = self.regex_match_atom(&token.atom, chars, current) {
+                        positions.push(next);
+                        current = next;
+                    }
+                    for p in positions.into_iter().rev() {
+                        stack.push((idx + 1, p));
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    fn regex_match_atom(&self, atom: &RegexAtom, chars: &[char], pos: usize) -> Option<usize> {
+        if pos >= chars.len() {
+            return None;
+        }
+        let c = chars[pos];
+        let matched = match atom {
+            RegexAtom::Literal(ch) => *ch == c,
+            RegexAtom::Any => true,
+            RegexAtom::Digit => c.is_ascii_digit(),
+            RegexAtom::Word => c.is_ascii_alphanumeric() || c == '_',
+            RegexAtom::Space => c.is_whitespace(),
+            RegexAtom::CharClass(class) => self.regex_match_class(class, c),
+        };
+        if matched { Some(pos + 1) } else { None }
+    }
+
+    fn regex_match_class(&self, class: &CharClass, c: char) -> bool {
+        let mut matched = false;
+        for item in &class.items {
+            match item {
+                ClassItem::Range(a, b) => {
+                    if *a <= c && c <= *b { matched = true; break; }
+                }
+                ClassItem::Char(ch) => {
+                    if *ch == c { matched = true; break; }
+                }
+                ClassItem::Digit => {
+                    if c.is_ascii_digit() { matched = true; break; }
+                }
+                ClassItem::Word => {
+                    if c.is_ascii_alphanumeric() || c == '_' { matched = true; break; }
+                }
+                ClassItem::Space => {
+                    if c.is_whitespace() { matched = true; break; }
+                }
+            }
+        }
+        if class.negated { !matched } else { matched }
+    }
+
+    fn parse_regex(&self, pattern: &str) -> Option<RegexPattern> {
+        let mut chars = pattern.chars().peekable();
+        let mut tokens = Vec::new();
+        let mut anchor_start = false;
+        let mut anchor_end = false;
+        while let Some(c) = chars.next() {
+            if c == '^' && tokens.is_empty() {
+                anchor_start = true;
+                continue;
+            }
+            if c == '$' && chars.peek().is_none() {
+                anchor_end = true;
+                break;
+            }
+            let atom = match c {
+                '.' => RegexAtom::Any,
+                '\\' => {
+                    let esc = chars.next()?;
+                    match esc {
+                        'd' => RegexAtom::Digit,
+                        'w' => RegexAtom::Word,
+                        's' => RegexAtom::Space,
+                        'n' => RegexAtom::Literal('\n'),
+                        't' => RegexAtom::Literal('\t'),
+                        'r' => RegexAtom::Literal('\r'),
+                        other => RegexAtom::Literal(other),
+                    }
+                }
+                '[' => {
+                    let class = self.parse_char_class(&mut chars)?;
+                    RegexAtom::CharClass(class)
+                }
+                other => RegexAtom::Literal(other),
+            };
+            let mut quant = RegexQuant::One;
+            if let Some(q) = chars.peek().copied() {
+                quant = match q {
+                    '*' => { chars.next(); RegexQuant::ZeroOrMore }
+                    '+' => { chars.next(); RegexQuant::OneOrMore }
+                    '?' => { chars.next(); RegexQuant::ZeroOrOne }
+                    _ => RegexQuant::One,
+                };
+            }
+            tokens.push(RegexToken { atom, quant });
+        }
+        Some(RegexPattern { tokens, anchor_start, anchor_end })
+    }
+
+    fn parse_char_class<I>(&self, chars: &mut std::iter::Peekable<I>) -> Option<CharClass>
+    where
+        I: Iterator<Item = char>,
+    {
+        let mut negated = false;
+        if let Some('^') = chars.peek().copied() {
+            chars.next();
+            negated = true;
+        }
+        let mut items = Vec::new();
+        while let Some(c) = chars.next() {
+            if c == ']' {
+                break;
+            }
+            let item = if c == '\\' {
+                let esc = chars.next()?;
+                match esc {
+                    'd' => ClassItem::Digit,
+                    'w' => ClassItem::Word,
+                    's' => ClassItem::Space,
+                    'n' => ClassItem::Char('\n'),
+                    't' => ClassItem::Char('\t'),
+                    'r' => ClassItem::Char('\r'),
+                    other => ClassItem::Char(other),
+                }
+            } else if let Some('-') = chars.peek().copied() {
+                chars.next();
+                if let Some(end) = chars.peek().copied() {
+                    if end != ']' {
+                        let end = chars.next()?;
+                        ClassItem::Range(c, end)
+                    } else {
+                        items.push(ClassItem::Char(c));
+                        items.push(ClassItem::Char('-'));
+                        continue;
+                    }
+                } else {
+                    items.push(ClassItem::Char(c));
+                    items.push(ClassItem::Char('-'));
+                    continue;
+                }
+            } else {
+                ClassItem::Char(c)
+            };
+            items.push(item);
+        }
+        Some(CharClass { negated, items })
     }
 
     fn reduction_identity(&self, op: &str) -> Value {
