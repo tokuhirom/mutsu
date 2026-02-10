@@ -172,7 +172,7 @@ Implement Raku OOP.
 - [x] `new` constructor (auto-generated)
 - [x] Inheritance (`is Parent`)
 - [ ] `role` declaration and `does`
-- [ ] `multi method`
+- [x] `multi method`
 - [ ] `BUILD` / `TWEAK` submethods
 - [ ] Type checking
 - [ ] Coercion (`Int(Str)` etc.)

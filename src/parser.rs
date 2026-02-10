@@ -64,8 +64,15 @@ impl Parser {
         if self.match_ident("has") {
             return self.parse_has_decl();
         }
+        let mut is_multi = false;
+        if self.match_ident("multi") {
+            if self.match_ident("method") {
+                return self.parse_method_decl(true);
+            }
+            is_multi = true;
+        }
         if self.match_ident("method") {
-            return self.parse_method_decl();
+            return self.parse_method_decl(false);
         }
         if self.match_ident("proto") {
             self.match_ident("sub");
@@ -130,7 +137,6 @@ impl Parser {
             }
             return Ok(Stmt::ProtoDecl { name, params, param_defs });
         }
-        let is_multi = self.match_ident("multi");
         if is_multi {
             self.match_ident("sub"); // optional 'sub' after 'multi'
         }
@@ -2404,7 +2410,7 @@ impl Parser {
         Ok(Stmt::HasDecl { name: attr_name, is_public, default })
     }
 
-    fn parse_method_decl(&mut self) -> Result<Stmt, RuntimeError> {
+    fn parse_method_decl(&mut self, multi: bool) -> Result<Stmt, RuntimeError> {
         let name = self.consume_ident()?;
         let mut params = Vec::new();
         let mut param_defs = Vec::new();
@@ -2446,7 +2452,7 @@ impl Parser {
         if self.match_kind(TokenKind::LBrace) {
             let body = self.parse_block_body()?;
             self.match_kind(TokenKind::Semicolon);
-            return Ok(Stmt::MethodDecl { name, params, param_defs, body });
+            return Ok(Stmt::MethodDecl { name, params, param_defs, body, multi });
         }
         Err(RuntimeError::new("Expected block for method"))
     }

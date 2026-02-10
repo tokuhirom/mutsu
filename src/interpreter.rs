@@ -11,7 +11,14 @@ use crate::value::{make_rat, JunctionKind, RuntimeError, Value};
 struct ClassDef {
     parent: Option<String>,
     attributes: Vec<(String, bool, Option<Expr>)>, // (name, is_public, default)
-    methods: HashMap<String, (Vec<String>, Vec<ParamDef>, Vec<Stmt>)>, // name -> (params, param_defs, body)
+    methods: HashMap<String, Vec<MethodDef>>, // name -> overloads
+}
+
+#[derive(Debug, Clone)]
+struct MethodDef {
+    params: Vec<String>,
+    param_defs: Vec<ParamDef>,
+    body: Vec<Stmt>,
 }
 
 #[derive(Clone)]
@@ -593,11 +600,17 @@ impl Interpreter {
                         Stmt::HasDecl { name: attr_name, is_public, default } => {
                             class_def.attributes.push((attr_name.clone(), *is_public, default.clone()));
                         }
-                        Stmt::MethodDecl { name: method_name, params, param_defs, body: method_body } => {
-                            class_def.methods.insert(
-                                method_name.clone(),
-                                (params.clone(), param_defs.clone(), method_body.clone()),
-                            );
+                        Stmt::MethodDecl { name: method_name, params, param_defs, body: method_body, multi } => {
+                            let def = MethodDef {
+                                params: params.clone(),
+                                param_defs: param_defs.clone(),
+                                body: method_body.clone(),
+                            };
+                            if *multi {
+                                class_def.methods.entry(method_name.clone()).or_insert_with(Vec::new).push(def);
+                            } else {
+                                class_def.methods.insert(method_name.clone(), vec![def]);
+                            }
                         }
                         _ => {
                             // Execute other statements in class scope
@@ -1127,12 +1140,16 @@ impl Interpreter {
         }
     }
 
-    fn find_method(&self, class_name: &str, method_name: &str) -> Option<(Vec<String>, Vec<ParamDef>, Vec<Stmt>)> {
+    fn resolve_method(&self, class_name: &str, method_name: &str, arg_values: &[Value]) -> Option<MethodDef> {
         let mut current = Some(class_name.to_string());
         while let Some(cn) = current {
             if let Some(class_def) = self.classes.get(&cn) {
-                if let Some(m) = class_def.methods.get(method_name) {
-                    return Some(m.clone());
+                if let Some(overloads) = class_def.methods.get(method_name) {
+                    for def in overloads {
+                        if self.method_args_match(arg_values, &def.param_defs) {
+                            return Some(def.clone());
+                        }
+                    }
                 }
                 current = class_def.parent.clone();
             } else {
@@ -1269,6 +1286,29 @@ impl Interpreter {
             }
         }
         true
+    }
+
+    fn method_args_match(&self, args: &[Value], param_defs: &[ParamDef]) -> bool {
+        let positional_params: Vec<&ParamDef> = param_defs.iter()
+            .filter(|p| !p.named)
+            .collect();
+        let mut required = 0usize;
+        let mut has_slurpy = false;
+        for pd in &positional_params {
+            if pd.slurpy {
+                has_slurpy = true;
+            } else {
+                required += 1;
+            }
+        }
+        if has_slurpy {
+            if args.len() < required {
+                return false;
+            }
+        } else if args.len() != required {
+            return false;
+        }
+        self.args_match_param_types(args, param_defs)
     }
 
     fn matches_expected(
@@ -1620,7 +1660,11 @@ impl Interpreter {
                             }
                         }
                         // Look up method in class hierarchy
-                        if let Some((method_params, method_param_defs, method_body)) = self.find_method(class_name, name) {
+                        let mut eval_args = Vec::new();
+                        for arg in args {
+                            eval_args.push(self.eval_expr(arg)?);
+                        }
+                        if let Some(method_def) = self.resolve_method(class_name, name, &eval_args) {
                             let class_name_owned = class_name.clone();
                             let original_attrs = attributes.clone();
                             let mut saved_env = self.env.clone();
@@ -1632,21 +1676,17 @@ impl Interpreter {
                                 self.env.insert(format!(".{}", attr_name), attr_val.clone());
                             }
                             // Bind method parameters
-                            let mut eval_args = Vec::new();
-                            for arg in args {
-                                eval_args.push(self.eval_expr(arg)?);
-                            }
-                            for (i, param) in method_params.iter().enumerate() {
+                            for (i, param) in method_def.params.iter().enumerate() {
                                 if let Some(val) = eval_args.get(i) {
                                     self.env.insert(param.clone(), val.clone());
-                                } else if let Some(pd) = method_param_defs.get(i) {
+                                } else if let Some(pd) = method_def.param_defs.get(i) {
                                     if let Some(default_expr) = &pd.default {
                                         let val = self.eval_expr(default_expr)?;
                                         self.env.insert(param.clone(), val);
                                     }
                                 }
                             }
-                            let result = match self.run_block(&method_body) {
+                            let result = match self.run_block(&method_def.body) {
                                 Ok(()) => Ok(Value::Nil),
                                 Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
                                 Err(e) => Err(e),
@@ -1668,6 +1708,11 @@ impl Interpreter {
                             }
                             self.env = saved_env;
                             return result;
+                        }
+                        if let Some(class_def) = self.classes.get(class_name) {
+                            if class_def.methods.contains_key(name) {
+                                return Err(RuntimeError::new(format!("No matching candidates for method: {}", name)));
+                            }
                         }
                         // Fall through to generic method handling (WHAT, defined, etc.)
                     }
