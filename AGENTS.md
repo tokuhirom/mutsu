@@ -25,6 +25,16 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 
 ## Spec sources
 - Design docs live at `./old-design-docs/`.
+- The official Raku test suite (roast) is available at `./roast/` as a git submodule.
+
+## Roast (official Raku test suite)
+- `roast/` contains the upstream Raku spec tests. It is read-only; never modify files under `roast/`.
+- `TODO_roast.md` tracks per-file pass/fail status. Mark a test `[x]` only when **all** of its subtests pass.
+- When a test file has known partial failures, add indented notes under its entry describing the blockers.
+- `roast-whitelist.txt` lists tests that pass completely. `make roast` runs only these via prove.
+- After fixing a bug or adding a feature, check whether any roast tests now pass and update the whitelist and TODO accordingly.
+- Do not add a roast test to the whitelist unless `prove -e 'cargo run --' <file>` exits cleanly (all subtests pass).
+- Roast tests may use constructs the interpreter does not yet support. Prefer fixing the interpreter over skipping tests.
 
 ## Conventions
 - Add small, focused tests for each new syntax feature.
