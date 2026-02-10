@@ -85,204 +85,42 @@ impl Parser {
         if self.match_ident("has") {
             return self.parse_has_decl();
         }
-        if self.match_ident("token") || self.match_ident("rule") {
-            let name = self.consume_ident()?;
-            let mut params = Vec::new();
-            let mut param_defs = Vec::new();
-            if self.match_kind(TokenKind::LParen) {
-                while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
-                    let mut is_named = false;
-                    let mut is_slurpy = false;
-                    if self.match_kind(TokenKind::Star) {
-                        is_slurpy = true;
-                    }
-                    if self.match_kind(TokenKind::Colon) {
-                        is_named = true;
-                    }
-                    let mut type_constraint = None;
-                    if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
-                        && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
-                    {
-                        if let Some(TokenKind::Ident(ty)) = self.tokens.get(self.pos).map(|t| &t.kind) {
-                            type_constraint = Some(ty.clone());
-                        }
-                        self.pos += 1;
-                    }
-                    if self.peek_is_var() {
-                        let var = self.consume_var()?;
-                        let default = if self.match_kind(TokenKind::Eq) {
-                            Some(self.parse_expr()?)
-                        } else {
-                            None
-                        };
-                        self.match_kind(TokenKind::Question);
-                        self.match_kind(TokenKind::Bang);
-                        params.push(var.clone());
-                        param_defs.push(ParamDef { name: var, default, named: is_named, slurpy: is_slurpy, type_constraint });
-                    } else {
-                        self.pos += 1;
-                    }
-                    self.match_kind(TokenKind::Comma);
-                }
-                self.match_kind(TokenKind::RParen);
+        if self.match_ident("proto") {
+            if self.match_ident("token") {
+                return self.parse_proto_token_decl();
             }
-            if self.match_kind(TokenKind::LBrace) {
-                let body = self.parse_block_body()?;
-                self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::SubDecl { name, params, param_defs, body, multi: false });
+            if self.match_ident("rule") {
+                return self.parse_proto_token_decl();
             }
-            return Err(RuntimeError::new("Expected block for token/rule"));
+            self.match_ident("sub");
+            return self.parse_proto_sub_decl();
         }
-        let mut is_multi = false;
         if self.match_ident("multi") {
+            if self.match_ident("token") {
+                return self.parse_token_rule_decl(false, true);
+            }
+            if self.match_ident("rule") {
+                return self.parse_token_rule_decl(true, true);
+            }
             if self.match_ident("method") {
                 return self.parse_method_decl(true);
             }
-            is_multi = true;
+            if self.match_ident("sub") {
+                return self.parse_sub_decl(true);
+            }
+            return Err(RuntimeError::new("Expected method or sub after multi"));
+        }
+        if self.match_ident("token") {
+            return self.parse_token_rule_decl(false, false);
+        }
+        if self.match_ident("rule") {
+            return self.parse_token_rule_decl(true, false);
         }
         if self.match_ident("method") {
             return self.parse_method_decl(false);
         }
-        if self.match_ident("proto") {
-            self.match_ident("sub");
-            let name = self.consume_ident()?;
-            let mut params = Vec::new();
-            let mut param_defs = Vec::new();
-            if self.match_kind(TokenKind::LParen) {
-                while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
-                    let mut is_named = false;
-                    let mut is_slurpy = false;
-                    if self.match_kind(TokenKind::Star) {
-                        is_slurpy = true;
-                    }
-                    if self.match_kind(TokenKind::Colon) {
-                        is_named = true;
-                    }
-                    let mut type_constraint = None;
-                    if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
-                        && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
-                    {
-                        if let Some(TokenKind::Ident(ty)) = self.tokens.get(self.pos).map(|t| &t.kind) {
-                            type_constraint = Some(ty.clone());
-                        }
-                        self.pos += 1;
-                    }
-                    if self.peek_is_var() {
-                        let var = self.consume_var()?;
-                        let default = if self.match_kind(TokenKind::Eq) {
-                            Some(self.parse_expr()?)
-                        } else if self.match_kind(TokenKind::QuestionQuestion) {
-                            None
-                        } else {
-                            None
-                        };
-                        self.match_kind(TokenKind::Question);
-                        self.match_kind(TokenKind::Bang);
-                        params.push(var.clone());
-                        param_defs.push(ParamDef { name: var, default, named: is_named, slurpy: is_slurpy, type_constraint });
-                    } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_))) {
-                        if let TokenKind::ArrayVar(n) = token.kind {
-                            let var = format!("@{}", n);
-                            params.push(var.clone());
-                            param_defs.push(ParamDef { name: var, default: None, named: false, slurpy: is_slurpy, type_constraint: None });
-                        }
-                    } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::HashVar(_))) {
-                        if let TokenKind::HashVar(n) = token.kind {
-                            let var = format!("%{}", n);
-                            params.push(var.clone());
-                            param_defs.push(ParamDef { name: var, default: None, named: is_named || is_slurpy, slurpy: is_slurpy, type_constraint: None });
-                        }
-                    }
-                    if !self.match_kind(TokenKind::Comma) {
-                        break;
-                    }
-                }
-                self.consume_kind(TokenKind::RParen)?;
-            }
-            if self.check(&TokenKind::LBrace) {
-                let _ = self.parse_block()?;
-            } else {
-                self.match_kind(TokenKind::Semicolon);
-            }
-            return Ok(Stmt::ProtoDecl { name, params, param_defs });
-        }
-        if is_multi {
-            self.match_ident("sub"); // optional 'sub' after 'multi'
-        }
-        if is_multi || self.match_ident("sub") {
-            let name = self.consume_ident()?;
-            let mut params = Vec::new();
-            let mut param_defs = Vec::new();
-            if self.match_kind(TokenKind::LParen) {
-                while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
-                    let mut is_named = false;
-                    let mut is_slurpy = false;
-                    // Check for slurpy *@args or *%opts
-                    if self.match_kind(TokenKind::Star) {
-                        is_slurpy = true;
-                    }
-                    // Check for named parameter :$name
-                    if self.match_kind(TokenKind::Colon) {
-                        is_named = true;
-                    }
-                    // Parse optional type annotation (e.g., Int $x)
-                    let mut type_constraint = None;
-                    if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
-                        && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
-                    {
-                        if let Some(TokenKind::Ident(ty)) = self.tokens.get(self.pos).map(|t| &t.kind) {
-                            type_constraint = Some(ty.clone());
-                        }
-                        self.pos += 1;
-                    }
-                    if self.peek_is_var() {
-                        let var = self.consume_var()?;
-                        // Check for default value
-                        let default = if self.match_kind(TokenKind::Eq) {
-                            Some(self.parse_expr()?)
-                        } else if self.match_kind(TokenKind::QuestionQuestion) {
-                            // Handle ?? !! ternary in default - skip for now
-                            None
-                        } else {
-                            None
-                        };
-                        // Check for ? (optional) or ! (required) suffix
-                        self.match_kind(TokenKind::Question);
-                        self.match_kind(TokenKind::Bang);
-                        params.push(var.clone());
-                        param_defs.push(ParamDef { name: var, default, named: is_named, slurpy: is_slurpy, type_constraint });
-                    } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_))) {
-                        if let TokenKind::ArrayVar(n) = token.kind {
-                            let var = format!("@{}", n);
-                            params.push(var.clone());
-                            param_defs.push(ParamDef { name: var, default: None, named: false, slurpy: is_slurpy, type_constraint: None });
-                        }
-                    } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::HashVar(_))) {
-                        if let TokenKind::HashVar(n) = token.kind {
-                            let var = format!("%{}", n);
-                            params.push(var.clone());
-                            param_defs.push(ParamDef { name: var, default: None, named: is_named || is_slurpy, slurpy: is_slurpy, type_constraint: None });
-                        }
-                    } else {
-                        self.pos += 1;
-                    }
-                    self.match_kind(TokenKind::Comma);
-                }
-                self.match_kind(TokenKind::RParen);
-            }
-            while self.match_ident("is") {
-                if self.match_kind(TokenKind::Colon) {
-                    let _ = self.consume_ident();
-                } else {
-                    let _ = self.consume_ident();
-                }
-            }
-            if self.match_kind(TokenKind::LBrace) {
-                let body = self.parse_block_body()?;
-                self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::SubDecl { name, params, param_defs, body, multi: is_multi });
-            }
-            return Err(RuntimeError::new("Expected block for sub"));
+        if self.match_ident("sub") {
+            return self.parse_sub_decl(false);
         }
         if self.match_ident("return") {
             let expr = self.parse_expr()?;
@@ -2601,5 +2439,232 @@ impl Parser {
             return Ok(Stmt::MethodDecl { name, params, param_defs, body, multi });
         }
         Err(RuntimeError::new("Expected block for method"))
+    }
+
+    fn parse_token_rule_decl(&mut self, is_rule: bool, multi: bool) -> Result<Stmt, RuntimeError> {
+        let name = self.consume_ident()?;
+        let mut params = Vec::new();
+        let mut param_defs = Vec::new();
+        if self.match_kind(TokenKind::LParen) {
+            while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
+                let mut is_named = false;
+                let mut is_slurpy = false;
+                if self.match_kind(TokenKind::Star) {
+                    is_slurpy = true;
+                }
+                if self.match_kind(TokenKind::Colon) {
+                    is_named = true;
+                }
+                let mut type_constraint = None;
+                if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
+                    && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
+                {
+                    if let Some(TokenKind::Ident(ty)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+                        type_constraint = Some(ty.clone());
+                    }
+                    self.pos += 1;
+                }
+                if self.peek_is_var() {
+                    let var = self.consume_var()?;
+                    let default = if self.match_kind(TokenKind::Eq) {
+                        Some(self.parse_expr()?)
+                    } else {
+                        None
+                    };
+                    self.match_kind(TokenKind::Question);
+                    self.match_kind(TokenKind::Bang);
+                    params.push(var.clone());
+                    param_defs.push(ParamDef { name: var, default, named: is_named, slurpy: is_slurpy, type_constraint });
+                } else {
+                    self.pos += 1;
+                }
+                self.match_kind(TokenKind::Comma);
+            }
+            self.match_kind(TokenKind::RParen);
+        }
+        if self.match_kind(TokenKind::LBrace) {
+            let body = self.parse_block_body()?;
+            self.match_kind(TokenKind::Semicolon);
+            if is_rule {
+                return Ok(Stmt::RuleDecl { name, params, param_defs, body, multi });
+            }
+            return Ok(Stmt::TokenDecl { name, params, param_defs, body, multi });
+        }
+        Err(RuntimeError::new("Expected block for token/rule"))
+    }
+
+    fn parse_proto_token_decl(&mut self) -> Result<Stmt, RuntimeError> {
+        let name = self.consume_ident()?;
+        if self.match_kind(TokenKind::LParen) {
+            while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
+                if self.match_kind(TokenKind::Star) || self.match_kind(TokenKind::Colon) {
+                    // ignore modifiers
+                }
+                if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
+                    && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
+                {
+                    self.pos += 1;
+                }
+                if self.peek_is_var() {
+                    let _ = self.consume_var()?;
+                    if self.match_kind(TokenKind::Eq) {
+                        let _ = self.parse_expr()?;
+                    }
+                    self.match_kind(TokenKind::Question);
+                    self.match_kind(TokenKind::Bang);
+                } else {
+                    self.pos += 1;
+                }
+                self.match_kind(TokenKind::Comma);
+            }
+            self.match_kind(TokenKind::RParen);
+        }
+        if self.match_kind(TokenKind::LBrace) {
+            let mut depth = 1usize;
+            while depth > 0 && !self.check(&TokenKind::Eof) {
+                if self.match_kind(TokenKind::LBrace) {
+                    depth += 1;
+                    continue;
+                }
+                if self.match_kind(TokenKind::RBrace) {
+                    depth -= 1;
+                    continue;
+                }
+                self.pos += 1;
+            }
+        } else {
+            self.match_kind(TokenKind::Semicolon);
+        }
+        Ok(Stmt::ProtoToken { name })
+    }
+
+    fn parse_proto_sub_decl(&mut self) -> Result<Stmt, RuntimeError> {
+        let name = self.consume_ident()?;
+        let mut params = Vec::new();
+        let mut param_defs = Vec::new();
+        if self.match_kind(TokenKind::LParen) {
+            while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
+                let mut is_named = false;
+                let mut is_slurpy = false;
+                if self.match_kind(TokenKind::Star) {
+                    is_slurpy = true;
+                }
+                if self.match_kind(TokenKind::Colon) {
+                    is_named = true;
+                }
+                let mut type_constraint = None;
+                if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
+                    && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
+                {
+                    if let Some(TokenKind::Ident(ty)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+                        type_constraint = Some(ty.clone());
+                    }
+                    self.pos += 1;
+                }
+                if self.peek_is_var() {
+                    let var = self.consume_var()?;
+                    let default = if self.match_kind(TokenKind::Eq) {
+                        Some(self.parse_expr()?)
+                    } else if self.match_kind(TokenKind::QuestionQuestion) {
+                        None
+                    } else {
+                        None
+                    };
+                    self.match_kind(TokenKind::Question);
+                    self.match_kind(TokenKind::Bang);
+                    params.push(var.clone());
+                    param_defs.push(ParamDef { name: var, default, named: is_named, slurpy: is_slurpy, type_constraint });
+                } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_))) {
+                    if let TokenKind::ArrayVar(n) = token.kind {
+                        let var = format!("@{}", n);
+                        params.push(var.clone());
+                        param_defs.push(ParamDef { name: var, default: None, named: false, slurpy: is_slurpy, type_constraint: None });
+                    }
+                } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::HashVar(_))) {
+                    if let TokenKind::HashVar(n) = token.kind {
+                        let var = format!("%{}", n);
+                        params.push(var.clone());
+                        param_defs.push(ParamDef { name: var, default: None, named: is_named || is_slurpy, slurpy: is_slurpy, type_constraint: None });
+                    }
+                }
+                if !self.match_kind(TokenKind::Comma) {
+                    break;
+                }
+            }
+            self.consume_kind(TokenKind::RParen)?;
+        }
+        if self.check(&TokenKind::LBrace) {
+            let _ = self.parse_block()?;
+        } else {
+            self.match_kind(TokenKind::Semicolon);
+        }
+        Ok(Stmt::ProtoDecl { name, params, param_defs })
+    }
+
+    fn parse_sub_decl(&mut self, is_multi: bool) -> Result<Stmt, RuntimeError> {
+        let name = self.consume_ident()?;
+        let mut params = Vec::new();
+        let mut param_defs = Vec::new();
+        if self.match_kind(TokenKind::LParen) {
+            while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
+                let mut is_named = false;
+                let mut is_slurpy = false;
+                if self.match_kind(TokenKind::Star) {
+                    is_slurpy = true;
+                }
+                if self.match_kind(TokenKind::Colon) {
+                    is_named = true;
+                }
+                let mut type_constraint = None;
+                if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
+                    && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
+                {
+                    if let Some(TokenKind::Ident(ty)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+                        type_constraint = Some(ty.clone());
+                    }
+                    self.pos += 1;
+                }
+                if self.peek_is_var() {
+                    let var = self.consume_var()?;
+                    let default = if self.match_kind(TokenKind::Eq) {
+                        Some(self.parse_expr()?)
+                    } else if self.match_kind(TokenKind::QuestionQuestion) {
+                        None
+                    } else {
+                        None
+                    };
+                    self.match_kind(TokenKind::Question);
+                    self.match_kind(TokenKind::Bang);
+                    params.push(var.clone());
+                    param_defs.push(ParamDef { name: var, default, named: is_named, slurpy: is_slurpy, type_constraint });
+                } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_))) {
+                    if let TokenKind::ArrayVar(n) = token.kind {
+                        let var = format!("@{}", n);
+                        params.push(var.clone());
+                        param_defs.push(ParamDef { name: var, default: None, named: false, slurpy: is_slurpy, type_constraint: None });
+                    }
+                } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::HashVar(_))) {
+                    if let TokenKind::HashVar(n) = token.kind {
+                        let var = format!("%{}", n);
+                        params.push(var.clone());
+                        param_defs.push(ParamDef { name: var, default: None, named: is_named || is_slurpy, slurpy: is_slurpy, type_constraint: None });
+                    }
+                }
+                if !self.match_kind(TokenKind::Comma) {
+                    break;
+                }
+            }
+            self.match_kind(TokenKind::RParen);
+            if self.match_kind(TokenKind::Colon) {
+                let _ = self.consume_ident();
+                let _ = self.consume_ident();
+            }
+        }
+        if self.match_kind(TokenKind::LBrace) {
+            let body = self.parse_block_body()?;
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::SubDecl { name, params, param_defs, body, multi: is_multi });
+        }
+        Err(RuntimeError::new("Expected block for sub"))
     }
 }

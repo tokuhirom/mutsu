@@ -90,6 +90,7 @@ pub struct Interpreter {
     forbid_skip_all: bool,
     loose_ok: bool,
     functions: HashMap<String, FunctionDef>,
+    token_defs: HashMap<String, Vec<FunctionDef>>,
     lib_paths: Vec<String>,
     program_path: Option<String>,
     current_package: String,
@@ -103,6 +104,7 @@ pub struct Interpreter {
     roles: HashMap<String, RoleDef>,
     subsets: HashMap<String, SubsetDef>,
     proto_subs: HashSet<String>,
+    proto_tokens: HashSet<String>,
     end_phasers: Vec<Vec<Stmt>>,
 }
 
@@ -145,6 +147,7 @@ impl Interpreter {
             forbid_skip_all: false,
             loose_ok: false,
             functions: HashMap::new(),
+            token_defs: HashMap::new(),
             lib_paths: Vec::new(),
             program_path: None,
             current_package: "GLOBAL".to_string(),
@@ -158,6 +161,7 @@ impl Interpreter {
             roles: HashMap::new(),
             subsets: HashMap::new(),
             proto_subs: HashSet::new(),
+            proto_tokens: HashSet::new(),
             end_phasers: Vec::new(),
         }
     }
@@ -327,11 +331,26 @@ impl Interpreter {
                     self.functions.insert(fq, def);
                 }
             }
+            Stmt::TokenDecl { name, params, param_defs, body, multi }
+            | Stmt::RuleDecl { name, params, param_defs, body, multi } => {
+                let def = FunctionDef {
+                    package: self.current_package.clone(),
+                    name: name.clone(),
+                    params: params.clone(),
+                    param_defs: param_defs.clone(),
+                    body: body.clone(),
+                };
+                self.insert_token_def(name, def, *multi);
+            }
             Stmt::ProtoDecl { name, params, param_defs } => {
                 let key = format!("{}::{}", self.current_package, name);
                 self.proto_subs.insert(key);
                 let _ = params.len();
                 let _ = param_defs.len();
+            }
+            Stmt::ProtoToken { name } => {
+                let key = format!("{}::{}", self.current_package, name);
+                self.proto_tokens.insert(key);
             }
             Stmt::Package { name, body } => {
                 let saved = self.current_package.clone();
@@ -1277,6 +1296,18 @@ impl Interpreter {
                 self.halted = true;
                 self.bailed_out = true;
             }
+            "make" => {
+                let value = if args.is_empty() {
+                    Value::Nil
+                } else {
+                    let expr = self.positional_arg(args, 0, "make expects value")?;
+                    self.eval_expr(expr)?
+                };
+                self.env.insert("made".to_string(), value);
+            }
+            "made" => {
+                let _ = self.env.get("made");
+            }
             _ => {
                 // Try user-defined function with type-based dispatch
                 let call_args: Vec<Expr> = args.iter().filter_map(|a| {
@@ -1323,6 +1354,37 @@ impl Interpreter {
             .get(&local)
             .cloned()
             .or_else(|| self.functions.get(&format!("GLOBAL::{}", name)).cloned())
+    }
+
+    fn insert_token_def(&mut self, name: &str, def: FunctionDef, multi: bool) {
+        let key = format!("{}::{}", self.current_package, name);
+        if multi {
+            self.token_defs.entry(key).or_insert_with(Vec::new).push(def);
+        } else {
+            self.token_defs.insert(key, vec![def]);
+        }
+    }
+
+    fn resolve_token_defs(&self, name: &str) -> Option<Vec<FunctionDef>> {
+        if name.contains("::") {
+            return self.token_defs.get(name).cloned();
+        }
+        let local = format!("{}::{}", self.current_package, name);
+        self.token_defs
+            .get(&local)
+            .cloned()
+            .or_else(|| self.token_defs.get(&format!("GLOBAL::{}", name)).cloned())
+    }
+
+    fn has_proto_token(&self, name: &str) -> bool {
+        if name.contains("::") {
+            return self.proto_tokens.contains(name);
+        }
+        let local = format!("{}::{}", self.current_package, name);
+        if self.proto_tokens.contains(&local) {
+            return true;
+        }
+        self.proto_tokens.contains(&format!("GLOBAL::{}", name))
     }
 
     fn gist_value(&self, value: &Value) -> String {
@@ -1731,6 +1793,65 @@ impl Interpreter {
             None
         } else {
             self.resolve_function_with_arity(name, arity)
+        }
+    }
+
+    fn eval_token_call(&mut self, name: &str, args: &[Expr]) -> Result<Option<String>, RuntimeError> {
+        let defs = match self.resolve_token_defs(name) {
+            Some(defs) => defs,
+            None => return Ok(None),
+        };
+        let arg_values: Vec<Value> = args.iter()
+            .filter_map(|a| self.eval_expr(a).ok())
+            .collect();
+        let literal_args: Vec<Expr> = arg_values.into_iter()
+            .map(Expr::Literal)
+            .collect();
+        let subject = match self.env.get("_") {
+            Some(Value::Str(s)) => Some(s.clone()),
+            _ => None,
+        };
+        let mut best: Option<(usize, String)> = None;
+        for def in defs {
+            if let Some(pattern) = self.eval_token_def(&def, &literal_args)? {
+                if let Some(ref text) = subject {
+                    if let Some(len) = self.regex_match_len_at_start(&pattern, text) {
+                        let better = best.as_ref().map(|(best_len, _)| len > *best_len).unwrap_or(true);
+                        if better {
+                            best = Some((len, pattern));
+                        }
+                    }
+                } else if best.is_none() {
+                    best = Some((0, pattern));
+                }
+            }
+        }
+        if let Some((_, pattern)) = best {
+            return Ok(Some(pattern));
+        }
+        if self.has_proto_token(name) {
+            return Err(RuntimeError::new(format!("No matching candidates for proto token: {}", name)));
+        }
+        Ok(None)
+    }
+
+    fn eval_token_def(&mut self, def: &FunctionDef, args: &[Expr]) -> Result<Option<String>, RuntimeError> {
+        let saved_env = self.env.clone();
+        self.bind_function_args(&def.param_defs, &def.params, args)?;
+        self.routine_stack.push((def.package.clone(), def.name.clone()));
+        let result = self.eval_block_value(&def.body);
+        self.routine_stack.pop();
+        self.env = saved_env;
+        let value = match result {
+            Ok(v) => v,
+            Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
+            Err(e) => return Err(e),
+        };
+        match value {
+            Value::Regex(pat) => Ok(Some(pat)),
+            Value::Str(s) => Ok(Some(s)),
+            Value::Nil => Ok(None),
+            other => Ok(Some(other.to_string_value())),
         }
     }
 
@@ -3999,6 +4120,18 @@ impl Interpreter {
                 Ok(Value::Hash(map))
             }
             Expr::Call { name, args } => {
+                if name == "make" {
+                    let value = if let Some(arg) = args.get(0) {
+                        self.eval_expr(arg)?
+                    } else {
+                        Value::Nil
+                    };
+                    self.env.insert("made".to_string(), value.clone());
+                    return Ok(value);
+                }
+                if name == "made" {
+                    return Ok(self.env.get("made").cloned().unwrap_or(Value::Nil));
+                }
                 if matches!(name.as_str(), "Int" | "Num" | "Str" | "Bool") {
                     if let Some(arg) = args.get(0) {
                         let value = self.eval_expr(arg)?;
@@ -4043,6 +4176,9 @@ impl Interpreter {
                         };
                         return Ok(coerced);
                     }
+                }
+                if let Some(pattern) = self.eval_token_call(name, args)? {
+                    return Ok(Value::Regex(pattern));
                 }
                 // Try type-based multi dispatch first
                 let arg_values: Vec<Value> = args.iter()
@@ -5110,6 +5246,12 @@ impl Interpreter {
             }
         }
         None
+    }
+
+    fn regex_match_len_at_start(&self, pattern: &str, text: &str) -> Option<usize> {
+        let parsed = self.parse_regex(pattern)?;
+        let chars: Vec<char> = text.chars().collect();
+        self.regex_match_end_from(&parsed, &chars, 0)
     }
 
     fn regex_match_end_from(&self, pattern: &RegexPattern, chars: &[char], start: usize) -> Option<usize> {

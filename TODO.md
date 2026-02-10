@@ -194,9 +194,9 @@ Implement Raku regex/grammar.
 - [x] Named captures (`$<name>`)
 - [x] `token`, `rule` declarations
 - [x] `grammar` declaration
-- [ ] `proto token` and LTM
+- [x] `proto token` and LTM
 - [ ] Action classes
-- [ ] `make` / `made`
+- [x] `make` / `made`
 
 ---
 
