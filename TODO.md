@@ -24,7 +24,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] Rat (rational number)
 - [x] Complex
 - [x] Set, Bag, Mix
-- [ ] Enum
+- [x] Enum
 - [ ] Junction
 
 ### Literals
@@ -76,7 +76,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [ ] Junction operators: `&`, `|`, `^`
 - [x] `[op]` reduction meta operator
 - [ ] Meta operators: `R`, `X`, `Z`, `op=`
-- [ ] Hyper operators: `>>op<<`
+- [x] Hyper operators: `>>op<<`
 
 ### Control Flow
 - [x] `if` / `elsif` / `else`
