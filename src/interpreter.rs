@@ -21,6 +21,12 @@ struct RoleDef {
 }
 
 #[derive(Debug, Clone)]
+struct SubsetDef {
+    base: String,
+    predicate: Expr,
+}
+
+#[derive(Debug, Clone)]
 struct MethodDef {
     params: Vec<String>,
     param_defs: Vec<ParamDef>,
@@ -93,6 +99,7 @@ pub struct Interpreter {
     enum_types: HashMap<String, Vec<(String, i64)>>,
     classes: HashMap<String, ClassDef>,
     roles: HashMap<String, RoleDef>,
+    subsets: HashMap<String, SubsetDef>,
     proto_subs: HashSet<String>,
 }
 
@@ -121,6 +128,7 @@ impl Interpreter {
             enum_types: HashMap::new(),
             classes: HashMap::new(),
             roles: HashMap::new(),
+            subsets: HashMap::new(),
             proto_subs: HashSet::new(),
         }
     }
@@ -669,6 +677,9 @@ impl Interpreter {
                 }
                 self.roles.insert(name.clone(), role_def);
             }
+            Stmt::SubsetDecl { name, base, predicate } => {
+                self.subsets.insert(name.clone(), SubsetDef { base: base.clone(), predicate: predicate.clone() });
+            }
             Stmt::HasDecl { .. } => {
                 // HasDecl outside a class is a no-op (handled during ClassDecl)
             }
@@ -1192,21 +1203,21 @@ impl Interpreter {
         }
     }
 
-    fn resolve_method(&self, class_name: &str, method_name: &str, arg_values: &[Value]) -> Option<MethodDef> {
+    fn resolve_method(&mut self, class_name: &str, method_name: &str, arg_values: &[Value]) -> Option<MethodDef> {
         let mut current = Some(class_name.to_string());
         while let Some(cn) = current {
-            if let Some(class_def) = self.classes.get(&cn) {
-                if let Some(overloads) = class_def.methods.get(method_name) {
-                    for def in overloads {
-                        if self.method_args_match(arg_values, &def.param_defs) {
-                            return Some(def.clone());
-                        }
+            let parent = self.classes.get(&cn).and_then(|c| c.parent.clone());
+            if let Some(overloads) = self.classes.get(&cn).and_then(|c| c.methods.get(method_name)).cloned() {
+                for def in overloads {
+                    if self.method_args_match(arg_values, &def.param_defs) {
+                        return Some(def);
                     }
                 }
-                current = class_def.parent.clone();
-            } else {
+            }
+            if parent.is_none() && !self.classes.contains_key(&cn) {
                 break;
             }
+            current = parent;
         }
         None
     }
@@ -1269,7 +1280,7 @@ impl Interpreter {
         self.resolve_function(name)
     }
 
-    fn resolve_function_with_types(&self, name: &str, arg_values: &[Value]) -> Option<FunctionDef> {
+    fn resolve_function_with_types(&mut self, name: &str, arg_values: &[Value]) -> Option<FunctionDef> {
         if name.contains("::") {
             return self.functions.get(name).cloned();
         }
@@ -1286,11 +1297,13 @@ impl Interpreter {
         // Try matching against all typed candidates for this name/arity
         let prefix_local = format!("{}::{}/{}:", self.current_package, name, arity);
         let prefix_global = format!("GLOBAL::{}/{}:", name, arity);
-        for (key, def) in &self.functions {
-            if key.starts_with(&prefix_local) || key.starts_with(&prefix_global) {
-                if self.args_match_param_types(arg_values, &def.param_defs) {
-                    return Some(def.clone());
-                }
+        let candidates: Vec<FunctionDef> = self.functions.iter()
+            .filter(|(key, _)| key.starts_with(&prefix_local) || key.starts_with(&prefix_global))
+            .map(|(_, def)| def.clone())
+            .collect();
+        for def in candidates {
+            if self.args_match_param_types(arg_values, &def.param_defs) {
+                return Some(def);
             }
         }
         // Fall back to arity-only if no proto declared
@@ -1364,15 +1377,33 @@ impl Interpreter {
         false
     }
 
-    fn args_match_param_types(&self, args: &[Value], param_defs: &[ParamDef]) -> bool {
+    fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
+        if let Some(subset) = self.subsets.get(constraint).cloned() {
+            if !self.type_matches_value(&subset.base, value) {
+                return false;
+            }
+            let saved = self.env.get("_").cloned();
+            self.env.insert("_".to_string(), value.clone());
+            let ok = self.eval_expr(&subset.predicate).map(|v| v.truthy()).unwrap_or(false);
+            if let Some(old) = saved {
+                self.env.insert("_".to_string(), old);
+            } else {
+                self.env.remove("_");
+            }
+            return ok;
+        }
+        let value_type = Self::value_type_name(value);
+        Self::type_matches(constraint, value_type)
+    }
+
+    fn args_match_param_types(&mut self, args: &[Value], param_defs: &[ParamDef]) -> bool {
         let positional_params: Vec<&ParamDef> = param_defs.iter()
             .filter(|p| !p.slurpy && !p.named)
             .collect();
         for (i, pd) in positional_params.iter().enumerate() {
             if let Some(constraint) = &pd.type_constraint {
                 if let Some(arg) = args.get(i) {
-                    let arg_type = Self::value_type_name(arg);
-                    if !Self::type_matches(constraint, arg_type) {
+                    if !self.type_matches_value(constraint, arg) {
                         return false;
                     }
                 }
@@ -1381,7 +1412,7 @@ impl Interpreter {
         true
     }
 
-    fn method_args_match(&self, args: &[Value], param_defs: &[ParamDef]) -> bool {
+    fn method_args_match(&mut self, args: &[Value], param_defs: &[ParamDef]) -> bool {
         let positional_params: Vec<&ParamDef> = param_defs.iter()
             .filter(|p| !p.named)
             .collect();
@@ -4878,11 +4909,10 @@ impl Interpreter {
                         if *name == pd.name {
                             let value = self.eval_expr(expr)?;
                             if let Some(constraint) = &pd.type_constraint {
-                                let value_type = Self::value_type_name(&value);
-                                if !Self::type_matches(constraint, value_type) {
+                                if !self.type_matches_value(constraint, &value) {
                                     return Err(RuntimeError::new(format!(
                                         "Type check failed for {}: expected {}, got {}",
-                                        pd.name, constraint, value_type
+                                        pd.name, constraint, Self::value_type_name(&value)
                                     )));
                                 }
                             }
@@ -4903,11 +4933,10 @@ impl Interpreter {
                 if positional_idx < args.len() {
                     let value = self.eval_expr(&args[positional_idx])?;
                     if let Some(constraint) = &pd.type_constraint {
-                        let value_type = Self::value_type_name(&value);
-                        if !Self::type_matches(constraint, value_type) {
+                        if !self.type_matches_value(constraint, &value) {
                             return Err(RuntimeError::new(format!(
                                 "Type check failed for {}: expected {}, got {}",
-                                pd.name, constraint, value_type
+                                pd.name, constraint, Self::value_type_name(&value)
                             )));
                         }
                     }
@@ -5378,6 +5407,9 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
         }
         Stmt::ProtoDecl { .. } => {}
         Stmt::DoesDecl { .. } => {}
+        Stmt::SubsetDecl { predicate, .. } => {
+            collect_ph_expr(predicate, out);
+        }
         _ => {}
     }
 }

@@ -64,6 +64,19 @@ impl Parser {
         if self.match_ident("role") {
             return self.parse_role_decl();
         }
+        if self.match_ident("subset") {
+            let name = self.consume_ident()?;
+            let mut base = "Any".to_string();
+            if self.match_ident("of") {
+                base = self.consume_ident()?;
+            }
+            if !self.match_ident("where") {
+                return Err(RuntimeError::new("Expected where in subset"));
+            }
+            let predicate = self.parse_expr()?;
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::SubsetDecl { name, base, predicate });
+        }
         if self.match_ident("has") {
             return self.parse_has_decl();
         }

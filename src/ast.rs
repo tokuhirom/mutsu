@@ -128,6 +128,7 @@ pub(crate) enum Stmt {
     MethodDecl { name: String, params: Vec<String>, param_defs: Vec<ParamDef>, body: Vec<Stmt>, multi: bool },
     RoleDecl { name: String, body: Vec<Stmt> },
     DoesDecl { name: String },
+    SubsetDecl { name: String, base: String, predicate: Expr },
     ProtoDecl { name: String, params: Vec<String>, param_defs: Vec<ParamDef> },
     Expr(Expr),
 }

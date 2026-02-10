@@ -177,7 +177,7 @@ Implement Raku OOP.
 - [x] Type checking
 - [x] Coercion (`Int(Str)` etc.)
 - [x] `enum`
-- [ ] `subset`
+- [x] `subset`
 - [ ] Method resolution order (MRO, C3)
 
 ---
