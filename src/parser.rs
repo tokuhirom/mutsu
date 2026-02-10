@@ -1141,26 +1141,48 @@ impl Parser {
         Ok(expr)
     }
 
-    fn parse_equality(&mut self) -> Result<Expr, RuntimeError> {
+    fn parse_junction(&mut self) -> Result<Expr, RuntimeError> {
         let mut expr = self.parse_comparison()?;
+        loop {
+            let op = if self.match_kind(TokenKind::Ampersand) {
+                Some(TokenKind::Ampersand)
+            } else if self.match_kind(TokenKind::Pipe) {
+                Some(TokenKind::Pipe)
+            } else if self.match_kind(TokenKind::Caret) {
+                Some(TokenKind::Caret)
+            } else {
+                None
+            };
+            if let Some(op) = op {
+                let right = self.parse_comparison()?;
+                expr = Expr::Binary { left: Box::new(expr), op, right: Box::new(right) };
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
+    }
+
+    fn parse_equality(&mut self) -> Result<Expr, RuntimeError> {
+        let mut expr = self.parse_junction()?;
         loop {
             if self.match_kind(TokenKind::EqEq) {
                 let op = TokenKind::EqEq;
-                let right = self.parse_comparison()?;
+                let right = self.parse_junction()?;
                 expr = Expr::Binary { left: Box::new(expr), op, right: Box::new(right) };
             } else if self.match_kind(TokenKind::EqEqEq) {
                 let op = TokenKind::EqEqEq;
-                let right = self.parse_comparison()?;
+                let right = self.parse_junction()?;
                 expr = Expr::Binary { left: Box::new(expr), op, right: Box::new(right) };
             } else if self.match_kind(TokenKind::BangEq) {
                 let op = TokenKind::BangEq;
-                let right = self.parse_comparison()?;
+                let right = self.parse_junction()?;
                 expr = Expr::Binary { left: Box::new(expr), op, right: Box::new(right) };
             } else if self.match_ident("eq") {
-                let right = self.parse_comparison()?;
+                let right = self.parse_junction()?;
                 expr = Expr::Binary { left: Box::new(expr), op: TokenKind::Ident("eq".to_string()), right: Box::new(right) };
             } else if self.match_ident("ne") {
-                let right = self.parse_comparison()?;
+                let right = self.parse_junction()?;
                 expr = Expr::Binary { left: Box::new(expr), op: TokenKind::Ident("ne".to_string()), right: Box::new(right) };
             } else {
                 break;

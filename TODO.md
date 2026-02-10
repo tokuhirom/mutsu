@@ -2,8 +2,6 @@
 
 Goal: Build a practical Raku (Perl 6) runtime in Rust that is faster than MoarVM.
 
-Development policy: In Phases 1-4, prioritize feature implementation without running roast. From Phase 5 onward, run roast at each milestone to measure progress.
-
 ---
 
 ## Phase 1: Language Core (current)
@@ -73,9 +71,10 @@ Get minimal Raku programs running. Prioritize feature implementation.
 - [x] `?` (boolean context prefix)
 - [x] `^` (upto: `^10` -> `0..^10`)
 - [x] Bitwise: `+&`, `+|`, `+^`, `+<`, `+>`
-- [ ] Junction operators: `&`, `|`, `^`
+- [x] Junction operators: `&`, `|`, `^`
 - [x] `[op]` reduction meta operator
-- [ ] Meta operators: `R`, `X`, `Z`, `op=`
+- [x] Meta operators: `R`, `X`, `Z`
+- [ ] Meta operators: `op=`
 - [x] Hyper operators: `>>op<<`
 
 ### Control Flow
@@ -164,7 +163,7 @@ Get minimal Raku programs running. Prioritize feature implementation.
 
 ## Phase 2: Object System
 
-Implement Raku OOP. Pass roast S12 tests.
+Implement Raku OOP.
 
 - [x] `class` declaration
 - [x] `has` attributes (`has $.name`, `has $!private`)
@@ -185,7 +184,7 @@ Implement Raku OOP. Pass roast S12 tests.
 
 ## Phase 3: Regex and Grammars
 
-Implement Raku regex/grammar. Pass roast S05 tests.
+Implement Raku regex/grammar.
 
 - [ ] Basic regex (`/pattern/`)
 - [ ] `rx//` form
@@ -250,7 +249,6 @@ Aim to exceed MoarVM performance.
 ## Design Principles
 
 1. **Gradual migration from tree-walking interpreter to bytecode VM**
-2. **Use roast compatibility as a positive metric** to measure spec compliance
-3. **Learn from MoarVM architecture** while leveraging Rust's strengths
-4. **Prioritize startup speed** (a weakness of MoarVM)
-5. **Incremental optimization**: make it correct first, then make it fast
+2. **Learn from MoarVM architecture** while leveraging Rust's strengths
+3. **Prioritize startup speed** (a weakness of MoarVM)
+4. **Incremental optimization**: make it correct first, then make it fast

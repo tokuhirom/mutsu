@@ -55,6 +55,7 @@ pub(crate) enum TokenKind {
     Bang,
     QuestionQuestion,
     Ampersand,
+    Pipe,
     LParen,
     RParen,
     LBracket,
@@ -772,7 +773,7 @@ impl Lexer {
                 if self.match_char('|') {
                     TokenKind::OrOr
                 } else {
-                    TokenKind::OrOr
+                    TokenKind::Pipe
                 }
             }
             '(' => {

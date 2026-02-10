@@ -3612,6 +3612,9 @@ impl Interpreter {
             }
         }
         match op {
+            TokenKind::Pipe => Ok(Self::merge_junction(JunctionKind::Any, left, right)),
+            TokenKind::Ampersand => Ok(Self::merge_junction(JunctionKind::All, left, right)),
+            TokenKind::Caret => Ok(Self::merge_junction(JunctionKind::One, left, right)),
             TokenKind::Plus => {
                 let (l, r) = Self::coerce_numeric(left, right);
                 if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
@@ -4613,6 +4616,22 @@ impl Interpreter {
             Value::Num(f) => Some((*f, 0.0)),
             Value::Rat(n, d) => if *d != 0 { Some((*n as f64 / *d as f64, 0.0)) } else { None },
             _ => None,
+        }
+    }
+
+    fn merge_junction(kind: JunctionKind, left: Value, right: Value) -> Value {
+        let mut values = Vec::new();
+        Self::push_junction_value(&kind, left, &mut values);
+        Self::push_junction_value(&kind, right, &mut values);
+        Value::Junction { kind, values }
+    }
+
+    fn push_junction_value(kind: &JunctionKind, value: Value, out: &mut Vec<Value>) {
+        match value {
+            Value::Junction { kind: inner_kind, values } if &inner_kind == kind => {
+                out.extend(values);
+            }
+            other => out.push(other),
         }
     }
 
