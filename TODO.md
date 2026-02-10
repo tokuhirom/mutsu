@@ -186,8 +186,8 @@ Implement Raku OOP.
 
 Implement Raku regex/grammar.
 
-- [ ] Basic regex (`/pattern/`)
-- [ ] `rx//` form
+- [x] Basic regex (`/pattern/`)
+- [x] `rx//` form
 - [ ] `m//` match operator
 - [ ] `s///` substitution operator
 - [ ] Character classes, quantifiers, anchors

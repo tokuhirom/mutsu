@@ -298,7 +298,7 @@ impl Lexer {
                         self.pos += 1;
                         self.pos += 1;
                         let regex = self.read_regex_literal();
-                        TokenKind::Str(regex)
+                        TokenKind::Regex(regex)
                     } else {
                         let ident = self.read_ident_start(ch);
                         match ident.as_str() {

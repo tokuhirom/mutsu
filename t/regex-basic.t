@@ -1,5 +1,5 @@
 use Test;
-plan 12;
+plan 13;
 
 ok "abc" ~~ /abc/, 'literal match';
 ok "abc" ~~ /b/, 'substring match';
@@ -13,3 +13,4 @@ ok "123" ~~ /\d+/, 'digit class';
 ok "a1_" ~~ /\w+/, 'word class';
 ok "a b" ~~ /\s/, 'space class';
 ok "abc".match(/b/), '.match uses regex';
+ok "abc" ~~ rx/ab/, 'rx// literal match';
