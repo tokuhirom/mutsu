@@ -7,6 +7,13 @@ use crate::lexer::{Lexer, TokenKind};
 use crate::parser::Parser;
 use crate::value::{make_rat, RuntimeError, Value};
 
+#[derive(Debug, Clone)]
+struct ClassDef {
+    parent: Option<String>,
+    attributes: Vec<(String, bool, Option<Expr>)>, // (name, is_public, default)
+    methods: HashMap<String, (Vec<String>, Vec<ParamDef>, Vec<Stmt>)>, // name -> (params, param_defs, body)
+}
+
 pub struct Interpreter {
     env: HashMap<String, Value>,
     output: String,
@@ -25,6 +32,7 @@ pub struct Interpreter {
     when_matched: bool,
     gather_items: Vec<Vec<Value>>,
     enum_types: HashMap<String, Vec<(String, i64)>>,
+    classes: HashMap<String, ClassDef>,
 }
 
 impl Interpreter {
@@ -50,6 +58,7 @@ impl Interpreter {
             when_matched: false,
             gather_items: Vec::new(),
             enum_types: HashMap::new(),
+            classes: HashMap::new(),
         }
     }
 
@@ -506,6 +515,45 @@ impl Interpreter {
                     self.env.insert(key.clone(), enum_val);
                 }
             }
+            Stmt::ClassDecl { name, parent, body } => {
+                let mut class_def = ClassDef {
+                    parent: parent.clone(),
+                    attributes: Vec::new(),
+                    methods: HashMap::new(),
+                };
+                // If there's a parent, inherit its attributes and methods
+                if let Some(parent_name) = parent {
+                    if let Some(parent_class) = self.classes.get(parent_name).cloned() {
+                        class_def.attributes = parent_class.attributes.clone();
+                        class_def.methods = parent_class.methods.clone();
+                    }
+                }
+                // Process class body to collect attributes and methods
+                for stmt in body {
+                    match stmt {
+                        Stmt::HasDecl { name: attr_name, is_public, default } => {
+                            class_def.attributes.push((attr_name.clone(), *is_public, default.clone()));
+                        }
+                        Stmt::MethodDecl { name: method_name, params, param_defs, body: method_body } => {
+                            class_def.methods.insert(
+                                method_name.clone(),
+                                (params.clone(), param_defs.clone(), method_body.clone()),
+                            );
+                        }
+                        _ => {
+                            // Execute other statements in class scope
+                            self.exec_stmt(stmt)?;
+                        }
+                    }
+                }
+                self.classes.insert(name.clone(), class_def);
+            }
+            Stmt::HasDecl { .. } => {
+                // HasDecl outside a class is a no-op (handled during ClassDecl)
+            }
+            Stmt::MethodDecl { .. } => {
+                // MethodDecl outside a class is a no-op (handled during ClassDecl)
+            }
             Stmt::Expr(expr) => {
                 self.eval_expr(expr)?;
             }
@@ -703,7 +751,13 @@ impl Interpreter {
                     "Set" => matches!(value, Value::Set(_)),
                     "Bag" => matches!(value, Value::Bag(_)),
                     "Mix" => matches!(value, Value::Mix(_)),
-                    _ => true,
+                    _ => {
+                        if let Value::Instance { class_name, .. } = &value {
+                            class_name == type_name.as_str()
+                        } else {
+                            true
+                        }
+                    }
                 };
                 self.test_ok(ok, &desc, todo)?;
             }
@@ -977,6 +1031,21 @@ impl Interpreter {
             .or_else(|| self.functions.get(&format!("GLOBAL::{}", name)).cloned())
     }
 
+    fn find_method(&self, class_name: &str, method_name: &str) -> Option<(Vec<String>, Vec<ParamDef>, Vec<Stmt>)> {
+        let mut current = Some(class_name.to_string());
+        while let Some(cn) = current {
+            if let Some(class_def) = self.classes.get(&cn) {
+                if let Some(m) = class_def.methods.get(method_name) {
+                    return Some(m.clone());
+                }
+                current = class_def.parent.clone();
+            } else {
+                break;
+            }
+        }
+        None
+    }
+
     fn resolve_function_with_arity(&self, name: &str, arity: usize) -> Option<FunctionDef> {
         if name.contains("::") {
             return self.functions.get(name).cloned();
@@ -1045,6 +1114,7 @@ impl Interpreter {
             Value::Package(_) => "Package",
             Value::CompUnitDepSpec { .. } => "Any",
             Value::Enum { .. } => "Int",
+            Value::Instance { .. } => "Any",
         }
     }
 
@@ -1212,6 +1282,10 @@ impl Interpreter {
                     if matches!(val, Value::Enum { .. }) {
                         return Ok(val.clone());
                     }
+                }
+                // Check if it's a class name (return as type object)
+                if self.classes.contains_key(name.as_str()) {
+                    return Ok(Value::Package(name.clone()));
                 }
                 Ok(Value::Str(name.clone()))
             }
@@ -1386,6 +1460,88 @@ impl Interpreter {
                     self.output.push('\n');
                     return Ok(Value::Nil);
                 }
+                // Handle .new() constructor on class type
+                if name == "new" {
+                    let base = self.eval_expr(target)?;
+                    if let Value::Package(class_name) = &base {
+                        if let Some(class_def) = self.classes.get(class_name).cloned() {
+                            let mut attrs = HashMap::new();
+                            // Set defaults
+                            for (attr_name, _is_public, default) in &class_def.attributes {
+                                let val = if let Some(expr) = default {
+                                    self.eval_expr(expr)?
+                                } else {
+                                    Value::Nil
+                                };
+                                attrs.insert(attr_name.clone(), val);
+                            }
+                            // Apply named arguments from constructor
+                            let mut eval_args = Vec::new();
+                            for arg in args {
+                                eval_args.push(self.eval_expr(arg)?);
+                            }
+                            for val in &eval_args {
+                                if let Value::Pair(k, v) = val {
+                                    attrs.insert(k.clone(), *v.clone());
+                                }
+                            }
+                            return Ok(Value::Instance {
+                                class_name: class_name.clone(),
+                                attributes: attrs,
+                            });
+                        }
+                    }
+                }
+                // Handle method calls on instances
+                {
+                    let base = self.eval_expr(target)?;
+                    if let Value::Instance { class_name, attributes } = &base {
+                        // Check for accessor methods (public attributes)
+                        if args.is_empty() {
+                            if let Some(class_def) = self.classes.get(class_name) {
+                                for (attr_name, is_public, _) in &class_def.attributes {
+                                    if *is_public && attr_name == name {
+                                        return Ok(attributes.get(name).cloned().unwrap_or(Value::Nil));
+                                    }
+                                }
+                            }
+                        }
+                        // Look up method in class hierarchy
+                        if let Some((method_params, method_param_defs, method_body)) = self.find_method(class_name, name) {
+                            let saved_env = self.env.clone();
+                            // Bind self
+                            self.env.insert("self".to_string(), base.clone());
+                            // Bind attributes as $!name and $.name
+                            for (attr_name, attr_val) in attributes {
+                                self.env.insert(format!("!{}", attr_name), attr_val.clone());
+                                self.env.insert(format!(".{}", attr_name), attr_val.clone());
+                            }
+                            // Bind method parameters
+                            let mut eval_args = Vec::new();
+                            for arg in args {
+                                eval_args.push(self.eval_expr(arg)?);
+                            }
+                            for (i, param) in method_params.iter().enumerate() {
+                                if let Some(val) = eval_args.get(i) {
+                                    self.env.insert(param.clone(), val.clone());
+                                } else if let Some(pd) = method_param_defs.get(i) {
+                                    if let Some(default_expr) = &pd.default {
+                                        let val = self.eval_expr(default_expr)?;
+                                        self.env.insert(param.clone(), val);
+                                    }
+                                }
+                            }
+                            let result = match self.run_block(&method_body) {
+                                Ok(()) => Ok(Value::Nil),
+                                Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
+                                Err(e) => Err(e),
+                            };
+                            self.env = saved_env;
+                            return result;
+                        }
+                        // Fall through to generic method handling (WHAT, defined, etc.)
+                    }
+                }
                 if let Expr::ArrayVar(var_name) = target.as_ref() {
                     let key = format!("@{}", var_name);
                     match name.as_str() {
@@ -1539,6 +1695,7 @@ impl Interpreter {
                         Value::Routine { .. } => "Routine",
                         Value::Sub { .. } => "Sub",
                         Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
+                        Value::Instance { class_name, .. } => class_name.as_str(),
                     }))),
                     "^name" => {
                         // Meta-method: type name
@@ -1563,6 +1720,7 @@ impl Interpreter {
                             Value::Routine { .. } => "Routine".to_string(),
                             Value::Sub { .. } => "Sub".to_string(),
                             Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification".to_string(),
+                            Value::Instance { class_name, .. } => class_name.clone(),
                         }))
                     }
                     "defined" => Ok(Value::Bool(!matches!(base, Value::Nil))),
@@ -3677,6 +3835,10 @@ impl Interpreter {
                 };
                 let items: Vec<Value> = std::iter::repeat(left).take(n).collect();
                 Ok(Value::Array(items))
+            }
+            TokenKind::FatArrow => {
+                let key = left.to_string_value();
+                Ok(Value::Pair(key, Box::new(right)))
             }
             _ => Err(RuntimeError::new("Unknown binary operator")),
         }

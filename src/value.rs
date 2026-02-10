@@ -85,6 +85,10 @@ pub enum Value {
         body: Vec<Stmt>,
         env: HashMap<String, Value>,
     },
+    Instance {
+        class_name: String,
+        attributes: HashMap<String, Value>,
+    },
     Nil,
 }
 
@@ -132,6 +136,7 @@ impl PartialEq for Value {
             (Value::Pair(ak, av), Value::Pair(bk, bv)) => ak == bk && av == bv,
             (Value::Enum { enum_type: at, key: ak, .. }, Value::Enum { enum_type: bt, key: bk, .. }) => at == bt && ak == bk,
             (Value::Routine { package: ap, name: an }, Value::Routine { package: bp, name: bn }) => ap == bp && an == bn,
+            (Value::Instance { class_name: a, attributes: aa }, Value::Instance { class_name: b, attributes: ba }) => a == b && aa == ba,
             (Value::Nil, Value::Nil) => true,
             _ => false,
         }
@@ -163,6 +168,7 @@ impl Value {
             Value::Package(_) => true,
             Value::Routine { .. } => true,
             Value::Sub { .. } => true,
+            Value::Instance { .. } => true,
             Value::Nil => false,
         }
     }
@@ -237,6 +243,7 @@ impl Value {
             Value::Package(s) => s.clone(),
             Value::Routine { package, name } => format!("{}::{}", package, name),
             Value::Sub { name, .. } => name.clone(),
+            Value::Instance { class_name, .. } => format!("{}()", class_name),
             Value::Nil => "Nil".to_string(),
         }
     }

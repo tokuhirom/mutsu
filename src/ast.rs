@@ -109,6 +109,9 @@ pub(crate) enum Stmt {
     Catch(Vec<Stmt>),
     Take(Expr),
     EnumDecl { name: String, variants: Vec<(String, Option<Expr>)> },
+    ClassDecl { name: String, parent: Option<String>, body: Vec<Stmt> },
+    HasDecl { name: String, is_public: bool, default: Option<Expr> },
+    MethodDecl { name: String, params: Vec<String>, param_defs: Vec<ParamDef>, body: Vec<Stmt> },
     Expr(Expr),
 }
 

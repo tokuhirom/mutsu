@@ -58,6 +58,15 @@ impl Parser {
             let body = self.parse_block()?;
             return Ok(Stmt::Package { name, body });
         }
+        if self.match_ident("class") {
+            return self.parse_class_decl();
+        }
+        if self.match_ident("has") {
+            return self.parse_has_decl();
+        }
+        if self.match_ident("method") {
+            return self.parse_method_decl();
+        }
         let is_multi = self.match_ident("multi");
         if is_multi {
             self.match_ident("sub"); // optional 'sub' after 'multi'
@@ -998,6 +1007,19 @@ impl Parser {
             };
             return Expr::AssignExpr { name, expr: Box::new(value) };
         }
+        // Handle name => value (pair/named arg syntax)
+        if let Some(name) = self.peek_ident() {
+            if matches!(self.peek_next_kind(), Some(TokenKind::FatArrow)) {
+                self.pos += 1; // consume ident
+                self.pos += 1; // consume =>
+                let value = self.parse_expr_or_true();
+                return Expr::Binary {
+                    left: Box::new(Expr::Literal(Value::Str(name))),
+                    op: TokenKind::FatArrow,
+                    right: Box::new(value),
+                };
+            }
+        }
         self.parse_expr_or_true()
     }
 
@@ -1480,11 +1502,6 @@ impl Parser {
                 } else {
                     Expr::Literal(Value::Nil)
                 }
-            } else if name == "class" && matches!(self.peek_next_kind(), Some(TokenKind::LBrace)) {
-                self.pos += 1;
-                self.consume_kind(TokenKind::LBrace)?;
-                self.skip_brace_block();
-                Expr::Literal(Value::Nil)
             } else if name == "EVAL" && matches!(self.peek_next_kind(), Some(TokenKind::Str(_))) {
                 let name = self.consume_ident()?;
                 let arg = self.parse_expr()?;
@@ -1523,6 +1540,8 @@ impl Parser {
                     Expr::Literal(Value::Bool(false))
                 } else if name == "Bool::True" {
                     Expr::Literal(Value::Bool(true))
+                } else if name == "self" {
+                    Expr::Var("self".to_string())
                 } else {
                     Expr::BareWord(name)
                 }
@@ -1761,24 +1780,6 @@ impl Parser {
         ) && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::FatArrow))
     }
 
-    fn skip_brace_block(&mut self) {
-        let mut depth = 1usize;
-        while let Some(token) = self.tokens.get(self.pos) {
-            match token.kind {
-                TokenKind::LBrace => depth += 1,
-                TokenKind::RBrace => {
-                    depth -= 1;
-                    if depth == 0 {
-                        self.pos += 1;
-                        break;
-                    }
-                }
-                _ => {}
-            }
-            self.pos += 1;
-        }
-    }
-
     fn consume_var(&mut self) -> Result<String, RuntimeError> {
         if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Var(_))) {
             if let TokenKind::Var(name) = token.kind {
@@ -2012,5 +2013,93 @@ impl Parser {
         self.consume_kind(TokenKind::RBracket)?;
         let expr = self.parse_comma_expr()?;
         Ok(Expr::Reduction { op: op_name, expr: Box::new(expr) })
+    }
+
+    fn parse_class_decl(&mut self) -> Result<Stmt, RuntimeError> {
+        let name = self.consume_ident()?;
+        let mut parent = None;
+        if self.match_ident("is") {
+            parent = Some(self.consume_ident()?);
+        }
+        self.consume_kind(TokenKind::LBrace)?;
+        let mut body = Vec::new();
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
+            body.push(self.parse_stmt()?);
+        }
+        self.consume_kind(TokenKind::RBrace)?;
+        self.match_kind(TokenKind::Semicolon);
+        Ok(Stmt::ClassDecl { name, parent, body })
+    }
+
+    fn parse_has_decl(&mut self) -> Result<Stmt, RuntimeError> {
+        // Skip optional type annotation
+        if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
+            && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
+        {
+            self.pos += 1;
+        }
+        let var = self.consume_var()?;
+        // var is like ".name" (public) or "!name" (private)
+        let (is_public, attr_name) = if let Some(rest) = var.strip_prefix('.') {
+            (true, rest.to_string())
+        } else if let Some(rest) = var.strip_prefix('!') {
+            (false, rest.to_string())
+        } else {
+            (false, var.clone())
+        };
+        let default = if self.match_kind(TokenKind::Eq) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+        self.match_kind(TokenKind::Semicolon);
+        Ok(Stmt::HasDecl { name: attr_name, is_public, default })
+    }
+
+    fn parse_method_decl(&mut self) -> Result<Stmt, RuntimeError> {
+        let name = self.consume_ident()?;
+        let mut params = Vec::new();
+        let mut param_defs = Vec::new();
+        if self.match_kind(TokenKind::LParen) {
+            while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
+                let mut is_named = false;
+                let mut is_slurpy = false;
+                if self.match_kind(TokenKind::Star) {
+                    is_slurpy = true;
+                }
+                if self.match_kind(TokenKind::Colon) {
+                    is_named = true;
+                }
+                let mut type_constraint = None;
+                if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(_)))
+                    && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind), Some(TokenKind::Var(_)))
+                {
+                    if let Some(TokenKind::Ident(ty)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+                        type_constraint = Some(ty.clone());
+                    }
+                    self.pos += 1;
+                }
+                if self.peek_is_var() {
+                    let var = self.consume_var()?;
+                    let default = if self.match_kind(TokenKind::Eq) {
+                        Some(self.parse_expr()?)
+                    } else {
+                        None
+                    };
+                    params.push(var.clone());
+                    param_defs.push(ParamDef { name: var, default, named: is_named, slurpy: is_slurpy, type_constraint });
+                } else {
+                    self.pos += 1;
+                }
+                self.match_kind(TokenKind::Comma);
+            }
+            self.match_kind(TokenKind::RParen);
+        }
+        if self.match_kind(TokenKind::LBrace) {
+            let body = self.parse_block_body()?;
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::MethodDecl { name, params, param_defs, body });
+        }
+        Err(RuntimeError::new("Expected block for method"))
     }
 }

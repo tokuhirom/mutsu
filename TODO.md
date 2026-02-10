@@ -166,18 +166,18 @@ Get minimal Raku programs running. Prioritize feature implementation.
 
 Implement Raku OOP. Pass roast S12 tests.
 
-- [ ] `class` declaration
-- [ ] `has` attributes (`has $.name`, `has $!private`)
-- [ ] `method` declaration
-- [ ] `self`
-- [ ] `new` constructor (auto-generated)
-- [ ] Inheritance (`is Parent`)
+- [x] `class` declaration
+- [x] `has` attributes (`has $.name`, `has $!private`)
+- [x] `method` declaration
+- [x] `self`
+- [x] `new` constructor (auto-generated)
+- [x] Inheritance (`is Parent`)
 - [ ] `role` declaration and `does`
 - [ ] `multi method`
 - [ ] `BUILD` / `TWEAK` submethods
 - [ ] Type checking
 - [ ] Coercion (`Int(Str)` etc.)
-- [ ] `enum`
+- [x] `enum`
 - [ ] `subset`
 - [ ] Method resolution order (MRO, C3)
 

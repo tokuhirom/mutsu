@@ -574,8 +574,25 @@ impl Lexer {
             }
             '$' => {
                 if self.peek() == Some('!') {
-                    self.pos += 1;
-                    TokenKind::Var("!".to_string())
+                    // Check if $!attr (attribute access) vs $! (error variable)
+                    if self.src.get(self.pos + 1).map_or(false, |c| c.is_ascii_alphabetic() || *c == '_') {
+                        self.pos += 1; // skip '!'
+                        let name = self.read_ident();
+                        TokenKind::Var(format!("!{}", name))
+                    } else {
+                        self.pos += 1;
+                        TokenKind::Var("!".to_string())
+                    }
+                } else if self.peek() == Some('.') {
+                    // Check if $.attr (public attribute accessor)
+                    if self.src.get(self.pos + 1).map_or(false, |c| c.is_ascii_alphabetic() || *c == '_') {
+                        self.pos += 1; // skip '.'
+                        let name = self.read_ident();
+                        TokenKind::Var(format!(".{}", name))
+                    } else {
+                        let ident = self.read_ident();
+                        TokenKind::Var(ident)
+                    }
                 } else {
                     let ident = self.read_ident();
                     TokenKind::Var(ident)
