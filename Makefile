@@ -2,7 +2,9 @@
 
 test:
 	cargo test
-	prove -e 'cargo run --' t/
+	cargo build
+	prove -e 'target/debug/mutsu' t/
 
 roast:
-	prove -e 'cargo run --' $(shell cat roast-whitelist.txt)
+	cargo build
+	prove -e 'target/debug/mutsu' $(shell cat roast-whitelist.txt)
