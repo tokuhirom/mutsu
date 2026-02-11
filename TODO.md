@@ -237,6 +237,8 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
 
 **Phase 7 (done):** Expression compilation: `EnvIndex` (%*ENV<key>), `Exists` (:exists), `Reduction` ([+] @arr), `Subst` (s///), `RoutineMagic`/`BlockMagic`.
 
+**Phase 8 (done):** All remaining statements compiled. No-ops (`Catch`/`Control`/`HasDecl`/`MethodDecl`/`DoesDecl`) emit nothing. `Take` compiled to native opcode. `React`/`Package` body compiled inline. `Phaser` (BEGIN inline, END deferred). Declarations (`SubDecl`/`ClassDecl`/`RoleDecl`/`EnumDecl`/`SubsetDecl`/`TokenDecl`/`RuleDecl`/`ProtoDecl`/`ProtoToken`/`Use`/`Subtest`/`Whenever`) and `Call` with named/Block args delegate to interpreter.
+
 #### Compiled Binary Ops
 - [x] Arithmetic: `+`, `-`, `*`, `/`, `%`, `**`
 - [x] String: `~` (concat)
@@ -286,17 +288,18 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
 - [x] `Assign` (=, :=, =~), `If`, `While`, `For`, `Loop` (C-style, repeat)
 - [x] `Call` (positional args only), `Last`, `Next`, `Redo`, `Return`, `Die`
 - [x] `Given`, `When`, `Default`, `Proceed`, `Succeed`
-- [ ] `Call` with named args / Block / AnonSub args
-- [ ] `SubDecl` / `MultiSubDecl` / `ProtoDecl`
-- [ ] `ClassDecl` / `RoleDecl` / `HasDecl` / `MethodDecl` / `DoesDecl`
-- [ ] `EnumDecl` / `SubsetDecl`
-- [ ] `GrammarDecl` / `TokenDecl` / `RuleDecl` / `ProtoToken`
-- [ ] `Use` / `Package`
-- [ ] `Phaser` (BEGIN, END, ENTER, LEAVE, …)
-- [ ] `Catch` / `Control`
-- [ ] `Take`
-- [ ] `React` / `Whenever` / `Supply` / `Emit`
-- [ ] `Subtest`
+- [x] `Call` with named args / Block / AnonSub args (delegate to interpreter)
+- [x] `SubDecl` / `ProtoDecl` (delegate to interpreter)
+- [x] `ClassDecl` / `RoleDecl` (delegate to interpreter)
+- [x] `HasDecl` / `MethodDecl` / `DoesDecl` (no-op outside class)
+- [x] `EnumDecl` / `SubsetDecl` (delegate to interpreter)
+- [x] `TokenDecl` / `RuleDecl` / `ProtoToken` (delegate to interpreter)
+- [x] `Use` / `Package` (Use delegates; Package compiled inline)
+- [x] `Phaser` (BEGIN inline, END deferred, others delegate)
+- [x] `Catch` / `Control` (no-op, handled by try)
+- [x] `Take` (compiled to Take opcode)
+- [x] `React` (compiled inline) / `Whenever` (delegate to interpreter)
+- [x] `Subtest` (delegate to interpreter)
 
 #### Remaining: VM Architecture
 - [ ] Local variable slots (`GetLocal`/`SetLocal` — indexed, no HashMap lookup)

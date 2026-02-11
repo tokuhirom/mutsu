@@ -992,6 +992,33 @@ impl VM {
                 *ip += 1;
             }
 
+            // -- Take (gather/take) --
+            OpCode::Take => {
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                self.interpreter.take_value(val);
+                *ip += 1;
+            }
+
+            // -- Package scope --
+            OpCode::PackageScope { name_idx, body_end } => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                let body_end = *body_end as usize;
+                let saved = self.interpreter.current_package().to_string();
+                self.interpreter.set_current_package(name);
+                self.run_range(code, *ip + 1, body_end)?;
+                self.interpreter.set_current_package(saved);
+                *ip = body_end;
+            }
+
+            // -- Phaser END (defer body for later execution) --
+            OpCode::PhaserEnd(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                if let crate::ast::Stmt::Phaser { body, .. } = stmt {
+                    self.interpreter.push_end_phaser(body.clone());
+                }
+                *ip += 1;
+            }
+
             // -- Fallback to tree-walker --
             OpCode::InterpretStmt(idx) => {
                 let stmt = &code.stmt_pool[*idx as usize];

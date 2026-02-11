@@ -214,6 +214,15 @@ pub(crate) enum OpCode {
     // -- Substitution (s///) --
     Subst { pattern_idx: u32, replacement_idx: u32 },
 
+    // -- Take (gather/take) --
+    Take,
+
+    // -- Package scope --
+    PackageScope { name_idx: u32, body_end: u32 },
+
+    // -- Phaser --
+    PhaserEnd(u32),
+
     // -- Error handling --
     Die,
 
@@ -297,7 +306,8 @@ impl CompiledCode {
             OpCode::Given { body_end, .. } => *body_end = target,
             OpCode::When { body_end, .. } => *body_end = target,
             OpCode::Default { body_end, .. } => *body_end = target,
-            _ => panic!("patch_body_end on non-Given/When/Default opcode"),
+            OpCode::PackageScope { body_end, .. } => *body_end = target,
+            _ => panic!("patch_body_end on non-Given/When/Default/PackageScope opcode"),
         }
     }
 

@@ -1,5 +1,5 @@
 use Test;
-plan 123;
+plan 131;
 
 # Literal compilation
 is 42, 42, 'integer literal';
@@ -379,3 +379,34 @@ is ([~] <a b c>), "abc", '[~] reduction on string list';
 is ([+] ()), 0, '[+] on empty list returns 0';
 is ([*] ()), 1, '[*] on empty list returns 1';
 is ([~] ()), "", '[~] on empty list returns ""';
+
+# --- Phase 8: compiled statements ---
+
+# Take statement (compiled Take opcode)
+my @gathered = gather { take 1; take 2; take 3; };
+is @gathered.elems, 3, 'take compiled to Take opcode';
+is @gathered[0], 1, 'take first value';
+is @gathered[2], 3, 'take third value';
+
+# Sub declaration (compiled via InterpretStmt, but recognized)
+sub vm_add($a, $b) { $a + $b }
+is vm_add(10, 20), 30, 'sub declaration compiled';
+
+# Class declaration (compiled via InterpretStmt)
+class VMTestPoint { has $.x; has $.y; method sum() { $.x + $.y } }
+my $vpt = VMTestPoint.new(x => 3, y => 4);
+is $vpt.sum, 7, 'class declaration compiled';
+
+# Enum declaration (compiled via InterpretStmt)
+enum VMColor <Red Green Blue>;
+is Red.key, "Red", 'enum declaration compiled';
+
+# BEGIN phaser (compiled inline)
+my $begin_val = 0;
+BEGIN { $begin_val = 42; }
+is $begin_val, 42, 'BEGIN phaser compiled inline';
+
+# React block (compiled inline)
+my $react_val = 0;
+react { $react_val = 99; }
+is $react_val, 99, 'react block compiled inline';

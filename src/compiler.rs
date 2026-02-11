@@ -270,6 +270,73 @@ impl Compiler {
                 }
                 self.code.patch_loop_end(loop_idx);
             }
+            // --- No-ops: these statements are handled elsewhere ---
+            // CATCH/CONTROL are handled by try expressions, not standalone
+            Stmt::Catch(_) | Stmt::Control(_) => {}
+            // HasDecl/MethodDecl/DoesDecl outside class context are no-ops
+            Stmt::HasDecl { .. } | Stmt::MethodDecl { .. } | Stmt::DoesDecl { .. } => {}
+
+            // --- Take (gather/take) ---
+            Stmt::Take(expr) => {
+                self.compile_expr(expr);
+                self.code.emit(OpCode::Take);
+            }
+
+            // --- React: just run the body block ---
+            Stmt::React { body } if !Self::has_phasers(body) => {
+                for s in body {
+                    self.compile_stmt(s);
+                }
+            }
+
+            // --- Package scope ---
+            Stmt::Package { name, body } if !Self::has_phasers(body) => {
+                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                let pkg_idx = self.code.emit(OpCode::PackageScope { name_idx, body_end: 0 });
+                for s in body {
+                    self.compile_stmt(s);
+                }
+                self.code.patch_body_end(pkg_idx);
+            }
+
+            // --- Phaser (BEGIN/END) ---
+            Stmt::Phaser { kind: PhaserKind::Begin, body } => {
+                // BEGIN: compile body inline (runs immediately)
+                for s in body {
+                    self.compile_stmt(s);
+                }
+            }
+            Stmt::Phaser { kind: PhaserKind::End, body } => {
+                // END: store body in stmt pool for deferred execution
+                let end_stmt = Stmt::Phaser { kind: PhaserKind::End, body: body.clone() };
+                let idx = self.code.add_stmt(end_stmt);
+                self.code.emit(OpCode::PhaserEnd(idx));
+            }
+
+            // --- Declarations: delegate to interpreter (run once, complex state) ---
+            Stmt::SubDecl { .. }
+            | Stmt::ProtoDecl { .. }
+            | Stmt::ClassDecl { .. }
+            | Stmt::RoleDecl { .. }
+            | Stmt::EnumDecl { .. }
+            | Stmt::SubsetDecl { .. }
+            | Stmt::TokenDecl { .. }
+            | Stmt::RuleDecl { .. }
+            | Stmt::ProtoToken { .. }
+            | Stmt::Use { .. }
+            | Stmt::Subtest { .. }
+            | Stmt::Whenever { .. } => {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::InterpretStmt(idx));
+            }
+
+            // --- Call with named/Block/AnonSub args: needs raw expressions ---
+            // (The simple positional-only case is handled above)
+            Stmt::Call { .. } => {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::InterpretStmt(idx));
+            }
+
             // Fallback for everything else
             _ => {
                 let idx = self.code.add_stmt(stmt.clone());

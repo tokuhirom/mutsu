@@ -348,6 +348,24 @@ impl Interpreter {
         Self::char_idx_to_byte(text, idx)
     }
 
+    pub(crate) fn take_value(&mut self, val: Value) {
+        if let Some(items) = self.gather_items.last_mut() {
+            items.push(val);
+        }
+    }
+
+    pub(crate) fn current_package(&self) -> &str {
+        &self.current_package
+    }
+
+    pub(crate) fn set_current_package(&mut self, pkg: String) {
+        self.current_package = pkg;
+    }
+
+    pub(crate) fn push_end_phaser(&mut self, body: Vec<Stmt>) {
+        self.end_phasers.push(body);
+    }
+
     fn init_order_enum(&mut self) {
         let variants = vec![
             ("Less".to_string(), -1i64),
