@@ -239,6 +239,8 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
 
 **Phase 8 (done):** All remaining statements compiled. No-ops (`Catch`/`Control`/`HasDecl`/`MethodDecl`/`DoesDecl`) emit nothing. `Take` compiled to native opcode. `React`/`Package` body compiled inline. `Phaser` (BEGIN inline, END deferred). Declarations (`SubDecl`/`ClassDecl`/`RoleDecl`/`EnumDecl`/`SubsetDecl`/`TokenDecl`/`RuleDecl`/`ProtoDecl`/`ProtoToken`/`Use`/`Subtest`/`Whenever`) and `Call` with named/Block args delegate to interpreter.
 
+**Phase 9 (done):** All remaining expressions compiled. `HyperOp`/`MetaOp`/`InfixFunc` sub-expressions compiled to bytecode with bridge opcodes. `Block`/`AnonSub`/`Lambda`/`Gather`/`CallOn`/`Try` delegate to interpreter (env capture / complex state).
+
 #### Compiled Binary Ops
 - [x] Arithmetic: `+`, `-`, `*`, `/`, `%`, `**`
 - [x] String: `~` (concat)
@@ -274,14 +276,14 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
 - [x] `Exists` (:exists)
 - [x] `Reduction` ([+] @arr)
 - [x] `RoutineMagic` / `BlockMagic`
-- [ ] `Block` / `AnonSub` (as expression value)
-- [ ] `Lambda` (-> $x { })
-- [ ] `CallOn` (target.())
-- [ ] `Try` (try { } CATCH { })
-- [ ] `Gather` (gather { take … })
-- [ ] `InfixFunc` (min, max infix)
-- [ ] `HyperOp` (>>op<<)
-- [ ] `MetaOp` (Rop, Xop, Zop)
+- [x] `HyperOp` (>>op<< — sub-expressions compiled, operation bridges)
+- [x] `MetaOp` (Rop, Xop, Zop — sub-expressions compiled, operation bridges)
+- [x] `InfixFunc` (atan2, sprintf — sub-expressions compiled, operation bridges)
+- [x] `Block` / `AnonSub` (delegate to interpreter — env capture)
+- [x] `Lambda` (-> $x { } — delegate to interpreter — env capture)
+- [x] `CallOn` (target.() — delegate to interpreter — complex state)
+- [x] `Try` (try { } CATCH { } — delegate to interpreter — error handling)
+- [x] `Gather` (gather { take … } — delegate to interpreter — env capture)
 
 #### Compiled Statements
 - [x] `Expr`, `Block`, `Say`, `Print`, `VarDecl`

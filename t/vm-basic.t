@@ -1,5 +1,5 @@
 use Test;
-plan 131;
+plan 142;
 
 # Literal compilation
 is 42, 42, 'integer literal';
@@ -410,3 +410,34 @@ is $begin_val, 42, 'BEGIN phaser compiled inline';
 my $react_val = 0;
 react { $react_val = 99; }
 is $react_val, 99, 'react block compiled inline';
+
+# --- Phase 9: remaining compiled expressions ---
+
+# HyperOp (compiled sub-expressions + HyperOp opcode)
+my @hyper_in = (1, 2, 3);
+my @hyper_out = @hyper_in >>+>> 10;
+is @hyper_out[0], 11, 'hyper op >>+>> first element';
+is @hyper_out[1], 12, 'hyper op >>+>> second element';
+is @hyper_out[2], 13, 'hyper op >>+>> third element';
+
+# MetaOp R (reverse)
+is (10 R- 3), -7, 'Rminus meta op compiled';
+
+# MetaOp X (cross)
+my @xresult = (1, 2) X+ (10, 20);
+is @xresult.elems, 4, 'Xplus meta op compiled element count';
+is @xresult[0], 11, 'Xplus first result';
+is @xresult[3], 22, 'Xplus last result';
+
+# MetaOp Z (zip)
+my @zresult = (1, 2, 3) Z+ (10, 20, 30);
+is @zresult[0], 11, 'Zplus first result';
+is @zresult[2], 33, 'Zplus third result';
+
+# Block as expression value (delegate to interpreter)
+my $block = { 42 };
+is $block(), 42, 'block as expression value';
+
+# Lambda (delegate to interpreter)
+my $lam = -> $x { $x * 2 };
+is $lam(5), 10, 'lambda expression value';

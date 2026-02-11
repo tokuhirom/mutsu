@@ -366,6 +366,29 @@ impl Interpreter {
         self.end_phasers.push(body);
     }
 
+    pub(crate) fn eval_hyper_op_values(
+        &self,
+        op: &str,
+        left: &Value,
+        right: &Value,
+        dwim_left: bool,
+        dwim_right: bool,
+    ) -> Result<Value, RuntimeError> {
+        self.eval_hyper_op(op, left, right, dwim_left, dwim_right)
+    }
+
+    pub(crate) fn value_to_list_bridge(&self, val: &Value) -> Vec<Value> {
+        self.value_to_list(val)
+    }
+
+    pub(crate) fn format_sprintf_bridge(&self, fmt: &str, arg: Option<&Value>) -> String {
+        self.format_sprintf(fmt, arg)
+    }
+
+    pub(crate) fn to_float_value_bridge(val: &Value) -> Option<f64> {
+        Self::to_float_value(val)
+    }
+
     fn init_order_enum(&mut self) {
         let variants = vec![
             ("Less".to_string(), -1i64),

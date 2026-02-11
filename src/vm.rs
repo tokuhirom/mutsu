@@ -1019,6 +1019,128 @@ impl VM {
                 *ip += 1;
             }
 
+            // -- HyperOp (>>op<<) --
+            OpCode::HyperOp { op_idx, dwim_left, dwim_right } => {
+                let right = self.stack.pop().unwrap_or(Value::Nil);
+                let left = self.stack.pop().unwrap_or(Value::Nil);
+                let op = Self::const_str(code, *op_idx);
+                let result = self.interpreter.eval_hyper_op_values(
+                    op, &left, &right, *dwim_left, *dwim_right,
+                )?;
+                self.stack.push(result);
+                *ip += 1;
+            }
+
+            // -- MetaOp (Rop, Xop, Zop) --
+            OpCode::MetaOp { meta_idx, op_idx } => {
+                let right = self.stack.pop().unwrap_or(Value::Nil);
+                let left = self.stack.pop().unwrap_or(Value::Nil);
+                let meta = Self::const_str(code, *meta_idx).to_string();
+                let op = Self::const_str(code, *op_idx).to_string();
+                let result = match meta.as_str() {
+                    "R" => {
+                        self.interpreter.apply_reduction_op_values(&op, &right, &left)?
+                    }
+                    "X" => {
+                        let left_list = self.interpreter.value_to_list_bridge(&left);
+                        let right_list = self.interpreter.value_to_list_bridge(&right);
+                        let mut results = Vec::new();
+                        for l in &left_list {
+                            for r in &right_list {
+                                results.push(
+                                    self.interpreter.apply_reduction_op_values(&op, l, r)?,
+                                );
+                            }
+                        }
+                        Value::Array(results)
+                    }
+                    "Z" => {
+                        let left_list = self.interpreter.value_to_list_bridge(&left);
+                        let right_list = self.interpreter.value_to_list_bridge(&right);
+                        let len = left_list.len().min(right_list.len());
+                        let mut results = Vec::new();
+                        if op.is_empty() || op == "," {
+                            for i in 0..len {
+                                results.push(Value::Array(vec![
+                                    left_list[i].clone(),
+                                    right_list[i].clone(),
+                                ]));
+                            }
+                        } else if op == "=>" {
+                            for i in 0..len {
+                                let key = left_list[i].to_string_value();
+                                results.push(Value::Pair(
+                                    key,
+                                    Box::new(right_list[i].clone()),
+                                ));
+                            }
+                        } else {
+                            for i in 0..len {
+                                results.push(
+                                    self.interpreter.apply_reduction_op_values(
+                                        &op,
+                                        &left_list[i],
+                                        &right_list[i],
+                                    )?,
+                                );
+                            }
+                        }
+                        Value::Array(results)
+                    }
+                    _ => {
+                        return Err(RuntimeError::new(
+                            &format!("Unknown meta operator: {}", meta),
+                        ));
+                    }
+                };
+                self.stack.push(result);
+                *ip += 1;
+            }
+
+            // -- InfixFunc (atan2, sprintf) --
+            OpCode::InfixFunc { name_idx, right_arity, modifier_idx } => {
+                let arity = *right_arity as usize;
+                let mut right_vals: Vec<Value> = Vec::with_capacity(arity);
+                for _ in 0..arity {
+                    right_vals.push(self.stack.pop().unwrap_or(Value::Nil));
+                }
+                right_vals.reverse();
+                let left_val = self.stack.pop().unwrap_or(Value::Nil);
+                let name = Self::const_str(code, *name_idx).to_string();
+                let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
+                let result = if name == "atan2" {
+                    let mut x = right_vals
+                        .first()
+                        .and_then(|v| Interpreter::to_float_value_bridge(v))
+                        .unwrap_or(0.0);
+                    let mut y = Interpreter::to_float_value_bridge(&left_val).unwrap_or(0.0);
+                    if modifier.as_deref() == Some("R") {
+                        std::mem::swap(&mut x, &mut y);
+                    }
+                    Value::Num(y.atan2(x))
+                } else if name == "sprintf" {
+                    let fmt = match left_val {
+                        Value::Str(s) => s,
+                        _ => String::new(),
+                    };
+                    if modifier.as_deref() == Some("X") {
+                        let mut parts = Vec::new();
+                        for val in &right_vals {
+                            parts.push(self.interpreter.format_sprintf_bridge(&fmt, Some(val)));
+                        }
+                        Value::Str(parts.join(" "))
+                    } else {
+                        let arg = right_vals.first();
+                        let rendered = self.interpreter.format_sprintf_bridge(&fmt, arg);
+                        Value::Str(rendered)
+                    }
+                } else {
+                    Value::Nil
+                };
+                self.stack.push(result);
+                *ip += 1;
+            }
+
             // -- Fallback to tree-walker --
             OpCode::InterpretStmt(idx) => {
                 let stmt = &code.stmt_pool[*idx as usize];

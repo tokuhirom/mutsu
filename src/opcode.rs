@@ -223,6 +223,15 @@ pub(crate) enum OpCode {
     // -- Phaser --
     PhaserEnd(u32),
 
+    // -- HyperOp (>>op<<) --
+    HyperOp { op_idx: u32, dwim_left: bool, dwim_right: bool },
+
+    // -- MetaOp (Rop, Xop, Zop) --
+    MetaOp { meta_idx: u32, op_idx: u32 },
+
+    // -- InfixFunc (atan2, sprintf) --
+    InfixFunc { name_idx: u32, right_arity: u32, modifier_idx: Option<u32> },
+
     // -- Error handling --
     Die,
 

@@ -655,6 +655,52 @@ impl Compiler {
                 let replacement_idx = self.code.add_constant(Value::Str(replacement.clone()));
                 self.code.emit(OpCode::Subst { pattern_idx, replacement_idx });
             }
+            // HyperOp (>>op<<): compile sub-expressions, delegate operation
+            Expr::HyperOp { op, left, right, dwim_left, dwim_right } => {
+                self.compile_expr(left);
+                self.compile_expr(right);
+                let op_idx = self.code.add_constant(Value::Str(op.clone()));
+                self.code.emit(OpCode::HyperOp {
+                    op_idx,
+                    dwim_left: *dwim_left,
+                    dwim_right: *dwim_right,
+                });
+            }
+            // MetaOp (Rop, Xop, Zop): compile sub-expressions, delegate operation
+            Expr::MetaOp { meta, op, left, right } => {
+                self.compile_expr(left);
+                self.compile_expr(right);
+                let meta_idx = self.code.add_constant(Value::Str(meta.clone()));
+                let op_idx = self.code.add_constant(Value::Str(op.clone()));
+                self.code.emit(OpCode::MetaOp { meta_idx, op_idx });
+            }
+            // InfixFunc (atan2, sprintf): compile sub-expressions, delegate operation
+            Expr::InfixFunc { name, left, right, modifier } => {
+                self.compile_expr(left);
+                for r in right {
+                    self.compile_expr(r);
+                }
+                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                let modifier_idx = modifier.as_ref().map(|m| {
+                    self.code.add_constant(Value::Str(m.clone()))
+                });
+                self.code.emit(OpCode::InfixFunc {
+                    name_idx,
+                    right_arity: right.len() as u32,
+                    modifier_idx,
+                });
+            }
+            // Block / AnonSub / Lambda / Gather / CallOn / Try:
+            // These capture env or have complex state interactions.
+            // Delegate entirely to interpreter.
+            Expr::Block(_)
+            | Expr::AnonSub(_)
+            | Expr::Lambda { .. }
+            | Expr::Gather(_)
+            | Expr::CallOn { .. }
+            | Expr::Try { .. } => {
+                self.fallback_expr(expr);
+            }
             _ => {
                 self.fallback_expr(expr);
             }
