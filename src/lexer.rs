@@ -43,6 +43,7 @@ pub(crate) enum TokenKind {
     Dot,
     DotDot,
     DotDotDot,
+    DotDotDotCaret,
     DotDotCaret,
     CaretDotDot,
     CaretDotDotCaret,
@@ -148,7 +149,12 @@ impl Lexer {
                             TokenKind::DotDotCaret
                         } else if self.peek() == Some('.') {
                             self.pos += 1;
-                            TokenKind::DotDotDot
+                            if self.peek() == Some('^') {
+                                self.pos += 1;
+                                TokenKind::DotDotDotCaret
+                            } else {
+                                TokenKind::DotDotDot
+                            }
                         } else {
                             TokenKind::DotDot
                         }

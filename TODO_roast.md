@@ -370,6 +370,7 @@
 - [ ] roast/S03-sequence/arity0.t
 - [ ] roast/S03-sequence/arity-2-or-more.t
 - [ ] roast/S03-sequence/basic.t
+  - 98/143 pass. Remaining blockers: Whatever-currying (*+2, +*), &prefix:<!>/&[+] function refs, is-deeply with Rat, throws-like X::Cannot::Empty, EVAL+.raku, Z~ zipping, *>=5 endpoint closures, ^N prefix range, code-on-RHS endpoints
 - [ ] roast/S03-sequence/exhaustive.t
 - [ ] roast/S03-sequence/limit-arity-2-or-more.t
 - [ ] roast/S03-sequence/misc.t

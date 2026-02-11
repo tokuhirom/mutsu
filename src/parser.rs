@@ -1421,7 +1421,7 @@ impl Parser {
             if self.try_meta_op_zx().is_some() {
                 break;
             }
-            if self.check(&TokenKind::DotDotDot) {
+            if self.check(&TokenKind::DotDotDot) || self.check(&TokenKind::DotDotDotCaret) {
                 break;
             }
             // Allow trailing comma (before ), ], etc.)
@@ -1452,12 +1452,20 @@ impl Parser {
             });
         }
 
-        // Check for ... (sequence operator, looser than comma)
+        // Check for ... or ...^ (sequence operator, looser than comma)
         if self.match_kind(TokenKind::DotDotDot) {
             let right = self.parse_comma_expr()?;
             return Ok(Expr::Binary {
                 left: Box::new(left),
                 op: TokenKind::DotDotDot,
+                right: Box::new(right),
+            });
+        }
+        if self.match_kind(TokenKind::DotDotDotCaret) {
+            let right = self.parse_comma_expr()?;
+            return Ok(Expr::Binary {
+                left: Box::new(left),
+                op: TokenKind::DotDotDotCaret,
                 right: Box::new(right),
             });
         }
@@ -2813,6 +2821,7 @@ impl Parser {
                     | "gather"
                     | "quietly"
                     | "eager"
+                    | "lazy"
                     | "rand"
                     | "self"
                     | "return"
@@ -2900,7 +2909,7 @@ impl Parser {
                             expr: Box::new(inner),
                         }),
                     }
-                } else if name == "quietly" || name == "eager" {
+                } else if name == "quietly" || name == "eager" || name == "lazy" {
                     self.parse_expr()?
                 } else if name == "gather" && self.check(&TokenKind::LBrace) {
                     let body = self.parse_block()?;

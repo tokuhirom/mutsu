@@ -8530,47 +8530,8 @@ impl Interpreter {
                 }
                 _ => Ok(Value::Nil),
             },
-            TokenKind::DotDotDot => {
-                // Sequence operator: left ... right
-                // left is typically an array of seed values, right is the endpoint
-                let seeds = Self::value_to_list(&left);
-                if seeds.is_empty() {
-                    return Ok(Value::Array(vec![]));
-                }
-                let endpoint = match &right {
-                    Value::Num(f) if f.is_infinite() => None, // infinite sequence
-                    Value::Int(n) => Some(*n),
-                    _ => return Ok(Value::Array(seeds)),
-                };
-                // Determine step from seeds
-                let mut result: Vec<Value> = seeds.clone();
-                let step = if seeds.len() >= 2 {
-                    match (&seeds[seeds.len() - 1], &seeds[seeds.len() - 2]) {
-                        (Value::Int(b), Value::Int(a)) => b - a,
-                        _ => 1,
-                    }
-                } else {
-                    1
-                };
-                let last = match seeds.last() {
-                    Some(Value::Int(n)) => *n,
-                    _ => return Ok(Value::Array(result)),
-                };
-                let mut cur = last + step;
-                let limit = endpoint.unwrap_or(last + 1000); // cap infinite
-                if step > 0 {
-                    while cur <= limit {
-                        result.push(Value::Int(cur));
-                        cur += step;
-                    }
-                } else if step < 0 {
-                    while cur >= limit {
-                        result.push(Value::Int(cur));
-                        cur += step;
-                    }
-                }
-                Ok(Value::Array(result))
-            }
+            TokenKind::DotDotDot => self.eval_sequence(left, right, false),
+            TokenKind::DotDotDotCaret => self.eval_sequence(left, right, true),
             TokenKind::DotDotCaret => match (left, right) {
                 (Value::Int(a), Value::Int(b)) => Ok(Value::RangeExcl(a, b)),
                 _ => Ok(Value::Nil),
@@ -9687,6 +9648,471 @@ impl Interpreter {
                 "Unsupported reduction operator: {}",
                 op
             ))),
+        }
+    }
+
+    fn seq_value_to_f64(v: &Value) -> Option<f64> {
+        match v {
+            Value::Int(i) => Some(*i as f64),
+            Value::Num(f) => Some(*f),
+            Value::Rat(n, d) => {
+                if *d != 0 {
+                    Some(*n as f64 / *d as f64)
+                } else {
+                    None
+                }
+            }
+            Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+            _ => None,
+        }
+    }
+
+    fn seq_values_equal(a: &Value, b: &Value) -> bool {
+        match (a, b) {
+            (Value::Int(x), Value::Int(y)) => x == y,
+            (Value::Str(x), Value::Str(y)) => x == y,
+            (Value::Bool(x), Value::Bool(y)) => x == y,
+            _ => {
+                if let (Some(fa), Some(fb)) = (Self::seq_value_to_f64(a), Self::seq_value_to_f64(b))
+                {
+                    (fa - fb).abs() < 1e-12
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    fn eval_sequence(
+        &mut self,
+        left: Value,
+        right: Value,
+        exclusive: bool,
+    ) -> Result<Value, RuntimeError> {
+        let seeds_raw = Self::value_to_list(&left);
+        if seeds_raw.is_empty() {
+            return Ok(Value::Array(vec![]));
+        }
+
+        // Separate seed values from generator closure
+        let mut seeds: Vec<Value> = Vec::new();
+        let mut generator: Option<Value> = None;
+        for v in &seeds_raw {
+            if matches!(v, Value::Sub { .. }) {
+                generator = Some(v.clone());
+            } else {
+                seeds.push(v.clone());
+            }
+        }
+        if seeds.is_empty() {
+            // All items were closures; use the closure as a zero-arg generator
+            // e.g. { 3+2 } ... *
+            // treat as if seeds = [] and generator produces values from scratch
+        }
+
+        // Parse endpoint: could be scalar, Inf/Whatever (None), or array (first is limit, rest are extra)
+        let (endpoint, extra_rhs) = match &right {
+            Value::Num(f) if f.is_infinite() => (None, vec![]),
+            Value::Array(items) => {
+                if items.is_empty() {
+                    return Err(RuntimeError::new(
+                        "Cannot use an empty list as endpoint of a sequence".to_string(),
+                    ));
+                }
+                let first = &items[0];
+                let rest: Vec<Value> = items[1..].to_vec();
+                match first {
+                    Value::Num(f) if f.is_infinite() => (None, rest),
+                    _ => (Some(first.clone()), rest),
+                }
+            }
+            other => (Some(other.clone()), vec![]),
+        };
+
+        // Determine generation mode
+        enum SeqMode {
+            Arithmetic(f64),
+            Geometric(f64),
+            Closure,
+        }
+
+        let mode = if generator.is_some() {
+            SeqMode::Closure
+        } else if seeds.len() >= 2 {
+            // Check if all seeds are numeric
+            let floats: Vec<f64> = seeds.iter().filter_map(Self::seq_value_to_f64).collect();
+            if floats.len() == seeds.len() {
+                // Use the last few elements to determine pattern
+                // First check: are ALL diffs equal? (pure arithmetic)
+                let diffs: Vec<f64> = floats.windows(2).map(|w| w[1] - w[0]).collect();
+                let all_diffs_equal = diffs.windows(2).all(|w| (w[0] - w[1]).abs() < 1e-12);
+
+                if all_diffs_equal {
+                    SeqMode::Arithmetic(diffs[diffs.len() - 1])
+                } else if floats.len() >= 3 {
+                    // Check if last 3 values form a geometric progression
+                    let last3 = &floats[floats.len() - 3..];
+                    let r1 = if last3[0].abs() > 1e-15 {
+                        last3[1] / last3[0]
+                    } else {
+                        f64::NAN
+                    };
+                    let r2 = if last3[1].abs() > 1e-15 {
+                        last3[2] / last3[1]
+                    } else {
+                        f64::NAN
+                    };
+                    if !r1.is_nan() && !r2.is_nan() && (r1 - r2).abs() < 1e-12 {
+                        SeqMode::Geometric(r2)
+                    } else {
+                        // Use last difference as arithmetic step
+                        SeqMode::Arithmetic(diffs[diffs.len() - 1])
+                    }
+                } else {
+                    SeqMode::Arithmetic(diffs[diffs.len() - 1])
+                }
+            } else {
+                // String constant sequences: check if all seeds are equal strings
+                let all_str = seeds.iter().all(|v| matches!(v, Value::Str(_)));
+                if all_str && seeds.len() >= 2 {
+                    let all_same = seeds.windows(2).all(|w| {
+                        if let (Value::Str(a), Value::Str(b)) = (&w[0], &w[1]) {
+                            a == b
+                        } else {
+                            false
+                        }
+                    });
+                    if all_same {
+                        SeqMode::Arithmetic(0.0) // constant string sequence
+                    } else {
+                        SeqMode::Arithmetic(1.0) // default
+                    }
+                } else {
+                    SeqMode::Arithmetic(1.0)
+                }
+            }
+        } else if seeds.len() == 1 {
+            // Single seed: determine direction from endpoint
+            if let Some(ref ep) = endpoint {
+                if let (Some(sv), Some(ev)) = (
+                    Self::seq_value_to_f64(&seeds[0]),
+                    Self::seq_value_to_f64(ep),
+                ) {
+                    if ev >= sv {
+                        SeqMode::Arithmetic(1.0)
+                    } else {
+                        SeqMode::Arithmetic(-1.0)
+                    }
+                } else {
+                    SeqMode::Arithmetic(1.0)
+                }
+            } else {
+                SeqMode::Arithmetic(1.0) // infinite, default increasing
+            }
+        } else {
+            // No seeds (only had a closure)
+            SeqMode::Closure
+        };
+
+        // Check for "wrong side" sequences: arithmetic with endpoint on wrong side
+        if let SeqMode::Arithmetic(step) = &mode
+            && let Some(ref ep) = endpoint
+            && let Some(ep_f) = Self::seq_value_to_f64(ep)
+            && seeds.len() >= 2
+        {
+            let last_f = Self::seq_value_to_f64(seeds.last().unwrap()).unwrap_or(0.0);
+            if (*step > 0.0 && ep_f < last_f) || (*step < 0.0 && ep_f > last_f) {
+                let mut result = Vec::new();
+                for s in &seeds {
+                    if let Some(sv) = Self::seq_value_to_f64(s) {
+                        if *step > 0.0 && sv > ep_f {
+                            break;
+                        }
+                        if *step < 0.0 && sv < ep_f {
+                            break;
+                        }
+                    }
+                    if exclusive && Self::seq_values_equal(s, ep) {
+                        break;
+                    }
+                    result.push(s.clone());
+                }
+                result.extend(extra_rhs);
+                return Ok(Value::Array(result));
+            }
+        }
+
+        // Check for "wrong side" on geometric sequences too
+        if let SeqMode::Geometric(ratio) = &mode
+            && let Some(ref ep) = endpoint
+            && let Some(ep_f) = Self::seq_value_to_f64(ep)
+            && seeds.len() >= 2
+        {
+            let last_f = Self::seq_value_to_f64(seeds.last().unwrap()).unwrap_or(0.0);
+            if *ratio > 0.0 {
+                // Non-alternating: check direction
+                if (*ratio > 1.0 && ep_f < last_f)
+                    || (*ratio < 1.0 && *ratio > 0.0 && ep_f > last_f)
+                {
+                    let mut result = Vec::new();
+                    for s in &seeds {
+                        if let Some(sv) = Self::seq_value_to_f64(s) {
+                            if *ratio > 1.0 && sv > ep_f {
+                                break;
+                            }
+                            if *ratio < 1.0 && sv < ep_f {
+                                break;
+                            }
+                        }
+                        if exclusive && Self::seq_values_equal(s, ep) {
+                            break;
+                        }
+                        result.push(s.clone());
+                    }
+                    result.extend(extra_rhs);
+                    return Ok(Value::Array(result));
+                }
+            } else {
+                // Alternating (negative ratio): check |value| against |endpoint|
+                let abs_last = last_f.abs();
+                let abs_ep = ep_f.abs();
+                if ratio.abs() > 1.0 && abs_ep < abs_last {
+                    // Check if endpoint is theoretically reachable
+                    let first_f = Self::seq_value_to_f64(&seeds[0]).unwrap_or(1.0).abs();
+                    let reachable = if first_f > 1e-15 {
+                        let log_val = (abs_ep / first_f).ln() / ratio.abs().ln();
+                        (log_val - log_val.round()).abs() < 1e-9 && log_val >= 0.0
+                    } else {
+                        false
+                    };
+                    if !reachable {
+                        let mut result = Vec::new();
+                        for s in &seeds {
+                            if let Some(sv) = Self::seq_value_to_f64(s)
+                                && sv.abs() > abs_ep
+                            {
+                                break;
+                            }
+                            if exclusive && Self::seq_values_equal(s, ep) {
+                                break;
+                            }
+                            result.push(s.clone());
+                        }
+                        result.extend(extra_rhs);
+                        return Ok(Value::Array(result));
+                    }
+                }
+            }
+        }
+
+        // Check if any seed matches the endpoint — for geometric/alternating sequences,
+        // the endpoint may match an earlier seed, not just the last one
+        if !seeds.is_empty()
+            && let Some(ref ep) = endpoint
+        {
+            // Check last seed first (most common case)
+            let last_seed = seeds.last().unwrap();
+            if Self::seq_values_equal(last_seed, ep) {
+                if exclusive {
+                    let mut end = seeds.len();
+                    while end > 0 && Self::seq_values_equal(&seeds[end - 1], ep) {
+                        end -= 1;
+                    }
+                    let mut result: Vec<Value> = seeds[..end].to_vec();
+                    result.extend(extra_rhs);
+                    return Ok(Value::Array(result));
+                } else {
+                    let mut result = seeds.clone();
+                    result.extend(extra_rhs);
+                    return Ok(Value::Array(result));
+                }
+            }
+            // For geometric/alternating: also check if the endpoint matches earlier seeds
+            if matches!(mode, SeqMode::Geometric(_)) {
+                for (i, s) in seeds.iter().enumerate() {
+                    if Self::seq_values_equal(s, ep) {
+                        if exclusive {
+                            let mut result: Vec<Value> = seeds[..i].to_vec();
+                            result.extend(extra_rhs);
+                            return Ok(Value::Array(result));
+                        } else {
+                            let mut result: Vec<Value> = seeds[..=i].to_vec();
+                            result.extend(extra_rhs);
+                            return Ok(Value::Array(result));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Generate values
+        let mut result: Vec<Value> = seeds.clone();
+        let max_gen = if endpoint.is_some() { 10000 } else { 1000 };
+        let is_string_seq = !seeds.is_empty() && matches!(seeds.last(), Some(Value::Str(_)));
+
+        for _ in 0..max_gen {
+            let next = match &mode {
+                SeqMode::Closure => {
+                    let genfn = generator.as_ref().unwrap();
+                    let arg = if result.is_empty() {
+                        Value::Nil
+                    } else {
+                        result.last().unwrap().clone()
+                    };
+                    if let Value::Sub {
+                        param, body, env, ..
+                    } = genfn
+                    {
+                        let saved = self.env.clone();
+                        for (k, v) in env {
+                            self.env.insert(k.clone(), v.clone());
+                        }
+                        if let Some(p) = param {
+                            self.env.insert(p.clone(), arg.clone());
+                        }
+                        let placeholders = collect_placeholders(body);
+                        if let Some(ph) = placeholders.first() {
+                            self.env.insert(ph.clone(), arg.clone());
+                        }
+                        self.env.insert("_".to_string(), arg);
+                        let val = self.eval_block_value(body)?;
+                        self.env = saved;
+                        val
+                    } else {
+                        break;
+                    }
+                }
+                SeqMode::Arithmetic(step) => {
+                    if is_string_seq {
+                        // String constant sequence
+                        if *step == 0.0 {
+                            result.last().unwrap().clone()
+                        } else {
+                            break; // can't do arithmetic on strings
+                        }
+                    } else {
+                        let last = result.last().unwrap();
+                        Self::seq_add(last, *step)
+                    }
+                }
+                SeqMode::Geometric(ratio) => {
+                    let last = result.last().unwrap();
+                    Self::seq_mul(last, *ratio)
+                }
+            };
+
+            // Check endpoint
+            if let Some(ref ep) = endpoint {
+                if Self::seq_values_equal(&next, ep) {
+                    if !exclusive {
+                        result.push(next);
+                    }
+                    break;
+                }
+                // Check if we went past the endpoint
+                if let (Some(nf), Some(ef)) =
+                    (Self::seq_value_to_f64(&next), Self::seq_value_to_f64(ep))
+                {
+                    match &mode {
+                        SeqMode::Arithmetic(step) => {
+                            if *step > 0.0 && nf > ef {
+                                break;
+                            }
+                            if *step < 0.0 && nf < ef {
+                                break;
+                            }
+                        }
+                        SeqMode::Geometric(ratio) => {
+                            if *ratio > 0.0 {
+                                // Non-alternating geometric
+                                if *ratio > 1.0 && nf > ef {
+                                    break;
+                                }
+                                if *ratio > 0.0 && *ratio < 1.0 && nf < ef {
+                                    break;
+                                }
+                            } else {
+                                // Alternating geometric: check if endpoint is reachable
+                                let first_f = if !seeds.is_empty() {
+                                    Self::seq_value_to_f64(&seeds[0]).unwrap_or(1.0).abs()
+                                } else {
+                                    1.0
+                                };
+                                let reachable = if first_f > 1e-15 && ef.abs() > 1e-15 {
+                                    let log_val = (ef.abs() / first_f).ln() / ratio.abs().ln();
+                                    (log_val - log_val.round()).abs() < 1e-9 && log_val >= -1e-9
+                                } else {
+                                    ef.abs() < 1e-15 // endpoint 0 is never reachable
+                                };
+                                if !reachable {
+                                    // Endpoint not reachable: stop if |next| > |endpoint|
+                                    if ratio.abs() > 1.0 && nf.abs() > ef.abs() {
+                                        break;
+                                    }
+                                    if ratio.abs() < 1.0 && ratio.abs() > 0.0 && nf.abs() < ef.abs()
+                                    {
+                                        break;
+                                    }
+                                }
+                                // If reachable, only exact match stops (handled above)
+                            }
+                        }
+                        SeqMode::Closure => {
+                            // For closures, don't auto-stop based on direction
+                        }
+                    }
+                }
+            }
+
+            result.push(next);
+        }
+
+        result.extend(extra_rhs);
+        Ok(Value::Array(result))
+    }
+
+    // Add step to a sequence value, preserving type where possible
+    fn seq_add(val: &Value, step: f64) -> Value {
+        match val {
+            Value::Int(i) => {
+                if step == step.floor() && step.abs() < i64::MAX as f64 {
+                    Value::Int(*i + step as i64)
+                } else {
+                    Value::Num(*i as f64 + step)
+                }
+            }
+            Value::Num(f) => Value::Num(*f + step),
+            Value::Rat(n, d) => {
+                if *d != 0 && step == step.floor() && step.abs() < i64::MAX as f64 {
+                    make_rat(*n + step as i64 * *d, *d)
+                } else {
+                    Value::Num(*n as f64 / *d as f64 + step)
+                }
+            }
+            _ => Value::Num(Self::seq_value_to_f64(val).unwrap_or(0.0) + step),
+        }
+    }
+
+    // Multiply a sequence value by ratio, preserving type where possible
+    fn seq_mul(val: &Value, ratio: f64) -> Value {
+        match val {
+            Value::Int(i) => {
+                let result = *i as f64 * ratio;
+                if ratio == ratio.floor() && result.abs() < i64::MAX as f64 {
+                    Value::Int(result as i64)
+                } else {
+                    Value::Num(result)
+                }
+            }
+            Value::Num(f) => Value::Num(*f * ratio),
+            Value::Rat(n, d) => {
+                if *d != 0 && ratio == ratio.floor() && ratio.abs() < i64::MAX as f64 {
+                    make_rat(*n * ratio as i64, *d)
+                } else {
+                    Value::Num(*n as f64 / *d as f64 * ratio)
+                }
+            }
+            _ => Value::Num(Self::seq_value_to_f64(val).unwrap_or(0.0) * ratio),
         }
     }
 

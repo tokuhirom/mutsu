@@ -99,7 +99,8 @@ pub(crate) enum OpCode {
     SetStrictSubset,
     SetStrictSuperset,
 
-    // -- Sequence --
+    // -- Sequence (currently handled by interpreter, not compiled to bytecode) --
+    #[allow(dead_code)]
     Sequence,
 
     // -- Nil check (for defined-or //) --
