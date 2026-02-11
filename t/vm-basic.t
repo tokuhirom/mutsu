@@ -1,5 +1,5 @@
 use Test;
-plan 58;
+plan 75;
 
 # Literal compilation
 is 42, 42, 'integer literal';
@@ -187,3 +187,54 @@ is $redo_count, 3, 'redo as compiled opcode';
 
 # Negate on string-numeric values (Inf, NaN)
 is -Inf, -Inf, 'negate Inf bareword';
+
+# --- Phase 4: newly compiled constructs ---
+
+# Array variable access (compiled GetArrayVar)
+my @va = (10, 20, 30);
+is @va.elems, 3, 'array variable compiled to GetArrayVar';
+
+# Hash variable access (compiled GetHashVar)
+my %vh = (x => 1, y => 2);
+is %vh<x>, 1, 'hash variable compiled to GetHashVar';
+
+# Bareword compilation (compiled GetBareWord)
+is True, True, 'bareword True compiled to GetBareWord';
+
+# Range operators (compiled MakeRange, MakeRangeExcl, etc.)
+my $rsum1 = 0;
+for 1..5 -> $n { $rsum1 = $rsum1 + $n; }
+is $rsum1, 15, 'range 1..5 compiled to MakeRange';
+my $rsum2 = 0;
+for 1..^5 -> $n { $rsum2 = $rsum2 + $n; }
+is $rsum2, 10, 'range 1..^5 compiled to MakeRangeExcl';
+
+# String comparison (compiled StrLt, StrGt, StrLe, StrGe)
+is "a" lt "b", True, 'string lt compiled';
+is "b" gt "a", True, 'string gt compiled';
+is "a" le "a", True, 'string le compiled';
+is "b" ge "a", True, 'string ge compiled';
+is "b" lt "a", False, 'string lt false compiled';
+is "a" gt "b", False, 'string gt false compiled';
+
+# Method call on $var target (compiled CallMethodMut)
+my $absval = -42;
+is $absval.abs, 42, 'method call on $var compiled to CallMethodMut';
+
+# Method call on @arr target (compiled CallMethodMut with writeback)
+my @parr = (1, 2, 3);
+@parr.push(4);
+is @parr.elems, 4, 'push on @array compiled to CallMethodMut';
+is @parr[3], 4, 'push result correct';
+
+# Method call on @arr - non-mutating (compiled CallMethodMut)
+my @jarr = (1, 2, 3);
+is @jarr.join(","), "1,2,3", 'join on @array compiled to CallMethodMut';
+
+# Die statement (compiled Die)
+my $died = False;
+try { die "oops"; CATCH { default { $died = True } } }
+is $died, True, 'die compiled to Die opcode';
+
+# Method call on literal target still works (compiled CallMethod)
+is "HELLO".lc, "hello", 'method call on literal still uses CallMethod';

@@ -189,6 +189,10 @@ impl Compiler {
                 self.compile_expr(expr);
                 self.code.emit(OpCode::Return);
             }
+            Stmt::Die(expr) => {
+                self.compile_expr(expr);
+                self.code.emit(OpCode::Die);
+            }
             // Fallback for everything else
             _ => {
                 let idx = self.code.add_stmt(stmt.clone());
@@ -217,6 +221,18 @@ impl Compiler {
             Expr::Var(name) => {
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
                 self.code.emit(OpCode::GetGlobal(name_idx));
+            }
+            Expr::ArrayVar(name) => {
+                let name_idx = self.code.add_constant(Value::Str(format!("@{}", name)));
+                self.code.emit(OpCode::GetArrayVar(name_idx));
+            }
+            Expr::HashVar(name) => {
+                let name_idx = self.code.add_constant(Value::Str(format!("%{}", name)));
+                self.code.emit(OpCode::GetHashVar(name_idx));
+            }
+            Expr::BareWord(name) => {
+                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                self.code.emit(OpCode::GetBareWord(name_idx));
             }
             Expr::Unary { op, expr } => match op {
                 TokenKind::Minus => {
@@ -320,11 +336,27 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
                 self.code.emit(OpCode::CallFunc { name_idx, arity });
             }
-            // Method call: fall back if target is a variable (method may mutate via
-            // update_instance_target, which needs the Expr name for writeback).
+            // Method call on mutable variable target (needs writeback)
             Expr::MethodCall { target, name, args }
-                if !Self::is_mutable_target(target) =>
+                if matches!(target.as_ref(), Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)) =>
             {
+                let target_name = match target.as_ref() {
+                    Expr::Var(n) => n.clone(),
+                    Expr::ArrayVar(n) => format!("@{}", n),
+                    Expr::HashVar(n) => format!("%{}", n),
+                    _ => unreachable!(),
+                };
+                self.compile_expr(target);
+                let arity = args.len() as u32;
+                for arg in args {
+                    self.compile_expr(arg);
+                }
+                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                let target_name_idx = self.code.add_constant(Value::Str(target_name));
+                self.code.emit(OpCode::CallMethodMut { name_idx, arity, target_name_idx });
+            }
+            // Method call on non-variable target (no writeback needed)
+            Expr::MethodCall { target, name, args } => {
                 self.compile_expr(target);
                 let arity = args.len() as u32;
                 for arg in args {
@@ -421,6 +453,14 @@ impl Compiler {
             TokenKind::Gte => Some(OpCode::NumGe),
             TokenKind::Ident(name) if name == "eq" => Some(OpCode::StrEq),
             TokenKind::Ident(name) if name == "ne" => Some(OpCode::StrNe),
+            TokenKind::Ident(name) if name == "lt" => Some(OpCode::StrLt),
+            TokenKind::Ident(name) if name == "gt" => Some(OpCode::StrGt),
+            TokenKind::Ident(name) if name == "le" => Some(OpCode::StrLe),
+            TokenKind::Ident(name) if name == "ge" => Some(OpCode::StrGe),
+            TokenKind::DotDot => Some(OpCode::MakeRange),
+            TokenKind::DotDotCaret => Some(OpCode::MakeRangeExcl),
+            TokenKind::CaretDotDot => Some(OpCode::MakeRangeExclStart),
+            TokenKind::CaretDotDotCaret => Some(OpCode::MakeRangeExclBoth),
             _ => None,
         }
     }
@@ -429,15 +469,6 @@ impl Compiler {
     /// exec_call handlers (e.g. throws-like needs Expr::Block to run code).
     fn needs_raw_expr(expr: &Expr) -> bool {
         matches!(expr, Expr::Block(_) | Expr::AnonSub(_))
-    }
-
-    /// Returns true if the expression is a variable that methods may mutate
-    /// (requiring update_instance_target writeback to the env).
-    fn is_mutable_target(expr: &Expr) -> bool {
-        matches!(
-            expr,
-            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)
-        )
     }
 
     fn has_phasers(stmts: &[Stmt]) -> bool {

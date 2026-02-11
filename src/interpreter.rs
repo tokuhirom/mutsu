@@ -265,6 +265,10 @@ impl Interpreter {
         &self.env
     }
 
+    pub(crate) fn has_class(&self, name: &str) -> bool {
+        self.classes.contains_key(name)
+    }
+
     pub(crate) fn env_mut(&mut self) -> &mut HashMap<String, Value> {
         &mut self.env
     }
@@ -8433,6 +8437,29 @@ impl Interpreter {
         let arg_exprs: Vec<Expr> = args.into_iter().map(Expr::Literal).collect();
         self.eval_expr(&Expr::MethodCall {
             target: Box::new(Expr::Literal(target)),
+            name: method.to_string(),
+            args: arg_exprs,
+        })
+    }
+
+    /// Bridge: method call on a mutable variable target (for VM CallMethodMut).
+    /// Constructs the correct Expr variant so the interpreter can write back mutations.
+    pub(crate) fn eval_method_call_mut_with_values(
+        &mut self,
+        target_var: &str,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let arg_exprs: Vec<Expr> = args.into_iter().map(Expr::Literal).collect();
+        let target_expr = if let Some(name) = target_var.strip_prefix('@') {
+            Expr::ArrayVar(name.to_string())
+        } else if let Some(name) = target_var.strip_prefix('%') {
+            Expr::HashVar(name.to_string())
+        } else {
+            Expr::Var(target_var.to_string())
+        };
+        self.eval_expr(&Expr::MethodCall {
+            target: Box::new(target_expr),
             name: method.to_string(),
             args: arg_exprs,
         })

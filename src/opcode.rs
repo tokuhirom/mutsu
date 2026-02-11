@@ -15,6 +15,9 @@ pub(crate) enum OpCode {
     SetLocal(u32),
     GetGlobal(u32),
     SetGlobal(u32),
+    GetArrayVar(u32),
+    GetHashVar(u32),
+    GetBareWord(u32),
 
     // -- Arithmetic --
     Add,
@@ -43,6 +46,10 @@ pub(crate) enum OpCode {
     // -- String comparison --
     StrEq,
     StrNe,
+    StrLt,
+    StrGt,
+    StrLe,
+    StrGe,
 
     // -- Nil check (for defined-or //) --
     IsNil,
@@ -60,6 +67,12 @@ pub(crate) enum OpCode {
     Dup,
     Pop,
 
+    // -- Range creation --
+    MakeRange,
+    MakeRangeExcl,
+    MakeRangeExclStart,
+    MakeRangeExclBoth,
+
     // -- Composite --
     MakeArray(u32),
     MakeHash(u32),
@@ -73,6 +86,8 @@ pub(crate) enum OpCode {
     CallFunc { name_idx: u32, arity: u32 },
     /// Method call: pop `arity` args + target, call method, push result.
     CallMethod { name_idx: u32, arity: u32 },
+    /// Method call with writeback: target is a variable that may be mutated.
+    CallMethodMut { name_idx: u32, arity: u32, target_name_idx: u32 },
     /// Statement-level call: pop `arity` args, call name (no push).
     ExecCall { name_idx: u32, arity: u32 },
 
@@ -105,6 +120,9 @@ pub(crate) enum OpCode {
     /// Layout after CStyleLoop: cond at [ip+1..cond_end), body at [cond_end..step_start),
     /// step at [step_start..body_end).
     CStyleLoop { cond_end: u32, step_start: u32, body_end: u32, label: Option<String> },
+
+    // -- Error handling --
+    Die,
 
     // -- Functions --
     Return,

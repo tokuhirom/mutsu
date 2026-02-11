@@ -90,6 +90,46 @@ impl VM {
                 self.stack.push(val);
                 *ip += 1;
             }
+            OpCode::GetArrayVar(name_idx) => {
+                let name = Self::const_str(code, *name_idx);
+                let val = self
+                    .interpreter
+                    .env()
+                    .get(name)
+                    .cloned()
+                    .unwrap_or(Value::Nil);
+                self.stack.push(val);
+                *ip += 1;
+            }
+            OpCode::GetHashVar(name_idx) => {
+                let name = Self::const_str(code, *name_idx);
+                let val = self
+                    .interpreter
+                    .env()
+                    .get(name)
+                    .cloned()
+                    .unwrap_or(Value::Nil);
+                self.stack.push(val);
+                *ip += 1;
+            }
+            OpCode::GetBareWord(name_idx) => {
+                let name = Self::const_str(code, *name_idx);
+                let val = if let Some(v) = self.interpreter.env().get(name) {
+                    if matches!(v, Value::Enum { .. } | Value::Nil) {
+                        v.clone()
+                    } else if self.interpreter.has_class(name) {
+                        Value::Package(name.to_string())
+                    } else {
+                        Value::Str(name.to_string())
+                    }
+                } else if self.interpreter.has_class(name) {
+                    Value::Package(name.to_string())
+                } else {
+                    Value::Str(name.to_string())
+                };
+                self.stack.push(val);
+                *ip += 1;
+            }
             OpCode::SetGlobal(name_idx) => {
                 let name = match &code.constants[*name_idx as usize] {
                     Value::Str(s) => s.clone(),
@@ -190,6 +230,18 @@ impl VM {
             OpCode::StrNe => {
                 self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("ne".to_string()))?;
             }
+            OpCode::StrLt => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("lt".to_string()))?;
+            }
+            OpCode::StrGt => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("gt".to_string()))?;
+            }
+            OpCode::StrLe => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("le".to_string()))?;
+            }
+            OpCode::StrGe => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("ge".to_string()))?;
+            }
 
             // -- Nil check --
             OpCode::IsNil => {
@@ -244,6 +296,20 @@ impl VM {
             OpCode::Pop => {
                 self.stack.pop();
                 *ip += 1;
+            }
+
+            // -- Range creation --
+            OpCode::MakeRange => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::DotDot)?;
+            }
+            OpCode::MakeRangeExcl => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::DotDotCaret)?;
+            }
+            OpCode::MakeRangeExclStart => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::CaretDotDot)?;
+            }
+            OpCode::MakeRangeExclBoth => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::CaretDotDotCaret)?;
             }
 
             // -- Composite --
@@ -312,6 +378,17 @@ impl VM {
                 let args: Vec<Value> = self.stack.drain(start..).collect();
                 let target = self.stack.pop().unwrap();
                 let result = self.interpreter.eval_method_call_with_values(target, &method, args)?;
+                self.stack.push(result);
+                *ip += 1;
+            }
+            OpCode::CallMethodMut { name_idx, arity, target_name_idx } => {
+                let method = Self::const_str(code, *name_idx).to_string();
+                let target_name = Self::const_str(code, *target_name_idx).to_string();
+                let arity = *arity as usize;
+                let start = self.stack.len() - arity;
+                let args: Vec<Value> = self.stack.drain(start..).collect();
+                self.stack.pop(); // discard target value; interpreter re-evaluates from env
+                let result = self.interpreter.eval_method_call_mut_with_values(&target_name, &method, args)?;
                 self.stack.push(result);
                 *ip += 1;
             }
@@ -508,6 +585,12 @@ impl VM {
                     self.run_range(code, step_begin, loop_end)?;
                 }
                 *ip = loop_end;
+            }
+
+            // -- Error handling --
+            OpCode::Die => {
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                return Err(RuntimeError::new(&val.to_string_value()));
             }
 
             // -- Functions --
