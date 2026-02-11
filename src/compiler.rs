@@ -584,16 +584,18 @@ impl Compiler {
                 self.code.emit(OpCode::CallFunc { name_idx, arity });
             }
             // Method call on mutable variable target (needs writeback)
-            Expr::MethodCall { target, name, args }
-                if matches!(
-                    target.as_ref(),
-                    Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)
-                ) =>
+            Expr::MethodCall {
+                target, name, args, ..
+            } if matches!(
+                target.as_ref(),
+                Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::CodeVar(_)
+            ) =>
             {
                 let target_name = match target.as_ref() {
                     Expr::Var(n) => n.clone(),
                     Expr::ArrayVar(n) => format!("@{}", n),
                     Expr::HashVar(n) => format!("%{}", n),
+                    Expr::CodeVar(n) => format!("&{}", n),
                     _ => unreachable!(),
                 };
                 self.compile_expr(target);
@@ -610,7 +612,9 @@ impl Compiler {
                 });
             }
             // Method call on non-variable target (no writeback needed)
-            Expr::MethodCall { target, name, args } => {
+            Expr::MethodCall {
+                target, name, args, ..
+            } => {
                 self.compile_expr(target);
                 let arity = args.len() as u32;
                 for arg in args {

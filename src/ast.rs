@@ -51,6 +51,7 @@ pub(crate) enum Expr {
         target: Box<Expr>,
         name: String,
         args: Vec<Expr>,
+        modifier: Option<char>,
     },
     Exists(Box<Expr>),
     RoutineMagic,

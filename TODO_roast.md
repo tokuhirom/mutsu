@@ -103,6 +103,9 @@
 - [ ] roast/S02-names/is_default.t
 - [ ] roast/S02-names/is_dynamic.t
 - [ ] roast/S02-names/name.t
+  - Tests 1-15 pass (`.VAR.name` on `$`, `@`, `%`, `&` variables)
+  - Tests 16-24 fail: require `&[op]` syntax and custom operator definitions (not yet implemented)
+  - Tests 25-28 not reached: blocked by parse error in tests 16-24 block (`.?`, `.+`, `.*` modifiers work per t/var-name.t)
 - [ ] roast/S02-names/our.t
 - [ ] roast/S02-names/pseudo-6d.t
 - [ ] roast/S02-names/pseudo-6e.t

@@ -3762,7 +3762,48 @@ impl Interpreter {
                     Ok(Value::Nil)
                 }
             }
-            Expr::MethodCall { target, name, args } => {
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier,
+            } => {
+                // Handle .VAR — returns a container object with the variable name
+                if name == "VAR" && args.is_empty() {
+                    let (var_name, class_name) = match target.as_ref() {
+                        Expr::Var(n) => (format!("${}", n), "Scalar"),
+                        Expr::ArrayVar(n) => (format!("@{}", n), "Array"),
+                        Expr::HashVar(n) => (format!("%{}", n), "Hash"),
+                        Expr::CodeVar(n) => (format!("&{}", n), "Scalar"),
+                        _ => {
+                            // .VAR on non-container is identity
+                            let value = self.eval_expr(target)?;
+                            return Ok(value);
+                        }
+                    };
+                    let mut attributes = HashMap::new();
+                    attributes.insert("name".to_string(), Value::Str(var_name));
+                    return Ok(Value::Instance {
+                        class_name: class_name.to_string(),
+                        attributes,
+                    });
+                }
+                // Handle method dispatch modifiers: .?method, .+method, .*method
+                if modifier.is_some() {
+                    let inner = Expr::MethodCall {
+                        target: target.clone(),
+                        name: name.clone(),
+                        args: args.clone(),
+                        modifier: None,
+                    };
+                    let result = self.eval_expr(&inner);
+                    return match modifier {
+                        Some('?') => Ok(result.unwrap_or(Value::Nil)),
+                        Some('+') => Ok(Value::Array(vec![result?])),
+                        Some('*') => Ok(Value::Array(vec![result?])),
+                        _ => result,
+                    };
+                }
                 if name == "say" && args.is_empty() {
                     let value = self.eval_expr(target)?;
                     self.output.push_str(&value.to_string_value());
@@ -5099,6 +5140,9 @@ impl Interpreter {
                         Value::Package(name) => Ok(Value::Str(name)),
                         Value::Str(name) => Ok(Value::Str(name)),
                         Value::Sub { name, .. } => Ok(Value::Str(name)),
+                        Value::Instance { attributes, .. } => {
+                            Ok(attributes.get("name").cloned().unwrap_or(Value::Nil))
+                        }
                         _ => Ok(Value::Nil),
                     },
                     "chars" => Ok(Value::Int(base.to_string_value().chars().count() as i64)),
@@ -8856,6 +8900,7 @@ impl Interpreter {
             target: Box::new(Expr::Literal(target)),
             name: method.to_string(),
             args: arg_exprs,
+            modifier: None,
         })
     }
 
@@ -8872,6 +8917,8 @@ impl Interpreter {
             Expr::ArrayVar(name.to_string())
         } else if let Some(name) = target_var.strip_prefix('%') {
             Expr::HashVar(name.to_string())
+        } else if let Some(name) = target_var.strip_prefix('&') {
+            Expr::CodeVar(name.to_string())
         } else {
             Expr::Var(target_var.to_string())
         };
@@ -8879,6 +8926,7 @@ impl Interpreter {
             target: Box::new(target_expr),
             name: method.to_string(),
             args: arg_exprs,
+            modifier: None,
         })
     }
 

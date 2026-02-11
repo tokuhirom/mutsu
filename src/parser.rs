@@ -309,6 +309,7 @@ impl Parser {
                         target: Box::new(orwith_cond),
                         name: "defined".to_string(),
                         args: Vec::new(),
+                        modifier: None,
                     },
                     then_branch: orwith_body,
                     else_branch: orwith_else,
@@ -323,6 +324,7 @@ impl Parser {
                     target: Box::new(cond),
                     name: "defined".to_string(),
                     args: Vec::new(),
+                    modifier: None,
                 },
                 then_branch,
                 else_branch,
@@ -338,6 +340,7 @@ impl Parser {
                         target: Box::new(cond),
                         name: "defined".to_string(),
                         args: Vec::new(),
+                        modifier: None,
                     }),
                 },
                 then_branch: body,
@@ -751,6 +754,7 @@ impl Parser {
                     target: Box::new(Expr::Var(name.clone())),
                     name: method_name,
                     args: method_args,
+                    modifier: None,
                 };
                 return Ok(Stmt::Assign {
                     name,
@@ -911,6 +915,7 @@ impl Parser {
                     target: Box::new(Expr::HashVar(name[1..].to_string())),
                     name: method_name,
                     args: method_args,
+                    modifier: None,
                 };
                 return Ok(Stmt::Assign {
                     name,
@@ -1104,6 +1109,7 @@ impl Parser {
                     target: Box::new(cond),
                     name: "defined".to_string(),
                     args: Vec::new(),
+                    modifier: None,
                 },
                 then_branch: vec![stmt],
                 else_branch: Vec::new(),
@@ -1119,6 +1125,7 @@ impl Parser {
                         target: Box::new(cond),
                         name: "defined".to_string(),
                         args: Vec::new(),
+                        modifier: None,
                     }),
                 },
                 then_branch: vec![stmt],
@@ -2542,6 +2549,7 @@ impl Parser {
                 target: Box::new(inner),
                 name: "hash".to_string(),
                 args: Vec::new(),
+                modifier: None,
             }
         } else if self.match_kind(TokenKind::RParen) {
             Expr::Literal(Value::Nil)
@@ -2551,6 +2559,7 @@ impl Parser {
                 target: Box::new(Expr::Var("_".to_string())),
                 name,
                 args: Vec::new(),
+                modifier: None,
             }
         } else if self.match_kind(TokenKind::LParen) {
             if self.check(&TokenKind::RParen) {
@@ -3028,6 +3037,16 @@ impl Parser {
                 continue;
             }
             if self.match_kind(TokenKind::Dot) {
+                // Handle dispatch modifiers: .?method, .+method, .*method
+                let modifier = if self.match_kind(TokenKind::Question) {
+                    Some('?')
+                } else if self.match_kind(TokenKind::Plus) {
+                    Some('+')
+                } else if self.match_kind(TokenKind::Star) {
+                    Some('*')
+                } else {
+                    None
+                };
                 // Handle .^name (meta-method call) - treat ^ as prefix to method name
                 let is_meta = self.match_kind(TokenKind::Caret);
                 let name = self.consume_ident()?;
@@ -3058,6 +3077,7 @@ impl Parser {
                     target: Box::new(expr),
                     name: full_name,
                     args,
+                    modifier,
                 };
                 continue;
             }
@@ -3133,6 +3153,7 @@ impl Parser {
                             target: Box::new(expr),
                             name: "pairs".to_string(),
                             args: Vec::new(),
+                            modifier: None,
                         };
                     } else if keys.len() == 1 {
                         let key = keys.remove(0);
@@ -3219,10 +3240,16 @@ impl Parser {
     fn replace_whatever(expr: &Expr) -> Expr {
         match expr {
             Expr::Var(name) if name == "__WHATEVER__" => Expr::Var("_".to_string()),
-            Expr::MethodCall { target, name, args } => Expr::MethodCall {
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier,
+            } => Expr::MethodCall {
                 target: Box::new(Self::replace_whatever(target)),
                 name: name.clone(),
                 args: args.clone(),
+                modifier: *modifier,
             },
             Expr::Binary { left, op, right } => Expr::Binary {
                 left: Box::new(Self::replace_whatever(left)),
