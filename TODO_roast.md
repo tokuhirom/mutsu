@@ -67,9 +67,12 @@
 - [ ] roast/S02-literals/underscores.t
   - 5/19 pass (tests 1, 11-13, 16). Failures: multiple underscores, leading/trailing underscores, underscore before/after `.`/`e`/`E` should fail; `2._foo` / `2._123` should parse as method calls
 - [ ] roast/S02-literals/version.t
-- [ ] roast/S02-magicals/78258.t
-- [ ] roast/S02-magicals/args.t
-- [ ] roast/S02-magicals/block.t
+- [x] roast/S02-magicals/78258.t
+  - 1/1 pass.
+- [x] roast/S02-magicals/args.t
+  - 6/6 pass.
+- [x] roast/S02-magicals/block.t
+  - 3/3 pass.
 - [ ] roast/S02-magicals/DISTRO.t
 - [ ] roast/S02-magicals/dollar_bang.t
   - 9/15 pass. Failures: `$!` not set correctly by try blocks (test 1), nonexisting method calls (test 3), wrong-signature calls (test 4), divide-by-zero (test 6), constant modification (test 7), die (test 8), EVAL error value (test 14)
@@ -78,15 +81,19 @@
 - [ ] roast/S02-magicals/env.t
   - 7/18 pass. Failures: `%*ENV.keys` (test 1), `%*ENV` rw assignment (test 6), `use MONKEY-SEE-NO-EVAL` required for %ENV tests (tests 9-11), env persistence to child processes (test 14), `.gist`/`.raku` on %*ENV (tests 15-16)
 - [ ] roast/S02-magicals/file_line.t
-- [ ] roast/S02-magicals/GROUP.t
+- [x] roast/S02-magicals/GROUP.t
+  - 1/1 pass.
 - [ ] roast/S02-magicals/KERNEL.t
 - [ ] roast/S02-magicals/PERL.t
 - [x] roast/S02-magicals/pid.t
-- [ ] roast/S02-magicals/progname.t
+- [x] roast/S02-magicals/progname.t
+  - 4/4 pass.
 - [ ] roast/S02-magicals/RAKU.t
-- [ ] roast/S02-magicals/subname.t
+- [x] roast/S02-magicals/subname.t
+  - 4/4 pass.
 - [ ] roast/S02-magicals/sub.t
-- [ ] roast/S02-magicals/USER.t
+- [x] roast/S02-magicals/USER.t
+  - 1/1 pass.
 - [ ] roast/S02-magicals/VM.t
 - [ ] roast/S02-names/bare-sigil.t
 - [ ] roast/S02-names/caller.t
@@ -133,7 +140,8 @@
 - [ ] roast/S02-types/catch_type_cast_mismatch.t
 - [ ] roast/S02-types/compact.t
 - [ ] roast/S02-types/declare.t
-- [ ] roast/S02-types/fatrat.t
+- [x] roast/S02-types/fatrat.t
+  - 1/1 pass.
 - [ ] roast/S02-types/flattening.t
 - [ ] roast/S02-types/generics.t
 - [ ] roast/S02-types/hash_ref.t
@@ -163,7 +171,8 @@
 - [ ] roast/S02-types/num.t
 - [ ] roast/S02-types/pair.t
   - ~5/182 pass. Fatal: `Type check failed for pair: expected Pair, got Any`. Most Pair introspection (`.key`, `.value`, colonpair `:a(42)`, nested pairs, `isa(Pair)`) fails. Pair type system not fully implemented
-- [ ] roast/S02-types/parsing-bool.t
+- [x] roast/S02-types/parsing-bool.t
+  - 4/4 pass.
 - [ ] roast/S02-types/range-iterator.t
 - [ ] roast/S02-types/range.t
   - ~20/259 pass. Failures: `.raku` for `^..` and `^..^` ranges (tests 5,7), Range-to-array reification (tests 8,11,13), `.reverse.raku` (test 17), numification of ranges (tests 32,35-43)
@@ -272,8 +281,8 @@
 - [ ] roast/S03-operators/is-divisible-by.t
   - 7/16 pass.
 - [x] roast/S03-operators/lcm.t
-- [ ] roast/S03-operators/list-quote-junction.t
-  - 6/16 pass.
+- [x] roast/S03-operators/list-quote-junction.t
+  - 16/16 pass.
 - [ ] roast/S03-operators/minmax.t
   - 4/39 pass.
 - [ ] roast/S03-operators/misc.t
@@ -334,13 +343,13 @@
 - [x] roast/S03-operators/spaceship-and-containers.t
   - 6/6 pass.
 - [ ] roast/S03-operators/spaceship.t
-  - 3/7 pass.
+  - 3/7 pass. Tests 5-7 fail.
 - [ ] roast/S03-operators/subscript-adverbs.t
   - 0/110 pass.
 - [ ] roast/S03-operators/subscript-vs-lt.t
   - 2/4 pass.
 - [ ] roast/S03-operators/ternary.t
-  - 7/28 pass.
+  - 14/28 pass. Tests 15-28 need EVAL/throws-like.
 - [ ] roast/S03-operators/u2212-minus.t
   - 0/54 pass.
 - [ ] roast/S03-operators/value_equivalence.t
@@ -1319,7 +1328,8 @@
 - [ ] roast/S32-num/rand.t
 - [ ] roast/S32-num/rat.t
 - [ ] roast/S32-num/real-bridge.t
-- [ ] roast/S32-num/roots.t
+- [x] roast/S32-num/roots.t
+  - 55/55 pass.
 - [ ] roast/S32-num/rounders.t
 - [ ] roast/S32-num/rshift_pos_amount.t
 - [ ] roast/S32-num/sign.t
@@ -1330,8 +1340,10 @@
 - [ ] roast/S32-scalar/defined.t
 - [ ] roast/S32-scalar/perl.t
 - [ ] roast/S32-scalar/undef.t
-- [ ] roast/S32-str/append.t
-- [ ] roast/S32-str/bool.t
+- [x] roast/S32-str/append.t
+  - 7/7 pass.
+- [x] roast/S32-str/bool.t
+  - 12/12 pass.
 - [ ] roast/S32-str/capitalize.t
 - [ ] roast/S32-str/chomp.t
 - [ ] roast/S32-str/chop.t
@@ -1363,7 +1375,8 @@
 - [ ] roast/S32-str/samecase.t
 - [ ] roast/S32-str/samemark.t
 - [ ] roast/S32-str/shiftjis-encode-decode.t
-- [ ] roast/S32-str/space-chars.t
+- [x] roast/S32-str/space-chars.t
+  - 30/30 pass.
 - [ ] roast/S32-str/split-simple.t
 - [ ] roast/S32-str/split.t
 - [ ] roast/S32-str/sprintf-b.t
