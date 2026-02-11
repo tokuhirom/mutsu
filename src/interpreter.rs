@@ -316,7 +316,7 @@ impl Interpreter {
 
     /// Convert a value to Value::Hash for hash variable assignment.
     /// Handles arrays of Pairs, flat key-value lists, and existing hashes.
-    fn coerce_to_hash(value: Value) -> Value {
+    pub(crate) fn coerce_to_hash(value: Value) -> Value {
         match value {
             Value::Hash(_) => value,
             Value::Array(items) => {
@@ -690,7 +690,7 @@ impl Interpreter {
             .or_else(|| self.get_dynamic_handle("$*IN"))
     }
 
-    fn write_to_named_handle(
+    pub(crate) fn write_to_named_handle(
         &mut self,
         name: &str,
         text: &str,

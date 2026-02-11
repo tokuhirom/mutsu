@@ -44,10 +44,17 @@ pub(crate) enum OpCode {
     StrEq,
     StrNe,
 
+    // -- Nil check (for defined-or //) --
+    IsNil,
+
     // -- Control flow --
     Jump(i32),
     JumpIfFalse(i32),
     JumpIfTrue(i32),
+    /// Jump if top of stack is nil (without popping)
+    JumpIfNil(i32),
+    /// Jump if top of stack is not nil (without popping)
+    JumpIfNotNil(i32),
 
     // -- Stack manipulation --
     Dup,
@@ -89,8 +96,29 @@ impl CompiledCode {
         }
     }
 
-    pub(crate) fn emit(&mut self, op: OpCode) {
+    pub(crate) fn emit(&mut self, op: OpCode) -> usize {
+        let idx = self.ops.len();
         self.ops.push(op);
+        idx
+    }
+
+    /// Patch a jump instruction at `idx` to point to the current position.
+    pub(crate) fn patch_jump(&mut self, idx: usize) {
+        let target = self.ops.len() as i32;
+        match &mut self.ops[idx] {
+            OpCode::Jump(offset)
+            | OpCode::JumpIfFalse(offset)
+            | OpCode::JumpIfTrue(offset)
+            | OpCode::JumpIfNil(offset)
+            | OpCode::JumpIfNotNil(offset) => {
+                *offset = target;
+            }
+            _ => panic!("patch_jump on non-jump opcode"),
+        }
+    }
+
+    pub(crate) fn current_pos(&self) -> usize {
+        self.ops.len()
     }
 
     pub(crate) fn add_constant(&mut self, value: Value) -> u32 {
