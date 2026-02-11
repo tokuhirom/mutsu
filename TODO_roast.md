@@ -503,7 +503,8 @@
 - [ ] roast/S05-mass/recursive.t
 - [ ] roast/S05-mass/rx.t
 - [ ] roast/S05-mass/stdrules.t
-- [ ] roast/S05-match/arrayhash.t
+- [x] roast/S05-match/arrayhash.t
+  - 9/9 pass.
 - [ ] roast/S05-match/basics.t
 - [ ] roast/S05-match/blocks.t
 - [ ] roast/S05-match/capturing-contexts.t
@@ -513,10 +514,12 @@
 - [ ] roast/S05-match/raku.t
 - [ ] roast/S05-metachars/closure.t
 - [ ] roast/S05-metachars/line-anchors.t
-- [ ] roast/S05-metachars/newline.t
+- [x] roast/S05-metachars/newline.t
+  - 15/15 pass.
 - [ ] roast/S05-metachars/tilde.t
 - [ ] roast/S05-metasyntax/angle-brackets.t
-- [ ] roast/S05-metasyntax/assertions.t
+- [x] roast/S05-metasyntax/assertions.t
+  - 4/4 pass.
 - [ ] roast/S05-metasyntax/changed.t
 - [ ] roast/S05-metasyntax/charset.t
 - [ ] roast/S05-metasyntax/delimiters.t
@@ -524,7 +527,8 @@
 - [ ] roast/S05-metasyntax/litvar.t
 - [ ] roast/S05-metasyntax/longest-alternative.t
 - [ ] roast/S05-metasyntax/lookaround.t
-- [ ] roast/S05-metasyntax/null.t
+- [x] roast/S05-metasyntax/null.t
+  - 4/4 pass.
 - [ ] roast/S05-metasyntax/proto-token-ltm.t
 - [ ] roast/S05-metasyntax/regex.t
 - [ ] roast/S05-metasyntax/repeat.t
@@ -702,7 +706,8 @@
 - [ ] roast/S10-packages/require-and-use.t
 - [ ] roast/S10-packages/scope.t
 - [ ] roast/S10-packages/use-with-class.t
-- [ ] roast/S11-compunit/compunit-dependencyspecification.t
+- [x] roast/S11-compunit/compunit-dependencyspecification.t
+  - 6/6 pass.
 - [ ] roast/S11-compunit/compunit-repository.t
 - [ ] roast/S11-compunit/rt126904.t
 - [ ] roast/S11-modules/export.t
@@ -986,7 +991,8 @@
 - [ ] roast/S16-io/tmpdir.t
 - [ ] roast/S16-io/watch.t
 - [ ] roast/S16-io/words.t
-- [ ] roast/S16-unfiled/getpeername.t
+- [x] roast/S16-unfiled/getpeername.t
+  - 1/1 pass.
 - [ ] roast/S16-unfiled/rebindstdhandles.t
 - [ ] roast/S17-channel/basic.t
 - [ ] roast/S17-channel/stress.t
@@ -1007,12 +1013,15 @@
 - [ ] roast/S17-procasync/bind-handles.t
 - [ ] roast/S17-procasync/encoding.t
 - [ ] roast/S17-procasync/kill.t
-- [ ] roast/S17-procasync/many-processes-no-close-stdin.t
+- [x] roast/S17-procasync/many-processes-no-close-stdin.t
+  - 1/1 pass.
 - [ ] roast/S17-procasync/nonexistent.t
-- [ ] roast/S17-procasync/no-runaway-file-limit.t
+- [x] roast/S17-procasync/no-runaway-file-limit.t
+  - 1/1 pass.
 - [ ] roast/S17-procasync/print.t
 - [ ] roast/S17-procasync/stress.t
-- [ ] roast/S17-procasync/windows-arg-quoting.t
+- [x] roast/S17-procasync/windows-arg-quoting.t
+  - 21/21 pass.
 - [ ] roast/S17-promise/allof.t
 - [ ] roast/S17-promise/anyof.t
 - [ ] roast/S17-promise/at.t
@@ -1094,23 +1103,29 @@
 - [ ] roast/S19-command-line/help.t
 - [ ] roast/S19-command-line-options/01-dash-uppercase-i.t
 - [ ] roast/S19-command-line-options/02-dash-n.t
-- [ ] roast/S19-command-line-options/03-dash-p.t
+- [x] roast/S19-command-line-options/03-dash-p.t
+  - 3/3 pass.
 - [ ] roast/S19-command-line-options/04-negation.t
 - [ ] roast/S19-command-line/repl.t
 - [ ] roast/S22-package-format/local.t
-- [ ] roast/S24-testing/0-compile.t
+- [x] roast/S24-testing/0-compile.t
+  - 1/1 pass.
 - [ ] roast/S24-testing/10-is-approx.t
 - [ ] roast/S24-testing/11-plan-skip-all-subtests.t
-- [ ] roast/S24-testing/11-plan-skip-all.t
-- [ ] roast/S24-testing/12-subtest-todo.t
+- [x] roast/S24-testing/11-plan-skip-all.t
+  - 0/0 pass (skipped).
+- [x] roast/S24-testing/12-subtest-todo.t
+  - 8/8 pass.
 - [ ] roast/S24-testing/13-cmp-ok.t
 - [ ] roast/S24-testing/14-like-unlike.t
 - [ ] roast/S24-testing/15-done-testing.t
 - [ ] roast/S24-testing/1-basic.t
 - [ ] roast/S24-testing/2-force_todo.t
-- [ ] roast/S24-testing/3-output.t
+- [x] roast/S24-testing/3-output.t
+  - 6/6 pass.
 - [ ] roast/S24-testing/6-done_testing.t
-- [ ] roast/S24-testing/7-bail_out.t
+- [x] roast/S24-testing/7-bail_out.t
+  - 4/4 pass.
 - [ ] roast/S24-testing/8-die_on_fail.t
 - [ ] roast/S24-testing/9-is_deeply.t
 - [ ] roast/S24-testing/fails-like.t
@@ -1161,7 +1176,8 @@
 - [ ] roast/S26-documentation/why-trailing.t
 - [ ] roast/S28-named-variables/cwd.t
 - [ ] roast/S28-named-variables/init-instant.t
-- [ ] roast/S28-named-variables/slangs.t
+- [x] roast/S28-named-variables/slangs.t
+  - 4/4 pass.
 - [ ] roast/S29-any/are.t
 - [x] roast/S29-any/cmp.t
   - 6/6 pass.
@@ -1457,7 +1473,8 @@
 - [ ] roast/S32-trig/pi.t
 - [ ] roast/S32-trig/sech.t
 - [ ] roast/S32-trig/sec.t
-- [ ] roast/S32-trig/simple.t
+- [x] roast/S32-trig/simple.t
+  - 12/12 pass.
 - [ ] roast/S32-trig/sinh.t
 - [ ] roast/S32-trig/sin.t
 - [ ] roast/S32-trig/tanh.t
