@@ -443,6 +443,7 @@
 - [ ] roast/S04-statement-modifiers/with.t
 - [ ] roast/S04-statement-parsing/hash.t
 - [ ] roast/S04-statements/do.t
+  - 29/32 pass. Failures: empty Slip in list context when no if-branch executes (tests 11-12), top-level comma expression in EVAL for last return value (test 25)
 - [ ] roast/S04-statements/for-scope.t
 - [ ] roast/S04-statements/for.t
   - Fatal: `Module not found: MONKEY-TYPING`. Requires `use MONKEY-TYPING` pragma

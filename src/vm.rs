@@ -1157,8 +1157,17 @@ impl VM {
             OpCode::MakeRange => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let result = match (left, right) {
-                    (Value::Int(a), Value::Int(b)) => Value::Range(a, b),
+                let result = match (&left, &right) {
+                    (Value::Int(a), Value::Int(b)) => Value::Range(*a, *b),
+                    (Value::Str(a), Value::Str(b)) if a.len() == 1 && b.len() == 1 => {
+                        let start = a.chars().next().unwrap();
+                        let end = b.chars().next().unwrap();
+                        let items: Vec<Value> = (start as u32..=end as u32)
+                            .filter_map(char::from_u32)
+                            .map(|c| Value::Str(c.to_string()))
+                            .collect();
+                        Value::Array(items)
+                    }
                     _ => Value::Nil,
                 };
                 self.stack.push(result);

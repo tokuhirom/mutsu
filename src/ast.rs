@@ -32,7 +32,7 @@ pub(crate) enum PhaserKind {
 }
 
 #[derive(Debug, Clone)]
-#[allow(clippy::enum_variant_names)]
+#[allow(clippy::enum_variant_names, dead_code)]
 pub(crate) enum Expr {
     Literal(Value),
     BareWord(String),
@@ -130,6 +130,11 @@ pub(crate) enum Expr {
         left: Box<Expr>,
         right: Box<Expr>,
     },
+    DoBlock {
+        body: Vec<Stmt>,
+        label: Option<String>,
+    },
+    DoStmt(Box<Stmt>),
 }
 
 #[derive(Debug, Clone)]
@@ -235,7 +240,7 @@ pub(crate) enum Stmt {
     },
     Last(Option<String>),
     Next(Option<String>),
-    Redo,
+    Redo(Option<String>),
     Proceed,
     Succeed,
     Given {

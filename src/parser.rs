@@ -19,6 +19,9 @@ impl Parser {
             let start = self.pos;
             match self.parse_stmt() {
                 Ok(stmt) => stmts.push(stmt),
+                Err(e) if e.message.contains("X::Obsolete") || e.message.contains("X::Comp") => {
+                    return Err(e);
+                }
                 Err(_) => {
                     self.recover_to_delim();
                     if self.pos == start && !self.check(&TokenKind::Eof) {
@@ -168,6 +171,49 @@ impl Parser {
             if self.match_ident("enum") {
                 return self.parse_enum_decl();
             }
+            // Destructuring: my ($a, $b, $c) = expr
+            if self.check(&TokenKind::LParen) {
+                self.pos += 1; // consume (
+                let mut names = Vec::new();
+                while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
+                    names.push(self.consume_var()?);
+                    if !self.match_kind(TokenKind::Comma) {
+                        break;
+                    }
+                }
+                self.consume_kind(TokenKind::RParen)?;
+                if self.match_kind(TokenKind::Eq) || self.match_kind(TokenKind::Bind) {
+                    let rhs = self.parse_comma_expr()?;
+                    self.match_kind(TokenKind::Semicolon);
+                    // Desugar into: { my @tmp = rhs; $a = @tmp[0]; $b = @tmp[1]; ... }
+                    let tmp_name = "@__destructure_tmp__".to_string();
+                    let array_bare = "__destructure_tmp__".to_string();
+                    let mut stmts = vec![Stmt::VarDecl {
+                        name: tmp_name,
+                        expr: rhs,
+                    }];
+                    for (i, var_name) in names.iter().enumerate() {
+                        stmts.push(Stmt::VarDecl {
+                            name: var_name.clone(),
+                            expr: Expr::Index {
+                                target: Box::new(Expr::ArrayVar(array_bare.clone())),
+                                index: Box::new(Expr::Literal(Value::Int(i as i64))),
+                            },
+                        });
+                    }
+                    return Ok(Stmt::Block(stmts));
+                }
+                // No assignment, just declare all as Nil
+                let mut stmts = Vec::new();
+                for var_name in &names {
+                    stmts.push(Stmt::VarDecl {
+                        name: var_name.clone(),
+                        expr: Expr::Literal(Value::Nil),
+                    });
+                }
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::Block(stmts));
+            }
             // Skip optional type annotation (e.g., my Str $a, my Int $b)
             if let Some(TokenKind::Ident(_)) = self.tokens.get(self.pos).map(|t| &t.kind)
                 && let Some(TokenKind::Var(_) | TokenKind::ArrayVar(_) | TokenKind::HashVar(_)) =
@@ -232,32 +278,7 @@ impl Parser {
             return self.parse_statement_modifier(stmt);
         }
         if self.match_ident("if") {
-            let cond = self.parse_expr()?;
-            let then_branch = self.parse_block()?;
-            let else_branch = if self.match_ident("elsif") {
-                // Desugar elsif into nested if
-                let elsif = self.parse_expr()?;
-                let elsif_branch = self.parse_block()?;
-                let inner_else = if self.match_ident("else") {
-                    self.parse_block()?
-                } else {
-                    Vec::new()
-                };
-                vec![Stmt::If {
-                    cond: elsif,
-                    then_branch: elsif_branch,
-                    else_branch: inner_else,
-                }]
-            } else if self.match_ident("else") {
-                self.parse_block()?
-            } else {
-                Vec::new()
-            };
-            return Ok(Stmt::If {
-                cond,
-                then_branch,
-                else_branch,
-            });
+            return self.parse_if_chain();
         }
         if self.match_ident("unless") {
             let cond = self.parse_expr()?;
@@ -330,7 +351,10 @@ impl Parser {
                 Some(TokenKind::Colon)
             )
             && let Some(TokenKind::Ident(kw)) = self.tokens.get(self.pos + 2).map(|t| &t.kind)
-            && matches!(kw.as_str(), "for" | "while" | "until" | "loop" | "repeat")
+            && matches!(
+                kw.as_str(),
+                "for" | "while" | "until" | "loop" | "repeat" | "do"
+            )
         {
             self.pos += 2; // skip label and colon
             return self.parse_labeled_loop(Some(label_name));
@@ -594,8 +618,27 @@ impl Parser {
             return Ok(Stmt::Succeed);
         }
         if self.match_ident("redo") {
+            let label = self.try_consume_loop_label();
+            if self.match_ident("if") {
+                let cond = self.parse_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::If {
+                    cond,
+                    then_branch: vec![Stmt::Redo(label)],
+                    else_branch: Vec::new(),
+                });
+            }
+            if self.match_ident("until") {
+                let cond = self.parse_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::If {
+                    cond,
+                    then_branch: Vec::new(),
+                    else_branch: vec![Stmt::Redo(label)],
+                });
+            }
             self.match_kind(TokenKind::Semicolon);
-            return Ok(Stmt::Redo);
+            return Ok(Stmt::Redo(label));
         }
         if self.match_ident("react") {
             let body = self.parse_block()?;
@@ -948,6 +991,25 @@ impl Parser {
         Ok(variants)
     }
 
+    /// Parse an if/elsif/else chain (assumes the `if` keyword has already been consumed).
+    fn parse_if_chain(&mut self) -> Result<Stmt, RuntimeError> {
+        let cond = self.parse_expr()?;
+        let then_branch = self.parse_block()?;
+        let else_branch = if self.match_ident("elsif") {
+            let inner = self.parse_if_chain()?;
+            vec![inner]
+        } else if self.match_ident("else") {
+            self.parse_block()?
+        } else {
+            Vec::new()
+        };
+        Ok(Stmt::If {
+            cond,
+            then_branch,
+            else_branch,
+        })
+    }
+
     pub(crate) fn parse_block(&mut self) -> Result<Vec<Stmt>, RuntimeError> {
         self.consume_kind(TokenKind::LBrace)?;
         self.parse_block_body()
@@ -972,6 +1034,15 @@ impl Parser {
     }
 
     fn parse_statement_modifier(&mut self, stmt: Stmt) -> Result<Stmt, RuntimeError> {
+        // Check for obsolete do...while/until/for/given
+        if matches!(&stmt, Stmt::Expr(Expr::DoBlock { .. }))
+            && let Some(kw) = self.peek_ident()
+            && matches!(kw.as_str(), "while" | "until" | "for" | "given")
+        {
+            return Err(RuntimeError::new(format!(
+                "Unsupported use of do...{kw} loop; in Raku please use repeat...while instead (X::Obsolete)"
+            )));
+        }
         if self.match_ident("if") {
             let cond = self.parse_expr()?;
             self.match_kind(TokenKind::Semicolon);
@@ -2785,9 +2856,32 @@ impl Parser {
                 Expr::AnonSub(body)
             } else {
                 let name = self.consume_ident()?;
-                if name == "do" && self.check(&TokenKind::LBrace) {
-                    let body = self.parse_block()?;
-                    Expr::Block(body)
+                if name == "do" {
+                    if self.check(&TokenKind::LBrace) {
+                        let body = self.parse_block()?;
+                        Expr::DoBlock { body, label: None }
+                    } else if self.match_ident("if") {
+                        let stmt = self.parse_if_chain()?;
+                        Expr::DoStmt(Box::new(stmt))
+                    } else if self.match_ident("unless") {
+                        let cond = self.parse_expr()?;
+                        let body = self.parse_block()?;
+                        Expr::DoStmt(Box::new(Stmt::If {
+                            cond: Expr::Unary {
+                                op: TokenKind::Bang,
+                                expr: Box::new(cond),
+                            },
+                            then_branch: body,
+                            else_branch: Vec::new(),
+                        }))
+                    } else if self.match_ident("given") {
+                        let topic = self.parse_expr()?;
+                        let body = self.parse_block()?;
+                        Expr::DoStmt(Box::new(Stmt::Given { topic, body }))
+                    } else {
+                        // do EXPR - parse expression and return it
+                        self.parse_expr()?
+                    }
                 } else if name == "so" {
                     let inner = self.parse_expr()?;
                     Expr::Unary {
@@ -3472,6 +3566,13 @@ impl Parser {
             return Err(RuntimeError::new(
                 "Expected 'while' or 'until' after repeat block",
             ));
+        }
+        if self.match_ident("do") {
+            if self.check(&TokenKind::LBrace) {
+                let body = self.parse_block()?;
+                return Ok(Stmt::Expr(Expr::DoBlock { body, label }));
+            }
+            return Err(RuntimeError::new("Expected block after labeled do"));
         }
         Err(RuntimeError::new("Expected loop keyword after label"))
     }

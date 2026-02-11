@@ -427,7 +427,7 @@ impl RuntimeError {
 
     pub(crate) fn last_signal() -> Self {
         Self {
-            message: String::new(),
+            message: "X::ControlFlow".to_string(),
             return_value: None,
             is_last: true,
             is_next: false,
@@ -440,7 +440,7 @@ impl RuntimeError {
 
     pub(crate) fn next_signal() -> Self {
         Self {
-            message: String::new(),
+            message: "X::ControlFlow".to_string(),
             return_value: None,
             is_last: false,
             is_next: true,
@@ -453,7 +453,7 @@ impl RuntimeError {
 
     pub(crate) fn redo_signal() -> Self {
         Self {
-            message: String::new(),
+            message: "X::ControlFlow".to_string(),
             return_value: None,
             is_last: false,
             is_next: false,

@@ -1497,8 +1497,10 @@ impl Interpreter {
                 sig.label = label.clone();
                 return Err(sig);
             }
-            Stmt::Redo => {
-                return Err(RuntimeError::redo_signal());
+            Stmt::Redo(label) => {
+                let mut sig = RuntimeError::redo_signal();
+                sig.label = label.clone();
+                return Err(sig);
             }
             Stmt::Proceed => {
                 return Err(RuntimeError::proceed_signal());
@@ -1513,7 +1515,14 @@ impl Interpreter {
                 let saved_when = self.when_matched;
                 self.when_matched = false;
                 for stmt in body {
-                    self.exec_stmt(stmt)?;
+                    match self.exec_stmt(stmt) {
+                        Ok(()) => {}
+                        Err(e) if e.is_succeed => {
+                            self.when_matched = true;
+                            break;
+                        }
+                        Err(e) => return Err(e),
+                    }
                     if self.when_matched || self.halted {
                         break;
                     }
@@ -1530,18 +1539,38 @@ impl Interpreter {
                 let cond_val = self.eval_expr(cond)?;
                 if self.smart_match(&topic, &cond_val) {
                     let mut did_proceed = false;
+                    let mut last_val = Value::Nil;
                     for stmt in body {
-                        match self.exec_stmt(stmt) {
-                            Err(e) if e.is_proceed => {
-                                did_proceed = true;
-                                break;
-                            }
-                            Err(e) if e.is_succeed => {
-                                break;
-                            }
-                            other => {
-                                other?;
-                            }
+                        match stmt {
+                            Stmt::Expr(expr) => match self.eval_expr(expr) {
+                                Ok(v) => last_val = v,
+                                Err(e) if e.is_proceed => {
+                                    did_proceed = true;
+                                    break;
+                                }
+                                Err(e) if e.is_succeed => {
+                                    if let Some(v) = e.return_value {
+                                        last_val = v;
+                                    }
+                                    break;
+                                }
+                                Err(e) => return Err(e),
+                            },
+                            _ => match self.exec_stmt(stmt) {
+                                Err(e) if e.is_proceed => {
+                                    did_proceed = true;
+                                    break;
+                                }
+                                Err(e) if e.is_succeed => {
+                                    if let Some(v) = e.return_value {
+                                        last_val = v;
+                                    }
+                                    break;
+                                }
+                                other => {
+                                    other?;
+                                }
+                            },
                         }
                         if self.halted {
                             break;
@@ -1549,6 +1578,10 @@ impl Interpreter {
                     }
                     if !did_proceed {
                         self.when_matched = true;
+                        // Emit succeed signal with the block's return value
+                        let mut sig = RuntimeError::succeed_signal();
+                        sig.return_value = Some(last_val);
+                        return Err(sig);
                     }
                 }
             }
@@ -3481,6 +3514,55 @@ impl Interpreter {
                     self.eval_block_value(body)
                 }
             }
+            Expr::DoBlock { body, label } => {
+                loop {
+                    match self.eval_block_value(body) {
+                        Ok(v) => return Ok(v),
+                        Err(e)
+                            if e.is_redo
+                                && (e.label.is_none()
+                                    || e.label.as_deref() == label.as_deref()) =>
+                        {
+                            continue; // redo
+                        }
+                        Err(e)
+                            if e.is_next
+                                && (e.label.is_none()
+                                    || e.label.as_deref() == label.as_deref()) =>
+                        {
+                            return Ok(Value::Array(vec![]));
+                        }
+                        Err(e)
+                            if e.is_last
+                                && (e.label.is_none()
+                                    || e.label.as_deref() == label.as_deref()) =>
+                        {
+                            return Ok(e.return_value.unwrap_or(Value::Array(vec![])));
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
+            }
+            Expr::DoStmt(stmt) => match stmt.as_ref() {
+                Stmt::If {
+                    cond,
+                    then_branch,
+                    else_branch,
+                } => {
+                    if self.eval_expr(cond)?.truthy() {
+                        self.eval_block_value(then_branch)
+                    } else if else_branch.is_empty() {
+                        Ok(Value::Nil)
+                    } else {
+                        self.eval_block_value(else_branch)
+                    }
+                }
+                Stmt::Given { topic, body } => self.eval_given_value(topic, body),
+                _ => {
+                    self.exec_stmt(stmt)?;
+                    Ok(Value::Nil)
+                }
+            },
             Expr::AnonSub(body) => Ok(Value::Sub {
                 package: self.current_package.clone(),
                 name: String::new(),
@@ -8391,8 +8473,17 @@ impl Interpreter {
                     Ok(Value::Nil)
                 }
             }
-            TokenKind::DotDot => match (left, right) {
-                (Value::Int(a), Value::Int(b)) => Ok(Value::Range(a, b)),
+            TokenKind::DotDot => match (&left, &right) {
+                (Value::Int(a), Value::Int(b)) => Ok(Value::Range(*a, *b)),
+                (Value::Str(a), Value::Str(b)) if a.len() == 1 && b.len() == 1 => {
+                    let start = a.chars().next().unwrap();
+                    let end = b.chars().next().unwrap();
+                    let items: Vec<Value> = (start as u32..=end as u32)
+                        .filter_map(char::from_u32)
+                        .map(|c| Value::Str(c.to_string()))
+                        .collect();
+                    Ok(Value::Array(items))
+                }
                 _ => Ok(Value::Nil),
             },
             TokenKind::DotDotDot => {
@@ -9775,6 +9866,47 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Evaluate a given block, returning the value from the matching when branch.
+    fn eval_given_value(&mut self, topic: &Expr, body: &[Stmt]) -> Result<Value, RuntimeError> {
+        let topic_val = self.eval_expr(topic)?;
+        let saved_topic = self.env.get("_").cloned();
+        self.env.insert("_".to_string(), topic_val);
+        let saved_when = self.when_matched;
+        self.when_matched = false;
+        let mut last = Value::Nil;
+        for stmt in body {
+            match self.exec_stmt(stmt) {
+                Ok(()) => {}
+                Err(e) if e.is_succeed => {
+                    if let Some(v) = e.return_value {
+                        last = v;
+                    }
+                    self.when_matched = true;
+                    break;
+                }
+                Err(e) => {
+                    self.when_matched = saved_when;
+                    if let Some(v) = saved_topic {
+                        self.env.insert("_".to_string(), v);
+                    } else {
+                        self.env.remove("_");
+                    }
+                    return Err(e);
+                }
+            }
+            if self.when_matched || self.halted {
+                break;
+            }
+        }
+        self.when_matched = saved_when;
+        if let Some(v) = saved_topic {
+            self.env.insert("_".to_string(), v);
+        } else {
+            self.env.remove("_");
+        }
+        Ok(last)
+    }
+
     fn eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
         let (enter_ph, leave_ph, body_main) = self.split_block_phasers(body);
         self.run_block_raw(&enter_ph)?;
@@ -9787,6 +9919,16 @@ impl Interpreter {
                     break;
                 }
                 Stmt::Expr(expr) => match self.eval_expr(expr) {
+                    Ok(v) => last = v,
+                    Err(e) => {
+                        result = Err(e);
+                        break;
+                    }
+                },
+                Stmt::Given {
+                    topic,
+                    body: given_body,
+                } => match self.eval_given_value(topic, given_body) {
                     Ok(v) => last = v,
                     Err(e) => {
                         result = Err(e);
@@ -10590,6 +10732,14 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             for s in stmts {
                 collect_ph_stmt(s, out);
             }
+        }
+        Expr::DoBlock { body, .. } => {
+            for s in body {
+                collect_ph_stmt(s, out);
+            }
+        }
+        Expr::DoStmt(stmt) => {
+            collect_ph_stmt(stmt, out);
         }
         Expr::Lambda { body, .. } => {
             for s in body {

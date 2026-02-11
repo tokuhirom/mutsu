@@ -210,7 +210,7 @@ impl Compiler {
             Stmt::Next(label) => {
                 self.code.emit(OpCode::Next(label.clone()));
             }
-            Stmt::Redo => {
+            Stmt::Redo(_) => {
                 self.code.emit(OpCode::Redo);
             }
             Stmt::Return(expr) => {
@@ -798,10 +798,15 @@ impl Compiler {
                     self.compile_block_inline(stmts);
                 }
             }
-            // AnonSub / Lambda / Gather / CallOn:
+            // AnonSub / Lambda / Gather / CallOn / DoBlock / DoStmt:
             // These capture env or have complex state interactions.
             // Delegate entirely to interpreter.
-            Expr::AnonSub(_) | Expr::Lambda { .. } | Expr::Gather(_) | Expr::CallOn { .. } => {
+            Expr::AnonSub(_)
+            | Expr::Lambda { .. }
+            | Expr::Gather(_)
+            | Expr::CallOn { .. }
+            | Expr::DoBlock { .. }
+            | Expr::DoStmt(_) => {
                 self.fallback_expr(expr);
             }
             _ => {
@@ -888,7 +893,10 @@ impl Compiler {
     /// Returns true if the expression must be kept as a raw Expr for
     /// exec_call handlers (e.g. throws-like needs Expr::Block to run code).
     fn needs_raw_expr(expr: &Expr) -> bool {
-        matches!(expr, Expr::Block(_) | Expr::AnonSub(_))
+        matches!(
+            expr,
+            Expr::Block(_) | Expr::AnonSub(_) | Expr::DoBlock { .. }
+        )
     }
 
     fn has_phasers(stmts: &[Stmt]) -> bool {
