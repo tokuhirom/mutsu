@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 use crate::ast::{AssignOp, CallArg, Expr, ParamDef, PhaserKind, Stmt};
 use crate::lexer::{Token, TokenKind};
 use crate::value::{RuntimeError, Value};
@@ -48,15 +49,13 @@ impl Parser {
             self.match_kind(TokenKind::Semicolon);
             return Ok(Stmt::Use { module, arg });
         }
-        if self.match_ident("unit") {
-            if self.match_ident("module") {
-                let name = self.consume_ident()?;
-                self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::Package {
-                    name,
-                    body: Vec::new(),
-                });
-            }
+        if self.match_ident("unit") && self.match_ident("module") {
+            let name = self.consume_ident()?;
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::Package {
+                name,
+                body: Vec::new(),
+            });
         }
         if self.match_ident("package") {
             let name = self.consume_ident()?;
@@ -170,12 +169,11 @@ impl Parser {
                 return self.parse_enum_decl();
             }
             // Skip optional type annotation (e.g., my Str $a, my Int $b)
-            if let Some(TokenKind::Ident(_)) = self.tokens.get(self.pos).map(|t| &t.kind) {
-                if let Some(TokenKind::Var(_) | TokenKind::ArrayVar(_) | TokenKind::HashVar(_)) =
+            if let Some(TokenKind::Ident(_)) = self.tokens.get(self.pos).map(|t| &t.kind)
+                && let Some(TokenKind::Var(_) | TokenKind::ArrayVar(_) | TokenKind::HashVar(_)) =
                     self.tokens.get(self.pos + 1).map(|t| &t.kind)
-                {
-                    self.pos += 1; // skip the type name
-                }
+            {
+                self.pos += 1; // skip the type name
             }
             let (name, is_array, is_hash) = if let Some(token) =
                 self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_)))
@@ -326,18 +324,16 @@ impl Parser {
             });
         }
         // Labeled loop detection: LABEL: for/while/loop/...
-        if let Some(label_name) = self.peek_ident() {
-            if matches!(
+        if let Some(label_name) = self.peek_ident()
+            && matches!(
                 self.tokens.get(self.pos + 1).map(|t| &t.kind),
                 Some(TokenKind::Colon)
-            ) {
-                if let Some(TokenKind::Ident(kw)) = self.tokens.get(self.pos + 2).map(|t| &t.kind) {
-                    if matches!(kw.as_str(), "for" | "while" | "until" | "loop" | "repeat") {
-                        self.pos += 2; // skip label and colon
-                        return self.parse_labeled_loop(Some(label_name));
-                    }
-                }
-            }
+            )
+            && let Some(TokenKind::Ident(kw)) = self.tokens.get(self.pos + 2).map(|t| &t.kind)
+            && matches!(kw.as_str(), "for" | "while" | "until" | "loop" | "repeat")
+        {
+            self.pos += 2; // skip label and colon
+            return self.parse_labeled_loop(Some(label_name));
         }
         if self.match_ident("while") {
             let cond = self.parse_expr()?;
@@ -627,8 +623,8 @@ impl Parser {
             // warn just outputs to stderr/diag; treat as no-op for now
             return Ok(Stmt::Expr(expr));
         }
-        if let Some(name) = self.peek_ident() {
-            if matches!(
+        if let Some(name) = self.peek_ident()
+            && matches!(
                 name.as_str(),
                 "ok" | "is"
                     | "isnt"
@@ -657,121 +653,121 @@ impl Parser {
                     | "todo"
                     | "does-ok"
                     | "can-ok"
-            ) {
-                self.pos += 1;
-                let args = if name == "is"
-                    && (!self.check(&TokenKind::LParen) || self.is_is_grouping_paren())
-                {
-                    self.parse_is_call_args()
-                } else if name == "ok"
-                    && matches!(
-                        self.tokens.get(self.pos).map(|t| &t.kind),
-                        Some(TokenKind::LParen | TokenKind::Bang)
-                    )
-                {
-                    self.parse_call_args_loose(&name)
-                } else {
-                    self.parse_call_args()?
-                };
-                self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::Call { name, args });
-            }
+            )
+        {
+            self.pos += 1;
+            let args = if name == "is"
+                && (!self.check(&TokenKind::LParen) || self.is_is_grouping_paren())
+            {
+                self.parse_is_call_args()
+            } else if name == "ok"
+                && matches!(
+                    self.tokens.get(self.pos).map(|t| &t.kind),
+                    Some(TokenKind::LParen | TokenKind::Bang)
+                )
+            {
+                self.parse_call_args_loose(&name)
+            } else {
+                self.parse_call_args()?
+            };
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::Call { name, args });
         }
-        if self.peek_is_var() {
-            if let Some(next) = self.peek_next_kind() {
-                if matches!(next, TokenKind::DotEq) {
-                    let name = self.consume_var()?;
-                    self.match_kind(TokenKind::DotEq);
-                    let method_name = self.consume_ident()?;
-                    let mut method_args = Vec::new();
-                    if self.match_kind(TokenKind::LParen) {
-                        if !self.check(&TokenKind::RParen) {
+        if self.peek_is_var()
+            && let Some(next) = self.peek_next_kind()
+        {
+            if matches!(next, TokenKind::DotEq) {
+                let name = self.consume_var()?;
+                self.match_kind(TokenKind::DotEq);
+                let method_name = self.consume_ident()?;
+                let mut method_args = Vec::new();
+                if self.match_kind(TokenKind::LParen) {
+                    if !self.check(&TokenKind::RParen) {
+                        method_args.push(self.parse_method_arg());
+                        while self.match_kind(TokenKind::Comma) {
                             method_args.push(self.parse_method_arg());
-                            while self.match_kind(TokenKind::Comma) {
-                                method_args.push(self.parse_method_arg());
-                            }
-                        }
-                        self.consume_kind(TokenKind::RParen)?;
-                    }
-                    self.match_kind(TokenKind::Semicolon);
-                    let expr = Expr::MethodCall {
-                        target: Box::new(Expr::Var(name.clone())),
-                        name: method_name,
-                        args: method_args,
-                    };
-                    return Ok(Stmt::Assign {
-                        name,
-                        expr,
-                        op: AssignOp::Assign,
-                    });
-                }
-                if matches!(
-                    next,
-                    TokenKind::PlusEq | TokenKind::MinusEq | TokenKind::TildeEq | TokenKind::StarEq
-                ) {
-                    let name = self.consume_var()?;
-                    let compound_op = if self.match_kind(TokenKind::PlusEq) {
-                        TokenKind::Plus
-                    } else if self.match_kind(TokenKind::MinusEq) {
-                        TokenKind::Minus
-                    } else if self.match_kind(TokenKind::TildeEq) {
-                        TokenKind::Tilde
-                    } else {
-                        self.match_kind(TokenKind::StarEq);
-                        TokenKind::Star
-                    };
-                    let rhs = self.parse_comma_expr()?;
-                    self.match_kind(TokenKind::Semicolon);
-                    let expr = Expr::Binary {
-                        left: Box::new(Expr::Var(name.clone())),
-                        op: compound_op,
-                        right: Box::new(rhs),
-                    };
-                    return Ok(Stmt::Assign {
-                        name,
-                        expr,
-                        op: AssignOp::Assign,
-                    });
-                }
-                if matches!(next, TokenKind::LBracket) {
-                    let name = self.consume_var()?;
-                    if let Some((meta, op, consumed)) = self.try_bracket_meta_op_at(self.pos) {
-                        self.pos += consumed;
-                        if self.match_kind(TokenKind::Eq) {
-                            let rhs = self.parse_comma_expr()?;
-                            self.match_kind(TokenKind::Semicolon);
-                            let expr = Expr::MetaOp {
-                                meta,
-                                op,
-                                left: Box::new(Expr::Var(name.clone())),
-                                right: Box::new(rhs),
-                            };
-                            return Ok(Stmt::Assign {
-                                name,
-                                expr,
-                                op: AssignOp::Assign,
-                            });
                         }
                     }
-                    self.pos -= 1;
+                    self.consume_kind(TokenKind::RParen)?;
                 }
-                if matches!(
-                    next,
-                    TokenKind::Eq | TokenKind::Bind | TokenKind::MatchAssign
-                ) {
-                    let name = self.consume_var()?;
-                    let op = if self.match_kind(TokenKind::Eq) {
-                        AssignOp::Assign
-                    } else if self.match_kind(TokenKind::Bind) {
-                        AssignOp::Bind
-                    } else {
-                        self.consume_kind(TokenKind::MatchAssign)?;
-                        AssignOp::MatchAssign
-                    };
-                    let expr = self.parse_comma_expr()?;
-                    self.match_kind(TokenKind::Semicolon);
-                    return Ok(Stmt::Assign { name, expr, op });
+                self.match_kind(TokenKind::Semicolon);
+                let expr = Expr::MethodCall {
+                    target: Box::new(Expr::Var(name.clone())),
+                    name: method_name,
+                    args: method_args,
+                };
+                return Ok(Stmt::Assign {
+                    name,
+                    expr,
+                    op: AssignOp::Assign,
+                });
+            }
+            if matches!(
+                next,
+                TokenKind::PlusEq | TokenKind::MinusEq | TokenKind::TildeEq | TokenKind::StarEq
+            ) {
+                let name = self.consume_var()?;
+                let compound_op = if self.match_kind(TokenKind::PlusEq) {
+                    TokenKind::Plus
+                } else if self.match_kind(TokenKind::MinusEq) {
+                    TokenKind::Minus
+                } else if self.match_kind(TokenKind::TildeEq) {
+                    TokenKind::Tilde
+                } else {
+                    self.match_kind(TokenKind::StarEq);
+                    TokenKind::Star
+                };
+                let rhs = self.parse_comma_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                let expr = Expr::Binary {
+                    left: Box::new(Expr::Var(name.clone())),
+                    op: compound_op,
+                    right: Box::new(rhs),
+                };
+                return Ok(Stmt::Assign {
+                    name,
+                    expr,
+                    op: AssignOp::Assign,
+                });
+            }
+            if matches!(next, TokenKind::LBracket) {
+                let name = self.consume_var()?;
+                if let Some((meta, op, consumed)) = self.try_bracket_meta_op_at(self.pos) {
+                    self.pos += consumed;
+                    if self.match_kind(TokenKind::Eq) {
+                        let rhs = self.parse_comma_expr()?;
+                        self.match_kind(TokenKind::Semicolon);
+                        let expr = Expr::MetaOp {
+                            meta,
+                            op,
+                            left: Box::new(Expr::Var(name.clone())),
+                            right: Box::new(rhs),
+                        };
+                        return Ok(Stmt::Assign {
+                            name,
+                            expr,
+                            op: AssignOp::Assign,
+                        });
+                    }
                 }
+                self.pos -= 1;
+            }
+            if matches!(
+                next,
+                TokenKind::Eq | TokenKind::Bind | TokenKind::MatchAssign
+            ) {
+                let name = self.consume_var()?;
+                let op = if self.match_kind(TokenKind::Eq) {
+                    AssignOp::Assign
+                } else if self.match_kind(TokenKind::Bind) {
+                    AssignOp::Bind
+                } else {
+                    self.consume_kind(TokenKind::MatchAssign)?;
+                    AssignOp::MatchAssign
+                };
+                let expr = self.parse_comma_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::Assign { name, expr, op });
             }
         }
         if let Some(TokenKind::ArrayVar(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
@@ -1039,9 +1035,7 @@ impl Parser {
                 TokenKind::Eof => break,
                 TokenKind::LParen | TokenKind::LBrace => depth += 1,
                 TokenKind::RParen | TokenKind::RBrace => {
-                    if depth > 0 {
-                        depth -= 1;
-                    }
+                    depth = depth.saturating_sub(1);
                 }
                 TokenKind::Semicolon => {
                     if depth == 0 {
@@ -1198,16 +1192,16 @@ impl Parser {
             }
             return Ok(CallArg::Named { name, value: None });
         }
-        if let Some(name) = self.peek_ident() {
-            if matches!(self.peek_next_kind(), Some(TokenKind::FatArrow)) {
-                self.pos += 1;
-                self.consume_kind(TokenKind::FatArrow)?;
-                let value = self.parse_expr()?;
-                return Ok(CallArg::Named {
-                    name,
-                    value: Some(value),
-                });
-            }
+        if let Some(name) = self.peek_ident()
+            && matches!(self.peek_next_kind(), Some(TokenKind::FatArrow))
+        {
+            self.pos += 1;
+            self.consume_kind(TokenKind::FatArrow)?;
+            let value = self.parse_expr()?;
+            return Ok(CallArg::Named {
+                name,
+                value: Some(value),
+            });
         }
         match self.parse_expr() {
             Ok(expr) => Ok(CallArg::Positional(expr)),
@@ -1223,19 +1217,19 @@ impl Parser {
 
     fn parse_expr(&mut self) -> Result<Expr, RuntimeError> {
         // Handle $var = expr as assignment expression
-        if let Some(TokenKind::Var(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
-            if matches!(
+        if let Some(TokenKind::Var(name)) = self.tokens.get(self.pos).map(|t| &t.kind)
+            && matches!(
                 self.tokens.get(self.pos + 1).map(|t| &t.kind),
                 Some(TokenKind::Eq)
-            ) {
-                let name = name.clone();
-                self.pos += 2;
-                let expr = self.parse_expr()?;
-                return Ok(Expr::AssignExpr {
-                    name,
-                    expr: Box::new(expr),
-                });
-            }
+            )
+        {
+            let name = name.clone();
+            self.pos += 2;
+            let expr = self.parse_expr()?;
+            return Ok(Expr::AssignExpr {
+                name,
+                expr: Box::new(expr),
+            });
         }
         let expr = self.parse_or()?;
         // Handle => (fat arrow / pair constructor)
@@ -1308,10 +1302,10 @@ impl Parser {
         let mut exprs = vec![first];
         while self.match_kind(TokenKind::Comma) {
             // Stop if next token looks like a statement modifier keyword
-            if let Some(TokenKind::Ident(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
-                if matches!(name.as_str(), "if" | "unless" | "for" | "while" | "until") {
-                    break;
-                }
+            if let Some(TokenKind::Ident(name)) = self.tokens.get(self.pos).map(|t| &t.kind)
+                && matches!(name.as_str(), "if" | "unless" | "for" | "while" | "until")
+            {
+                break;
             }
             exprs.push(self.parse_expr()?);
         }
@@ -1336,17 +1330,17 @@ impl Parser {
             };
         }
         // Handle name => value (pair/named arg syntax)
-        if let Some(name) = self.peek_ident() {
-            if matches!(self.peek_next_kind(), Some(TokenKind::FatArrow)) {
-                self.pos += 1; // consume ident
-                self.pos += 1; // consume =>
-                let value = self.parse_expr_or_true();
-                return Expr::Binary {
-                    left: Box::new(Expr::Literal(Value::Str(name))),
-                    op: TokenKind::FatArrow,
-                    right: Box::new(value),
-                };
-            }
+        if let Some(name) = self.peek_ident()
+            && matches!(self.peek_next_kind(), Some(TokenKind::FatArrow))
+        {
+            self.pos += 1; // consume ident
+            self.pos += 1; // consume =>
+            let value = self.parse_expr_or_true();
+            return Expr::Binary {
+                left: Box::new(Expr::Literal(Value::Str(name))),
+                op: TokenKind::FatArrow,
+                right: Box::new(value),
+            };
         }
         self.parse_expr_or_true()
     }
@@ -1915,15 +1909,14 @@ impl Parser {
         if let Some(TokenKind::Ident(name)) = self.tokens.get(pos + 1).map(|t| &t.kind) {
             if matches!(name.as_str(), "R" | "X" | "Z") {
                 let meta = name.clone();
-                if let Some(kind) = self.tokens.get(pos + 2).map(|t| &t.kind) {
-                    if let Some(op) = op_from_kind(kind) {
-                        if matches!(
-                            self.tokens.get(pos + 3).map(|t| &t.kind),
-                            Some(TokenKind::RBracket)
-                        ) {
-                            return Some((meta, op, 4));
-                        }
-                    }
+                if let Some(kind) = self.tokens.get(pos + 2).map(|t| &t.kind)
+                    && let Some(op) = op_from_kind(kind)
+                    && matches!(
+                        self.tokens.get(pos + 3).map(|t| &t.kind),
+                        Some(TokenKind::RBracket)
+                    )
+                {
+                    return Some((meta, op, 4));
                 }
             }
             if name.len() > 1 {
@@ -1957,19 +1950,15 @@ impl Parser {
 
     fn parse_meta_op(&mut self) -> Result<Expr, RuntimeError> {
         let mut expr = self.parse_hyper()?;
-        loop {
-            if let Some((meta, op, consumed)) = self.try_meta_op() {
-                self.pos += consumed;
-                let right = self.parse_hyper()?;
-                expr = Expr::MetaOp {
-                    meta,
-                    op,
-                    left: Box::new(expr),
-                    right: Box::new(right),
-                };
-            } else {
-                break;
-            }
+        while let Some((meta, op, consumed)) = self.try_meta_op() {
+            self.pos += consumed;
+            let right = self.parse_hyper()?;
+            expr = Expr::MetaOp {
+                meta,
+                op,
+                left: Box::new(expr),
+                right: Box::new(right),
+            };
         }
         Ok(expr)
     }
@@ -2007,8 +1996,8 @@ impl Parser {
         // Look ahead for op + closer pattern
         let mut i = self.pos + 1;
         // skip inner op token(s) — some ops are two tokens (e.g. Star Star for **)
-        if let Some(t) = self.tokens.get(i).map(|t| &t.kind) {
-            match t {
+        match self.tokens.get(i).map(|t| &t.kind) {
+            Some(
                 TokenKind::Star
                 | TokenKind::StarStar
                 | TokenKind::EqEq
@@ -2024,13 +2013,11 @@ impl Parser {
                 | TokenKind::BitOr
                 | TokenKind::BitXor
                 | TokenKind::Lt
-                | TokenKind::Gt => {
-                    i += 1;
-                }
-                _ => return false,
+                | TokenKind::Gt,
+            ) => {
+                i += 1;
             }
-        } else {
-            return false;
+            _ => return false,
         }
         matches!(
             self.tokens.get(i).map(|t| &t.kind),
@@ -2252,11 +2239,11 @@ impl Parser {
     fn parse_infix_func(&mut self, left: Expr) -> Result<Option<Expr>, RuntimeError> {
         let mut modifier = None;
         let start_pos = self.pos;
-        if let Some(TokenKind::Ident(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
-            if name == "R" || name == "X" {
-                modifier = Some(name.clone());
-                self.pos += 1;
-            }
+        if let Some(TokenKind::Ident(name)) = self.tokens.get(self.pos).map(|t| &t.kind)
+            && (name == "R" || name == "X")
+        {
+            modifier = Some(name.clone());
+            self.pos += 1;
         }
         if !self.match_kind(TokenKind::LBracket) {
             self.pos = start_pos;
@@ -2424,8 +2411,8 @@ impl Parser {
                     match part {
                         DStrPart::Lit(s) => exprs.push(Expr::Literal(Value::Str(s))),
                         DStrPart::Var(name) => {
-                            if name.starts_with('@') {
-                                exprs.push(Expr::ArrayVar(name[1..].to_string()));
+                            if let Some(stripped) = name.strip_prefix('@') {
+                                exprs.push(Expr::ArrayVar(stripped.to_string()));
                             } else {
                                 exprs.push(Expr::Var(name));
                             }
@@ -2527,9 +2514,7 @@ impl Parser {
                             expr: Box::new(inner),
                         }),
                     }
-                } else if name == "quietly" {
-                    self.parse_expr()?
-                } else if name == "eager" {
+                } else if name == "quietly" || name == "eager" {
                     self.parse_expr()?
                 } else if name == "gather" && self.check(&TokenKind::LBrace) {
                     let body = self.parse_block()?;
@@ -2759,16 +2744,16 @@ impl Parser {
                     continue;
                 }
             }
-            if self.check(&TokenKind::Colon) {
-                if matches!(
+            if self.check(&TokenKind::Colon)
+                && matches!(
                     self.tokens.get(self.pos + 1).map(|t| &t.kind),
                     Some(TokenKind::Ident(name)) if name == "exists"
-                ) {
-                    self.match_kind(TokenKind::Colon);
-                    let _ = self.consume_ident()?;
-                    expr = Expr::Exists(Box::new(expr));
-                    continue;
-                }
+                )
+            {
+                self.match_kind(TokenKind::Colon);
+                let _ = self.consume_ident()?;
+                expr = Expr::Exists(Box::new(expr));
+                continue;
             }
             if self.match_kind(TokenKind::LParen) {
                 let mut args = Vec::new();
@@ -2869,31 +2854,31 @@ impl Parser {
     }
 
     fn consume_var(&mut self) -> Result<String, RuntimeError> {
-        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Var(_))) {
-            if let TokenKind::Var(name) = token.kind {
-                return Ok(name);
-            }
+        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Var(_)))
+            && let TokenKind::Var(name) = token.kind
+        {
+            return Ok(name);
         }
         Err(RuntimeError::new("Expected variable"))
     }
 
     fn consume_ident(&mut self) -> Result<String, RuntimeError> {
-        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_))) {
-            if let TokenKind::Ident(name) = token.kind {
-                return Ok(name);
-            }
+        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_)))
+            && let TokenKind::Ident(name) = token.kind
+        {
+            return Ok(name);
         }
         Err(RuntimeError::new("Expected identifier"))
     }
 
     fn match_ident(&mut self, ident: &str) -> bool {
-        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_))) {
-            if let TokenKind::Ident(name) = token.kind {
-                if name == ident {
-                    return true;
-                }
-                self.pos -= 1;
+        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_)))
+            && let TokenKind::Ident(name) = token.kind
+        {
+            if name == ident {
+                return true;
             }
+            self.pos -= 1;
         }
         false
     }
@@ -2927,11 +2912,11 @@ impl Parser {
     where
         F: Fn(&TokenKind) -> bool,
     {
-        if let Some(token) = self.tokens.get(self.pos) {
-            if predicate(&token.kind) {
-                self.pos += 1;
-                return Some(token.clone());
-            }
+        if let Some(token) = self.tokens.get(self.pos)
+            && predicate(&token.kind)
+        {
+            self.pos += 1;
+            return Some(token.clone());
         }
         None
     }
@@ -2956,15 +2941,15 @@ impl Parser {
 
     fn try_consume_loop_label(&mut self) -> Option<String> {
         // Check if next token is an identifier that's NOT a keyword
-        if let Some(TokenKind::Ident(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
-            if !matches!(
+        if let Some(TokenKind::Ident(name)) = self.tokens.get(self.pos).map(|t| &t.kind)
+            && !matches!(
                 name.as_str(),
                 "if" | "unless" | "while" | "until" | "for" | "given" | "when" | "with" | "without"
-            ) {
-                let label = name.clone();
-                self.pos += 1;
-                return Some(label);
-            }
+            )
+        {
+            let label = name.clone();
+            self.pos += 1;
+            return Some(label);
         }
         None
     }
@@ -3475,9 +3460,8 @@ impl Parser {
                     let var = self.consume_var()?;
                     let default = if self.match_kind(TokenKind::Eq) {
                         Some(self.parse_expr()?)
-                    } else if self.match_kind(TokenKind::QuestionQuestion) {
-                        None
                     } else {
+                        self.match_kind(TokenKind::QuestionQuestion);
                         None
                     };
                     self.match_kind(TokenKind::Question);
@@ -3506,19 +3490,18 @@ impl Parser {
                         });
                     }
                 } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::HashVar(_)))
+                    && let TokenKind::HashVar(n) = token.kind
                 {
-                    if let TokenKind::HashVar(n) = token.kind {
-                        let var = format!("%{}", n);
-                        params.push(var.clone());
-                        param_defs.push(ParamDef {
-                            name: var,
-                            default: None,
-                            named: is_named || is_slurpy,
-                            slurpy: is_slurpy,
-                            type_constraint: None,
-                            literal_value: None,
-                        });
-                    }
+                    let var = format!("%{}", n);
+                    params.push(var.clone());
+                    param_defs.push(ParamDef {
+                        name: var,
+                        default: None,
+                        named: is_named || is_slurpy,
+                        slurpy: is_slurpy,
+                        type_constraint: None,
+                        literal_value: None,
+                    });
                 }
                 if !self.match_kind(TokenKind::Comma) {
                     break;
@@ -3570,9 +3553,8 @@ impl Parser {
                     let var = self.consume_var()?;
                     let default = if self.match_kind(TokenKind::Eq) {
                         Some(self.parse_expr()?)
-                    } else if self.match_kind(TokenKind::QuestionQuestion) {
-                        None
                     } else {
+                        self.match_kind(TokenKind::QuestionQuestion);
                         None
                     };
                     self.match_kind(TokenKind::Question);
@@ -3657,20 +3639,20 @@ impl Parser {
     }
 
     fn parse_literal_param_value(&mut self) -> Option<Value> {
-        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Number(_))) {
-            if let TokenKind::Number(value) = token.kind {
-                return Some(Value::Int(value));
-            }
+        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Number(_)))
+            && let TokenKind::Number(value) = token.kind
+        {
+            return Some(Value::Int(value));
         }
-        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Float(_))) {
-            if let TokenKind::Float(value) = token.kind {
-                return Some(Value::Num(value));
-            }
+        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Float(_)))
+            && let TokenKind::Float(value) = token.kind
+        {
+            return Some(Value::Num(value));
         }
-        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Str(_))) {
-            if let TokenKind::Str(value) = token.kind {
-                return Some(Value::Str(value));
-            }
+        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Str(_)))
+            && let TokenKind::Str(value) = token.kind
+        {
+            return Some(Value::Str(value));
         }
         if self.match_kind(TokenKind::True) {
             return Some(Value::Bool(true));

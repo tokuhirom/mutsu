@@ -225,7 +225,7 @@ impl Lexer {
                                     "or" => TokenKind::OrWord,
                                     "orelse" => TokenKind::OrElse,
                                     "andthen" => TokenKind::AndThen,
-                            "notandthen" => TokenKind::NotAndThen,
+                                    "notandthen" => TokenKind::NotAndThen,
                                     _ => TokenKind::Ident(ident),
                                 }
                             }
@@ -323,7 +323,7 @@ impl Lexer {
                             "True" => TokenKind::True,
                             "False" => TokenKind::False,
                             "Nil" | "Mu" => TokenKind::Nil,
-                                    "Any" => TokenKind::Ident("Any".to_string()),
+                            "Any" => TokenKind::Ident("Any".to_string()),
                             "or" => TokenKind::OrWord,
                             "orelse" => TokenKind::OrElse,
                             "andthen" => TokenKind::AndThen,
@@ -343,7 +343,7 @@ impl Lexer {
                             "True" => TokenKind::True,
                             "False" => TokenKind::False,
                             "Nil" | "Mu" => TokenKind::Nil,
-                                    "Any" => TokenKind::Ident("Any".to_string()),
+                            "Any" => TokenKind::Ident("Any".to_string()),
                             _ => TokenKind::Ident(ident),
                         }
                     }
@@ -364,7 +364,7 @@ impl Lexer {
                             "True" => TokenKind::True,
                             "False" => TokenKind::False,
                             "Nil" | "Mu" => TokenKind::Nil,
-                                    "Any" => TokenKind::Ident("Any".to_string()),
+                            "Any" => TokenKind::Ident("Any".to_string()),
                             _ => TokenKind::Ident(ident),
                         }
                     }
@@ -384,7 +384,7 @@ impl Lexer {
                             "True" => TokenKind::True,
                             "False" => TokenKind::False,
                             "Nil" | "Mu" => TokenKind::Nil,
-                                    "Any" => TokenKind::Ident("Any".to_string()),
+                            "Any" => TokenKind::Ident("Any".to_string()),
                             _ => TokenKind::Ident(ident),
                         }
                     }
@@ -463,7 +463,7 @@ impl Lexer {
                     }
                     // Check for decimal point
                     if self.peek() == Some('.')
-                        && self.peek_next().map_or(false, |c| c.is_ascii_digit())
+                        && self.peek_next().is_some_and(|c| c.is_ascii_digit())
                     {
                         num.push('.');
                         self.pos += 1;
@@ -710,11 +710,9 @@ impl Lexer {
                         TokenKind::CaptureVar(name)
                     } else if self.peek() == Some('!') {
                         // Check if $!attr (attribute access) vs $! (error variable)
-                        if self
-                            .src
-                            .get(self.pos + 1)
-                            .map_or(false, |c| c.is_ascii_alphabetic() || c.is_alphabetic() || *c == '_')
-                        {
+                        if self.src.get(self.pos + 1).is_some_and(|c| {
+                            c.is_ascii_alphabetic() || c.is_alphabetic() || *c == '_'
+                        }) {
                             self.pos += 1; // skip '!'
                             let name = self.read_ident();
                             TokenKind::Var(format!("!{}", name))
@@ -724,11 +722,9 @@ impl Lexer {
                         }
                     } else if self.peek() == Some('.') {
                         // Check if $.attr (public attribute accessor)
-                        if self
-                            .src
-                            .get(self.pos + 1)
-                            .map_or(false, |c| c.is_ascii_alphabetic() || c.is_alphabetic() || *c == '_')
-                        {
+                        if self.src.get(self.pos + 1).is_some_and(|c| {
+                            c.is_ascii_alphabetic() || c.is_alphabetic() || *c == '_'
+                        }) {
                             self.pos += 1; // skip '.'
                             let name = self.read_ident();
                             TokenKind::Var(format!(".{}", name))
@@ -748,10 +744,9 @@ impl Lexer {
                 '%' => {
                     if self.match_char('%') {
                         TokenKind::PercentPercent
-                    } else if self
-                        .peek()
-                        .map_or(true, |c| c.is_ascii_alphabetic() || c.is_alphabetic() || c == '_' || c == '*')
-                    {
+                    } else if self.peek().is_none_or(|c| {
+                        c.is_ascii_alphabetic() || c.is_alphabetic() || c == '_' || c == '*'
+                    }) {
                         let ident = self.read_ident();
                         TokenKind::HashVar(ident)
                     } else {
@@ -882,11 +877,15 @@ impl Lexer {
                         TokenKind::AndAnd
                     } else if self
                         .peek()
-                        .map_or(false, |c| c.is_ascii_alphabetic() || c.is_alphabetic() || c == '_')
+                        .is_some_and(|c| c.is_ascii_alphabetic() || c.is_alphabetic() || c == '_')
                     {
                         let mut name = String::new();
                         while let Some(c) = self.peek() {
-                            if c.is_ascii_alphanumeric() || c.is_alphabetic() || c == '_' || c == '-' {
+                            if c.is_ascii_alphanumeric()
+                                || c.is_alphabetic()
+                                || c == '_'
+                                || c == '-'
+                            {
                                 name.push(c);
                                 self.pos += 1;
                             } else {
@@ -984,7 +983,7 @@ impl Lexer {
                             "True" => TokenKind::True,
                             "False" => TokenKind::False,
                             "Nil" | "Mu" => TokenKind::Nil,
-                                    "Any" => TokenKind::Ident("Any".to_string()),
+                            "Any" => TokenKind::Ident("Any".to_string()),
                             "or" => TokenKind::OrWord,
                             "orelse" => TokenKind::OrElse,
                             "andthen" => TokenKind::AndThen,
@@ -996,17 +995,20 @@ impl Lexer {
                     }
                 }
             };
-            return Token { kind, line: token_line };
+            return Token {
+                kind,
+                line: token_line,
+            };
         }
     }
 
     fn read_ident(&mut self) -> String {
         let mut ident = String::new();
-        if matches!(self.peek(), Some('*') | Some('~') | Some('?') | Some('^')) {
-            if let Some(c) = self.peek() {
-                ident.push(c);
-                self.pos += 1;
-            }
+        if matches!(self.peek(), Some('*') | Some('~') | Some('?') | Some('^'))
+            && let Some(c) = self.peek()
+        {
+            ident.push(c);
+            self.pos += 1;
         }
         self.read_ident_tail(&mut ident);
         ident
@@ -1021,7 +1023,8 @@ impl Lexer {
 
     fn read_ident_tail(&mut self, ident: &mut String) {
         while let Some(c) = self.peek() {
-            if c.is_ascii_alphanumeric() || c.is_alphabetic() || c == '_' || self.is_ident_hyphen(c) {
+            if c.is_ascii_alphanumeric() || c.is_alphabetic() || c == '_' || self.is_ident_hyphen(c)
+            {
                 ident.push(c);
                 self.pos += 1;
                 continue;
@@ -1042,9 +1045,7 @@ impl Lexer {
                 if c == '\n' {
                     self.line += 1;
                     self.pos += 1;
-                } else if c == '\u{feff}' {
-                    self.pos += 1;
-                } else if c.is_whitespace() {
+                } else if c == '\u{feff}' || c.is_whitespace() {
                     self.pos += 1;
                 } else {
                     break;
@@ -1098,12 +1099,12 @@ impl Lexer {
                 // Check for embedded comment #`(...)
                 if self.peek() == Some('`') {
                     self.pos += 1;
-                    if let Some(open) = self.peek() {
-                        if let Some(close) = Self::matching_bracket(open) {
-                            self.pos += 1;
-                            self.skip_bracketed_comment(open, close);
-                            continue;
-                        }
+                    if let Some(open) = self.peek()
+                        && let Some(close) = Self::matching_bracket(open)
+                    {
+                        self.pos += 1;
+                        self.skip_bracketed_comment(open, close);
+                        continue;
                     }
                     // Not a valid embedded comment, treat as regular comment
                     self.pos -= 1; // back to after #
@@ -1342,17 +1343,17 @@ impl Lexer {
         let mut s = String::new();
         while let Some(c) = self.peek() {
             self.pos += 1;
-            if c == '\\' {
-                if let Some(n) = self.peek() {
-                    self.pos += 1;
-                    if n == delim {
-                        s.push(n);
-                    } else {
-                        s.push('\\');
-                        s.push(n);
-                    }
-                    continue;
+            if c == '\\'
+                && let Some(n) = self.peek()
+            {
+                self.pos += 1;
+                if n == delim {
+                    s.push(n);
+                } else {
+                    s.push('\\');
+                    s.push(n);
                 }
+                continue;
             }
             if c == delim {
                 break;
@@ -1388,11 +1389,9 @@ impl Lexer {
                     current.push(c);
                     continue;
                 }
-            } else {
-                if c == close {
-                    self.pos += 1;
-                    break;
-                }
+            } else if c == close {
+                self.pos += 1;
+                break;
             }
             if c == '\\' {
                 self.pos += 1;

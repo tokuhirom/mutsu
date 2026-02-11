@@ -32,7 +32,10 @@ impl Compiler {
         slot
     }
 
-    pub(crate) fn compile(mut self, stmts: &[Stmt]) -> (CompiledCode, HashMap<String, CompiledFunction>) {
+    pub(crate) fn compile(
+        mut self,
+        stmts: &[Stmt],
+    ) -> (CompiledCode, HashMap<String, CompiledFunction>) {
         for stmt in stmts {
             self.compile_stmt(stmt);
         }
@@ -320,7 +323,10 @@ impl Compiler {
             // --- Package scope ---
             Stmt::Package { name, body } if !Self::has_phasers(body) => {
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                let pkg_idx = self.code.emit(OpCode::PackageScope { name_idx, body_end: 0 });
+                let pkg_idx = self.code.emit(OpCode::PackageScope {
+                    name_idx,
+                    body_end: 0,
+                });
                 let saved_package = self.current_package.clone();
                 self.current_package = name.clone();
                 for s in body {
@@ -331,21 +337,36 @@ impl Compiler {
             }
 
             // --- Phaser (BEGIN/END) ---
-            Stmt::Phaser { kind: PhaserKind::Begin, body } => {
+            Stmt::Phaser {
+                kind: PhaserKind::Begin,
+                body,
+            } => {
                 // BEGIN: compile body inline (runs immediately)
                 for s in body {
                     self.compile_stmt(s);
                 }
             }
-            Stmt::Phaser { kind: PhaserKind::End, body } => {
+            Stmt::Phaser {
+                kind: PhaserKind::End,
+                body,
+            } => {
                 // END: store body in stmt pool for deferred execution
-                let end_stmt = Stmt::Phaser { kind: PhaserKind::End, body: body.clone() };
+                let end_stmt = Stmt::Phaser {
+                    kind: PhaserKind::End,
+                    body: body.clone(),
+                };
                 let idx = self.code.add_stmt(end_stmt);
                 self.code.emit(OpCode::PhaserEnd(idx));
             }
 
             // --- SubDecl: delegate to interpreter AND compile body ---
-            Stmt::SubDecl { name, params, param_defs, body, multi } => {
+            Stmt::SubDecl {
+                name,
+                params,
+                param_defs,
+                body,
+                multi,
+            } => {
                 // Still emit InterpretStmt so interpreter registers the FunctionDef
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::InterpretStmt(idx));
@@ -563,7 +584,10 @@ impl Compiler {
             }
             // Method call on mutable variable target (needs writeback)
             Expr::MethodCall { target, name, args }
-                if matches!(target.as_ref(), Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)) =>
+                if matches!(
+                    target.as_ref(),
+                    Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)
+                ) =>
             {
                 let target_name = match target.as_ref() {
                     Expr::Var(n) => n.clone(),
@@ -578,7 +602,11 @@ impl Compiler {
                 }
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
                 let target_name_idx = self.code.add_constant(Value::Str(target_name));
-                self.code.emit(OpCode::CallMethodMut { name_idx, arity, target_name_idx });
+                self.code.emit(OpCode::CallMethodMut {
+                    name_idx,
+                    arity,
+                    target_name_idx,
+                });
             }
             // Method call on non-variable target (no writeback needed)
             Expr::MethodCall { target, name, args } => {
@@ -670,18 +698,16 @@ impl Compiler {
                 self.code.emit(OpCode::GetEnvIndex(key_idx));
             }
             // Exists check (:exists)
-            Expr::Exists(inner) => {
-                match inner.as_ref() {
-                    Expr::EnvIndex(key) => {
-                        let key_idx = self.code.add_constant(Value::Str(key.clone()));
-                        self.code.emit(OpCode::ExistsEnvIndex(key_idx));
-                    }
-                    _ => {
-                        self.compile_expr(inner);
-                        self.code.emit(OpCode::ExistsExpr);
-                    }
+            Expr::Exists(inner) => match inner.as_ref() {
+                Expr::EnvIndex(key) => {
+                    let key_idx = self.code.add_constant(Value::Str(key.clone()));
+                    self.code.emit(OpCode::ExistsEnvIndex(key_idx));
                 }
-            }
+                _ => {
+                    self.compile_expr(inner);
+                    self.code.emit(OpCode::ExistsExpr);
+                }
+            },
             // Reduction ([+] @arr)
             Expr::Reduction { op, expr } => {
                 self.compile_expr(expr);
@@ -697,13 +723,25 @@ impl Compiler {
                 self.code.emit(OpCode::BlockMagic);
             }
             // s/// substitution
-            Expr::Subst { pattern, replacement } => {
+            Expr::Subst {
+                pattern,
+                replacement,
+            } => {
                 let pattern_idx = self.code.add_constant(Value::Str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::Str(replacement.clone()));
-                self.code.emit(OpCode::Subst { pattern_idx, replacement_idx });
+                self.code.emit(OpCode::Subst {
+                    pattern_idx,
+                    replacement_idx,
+                });
             }
             // HyperOp (>>op<<): compile sub-expressions, delegate operation
-            Expr::HyperOp { op, left, right, dwim_left, dwim_right } => {
+            Expr::HyperOp {
+                op,
+                left,
+                right,
+                dwim_left,
+                dwim_right,
+            } => {
                 self.compile_expr(left);
                 self.compile_expr(right);
                 let op_idx = self.code.add_constant(Value::Str(op.clone()));
@@ -714,7 +752,12 @@ impl Compiler {
                 });
             }
             // MetaOp (Rop, Xop, Zop): compile sub-expressions, delegate operation
-            Expr::MetaOp { meta, op, left, right } => {
+            Expr::MetaOp {
+                meta,
+                op,
+                left,
+                right,
+            } => {
                 self.compile_expr(left);
                 self.compile_expr(right);
                 let meta_idx = self.code.add_constant(Value::Str(meta.clone()));
@@ -722,15 +765,20 @@ impl Compiler {
                 self.code.emit(OpCode::MetaOp { meta_idx, op_idx });
             }
             // InfixFunc (atan2, sprintf): compile sub-expressions, delegate operation
-            Expr::InfixFunc { name, left, right, modifier } => {
+            Expr::InfixFunc {
+                name,
+                left,
+                right,
+                modifier,
+            } => {
                 self.compile_expr(left);
                 for r in right {
                     self.compile_expr(r);
                 }
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                let modifier_idx = modifier.as_ref().map(|m| {
-                    self.code.add_constant(Value::Str(m.clone()))
-                });
+                let modifier_idx = modifier
+                    .as_ref()
+                    .map(|m| self.code.add_constant(Value::Str(m.clone())));
                 self.code.emit(OpCode::InfixFunc {
                     name_idx,
                     right_arity: right.len() as u32,
@@ -752,10 +800,7 @@ impl Compiler {
             // AnonSub / Lambda / Gather / CallOn:
             // These capture env or have complex state interactions.
             // Delegate entirely to interpreter.
-            Expr::AnonSub(_)
-            | Expr::Lambda { .. }
-            | Expr::Gather(_)
-            | Expr::CallOn { .. } => {
+            Expr::AnonSub(_) | Expr::Lambda { .. } | Expr::Gather(_) | Expr::CallOn { .. } => {
                 self.fallback_expr(expr);
             }
             _ => {
@@ -863,15 +908,23 @@ impl Compiler {
 
     fn stmt_has_placeholder(stmt: &Stmt) -> bool {
         match stmt {
-            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Take(e) => Self::expr_has_placeholder(e),
-            Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => Self::expr_has_placeholder(expr),
-            Stmt::Say(es) | Stmt::Print(es) => es.iter().any(|e| Self::expr_has_placeholder(e)),
-            Stmt::If { cond, then_branch, else_branch } => {
-                Self::expr_has_placeholder(cond)
-                    || then_branch.iter().any(|s| Self::stmt_has_placeholder(s))
-                    || else_branch.iter().any(|s| Self::stmt_has_placeholder(s))
+            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Take(e) => {
+                Self::expr_has_placeholder(e)
             }
-            Stmt::Block(stmts) => stmts.iter().any(|s| Self::stmt_has_placeholder(s)),
+            Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
+                Self::expr_has_placeholder(expr)
+            }
+            Stmt::Say(es) | Stmt::Print(es) => es.iter().any(Self::expr_has_placeholder),
+            Stmt::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                Self::expr_has_placeholder(cond)
+                    || then_branch.iter().any(Self::stmt_has_placeholder)
+                    || else_branch.iter().any(Self::stmt_has_placeholder)
+            }
+            Stmt::Block(stmts) => stmts.iter().any(Self::stmt_has_placeholder),
             _ => false,
         }
     }
@@ -883,20 +936,24 @@ impl Compiler {
                 Self::expr_has_placeholder(left) || Self::expr_has_placeholder(right)
             }
             Expr::Unary { expr, .. } => Self::expr_has_placeholder(expr),
-            Expr::Ternary { cond, then_expr, else_expr } => {
+            Expr::Ternary {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
                 Self::expr_has_placeholder(cond)
                     || Self::expr_has_placeholder(then_expr)
                     || Self::expr_has_placeholder(else_expr)
             }
-            Expr::Call { args, .. } => args.iter().any(|e| Self::expr_has_placeholder(e)),
+            Expr::Call { args, .. } => args.iter().any(Self::expr_has_placeholder),
             Expr::MethodCall { target, args, .. } => {
-                Self::expr_has_placeholder(target) || args.iter().any(|e| Self::expr_has_placeholder(e))
+                Self::expr_has_placeholder(target) || args.iter().any(Self::expr_has_placeholder)
             }
             Expr::Index { target, index } => {
                 Self::expr_has_placeholder(target) || Self::expr_has_placeholder(index)
             }
             Expr::StringInterpolation(parts) | Expr::ArrayLiteral(parts) => {
-                parts.iter().any(|e| Self::expr_has_placeholder(e))
+                parts.iter().any(Self::expr_has_placeholder)
             }
             _ => false,
         }
@@ -925,22 +982,22 @@ impl Compiler {
         // Compile body statements; last Stmt::Expr should NOT emit Pop (implicit return)
         for (i, stmt) in body.iter().enumerate() {
             let is_last = i == body.len() - 1;
-            if is_last {
-                if let Stmt::Expr(expr) = stmt {
-                    sub_compiler.compile_expr(expr);
-                    // Don't emit Pop — leave value on stack as implicit return
-                    continue;
-                }
+            if is_last && let Stmt::Expr(expr) = stmt {
+                sub_compiler.compile_expr(expr);
+                // Don't emit Pop — leave value on stack as implicit return
+                continue;
             }
             sub_compiler.compile_stmt(stmt);
         }
 
         let key = if multi {
             let arity = param_defs.len();
-            let type_sig: Vec<String> = param_defs.iter().map(|pd| {
-                pd.type_constraint.clone().unwrap_or_default()
-            }).collect();
-            format!("{}::{}{}",
+            let type_sig: Vec<String> = param_defs
+                .iter()
+                .map(|pd| pd.type_constraint.clone().unwrap_or_default())
+                .collect();
+            format!(
+                "{}::{}{}",
                 self.current_package,
                 name,
                 if !type_sig.is_empty() {
@@ -974,15 +1031,16 @@ impl Compiler {
             }
         }
         // Emit TryCatch placeholder
-        let try_idx = self.code.emit(OpCode::TryCatch { catch_start: 0, body_end: 0 });
+        let try_idx = self.code.emit(OpCode::TryCatch {
+            catch_start: 0,
+            body_end: 0,
+        });
         // Compile main body (last Stmt::Expr leaves value on stack)
         for (i, stmt) in main_stmts.iter().enumerate() {
             let is_last = i == main_stmts.len() - 1;
-            if is_last {
-                if let Stmt::Expr(expr) = stmt {
-                    self.compile_expr(expr);
-                    continue;
-                }
+            if is_last && let Stmt::Expr(expr) = stmt {
+                self.compile_expr(expr);
+                continue;
             }
             self.compile_stmt(stmt);
         }
@@ -1013,12 +1071,10 @@ impl Compiler {
         }
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
-            if is_last {
-                if let Stmt::Expr(expr) = stmt {
-                    self.compile_expr(expr);
-                    // Don't emit Pop — leave value on stack as block's return value
-                    return;
-                }
+            if is_last && let Stmt::Expr(expr) = stmt {
+                self.compile_expr(expr);
+                // Don't emit Pop — leave value on stack as block's return value
+                return;
             }
             self.compile_stmt(stmt);
         }

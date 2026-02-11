@@ -1,8 +1,9 @@
+#![allow(clippy::result_large_err)]
 use std::collections::HashMap;
 
 use crate::interpreter::Interpreter;
 use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
-use crate::value::{make_rat, RuntimeError, Value};
+use crate::value::{RuntimeError, Value, make_rat};
 
 pub(crate) struct VM {
     interpreter: Interpreter,
@@ -64,7 +65,7 @@ impl VM {
     }
 
     /// Resolve a string constant name from index.
-    fn const_str<'a>(code: &'a CompiledCode, idx: u32) -> &'a str {
+    fn const_str(code: &CompiledCode, idx: u32) -> &str {
         match &code.constants[idx as usize] {
             Value::Str(s) => s.as_str(),
             _ => unreachable!("expected string constant"),
@@ -169,13 +170,25 @@ impl VM {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
                 let (l, r) = Interpreter::coerce_numeric(left, right);
-                let result = if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
-                    let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
-                    let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
-                    Value::Complex(ar + br, ai + bi)
-                } else if let (Some((an, ad)), Some((bn, bd))) = (Interpreter::to_rat_parts(&l), Interpreter::to_rat_parts(&r)) {
-                    if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
-                        make_rat(an * bd + bn * ad, ad * bd)
+                let result =
+                    if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+                        let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                        let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                        Value::Complex(ar + br, ai + bi)
+                    } else if let (Some((an, ad)), Some((bn, bd))) =
+                        (Interpreter::to_rat_parts(&l), Interpreter::to_rat_parts(&r))
+                    {
+                        if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
+                            make_rat(an * bd + bn * ad, ad * bd)
+                        } else {
+                            match (l, r) {
+                                (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_add(b)),
+                                (Value::Num(a), Value::Num(b)) => Value::Num(a + b),
+                                (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 + b),
+                                (Value::Num(a), Value::Int(b)) => Value::Num(a + b as f64),
+                                _ => Value::Int(0),
+                            }
+                        }
                     } else {
                         match (l, r) {
                             (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_add(b)),
@@ -184,16 +197,7 @@ impl VM {
                             (Value::Num(a), Value::Int(b)) => Value::Num(a + b as f64),
                             _ => Value::Int(0),
                         }
-                    }
-                } else {
-                    match (l, r) {
-                        (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_add(b)),
-                        (Value::Num(a), Value::Num(b)) => Value::Num(a + b),
-                        (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 + b),
-                        (Value::Num(a), Value::Int(b)) => Value::Num(a + b as f64),
-                        _ => Value::Int(0),
-                    }
-                };
+                    };
                 self.stack.push(result);
                 *ip += 1;
             }
@@ -201,13 +205,25 @@ impl VM {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
                 let (l, r) = Interpreter::coerce_numeric(left, right);
-                let result = if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
-                    let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
-                    let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
-                    Value::Complex(ar - br, ai - bi)
-                } else if let (Some((an, ad)), Some((bn, bd))) = (Interpreter::to_rat_parts(&l), Interpreter::to_rat_parts(&r)) {
-                    if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
-                        make_rat(an * bd - bn * ad, ad * bd)
+                let result =
+                    if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+                        let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                        let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                        Value::Complex(ar - br, ai - bi)
+                    } else if let (Some((an, ad)), Some((bn, bd))) =
+                        (Interpreter::to_rat_parts(&l), Interpreter::to_rat_parts(&r))
+                    {
+                        if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
+                            make_rat(an * bd - bn * ad, ad * bd)
+                        } else {
+                            match (l, r) {
+                                (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_sub(b)),
+                                (Value::Num(a), Value::Num(b)) => Value::Num(a - b),
+                                (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 - b),
+                                (Value::Num(a), Value::Int(b)) => Value::Num(a - b as f64),
+                                _ => Value::Int(0),
+                            }
+                        }
                     } else {
                         match (l, r) {
                             (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_sub(b)),
@@ -216,16 +232,7 @@ impl VM {
                             (Value::Num(a), Value::Int(b)) => Value::Num(a - b as f64),
                             _ => Value::Int(0),
                         }
-                    }
-                } else {
-                    match (l, r) {
-                        (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_sub(b)),
-                        (Value::Num(a), Value::Num(b)) => Value::Num(a - b),
-                        (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 - b),
-                        (Value::Num(a), Value::Int(b)) => Value::Num(a - b as f64),
-                        _ => Value::Int(0),
-                    }
-                };
+                    };
                 self.stack.push(result);
                 *ip += 1;
             }
@@ -233,13 +240,25 @@ impl VM {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
                 let (l, r) = Interpreter::coerce_numeric(left, right);
-                let result = if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
-                    let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
-                    let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
-                    Value::Complex(ar * br - ai * bi, ar * bi + ai * br)
-                } else if let (Some((an, ad)), Some((bn, bd))) = (Interpreter::to_rat_parts(&l), Interpreter::to_rat_parts(&r)) {
-                    if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
-                        make_rat(an * bn, ad * bd)
+                let result =
+                    if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+                        let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                        let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                        Value::Complex(ar * br - ai * bi, ar * bi + ai * br)
+                    } else if let (Some((an, ad)), Some((bn, bd))) =
+                        (Interpreter::to_rat_parts(&l), Interpreter::to_rat_parts(&r))
+                    {
+                        if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
+                            make_rat(an * bn, ad * bd)
+                        } else {
+                            match (l, r) {
+                                (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_mul(b)),
+                                (Value::Num(a), Value::Num(b)) => Value::Num(a * b),
+                                (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 * b),
+                                (Value::Num(a), Value::Int(b)) => Value::Num(a * b as f64),
+                                _ => Value::Int(0),
+                            }
+                        }
                     } else {
                         match (l, r) {
                             (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_mul(b)),
@@ -248,16 +267,7 @@ impl VM {
                             (Value::Num(a), Value::Int(b)) => Value::Num(a * b as f64),
                             _ => Value::Int(0),
                         }
-                    }
-                } else {
-                    match (l, r) {
-                        (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_mul(b)),
-                        (Value::Num(a), Value::Num(b)) => Value::Num(a * b),
-                        (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 * b),
-                        (Value::Num(a), Value::Int(b)) => Value::Num(a * b as f64),
-                        _ => Value::Int(0),
-                    }
-                };
+                    };
                 self.stack.push(result);
                 *ip += 1;
             }
@@ -265,30 +275,33 @@ impl VM {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
                 let (l, r) = Interpreter::coerce_numeric(left, right);
-                let result = if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
-                    let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
-                    let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
-                    let denom = br * br + bi * bi;
-                    if denom == 0.0 {
-                        return Err(RuntimeError::new("Division by zero"));
-                    }
-                    Value::Complex((ar * br + ai * bi) / denom, (ai * br - ar * bi) / denom)
-                } else {
-                    match (&l, &r) {
-                        (Value::Rat(_, _), _) | (_, Value::Rat(_, _)) | (Value::Int(_), Value::Int(_)) => {
-                            let (an, ad) = Interpreter::to_rat_parts(&l).unwrap_or((0, 1));
-                            let (bn, bd) = Interpreter::to_rat_parts(&r).unwrap_or((0, 1));
-                            if bn == 0 {
-                                return Err(RuntimeError::new("Division by zero"));
-                            }
-                            make_rat(an * bd, ad * bn)
+                let result =
+                    if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+                        let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                        let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                        let denom = br * br + bi * bi;
+                        if denom == 0.0 {
+                            return Err(RuntimeError::new("Division by zero"));
                         }
-                        (Value::Num(a), Value::Num(b)) => Value::Num(a / b),
-                        (Value::Int(a), Value::Num(b)) => Value::Num(*a as f64 / b),
-                        (Value::Num(a), Value::Int(b)) => Value::Num(a / *b as f64),
-                        _ => Value::Int(0),
-                    }
-                };
+                        Value::Complex((ar * br + ai * bi) / denom, (ai * br - ar * bi) / denom)
+                    } else {
+                        match (&l, &r) {
+                            (Value::Rat(_, _), _)
+                            | (_, Value::Rat(_, _))
+                            | (Value::Int(_), Value::Int(_)) => {
+                                let (an, ad) = Interpreter::to_rat_parts(&l).unwrap_or((0, 1));
+                                let (bn, bd) = Interpreter::to_rat_parts(&r).unwrap_or((0, 1));
+                                if bn == 0 {
+                                    return Err(RuntimeError::new("Division by zero"));
+                                }
+                                make_rat(an * bd, ad * bn)
+                            }
+                            (Value::Num(a), Value::Num(b)) => Value::Num(a / b),
+                            (Value::Int(a), Value::Num(b)) => Value::Num(*a as f64 / b),
+                            (Value::Num(a), Value::Int(b)) => Value::Num(a / *b as f64),
+                            _ => Value::Int(0),
+                        }
+                    };
                 self.stack.push(result);
                 *ip += 1;
             }
@@ -296,7 +309,9 @@ impl VM {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
                 let (l, r) = Interpreter::coerce_numeric(left, right);
-                let result = if let (Some((an, ad)), Some((bn, bd))) = (Interpreter::to_rat_parts(&l), Interpreter::to_rat_parts(&r)) {
+                let result = if let (Some((an, ad)), Some((bn, bd))) =
+                    (Interpreter::to_rat_parts(&l), Interpreter::to_rat_parts(&r))
+                {
                     if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
                         if bn == 0 {
                             return Err(RuntimeError::new("Modulo by zero"));
@@ -306,7 +321,9 @@ impl VM {
                         Value::Num(lf % rf)
                     } else {
                         match (l, r) {
-                            (Value::Int(_), Value::Int(0)) => return Err(RuntimeError::new("Modulo by zero")),
+                            (Value::Int(_), Value::Int(0)) => {
+                                return Err(RuntimeError::new("Modulo by zero"));
+                            }
                             (Value::Int(a), Value::Int(b)) => Value::Int(a % b),
                             (Value::Num(a), Value::Num(b)) => Value::Num(a % b),
                             (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 % b),
@@ -316,7 +333,9 @@ impl VM {
                     }
                 } else {
                     match (l, r) {
-                        (Value::Int(_), Value::Int(0)) => return Err(RuntimeError::new("Modulo by zero")),
+                        (Value::Int(_), Value::Int(0)) => {
+                            return Err(RuntimeError::new("Modulo by zero"));
+                        }
                         (Value::Int(a), Value::Int(b)) => Value::Int(a % b),
                         (Value::Num(a), Value::Num(b)) => Value::Num(a % b),
                         (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 % b),
@@ -331,37 +350,38 @@ impl VM {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
                 let (l, r) = Interpreter::coerce_numeric(left, right);
-                let result = if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
-                    let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
-                    let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
-                    let ln_r = (ar * ar + ai * ai).sqrt().ln();
-                    let ln_i = ai.atan2(ar);
-                    let wr = br * ln_r - bi * ln_i;
-                    let wi = br * ln_i + bi * ln_r;
-                    let mag = wr.exp();
-                    Value::Complex(mag * wi.cos(), mag * wi.sin())
-                } else {
-                    match (l, r) {
-                        (Value::Int(a), Value::Int(b)) if b >= 0 => Value::Int(a.pow(b as u32)),
-                        (Value::Int(a), Value::Int(b)) => {
-                            let pos = (-b) as u32;
-                            let base = a.pow(pos);
-                            make_rat(1, base)
+                let result =
+                    if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+                        let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                        let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                        let ln_r = (ar * ar + ai * ai).sqrt().ln();
+                        let ln_i = ai.atan2(ar);
+                        let wr = br * ln_r - bi * ln_i;
+                        let wi = br * ln_i + bi * ln_r;
+                        let mag = wr.exp();
+                        Value::Complex(mag * wi.cos(), mag * wi.sin())
+                    } else {
+                        match (l, r) {
+                            (Value::Int(a), Value::Int(b)) if b >= 0 => Value::Int(a.pow(b as u32)),
+                            (Value::Int(a), Value::Int(b)) => {
+                                let pos = (-b) as u32;
+                                let base = a.pow(pos);
+                                make_rat(1, base)
+                            }
+                            (Value::Rat(n, d), Value::Int(b)) if b >= 0 => {
+                                let p = b as u32;
+                                make_rat(n.pow(p), d.pow(p))
+                            }
+                            (Value::Rat(n, d), Value::Int(b)) => {
+                                let p = (-b) as u32;
+                                make_rat(d.pow(p), n.pow(p))
+                            }
+                            (Value::Num(a), Value::Int(b)) => Value::Num(a.powi(b as i32)),
+                            (Value::Int(a), Value::Num(b)) => Value::Num((a as f64).powf(b)),
+                            (Value::Num(a), Value::Num(b)) => Value::Num(a.powf(b)),
+                            _ => Value::Int(0),
                         }
-                        (Value::Rat(n, d), Value::Int(b)) if b >= 0 => {
-                            let p = b as u32;
-                            make_rat(n.pow(p), d.pow(p))
-                        }
-                        (Value::Rat(n, d), Value::Int(b)) => {
-                            let p = (-b) as u32;
-                            make_rat(d.pow(p), n.pow(p))
-                        }
-                        (Value::Num(a), Value::Int(b)) => Value::Num(a.powi(b as i32)),
-                        (Value::Int(a), Value::Num(b)) => Value::Num((a as f64).powf(b)),
-                        (Value::Num(a), Value::Num(b)) => Value::Num(a.powf(b)),
-                        _ => Value::Int(0),
-                    }
-                };
+                    };
                 self.stack.push(result);
                 *ip += 1;
             }
@@ -403,7 +423,11 @@ impl VM {
             OpCode::Concat => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                self.stack.push(Value::Str(format!("{}{}", left.to_string_value(), right.to_string_value())));
+                self.stack.push(Value::Str(format!(
+                    "{}{}",
+                    left.to_string_value(),
+                    right.to_string_value()
+                )));
                 *ip += 1;
             }
 
@@ -411,42 +435,52 @@ impl VM {
             OpCode::NumEq => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let result = self.eval_binary_with_junctions(left, right, |_, l, r| Ok(Value::Bool(l == r)))?;
+                let result = self
+                    .eval_binary_with_junctions(left, right, |_, l, r| Ok(Value::Bool(l == r)))?;
                 self.stack.push(result);
                 *ip += 1;
             }
             OpCode::NumNe => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let result = self.eval_binary_with_junctions(left, right, |_, l, r| Ok(Value::Bool(l != r)))?;
+                let result = self
+                    .eval_binary_with_junctions(left, right, |_, l, r| Ok(Value::Bool(l != r)))?;
                 self.stack.push(result);
                 *ip += 1;
             }
             OpCode::NumLt => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let result = self.eval_binary_with_junctions(left, right, |_, l, r| Interpreter::compare(l, r, |o| o < 0))?;
+                let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+                    Interpreter::compare(l, r, |o| o < 0)
+                })?;
                 self.stack.push(result);
                 *ip += 1;
             }
             OpCode::NumLe => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let result = self.eval_binary_with_junctions(left, right, |_, l, r| Interpreter::compare(l, r, |o| o <= 0))?;
+                let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+                    Interpreter::compare(l, r, |o| o <= 0)
+                })?;
                 self.stack.push(result);
                 *ip += 1;
             }
             OpCode::NumGt => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let result = self.eval_binary_with_junctions(left, right, |_, l, r| Interpreter::compare(l, r, |o| o > 0))?;
+                let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+                    Interpreter::compare(l, r, |o| o > 0)
+                })?;
                 self.stack.push(result);
                 *ip += 1;
             }
             OpCode::NumGe => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let result = self.eval_binary_with_junctions(left, right, |_, l, r| Interpreter::compare(l, r, |o| o >= 0))?;
+                let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+                    Interpreter::compare(l, r, |o| o >= 0)
+                })?;
                 self.stack.push(result);
                 *ip += 1;
             }
@@ -533,17 +567,28 @@ impl VM {
                 let left = self.stack.pop().unwrap();
                 let ord = match (&left, &right) {
                     (Value::Int(a), Value::Int(b)) => a.cmp(b),
-                    (Value::Rat(_, _), _) | (_, Value::Rat(_, _))
-                    | (Value::FatRat(_, _), _) | (_, Value::FatRat(_, _)) => {
-                        if let (Some((an, ad)), Some((bn, bd))) = (Interpreter::to_rat_parts(&left), Interpreter::to_rat_parts(&right)) {
+                    (Value::Rat(_, _), _)
+                    | (_, Value::Rat(_, _))
+                    | (Value::FatRat(_, _), _)
+                    | (_, Value::FatRat(_, _)) => {
+                        if let (Some((an, ad)), Some((bn, bd))) = (
+                            Interpreter::to_rat_parts(&left),
+                            Interpreter::to_rat_parts(&right),
+                        ) {
                             (an * bd).cmp(&(bn * ad))
                         } else {
                             left.to_string_value().cmp(&right.to_string_value())
                         }
                     }
-                    (Value::Num(a), Value::Num(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
-                    (Value::Int(a), Value::Num(b)) => (*a as f64).partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
-                    (Value::Num(a), Value::Int(b)) => a.partial_cmp(&(*b as f64)).unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Num(a), Value::Num(b)) => {
+                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                    (Value::Int(a), Value::Num(b)) => (*a as f64)
+                        .partial_cmp(b)
+                        .unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Num(a), Value::Int(b)) => a
+                        .partial_cmp(&(*b as f64))
+                        .unwrap_or(std::cmp::Ordering::Equal),
                     _ => left.to_string_value().cmp(&right.to_string_value()),
                 };
                 self.stack.push(Interpreter::make_order(ord));
@@ -554,17 +599,28 @@ impl VM {
                 let left = self.stack.pop().unwrap();
                 let ord = match (&left, &right) {
                     (Value::Int(a), Value::Int(b)) => a.cmp(b),
-                    (Value::Rat(_, _), _) | (_, Value::Rat(_, _))
-                    | (Value::FatRat(_, _), _) | (_, Value::FatRat(_, _)) => {
-                        if let (Some((an, ad)), Some((bn, bd))) = (Interpreter::to_rat_parts(&left), Interpreter::to_rat_parts(&right)) {
+                    (Value::Rat(_, _), _)
+                    | (_, Value::Rat(_, _))
+                    | (Value::FatRat(_, _), _)
+                    | (_, Value::FatRat(_, _)) => {
+                        if let (Some((an, ad)), Some((bn, bd))) = (
+                            Interpreter::to_rat_parts(&left),
+                            Interpreter::to_rat_parts(&right),
+                        ) {
                             (an * bd).cmp(&(bn * ad))
                         } else {
                             left.to_string_value().cmp(&right.to_string_value())
                         }
                     }
-                    (Value::Num(a), Value::Num(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
-                    (Value::Int(a), Value::Num(b)) => (*a as f64).partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
-                    (Value::Num(a), Value::Int(b)) => a.partial_cmp(&(*b as f64)).unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Num(a), Value::Num(b)) => {
+                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                    (Value::Int(a), Value::Num(b)) => (*a as f64)
+                        .partial_cmp(b)
+                        .unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Num(a), Value::Int(b)) => a
+                        .partial_cmp(&(*b as f64))
+                        .unwrap_or(std::cmp::Ordering::Equal),
                     _ => left.to_string_value().cmp(&right.to_string_value()),
                 };
                 self.stack.push(Interpreter::make_order(ord));
@@ -598,7 +654,9 @@ impl VM {
                 let left = self.stack.pop().unwrap();
                 let (l, r) = Interpreter::coerce_numeric(left, right);
                 let result = match (l, r) {
-                    (Value::Int(_), Value::Int(0)) => return Err(RuntimeError::new("Divisibility by zero")),
+                    (Value::Int(_), Value::Int(0)) => {
+                        return Err(RuntimeError::new("Divisibility by zero"));
+                    }
                     (Value::Int(a), Value::Int(b)) => Value::Bool(a % b == 0),
                     _ => Value::Bool(false),
                 };
@@ -612,7 +670,9 @@ impl VM {
                 let left = self.stack.pop().unwrap();
                 let result = match (left, right) {
                     (Value::Int(a), Value::Int(b)) if b != 0 => Value::Int(a.div_euclid(b)),
-                    (Value::Int(_), Value::Int(_)) => return Err(RuntimeError::new("Division by zero")),
+                    (Value::Int(_), Value::Int(_)) => {
+                        return Err(RuntimeError::new("Division by zero"));
+                    }
                     _ => return Err(RuntimeError::new("div expects Int")),
                 };
                 self.stack.push(result);
@@ -623,7 +683,9 @@ impl VM {
                 let left = self.stack.pop().unwrap();
                 let result = match (left, right) {
                     (Value::Int(a), Value::Int(b)) if b != 0 => Value::Int(a.rem_euclid(b)),
-                    (Value::Int(_), Value::Int(_)) => return Err(RuntimeError::new("Modulo by zero")),
+                    (Value::Int(_), Value::Int(_)) => {
+                        return Err(RuntimeError::new("Modulo by zero"));
+                    }
                     _ => return Err(RuntimeError::new("mod expects Int")),
                 };
                 self.stack.push(result);
@@ -632,7 +694,10 @@ impl VM {
             OpCode::Gcd => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let (mut a, mut b) = (Interpreter::to_int(&left).abs(), Interpreter::to_int(&right).abs());
+                let (mut a, mut b) = (
+                    Interpreter::to_int(&left).abs(),
+                    Interpreter::to_int(&right).abs(),
+                );
                 while b != 0 {
                     let t = b;
                     b = a % b;
@@ -644,7 +709,10 @@ impl VM {
             OpCode::Lcm => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let (a, b) = (Interpreter::to_int(&left).abs(), Interpreter::to_int(&right).abs());
+                let (a, b) = (
+                    Interpreter::to_int(&left).abs(),
+                    Interpreter::to_int(&right).abs(),
+                );
                 let result = if a == 0 && b == 0 {
                     Value::Int(0)
                 } else {
@@ -680,7 +748,7 @@ impl VM {
                     Value::Int(n) => n.max(0) as usize,
                     _ => 0,
                 };
-                let items: Vec<Value> = std::iter::repeat(left).take(n).collect();
+                let items: Vec<Value> = std::iter::repeat_n(left, n).collect();
                 self.stack.push(Value::Array(items));
                 *ip += 1;
             }
@@ -783,30 +851,44 @@ impl VM {
                 let left = self.stack.pop().unwrap();
                 let result = match (left, right) {
                     (Value::Set(mut a), Value::Set(b)) => {
-                        for elem in b { a.insert(elem); }
+                        for elem in b {
+                            a.insert(elem);
+                        }
                         Value::Set(a)
                     }
                     (Value::Bag(mut a), Value::Bag(b)) => {
-                        for (k, v) in b { let e = a.entry(k).or_insert(0); *e = (*e).max(v); }
+                        for (k, v) in b {
+                            let e = a.entry(k).or_insert(0);
+                            *e = (*e).max(v);
+                        }
                         Value::Bag(a)
                     }
                     (Value::Mix(mut a), Value::Mix(b)) => {
-                        for (k, v) in b { let e = a.entry(k).or_insert(0.0); *e = e.max(v); }
+                        for (k, v) in b {
+                            let e = a.entry(k).or_insert(0.0);
+                            *e = e.max(v);
+                        }
                         Value::Mix(a)
                     }
                     (Value::Set(a), Value::Bag(mut b)) => {
-                        for elem in a { b.entry(elem).or_insert(1); }
+                        for elem in a {
+                            b.entry(elem).or_insert(1);
+                        }
                         Value::Bag(b)
                     }
                     (Value::Bag(mut a), Value::Set(b)) => {
-                        for elem in b { a.entry(elem).or_insert(1); }
+                        for elem in b {
+                            a.entry(elem).or_insert(1);
+                        }
                         Value::Bag(a)
                     }
                     (l, r) => {
                         let a = Interpreter::coerce_to_set(&l);
                         let b = Interpreter::coerce_to_set(&r);
                         let mut result = a;
-                        for elem in b { result.insert(elem); }
+                        for elem in b {
+                            result.insert(elem);
+                        }
                         Value::Set(result)
                     }
                 };
@@ -817,18 +899,24 @@ impl VM {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
                 let result = match (left, right) {
-                    (Value::Set(a), Value::Set(b)) => Value::Set(a.intersection(&b).cloned().collect()),
+                    (Value::Set(a), Value::Set(b)) => {
+                        Value::Set(a.intersection(&b).cloned().collect())
+                    }
                     (Value::Bag(a), Value::Bag(b)) => {
                         let mut result = HashMap::new();
                         for (k, v) in &a {
-                            if let Some(bv) = b.get(k) { result.insert(k.clone(), (*v).min(*bv)); }
+                            if let Some(bv) = b.get(k) {
+                                result.insert(k.clone(), (*v).min(*bv));
+                            }
                         }
                         Value::Bag(result)
                     }
                     (Value::Mix(a), Value::Mix(b)) => {
                         let mut result = HashMap::new();
                         for (k, v) in &a {
-                            if let Some(bv) = b.get(k) { result.insert(k.clone(), v.min(*bv)); }
+                            if let Some(bv) = b.get(k) {
+                                result.insert(k.clone(), v.min(*bv));
+                            }
                         }
                         Value::Mix(result)
                     }
@@ -845,12 +933,16 @@ impl VM {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
                 let result = match (left, right) {
-                    (Value::Set(a), Value::Set(b)) => Value::Set(a.difference(&b).cloned().collect()),
+                    (Value::Set(a), Value::Set(b)) => {
+                        Value::Set(a.difference(&b).cloned().collect())
+                    }
                     (Value::Bag(a), Value::Bag(b)) => {
                         let mut result = HashMap::new();
                         for (k, v) in a {
                             let bv = b.get(&k).copied().unwrap_or(0);
-                            if v > bv { result.insert(k, v - bv); }
+                            if v > bv {
+                                result.insert(k, v - bv);
+                            }
                         }
                         Value::Bag(result)
                     }
@@ -858,7 +950,9 @@ impl VM {
                         let mut result = HashMap::new();
                         for (k, v) in a {
                             let bv = b.get(&k).copied().unwrap_or(0.0);
-                            if v > bv { result.insert(k, v - bv); }
+                            if v > bv {
+                                result.insert(k, v - bv);
+                            }
                         }
                         Value::Mix(result)
                     }
@@ -875,7 +969,9 @@ impl VM {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
                 let result = match (left, right) {
-                    (Value::Set(a), Value::Set(b)) => Value::Set(a.symmetric_difference(&b).cloned().collect()),
+                    (Value::Set(a), Value::Set(b)) => {
+                        Value::Set(a.symmetric_difference(&b).cloned().collect())
+                    }
                     (l, r) => {
                         let a = Interpreter::coerce_to_set(&l);
                         let b = Interpreter::coerce_to_set(&r);
@@ -906,7 +1002,8 @@ impl VM {
                 let left = self.stack.pop().unwrap();
                 let a = Interpreter::coerce_to_set(&left);
                 let b = Interpreter::coerce_to_set(&right);
-                self.stack.push(Value::Bool(a.is_subset(&b) && a.len() < b.len()));
+                self.stack
+                    .push(Value::Bool(a.is_subset(&b) && a.len() < b.len()));
                 *ip += 1;
             }
             OpCode::SetStrictSuperset => {
@@ -914,7 +1011,8 @@ impl VM {
                 let left = self.stack.pop().unwrap();
                 let a = Interpreter::coerce_to_set(&left);
                 let b = Interpreter::coerce_to_set(&right);
-                self.stack.push(Value::Bool(a.is_superset(&b) && a.len() > b.len()));
+                self.stack
+                    .push(Value::Bool(a.is_superset(&b) && a.len() > b.len()));
                 *ip += 1;
             }
 
@@ -1124,7 +1222,8 @@ impl VM {
                 let args: Vec<Value> = self.stack.drain(start..).collect();
                 if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
                     let pkg = self.interpreter.current_package().to_string();
-                    let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
+                    let result =
+                        self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
                     self.stack.push(result);
                     self.sync_locals_from_env(code);
                 } else if let Some(native_result) = Self::try_native_function(&name, &args) {
@@ -1145,13 +1244,19 @@ impl VM {
                 if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
                     self.stack.push(native_result?);
                 } else {
-                    let result = self.interpreter.eval_method_call_with_values(target, &method, args)?;
+                    let result = self
+                        .interpreter
+                        .eval_method_call_with_values(target, &method, args)?;
                     self.stack.push(result);
                     self.sync_locals_from_env(code);
                 }
                 *ip += 1;
             }
-            OpCode::CallMethodMut { name_idx, arity, target_name_idx } => {
+            OpCode::CallMethodMut {
+                name_idx,
+                arity,
+                target_name_idx,
+            } => {
                 let method = Self::const_str(code, *name_idx).to_string();
                 let target_name = Self::const_str(code, *target_name_idx).to_string();
                 let arity = *arity as usize;
@@ -1163,7 +1268,11 @@ impl VM {
                     self.stack.push(native_result?);
                 } else {
                     // Fall back to interpreter bridge (may mutate target)
-                    let result = self.interpreter.eval_method_call_mut_with_values(&target_name, &method, args)?;
+                    let result = self.interpreter.eval_method_call_mut_with_values(
+                        &target_name,
+                        &method,
+                        args,
+                    )?;
                     self.stack.push(result);
                     self.sync_locals_from_env(code);
                 }
@@ -1176,7 +1285,8 @@ impl VM {
                 let args: Vec<Value> = self.stack.drain(start..).collect();
                 if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
                     let pkg = self.interpreter.current_package().to_string();
-                    let _result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
+                    let _result =
+                        self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
                     self.sync_locals_from_env(code);
                 } else if let Some(native_result) = Self::try_native_function(&name, &args) {
                     native_result?;
@@ -1236,15 +1346,11 @@ impl VM {
                     }
                     (Value::Set(s), Value::Str(key)) => Value::Bool(s.contains(&key)),
                     (Value::Set(s), idx) => Value::Bool(s.contains(&idx.to_string_value())),
-                    (Value::Bag(b), Value::Str(key)) => {
-                        Value::Int(*b.get(&key).unwrap_or(&0))
-                    }
+                    (Value::Bag(b), Value::Str(key)) => Value::Int(*b.get(&key).unwrap_or(&0)),
                     (Value::Bag(b), idx) => {
                         Value::Int(*b.get(&idx.to_string_value()).unwrap_or(&0))
                     }
-                    (Value::Mix(m), Value::Str(key)) => {
-                        Value::Num(*m.get(&key).unwrap_or(&0.0))
-                    }
+                    (Value::Mix(m), Value::Str(key)) => Value::Num(*m.get(&key).unwrap_or(&0.0)),
                     (Value::Mix(m), idx) => {
                         Value::Num(*m.get(&idx.to_string_value()).unwrap_or(&0.0))
                     }
@@ -1293,26 +1399,40 @@ impl VM {
             // -- Postfix operators --
             OpCode::PostIncrement(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
-                let val = self.interpreter.env().get(name).cloned().unwrap_or(Value::Int(0));
+                let val = self
+                    .interpreter
+                    .env()
+                    .get(name)
+                    .cloned()
+                    .unwrap_or(Value::Int(0));
                 let new_val = match &val {
                     Value::Int(i) => Value::Int(i + 1),
                     Value::Rat(n, d) => make_rat(n + d, *d),
                     _ => Value::Int(1),
                 };
-                self.interpreter.env_mut().insert(name.to_string(), new_val.clone());
+                self.interpreter
+                    .env_mut()
+                    .insert(name.to_string(), new_val.clone());
                 self.update_local_if_exists(code, name, &new_val);
                 self.stack.push(val);
                 *ip += 1;
             }
             OpCode::PostDecrement(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
-                let val = self.interpreter.env().get(name).cloned().unwrap_or(Value::Int(0));
+                let val = self
+                    .interpreter
+                    .env()
+                    .get(name)
+                    .cloned()
+                    .unwrap_or(Value::Int(0));
                 let new_val = match &val {
                     Value::Int(i) => Value::Int(i - 1),
                     Value::Rat(n, d) => make_rat(n - d, *d),
                     _ => Value::Int(-1),
                 };
-                self.interpreter.env_mut().insert(name.to_string(), new_val.clone());
+                self.interpreter
+                    .env_mut()
+                    .insert(name.to_string(), new_val.clone());
                 self.update_local_if_exists(code, name, &new_val);
                 self.stack.push(val);
                 *ip += 1;
@@ -1350,26 +1470,40 @@ impl VM {
             // -- Prefix increment/decrement --
             OpCode::PreIncrement(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
-                let val = self.interpreter.env().get(name).cloned().unwrap_or(Value::Int(0));
+                let val = self
+                    .interpreter
+                    .env()
+                    .get(name)
+                    .cloned()
+                    .unwrap_or(Value::Int(0));
                 let new_val = match val {
                     Value::Int(i) => Value::Int(i + 1),
                     Value::Rat(n, d) => make_rat(n + d, d),
                     _ => Value::Int(1),
                 };
-                self.interpreter.env_mut().insert(name.to_string(), new_val.clone());
+                self.interpreter
+                    .env_mut()
+                    .insert(name.to_string(), new_val.clone());
                 self.update_local_if_exists(code, name, &new_val);
                 self.stack.push(new_val);
                 *ip += 1;
             }
             OpCode::PreDecrement(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
-                let val = self.interpreter.env().get(name).cloned().unwrap_or(Value::Int(0));
+                let val = self
+                    .interpreter
+                    .env()
+                    .get(name)
+                    .cloned()
+                    .unwrap_or(Value::Int(0));
                 let new_val = match val {
                     Value::Int(i) => Value::Int(i - 1),
                     Value::Rat(n, d) => make_rat(n - d, d),
                     _ => Value::Int(-1),
                 };
-                self.interpreter.env_mut().insert(name.to_string(), new_val.clone());
+                self.interpreter
+                    .env_mut()
+                    .insert(name.to_string(), new_val.clone());
                 self.update_local_if_exists(code, name, &new_val);
                 self.stack.push(new_val);
                 *ip += 1;
@@ -1378,7 +1512,12 @@ impl VM {
             // -- Variable access --
             OpCode::GetCaptureVar(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
-                let val = self.interpreter.env().get(name).cloned().unwrap_or(Value::Nil);
+                let val = self
+                    .interpreter
+                    .env()
+                    .get(name)
+                    .cloned()
+                    .unwrap_or(Value::Nil);
                 self.stack.push(val);
                 *ip += 1;
             }
@@ -1402,7 +1541,11 @@ impl VM {
             }
 
             // -- Loops --
-            OpCode::WhileLoop { cond_end, body_end, label } => {
+            OpCode::WhileLoop {
+                cond_end,
+                body_end,
+                label,
+            } => {
                 let cond_start = *ip + 1;
                 let body_start = *cond_end as usize;
                 let loop_end = *body_end as usize;
@@ -1419,9 +1562,15 @@ impl VM {
                     'body_redo: loop {
                         match self.run_range(code, body_start, loop_end, compiled_fns) {
                             Ok(()) => break 'body_redo,
-                            Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => continue 'body_redo,
-                            Err(e) if e.is_last && Self::label_matches(&e.label, &label) => break 'while_loop,
-                            Err(e) if e.is_next && Self::label_matches(&e.label, &label) => break 'body_redo,
+                            Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => {
+                                continue 'body_redo;
+                            }
+                            Err(e) if e.is_last && Self::label_matches(&e.label, &label) => {
+                                break 'while_loop;
+                            }
+                            Err(e) if e.is_next && Self::label_matches(&e.label, &label) => {
+                                break 'body_redo;
+                            }
                             Err(e) => return Err(e),
                         }
                     }
@@ -1469,9 +1618,15 @@ impl VM {
                     'body_redo: loop {
                         match self.run_range(code, body_start, loop_end, compiled_fns) {
                             Ok(()) => break 'body_redo,
-                            Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => continue 'body_redo,
-                            Err(e) if e.is_last && Self::label_matches(&e.label, &label) => break 'for_loop,
-                            Err(e) if e.is_next && Self::label_matches(&e.label, &label) => break 'body_redo,
+                            Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => {
+                                continue 'body_redo;
+                            }
+                            Err(e) if e.is_last && Self::label_matches(&e.label, &label) => {
+                                break 'for_loop;
+                            }
+                            Err(e) if e.is_next && Self::label_matches(&e.label, &label) => {
+                                break 'body_redo;
+                            }
                             Err(e) => return Err(e),
                         }
                     }
@@ -1504,9 +1659,15 @@ impl VM {
                     'body_redo: loop {
                         match self.run_range(code, body_start, step_begin, compiled_fns) {
                             Ok(()) => break 'body_redo,
-                            Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => continue 'body_redo,
-                            Err(e) if e.is_last && Self::label_matches(&e.label, &label) => break 'c_loop,
-                            Err(e) if e.is_next && Self::label_matches(&e.label, &label) => break 'body_redo,
+                            Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => {
+                                continue 'body_redo;
+                            }
+                            Err(e) if e.is_last && Self::label_matches(&e.label, &label) => {
+                                break 'c_loop;
+                            }
+                            Err(e) if e.is_next && Self::label_matches(&e.label, &label) => {
+                                break 'body_redo;
+                            }
                             Err(e) => return Err(e),
                         }
                     }
@@ -1563,7 +1724,12 @@ impl VM {
                 let body_start = *ip + 1;
                 let end = *body_end as usize;
 
-                let topic = self.interpreter.env().get("_").cloned().unwrap_or(Value::Nil);
+                let topic = self
+                    .interpreter
+                    .env()
+                    .get("_")
+                    .cloned()
+                    .unwrap_or(Value::Nil);
                 if self.interpreter.smart_match_values(&topic, &cond_val) {
                     let mut did_proceed = false;
                     match self.run_range(code, body_start, end, compiled_fns) {
@@ -1591,7 +1757,11 @@ impl VM {
             }
 
             // -- Repeat loop --
-            OpCode::RepeatLoop { cond_end, body_end, label } => {
+            OpCode::RepeatLoop {
+                cond_end,
+                body_end,
+                label,
+            } => {
                 let body_start = *ip + 1;
                 let cond_start = *cond_end as usize;
                 let loop_end = *body_end as usize;
@@ -1612,9 +1782,15 @@ impl VM {
                     'body_redo: loop {
                         match self.run_range(code, body_start, cond_start, compiled_fns) {
                             Ok(()) => break 'body_redo,
-                            Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => continue 'body_redo,
-                            Err(e) if e.is_last && Self::label_matches(&e.label, &label) => break 'repeat_loop,
-                            Err(e) if e.is_next && Self::label_matches(&e.label, &label) => break 'body_redo,
+                            Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => {
+                                continue 'body_redo;
+                            }
+                            Err(e) if e.is_last && Self::label_matches(&e.label, &label) => {
+                                break 'repeat_loop;
+                            }
+                            Err(e) if e.is_next && Self::label_matches(&e.label, &label) => {
+                                break 'body_redo;
+                            }
                             Err(e) => return Err(e),
                         }
                     }
@@ -1626,7 +1802,10 @@ impl VM {
             }
 
             // -- Exception handling (try/catch) --
-            OpCode::TryCatch { catch_start, body_end } => {
+            OpCode::TryCatch {
+                catch_start,
+                body_end,
+            } => {
                 let saved_depth = self.stack.len();
                 let body_start = *ip + 1;
                 let catch_begin = *catch_start as usize;
@@ -1637,14 +1816,20 @@ impl VM {
                         *ip = end;
                     }
                     Err(e) if e.return_value.is_some() => return Err(e),
-                    Err(e) if e.is_last || e.is_next || e.is_redo || e.is_proceed || e.is_succeed => return Err(e),
+                    Err(e)
+                        if e.is_last || e.is_next || e.is_redo || e.is_proceed || e.is_succeed =>
+                    {
+                        return Err(e);
+                    }
                     Err(e) => {
                         // Error caught
                         self.stack.truncate(saved_depth);
                         let err_val = Value::Str(e.message.clone());
                         let saved_err = self.interpreter.env().get("!").cloned();
                         let saved_topic = self.interpreter.env().get("_").cloned();
-                        self.interpreter.env_mut().insert("!".to_string(), err_val.clone());
+                        self.interpreter
+                            .env_mut()
+                            .insert("!".to_string(), err_val.clone());
                         self.interpreter.env_mut().insert("_".to_string(), err_val);
                         // Run catch block
                         let saved_when = self.interpreter.when_matched();
@@ -1671,7 +1856,7 @@ impl VM {
             // -- Error handling --
             OpCode::Die => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
-                return Err(RuntimeError::new(&val.to_string_value()));
+                return Err(RuntimeError::new(val.to_string_value()));
             }
 
             // -- Functions --
@@ -1704,7 +1889,8 @@ impl VM {
             // -- Exists check --
             OpCode::ExistsEnvIndex(key_idx) => {
                 let key = Self::const_str(code, *key_idx);
-                self.stack.push(Value::Bool(std::env::var_os(key).is_some()));
+                self.stack
+                    .push(Value::Bool(std::env::var_os(key).is_some()));
                 *ip += 1;
             }
             OpCode::ExistsExpr => {
@@ -1760,12 +1946,22 @@ impl VM {
             }
 
             // -- Substitution (s///) --
-            OpCode::Subst { pattern_idx, replacement_idx } => {
+            OpCode::Subst {
+                pattern_idx,
+                replacement_idx,
+            } => {
                 let pattern = Self::const_str(code, *pattern_idx).to_string();
                 let replacement = Self::const_str(code, *replacement_idx).to_string();
-                let target = self.interpreter.env().get("_").cloned().unwrap_or(Value::Nil);
+                let target = self
+                    .interpreter
+                    .env()
+                    .get("_")
+                    .cloned()
+                    .unwrap_or(Value::Nil);
                 let text = target.to_string_value();
-                if let Some((start, end)) = self.interpreter.regex_find_first_bridge(&pattern, &text) {
+                if let Some((start, end)) =
+                    self.interpreter.regex_find_first_bridge(&pattern, &text)
+                {
                     let start_b = Interpreter::char_idx_to_byte(&text, start);
                     let end_b = Interpreter::char_idx_to_byte(&text, end);
                     let mut out = String::new();
@@ -1773,7 +1969,9 @@ impl VM {
                     out.push_str(&replacement);
                     out.push_str(&text[end_b..]);
                     let result = Value::Str(out);
-                    self.interpreter.env_mut().insert("_".to_string(), result.clone());
+                    self.interpreter
+                        .env_mut()
+                        .insert("_".to_string(), result.clone());
                     self.stack.push(result);
                 } else {
                     self.stack.push(Value::Str(text));
@@ -1809,13 +2007,16 @@ impl VM {
             }
 
             // -- HyperOp (>>op<<) --
-            OpCode::HyperOp { op_idx, dwim_left, dwim_right } => {
+            OpCode::HyperOp {
+                op_idx,
+                dwim_left,
+                dwim_right,
+            } => {
                 let right = self.stack.pop().unwrap_or(Value::Nil);
                 let left = self.stack.pop().unwrap_or(Value::Nil);
                 let op = Self::const_str(code, *op_idx);
-                let result = Interpreter::eval_hyper_op(
-                    op, &left, &right, *dwim_left, *dwim_right,
-                )?;
+                let result =
+                    Interpreter::eval_hyper_op(op, &left, &right, *dwim_left, *dwim_right)?;
                 self.stack.push(result);
                 *ip += 1;
             }
@@ -1827,18 +2028,14 @@ impl VM {
                 let meta = Self::const_str(code, *meta_idx).to_string();
                 let op = Self::const_str(code, *op_idx).to_string();
                 let result = match meta.as_str() {
-                    "R" => {
-                        Interpreter::apply_reduction_op(&op, &right, &left)?
-                    }
+                    "R" => Interpreter::apply_reduction_op(&op, &right, &left)?,
                     "X" => {
                         let left_list = Interpreter::value_to_list(&left);
                         let right_list = Interpreter::value_to_list(&right);
                         let mut results = Vec::new();
                         for l in &left_list {
                             for r in &right_list {
-                                results.push(
-                                    Interpreter::apply_reduction_op(&op, l, r)?,
-                                );
+                                results.push(Interpreter::apply_reduction_op(&op, l, r)?);
                             }
                         }
                         Value::Array(results)
@@ -1858,28 +2055,24 @@ impl VM {
                         } else if op == "=>" {
                             for i in 0..len {
                                 let key = left_list[i].to_string_value();
-                                results.push(Value::Pair(
-                                    key,
-                                    Box::new(right_list[i].clone()),
-                                ));
+                                results.push(Value::Pair(key, Box::new(right_list[i].clone())));
                             }
                         } else {
                             for i in 0..len {
-                                results.push(
-                                    Interpreter::apply_reduction_op(
-                                        &op,
-                                        &left_list[i],
-                                        &right_list[i],
-                                    )?,
-                                );
+                                results.push(Interpreter::apply_reduction_op(
+                                    &op,
+                                    &left_list[i],
+                                    &right_list[i],
+                                )?);
                             }
                         }
                         Value::Array(results)
                     }
                     _ => {
-                        return Err(RuntimeError::new(
-                            &format!("Unknown meta operator: {}", meta),
-                        ));
+                        return Err(RuntimeError::new(format!(
+                            "Unknown meta operator: {}",
+                            meta
+                        )));
                     }
                 };
                 self.stack.push(result);
@@ -1887,7 +2080,11 @@ impl VM {
             }
 
             // -- InfixFunc (atan2, sprintf) --
-            OpCode::InfixFunc { name_idx, right_arity, modifier_idx } => {
+            OpCode::InfixFunc {
+                name_idx,
+                right_arity,
+                modifier_idx,
+            } => {
                 let arity = *right_arity as usize;
                 let mut right_vals: Vec<Value> = Vec::with_capacity(arity);
                 for _ in 0..arity {
@@ -1900,7 +2097,7 @@ impl VM {
                 let result = if name == "atan2" {
                     let mut x = right_vals
                         .first()
-                        .and_then(|v| Interpreter::to_float_value(v))
+                        .and_then(Interpreter::to_float_value)
                         .unwrap_or(0.0);
                     let mut y = Interpreter::to_float_value(&left_val).unwrap_or(0.0);
                     if modifier.as_deref() == Some("R") {
@@ -1969,7 +2166,9 @@ impl VM {
                 let val = self.stack.last().unwrap().clone();
                 let idx = *idx as usize;
                 self.locals[idx] = val.clone();
-                self.interpreter.env_mut().insert(code.locals[idx].clone(), val);
+                self.interpreter
+                    .env_mut()
+                    .insert(code.locals[idx].clone(), val);
                 *ip += 1;
             }
         }
@@ -1997,14 +2196,20 @@ impl VM {
                 .into_iter()
                 .map(|v| self.eval_binary_with_junctions(v, right.clone(), f))
                 .collect();
-            return Ok(Value::Junction { kind, values: results? });
+            return Ok(Value::Junction {
+                kind,
+                values: results?,
+            });
         }
         if let Value::Junction { kind, values } = right {
             let results: Result<Vec<Value>, RuntimeError> = values
                 .into_iter()
                 .map(|v| self.eval_binary_with_junctions(left.clone(), v, f))
                 .collect();
-            return Ok(Value::Junction { kind, values: results? });
+            return Ok(Value::Junction {
+                kind,
+                values: results?,
+            });
         }
         f(self, left, right)
     }
@@ -2033,7 +2238,11 @@ impl VM {
 
     /// Try to dispatch a method call natively (without interpreter bridge).
     /// Returns Some(result) on success, None if the method should fall through.
-    fn try_native_method(target: &Value, method: &str, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    fn try_native_method(
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
         if args.len() == 2 {
             return Self::try_native_method_2arg(target, method, &args[0], &args[1]);
         }
@@ -2049,8 +2258,8 @@ impl VM {
             "Str" => {
                 // Exclude complex types with special interpreter handling
                 match target {
-                    Value::Package(_) | Value::Instance { .. } => return None,
-                    Value::Str(s) if s == "IO::Special" => return Some(Ok(Value::Str(String::new()))),
+                    Value::Package(_) | Value::Instance { .. } => None,
+                    Value::Str(s) if s == "IO::Special" => Some(Ok(Value::Str(String::new()))),
                     _ => Some(Ok(Value::Str(target.to_string_value()))),
                 }
             }
@@ -2092,9 +2301,9 @@ impl VM {
                 };
                 Some(Ok(result))
             }
-            "chars" => {
-                Some(Ok(Value::Int(target.to_string_value().chars().count() as i64)))
-            }
+            "chars" => Some(Ok(Value::Int(
+                target.to_string_value().chars().count() as i64
+            ))),
             "elems" => {
                 let result = match target {
                     Value::Array(items) => Value::Int(items.len() as i64),
@@ -2115,12 +2324,8 @@ impl VM {
                 };
                 Some(Ok(result))
             }
-            "uc" => {
-                Some(Ok(Value::Str(target.to_string_value().to_uppercase())))
-            }
-            "lc" => {
-                Some(Ok(Value::Str(target.to_string_value().to_lowercase())))
-            }
+            "uc" => Some(Ok(Value::Str(target.to_string_value().to_uppercase()))),
+            "lc" => Some(Ok(Value::Str(target.to_string_value().to_lowercase()))),
             "sign" => {
                 let result = match target {
                     Value::Int(i) => Value::Int(i.signum()),
@@ -2128,145 +2333,130 @@ impl VM {
                         if f.is_nan() {
                             Value::Num(f64::NAN)
                         } else {
-                            Value::Int(if *f > 0.0 { 1 } else if *f < 0.0 { -1 } else { 0 })
+                            Value::Int(if *f > 0.0 {
+                                1
+                            } else if *f < 0.0 {
+                                -1
+                            } else {
+                                0
+                            })
                         }
                     }
                     _ => return None,
                 };
                 Some(Ok(result))
             }
-            "end" => {
-                match target {
-                    Value::Array(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
-                    _ => None,
-                }
-            }
-            "flat" => {
-                match target {
-                    Value::Array(items) => {
-                        let mut result = Vec::new();
-                        for item in items {
-                            match item {
-                                Value::Array(inner) => result.extend(inner.iter().cloned()),
-                                other => result.push(other.clone()),
-                            }
-                        }
-                        Some(Ok(Value::Array(result)))
-                    }
-                    _ => None,
-                }
-            }
-            "sort" => {
-                match target {
-                    Value::Array(items) => {
-                        let mut sorted = items.clone();
-                        sorted.sort_by(|a, b| {
-                            let fa = Interpreter::to_float_value(a).unwrap_or(0.0);
-                            let fb = Interpreter::to_float_value(b).unwrap_or(0.0);
-                            fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
-                        });
-                        Some(Ok(Value::Array(sorted)))
-                    }
-                    _ => None,
-                }
-            }
-            "reverse" => {
-                match target {
-                    Value::Array(items) => {
-                        let mut reversed = items.clone();
-                        reversed.reverse();
-                        Some(Ok(Value::Array(reversed)))
-                    }
-                    Value::Str(s) => {
-                        Some(Ok(Value::Str(s.chars().rev().collect())))
-                    }
-                    _ => None,
-                }
-            }
-            "unique" => {
-                match target {
-                    Value::Array(items) => {
-                        let mut seen = Vec::new();
-                        let mut result = Vec::new();
-                        for item in items {
-                            let key = item.to_string_value();
-                            if !seen.contains(&key) {
-                                seen.push(key);
-                                result.push(item.clone());
-                            }
-                        }
-                        Some(Ok(Value::Array(result)))
-                    }
-                    _ => None,
-                }
-            }
-            "keys" => {
-                match target {
-                    Value::Hash(map) => {
-                        let keys: Vec<Value> = map.keys().map(|k| Value::Str(k.clone())).collect();
-                        Some(Ok(Value::Array(keys)))
-                    }
-                    _ => None,
-                }
-            }
-            "values" => {
-                match target {
-                    Value::Hash(map) => {
-                        let values: Vec<Value> = map.values().cloned().collect();
-                        Some(Ok(Value::Array(values)))
-                    }
-                    _ => None,
-                }
-            }
-            "floor" => {
-                match target {
-                    Value::Num(f) => Some(Ok(Value::Int(f.floor() as i64))),
-                    Value::Int(i) => Some(Ok(Value::Int(*i))),
-                    Value::Rat(n, d) if *d != 0 => {
-                        let q = *n / *d;
-                        let r = *n % *d;
-                        if r != 0 && (*n < 0) != (*d < 0) {
-                            Some(Ok(Value::Int(q - 1)))
-                        } else {
-                            Some(Ok(Value::Int(q)))
+            "end" => match target {
+                Value::Array(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
+                _ => None,
+            },
+            "flat" => match target {
+                Value::Array(items) => {
+                    let mut result = Vec::new();
+                    for item in items {
+                        match item {
+                            Value::Array(inner) => result.extend(inner.iter().cloned()),
+                            other => result.push(other.clone()),
                         }
                     }
-                    _ => None,
+                    Some(Ok(Value::Array(result)))
                 }
-            }
-            "ceiling" => {
-                match target {
-                    Value::Num(f) => Some(Ok(Value::Int(f.ceil() as i64))),
-                    Value::Int(i) => Some(Ok(Value::Int(*i))),
-                    Value::Rat(n, d) if *d != 0 => {
-                        let q = *n / *d;
-                        let r = *n % *d;
-                        if r != 0 && (*n < 0) == (*d < 0) {
-                            Some(Ok(Value::Int(q + 1)))
-                        } else {
-                            Some(Ok(Value::Int(q)))
+                _ => None,
+            },
+            "sort" => match target {
+                Value::Array(items) => {
+                    let mut sorted = items.clone();
+                    sorted.sort_by(|a, b| {
+                        let fa = Interpreter::to_float_value(a).unwrap_or(0.0);
+                        let fb = Interpreter::to_float_value(b).unwrap_or(0.0);
+                        fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
+                    });
+                    Some(Ok(Value::Array(sorted)))
+                }
+                _ => None,
+            },
+            "reverse" => match target {
+                Value::Array(items) => {
+                    let mut reversed = items.clone();
+                    reversed.reverse();
+                    Some(Ok(Value::Array(reversed)))
+                }
+                Value::Str(s) => Some(Ok(Value::Str(s.chars().rev().collect()))),
+                _ => None,
+            },
+            "unique" => match target {
+                Value::Array(items) => {
+                    let mut seen = Vec::new();
+                    let mut result = Vec::new();
+                    for item in items {
+                        let key = item.to_string_value();
+                        if !seen.contains(&key) {
+                            seen.push(key);
+                            result.push(item.clone());
                         }
                     }
-                    _ => None,
+                    Some(Ok(Value::Array(result)))
                 }
-            }
-            "round" => {
-                match target {
-                    Value::Num(f) => Some(Ok(Value::Int(f.round() as i64))),
-                    Value::Int(i) => Some(Ok(Value::Int(*i))),
-                    _ => None,
+                _ => None,
+            },
+            "keys" => match target {
+                Value::Hash(map) => {
+                    let keys: Vec<Value> = map.keys().map(|k| Value::Str(k.clone())).collect();
+                    Some(Ok(Value::Array(keys)))
                 }
-            }
-            "sqrt" => {
-                match target {
-                    Value::Int(i) => Some(Ok(Value::Num((*i as f64).sqrt()))),
-                    Value::Num(f) => Some(Ok(Value::Num(f.sqrt()))),
-                    _ => None,
+                _ => None,
+            },
+            "values" => match target {
+                Value::Hash(map) => {
+                    let values: Vec<Value> = map.values().cloned().collect();
+                    Some(Ok(Value::Array(values)))
                 }
-            }
+                _ => None,
+            },
+            "floor" => match target {
+                Value::Num(f) => Some(Ok(Value::Int(f.floor() as i64))),
+                Value::Int(i) => Some(Ok(Value::Int(*i))),
+                Value::Rat(n, d) if *d != 0 => {
+                    let q = *n / *d;
+                    let r = *n % *d;
+                    if r != 0 && (*n < 0) != (*d < 0) {
+                        Some(Ok(Value::Int(q - 1)))
+                    } else {
+                        Some(Ok(Value::Int(q)))
+                    }
+                }
+                _ => None,
+            },
+            "ceiling" => match target {
+                Value::Num(f) => Some(Ok(Value::Int(f.ceil() as i64))),
+                Value::Int(i) => Some(Ok(Value::Int(*i))),
+                Value::Rat(n, d) if *d != 0 => {
+                    let q = *n / *d;
+                    let r = *n % *d;
+                    if r != 0 && (*n < 0) == (*d < 0) {
+                        Some(Ok(Value::Int(q + 1)))
+                    } else {
+                        Some(Ok(Value::Int(q)))
+                    }
+                }
+                _ => None,
+            },
+            "round" => match target {
+                Value::Num(f) => Some(Ok(Value::Int(f.round() as i64))),
+                Value::Int(i) => Some(Ok(Value::Int(*i))),
+                _ => None,
+            },
+            "sqrt" => match target {
+                Value::Int(i) => Some(Ok(Value::Num((*i as f64).sqrt()))),
+                Value::Num(f) => Some(Ok(Value::Num(f.sqrt()))),
+                _ => None,
+            },
             "words" => {
                 let s = target.to_string_value();
-                let words: Vec<Value> = s.split_whitespace().map(|w| Value::Str(w.to_string())).collect();
+                let words: Vec<Value> = s
+                    .split_whitespace()
+                    .map(|w| Value::Str(w.to_string()))
+                    .collect();
                 Some(Ok(Value::Array(words)))
             }
             "lines" => {
@@ -2274,20 +2464,18 @@ impl VM {
                 let lines: Vec<Value> = s.lines().map(|l| Value::Str(l.to_string())).collect();
                 Some(Ok(Value::Array(lines)))
             }
-            "trim" => {
-                Some(Ok(Value::Str(target.to_string_value().trim().to_string())))
-            }
-            "trim-leading" => {
-                Some(Ok(Value::Str(target.to_string_value().trim_start().to_string())))
-            }
-            "trim-trailing" => {
-                Some(Ok(Value::Str(target.to_string_value().trim_end().to_string())))
-            }
+            "trim" => Some(Ok(Value::Str(target.to_string_value().trim().to_string()))),
+            "trim-leading" => Some(Ok(Value::Str(
+                target.to_string_value().trim_start().to_string(),
+            ))),
+            "trim-trailing" => Some(Ok(Value::Str(
+                target.to_string_value().trim_end().to_string(),
+            ))),
             "so" => Some(Ok(Value::Bool(target.truthy()))),
             "not" => Some(Ok(Value::Bool(!target.truthy()))),
-            "chomp" => {
-                Some(Ok(Value::Str(target.to_string_value().trim_end_matches('\n').to_string())))
-            }
+            "chomp" => Some(Ok(Value::Str(
+                target.to_string_value().trim_end_matches('\n').to_string(),
+            ))),
             "chop" => {
                 let mut s = target.to_string_value();
                 s.pop();
@@ -2485,21 +2673,31 @@ impl VM {
             "join" => match target {
                 Value::Array(items) => {
                     let sep = arg.to_string_value();
-                    let joined = items.iter().map(|v| v.to_string_value()).collect::<Vec<_>>().join(&sep);
+                    let joined = items
+                        .iter()
+                        .map(|v| v.to_string_value())
+                        .collect::<Vec<_>>()
+                        .join(&sep);
                     Some(Ok(Value::Str(joined)))
                 }
                 _ => None,
             },
             "head" => match target {
                 Value::Array(items) => {
-                    let n = match arg { Value::Int(i) => *i as usize, _ => return None };
+                    let n = match arg {
+                        Value::Int(i) => *i as usize,
+                        _ => return None,
+                    };
                     Some(Ok(Value::Array(items[..n.min(items.len())].to_vec())))
                 }
                 _ => None,
             },
             "tail" => match target {
                 Value::Array(items) => {
-                    let n = match arg { Value::Int(i) => *i as usize, _ => return None };
+                    let n = match arg {
+                        Value::Int(i) => *i as usize,
+                        _ => return None,
+                    };
                     let start = items.len().saturating_sub(n);
                     Some(Ok(Value::Array(items[start..].to_vec())))
                 }
@@ -2538,7 +2736,10 @@ impl VM {
             // Numeric methods
             "base" => match target {
                 Value::Int(i) => {
-                    let radix = match arg { Value::Int(r) => *r, _ => return None };
+                    let radix = match arg {
+                        Value::Int(r) => *r,
+                        _ => return None,
+                    };
                     let s = match radix {
                         2 => format!("{:b}", i),
                         8 => format!("{:o}", i),
@@ -2619,36 +2820,34 @@ impl VM {
                 }
                 Some(Ok(Value::Str(result)))
             }
-            "chomp" => {
-                Some(Ok(Value::Str(arg.to_string_value().trim_end_matches('\n').to_string())))
-            }
+            "chomp" => Some(Ok(Value::Str(
+                arg.to_string_value().trim_end_matches('\n').to_string(),
+            ))),
             "chop" => {
                 let mut s = arg.to_string_value();
                 s.pop();
                 Some(Ok(Value::Str(s)))
             }
-            "trim" => {
-                Some(Ok(Value::Str(arg.to_string_value().trim().to_string())))
-            }
-            "flip" => {
-                Some(Ok(Value::Str(arg.to_string_value().chars().rev().collect())))
-            }
+            "trim" => Some(Ok(Value::Str(arg.to_string_value().trim().to_string()))),
+            "flip" => Some(Ok(Value::Str(
+                arg.to_string_value().chars().rev().collect(),
+            ))),
             "words" => {
                 let s = arg.to_string_value();
-                let parts: Vec<Value> = s.split_whitespace().map(|p| Value::Str(p.to_string())).collect();
+                let parts: Vec<Value> = s
+                    .split_whitespace()
+                    .map(|p| Value::Str(p.to_string()))
+                    .collect();
                 Some(Ok(Value::Array(parts)))
             }
-            "chars" => {
-                Some(Ok(Value::Int(arg.to_string_value().chars().count() as i64)))
-            }
+            "chars" => Some(Ok(Value::Int(arg.to_string_value().chars().count() as i64))),
             // Char/Ord
             "chr" => {
-                if let Value::Int(i) = arg {
-                    if *i >= 0 {
-                        if let Some(ch) = std::char::from_u32(*i as u32) {
-                            return Some(Ok(Value::Str(ch.to_string())));
-                        }
-                    }
+                if let Value::Int(i) = arg
+                    && *i >= 0
+                    && let Some(ch) = std::char::from_u32(*i as u32)
+                {
+                    return Some(Ok(Value::Str(ch.to_string())));
                 }
                 Some(Ok(Value::Str(String::new())))
             }
@@ -2715,9 +2914,7 @@ impl VM {
                 }
             }
             // Query
-            "defined" => {
-                Some(Ok(Value::Bool(!matches!(arg, Value::Nil))))
-            }
+            "defined" => Some(Ok(Value::Bool(!matches!(arg, Value::Nil)))),
             "elems" => Some(Ok(match arg {
                 Value::Array(items) => Value::Int(items.len() as i64),
                 Value::Hash(items) => Value::Int(items.len() as i64),
@@ -2737,7 +2934,7 @@ impl VM {
             "sort" => Some(Ok(match arg {
                 Value::Array(items) => {
                     let mut sorted = items.clone();
-                    sorted.sort_by(|a, b| a.to_string_value().cmp(&b.to_string_value()));
+                    sorted.sort_by_key(|a| a.to_string_value());
                     Value::Array(sorted)
                 }
                 _ => Value::Nil,
@@ -2787,15 +2984,17 @@ impl VM {
                 let codes: Vec<Value> = s.chars().map(|ch| Value::Int(ch as u32 as i64)).collect();
                 Some(Ok(Value::Array(codes)))
             }
-            "gist" => {
-                Some(Ok(Value::Str(arg.to_string_value())))
-            }
+            "gist" => Some(Ok(Value::Str(arg.to_string_value()))),
             _ => None,
         }
     }
 
     /// Native dispatch for two-arg built-in functions.
-    fn try_native_function_2arg(name: &str, arg1: &Value, arg2: &Value) -> Option<Result<Value, RuntimeError>> {
+    fn try_native_function_2arg(
+        name: &str,
+        arg1: &Value,
+        arg2: &Value,
+    ) -> Option<Result<Value, RuntimeError>> {
         match name {
             "join" => {
                 let sep = arg1.to_string_value();
@@ -2826,7 +3025,9 @@ impl VM {
                     _ => return None,
                 };
                 let chars: Vec<char> = s.chars().collect();
-                Some(Ok(Value::Str(chars[start.min(chars.len())..].iter().collect())))
+                Some(Ok(Value::Str(
+                    chars[start.min(chars.len())..].iter().collect(),
+                )))
             }
             "atan2" => {
                 let y = Interpreter::to_float_value(arg1).unwrap_or(0.0);
@@ -2857,21 +3058,38 @@ impl VM {
                     (Value::Int(x), Value::Int(y)) => x.cmp(y),
                     _ => arg1.to_string_value().cmp(&arg2.to_string_value()),
                 };
-                Some(Ok(if cmp == std::cmp::Ordering::Less || cmp == std::cmp::Ordering::Equal { arg1.clone() } else { arg2.clone() }))
+                Some(Ok(
+                    if cmp == std::cmp::Ordering::Less || cmp == std::cmp::Ordering::Equal {
+                        arg1.clone()
+                    } else {
+                        arg2.clone()
+                    },
+                ))
             }
             "max" => {
                 let cmp = match (arg1, arg2) {
                     (Value::Int(x), Value::Int(y)) => x.cmp(y),
                     _ => arg1.to_string_value().cmp(&arg2.to_string_value()),
                 };
-                Some(Ok(if cmp == std::cmp::Ordering::Greater || cmp == std::cmp::Ordering::Equal { arg1.clone() } else { arg2.clone() }))
+                Some(Ok(
+                    if cmp == std::cmp::Ordering::Greater || cmp == std::cmp::Ordering::Equal {
+                        arg1.clone()
+                    } else {
+                        arg2.clone()
+                    },
+                ))
             }
             _ => None,
         }
     }
 
     /// Native dispatch for three-arg built-in functions.
-    fn try_native_function_3arg(name: &str, arg1: &Value, arg2: &Value, arg3: &Value) -> Option<Result<Value, RuntimeError>> {
+    fn try_native_function_3arg(
+        name: &str,
+        arg1: &Value,
+        arg2: &Value,
+        arg3: &Value,
+    ) -> Option<Result<Value, RuntimeError>> {
         match name {
             "substr" => {
                 let s = arg1.to_string_value();
@@ -2893,11 +3111,17 @@ impl VM {
     }
 
     /// Native dispatch for variadic built-in functions.
-    fn try_native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    fn try_native_function_variadic(
+        name: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
         match name {
             "min" => {
-                if args.is_empty() { return Some(Ok(Value::Nil)); }
-                Some(Ok(args.iter()
+                if args.is_empty() {
+                    return Some(Ok(Value::Nil));
+                }
+                Some(Ok(args
+                    .iter()
                     .cloned()
                     .min_by(|a, b| match (a, b) {
                         (Value::Int(x), Value::Int(y)) => x.cmp(y),
@@ -2906,8 +3130,11 @@ impl VM {
                     .unwrap_or(Value::Nil)))
             }
             "max" => {
-                if args.is_empty() { return Some(Ok(Value::Nil)); }
-                Some(Ok(args.iter()
+                if args.is_empty() {
+                    return Some(Ok(Value::Nil));
+                }
+                Some(Ok(args
+                    .iter()
                     .cloned()
                     .max_by(|a, b| match (a, b) {
                         (Value::Int(x), Value::Int(y)) => x.cmp(y),
@@ -2920,23 +3147,22 @@ impl VM {
                 for arg in args {
                     match arg {
                         Value::Int(i) => {
-                            if *i >= 0 {
-                                if let Some(ch) = std::char::from_u32(*i as u32) {
-                                    result.push(ch);
-                                    continue;
-                                }
+                            if *i >= 0
+                                && let Some(ch) = std::char::from_u32(*i as u32)
+                            {
+                                result.push(ch);
+                                continue;
                             }
                             result.push_str(&arg.to_string_value());
                         }
                         Value::Array(items) => {
                             for item in items {
-                                if let Value::Int(i) = item {
-                                    if *i >= 0 {
-                                        if let Some(ch) = std::char::from_u32(*i as u32) {
-                                            result.push(ch);
-                                            continue;
-                                        }
-                                    }
+                                if let Value::Int(i) = item
+                                    && *i >= 0
+                                    && let Some(ch) = std::char::from_u32(*i as u32)
+                                {
+                                    result.push(ch);
+                                    continue;
                                 }
                                 result.push_str(&item.to_string_value());
                             }
@@ -3005,7 +3231,10 @@ impl VM {
         let pkg = self.interpreter.current_package();
         let arity = args.len();
         // Try package::name/arity:types (multi-dispatch with types)
-        let type_sig: Vec<String> = args.iter().map(|v| Interpreter::value_type_name(v).to_string()).collect();
+        let type_sig: Vec<String> = args
+            .iter()
+            .map(|v| Interpreter::value_type_name(v).to_string())
+            .collect();
         let key_typed = format!("{}::{}/{}:{}", pkg, name, arity, type_sig.join(","));
         if let Some(cf) = compiled_fns.get(&key_typed) {
             return Some(cf);
@@ -3051,11 +3280,13 @@ impl VM {
 
         // Push to routine stack for &?ROUTINE support
         if !fn_name.is_empty() {
-            self.interpreter.push_routine(fn_package.to_string(), fn_name.to_string());
+            self.interpreter
+                .push_routine(fn_package.to_string(), fn_name.to_string());
         }
 
         // Bind arguments using interpreter's parameter binding
-        self.interpreter.bind_function_args_values(&cf.param_defs, &cf.params, &args)?;
+        self.interpreter
+            .bind_function_args_values(&cf.param_defs, &cf.params, &args)?;
 
         // Initialize function locals from env
         self.locals = vec![Value::Nil; cf.code.locals.len()];

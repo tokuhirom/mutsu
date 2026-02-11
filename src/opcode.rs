@@ -103,6 +103,7 @@ pub(crate) enum OpCode {
     Sequence,
 
     // -- Nil check (for defined-or //) --
+    #[allow(dead_code)]
     IsNil,
 
     // -- Control flow --
@@ -134,13 +135,26 @@ pub(crate) enum OpCode {
 
     // -- Calls (args compiled to bytecode, dispatch delegated to interpreter) --
     /// Expression-level function call: pop `arity` args, call name, push result.
-    CallFunc { name_idx: u32, arity: u32 },
+    CallFunc {
+        name_idx: u32,
+        arity: u32,
+    },
     /// Method call: pop `arity` args + target, call method, push result.
-    CallMethod { name_idx: u32, arity: u32 },
+    CallMethod {
+        name_idx: u32,
+        arity: u32,
+    },
     /// Method call with writeback: target is a variable that may be mutated.
-    CallMethodMut { name_idx: u32, arity: u32, target_name_idx: u32 },
+    CallMethodMut {
+        name_idx: u32,
+        arity: u32,
+        target_name_idx: u32,
+    },
     /// Statement-level call: pop `arity` args, call name (no push).
-    ExecCall { name_idx: u32, arity: u32 },
+    ExecCall {
+        name_idx: u32,
+        arity: u32,
+    },
 
     // -- Indexing --
     Index,
@@ -182,22 +196,46 @@ pub(crate) enum OpCode {
     // -- Loops (compound opcodes) --
     /// While loop. Condition opcodes follow at [ip+1..cond_end).
     /// Body opcodes at [cond_end..body_end). VM loops internally.
-    WhileLoop { cond_end: u32, body_end: u32, label: Option<String> },
+    WhileLoop {
+        cond_end: u32,
+        body_end: u32,
+        label: Option<String>,
+    },
     /// For loop. Iterable value must be on stack.
     /// Body opcodes at [ip+1..body_end). VM iterates internally.
-    ForLoop { param_idx: Option<u32>, param_local: Option<u32>, body_end: u32, label: Option<String> },
+    ForLoop {
+        param_idx: Option<u32>,
+        param_local: Option<u32>,
+        body_end: u32,
+        label: Option<String>,
+    },
     /// C-style loop: [cond opcodes][body opcodes][step opcodes].
     /// Layout after CStyleLoop: cond at [ip+1..cond_end), body at [cond_end..step_start),
     /// step at [step_start..body_end).
-    CStyleLoop { cond_end: u32, step_start: u32, body_end: u32, label: Option<String> },
+    CStyleLoop {
+        cond_end: u32,
+        step_start: u32,
+        body_end: u32,
+        label: Option<String>,
+    },
 
     // -- Given/When/Default (compound opcodes) --
-    Given { body_end: u32 },
-    When { body_end: u32 },
-    Default { body_end: u32 },
+    Given {
+        body_end: u32,
+    },
+    When {
+        body_end: u32,
+    },
+    Default {
+        body_end: u32,
+    },
 
     // -- Repeat loop (compound opcode) --
-    RepeatLoop { cond_end: u32, body_end: u32, label: Option<String> },
+    RepeatLoop {
+        cond_end: u32,
+        body_end: u32,
+        label: Option<String>,
+    },
 
     // -- Environment variable access --
     GetEnvIndex(u32),
@@ -214,29 +252,49 @@ pub(crate) enum OpCode {
     BlockMagic,
 
     // -- Substitution (s///) --
-    Subst { pattern_idx: u32, replacement_idx: u32 },
+    Subst {
+        pattern_idx: u32,
+        replacement_idx: u32,
+    },
 
     // -- Take (gather/take) --
     Take,
 
     // -- Package scope --
-    PackageScope { name_idx: u32, body_end: u32 },
+    PackageScope {
+        name_idx: u32,
+        body_end: u32,
+    },
 
     // -- Phaser --
     PhaserEnd(u32),
 
     // -- HyperOp (>>op<<) --
-    HyperOp { op_idx: u32, dwim_left: bool, dwim_right: bool },
+    HyperOp {
+        op_idx: u32,
+        dwim_left: bool,
+        dwim_right: bool,
+    },
 
     // -- MetaOp (Rop, Xop, Zop) --
-    MetaOp { meta_idx: u32, op_idx: u32 },
+    MetaOp {
+        meta_idx: u32,
+        op_idx: u32,
+    },
 
     // -- InfixFunc (atan2, sprintf) --
-    InfixFunc { name_idx: u32, right_arity: u32, modifier_idx: Option<u32> },
+    InfixFunc {
+        name_idx: u32,
+        right_arity: u32,
+        modifier_idx: Option<u32>,
+    },
 
     // -- Exception handling --
     /// Try/catch block. Body at [ip+1..catch_start), catch at [catch_start..body_end).
-    TryCatch { catch_start: u32, body_end: u32 },
+    TryCatch {
+        catch_start: u32,
+        body_end: u32,
+    },
 
     // -- Error handling --
     Die,
@@ -291,6 +349,7 @@ impl CompiledCode {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn current_pos(&self) -> usize {
         self.ops.len()
     }

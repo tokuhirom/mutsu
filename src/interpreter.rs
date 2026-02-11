@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
@@ -231,9 +232,7 @@ impl Interpreter {
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
-        interpreter
-            .env
-            .insert("Any".to_string(), Value::Nil);
+        interpreter.env.insert("Any".to_string(), Value::Nil);
         interpreter
     }
 
@@ -297,9 +296,7 @@ impl Interpreter {
             let prefix_global = format!("GLOBAL::{}/", name);
             self.functions
                 .iter()
-                .find(|(k, _)| {
-                    k.starts_with(&prefix_local) || k.starts_with(&prefix_global)
-                })
+                .find(|(k, _)| k.starts_with(&prefix_local) || k.starts_with(&prefix_global))
                 .map(|(_, v)| v.clone())
         });
         if let Some(def) = def {
@@ -314,8 +311,6 @@ impl Interpreter {
             Value::Nil
         }
     }
-
-
 
     pub(crate) fn routine_stack_top(&self) -> Option<&(String, String)> {
         self.routine_stack.last()
@@ -341,7 +336,6 @@ impl Interpreter {
         self.regex_find_first(pattern, text)
     }
 
-
     pub(crate) fn take_value(&mut self, val: Value) {
         if let Some(items) = self.gather_items.last_mut() {
             items.push(val);
@@ -360,10 +354,6 @@ impl Interpreter {
         self.end_phasers.push(body);
     }
 
-
-
-
-
     fn init_order_enum(&mut self) {
         let variants = vec![
             ("Less".to_string(), -1i64),
@@ -381,8 +371,7 @@ impl Interpreter {
                 value: *val,
                 index,
             };
-            self.env
-                .insert(format!("Order::{}", key), enum_val.clone());
+            self.env.insert(format!("Order::{}", key), enum_val.clone());
         }
     }
 
@@ -556,14 +545,11 @@ impl Interpreter {
             class_name,
             attributes,
         } = value
+            && class_name == "IO::Handle"
+            && let Some(Value::Int(id)) = attributes.get("handle")
+            && *id >= 0
         {
-            if class_name == "IO::Handle" {
-                if let Some(Value::Int(id)) = attributes.get("handle") {
-                    if *id >= 0 {
-                        return Some(*id as usize);
-                    }
-                }
-            }
+            return Some(*id as usize);
         }
         None
     }
@@ -905,11 +891,11 @@ impl Interpreter {
         key: &str,
     ) -> Result<Option<String>, RuntimeError> {
         for arg in args {
-            if let Expr::AssignExpr { name, expr } = arg {
-                if name == key {
-                    let value = self.eval_expr(expr)?;
-                    return Ok(Some(value.to_string_value()));
-                }
+            if let Expr::AssignExpr { name, expr } = arg
+                && name == key
+            {
+                let value = self.eval_expr(expr)?;
+                return Ok(Some(value.to_string_value()));
             }
         }
         Ok(None)
@@ -983,26 +969,26 @@ impl Interpreter {
                     .unwrap_or("")
                     .to_string();
                 if !name.is_empty() {
-                    if let Some(before) = pending_before.take() {
-                        if !before.is_empty() {
-                            self.doc_comments.insert(name.clone(), before);
-                        }
+                    if let Some(before) = pending_before.take()
+                        && !before.is_empty()
+                    {
+                        self.doc_comments.insert(name.clone(), before);
                     }
                     last_unit_module = Some(name);
                 }
                 continue;
             }
-            if let Some(rest) = trimmed.strip_prefix("#=") {
-                if let Some(name) = last_unit_module.take() {
-                    let after = rest.trim();
-                    if !after.is_empty() {
-                        let entry = self.doc_comments.entry(name).or_insert_with(String::new);
-                        if entry.is_empty() {
-                            entry.push_str(after);
-                        } else {
-                            entry.push('\n');
-                            entry.push_str(after);
-                        }
+            if let Some(rest) = trimmed.strip_prefix("#=")
+                && let Some(name) = last_unit_module.take()
+            {
+                let after = rest.trim();
+                if !after.is_empty() {
+                    let entry = self.doc_comments.entry(name).or_default();
+                    if entry.is_empty() {
+                        entry.push_str(after);
+                    } else {
+                        entry.push('\n');
+                        entry.push_str(after);
                     }
                 }
             }
@@ -1062,7 +1048,7 @@ impl Interpreter {
             } else {
                 Vec::new()
             };
-            let arg_exprs: Vec<Expr> = args_list.into_iter().map(|v| Expr::Literal(v)).collect();
+            let arg_exprs: Vec<Expr> = args_list.into_iter().map(Expr::Literal).collect();
             self.bind_function_args(&main_def.param_defs, &main_def.params, &arg_exprs)?;
             let body = main_def.body.clone();
             match self.run_block(&body) {
@@ -1305,10 +1291,10 @@ impl Interpreter {
                             continue;
                         }
                         let leave_res = self.run_block(&leave_ph);
-                        if let Err(e) = leave_res {
-                            if control.is_none() {
-                                return Err(e);
-                            }
+                        if let Err(e) = leave_res
+                            && control.is_none()
+                        {
+                            return Err(e);
                         }
                         if let Some(e) = control {
                             if e.is_last {
@@ -1382,10 +1368,10 @@ impl Interpreter {
                             continue;
                         }
                         let leave_res = self.run_block(&leave_ph);
-                        if let Err(e) = leave_res {
-                            if control.is_none() {
-                                return Err(e);
-                            }
+                        if let Err(e) = leave_res
+                            && control.is_none()
+                        {
+                            return Err(e);
                         }
                         if let Some(e) = control {
                             if e.is_last {
@@ -1426,32 +1412,31 @@ impl Interpreter {
                     class_name,
                     attributes,
                 } = supply_val
+                    && class_name == "Supply"
                 {
-                    if class_name == "Supply" {
-                        let tap_sub = Value::Sub {
-                            package: self.current_package.clone(),
-                            name: String::new(),
-                            param: param.clone(),
-                            body: body.clone(),
-                            env: self.env.clone(),
-                        };
-                        let mut attrs = attributes.clone();
-                        if let Some(Value::Array(items)) = attrs.get_mut("taps") {
-                            items.push(tap_sub.clone());
-                        } else {
-                            attrs.insert("taps".to_string(), Value::Array(vec![tap_sub.clone()]));
-                        }
-                        if let Some(Value::Array(values)) = attrs.get("values") {
-                            for v in values {
-                                let _ = self.call_sub_value(tap_sub.clone(), vec![v.clone()], true);
-                            }
-                        }
-                        let updated = Value::Instance {
-                            class_name: class_name.clone(),
-                            attributes: attrs,
-                        };
-                        self.update_instance_target(supply, updated);
+                    let tap_sub = Value::Sub {
+                        package: self.current_package.clone(),
+                        name: String::new(),
+                        param: param.clone(),
+                        body: body.clone(),
+                        env: self.env.clone(),
+                    };
+                    let mut attrs = attributes.clone();
+                    if let Some(Value::Array(items)) = attrs.get_mut("taps") {
+                        items.push(tap_sub.clone());
+                    } else {
+                        attrs.insert("taps".to_string(), Value::Array(vec![tap_sub.clone()]));
                     }
+                    if let Some(Value::Array(values)) = attrs.get("values") {
+                        for v in values {
+                            let _ = self.call_sub_value(tap_sub.clone(), vec![v.clone()], true);
+                        }
+                    }
+                    let updated = Value::Instance {
+                        class_name: class_name.clone(),
+                        attributes: attrs,
+                    };
+                    self.update_instance_target(supply, updated);
                 }
             }
             Stmt::Last(label) => {
@@ -1570,10 +1555,10 @@ impl Interpreter {
                             continue;
                         }
                         let leave_res = self.run_block(&leave_ph);
-                        if let Err(e) = leave_res {
-                            if control.is_none() {
-                                return Err(e);
-                            }
+                        if let Err(e) = leave_res
+                            && control.is_none()
+                        {
+                            return Err(e);
                         }
                         if let Some(e) = control {
                             if e.is_last {
@@ -1694,7 +1679,7 @@ impl Interpreter {
                                 class_def
                                     .methods
                                     .entry(method_name.clone())
-                                    .or_insert_with(Vec::new)
+                                    .or_default()
                                     .push(def);
                             } else {
                                 class_def.methods.insert(method_name.clone(), vec![def]);
@@ -1713,7 +1698,7 @@ impl Interpreter {
                                 class_def
                                     .methods
                                     .entry(mname)
-                                    .or_insert_with(Vec::new)
+                                    .or_default()
                                     .extend(overloads);
                             }
                         }
@@ -1761,7 +1746,7 @@ impl Interpreter {
                                 role_def
                                     .methods
                                     .entry(method_name.clone())
-                                    .or_insert_with(Vec::new)
+                                    .or_default()
                                     .push(def);
                             } else {
                                 role_def.methods.insert(method_name.clone(), vec![def]);
@@ -1862,10 +1847,10 @@ impl Interpreter {
             candidates.push(Path::new(base).join(&filename));
         }
         if candidates.is_empty() {
-            if let Some(path) = &self.program_path {
-                if let Some(parent) = Path::new(path).parent() {
-                    candidates.push(parent.join(&filename));
-                }
+            if let Some(path) = &self.program_path
+                && let Some(parent) = Path::new(path).parent()
+            {
+                candidates.push(parent.join(&filename));
             }
             candidates.push(Path::new(".").join(&filename));
         }
@@ -2076,9 +2061,7 @@ impl Interpreter {
                 let desc = self.positional_arg_value(args, 1)?;
                 let todo = self.named_arg_bool(args, "todo")?;
                 let ok = match block {
-                    Expr::Block(body) | Expr::AnonSub(body) => {
-                        self.eval_block_value(body).is_ok()
-                    }
+                    Expr::Block(body) | Expr::AnonSub(body) => self.eval_block_value(body).is_ok(),
                     _ => self.eval_expr(block).is_ok(),
                 };
                 self.test_ok(ok, &desc, todo)?;
@@ -2088,9 +2071,7 @@ impl Interpreter {
                 let desc = self.positional_arg_value(args, 1)?;
                 let todo = self.named_arg_bool(args, "todo")?;
                 let ok = match block {
-                    Expr::Block(body) | Expr::AnonSub(body) => {
-                        self.eval_block_value(body).is_err()
-                    }
+                    Expr::Block(body) | Expr::AnonSub(body) => self.eval_block_value(body).is_err(),
                     _ => self.eval_expr(block).is_err(),
                 };
                 self.test_ok(ok, &desc, todo)?;
@@ -2130,9 +2111,7 @@ impl Interpreter {
                     _ => String::new(),
                 };
                 let result = match code_expr {
-                    Expr::Block(body) | Expr::AnonSub(body) => {
-                        self.eval_block_value(body)
-                    }
+                    Expr::Block(body) | Expr::AnonSub(body) => self.eval_block_value(body),
                     _ => {
                         let code = match self.eval_expr(code_expr)? {
                             Value::Str(s) => s,
@@ -2185,10 +2164,10 @@ impl Interpreter {
                             "status" => {
                                 if let Some(Expr::Literal(Value::Int(i))) = value {
                                     expected_status = Some(*i);
-                                } else if let Some(expr) = value {
-                                    if let Ok(Value::Int(i)) = self.eval_expr(expr) {
-                                        expected_status = Some(i);
-                                    }
+                                } else if let Some(expr) = value
+                                    && let Ok(Value::Int(i)) = self.eval_expr(expr)
+                                {
+                                    expected_status = Some(i);
                                 }
                             }
                             _ => {}
@@ -2200,14 +2179,12 @@ impl Interpreter {
                     nested.set_pid(pid.saturating_add(1));
                 }
                 for arg in args {
-                    if let CallArg::Named { name, value } = arg {
-                        if name == "args" {
-                            if let Some(expr) = value {
-                                if let Ok(Value::Array(items)) = self.eval_expr(expr) {
-                                    run_args = Some(items);
-                                }
-                            }
-                        }
+                    if let CallArg::Named { name, value } = arg
+                        && name == "args"
+                        && let Some(expr) = value
+                        && let Ok(Value::Array(items)) = self.eval_expr(expr)
+                    {
+                        run_args = Some(items);
                     }
                 }
                 if let Some(items) = run_args {
@@ -2241,10 +2218,10 @@ impl Interpreter {
                     let mut skip_count = 1usize;
                     for arg in args {
                         if let CallArg::Positional(expr) = arg {
-                            if positional_count == 1 {
-                                if let Ok(Value::Int(n)) = self.eval_expr(expr) {
-                                    skip_count = n.max(1) as usize;
-                                }
+                            if positional_count == 1
+                                && let Ok(Value::Int(n)) = self.eval_expr(expr)
+                            {
+                                skip_count = n.max(1) as usize;
                             }
                             positional_count += 1;
                         }
@@ -2333,7 +2310,7 @@ impl Interpreter {
                 if let Some(def) = def_opt {
                     let saved_env = self.env.clone();
                     let literal_args: Vec<Expr> =
-                        arg_values.into_iter().map(|v| Expr::Literal(v)).collect();
+                        arg_values.into_iter().map(Expr::Literal).collect();
                     self.bind_function_args(&def.param_defs, &def.params, &literal_args)?;
                     self.routine_stack
                         .push((def.package.clone(), def.name.clone()));
@@ -2372,10 +2349,7 @@ impl Interpreter {
     fn insert_token_def(&mut self, name: &str, def: FunctionDef, multi: bool) {
         let key = format!("{}::{}", self.current_package, name);
         if multi {
-            self.token_defs
-                .entry(key)
-                .or_insert_with(Vec::new)
-                .push(def);
+            self.token_defs.entry(key).or_default().push(def);
         } else {
             self.token_defs.insert(key, vec![def]);
         }
@@ -2437,7 +2411,7 @@ impl Interpreter {
             }
             Value::Array(items) => items
                 .iter()
-                .map(|v| Self::gist_value(v))
+                .map(Self::gist_value)
                 .collect::<Vec<_>>()
                 .join(" "),
             Value::Hash(items) => items
@@ -2475,10 +2449,10 @@ impl Interpreter {
     }
 
     fn class_mro(&mut self, class_name: &str) -> Vec<String> {
-        if let Some(class_def) = self.classes.get(class_name) {
-            if !class_def.mro.is_empty() {
-                return class_def.mro.clone();
-            }
+        if let Some(class_def) = self.classes.get(class_name)
+            && !class_def.mro.is_empty()
+        {
+            return class_def.mro.clone();
         }
         let mut stack = Vec::new();
         match self.compute_class_mro(class_name, &mut stack) {
@@ -2552,6 +2526,7 @@ impl Interpreter {
         (enter_ph, leave_ph, body_main)
     }
 
+    #[allow(clippy::type_complexity)]
     fn split_loop_phasers(
         &self,
         stmts: &[Stmt],
@@ -2630,9 +2605,7 @@ impl Interpreter {
             let mut new_env = saved_env.clone();
             for (k, v) in env {
                 if merge_all {
-                    if !new_env.contains_key(&k) {
-                        new_env.insert(k, v);
-                    }
+                    new_env.entry(k).or_insert(v);
                     continue;
                 }
                 if matches!(new_env.get(&k), Some(Value::Array(_))) && matches!(v, Value::Array(_))
@@ -2641,10 +2614,10 @@ impl Interpreter {
                 }
                 new_env.insert(k, v);
             }
-            if let Some(param_name) = param {
-                if let Some(value) = args.get(0) {
-                    new_env.insert(param_name, value.clone());
-                }
+            if let Some(param_name) = param
+                && let Some(value) = args.first()
+            {
+                new_env.insert(param_name, value.clone());
             }
             let placeholders = collect_placeholders(&body);
             if !placeholders.is_empty() {
@@ -2699,10 +2672,10 @@ impl Interpreter {
                 class_name
             )));
         }
-        if let Some(class_def) = self.classes.get(class_name) {
-            if !class_def.mro.is_empty() {
-                return Ok(class_def.mro.clone());
-            }
+        if let Some(class_def) = self.classes.get(class_name)
+            && !class_def.mro.is_empty()
+        {
+            return Ok(class_def.mro.clone());
         }
         stack.push(class_name.to_string());
         let parents = self
@@ -2762,10 +2735,10 @@ impl Interpreter {
     fn class_has_method(&mut self, class_name: &str, method_name: &str) -> bool {
         let mro = self.class_mro(class_name);
         for cn in mro {
-            if let Some(class_def) = self.classes.get(&cn) {
-                if class_def.methods.contains_key(method_name) {
-                    return true;
-                }
+            if let Some(class_def) = self.classes.get(&cn)
+                && class_def.methods.contains_key(method_name)
+            {
+                return true;
             }
         }
         false
@@ -2815,11 +2788,11 @@ impl Interpreter {
         for (i, param) in method_def.params.iter().enumerate() {
             if let Some(val) = args.get(i) {
                 self.env.insert(param.clone(), val.clone());
-            } else if let Some(pd) = method_def.param_defs.get(i) {
-                if let Some(default_expr) = &pd.default {
-                    let val = self.eval_expr(default_expr)?;
-                    self.env.insert(param.clone(), val);
-                }
+            } else if let Some(pd) = method_def.param_defs.get(i)
+                && let Some(default_expr) = &pd.default
+            {
+                let val = self.eval_expr(default_expr)?;
+                self.env.insert(param.clone(), val);
             }
         }
         let block_result = self.run_block(&method_def.body);
@@ -3085,12 +3058,11 @@ impl Interpreter {
                     return false;
                 }
             }
-            if let Some(constraint) = &pd.type_constraint {
-                if let Some(arg) = args.get(i) {
-                    if !self.type_matches_value(constraint, arg) {
-                        return false;
-                    }
-                }
+            if let Some(constraint) = &pd.type_constraint
+                && let Some(arg) = args.get(i)
+                && !self.type_matches_value(constraint, arg)
+            {
+                return false;
             }
         }
         true
@@ -3125,7 +3097,7 @@ impl Interpreter {
         match matcher {
             ExpectedMatcher::Exact(Value::Str(s)) => Ok(actual == s),
             ExpectedMatcher::Exact(Value::Int(i)) => Ok(actual.trim() == i.to_string()),
-            ExpectedMatcher::Exact(Value::Bool(b)) => Ok(*b == !actual.is_empty()),
+            ExpectedMatcher::Exact(Value::Bool(b)) => Ok(*b != actual.is_empty()),
             ExpectedMatcher::Exact(Value::Nil) => Ok(actual.is_empty()),
             ExpectedMatcher::Exact(_) => Ok(false),
             ExpectedMatcher::Lambda { param, body } => {
@@ -3186,13 +3158,12 @@ impl Interpreter {
                 name: arg_name,
                 value,
             } = arg
+                && arg_name == name
             {
-                if arg_name == name {
-                    if let Some(expr) = value {
-                        return Ok(self.eval_expr(expr)?.truthy());
-                    }
-                    return Ok(true);
+                if let Some(expr) = value {
+                    return Ok(self.eval_expr(expr)?.truthy());
                 }
+                return Ok(true);
             }
         }
         Ok(false)
@@ -3208,13 +3179,12 @@ impl Interpreter {
                 name: arg_name,
                 value,
             } = arg
+                && arg_name == name
             {
-                if arg_name == name {
-                    if let Some(expr) = value {
-                        return Ok(Some(self.eval_expr(expr)?.to_string_value()));
-                    }
-                    return Ok(Some(String::new()));
+                if let Some(expr) = value {
+                    return Ok(Some(self.eval_expr(expr)?.to_string_value()));
                 }
+                return Ok(Some(String::new()));
             }
         }
         Ok(None)
@@ -3255,10 +3225,10 @@ impl Interpreter {
             Expr::Literal(v) => Ok(v.clone()),
             Expr::BareWord(name) => {
                 // Check if bare word matches an enum value or type in env
-                if let Some(val) = self.env.get(name.as_str()) {
-                    if matches!(val, Value::Enum { .. } | Value::Nil) {
-                        return Ok(val.clone());
-                    }
+                if let Some(val) = self.env.get(name.as_str())
+                    && matches!(val, Value::Enum { .. } | Value::Nil)
+                {
+                    return Ok(val.clone());
                 }
                 // Check if it's a class name (return as type object)
                 if self.classes.contains_key(name.as_str()) {
@@ -3493,7 +3463,7 @@ impl Interpreter {
                         }
                         if class_name == "IO::Path" {
                             let path = args
-                                .get(0)
+                                .first()
                                 .and_then(|a| self.eval_expr(a).ok())
                                 .map(|v| v.to_string_value())
                                 .unwrap_or_default();
@@ -3543,9 +3513,8 @@ impl Interpreter {
                                 }
                                 "read" => {
                                     let count = args
-                                        .get(0)
-                                        .map(|e| self.eval_expr(e).ok())
-                                        .flatten()
+                                        .first()
+                                        .and_then(|e| self.eval_expr(e).ok())
                                         .and_then(|v| match v {
                                             Value::Int(i) if i > 0 => Some(i as usize),
                                             _ => None,
@@ -3575,9 +3544,8 @@ impl Interpreter {
                                 }
                                 "write" => {
                                     let content = args
-                                        .get(0)
-                                        .map(|e| self.eval_expr(e).ok())
-                                        .flatten()
+                                        .first()
+                                        .and_then(|e| self.eval_expr(e).ok())
                                         .map(|v| v.to_string_value())
                                         .unwrap_or_default();
                                     self.write_to_handle_value(&base, &content, false)?;
@@ -3585,9 +3553,8 @@ impl Interpreter {
                                 }
                                 "print" => {
                                     let content = args
-                                        .get(0)
-                                        .map(|e| self.eval_expr(e).ok())
-                                        .flatten()
+                                        .first()
+                                        .and_then(|e| self.eval_expr(e).ok())
                                         .map(|v| v.to_string_value())
                                         .unwrap_or_default();
                                     self.write_to_handle_value(&base, &content, false)?;
@@ -3595,32 +3562,30 @@ impl Interpreter {
                                 }
                                 "say" => {
                                     let content = args
-                                        .get(0)
-                                        .map(|e| self.eval_expr(e).ok())
-                                        .flatten()
+                                        .first()
+                                        .and_then(|e| self.eval_expr(e).ok())
                                         .map(|v| v.to_string_value())
                                         .unwrap_or_default();
                                     self.write_to_handle_value(&base, &content, true)?;
                                     return Ok(Value::Bool(true));
                                 }
                                 "flush" => {
-                                    if let Ok(state) = self.handle_state_mut(&base) {
-                                        if let Some(file) = state.file.as_mut() {
-                                            file.flush().map_err(|err| {
-                                                RuntimeError::new(format!(
-                                                    "Failed to flush handle: {}",
-                                                    err
-                                                ))
-                                            })?;
-                                        }
+                                    if let Ok(state) = self.handle_state_mut(&base)
+                                        && let Some(file) = state.file.as_mut()
+                                    {
+                                        file.flush().map_err(|err| {
+                                            RuntimeError::new(format!(
+                                                "Failed to flush handle: {}",
+                                                err
+                                            ))
+                                        })?;
                                     }
                                     return Ok(Value::Bool(true));
                                 }
                                 "seek" => {
                                     let pos = args
-                                        .get(0)
-                                        .map(|e| self.eval_expr(e).ok())
-                                        .flatten()
+                                        .first()
+                                        .and_then(|e| self.eval_expr(e).ok())
                                         .and_then(|v| match v {
                                             Value::Int(i) => Some(i),
                                             _ => None,
@@ -3638,7 +3603,7 @@ impl Interpreter {
                                     return Ok(Value::Bool(at_end));
                                 }
                                 "encoding" => {
-                                    if let Some(arg) = args.get(0) {
+                                    if let Some(arg) = args.first() {
                                         let encoding = self.eval_expr(arg)?.to_string_value();
                                         let prev = self
                                             .set_handle_encoding(&base, Some(encoding.clone()))?;
@@ -3669,9 +3634,8 @@ impl Interpreter {
                                 }
                                 "spurt" => {
                                     let content = args
-                                        .get(0)
-                                        .map(|e| self.eval_expr(e).ok())
-                                        .flatten()
+                                        .first()
+                                        .and_then(|e| self.eval_expr(e).ok())
                                         .map(|v| v.to_string_value())
                                         .unwrap_or_default();
                                     let path = {
@@ -3696,9 +3660,8 @@ impl Interpreter {
                             match name.as_str() {
                                 "canonpath" => {
                                     let path = args
-                                        .get(0)
-                                        .map(|e| self.eval_expr(e).ok())
-                                        .flatten()
+                                        .first()
+                                        .and_then(|e| self.eval_expr(e).ok())
                                         .map(|v| v.to_string_value())
                                         .unwrap_or_default();
                                     let resolved = self.resolve_path(&path);
@@ -3715,21 +3678,18 @@ impl Interpreter {
                                 }
                                 "catpath" => {
                                     let volume = args
-                                        .get(0)
-                                        .map(|e| self.eval_expr(e).ok())
-                                        .flatten()
+                                        .first()
+                                        .and_then(|e| self.eval_expr(e).ok())
                                         .map(|v| v.to_string_value())
                                         .unwrap_or_default();
                                     let directories = args
                                         .get(1)
-                                        .map(|e| self.eval_expr(e).ok())
-                                        .flatten()
+                                        .and_then(|e| self.eval_expr(e).ok())
                                         .map(|v| v.to_string_value())
                                         .unwrap_or_default();
                                     let basename = args
                                         .get(2)
-                                        .map(|e| self.eval_expr(e).ok())
-                                        .flatten()
+                                        .and_then(|e| self.eval_expr(e).ok())
                                         .map(|v| v.to_string_value())
                                         .unwrap_or_default();
                                     let mut combined = PathBuf::new();
@@ -3746,9 +3706,8 @@ impl Interpreter {
                                 }
                                 "splitpath" => {
                                     let path = args
-                                        .get(0)
-                                        .map(|e| self.eval_expr(e).ok())
-                                        .flatten()
+                                        .first()
+                                        .and_then(|e| self.eval_expr(e).ok())
                                         .map(|v| v.to_string_value())
                                         .unwrap_or_default();
                                     let pb = Path::new(&path);
@@ -3757,10 +3716,8 @@ impl Interpreter {
                                         .next()
                                         .map(|comp| comp.as_os_str().to_string_lossy().to_string())
                                         .unwrap_or_default();
-                                    let directory = pb
-                                        .parent()
-                                        .map(|p| Self::stringify_path(p))
-                                        .unwrap_or_default();
+                                    let directory =
+                                        pb.parent().map(Self::stringify_path).unwrap_or_default();
                                     let basename = pb
                                         .file_name()
                                         .map(|name| name.to_string_lossy().to_string())
@@ -3773,9 +3730,8 @@ impl Interpreter {
                                 }
                                 "splitdir" => {
                                     let path = args
-                                        .get(0)
-                                        .map(|e| self.eval_expr(e).ok())
-                                        .flatten()
+                                        .first()
+                                        .and_then(|e| self.eval_expr(e).ok())
                                         .map(|v| v.to_string_value())
                                         .unwrap_or_default();
                                     let pb = Path::new(&path);
@@ -3789,9 +3745,8 @@ impl Interpreter {
                                 }
                                 "abs2rel" => {
                                     let path = args
-                                        .get(0)
-                                        .map(|e| self.eval_expr(e).ok())
-                                        .flatten()
+                                        .first()
+                                        .and_then(|e| self.eval_expr(e).ok())
                                         .map(|v| v.to_string_value())
                                         .unwrap_or_default();
                                     let base =
@@ -3805,15 +3760,14 @@ impl Interpreter {
                                     let base_buf = self.resolve_path(&base);
                                     let relative = path_buf
                                         .strip_prefix(&base_buf)
-                                        .map(|p| Self::stringify_path(p))
+                                        .map(Self::stringify_path)
                                         .unwrap_or_else(|_| Self::stringify_path(&path_buf));
                                     return Ok(Value::Str(relative));
                                 }
                                 "rel2abs" => {
                                     let path = args
-                                        .get(0)
-                                        .map(|e| self.eval_expr(e).ok())
-                                        .flatten()
+                                        .first()
+                                        .and_then(|e| self.eval_expr(e).ok())
                                         .map(|v| v.to_string_value())
                                         .unwrap_or_default();
                                     let base =
@@ -3899,9 +3853,8 @@ impl Interpreter {
                         if class_name == "Promise" {
                             if name == "keep" {
                                 let value = args
-                                    .get(0)
-                                    .map(|arg| self.eval_expr(arg).ok())
-                                    .flatten()
+                                    .first()
+                                    .and_then(|arg| self.eval_expr(arg).ok())
                                     .unwrap_or(Value::Nil);
                                 let mut attrs = attributes.clone();
                                 attrs.insert("result".to_string(), value);
@@ -3924,9 +3877,8 @@ impl Interpreter {
                             }
                             if name == "then" {
                                 let block = args
-                                    .get(0)
-                                    .map(|arg| self.eval_expr(arg).ok())
-                                    .flatten()
+                                    .first()
+                                    .and_then(|arg| self.eval_expr(arg).ok())
                                     .unwrap_or(Value::Nil);
                                 let status = attributes
                                     .get("status")
@@ -3944,9 +3896,8 @@ impl Interpreter {
                         if class_name == "Channel" {
                             if name == "send" {
                                 let value = args
-                                    .get(0)
-                                    .map(|arg| self.eval_expr(arg).ok())
-                                    .flatten()
+                                    .first()
+                                    .and_then(|arg| self.eval_expr(arg).ok())
                                     .unwrap_or(Value::Nil);
                                 let mut attrs = attributes.clone();
                                 match attrs.get_mut("queue") {
@@ -3966,10 +3917,10 @@ impl Interpreter {
                             if name == "receive" && args.is_empty() {
                                 let mut attrs = attributes.clone();
                                 let mut value = Value::Nil;
-                                if let Some(Value::Array(items)) = attrs.get_mut("queue") {
-                                    if !items.is_empty() {
-                                        value = items.remove(0);
-                                    }
+                                if let Some(Value::Array(items)) = attrs.get_mut("queue")
+                                    && !items.is_empty()
+                                {
+                                    value = items.remove(0);
                                 }
                                 let updated = Value::Instance {
                                     class_name: class_name.clone(),
@@ -3998,9 +3949,8 @@ impl Interpreter {
                         if class_name == "Supply" {
                             if name == "emit" {
                                 let value = args
-                                    .get(0)
-                                    .map(|arg| self.eval_expr(arg).ok())
-                                    .flatten()
+                                    .first()
+                                    .and_then(|arg| self.eval_expr(arg).ok())
                                     .unwrap_or(Value::Nil);
                                 let mut attrs = attributes.clone();
                                 if let Some(Value::Array(items)) = attrs.get_mut("values") {
@@ -4025,9 +3975,8 @@ impl Interpreter {
                             }
                             if name == "tap" {
                                 let tap = args
-                                    .get(0)
-                                    .map(|arg| self.eval_expr(arg).ok())
-                                    .flatten()
+                                    .first()
+                                    .and_then(|arg| self.eval_expr(arg).ok())
                                     .unwrap_or(Value::Nil);
                                 let mut attrs = attributes.clone();
                                 if let Some(Value::Array(items)) = attrs.get_mut("taps") {
@@ -4097,9 +4046,8 @@ impl Interpreter {
                         }
                         if name == "isa" {
                             let target = args
-                                .get(0)
-                                .map(|arg| self.eval_expr(arg).ok())
-                                .flatten()
+                                .first()
+                                .and_then(|arg| self.eval_expr(arg).ok())
                                 .unwrap_or(Value::Nil);
                             let target_name = match target {
                                 Value::Package(name) => name,
@@ -4133,10 +4081,10 @@ impl Interpreter {
                                 }
                                 "parent" => {
                                     let mut levels = 1i64;
-                                    if let Some(arg) = args.get(0) {
-                                        if let Value::Int(i) = self.eval_expr(arg)? {
-                                            levels = i.max(1);
-                                        }
+                                    if let Some(arg) = args.first()
+                                        && let Value::Int(i) = self.eval_expr(arg)?
+                                    {
+                                        levels = i.max(1);
                                     }
                                     let mut path = p.clone();
                                     for _ in 0..levels {
@@ -4156,7 +4104,7 @@ impl Interpreter {
                                 }
                                 "child" | "add" => {
                                     let child_name = args
-                                        .get(0)
+                                        .first()
                                         .and_then(|a| self.eval_expr(a).ok())
                                         .map(|v| v.to_string_value())
                                         .unwrap_or_default();
@@ -4177,7 +4125,7 @@ impl Interpreter {
                                 "relative" => {
                                     let rel = path_buf
                                         .strip_prefix(&cwd_path)
-                                        .map(|rel| Self::stringify_path(rel))
+                                        .map(Self::stringify_path)
                                         .unwrap_or_else(|_| Self::stringify_path(&path_buf));
                                     return Ok(Value::Str(rel));
                                 }
@@ -4310,7 +4258,7 @@ impl Interpreter {
                                     return self.open_file_handle(&path_buf, read, write, append);
                                 }
                                 "copy" => {
-                                    let dest = args.get(0).ok_or_else(|| {
+                                    let dest = args.first().ok_or_else(|| {
                                         RuntimeError::new("copy requires destination")
                                     })?;
                                     let dest_path_str = self.eval_expr(dest)?.to_string_value();
@@ -4324,7 +4272,7 @@ impl Interpreter {
                                     return Ok(Value::Bool(true));
                                 }
                                 "rename" | "move" => {
-                                    let dest = args.get(0).ok_or_else(|| {
+                                    let dest = args.first().ok_or_else(|| {
                                         RuntimeError::new("rename/move requires destination")
                                     })?;
                                     let dest_path_str = self.eval_expr(dest)?.to_string_value();
@@ -4339,7 +4287,7 @@ impl Interpreter {
                                 }
                                 "chmod" => {
                                     let mode_arg = args
-                                        .get(0)
+                                        .first()
                                         .ok_or_else(|| RuntimeError::new("chmod requires mode"))?;
                                     let mode_value = self.eval_expr(mode_arg)?;
                                     let mode_int = match mode_value {
@@ -4419,7 +4367,7 @@ impl Interpreter {
                                 }
                                 "spurt" => {
                                     let content = args
-                                        .get(0)
+                                        .first()
                                         .and_then(|a| self.eval_expr(a).ok())
                                         .map(|v| v.to_string_value())
                                         .unwrap_or_default();
@@ -4474,11 +4422,11 @@ impl Interpreter {
                             for (i, param) in method_def.params.iter().enumerate() {
                                 if let Some(val) = eval_args.get(i) {
                                     self.env.insert(param.clone(), val.clone());
-                                } else if let Some(pd) = method_def.param_defs.get(i) {
-                                    if let Some(default_expr) = &pd.default {
-                                        let val = self.eval_expr(default_expr)?;
-                                        self.env.insert(param.clone(), val);
-                                    }
+                                } else if let Some(pd) = method_def.param_defs.get(i)
+                                    && let Some(default_expr) = &pd.default
+                                {
+                                    let val = self.eval_expr(default_expr)?;
+                                    self.env.insert(param.clone(), val);
                                 }
                             }
                             let block_result = self.run_block(&method_def.body);
@@ -4520,9 +4468,8 @@ impl Interpreter {
                     match name.as_str() {
                         "push" => {
                             let value = args
-                                .get(0)
-                                .map(|arg| self.eval_expr(arg).ok())
-                                .flatten()
+                                .first()
+                                .and_then(|arg| self.eval_expr(arg).ok())
                                 .unwrap_or(Value::Nil);
                             if let Some(Value::Array(items)) = self.env.get_mut(&key) {
                                 items.push(value);
@@ -4548,9 +4495,8 @@ impl Interpreter {
                         }
                         "unshift" => {
                             let value = args
-                                .get(0)
-                                .map(|arg| self.eval_expr(arg).ok())
-                                .flatten()
+                                .first()
+                                .and_then(|arg| self.eval_expr(arg).ok())
                                 .unwrap_or(Value::Nil);
                             if let Some(Value::Array(items)) = self.env.get_mut(&key) {
                                 items.insert(0, value);
@@ -4573,9 +4519,8 @@ impl Interpreter {
                         }
                         "join" => {
                             let sep = args
-                                .get(0)
-                                .map(|arg| self.eval_expr(arg).ok())
-                                .flatten()
+                                .first()
+                                .and_then(|arg| self.eval_expr(arg).ok())
                                 .map(|v| v.to_string_value())
                                 .unwrap_or_default();
                             if let Some(Value::Array(items)) = self.env.get(&key) {
@@ -4623,28 +4568,28 @@ impl Interpreter {
                             if index == 0 {
                                 return Ok(Value::Nil);
                             }
-                            if let Some(variants) = self.enum_types.get(enum_type) {
-                                if let Some((prev_key, prev_val)) = variants.get(index - 1) {
-                                    return Ok(Value::Enum {
-                                        enum_type: enum_type.clone(),
-                                        key: prev_key.clone(),
-                                        value: *prev_val,
-                                        index: index - 1,
-                                    });
-                                }
+                            if let Some(variants) = self.enum_types.get(enum_type)
+                                && let Some((prev_key, prev_val)) = variants.get(index - 1)
+                            {
+                                return Ok(Value::Enum {
+                                    enum_type: enum_type.clone(),
+                                    key: prev_key.clone(),
+                                    value: *prev_val,
+                                    index: index - 1,
+                                });
                             }
                             return Ok(Value::Nil);
                         }
                         "succ" => {
-                            if let Some(variants) = self.enum_types.get(enum_type) {
-                                if let Some((next_key, next_val)) = variants.get(index + 1) {
-                                    return Ok(Value::Enum {
-                                        enum_type: enum_type.clone(),
-                                        key: next_key.clone(),
-                                        value: *next_val,
-                                        index: index + 1,
-                                    });
-                                }
+                            if let Some(variants) = self.enum_types.get(enum_type)
+                                && let Some((next_key, next_val)) = variants.get(index + 1)
+                            {
+                                return Ok(Value::Enum {
+                                    enum_type: enum_type.clone(),
+                                    key: next_key.clone(),
+                                    value: *next_val,
+                                    index: index + 1,
+                                });
                             }
                             return Ok(Value::Nil);
                         }
@@ -4652,16 +4597,15 @@ impl Interpreter {
                     }
                 }
                 // Handle Type.enums (bare identifier matching an enum type name)
-                if name == "enums" {
-                    if let Value::Str(ref type_name) = base {
-                        if let Some(variants) = self.enum_types.get(type_name) {
-                            let mut map = HashMap::new();
-                            for (k, v) in variants {
-                                map.insert(k.clone(), Value::Int(*v));
-                            }
-                            return Ok(Value::Hash(map));
-                        }
+                if name == "enums"
+                    && let Value::Str(ref type_name) = base
+                    && let Some(variants) = self.enum_types.get(type_name)
+                {
+                    let mut map = HashMap::new();
+                    for (k, v) in variants {
+                        map.insert(k.clone(), Value::Int(*v));
                     }
+                    return Ok(Value::Hash(map));
                 }
                 match name.as_str() {
                     "WHAT" => Ok(Value::Str(format!(
@@ -4733,10 +4677,10 @@ impl Interpreter {
                     "defined" => Ok(Value::Bool(!matches!(base, Value::Nil))),
                     "parent" => {
                         let mut levels = 1i64;
-                        if let Some(arg) = args.get(0) {
-                            if let Value::Int(i) = self.eval_expr(arg)? {
-                                levels = i.max(1);
-                            }
+                        if let Some(arg) = args.first()
+                            && let Value::Int(i) = self.eval_expr(arg)?
+                        {
+                            levels = i.max(1);
                         }
                         let mut path = base.to_string_value();
                         for _ in 0..levels {
@@ -4756,9 +4700,8 @@ impl Interpreter {
                     }
                     "sibling" => {
                         let segment = args
-                            .get(0)
-                            .map(|arg| self.eval_expr(arg).ok())
-                            .flatten()
+                            .first()
+                            .and_then(|arg| self.eval_expr(arg).ok())
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
                         let base_path = base.to_string_value();
@@ -4770,9 +4713,8 @@ impl Interpreter {
                     }
                     "add" => {
                         let segment = args
-                            .get(0)
-                            .map(|arg| self.eval_expr(arg).ok())
-                            .flatten()
+                            .first()
+                            .and_then(|arg| self.eval_expr(arg).ok())
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
                         let joined = Path::new(&base.to_string_value()).join(segment);
@@ -4845,27 +4787,24 @@ impl Interpreter {
                     "flip" => Ok(Value::Str(base.to_string_value().chars().rev().collect())),
                     "contains" => {
                         let needle = args
-                            .get(0)
-                            .map(|a| self.eval_expr(a).ok())
-                            .flatten()
+                            .first()
+                            .and_then(|a| self.eval_expr(a).ok())
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
                         Ok(Value::Bool(base.to_string_value().contains(&needle)))
                     }
                     "starts-with" => {
                         let needle = args
-                            .get(0)
-                            .map(|a| self.eval_expr(a).ok())
-                            .flatten()
+                            .first()
+                            .and_then(|a| self.eval_expr(a).ok())
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
                         Ok(Value::Bool(base.to_string_value().starts_with(&needle)))
                     }
                     "ends-with" => {
                         let needle = args
-                            .get(0)
-                            .map(|a| self.eval_expr(a).ok())
-                            .flatten()
+                            .first()
+                            .and_then(|a| self.eval_expr(a).ok())
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
                         Ok(Value::Bool(base.to_string_value().ends_with(&needle)))
@@ -4873,9 +4812,8 @@ impl Interpreter {
                     "substr" => {
                         let s = base.to_string_value();
                         let start = args
-                            .get(0)
-                            .map(|a| self.eval_expr(a).ok())
-                            .flatten()
+                            .first()
+                            .and_then(|a| self.eval_expr(a).ok())
                             .and_then(|v| match v {
                                 Value::Int(i) => Some(i),
                                 _ => None,
@@ -4898,9 +4836,8 @@ impl Interpreter {
                     "index" => {
                         let s = base.to_string_value();
                         let needle = args
-                            .get(0)
-                            .map(|a| self.eval_expr(a).ok())
-                            .flatten()
+                            .first()
+                            .and_then(|a| self.eval_expr(a).ok())
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
                         match s.find(&needle) {
@@ -4914,9 +4851,8 @@ impl Interpreter {
                     "rindex" => {
                         let s = base.to_string_value();
                         let needle = args
-                            .get(0)
-                            .map(|a| self.eval_expr(a).ok())
-                            .flatten()
+                            .first()
+                            .and_then(|a| self.eval_expr(a).ok())
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
                         match s.rfind(&needle) {
@@ -4928,7 +4864,7 @@ impl Interpreter {
                         }
                     }
                     "match" => {
-                        if let Some(arg) = args.get(0) {
+                        if let Some(arg) = args.first() {
                             let target = base.to_string_value();
                             let pat_val = self.eval_expr(arg)?;
                             match pat_val {
@@ -4991,9 +4927,8 @@ impl Interpreter {
                     "splice" => match base {
                         Value::Array(mut items) => {
                             let start = args
-                                .get(0)
-                                .map(|a| self.eval_expr(a).ok())
-                                .flatten()
+                                .first()
+                                .and_then(|a| self.eval_expr(a).ok())
                                 .and_then(|v| match v {
                                     Value::Int(i) => Some(i.max(0) as usize),
                                     _ => None,
@@ -5001,8 +4936,7 @@ impl Interpreter {
                                 .unwrap_or(0);
                             let count = args
                                 .get(1)
-                                .map(|a| self.eval_expr(a).ok())
-                                .flatten()
+                                .and_then(|a| self.eval_expr(a).ok())
                                 .and_then(|v| match v {
                                     Value::Int(i) => Some(i.max(0) as usize),
                                     _ => None,
@@ -5031,9 +4965,8 @@ impl Interpreter {
                     "split" => {
                         let s = base.to_string_value();
                         let sep = args
-                            .get(0)
-                            .map(|a| self.eval_expr(a).ok())
-                            .flatten()
+                            .first()
+                            .and_then(|a| self.eval_expr(a).ok())
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
                         let parts: Vec<Value> =
@@ -5430,7 +5363,7 @@ impl Interpreter {
                     },
                     "sort" => match base {
                         Value::Array(mut items) => {
-                            if let Some(func_expr) = args.get(0) {
+                            if let Some(func_expr) = args.first() {
                                 let func = self.eval_expr(func_expr)?;
                                 if let Value::Sub {
                                     param, body, env, ..
@@ -5455,11 +5388,9 @@ impl Interpreter {
                                         self.env = saved;
                                         match result {
                                             Value::Int(n) => n.cmp(&0),
-                                            Value::Enum { enum_type, value, .. }
-                                                if enum_type == "Order" =>
-                                            {
-                                                value.cmp(&0)
-                                            }
+                                            Value::Enum {
+                                                enum_type, value, ..
+                                            } if enum_type == "Order" => value.cmp(&0),
                                             _ => std::cmp::Ordering::Equal,
                                         }
                                     });
@@ -5471,7 +5402,7 @@ impl Interpreter {
                                     Ok(Value::Array(items))
                                 }
                             } else {
-                                items.sort_by(|a, b| a.to_string_value().cmp(&b.to_string_value()));
+                                items.sort_by_key(|a| a.to_string_value());
                                 Ok(Value::Array(items))
                             }
                         }
@@ -5644,7 +5575,7 @@ impl Interpreter {
                     },
                     "map" => match base {
                         Value::Array(items) => {
-                            if let Some(func_expr) = args.get(0) {
+                            if let Some(func_expr) = args.first() {
                                 let func = self.eval_expr(func_expr)?;
                                 if let Value::Sub {
                                     param, body, env, ..
@@ -5680,7 +5611,7 @@ impl Interpreter {
                     },
                     "grep" => match base {
                         Value::Array(items) => {
-                            if let Some(func_expr) = args.get(0) {
+                            if let Some(func_expr) = args.first() {
                                 let func = self.eval_expr(func_expr)?;
                                 if let Value::Sub {
                                     param, body, env, ..
@@ -5810,9 +5741,8 @@ impl Interpreter {
                     },
                     "fmt" => {
                         let fmt = args
-                            .get(0)
-                            .map(|a| self.eval_expr(a).ok())
-                            .flatten()
+                            .first()
+                            .and_then(|a| self.eval_expr(a).ok())
                             .map(|v| v.to_string_value())
                             .unwrap_or_else(|| "%s".to_string());
                         let rendered = Self::format_sprintf(&fmt, Some(&base));
@@ -5821,9 +5751,8 @@ impl Interpreter {
                     "base" => match base {
                         Value::Int(i) => {
                             let radix = args
-                                .get(0)
-                                .map(|a| self.eval_expr(a).ok())
-                                .flatten()
+                                .first()
+                                .and_then(|a| self.eval_expr(a).ok())
                                 .and_then(|v| match v {
                                     Value::Int(n) => Some(n),
                                     _ => None,
@@ -5841,9 +5770,8 @@ impl Interpreter {
                     },
                     "parse-base" => {
                         let radix = args
-                            .get(0)
-                            .map(|a| self.eval_expr(a).ok())
-                            .flatten()
+                            .first()
+                            .and_then(|a| self.eval_expr(a).ok())
                             .and_then(|v| match v {
                                 Value::Int(n) => Some(n as u32),
                                 _ => None,
@@ -5899,9 +5827,8 @@ impl Interpreter {
                         match base {
                             Value::Array(mut items) => {
                                 let value = args
-                                    .get(0)
-                                    .map(|a| self.eval_expr(a).ok())
-                                    .flatten()
+                                    .first()
+                                    .and_then(|a| self.eval_expr(a).ok())
                                     .unwrap_or(Value::Nil);
                                 items.push(value);
                                 Ok(Value::Array(items))
@@ -5926,9 +5853,8 @@ impl Interpreter {
                     "unshift" => match base {
                         Value::Array(mut items) => {
                             let value = args
-                                .get(0)
-                                .map(|a| self.eval_expr(a).ok())
-                                .flatten()
+                                .first()
+                                .and_then(|a| self.eval_expr(a).ok())
                                 .unwrap_or(Value::Nil);
                             items.insert(0, value);
                             Ok(Value::Array(items))
@@ -5938,9 +5864,8 @@ impl Interpreter {
                     "join" => match base {
                         Value::Array(items) => {
                             let sep = args
-                                .get(0)
-                                .map(|arg| self.eval_expr(arg).ok())
-                                .flatten()
+                                .first()
+                                .and_then(|arg| self.eval_expr(arg).ok())
                                 .map(|v| v.to_string_value())
                                 .unwrap_or_default();
                             let joined = items
@@ -5965,8 +5890,8 @@ impl Interpreter {
                     },
                     "new" => match base {
                         Value::Str(name) if name == "Rat" => {
-                            let a = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
-                            let b = args.get(1).map(|e| self.eval_expr(e).ok()).flatten();
+                            let a = args.first().and_then(|e| self.eval_expr(e).ok());
+                            let b = args.get(1).and_then(|e| self.eval_expr(e).ok());
                             let a = match a {
                                 Some(Value::Int(i)) => i,
                                 _ => 0,
@@ -5978,8 +5903,8 @@ impl Interpreter {
                             Ok(make_rat(a, b))
                         }
                         Value::Str(name) if name == "FatRat" => {
-                            let a = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
-                            let b = args.get(1).map(|e| self.eval_expr(e).ok()).flatten();
+                            let a = args.first().and_then(|e| self.eval_expr(e).ok());
+                            let b = args.get(1).and_then(|e| self.eval_expr(e).ok());
                             let a = match a {
                                 Some(Value::Int(i)) => i,
                                 _ => 0,
@@ -6045,8 +5970,8 @@ impl Interpreter {
                             Ok(Value::Mix(weights))
                         }
                         Value::Str(name) if name == "Complex" => {
-                            let a = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
-                            let b = args.get(1).map(|e| self.eval_expr(e).ok()).flatten();
+                            let a = args.first().and_then(|e| self.eval_expr(e).ok());
+                            let b = args.get(1).and_then(|e| self.eval_expr(e).ok());
                             let re = match a {
                                 Some(Value::Int(i)) => i as f64,
                                 Some(Value::Num(f)) => f,
@@ -6061,12 +5986,12 @@ impl Interpreter {
                         }
                         Value::Str(name) if name == "CompUnit::DependencySpecification" => {
                             let mut short_name = None;
-                            if let Some(arg) = args.get(0) {
+                            if let Some(arg) = args.first() {
                                 if let Expr::AssignExpr { name, expr } = arg {
-                                    if name == "short-name" {
-                                        if let Ok(Value::Str(s)) = self.eval_expr(expr) {
-                                            short_name = Some(s);
-                                        }
+                                    if name == "short-name"
+                                        && let Ok(Value::Str(s)) = self.eval_expr(expr)
+                                    {
+                                        short_name = Some(s);
                                     }
                                 } else if let Ok(Value::Str(s)) = self.eval_expr(arg) {
                                     short_name = Some(s);
@@ -6130,12 +6055,11 @@ impl Interpreter {
                         new_env.insert(k, v);
                     }
                     let param_name = param.clone();
-                    if let Some(param_name) = param_name {
-                        if let Some(arg) = args.get(0) {
-                            if let Ok(value) = self.eval_expr(arg) {
-                                new_env.insert(param_name, value);
-                            }
-                        }
+                    if let Some(param_name) = param_name
+                        && let Some(arg) = args.first()
+                        && let Ok(value) = self.eval_expr(arg)
+                    {
+                        new_env.insert(param_name, value);
                     }
                     // Bind placeholder variables ($^a, $^b, ...)
                     let placeholders = collect_placeholders(&body);
@@ -6329,7 +6253,7 @@ impl Interpreter {
             }
             Expr::Call { name, args } => {
                 if name == "make" {
-                    let value = if let Some(arg) = args.get(0) {
+                    let value = if let Some(arg) = args.first() {
                         self.eval_expr(arg)?
                     } else {
                         Value::Nil
@@ -6342,9 +6266,8 @@ impl Interpreter {
                 }
                 if name == "callframe" {
                     let depth = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .and_then(|v| match v {
                             Value::Int(i) if i >= 0 => Some(i as usize),
                             Value::Num(f) if f >= 0.0 => Some(f as usize),
@@ -6358,9 +6281,8 @@ impl Interpreter {
                 }
                 if name == "caller" {
                     let depth = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .and_then(|v| match v {
                             Value::Int(i) if i >= 0 => Some(i as usize),
                             Value::Num(f) if f >= 0.0 => Some(f as usize),
@@ -6372,60 +6294,60 @@ impl Interpreter {
                     }
                     return Ok(Value::Nil);
                 }
-                if matches!(name.as_str(), "Int" | "Num" | "Str" | "Bool") {
-                    if let Some(arg) = args.get(0) {
-                        let value = self.eval_expr(arg)?;
-                        let coerced = match name.as_str() {
-                            "Int" => match value {
-                                Value::Int(i) => Value::Int(i),
-                                Value::Num(f) => Value::Int(f as i64),
-                                Value::Rat(n, d) => {
-                                    if d == 0 {
-                                        Value::Int(0)
-                                    } else {
-                                        Value::Int(n / d)
-                                    }
+                if matches!(name.as_str(), "Int" | "Num" | "Str" | "Bool")
+                    && let Some(arg) = args.first()
+                {
+                    let value = self.eval_expr(arg)?;
+                    let coerced = match name.as_str() {
+                        "Int" => match value {
+                            Value::Int(i) => Value::Int(i),
+                            Value::Num(f) => Value::Int(f as i64),
+                            Value::Rat(n, d) => {
+                                if d == 0 {
+                                    Value::Int(0)
+                                } else {
+                                    Value::Int(n / d)
                                 }
-                                Value::Complex(r, _) => Value::Int(r as i64),
-                                Value::Str(s) => Value::Int(s.trim().parse::<i64>().unwrap_or(0)),
-                                Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
-                                _ => Value::Int(0),
-                            },
-                            "Num" => match value {
-                                Value::Int(i) => Value::Num(i as f64),
-                                Value::Num(f) => Value::Num(f),
-                                Value::Rat(n, d) => {
-                                    if d == 0 {
-                                        Value::Num(if n == 0 {
-                                            f64::NAN
-                                        } else if n > 0 {
-                                            f64::INFINITY
-                                        } else {
-                                            f64::NEG_INFINITY
-                                        })
+                            }
+                            Value::Complex(r, _) => Value::Int(r as i64),
+                            Value::Str(s) => Value::Int(s.trim().parse::<i64>().unwrap_or(0)),
+                            Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
+                            _ => Value::Int(0),
+                        },
+                        "Num" => match value {
+                            Value::Int(i) => Value::Num(i as f64),
+                            Value::Num(f) => Value::Num(f),
+                            Value::Rat(n, d) => {
+                                if d == 0 {
+                                    Value::Num(if n == 0 {
+                                        f64::NAN
+                                    } else if n > 0 {
+                                        f64::INFINITY
                                     } else {
-                                        Value::Num(n as f64 / d as f64)
-                                    }
+                                        f64::NEG_INFINITY
+                                    })
+                                } else {
+                                    Value::Num(n as f64 / d as f64)
                                 }
-                                Value::Complex(r, _) => Value::Num(r),
-                                Value::Str(s) => {
-                                    if let Ok(i) = s.trim().parse::<i64>() {
-                                        Value::Num(i as f64)
-                                    } else if let Ok(f) = s.trim().parse::<f64>() {
-                                        Value::Num(f)
-                                    } else {
-                                        Value::Num(0.0)
-                                    }
+                            }
+                            Value::Complex(r, _) => Value::Num(r),
+                            Value::Str(s) => {
+                                if let Ok(i) = s.trim().parse::<i64>() {
+                                    Value::Num(i as f64)
+                                } else if let Ok(f) = s.trim().parse::<f64>() {
+                                    Value::Num(f)
+                                } else {
+                                    Value::Num(0.0)
                                 }
-                                Value::Bool(b) => Value::Num(if b { 1.0 } else { 0.0 }),
-                                _ => Value::Num(0.0),
-                            },
-                            "Str" => Value::Str(value.to_string_value()),
-                            "Bool" => Value::Bool(value.truthy()),
-                            _ => Value::Nil,
-                        };
-                        return Ok(coerced);
-                    }
+                            }
+                            Value::Bool(b) => Value::Num(if b { 1.0 } else { 0.0 }),
+                            _ => Value::Num(0.0),
+                        },
+                        "Str" => Value::Str(value.to_string_value()),
+                        "Bool" => Value::Bool(value.truthy()),
+                        _ => Value::Nil,
+                    };
+                    return Ok(coerced);
                 }
                 if let Some(pattern) = self.eval_token_call(name, args)? {
                     return Ok(Value::Regex(pattern));
@@ -6436,7 +6358,7 @@ impl Interpreter {
                 if let Some(def) = self.resolve_function_with_types(name, &arg_values) {
                     let saved_env = self.env.clone();
                     let literal_args: Vec<Expr> =
-                        arg_values.into_iter().map(|v| Expr::Literal(v)).collect();
+                        arg_values.into_iter().map(Expr::Literal).collect();
                     self.bind_function_args(&def.param_defs, &def.params, &literal_args)?;
                     self.routine_stack
                         .push((def.package.clone(), def.name.clone()));
@@ -6456,9 +6378,8 @@ impl Interpreter {
                 }
                 if name == "EVALFILE" {
                     let path = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .ok_or_else(|| RuntimeError::new("EVALFILE requires a filename"))?;
                     let code = fs::read_to_string(&path).map_err(|err| {
@@ -6467,7 +6388,7 @@ impl Interpreter {
                     return self.eval_eval_string(&code);
                 }
                 if name == "EVAL" {
-                    let code = if let Some(arg) = args.get(0) {
+                    let code = if let Some(arg) = args.first() {
                         self.eval_expr(arg)?.to_string_value()
                     } else {
                         String::new()
@@ -6478,7 +6399,7 @@ impl Interpreter {
                     return self.eval_eval_string(&code);
                 }
                 if name == "elems" {
-                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     return Ok(match val {
                         Some(Value::Array(items)) => Value::Int(items.len() as i64),
                         Some(Value::LazyList(list)) => {
@@ -6490,7 +6411,7 @@ impl Interpreter {
                     });
                 }
                 if name == "abs" {
-                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     return Ok(match val {
                         Some(Value::Int(i)) => Value::Int(i.abs()),
                         Some(Value::Num(f)) => Value::Num(f.abs()),
@@ -6498,7 +6419,7 @@ impl Interpreter {
                     });
                 }
                 if name == "chars" {
-                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     return Ok(match val {
                         Some(Value::Str(s)) => Value::Int(s.chars().count() as i64),
                         Some(v) => Value::Int(v.to_string_value().chars().count() as i64),
@@ -6506,23 +6427,22 @@ impl Interpreter {
                     });
                 }
                 if name == "sprintf" {
-                    let fmt = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let fmt = args.first().and_then(|e| self.eval_expr(e).ok());
                     let fmt = match fmt {
                         Some(Value::Str(s)) => s,
                         _ => String::new(),
                     };
-                    let arg = args.get(1).map(|e| self.eval_expr(e).ok()).flatten();
+                    let arg = args.get(1).and_then(|e| self.eval_expr(e).ok());
                     let rendered = Self::format_sprintf(&fmt, arg.as_ref());
                     return Ok(Value::Str(rendered));
                 }
                 if name == "join" {
                     let sep = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
-                    let list = args.get(1).map(|e| self.eval_expr(e).ok()).flatten();
+                    let list = args.get(1).and_then(|e| self.eval_expr(e).ok());
                     return Ok(match list {
                         Some(Value::Array(items)) => {
                             let joined = items
@@ -6610,9 +6530,8 @@ impl Interpreter {
                 }
                 if name == "chroot" {
                     let path_str = args
-                        .get(0)
-                        .map(|expr| self.eval_expr(expr).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|expr| self.eval_expr(expr).ok())
                         .map(|val| val.to_string_value())
                         .or_else(|| {
                             self.get_dynamic_string("$*CWD")
@@ -6636,11 +6555,10 @@ impl Interpreter {
                 }
                 if name == "gethost" {
                     let host_str = args
-                        .get(0)
-                        .map(|expr| self.eval_expr(expr).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|expr| self.eval_expr(expr).ok())
                         .map(|val| val.to_string_value());
-                    let hostname = host_str.unwrap_or_else(|| Self::hostname());
+                    let hostname = host_str.unwrap_or_else(Self::hostname);
                     let addrs = Self::resolve_host(&hostname);
                     return Ok(Self::make_os_name_value(hostname, addrs));
                 }
@@ -6648,8 +6566,7 @@ impl Interpreter {
                     let mut iter = args.iter();
                     let signal = iter
                         .next()
-                        .map(|expr| self.eval_expr(expr).ok())
-                        .flatten()
+                        .and_then(|expr| self.eval_expr(expr).ok())
                         .map(|val| Self::to_int(&val))
                         .unwrap_or(15);
                     let mut success = true;
@@ -6670,9 +6587,8 @@ impl Interpreter {
                 }
                 if name == "shell" {
                     let command_str = args
-                        .get(0)
-                        .map(|expr| self.eval_expr(expr).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|expr| self.eval_expr(expr).ok())
                         .map(|val| val.to_string_value())
                         .unwrap_or_default();
                     if command_str.is_empty() {
@@ -6721,7 +6637,7 @@ impl Interpreter {
                     return Ok(Value::Bool(status));
                 }
                 if name == "syscall" {
-                    let num_val = args.get(0).map(|expr| self.eval_expr(expr).ok()).flatten();
+                    let num_val = args.first().and_then(|expr| self.eval_expr(expr).ok());
                     if let Some(val) = num_val {
                         let num = Self::to_int(&val);
                         if num == 0 {
@@ -6744,14 +6660,14 @@ impl Interpreter {
                     return Ok(Value::Str(login));
                 }
                 if name == "sleep" {
-                    let arg_val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let arg_val = args.first().and_then(|e| self.eval_expr(e).ok());
                     let duration =
                         Self::duration_from_seconds(Self::seconds_from_value(arg_val.clone()));
                     thread::sleep(duration);
                     return Ok(Value::Nil);
                 }
                 if name == "sleep-timer" {
-                    let arg_val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let arg_val = args.first().and_then(|e| self.eval_expr(e).ok());
                     let duration =
                         Self::duration_from_seconds(Self::seconds_from_value(arg_val.clone()));
                     let start = Instant::now();
@@ -6761,7 +6677,7 @@ impl Interpreter {
                     return Ok(Value::Num(remaining.as_secs_f64()));
                 }
                 if name == "sleep-till" {
-                    let arg_val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let arg_val = args.first().and_then(|e| self.eval_expr(e).ok());
                     if let Some(target_time) = Self::system_time_from_value(arg_val) {
                         let now = SystemTime::now();
                         if target_time <= now {
@@ -6795,7 +6711,7 @@ impl Interpreter {
                     });
                 }
                 if name == "item" {
-                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     return Ok(val.unwrap_or(Value::Nil));
                 }
                 if name == "list" {
@@ -6835,7 +6751,7 @@ impl Interpreter {
                     return Ok(Value::Array(result));
                 }
                 if name == "classify" || name == "categorize" {
-                    let func_expr = match args.get(0) {
+                    let func_expr = match args.first() {
                         Some(expr) => expr,
                         None => return Ok(Value::Hash(HashMap::new())),
                     };
@@ -6859,10 +6775,7 @@ impl Interpreter {
                         };
                         for key in target_keys {
                             let bucket_key = key.to_string_value();
-                            buckets
-                                .entry(bucket_key)
-                                .or_insert_with(Vec::new)
-                                .push(item.clone());
+                            buckets.entry(bucket_key).or_default().push(item.clone());
                         }
                     }
                     let hash_map = buckets
@@ -6872,7 +6785,7 @@ impl Interpreter {
                     return Ok(Value::Hash(hash_map));
                 }
                 if name == "reverse" {
-                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     return Ok(match val {
                         Some(Value::Array(mut items)) => {
                             items.reverse();
@@ -6883,21 +6796,21 @@ impl Interpreter {
                     });
                 }
                 if name == "sort" {
-                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     return Ok(match val {
                         Some(Value::Array(mut items)) => {
-                            items.sort_by(|a, b| a.to_string_value().cmp(&b.to_string_value()));
+                            items.sort_by_key(|a| a.to_string_value());
                             Value::Array(items)
                         }
                         _ => Value::Nil,
                     });
                 }
                 if name == "defined" {
-                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     return Ok(Value::Bool(!matches!(val, Some(Value::Nil) | None)));
                 }
                 if name == "sqrt" {
-                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     return Ok(match val {
                         Some(Value::Int(i)) => Value::Num((i as f64).sqrt()),
                         Some(Value::Num(f)) => Value::Num(f.sqrt()),
@@ -6905,7 +6818,7 @@ impl Interpreter {
                     });
                 }
                 if name == "floor" {
-                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     return Ok(match val {
                         Some(Value::Num(f)) => Value::Int(f.floor() as i64),
                         Some(Value::Int(i)) => Value::Int(i),
@@ -6913,7 +6826,7 @@ impl Interpreter {
                     });
                 }
                 if name == "ceiling" || name == "ceil" {
-                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     return Ok(match val {
                         Some(Value::Num(f)) => Value::Int(f.ceil() as i64),
                         Some(Value::Int(i)) => Value::Int(i),
@@ -6921,7 +6834,7 @@ impl Interpreter {
                     });
                 }
                 if name == "round" {
-                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     return Ok(match val {
                         Some(Value::Num(f)) => Value::Int(f.round() as i64),
                         Some(Value::Int(i)) => Value::Int(i),
@@ -6929,15 +6842,14 @@ impl Interpreter {
                     });
                 }
                 if name == "log" {
-                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     let x = val
                         .and_then(|v| Self::to_float_value(&v))
                         .unwrap_or(f64::NAN);
                     if args.len() > 1 {
                         let base = args
                             .get(1)
-                            .map(|e| self.eval_expr(e).ok())
-                            .flatten()
+                            .and_then(|e| self.eval_expr(e).ok())
                             .and_then(|v| Self::to_float_value(&v))
                             .unwrap_or(f64::NAN);
                         if base.is_finite() && base > 0.0 && base != 1.0 && x > 0.0 {
@@ -6955,7 +6867,7 @@ impl Interpreter {
                     || name == "acos"
                     || name == "atan"
                 {
-                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     let x = val.and_then(|v| Self::to_float_value(&v)).unwrap_or(0.0);
                     let result = match name.as_str() {
                         "sin" => x.sin(),
@@ -6970,22 +6882,20 @@ impl Interpreter {
                 }
                 if name == "atan2" {
                     let y = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .and_then(|v| Self::to_float_value(&v))
                         .unwrap_or(0.0);
                     let x = args
                         .get(1)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .and_then(|v| Self::to_float_value(&v))
                         .unwrap_or(0.0);
                     return Ok(Value::Num(y.atan2(x)));
                 }
                 if name == "truncate" {
-                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
-                    if let Some(num) = val.as_ref().and_then(|v| Self::to_float_value(v)) {
+                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
+                    if let Some(num) = val.as_ref().and_then(Self::to_float_value) {
                         return Ok(Value::Int(num.trunc() as i64));
                     }
                     if let Some(v) = val {
@@ -6994,7 +6904,7 @@ impl Interpreter {
                     return Ok(Value::Int(0));
                 }
                 if name == "exp" {
-                    let val = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     return Ok(match val {
                         Some(Value::Int(i)) => Value::Num((i as f64).exp()),
                         Some(Value::Num(f)) => Value::Num(f.exp()),
@@ -7028,7 +6938,7 @@ impl Interpreter {
                         .unwrap_or(Value::Nil));
                 }
                 if name == "exit" {
-                    let code = args.get(0).map(|e| self.eval_expr(e).ok()).flatten();
+                    let code = args.first().and_then(|e| self.eval_expr(e).ok());
                     let _code = match code {
                         Some(Value::Int(i)) => i,
                         _ => 0,
@@ -7037,22 +6947,19 @@ impl Interpreter {
                     return Ok(Value::Nil);
                 }
                 if name == "chr" {
-                    if let Some(Value::Int(i)) =
-                        args.get(0).map(|e| self.eval_expr(e).ok()).flatten()
+                    if let Some(Value::Int(i)) = args.first().and_then(|e| self.eval_expr(e).ok())
+                        && i >= 0
+                        && let Some(ch) = std::char::from_u32(i as u32)
                     {
-                        if i >= 0 {
-                            if let Some(ch) = std::char::from_u32(i as u32) {
-                                return Ok(Value::Str(ch.to_string()));
-                            }
-                        }
+                        return Ok(Value::Str(ch.to_string()));
                     }
                     return Ok(Value::Str(String::new()));
                 }
                 if name == "ord" {
-                    if let Some(val) = args.get(0).map(|e| self.eval_expr(e).ok()).flatten() {
-                        if let Some(ch) = val.to_string_value().chars().next() {
-                            return Ok(Value::Int(ch as u32 as i64));
-                        }
+                    if let Some(val) = args.first().and_then(|e| self.eval_expr(e).ok())
+                        && let Some(ch) = val.to_string_value().chars().next()
+                    {
+                        return Ok(Value::Int(ch as u32 as i64));
                     }
                     return Ok(Value::Nil);
                 }
@@ -7061,13 +6968,13 @@ impl Interpreter {
                     for arg in args {
                         let val = self.eval_expr(arg)?;
                         for item in Self::value_to_list(&val) {
-                            if let Value::Int(i) = item {
-                                if i >= 0 && (i as u64) <= 0x10ffff {
-                                    if let Some(ch) = std::char::from_u32(i as u32) {
-                                        result.push(ch);
-                                        continue;
-                                    }
-                                }
+                            if let Value::Int(i) = item
+                                && i >= 0
+                                && (i as u64) <= 0x10ffff
+                                && let Some(ch) = std::char::from_u32(i as u32)
+                            {
+                                result.push(ch);
+                                continue;
                             }
                             result.push_str(&item.to_string_value());
                         }
@@ -7075,7 +6982,7 @@ impl Interpreter {
                     return Ok(Value::Str(result));
                 }
                 if name == "ords" {
-                    if let Some(val) = args.get(0).map(|e| self.eval_expr(e).ok()).flatten() {
+                    if let Some(val) = args.first().and_then(|e| self.eval_expr(e).ok()) {
                         let mut codes = Vec::new();
                         for ch in val.to_string_value().chars() {
                             codes.push(Value::Int(ch as u32 as i64));
@@ -7086,34 +6993,30 @@ impl Interpreter {
                 }
                 if name == "flip" {
                     let val = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
                     return Ok(Value::Str(val.chars().rev().collect()));
                 }
                 if name == "lc" {
                     let val = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .unwrap_or(Value::Nil);
                     return Ok(Value::Str(val.to_string_value().to_lowercase()));
                 }
                 if name == "uc" {
                     let val = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .unwrap_or(Value::Nil);
                     return Ok(Value::Str(val.to_string_value().to_uppercase()));
                 }
                 if name == "tc" {
                     let val = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
                     let mut result = String::new();
@@ -7132,18 +7035,16 @@ impl Interpreter {
                 }
                 if name == "chomp" {
                     let val = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
                     return Ok(Value::Str(val.trim_end_matches('\n').to_string()));
                 }
                 if name == "chop" {
                     let mut val = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
                     val.pop();
@@ -7151,18 +7052,16 @@ impl Interpreter {
                 }
                 if name == "trim" {
                     let val = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
                     return Ok(Value::Str(val.trim().to_string()));
                 }
                 if name == "words" {
                     let val = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
                     let parts: Vec<Value> = val
@@ -7173,15 +7072,13 @@ impl Interpreter {
                 }
                 if name == "substr" {
                     let s = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
                     let start = args
                         .get(1)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .and_then(|v| match v {
                             Value::Int(i) => Some(i),
                             _ => None,
@@ -7189,7 +7086,7 @@ impl Interpreter {
                         .unwrap_or(0);
                     let chars: Vec<char> = s.chars().collect();
                     let start = start.max(0) as usize;
-                    if let Some(len_val) = args.get(2).map(|e| self.eval_expr(e).ok()).flatten() {
+                    if let Some(len_val) = args.get(2).and_then(|e| self.eval_expr(e).ok()) {
                         let len = match len_val {
                             Value::Int(i) => i.max(0) as usize,
                             _ => chars.len(),
@@ -7201,15 +7098,13 @@ impl Interpreter {
                 }
                 if name == "index" {
                     let s = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
                     let needle = args
                         .get(1)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
                     return Ok(match s.find(&needle) {
@@ -7219,41 +7114,36 @@ impl Interpreter {
                 }
                 if name == "gist" {
                     let val = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .unwrap_or(Value::Nil);
                     return Ok(Value::Str(val.to_string_value()));
                 }
                 if name == "dd" {
                     // Debug dump
                     let val = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .unwrap_or(Value::Nil);
                     self.output.push_str(&format!("{:?}\n", val));
                     return Ok(val);
                 }
                 if name == "pair" {
                     let key = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
                     let val = args
                         .get(1)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .unwrap_or(Value::Nil);
                     return Ok(Value::Pair(key, Box::new(val)));
                 }
                 if name == "slurp" {
                     let path = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .ok_or_else(|| RuntimeError::new("slurp requires a path argument"))?;
                     let content = fs::read_to_string(&path).map_err(|err| {
@@ -7263,15 +7153,13 @@ impl Interpreter {
                 }
                 if name == "spurt" {
                     let path = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .ok_or_else(|| RuntimeError::new("spurt requires a path argument"))?;
                     let content = args
                         .get(1)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .ok_or_else(|| RuntimeError::new("spurt requires a content argument"))?;
                     fs::write(&path, &content).map_err(|err| {
@@ -7281,9 +7169,8 @@ impl Interpreter {
                 }
                 if name == "unlink" {
                     let path = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .ok_or_else(|| RuntimeError::new("unlink requires a path argument"))?;
                     fs::remove_file(&path).map_err(|err| {
@@ -7320,9 +7207,8 @@ impl Interpreter {
                 }
                 if name == "prompt" {
                     let msg = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
                     self.write_to_named_handle("$*OUT", &msg, false)?;
@@ -7334,9 +7220,8 @@ impl Interpreter {
                 }
                 if name == "get" {
                     let handle = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .or_else(|| self.default_input_handle());
                     if let Some(handle) = handle {
                         let line = self.read_line_from_handle_value(&handle)?;
@@ -7346,9 +7231,8 @@ impl Interpreter {
                 }
                 if name == "lines" {
                     let handle = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .or_else(|| self.default_input_handle());
                     if let Some(handle) = handle {
                         let mut lines = Vec::new();
@@ -7365,9 +7249,8 @@ impl Interpreter {
                 }
                 if name == "words" {
                     let handle = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .or_else(|| self.default_input_handle());
                     if let Some(handle) = handle {
                         let mut words = Vec::new();
@@ -7386,7 +7269,7 @@ impl Interpreter {
                 }
                 if name == "open" {
                     let path_expr = args
-                        .get(0)
+                        .first()
                         .ok_or_else(|| RuntimeError::new("open requires a path argument"))?;
                     let path_str = self.eval_expr(path_expr)?.to_string_value();
                     let (read, write, append) = self.parse_io_flags(&args[1..])?;
@@ -7395,16 +7278,15 @@ impl Interpreter {
                 }
                 if name == "close" {
                     let handle_expr = args
-                        .get(0)
+                        .first()
                         .ok_or_else(|| RuntimeError::new("close requires a handle"))?;
                     let handle_val = self.eval_expr(handle_expr)?;
                     return Ok(Value::Bool(self.close_handle_value(&handle_val)?));
                 }
                 if name == "dir" {
                     let requested = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .unwrap_or_else(|| {
                             self.get_dynamic_string("$*CWD")
@@ -7427,15 +7309,13 @@ impl Interpreter {
                 }
                 if name == "copy" {
                     let source = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .ok_or_else(|| RuntimeError::new("copy requires a source path"))?;
                     let dest = args
                         .get(1)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .ok_or_else(|| RuntimeError::new("copy requires a destination path"))?;
                     let src_buf = self.resolve_path(&source);
@@ -7447,15 +7327,13 @@ impl Interpreter {
                 }
                 if name == "rename" || name == "move" {
                     let source = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .ok_or_else(|| RuntimeError::new("rename requires a source path"))?;
                     let dest = args
                         .get(1)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .ok_or_else(|| RuntimeError::new("rename requires a destination path"))?;
                     let src_buf = self.resolve_path(&source);
@@ -7467,9 +7345,8 @@ impl Interpreter {
                 }
                 if name == "chmod" {
                     let path = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .ok_or_else(|| RuntimeError::new("chmod requires a path"))?;
                     let mode_arg = args
@@ -7502,9 +7379,8 @@ impl Interpreter {
                 }
                 if name == "mkdir" {
                     let path = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .unwrap_or_else(|| {
                             self.get_dynamic_string("$*CWD")
@@ -7518,9 +7394,8 @@ impl Interpreter {
                 }
                 if name == "rmdir" {
                     let path = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .ok_or_else(|| RuntimeError::new("rmdir requires a path"))?;
                     let path_buf = self.resolve_path(&path);
@@ -7531,9 +7406,8 @@ impl Interpreter {
                 }
                 if name == "chdir" {
                     let path = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .ok_or_else(|| RuntimeError::new("chdir requires a path"))?;
                     let path_buf = self.resolve_path(&path);
@@ -7551,9 +7425,8 @@ impl Interpreter {
                 }
                 if name == "indir" {
                     let path = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .ok_or_else(|| RuntimeError::new("indir requires a path"))?;
                     let path_buf = self.resolve_path(&path);
@@ -7570,7 +7443,9 @@ impl Interpreter {
                     );
                     let result = if let Some(body) = args.get(1) {
                         match body {
-                            Expr::Block(body_stmts) | Expr::AnonSub(body_stmts) => self.eval_block_value(body_stmts),
+                            Expr::Block(body_stmts) | Expr::AnonSub(body_stmts) => {
+                                self.eval_block_value(body_stmts)
+                            }
                             other => self.eval_expr(other),
                         }
                     } else {
@@ -7584,7 +7459,7 @@ impl Interpreter {
                     return result;
                 }
                 if name == "tmpdir" {
-                    if let Some(path_expr) = args.get(0) {
+                    if let Some(path_expr) = args.first() {
                         let path = self.eval_expr(path_expr)?.to_string_value();
                         let path_buf = self.resolve_path(&path);
                         if !path_buf.is_dir() {
@@ -7600,7 +7475,7 @@ impl Interpreter {
                     ));
                 }
                 if name == "homedir" {
-                    if let Some(path_expr) = args.get(0) {
+                    if let Some(path_expr) = args.first() {
                         let path = self.eval_expr(path_expr)?.to_string_value();
                         let path_buf = self.resolve_path(&path);
                         if !path_buf.is_dir() {
@@ -7617,15 +7492,13 @@ impl Interpreter {
                 }
                 if name == "link" {
                     let target = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .ok_or_else(|| RuntimeError::new("link requires a target"))?;
                     let link = args
                         .get(1)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .ok_or_else(|| RuntimeError::new("link requires a link name"))?;
                     let target_buf = self.resolve_path(&target);
@@ -7637,15 +7510,13 @@ impl Interpreter {
                 }
                 if name == "symlink" {
                     let target = args
-                        .get(0)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .ok_or_else(|| RuntimeError::new("symlink requires a target"))?;
                     let link = args
                         .get(1)
-                        .map(|e| self.eval_expr(e).ok())
-                        .flatten()
+                        .and_then(|e| self.eval_expr(e).ok())
                         .map(|v| v.to_string_value())
                         .ok_or_else(|| RuntimeError::new("symlink requires a link name"))?;
                     let target_buf = self.resolve_path(&target);
@@ -7696,19 +7567,19 @@ impl Interpreter {
                 match self.eval_block_value(&main_stmts) {
                     Ok(v) => Ok(v),
                     Err(e) => {
-                        if e.is_last || e.is_next || e.is_redo || e.is_proceed || e.is_succeed {
-                            if let Some(control_body) = control_stmts {
-                                let saved_when = self.when_matched;
-                                self.when_matched = false;
-                                for stmt in &control_body {
-                                    self.exec_stmt(stmt)?;
-                                    if self.when_matched || self.halted {
-                                        break;
-                                    }
+                        if (e.is_last || e.is_next || e.is_redo || e.is_proceed || e.is_succeed)
+                            && let Some(control_body) = control_stmts
+                        {
+                            let saved_when = self.when_matched;
+                            self.when_matched = false;
+                            for stmt in &control_body {
+                                self.exec_stmt(stmt)?;
+                                if self.when_matched || self.halted {
+                                    break;
                                 }
-                                self.when_matched = saved_when;
-                                return Ok(Value::Nil);
                             }
+                            self.when_matched = saved_when;
+                            return Ok(Value::Nil);
                         }
                         if let Some(catch_body) = catch_stmts {
                             let err_val = Value::Str(e.message);
@@ -7811,10 +7682,7 @@ impl Interpreter {
                             // Z=> : create pairs
                             for i in 0..len {
                                 let key = left_list[i].to_string_value();
-                                results.push(Value::Pair(
-                                    key,
-                                    Box::new(right_list[i].clone()),
-                                ));
+                                results.push(Value::Pair(key, Box::new(right_list[i].clone())));
                             }
                         } else {
                             for i in 0..len {
@@ -7846,8 +7714,8 @@ impl Interpreter {
                 }
                 if name == "atan2" {
                     let mut x = right_vals
-                        .get(0)
-                        .and_then(|v| Self::to_float_value(v))
+                        .first()
+                        .and_then(Self::to_float_value)
                         .unwrap_or(0.0);
                     let mut y = Self::to_float_value(&left_val).unwrap_or(0.0);
                     if modifier.as_deref() == Some("R") {
@@ -7867,7 +7735,7 @@ impl Interpreter {
                         }
                         return Ok(Value::Str(parts.join(" ")));
                     }
-                    let arg = right_vals.get(0);
+                    let arg = right_vals.first();
                     let rendered = Self::format_sprintf(&fmt, arg);
                     return Ok(Value::Str(rendered));
                 }
@@ -7894,29 +7762,29 @@ impl Interpreter {
         right: Value,
     ) -> Result<Value, RuntimeError> {
         // Junction auto-threading for comparison operators
-        if let Value::Junction { kind, values } = &left {
-            if Self::is_threadable_op(op) {
-                let results: Result<Vec<Value>, RuntimeError> = values
-                    .iter()
-                    .map(|v| self.eval_binary(v.clone(), op, right.clone()))
-                    .collect();
-                return Ok(Value::Junction {
-                    kind: kind.clone(),
-                    values: results?,
-                });
-            }
+        if let Value::Junction { kind, values } = &left
+            && Self::is_threadable_op(op)
+        {
+            let results: Result<Vec<Value>, RuntimeError> = values
+                .iter()
+                .map(|v| self.eval_binary(v.clone(), op, right.clone()))
+                .collect();
+            return Ok(Value::Junction {
+                kind: kind.clone(),
+                values: results?,
+            });
         }
-        if let Value::Junction { kind, values } = &right {
-            if Self::is_threadable_op(op) {
-                let results: Result<Vec<Value>, RuntimeError> = values
-                    .iter()
-                    .map(|v| self.eval_binary(left.clone(), op, v.clone()))
-                    .collect();
-                return Ok(Value::Junction {
-                    kind: kind.clone(),
-                    values: results?,
-                });
-            }
+        if let Value::Junction { kind, values } = &right
+            && Self::is_threadable_op(op)
+        {
+            let results: Result<Vec<Value>, RuntimeError> = values
+                .iter()
+                .map(|v| self.eval_binary(left.clone(), op, v.clone()))
+                .collect();
+            return Ok(Value::Junction {
+                kind: kind.clone(),
+                values: results?,
+            });
         }
         match op {
             TokenKind::Pipe => Ok(Self::merge_junction(JunctionKind::Any, left, right)),
@@ -7931,10 +7799,9 @@ impl Interpreter {
                 }
                 if let (Some((an, ad)), Some((bn, bd))) =
                     (Self::to_rat_parts(&l), Self::to_rat_parts(&r))
+                    && (matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)))
                 {
-                    if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
-                        return Ok(make_rat(an * bd + bn * ad, ad * bd));
-                    }
+                    return Ok(make_rat(an * bd + bn * ad, ad * bd));
                 }
                 match (l, r) {
                     (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a.wrapping_add(b))),
@@ -7953,10 +7820,9 @@ impl Interpreter {
                 }
                 if let (Some((an, ad)), Some((bn, bd))) =
                     (Self::to_rat_parts(&l), Self::to_rat_parts(&r))
+                    && (matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)))
                 {
-                    if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
-                        return Ok(make_rat(an * bd - bn * ad, ad * bd));
-                    }
+                    return Ok(make_rat(an * bd - bn * ad, ad * bd));
                 }
                 match (l, r) {
                     (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a.wrapping_sub(b))),
@@ -7976,10 +7842,9 @@ impl Interpreter {
                 }
                 if let (Some((an, ad)), Some((bn, bd))) =
                     (Self::to_rat_parts(&l), Self::to_rat_parts(&r))
+                    && (matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)))
                 {
-                    if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
-                        return Ok(make_rat(an * bn, ad * bd));
-                    }
+                    return Ok(make_rat(an * bn, ad * bd));
                 }
                 match (l, r) {
                     (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a.wrapping_mul(b))),
@@ -8025,17 +7890,16 @@ impl Interpreter {
                 let (l, r) = Self::coerce_numeric(left, right);
                 if let (Some((an, ad)), Some((bn, bd))) =
                     (Self::to_rat_parts(&l), Self::to_rat_parts(&r))
+                    && (matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)))
                 {
-                    if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
-                        if bn == 0 {
-                            return Err(RuntimeError::new("Modulo by zero"));
-                        }
-                        // (an/ad) % (bn/bd) = remainder
-                        let lf = an as f64 / ad as f64;
-                        let rf = bn as f64 / bd as f64;
-                        let result = lf % rf;
-                        return Ok(Value::Num(result));
+                    if bn == 0 {
+                        return Err(RuntimeError::new("Modulo by zero"));
                     }
+                    // (an/ad) % (bn/bd) = remainder
+                    let lf = an as f64 / ad as f64;
+                    let rf = bn as f64 / bd as f64;
+                    let result = lf % rf;
+                    return Ok(Value::Num(result));
                 }
                 match (l, r) {
                     (Value::Int(_), Value::Int(0)) => Err(RuntimeError::new("Modulo by zero")),
@@ -8211,7 +8075,7 @@ impl Interpreter {
                         cur += step;
                     }
                 }
-                return Ok(Value::Array(result));
+                Ok(Value::Array(result))
             }
             TokenKind::DotDotCaret => match (left, right) {
                 (Value::Int(a), Value::Int(b)) => Ok(Value::RangeExcl(a, b)),
@@ -8228,8 +8092,10 @@ impl Interpreter {
             TokenKind::LtEqGt => {
                 let ord = match (&left, &right) {
                     (Value::Int(a), Value::Int(b)) => a.cmp(b),
-                    (Value::Rat(_, _), _) | (_, Value::Rat(_, _))
-                    | (Value::FatRat(_, _), _) | (_, Value::FatRat(_, _)) => {
+                    (Value::Rat(_, _), _)
+                    | (_, Value::Rat(_, _))
+                    | (Value::FatRat(_, _), _)
+                    | (_, Value::FatRat(_, _)) => {
                         if let (Some((an, ad)), Some((bn, bd))) =
                             (Self::to_rat_parts(&left), Self::to_rat_parts(&right))
                         {
@@ -8312,8 +8178,10 @@ impl Interpreter {
             TokenKind::Ident(name) if name == "cmp" => {
                 let ord = match (&left, &right) {
                     (Value::Int(a), Value::Int(b)) => a.cmp(b),
-                    (Value::Rat(_, _), _) | (_, Value::Rat(_, _))
-                    | (Value::FatRat(_, _), _) | (_, Value::FatRat(_, _)) => {
+                    (Value::Rat(_, _), _)
+                    | (_, Value::Rat(_, _))
+                    | (Value::FatRat(_, _), _)
+                    | (_, Value::FatRat(_, _)) => {
                         if let (Some((an, ad)), Some((bn, bd))) =
                             (Self::to_rat_parts(&left), Self::to_rat_parts(&right))
                         {
@@ -8349,7 +8217,7 @@ impl Interpreter {
                     Value::Int(n) => n.max(0) as usize,
                     _ => 0,
                 };
-                let items: Vec<Value> = std::iter::repeat(left).take(n).collect();
+                let items: Vec<Value> = std::iter::repeat_n(left, n).collect();
                 Ok(Value::Array(items))
             }
             TokenKind::FatArrow => {
@@ -8820,12 +8688,10 @@ impl Interpreter {
         if idx == 0 {
             return 0;
         }
-        let mut count = 0usize;
-        for (b, _) in text.char_indices() {
+        for (count, (b, _)) in text.char_indices().enumerate() {
             if count == idx {
                 return b;
             }
-            count += 1;
         }
         text.len()
     }
@@ -9017,7 +8883,7 @@ impl Interpreter {
                 }
                 '<' => {
                     let mut name = String::new();
-                    while let Some(ch) = chars.next() {
+                    for ch in chars.by_ref() {
                         if ch == '>' {
                             break;
                         }
@@ -9270,8 +9136,10 @@ impl Interpreter {
             "cmp" => {
                 let ord = match (left, right) {
                     (Value::Int(a), Value::Int(b)) => a.cmp(b),
-                    (Value::Rat(_, _), _) | (_, Value::Rat(_, _))
-                    | (Value::FatRat(_, _), _) | (_, Value::FatRat(_, _)) => {
+                    (Value::Rat(_, _), _)
+                    | (_, Value::Rat(_, _))
+                    | (Value::FatRat(_, _), _)
+                    | (_, Value::FatRat(_, _)) => {
                         if let (Some((an, ad)), Some((bn, bd))) =
                             (Self::to_rat_parts(left), Self::to_rat_parts(right))
                         {
@@ -9398,10 +9266,10 @@ impl Interpreter {
         if param_defs.is_empty() {
             // Legacy path: just bind by position
             for (i, param) in params.iter().enumerate() {
-                if let Some(arg) = args.get(i) {
-                    if let Ok(value) = self.eval_expr(arg) {
-                        self.env.insert(param.clone(), value);
-                    }
+                if let Some(arg) = args.get(i)
+                    && let Ok(value) = self.eval_expr(arg)
+                {
+                    self.env.insert(param.clone(), value);
                 }
             }
             return Ok(());
@@ -9424,41 +9292,13 @@ impl Interpreter {
                 // Named params: look for matching AssignExpr in args
                 let mut found = false;
                 for arg in args {
-                    if let Expr::AssignExpr { name, expr } = arg {
-                        if *name == pd.name {
-                            let value = self.eval_expr(expr)?;
-                            if let Some(constraint) = &pd.type_constraint {
-                                if !self.type_matches_value(constraint, &value) {
-                                    return Err(RuntimeError::new(format!(
-                                        "Type check failed for {}: expected {}, got {}",
-                                        pd.name,
-                                        constraint,
-                                        Self::value_type_name(&value)
-                                    )));
-                                }
-                            }
-                            if !pd.name.is_empty() {
-                                self.env.insert(pd.name.clone(), value);
-                            }
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-                if !found {
-                    if let Some(default_expr) = &pd.default {
-                        let value = self.eval_expr(default_expr)?;
-                        if !pd.name.is_empty() {
-                            self.env.insert(pd.name.clone(), value);
-                        }
-                    }
-                }
-            } else {
-                // Positional param
-                if positional_idx < args.len() {
-                    let value = self.eval_expr(&args[positional_idx])?;
-                    if let Some(constraint) = &pd.type_constraint {
-                        if !self.type_matches_value(constraint, &value) {
+                    if let Expr::AssignExpr { name, expr } = arg
+                        && *name == pd.name
+                    {
+                        let value = self.eval_expr(expr)?;
+                        if let Some(constraint) = &pd.type_constraint
+                            && !self.type_matches_value(constraint, &value)
+                        {
                             return Err(RuntimeError::new(format!(
                                 "Type check failed for {}: expected {}, got {}",
                                 pd.name,
@@ -9466,6 +9306,32 @@ impl Interpreter {
                                 Self::value_type_name(&value)
                             )));
                         }
+                        if !pd.name.is_empty() {
+                            self.env.insert(pd.name.clone(), value);
+                        }
+                        found = true;
+                        break;
+                    }
+                }
+                if !found && let Some(default_expr) = &pd.default {
+                    let value = self.eval_expr(default_expr)?;
+                    if !pd.name.is_empty() {
+                        self.env.insert(pd.name.clone(), value);
+                    }
+                }
+            } else {
+                // Positional param
+                if positional_idx < args.len() {
+                    let value = self.eval_expr(&args[positional_idx])?;
+                    if let Some(constraint) = &pd.type_constraint
+                        && !self.type_matches_value(constraint, &value)
+                    {
+                        return Err(RuntimeError::new(format!(
+                            "Type check failed for {}: expected {}, got {}",
+                            pd.name,
+                            constraint,
+                            Self::value_type_name(&value)
+                        )));
                     }
                     if !pd.name.is_empty() {
                         self.env.insert(pd.name.clone(), value);
@@ -9521,15 +9387,15 @@ impl Interpreter {
                 // Positional param
                 if positional_idx < args.len() {
                     let value = args[positional_idx].clone();
-                    if let Some(constraint) = &pd.type_constraint {
-                        if !self.type_matches_value(constraint, &value) {
-                            return Err(RuntimeError::new(format!(
-                                "Type check failed for {}: expected {}, got {}",
-                                pd.name,
-                                constraint,
-                                Self::value_type_name(&value)
-                            )));
-                        }
+                    if let Some(constraint) = &pd.type_constraint
+                        && !self.type_matches_value(constraint, &value)
+                    {
+                        return Err(RuntimeError::new(format!(
+                            "Type check failed for {}: expected {}, got {}",
+                            pd.name,
+                            constraint,
+                            Self::value_type_name(&value)
+                        )));
                     }
                     if !pd.name.is_empty() {
                         self.env.insert(pd.name.clone(), value);
@@ -9576,10 +9442,10 @@ impl Interpreter {
             }
         }
         let leave_res = self.run_block_raw(&leave_ph);
-        if let Err(e) = leave_res {
-            if result.is_ok() {
-                return Err(e);
-            }
+        if let Err(e) = leave_res
+            && result.is_ok()
+        {
+            return Err(e);
         }
         match result {
             Ok(()) => Ok(last),
@@ -9597,17 +9463,17 @@ impl Interpreter {
         };
         let start = rest.find('<');
         let end = rest.rfind('>');
-        if prefix != ' ' || (start.is_some() && trimmed.starts_with('<')) {
-            if let (Some(s), Some(e)) = (start, end) {
-                let inner = &rest[s + 1..e];
-                let words: Vec<&str> = inner.split_whitespace().collect();
-                return Ok(match prefix {
-                    '~' => Value::Str(words.join(" ")),
-                    '+' => Value::Int(words.len() as i64),
-                    '?' => Value::Bool(!words.is_empty()),
-                    _ => Value::Str(words.join(" ")),
-                });
-            }
+        if (prefix != ' ' || (start.is_some() && trimmed.starts_with('<')))
+            && let (Some(s), Some(e)) = (start, end)
+        {
+            let inner = &rest[s + 1..e];
+            let words: Vec<&str> = inner.split_whitespace().collect();
+            return Ok(match prefix {
+                '~' => Value::Str(words.join(" ")),
+                '+' => Value::Int(words.len() as i64),
+                '?' => Value::Bool(!words.is_empty()),
+                _ => Value::Str(words.join(" ")),
+            });
         }
         // General case: parse and evaluate as Raku code
         let mut lexer = Lexer::new(trimmed);
@@ -10117,14 +9983,18 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn compare(left: Value, right: Value, f: fn(i32) -> bool) -> Result<Value, RuntimeError> {
+    pub(crate) fn compare(
+        left: Value,
+        right: Value,
+        f: fn(i32) -> bool,
+    ) -> Result<Value, RuntimeError> {
         let (l, r) = Self::coerce_numeric(left, right);
-        if let (Some((an, ad)), Some((bn, bd))) = (Self::to_rat_parts(&l), Self::to_rat_parts(&r)) {
-            if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
-                let lhs = an as i128 * bd as i128;
-                let rhs = bn as i128 * ad as i128;
-                return Ok(Value::Bool(f(lhs.cmp(&rhs) as i32)));
-            }
+        if let (Some((an, ad)), Some((bn, bd))) = (Self::to_rat_parts(&l), Self::to_rat_parts(&r))
+            && (matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)))
+        {
+            let lhs = an as i128 * bd as i128;
+            let rhs = bn as i128 * ad as i128;
+            return Ok(Value::Bool(f(lhs.cmp(&rhs) as i32)));
         }
         match (l, r) {
             (Value::Int(a), Value::Int(b)) => {
