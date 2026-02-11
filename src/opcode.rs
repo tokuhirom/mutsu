@@ -176,6 +176,8 @@ pub(crate) enum OpCode {
 
     // -- Assignment as expression --
     AssignExpr(u32),
+    /// Assignment as expression for local variable (indexed slot)
+    AssignExprLocal(u32),
 
     // -- Loops (compound opcodes) --
     /// While loop. Condition opcodes follow at [ip+1..cond_end).
@@ -183,7 +185,7 @@ pub(crate) enum OpCode {
     WhileLoop { cond_end: u32, body_end: u32, label: Option<String> },
     /// For loop. Iterable value must be on stack.
     /// Body opcodes at [ip+1..body_end). VM iterates internally.
-    ForLoop { param_idx: Option<u32>, body_end: u32, label: Option<String> },
+    ForLoop { param_idx: Option<u32>, param_local: Option<u32>, body_end: u32, label: Option<String> },
     /// C-style loop: [cond opcodes][body opcodes][step opcodes].
     /// Layout after CStyleLoop: cond at [ip+1..cond_end), body at [cond_end..step_start),
     /// step at [step_start..body_end).

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::ast::{AssignOp, CallArg, Expr, PhaserKind, Stmt};
 use crate::lexer::TokenKind;
 use crate::opcode::{CompiledCode, OpCode};
@@ -5,13 +7,25 @@ use crate::value::Value;
 
 pub(crate) struct Compiler {
     code: CompiledCode,
+    local_map: HashMap<String, u32>,
 }
 
 impl Compiler {
     pub(crate) fn new() -> Self {
         Self {
             code: CompiledCode::new(),
+            local_map: HashMap::new(),
         }
+    }
+
+    fn alloc_local(&mut self, name: &str) -> u32 {
+        if let Some(&slot) = self.local_map.get(name) {
+            return slot;
+        }
+        let slot = self.code.locals.len() as u32;
+        self.code.locals.push(name.to_string());
+        self.local_map.insert(name.to_string(), slot);
+        slot
     }
 
     pub(crate) fn compile(mut self, stmts: &[Stmt]) -> CompiledCode {
@@ -52,8 +66,8 @@ impl Compiler {
             }
             Stmt::VarDecl { name, expr } => {
                 self.compile_expr(expr);
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                self.code.emit(OpCode::SetGlobal(name_idx));
+                let slot = self.alloc_local(name);
+                self.code.emit(OpCode::SetLocal(slot));
             }
             Stmt::Assign {
                 name,
@@ -61,8 +75,12 @@ impl Compiler {
                 op: AssignOp::Assign | AssignOp::Bind,
             } if name != "*PID" => {
                 self.compile_expr(expr);
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                self.code.emit(OpCode::SetGlobal(name_idx));
+                if let Some(&slot) = self.local_map.get(name.as_str()) {
+                    self.code.emit(OpCode::SetLocal(slot));
+                } else {
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::SetGlobal(name_idx));
+                }
             }
             Stmt::If {
                 cond,
@@ -108,8 +126,10 @@ impl Compiler {
                 let param_idx = param
                     .as_ref()
                     .map(|p| self.code.add_constant(Value::Str(p.clone())));
+                let param_local = param.as_ref().map(|p| self.alloc_local(p));
                 let loop_idx = self.code.emit(OpCode::ForLoop {
                     param_idx,
+                    param_local,
                     body_end: 0,
                     label: label.clone(),
                 });
@@ -207,8 +227,12 @@ impl Compiler {
             } if name != "*PID" => {
                 self.compile_expr(expr);
                 self.code.emit(OpCode::StrCoerce);
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                self.code.emit(OpCode::SetGlobal(name_idx));
+                if let Some(&slot) = self.local_map.get(name.as_str()) {
+                    self.code.emit(OpCode::SetLocal(slot));
+                } else {
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::SetGlobal(name_idx));
+                }
             }
             // Given/When/Default
             Stmt::Given { topic, body } if !Self::has_phasers(body) => {
@@ -363,8 +387,12 @@ impl Compiler {
                 }
             },
             Expr::Var(name) => {
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                self.code.emit(OpCode::GetGlobal(name_idx));
+                if let Some(&slot) = self.local_map.get(name.as_str()) {
+                    self.code.emit(OpCode::GetLocal(slot));
+                } else {
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::GetGlobal(name_idx));
+                }
             }
             Expr::ArrayVar(name) => {
                 let name_idx = self.code.add_constant(Value::Str(format!("@{}", name)));
@@ -588,8 +616,12 @@ impl Compiler {
             // Assignment as expression
             Expr::AssignExpr { name, expr } => {
                 self.compile_expr(expr);
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                self.code.emit(OpCode::AssignExpr(name_idx));
+                if let Some(&slot) = self.local_map.get(name.as_str()) {
+                    self.code.emit(OpCode::AssignExprLocal(slot));
+                } else {
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::AssignExpr(name_idx));
+                }
             }
             // Capture variable ($0, $1, etc.)
             Expr::CaptureVar(name) => {

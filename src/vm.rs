@@ -7,6 +7,7 @@ use crate::value::{make_rat, RuntimeError, Value};
 pub(crate) struct VM {
     interpreter: Interpreter,
     stack: Vec<Value>,
+    locals: Vec<Value>,
 }
 
 impl VM {
@@ -14,12 +15,20 @@ impl VM {
         Self {
             interpreter,
             stack: Vec::new(),
+            locals: Vec::new(),
         }
     }
 
     /// Run the compiled bytecode. Always returns the interpreter back
     /// (even on error) so the caller can restore it.
     pub(crate) fn run(mut self, code: &CompiledCode) -> (Interpreter, Result<(), RuntimeError>) {
+        // Initialize local variable slots
+        self.locals = vec![Value::Nil; code.locals.len()];
+        for (i, name) in code.locals.iter().enumerate() {
+            if let Some(val) = self.interpreter.env().get(name) {
+                self.locals[i] = val.clone();
+            }
+        }
         let mut ip = 0;
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip) {
@@ -482,6 +491,7 @@ impl VM {
                 let args: Vec<Value> = self.stack.drain(start..).collect();
                 let result = self.interpreter.eval_call_with_values(&name, args)?;
                 self.stack.push(result);
+                self.sync_locals_from_env(code);
                 *ip += 1;
             }
             OpCode::CallMethod { name_idx, arity } => {
@@ -490,8 +500,13 @@ impl VM {
                 let start = self.stack.len() - arity;
                 let args: Vec<Value> = self.stack.drain(start..).collect();
                 let target = self.stack.pop().unwrap();
-                let result = self.interpreter.eval_method_call_with_values(target, &method, args)?;
-                self.stack.push(result);
+                if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
+                    self.stack.push(native_result?);
+                } else {
+                    let result = self.interpreter.eval_method_call_with_values(target, &method, args)?;
+                    self.stack.push(result);
+                    self.sync_locals_from_env(code);
+                }
                 *ip += 1;
             }
             OpCode::CallMethodMut { name_idx, arity, target_name_idx } => {
@@ -500,9 +515,16 @@ impl VM {
                 let arity = *arity as usize;
                 let start = self.stack.len() - arity;
                 let args: Vec<Value> = self.stack.drain(start..).collect();
-                self.stack.pop(); // discard target value; interpreter re-evaluates from env
-                let result = self.interpreter.eval_method_call_mut_with_values(&target_name, &method, args)?;
-                self.stack.push(result);
+                let target = self.stack.pop().unwrap();
+                // Try native dispatch first (non-mutating methods only)
+                if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
+                    self.stack.push(native_result?);
+                } else {
+                    // Fall back to interpreter bridge (may mutate target)
+                    let result = self.interpreter.eval_method_call_mut_with_values(&target_name, &method, args)?;
+                    self.stack.push(result);
+                    self.sync_locals_from_env(code);
+                }
                 *ip += 1;
             }
             OpCode::ExecCall { name_idx, arity } => {
@@ -511,6 +533,7 @@ impl VM {
                 let start = self.stack.len() - arity;
                 let args: Vec<Value> = self.stack.drain(start..).collect();
                 self.interpreter.exec_call_with_values(&name, args)?;
+                self.sync_locals_from_env(code);
                 *ip += 1;
             }
 
@@ -572,7 +595,8 @@ impl VM {
                     Value::Rat(n, d) => make_rat(n + d, *d),
                     _ => Value::Int(1),
                 };
-                self.interpreter.env_mut().insert(name.to_string(), new_val);
+                self.interpreter.env_mut().insert(name.to_string(), new_val.clone());
+                self.update_local_if_exists(code, name, &new_val);
                 self.stack.push(val);
                 *ip += 1;
             }
@@ -584,7 +608,8 @@ impl VM {
                     Value::Rat(n, d) => make_rat(n - d, *d),
                     _ => Value::Int(-1),
                 };
-                self.interpreter.env_mut().insert(name.to_string(), new_val);
+                self.interpreter.env_mut().insert(name.to_string(), new_val.clone());
+                self.update_local_if_exists(code, name, &new_val);
                 self.stack.push(val);
                 *ip += 1;
             }
@@ -628,6 +653,7 @@ impl VM {
                     _ => Value::Int(1),
                 };
                 self.interpreter.env_mut().insert(name.to_string(), new_val.clone());
+                self.update_local_if_exists(code, name, &new_val);
                 self.stack.push(new_val);
                 *ip += 1;
             }
@@ -640,6 +666,7 @@ impl VM {
                     _ => Value::Int(-1),
                 };
                 self.interpreter.env_mut().insert(name.to_string(), new_val.clone());
+                self.update_local_if_exists(code, name, &new_val);
                 self.stack.push(new_val);
                 *ip += 1;
             }
@@ -665,6 +692,7 @@ impl VM {
                     _ => unreachable!("AssignExpr name must be a string constant"),
                 };
                 let val = self.stack.last().unwrap().clone();
+                self.update_local_if_exists(code, &name, &val);
                 self.interpreter.env_mut().insert(name, val);
                 *ip += 1;
             }
@@ -701,14 +729,17 @@ impl VM {
             }
             OpCode::ForLoop {
                 param_idx,
+                param_local,
                 body_end,
                 label,
             } => {
                 let iterable = self.stack.pop().unwrap();
                 let items = self.interpreter.list_from_value(iterable)?;
+                self.sync_locals_from_env(code);
                 let body_start = *ip + 1;
                 let loop_end = *body_end as usize;
                 let label = label.clone();
+                let param_local = *param_local;
 
                 let param_name = param_idx.map(|idx| match &code.constants[idx as usize] {
                     Value::Str(s) => s.clone(),
@@ -722,7 +753,10 @@ impl VM {
                     if let Some(ref name) = param_name {
                         self.interpreter
                             .env_mut()
-                            .insert(name.clone(), item);
+                            .insert(name.clone(), item.clone());
+                    }
+                    if let Some(slot) = param_local {
+                        self.locals[slot as usize] = item;
                     }
                     'body_redo: loop {
                         match self.run_range(code, body_start, loop_end) {
@@ -1145,18 +1179,43 @@ impl VM {
             OpCode::InterpretStmt(idx) => {
                 let stmt = &code.stmt_pool[*idx as usize];
                 self.interpreter.exec_stmt(stmt)?;
+                self.sync_locals_from_env(code);
                 *ip += 1;
             }
             OpCode::InterpretExpr(idx) => {
                 let expr = &code.expr_pool[*idx as usize];
                 let val = self.interpreter.eval_expr(expr)?;
                 self.stack.push(val);
+                self.sync_locals_from_env(code);
                 *ip += 1;
             }
 
-            // Not yet used
-            OpCode::GetLocal(_) | OpCode::SetLocal(_) => {
-                unreachable!("Local variable opcodes not yet implemented");
+            // -- Local variables (indexed slots) --
+            OpCode::GetLocal(idx) => {
+                self.stack.push(self.locals[*idx as usize].clone());
+                *ip += 1;
+            }
+            OpCode::SetLocal(idx) => {
+                let val = self.stack.pop().unwrap();
+                let idx = *idx as usize;
+                self.locals[idx] = val.clone();
+                // Dual-write to env for interpreter bridge compatibility
+                let name = &code.locals[idx];
+                let val = if name.starts_with('%') {
+                    Interpreter::coerce_to_hash(val)
+                } else {
+                    val
+                };
+                self.interpreter.env_mut().insert(name.clone(), val);
+                *ip += 1;
+            }
+            // -- Assignment as expression for local variable --
+            OpCode::AssignExprLocal(idx) => {
+                let val = self.stack.last().unwrap().clone();
+                let idx = *idx as usize;
+                self.locals[idx] = val.clone();
+                self.interpreter.env_mut().insert(code.locals[idx].clone(), val);
+                *ip += 1;
             }
         }
         Ok(())
@@ -1184,5 +1243,135 @@ impl VM {
         self.stack.push(result);
         *ip += 1;
         Ok(())
+    }
+
+    /// Sync local variable slots from the interpreter environment.
+    /// Called after operations that may modify env (InterpretExpr, InterpretStmt, etc.).
+    fn sync_locals_from_env(&mut self, code: &CompiledCode) {
+        for (i, name) in code.locals.iter().enumerate() {
+            if let Some(val) = self.interpreter.env().get(name) {
+                self.locals[i] = val.clone();
+            }
+        }
+    }
+
+    /// Find the local slot index for a variable name, if it exists.
+    fn find_local_slot(&self, code: &CompiledCode, name: &str) -> Option<usize> {
+        code.locals.iter().position(|n| n == name)
+    }
+
+    /// Update a local slot if the variable name is a local.
+    fn update_local_if_exists(&mut self, code: &CompiledCode, name: &str, val: &Value) {
+        if let Some(slot) = self.find_local_slot(code, name) {
+            self.locals[slot] = val.clone();
+        }
+    }
+
+    /// Try to dispatch a method call natively (without interpreter bridge).
+    /// Returns Some(result) on success, None if the method should fall through.
+    fn try_native_method(target: &Value, method: &str, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+        if !args.is_empty() {
+            return None; // Only zero-arg methods for now
+        }
+        match method {
+            "defined" => Some(Ok(Value::Bool(!matches!(target, Value::Nil)))),
+            "Bool" => Some(Ok(Value::Bool(target.truthy()))),
+            "Str" => {
+                // Exclude complex types with special interpreter handling
+                match target {
+                    Value::Package(_) | Value::Instance { .. } => return None,
+                    Value::Str(s) if s == "IO::Special" => return Some(Ok(Value::Str(String::new()))),
+                    _ => Some(Ok(Value::Str(target.to_string_value()))),
+                }
+            }
+            "Int" => {
+                let result = match target {
+                    Value::Int(i) => Value::Int(*i),
+                    Value::Num(f) => Value::Int(*f as i64),
+                    Value::Rat(n, d) if *d != 0 => Value::Int(*n / *d),
+                    Value::Str(s) => {
+                        if let Ok(i) = s.trim().parse::<i64>() {
+                            Value::Int(i)
+                        } else if let Ok(f) = s.trim().parse::<f64>() {
+                            Value::Int(f as i64)
+                        } else {
+                            return None; // Fall back to interpreter for error handling
+                        }
+                    }
+                    Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
+                    _ => return None,
+                };
+                Some(Ok(result))
+            }
+            "Numeric" | "Num" => {
+                let result = match target {
+                    Value::Int(i) => Value::Int(*i),
+                    Value::Num(f) => Value::Num(*f),
+                    Value::Rat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
+                    Value::Str(s) => {
+                        if let Ok(i) = s.trim().parse::<i64>() {
+                            Value::Int(i)
+                        } else if let Ok(f) = s.trim().parse::<f64>() {
+                            Value::Num(f)
+                        } else {
+                            return None;
+                        }
+                    }
+                    Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
+                    _ => return None,
+                };
+                Some(Ok(result))
+            }
+            "chars" => {
+                Some(Ok(Value::Int(target.to_string_value().chars().count() as i64)))
+            }
+            "elems" => {
+                let result = match target {
+                    Value::Array(items) => Value::Int(items.len() as i64),
+                    Value::Hash(items) => Value::Int(items.len() as i64),
+                    Value::Set(items) => Value::Int(items.len() as i64),
+                    Value::Bag(items) => Value::Int(items.len() as i64),
+                    Value::Mix(items) => Value::Int(items.len() as i64),
+                    _ => return None,
+                };
+                Some(Ok(result))
+            }
+            "abs" => {
+                let result = match target {
+                    Value::Int(i) => Value::Int(i.abs()),
+                    Value::Num(f) => Value::Num(f.abs()),
+                    Value::Rat(n, d) => Value::Rat(n.abs(), *d),
+                    _ => return None,
+                };
+                Some(Ok(result))
+            }
+            "uc" => {
+                Some(Ok(Value::Str(target.to_string_value().to_uppercase())))
+            }
+            "lc" => {
+                Some(Ok(Value::Str(target.to_string_value().to_lowercase())))
+            }
+            "sign" => {
+                let result = match target {
+                    Value::Int(i) => Value::Int(i.signum()),
+                    Value::Num(f) => {
+                        if f.is_nan() {
+                            Value::Num(f64::NAN)
+                        } else {
+                            Value::Int(if *f > 0.0 { 1 } else if *f < 0.0 { -1 } else { 0 })
+                        }
+                    }
+                    _ => return None,
+                };
+                Some(Ok(result))
+            }
+            "end" => {
+                match target {
+                    Value::Array(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
     }
 }

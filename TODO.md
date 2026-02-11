@@ -241,6 +241,8 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
 
 **Phase 9 (done):** All remaining expressions compiled. `HyperOp`/`MetaOp`/`InfixFunc` sub-expressions compiled to bytecode with bridge opcodes. `Block`/`AnonSub`/`Lambda`/`Gather`/`CallOn`/`Try` delegate to interpreter (env capture / complex state).
 
+**Phase 10 (done):** Local variable slots (`GetLocal`/`SetLocal` with indexed O(1) access), compiler `local_map` for `VarDecl`/`Assign`/`Var`/`ForLoop` params, dual-write to env for interpreter bridge compatibility, `sync_locals_from_env` after fallback opcodes. Native method dispatch for 12 zero-arg methods (`.defined`/`.Bool`/`.Str`/`.Int`/`.Numeric`/`.Num`/`.chars`/`.elems`/`.abs`/`.uc`/`.lc`/`.sign`/`.end`) bypassing interpreter bridge.
+
 #### Compiled Binary Ops
 - [x] Arithmetic: `+`, `-`, `*`, `/`, `%`, `**`
 - [x] String: `~` (concat)
@@ -303,12 +305,15 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
 - [x] `React` (compiled inline) / `Whenever` (delegate to interpreter)
 - [x] `Subtest` (delegate to interpreter)
 
-#### Remaining: VM Architecture
-- [ ] Local variable slots (`GetLocal`/`SetLocal` — indexed, no HashMap lookup)
-- [ ] Scope management (push/pop env frames in VM)
+#### VM Architecture
+- [x] Local variable slots (`GetLocal`/`SetLocal` — indexed, no HashMap lookup)
+- [x] Scope management (dual-write locals + env sync after interpreter bridges)
 - [ ] Functions/closures in VM (`MakeClosure`, upvalues)
-- [ ] Native method dispatch in VM (bypass interpreter bridge)
+  - Requires compiling function bodies to separate CompiledCode chunks, call frame stack, upvalue capture
+- [x] Native method dispatch in VM (bypass interpreter bridge)
+  - Tier 1: `.defined`, `.Bool`, `.Str`, `.Int`, `.Numeric`/`.Num`, `.chars`, `.elems`, `.abs`, `.uc`, `.lc`, `.sign`, `.end`
 - [ ] Remove fallback opcodes (full native compilation)
+  - Depends on functions/closures + natively compiling all declaration types
 
 ### Optimization Pipeline
 - [ ] Constant folding

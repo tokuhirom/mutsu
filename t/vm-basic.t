@@ -1,5 +1,5 @@
 use Test;
-plan 142;
+plan 179;
 
 # Literal compilation
 is 42, 42, 'integer literal';
@@ -441,3 +441,106 @@ is $block(), 42, 'block as expression value';
 # Lambda (delegate to interpreter)
 my $lam = -> $x { $x * 2 };
 is $lam(5), 10, 'lambda expression value';
+
+# --- Phase 10: Local variable slots + native method dispatch ---
+
+# Local variable read/write (GetLocal/SetLocal)
+my $loc_x = 42;
+is $loc_x, 42, 'local variable read via GetLocal';
+
+# Local variable assignment
+my $loc_y = 10;
+$loc_y = 20;
+is $loc_y, 20, 'local variable assign via SetLocal';
+
+# For-loop param as local
+my $loc_fsum = 0;
+for 1..5 -> $n { $loc_fsum = $loc_fsum + $n; }
+is $loc_fsum, 15, 'for-loop param as local slot';
+
+# $_ topic still works (not a local)
+my $topic_sum = 0;
+for 1..3 { $topic_sum = $topic_sum + $_; }
+is $topic_sum, 6, '$_ topic variable still works';
+
+# Interaction with interpreter fallback (InterpretStmt syncs locals)
+my $sub_loc = 0;
+sub get_sub_loc() { $sub_loc }
+is get_sub_loc(), 0, 'interpreter fallback reads local via env';
+
+# Increment/decrement on locals
+my $inc_loc = 5;
+$inc_loc++;
+is $inc_loc, 6, 'postfix ++ on local variable';
+++$inc_loc;
+is $inc_loc, 7, 'prefix ++ on local variable';
+$inc_loc--;
+is $inc_loc, 6, 'postfix -- on local variable';
+--$inc_loc;
+is $inc_loc, 5, 'prefix -- on local variable';
+
+# Nested for loops with different params
+my $nested_sum = 0;
+for 1..3 -> $i {
+    for 1..2 -> $j {
+        $nested_sum = $nested_sum + $i * $j;
+    }
+}
+is $nested_sum, 18, 'nested for loops with local params';
+
+# AssignExpr on locals
+my $ae_loc;
+my $ae_loc_val = ($ae_loc = 77);
+is $ae_loc, 77, 'assign expr sets local';
+is $ae_loc_val, 77, 'assign expr returns value for local';
+
+# Native .defined dispatch
+is 42.defined, True, 'native .defined on Int';
+is Nil.defined, False, 'native .defined on Nil';
+my $def_var = "hello";
+is $def_var.defined, True, 'native .defined on local Str';
+
+# Native .elems dispatch
+my @ne_arr = (1, 2, 3, 4);
+is @ne_arr.elems, 4, 'native .elems on array';
+my %ne_hash = (a => 1, b => 2);
+is %ne_hash.elems, 2, 'native .elems on hash';
+
+# Native .chars dispatch
+is "hello".chars, 5, 'native .chars on string literal';
+my $chars_str = "world";
+is $chars_str.chars, 5, 'native .chars on local variable';
+
+# Native .abs dispatch
+is (-42).abs, 42, 'native .abs on negative Int';
+is 42.abs, 42, 'native .abs on positive Int';
+my $abs_val = -3.14;
+is $abs_val.abs, 3.14, 'native .abs on Num';
+
+# Native .uc/.lc dispatch
+is "hello".uc, "HELLO", 'native .uc';
+is "HELLO".lc, "hello", 'native .lc';
+
+# Native .Int dispatch
+is "42".Int, 42, 'native .Int on string';
+is 3.14.Int, 3, 'native .Int on Num';
+is True.Int, 1, 'native .Int on True';
+is False.Int, 0, 'native .Int on False';
+
+# Native .Bool dispatch
+is 42.Bool, True, 'native .Bool on non-zero Int';
+is 0.Bool, False, 'native .Bool on zero';
+is "".Bool, False, 'native .Bool on empty string';
+
+# Native .Str dispatch
+is 42.Str, "42", 'native .Str on Int';
+is True.Str, "True", 'native .Str on Bool';
+
+# Native .sign dispatch
+is 42.sign, 1, 'native .sign positive';
+is (-5).sign, -1, 'native .sign negative';
+is 0.sign, 0, 'native .sign zero';
+
+# Native .end dispatch
+my @end_arr = (10, 20, 30, 40);
+is @end_arr.end, 3, 'native .end on array';
