@@ -2346,6 +2346,88 @@ impl VM {
                 Value::Array(items) => Some(Ok(items.first().cloned().unwrap_or(Value::Nil))),
                 _ => None,
             },
+            "min" => match target {
+                Value::Array(items) => Some(Ok(items
+                    .iter()
+                    .cloned()
+                    .min_by(|a, b| match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                        _ => a.to_string_value().cmp(&b.to_string_value()),
+                    })
+                    .unwrap_or(Value::Nil))),
+                _ => Some(Ok(target.clone())),
+            },
+            "max" => match target {
+                Value::Array(items) => Some(Ok(items
+                    .iter()
+                    .cloned()
+                    .max_by(|a, b| match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                        _ => a.to_string_value().cmp(&b.to_string_value()),
+                    })
+                    .unwrap_or(Value::Nil))),
+                _ => Some(Ok(target.clone())),
+            },
+            "tclc" => {
+                let s = target.to_string_value();
+                let mut result = String::new();
+                let mut first = true;
+                for ch in s.chars() {
+                    if first {
+                        for c in ch.to_uppercase() {
+                            result.push(c);
+                        }
+                        first = false;
+                    } else {
+                        for c in ch.to_lowercase() {
+                            result.push(c);
+                        }
+                    }
+                }
+                Some(Ok(Value::Str(result)))
+            }
+            "succ" => match target {
+                Value::Enum { .. } | Value::Instance { .. } => None,
+                Value::Int(i) => Some(Ok(Value::Int(i + 1))),
+                Value::Str(s) => {
+                    if s.is_empty() {
+                        Some(Ok(Value::Str(String::new())))
+                    } else {
+                        let mut chars: Vec<char> = s.chars().collect();
+                        if let Some(last) = chars.last_mut() {
+                            *last = char::from_u32(*last as u32 + 1).unwrap_or(*last);
+                        }
+                        Some(Ok(Value::Str(chars.into_iter().collect())))
+                    }
+                }
+                _ => Some(Ok(target.clone())),
+            },
+            "pred" => match target {
+                Value::Enum { .. } | Value::Instance { .. } => None,
+                Value::Int(i) => Some(Ok(Value::Int(i - 1))),
+                _ => Some(Ok(target.clone())),
+            },
+            "log" => match target {
+                Value::Int(i) => Some(Ok(Value::Num((*i as f64).ln()))),
+                Value::Num(f) => Some(Ok(Value::Num(f.ln()))),
+                _ => Some(Ok(Value::Num(f64::NAN))),
+            },
+            "exp" => match target {
+                Value::Int(i) => Some(Ok(Value::Num((*i as f64).exp()))),
+                Value::Num(f) => Some(Ok(Value::Num(f.exp()))),
+                _ => Some(Ok(Value::Num(f64::NAN))),
+            },
+            "Rat" => match target {
+                Value::Rat(_, _) => Some(Ok(target.clone())),
+                Value::Int(i) => Some(Ok(make_rat(*i, 1))),
+                Value::Num(f) => {
+                    let denom = 1_000_000i64;
+                    let numer = (f * denom as f64).round() as i64;
+                    Some(Ok(make_rat(numer, denom)))
+                }
+                Value::FatRat(n, d) => Some(Ok(make_rat(*n, *d))),
+                _ => Some(Ok(make_rat(0, 1))),
+            },
             _ => None,
         }
     }
@@ -2467,6 +2549,40 @@ impl VM {
                 }
                 _ => None,
             },
+            "round" => {
+                let scale = match arg {
+                    Value::Int(i) => *i as f64,
+                    Value::Num(f) => *f,
+                    _ => return None,
+                };
+                let x = match target {
+                    Value::Int(i) => *i as f64,
+                    Value::Num(f) => *f,
+                    _ => return None,
+                };
+                if scale == 0.0 {
+                    return Some(Ok(Value::Int(x.round() as i64)));
+                }
+                let factor = (1.0 / scale).abs();
+                Some(Ok(Value::Num((x * factor).round() / factor)))
+            }
+            "log" => {
+                let base_val = match arg {
+                    Value::Int(i) => *i as f64,
+                    Value::Num(f) => *f,
+                    _ => return None,
+                };
+                let x = match target {
+                    Value::Int(i) => *i as f64,
+                    Value::Num(f) => *f,
+                    _ => return None,
+                };
+                if base_val.is_finite() && base_val > 0.0 && base_val != 1.0 && x > 0.0 {
+                    Some(Ok(Value::Num(x.ln() / base_val.ln())))
+                } else {
+                    Some(Ok(Value::Num(f64::NAN)))
+                }
+            }
             _ => None,
         }
     }
@@ -2476,7 +2592,8 @@ impl VM {
         match args.len() {
             1 => Self::try_native_function_1arg(name, &args[0]),
             2 => Self::try_native_function_2arg(name, &args[0], &args[1]),
-            _ => None,
+            3 => Self::try_native_function_3arg(name, &args[0], &args[1], &args[2]),
+            _ => Self::try_native_function_variadic(name, args),
         }
     }
 
@@ -2577,12 +2694,15 @@ impl VM {
                 let x = Interpreter::to_float_value(arg).unwrap_or(f64::NAN);
                 Some(Ok(Value::Num(x.ln())))
             }
-            "sin" | "cos" | "tan" => {
+            "sin" | "cos" | "tan" | "asin" | "acos" | "atan" => {
                 let x = Interpreter::to_float_value(arg).unwrap_or(0.0);
                 let result = match name {
                     "sin" => x.sin(),
                     "cos" => x.cos(),
                     "tan" => x.tan(),
+                    "asin" => x.asin(),
+                    "acos" => x.acos(),
+                    "atan" => x.atan(),
                     _ => 0.0,
                 };
                 Some(Ok(Value::Num(result)))
@@ -2622,6 +2742,54 @@ impl VM {
                 }
                 _ => Value::Nil,
             })),
+            "flat" => Some(Ok(match arg {
+                Value::Array(items) => {
+                    let mut flat = Vec::new();
+                    for item in items {
+                        if let Value::Array(sub) = item {
+                            flat.extend(sub.clone());
+                        } else {
+                            flat.push(item.clone());
+                        }
+                    }
+                    Value::Array(flat)
+                }
+                other => Value::Array(vec![other.clone()]),
+            })),
+            "first" => Some(Ok(match arg {
+                Value::Array(items) => items.first().cloned().unwrap_or(Value::Nil),
+                _ => arg.clone(),
+            })),
+            "min" => Some(Ok(match arg {
+                Value::Array(items) => items
+                    .iter()
+                    .cloned()
+                    .min_by(|a, b| match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                        _ => a.to_string_value().cmp(&b.to_string_value()),
+                    })
+                    .unwrap_or(Value::Nil),
+                _ => arg.clone(),
+            })),
+            "max" => Some(Ok(match arg {
+                Value::Array(items) => items
+                    .iter()
+                    .cloned()
+                    .max_by(|a, b| match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                        _ => a.to_string_value().cmp(&b.to_string_value()),
+                    })
+                    .unwrap_or(Value::Nil),
+                _ => arg.clone(),
+            })),
+            "ords" => {
+                let s = arg.to_string_value();
+                let codes: Vec<Value> = s.chars().map(|ch| Value::Int(ch as u32 as i64)).collect();
+                Some(Ok(Value::Array(codes)))
+            }
+            "gist" => {
+                Some(Ok(Value::Str(arg.to_string_value())))
+            }
             _ => None,
         }
     }
@@ -2664,6 +2832,137 @@ impl VM {
                 let y = Interpreter::to_float_value(arg1).unwrap_or(0.0);
                 let x = Interpreter::to_float_value(arg2).unwrap_or(0.0);
                 Some(Ok(Value::Num(y.atan2(x))))
+            }
+            "log" => {
+                let x = Interpreter::to_float_value(arg1).unwrap_or(f64::NAN);
+                let base_val = Interpreter::to_float_value(arg2).unwrap_or(f64::NAN);
+                if base_val.is_finite() && base_val > 0.0 && base_val != 1.0 && x > 0.0 {
+                    Some(Ok(Value::Num(x.ln() / base_val.ln())))
+                } else {
+                    Some(Ok(Value::Num(f64::NAN)))
+                }
+            }
+            "round" => {
+                let x = Interpreter::to_float_value(arg1)?;
+                let scale = Interpreter::to_float_value(arg2)?;
+                if scale == 0.0 {
+                    Some(Ok(Value::Int(x.round() as i64)))
+                } else {
+                    let factor = (1.0 / scale).abs();
+                    Some(Ok(Value::Num((x * factor).round() / factor)))
+                }
+            }
+            "min" => {
+                let cmp = match (arg1, arg2) {
+                    (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                    _ => arg1.to_string_value().cmp(&arg2.to_string_value()),
+                };
+                Some(Ok(if cmp == std::cmp::Ordering::Less || cmp == std::cmp::Ordering::Equal { arg1.clone() } else { arg2.clone() }))
+            }
+            "max" => {
+                let cmp = match (arg1, arg2) {
+                    (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                    _ => arg1.to_string_value().cmp(&arg2.to_string_value()),
+                };
+                Some(Ok(if cmp == std::cmp::Ordering::Greater || cmp == std::cmp::Ordering::Equal { arg1.clone() } else { arg2.clone() }))
+            }
+            _ => None,
+        }
+    }
+
+    /// Native dispatch for three-arg built-in functions.
+    fn try_native_function_3arg(name: &str, arg1: &Value, arg2: &Value, arg3: &Value) -> Option<Result<Value, RuntimeError>> {
+        match name {
+            "substr" => {
+                let s = arg1.to_string_value();
+                let start = match arg2 {
+                    Value::Int(i) => (*i).max(0) as usize,
+                    _ => return None,
+                };
+                let len = match arg3 {
+                    Value::Int(i) => (*i).max(0) as usize,
+                    _ => return None,
+                };
+                let chars: Vec<char> = s.chars().collect();
+                let start = start.min(chars.len());
+                let end = (start + len).min(chars.len());
+                Some(Ok(Value::Str(chars[start..end].iter().collect())))
+            }
+            _ => None,
+        }
+    }
+
+    /// Native dispatch for variadic built-in functions.
+    fn try_native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+        match name {
+            "min" => {
+                if args.is_empty() { return Some(Ok(Value::Nil)); }
+                Some(Ok(args.iter()
+                    .cloned()
+                    .min_by(|a, b| match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                        _ => a.to_string_value().cmp(&b.to_string_value()),
+                    })
+                    .unwrap_or(Value::Nil)))
+            }
+            "max" => {
+                if args.is_empty() { return Some(Ok(Value::Nil)); }
+                Some(Ok(args.iter()
+                    .cloned()
+                    .max_by(|a, b| match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                        _ => a.to_string_value().cmp(&b.to_string_value()),
+                    })
+                    .unwrap_or(Value::Nil)))
+            }
+            "chrs" => {
+                let mut result = String::new();
+                for arg in args {
+                    match arg {
+                        Value::Int(i) => {
+                            if *i >= 0 {
+                                if let Some(ch) = std::char::from_u32(*i as u32) {
+                                    result.push(ch);
+                                    continue;
+                                }
+                            }
+                            result.push_str(&arg.to_string_value());
+                        }
+                        Value::Array(items) => {
+                            for item in items {
+                                if let Value::Int(i) = item {
+                                    if *i >= 0 {
+                                        if let Some(ch) = std::char::from_u32(*i as u32) {
+                                            result.push(ch);
+                                            continue;
+                                        }
+                                    }
+                                }
+                                result.push_str(&item.to_string_value());
+                            }
+                        }
+                        _ => result.push_str(&arg.to_string_value()),
+                    }
+                }
+                Some(Ok(Value::Str(result)))
+            }
+            "flat" => {
+                let mut result = Vec::new();
+                for arg in args {
+                    match arg {
+                        Value::Array(items) => {
+                            for item in items {
+                                if let Value::Array(sub) = item {
+                                    result.extend(sub.clone());
+                                } else {
+                                    result.push(item.clone());
+                                }
+                            }
+                        }
+                        other => result.push(other.clone()),
+                    }
+                }
+                Some(Ok(Value::Array(result)))
             }
             _ => None,
         }

@@ -1,5 +1,5 @@
 use Test;
-plan 298;
+plan 327;
 
 # Literal compilation
 is 42, 42, 'integer literal';
@@ -791,3 +791,58 @@ is index("hello world", "world"), 6, 'index function';
 ok sin(0) == 0e0, 'sin function';
 ok cos(0) == 1e0, 'cos function';
 ok exp(0) == 1e0, 'exp function';
+
+# === VM Phase 16: Remaining Pure Native Dispatch ===
+
+# Zero-arg methods: tclc, succ, pred
+is "hELLO".tclc, "Hello", 'tclc titlecase';
+is 5.succ, 6, 'succ on Int';
+is "a".succ, "b", 'succ on Str';
+is 5.pred, 4, 'pred on Int';
+
+# Zero-arg methods: min, max on arrays
+is (3,1,2).min, 1, 'min method on array';
+is (3,1,2).max, 3, 'max method on array';
+
+# Zero-arg methods: log, exp
+ok 1.log == 0e0, 'log method on 1';
+ok 0.exp == 1e0, 'exp method on 0';
+
+# Zero-arg method: Rat
+is 42.Rat.nude.join("/"), "42/1", 'Rat method on Int';
+
+# One-arg methods: round(scale), log(base)
+is 3.456.round(0.01), 3.46, 'round with scale';
+is 100.log(10), 2e0, 'log with base';
+
+# Functions: asin, acos, atan
+ok asin(0) == 0e0, 'asin function';
+ok atan(0) == 0e0, 'atan function';
+
+# Functions: flat, first, min, max
+is flat([1,[2,3],4]).join(","), "1,2,3,4", 'flat function';
+is first([5,6,7]), 5, 'first function';
+is min(3,1,2), 1, 'min function variadic';
+is max(3,1,2), 3, 'max function variadic';
+is min(10,20), 10, 'min function 2-arg';
+is max(10,20), 20, 'max function 2-arg';
+
+# Functions: ords, gist
+is ords("AB").join(","), "65,66", 'ords function';
+is gist(42), "42", 'gist function';
+
+# Functions: log 2-arg, round 2-arg, substr 3-arg
+is log(100, 10), 2e0, 'log function with base';
+is round(3.456, 0.01), 3.46, 'round function with scale';
+is substr("hello world", 0, 5), "hello", 'substr function 3-arg';
+is substr("hello world", 6, 5), "world", 'substr function 3-arg mid';
+
+# Functions: chrs
+is chrs(65, 66, 67), "ABC", 'chrs function';
+
+# Method .tclc edge case
+is "hello WORLD".tclc, "Hello world", 'tclc lowercases rest';
+
+# Method .min/.max on array
+is (10, 5, 20, 1).min, 1, 'min method 4 elements';
+is (10, 5, 20, 1).max, 20, 'max method 4 elements';

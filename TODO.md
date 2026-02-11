@@ -253,6 +253,8 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
 
 **Phase 15 (done):** Native function dispatch, two-arg methods, and bridge elimination — added `try_native_function` dispatcher for ~30 pure built-in functions (`abs`/`sqrt`/`floor`/`ceiling`/`round`/`exp`/`log`/`sin`/`cos`/`tan`/`truncate`/`chr`/`ord`/`uc`/`lc`/`tc`/`chomp`/`chop`/`trim`/`flip`/`words`/`chars`/`defined`/`elems`/`reverse`/`sort`/`join`/`index`/`substr`/`atan2`), wired into `CallFunc` and `ExecCall`. Added `try_native_method_2arg` for two-arg methods (`.substr(start, len)`). Added 3 one-arg native methods (`.rindex`/`.fmt`/`.parse-base`). Converted 3 bridge functions to static (`to_float_value`/`value_type_name`/`char_idx_to_byte` → `pub(crate)`).
 
+**Phase 16 (done):** Remaining pure native dispatch — extended function dispatch with 3-arg and variadic support. Added native functions: `asin`/`acos`/`atan`, `min`/`max` (2-arg and variadic), `flat`, `first`, `ords`, `gist`, `chrs`, `log(x,base)` 2-arg, `round(n,scale)` 2-arg, `substr(s,start,len)` 3-arg. Added 8 zero-arg native methods: `.tclc`/`.succ`/`.pred`/`.log`/`.exp`/`.min`/`.max`/`.Rat`. Added 2 one-arg native methods: `.round(scale)`/`.log(base)`. Enum values correctly fall through to interpreter for `.succ`/`.pred`.
+
 #### Compiled Binary Ops
 - [x] Arithmetic: `+`, `-`, `*`, `/`, `%`, `**`
 - [x] String: `~` (concat)
@@ -329,11 +331,18 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
   - Tier 1: `.defined`, `.Bool`, `.Str`, `.Int`, `.Numeric`/`.Num`, `.chars`, `.elems`, `.abs`, `.uc`, `.lc`, `.sign`, `.end`
   - Tier 2: `.flat`, `.sort`, `.reverse`, `.unique`, `.keys`, `.values`, `.floor`, `.ceiling`, `.round`, `.sqrt`, `.words`, `.lines`, `.trim`, `.trim-leading`, `.trim-trailing`, `.so`, `.not`
   - Tier 3 (zero-arg): `.chomp`, `.chop`, `.comb`, `.gist`/`.raku`/`.perl`, `.head`, `.tail`, `.first`
-  - Tier 4 (one-arg): `.contains`, `.starts-with`, `.ends-with`, `.index`, `.substr`, `.split`, `.join`, `.head(n)`, `.tail(n)`, `.base`, `.rindex`, `.fmt`, `.parse-base`
+  - Tier 4 (one-arg): `.contains`, `.starts-with`, `.ends-with`, `.index`, `.substr`, `.split`, `.join`, `.head(n)`, `.tail(n)`, `.base`, `.rindex`, `.fmt`, `.parse-base`, `.round(scale)`, `.log(base)`
   - Tier 5 (two-arg): `.substr(start, len)`
+  - Tier 6 (zero-arg): `.tclc`, `.succ`, `.pred`, `.log`, `.exp`, `.min`, `.max`, `.Rat`
 - [x] Native function dispatch in VM (bypass interpreter bridge for pure built-ins)
-  - 1-arg: `abs`, `sqrt`, `floor`, `ceiling`/`ceil`, `round`, `exp`, `log`, `sin`, `cos`, `tan`, `truncate`, `chr`, `ord`, `uc`, `lc`, `tc`, `chomp`, `chop`, `trim`, `flip`, `words`, `chars`, `defined`, `elems`, `reverse`, `sort`
-  - 2-arg: `join`, `index`, `substr`, `atan2`
+  - 1-arg: `abs`, `sqrt`, `floor`, `ceiling`/`ceil`, `round`, `exp`, `log`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `truncate`, `chr`, `ord`, `uc`, `lc`, `tc`, `chomp`, `chop`, `trim`, `flip`, `words`, `chars`, `defined`, `elems`, `reverse`, `sort`, `flat`, `first`, `min`, `max`, `ords`, `gist`
+  - 2-arg: `join`, `index`, `substr`, `atan2`, `log`, `round`, `min`, `max`
+  - 3-arg: `substr`
+  - variadic: `min`, `max`, `chrs`, `flat`
+- [ ] Native dispatch remaining (pure, no interpreter state needed)
+  - Methods (zero-arg): `.Complex`, `.sin`, `.cos`, `.tan`
+  - Methods (one-arg): `.comb(pattern-str)`, `.substr-rw`
+  - Methods (two-arg+): `.split(sep,limit)`, `.index(needle,pos)`, `.rindex(needle,pos)`, `.base(radix,digits)`
 - [ ] Remove fallback opcodes (full native compilation)
   - Depends on closures + natively compiling all declaration types
 
