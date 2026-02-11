@@ -1251,42 +1251,56 @@ impl Parser {
     }
 
     fn parse_comma_expr(&mut self) -> Result<Expr, RuntimeError> {
+        // Collect comma-separated items
         let mut exprs = Vec::new();
         exprs.push(self.parse_expr()?);
-        if self.match_kind(TokenKind::Comma) {
+        while self.match_kind(TokenKind::Comma) {
+            // Before parsing next item, check if next token is Z/X list infix or ...
+            if self.try_meta_op_zx().is_some() {
+                break;
+            }
+            if self.check(&TokenKind::DotDotDot) {
+                break;
+            }
+            // Allow trailing comma (before ), ], etc.)
+            if self.check(&TokenKind::RParen)
+                || self.check(&TokenKind::RBracket)
+                || self.check(&TokenKind::Semicolon)
+                || self.check(&TokenKind::Eof)
+            {
+                break;
+            }
             exprs.push(self.parse_expr()?);
-            while self.match_kind(TokenKind::Comma) {
-                exprs.push(self.parse_expr()?);
-            }
-            if matches!(exprs.last(), Some(Expr::MetaOp { .. })) {
-                if let Some(Expr::MetaOp {
-                    meta,
-                    op,
-                    left,
-                    right,
-                }) = exprs.pop()
-                {
-                    if meta == "X" || meta == "Z" {
-                        let mut items = exprs;
-                        items.push(*left);
-                        return Ok(Expr::MetaOp {
-                            meta,
-                            op,
-                            left: Box::new(Expr::ArrayLiteral(items)),
-                            right,
-                        });
-                    }
-                    exprs.push(Expr::MetaOp {
-                        meta,
-                        op,
-                        left,
-                        right,
-                    });
-                }
-            }
-            return Ok(Expr::ArrayLiteral(exprs));
         }
-        Ok(exprs.remove(0))
+        let left = if exprs.len() == 1 {
+            exprs.remove(0)
+        } else {
+            Expr::ArrayLiteral(exprs)
+        };
+
+        // Check for Z/X list infix operators (looser than comma)
+        if let Some((meta, op, consumed)) = self.try_meta_op_zx() {
+            self.pos += consumed;
+            let right = self.parse_comma_expr()?;
+            return Ok(Expr::MetaOp {
+                meta,
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            });
+        }
+
+        // Check for ... (sequence operator, looser than comma)
+        if self.match_kind(TokenKind::DotDotDot) {
+            let right = self.parse_comma_expr()?;
+            return Ok(Expr::Binary {
+                left: Box::new(left),
+                op: TokenKind::DotDotDot,
+                right: Box::new(right),
+            });
+        }
+
+        Ok(left)
     }
 
     fn parse_expr_list(&mut self) -> Result<Vec<Expr>, RuntimeError> {
@@ -1675,11 +1689,11 @@ impl Parser {
         Ok(expr)
     }
 
+    /// Detect R (reverse) meta-operator only. Z/X are handled at list infix level.
     fn try_meta_op(&self) -> Option<(String, String, usize)> {
         if let Some(TokenKind::Ident(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
-            if matches!(name.as_str(), "R" | "X" | "Z") {
+            if name == "R" {
                 let meta = name.clone();
-                // Look ahead for operator token
                 let op = match self.tokens.get(self.pos + 1).map(|t| &t.kind) {
                     Some(TokenKind::Plus) => "+",
                     Some(TokenKind::Minus) => "-",
@@ -1721,7 +1735,7 @@ impl Parser {
             }
             if name.len() > 1 {
                 let (meta, op) = name.split_at(1);
-                if matches!(meta, "R" | "X" | "Z")
+                if meta == "R"
                     && matches!(
                         op,
                         "eq" | "ne"
@@ -1735,6 +1749,114 @@ impl Parser {
                             | "xx"
                             | "cmp"
                             | "leg"
+                    )
+                {
+                    return Some((meta.to_string(), op.to_string(), 1));
+                }
+            }
+        }
+        None
+    }
+
+    /// Detect Z/X meta-operators at list infix precedence (looser than comma).
+    /// Returns (meta, op, tokens_consumed). op="" for bare Z/X.
+    fn try_meta_op_zx(&self) -> Option<(String, String, usize)> {
+        if let Some(TokenKind::Ident(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+            if matches!(name.as_str(), "X" | "Z") {
+                let meta = name.clone();
+                // Look ahead for operator token
+                let op = match self.tokens.get(self.pos + 1).map(|t| &t.kind) {
+                    Some(TokenKind::Plus) => "+",
+                    Some(TokenKind::Minus) => "-",
+                    Some(TokenKind::Star) => "*",
+                    Some(TokenKind::StarStar) => "**",
+                    Some(TokenKind::Slash) => "/",
+                    Some(TokenKind::Percent) => "%",
+                    Some(TokenKind::Tilde) => "~",
+                    Some(TokenKind::Comma) => ",",
+                    Some(TokenKind::EqEq) => "==",
+                    Some(TokenKind::BangEq) => "!=",
+                    Some(TokenKind::Lt) => {
+                        // Disambiguate: Z< (zip-less-than) vs Z <word list>
+                        // If < is followed by ident/number tokens ending with >,
+                        // treat as bare Z followed by angle bracket word list.
+                        let mut j = self.pos + 2;
+                        let mut looks_like_qw = false;
+                        while j < self.tokens.len() {
+                            match &self.tokens[j].kind {
+                                TokenKind::Ident(_)
+                                | TokenKind::Number(_)
+                                | TokenKind::Str(_)
+                                | TokenKind::Float(_)
+                                | TokenKind::Minus => j += 1,
+                                TokenKind::Gt => {
+                                    looks_like_qw = true;
+                                    break;
+                                }
+                                _ => break,
+                            }
+                        }
+                        if looks_like_qw {
+                            return Some((meta, "".to_string(), 1));
+                        }
+                        "<"
+                    }
+                    Some(TokenKind::Gt) => ">",
+                    Some(TokenKind::Lte) => "<=",
+                    Some(TokenKind::Gte) => ">=",
+                    Some(TokenKind::BitAnd) => "+&",
+                    Some(TokenKind::BitOr) => "+|",
+                    Some(TokenKind::BitXor) => "+^",
+                    Some(TokenKind::FatArrow) => "=>",
+                    Some(TokenKind::Ident(s))
+                        if matches!(
+                            s.as_str(),
+                            "eq" | "ne"
+                                | "lt"
+                                | "le"
+                                | "gt"
+                                | "ge"
+                                | "min"
+                                | "max"
+                                | "x"
+                                | "xx"
+                                | "cmp"
+                                | "leg"
+                                | "and"
+                                | "or"
+                                | "andthen"
+                                | "orelse"
+                        ) =>
+                    {
+                        s.as_str()
+                    }
+                    _ => {
+                        // Bare Z/X (no operator suffix)
+                        return Some((meta, "".to_string(), 1));
+                    }
+                };
+                return Some((meta, op.to_string(), 2));
+            }
+            if name.len() > 1 {
+                let (meta, op) = name.split_at(1);
+                if matches!(meta, "X" | "Z")
+                    && matches!(
+                        op,
+                        "eq" | "ne"
+                            | "lt"
+                            | "le"
+                            | "gt"
+                            | "ge"
+                            | "min"
+                            | "max"
+                            | "x"
+                            | "xx"
+                            | "cmp"
+                            | "leg"
+                            | "and"
+                            | "or"
+                            | "andthen"
+                            | "orelse"
                     )
                 {
                     return Some((meta.to_string(), op.to_string(), 1));
@@ -2496,6 +2618,9 @@ impl Parser {
             }
         } else if self.check(&TokenKind::Lt) {
             self.parse_angle_literal()
+        } else if self.match_kind(TokenKind::Star) {
+            // Whatever star (*)
+            Expr::Literal(Value::Num(f64::INFINITY))
         } else {
             return Err(RuntimeError::new(format!(
                 "Unexpected token in expression at {:?}",
@@ -2515,6 +2640,22 @@ impl Parser {
                 expr = Expr::PostfixOp {
                     op: TokenKind::MinusMinus,
                     expr: Box::new(expr),
+                };
+                continue;
+            }
+            if self.check(&TokenKind::Dot)
+                && matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::LBracket)
+                )
+            {
+                // .[] subscript syntax — treat as index access
+                self.pos += 2; // skip . and [
+                let index = self.parse_expr_or_true();
+                self.consume_kind(TokenKind::RBracket)?;
+                expr = Expr::Index {
+                    target: Box::new(expr),
+                    index: Box::new(index),
                 };
                 continue;
             }
