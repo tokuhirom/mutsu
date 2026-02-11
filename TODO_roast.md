@@ -213,7 +213,7 @@
 - [ ] roast/S03-operators/adverbial-modifiers.t
   - 4/42 pass.
 - [ ] roast/S03-operators/also.t
-  - 7/8 pass.
+  - 7/8 pass. Test 6 fails: closures cannot mutate outer lexical variables (env is cloned by value, not shared by reference).
 - [ ] roast/S03-operators/andthen.t
   - 2/14 pass.
 - [ ] roast/S03-operators/arith.t
