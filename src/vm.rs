@@ -1911,12 +1911,12 @@ impl VM {
                     if modifier.as_deref() == Some("X") {
                         let mut parts = Vec::new();
                         for val in &right_vals {
-                            parts.push(self.interpreter.format_sprintf_bridge(&fmt, Some(val)));
+                            parts.push(Interpreter::format_sprintf(&fmt, Some(val)));
                         }
                         Value::Str(parts.join(" "))
                     } else {
                         let arg = right_vals.first();
-                        let rendered = self.interpreter.format_sprintf_bridge(&fmt, arg);
+                        let rendered = Interpreter::format_sprintf(&fmt, arg);
                         Value::Str(rendered)
                     }
                 } else {
@@ -2030,8 +2030,11 @@ impl VM {
     /// Try to dispatch a method call natively (without interpreter bridge).
     /// Returns Some(result) on success, None if the method should fall through.
     fn try_native_method(target: &Value, method: &str, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+        if args.len() == 1 {
+            return Self::try_native_method_1arg(target, method, &args[0]);
+        }
         if !args.is_empty() {
-            return None; // Only zero-arg methods for now
+            return None;
         }
         match method {
             "defined" => Some(Ok(Value::Bool(!matches!(target, Value::Nil)))),
@@ -2275,6 +2278,158 @@ impl VM {
             }
             "so" => Some(Ok(Value::Bool(target.truthy()))),
             "not" => Some(Ok(Value::Bool(!target.truthy()))),
+            "chomp" => {
+                Some(Ok(Value::Str(target.to_string_value().trim_end_matches('\n').to_string())))
+            }
+            "chop" => {
+                let mut s = target.to_string_value();
+                s.pop();
+                Some(Ok(Value::Str(s)))
+            }
+            "comb" => {
+                let s = target.to_string_value();
+                let parts: Vec<Value> = s.chars().map(|c| Value::Str(c.to_string())).collect();
+                Some(Ok(Value::Array(parts)))
+            }
+            "gist" | "raku" | "perl" => match target {
+                Value::Nil => Some(Ok(Value::Str("(Any)".to_string()))),
+                Value::Rat(n, d) => {
+                    if *d == 0 {
+                        if *n == 0 {
+                            Some(Ok(Value::Str("NaN".to_string())))
+                        } else if *n > 0 {
+                            Some(Ok(Value::Str("Inf".to_string())))
+                        } else {
+                            Some(Ok(Value::Str("-Inf".to_string())))
+                        }
+                    } else {
+                        let mut dd = *d;
+                        while dd % 2 == 0 {
+                            dd /= 2;
+                        }
+                        while dd % 5 == 0 {
+                            dd /= 5;
+                        }
+                        if dd == 1 {
+                            let val = *n as f64 / *d as f64;
+                            let s = format!("{}", val);
+                            if s.contains('.') {
+                                Some(Ok(Value::Str(s)))
+                            } else {
+                                Some(Ok(Value::Str(format!("{}.0", val))))
+                            }
+                        } else {
+                            Some(Ok(Value::Str(format!("<{}/{}>", n, d))))
+                        }
+                    }
+                }
+                // Complex types fall through to interpreter
+                Value::Package(_) | Value::Instance { .. } | Value::Enum { .. } => None,
+                _ => Some(Ok(Value::Str(target.to_string_value()))),
+            },
+            "head" => match target {
+                Value::Array(items) => Some(Ok(items.first().cloned().unwrap_or(Value::Nil))),
+                _ => None,
+            },
+            "tail" => match target {
+                Value::Array(items) => Some(Ok(items.last().cloned().unwrap_or(Value::Nil))),
+                _ => None,
+            },
+            "first" => match target {
+                Value::Array(items) => Some(Ok(items.first().cloned().unwrap_or(Value::Nil))),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Try to dispatch a one-argument method call natively.
+    fn try_native_method_1arg(
+        target: &Value,
+        method: &str,
+        arg: &Value,
+    ) -> Option<Result<Value, RuntimeError>> {
+        match method {
+            // String methods
+            "contains" => {
+                let s = target.to_string_value();
+                let needle = arg.to_string_value();
+                Some(Ok(Value::Bool(s.contains(&needle))))
+            }
+            "starts-with" => {
+                let s = target.to_string_value();
+                let prefix = arg.to_string_value();
+                Some(Ok(Value::Bool(s.starts_with(&prefix))))
+            }
+            "ends-with" => {
+                let s = target.to_string_value();
+                let suffix = arg.to_string_value();
+                Some(Ok(Value::Bool(s.ends_with(&suffix))))
+            }
+            "index" => {
+                let s = target.to_string_value();
+                let needle = arg.to_string_value();
+                match s.find(&needle) {
+                    Some(pos) => {
+                        let char_pos = s[..pos].chars().count();
+                        Some(Ok(Value::Int(char_pos as i64)))
+                    }
+                    None => Some(Ok(Value::Nil)),
+                }
+            }
+            "substr" => {
+                let s = target.to_string_value();
+                let start = match arg {
+                    Value::Int(i) => (*i).max(0) as usize,
+                    _ => return None,
+                };
+                let result: String = s.chars().skip(start).collect();
+                Some(Ok(Value::Str(result)))
+            }
+            "split" => {
+                let s = target.to_string_value();
+                let sep = arg.to_string_value();
+                let parts: Vec<Value> = s.split(&sep).map(|p| Value::Str(p.to_string())).collect();
+                Some(Ok(Value::Array(parts)))
+            }
+            // Array methods
+            "join" => match target {
+                Value::Array(items) => {
+                    let sep = arg.to_string_value();
+                    let joined = items.iter().map(|v| v.to_string_value()).collect::<Vec<_>>().join(&sep);
+                    Some(Ok(Value::Str(joined)))
+                }
+                _ => None,
+            },
+            "head" => match target {
+                Value::Array(items) => {
+                    let n = match arg { Value::Int(i) => *i as usize, _ => return None };
+                    Some(Ok(Value::Array(items[..n.min(items.len())].to_vec())))
+                }
+                _ => None,
+            },
+            "tail" => match target {
+                Value::Array(items) => {
+                    let n = match arg { Value::Int(i) => *i as usize, _ => return None };
+                    let start = items.len().saturating_sub(n);
+                    Some(Ok(Value::Array(items[start..].to_vec())))
+                }
+                _ => None,
+            },
+            // Numeric methods
+            "base" => match target {
+                Value::Int(i) => {
+                    let radix = match arg { Value::Int(r) => *r, _ => return None };
+                    let s = match radix {
+                        2 => format!("{:b}", i),
+                        8 => format!("{:o}", i),
+                        16 => format!("{:X}", i),
+                        _ => format!("{}", i),
+                    };
+                    Some(Ok(Value::Str(s)))
+                }
+                _ => None,
+            },
             _ => None,
         }
     }

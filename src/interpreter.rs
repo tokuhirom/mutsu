@@ -365,9 +365,6 @@ impl Interpreter {
 
 
 
-    pub(crate) fn format_sprintf_bridge(&self, fmt: &str, arg: Option<&Value>) -> String {
-        self.format_sprintf(fmt, arg)
-    }
 
     pub(crate) fn to_float_value_bridge(val: &Value) -> Option<f64> {
         Self::to_float_value(val)
@@ -5828,7 +5825,7 @@ impl Interpreter {
                             .flatten()
                             .map(|v| v.to_string_value())
                             .unwrap_or_else(|| "%s".to_string());
-                        let rendered = self.format_sprintf(&fmt, Some(&base));
+                        let rendered = Self::format_sprintf(&fmt, Some(&base));
                         Ok(Value::Str(rendered))
                     }
                     "base" => match base {
@@ -6525,7 +6522,7 @@ impl Interpreter {
                         _ => String::new(),
                     };
                     let arg = args.get(1).map(|e| self.eval_expr(e).ok()).flatten();
-                    let rendered = self.format_sprintf(&fmt, arg.as_ref());
+                    let rendered = Self::format_sprintf(&fmt, arg.as_ref());
                     return Ok(Value::Str(rendered));
                 }
                 if name == "join" {
@@ -7876,12 +7873,12 @@ impl Interpreter {
                     if modifier.as_deref() == Some("X") {
                         let mut parts = Vec::new();
                         for val in right_vals {
-                            parts.push(self.format_sprintf(&fmt, Some(&val)));
+                            parts.push(Self::format_sprintf(&fmt, Some(&val)));
                         }
                         return Ok(Value::Str(parts.join(" ")));
                     }
                     let arg = right_vals.get(0);
-                    let rendered = self.format_sprintf(&fmt, arg);
+                    let rendered = Self::format_sprintf(&fmt, arg);
                     return Ok(Value::Str(rendered));
                 }
                 Ok(Value::Nil)
@@ -9640,7 +9637,7 @@ impl Interpreter {
         }
     }
 
-    fn format_sprintf(&self, fmt: &str, arg: Option<&Value>) -> String {
+    pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
         let mut chars = fmt.chars().peekable();
         let mut out = String::new();
         while let Some(c) = chars.next() {

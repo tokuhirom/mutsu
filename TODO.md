@@ -249,6 +249,8 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
 
 **Phase 13 (done):** Eliminate remaining interpreter dependencies — converted 5 interpreter methods (`value_to_list`, `reduction_identity`, `apply_reduction_op`, `eval_hyper_op`, `gist_value`) from instance methods to `pub(crate)` static associated functions, removing `&self` dependency. Inlined Sequence (`...`) and Index operators directly in VM, eliminating `eval_binary` and `eval_expr` bridges. Replaced `list_from_value` calls in ForLoop and Reduction with static `value_to_list` plus LazyList fallback. Removed 4 bridge wrappers (`value_to_list_bridge`, `reduction_identity_value`, `apply_reduction_op_values`, `eval_hyper_op_values`). Added `force_lazy_list_bridge` for LazyList support in VM. ~15 interpreter bridge calls eliminated.
 
+**Phase 14 (done):** Native one-arg method dispatch — extended `try_native_method` to handle methods with one argument via new `try_native_method_1arg` dispatcher. Added 10 one-arg native methods: `.contains`/`.starts-with`/`.ends-with`/`.index`/`.substr`/`.split` (string), `.join`/`.head(n)`/`.tail(n)` (array), `.base` (numeric). Added 7 new zero-arg native methods: `.chomp`/`.chop`/`.comb`/`.gist`/`.raku`/`.perl`/`.head`/`.tail`/`.first`. Converted `format_sprintf` to static associated function, removing `format_sprintf_bridge` wrapper.
+
 #### Compiled Binary Ops
 - [x] Arithmetic: `+`, `-`, `*`, `/`, `%`, `**`
 - [x] String: `~` (concat)
@@ -324,6 +326,8 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
 - [x] Native method dispatch in VM (bypass interpreter bridge)
   - Tier 1: `.defined`, `.Bool`, `.Str`, `.Int`, `.Numeric`/`.Num`, `.chars`, `.elems`, `.abs`, `.uc`, `.lc`, `.sign`, `.end`
   - Tier 2: `.flat`, `.sort`, `.reverse`, `.unique`, `.keys`, `.values`, `.floor`, `.ceiling`, `.round`, `.sqrt`, `.words`, `.lines`, `.trim`, `.trim-leading`, `.trim-trailing`, `.so`, `.not`
+  - Tier 3 (zero-arg): `.chomp`, `.chop`, `.comb`, `.gist`/`.raku`/`.perl`, `.head`, `.tail`, `.first`
+  - Tier 4 (one-arg): `.contains`, `.starts-with`, `.ends-with`, `.index`, `.substr`, `.split`, `.join`, `.head(n)`, `.tail(n)`, `.base`
 - [ ] Remove fallback opcodes (full native compilation)
   - Depends on closures + natively compiling all declaration types
 

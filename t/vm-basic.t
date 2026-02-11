@@ -1,5 +1,5 @@
 use Test;
-plan 235;
+plan 262;
 
 # Literal compilation
 is 42, 42, 'integer literal';
@@ -694,3 +694,52 @@ is @idx-arr[4], 50, 'array index last native';
 my %idx-hash = x => 42, y => 99;
 is %idx-hash<x>, 42, 'hash index native';
 is %idx-hash<y>, 99, 'hash index str native';
+
+# === VM Phase 14: Native One-Arg Method Dispatch ===
+
+# Zero-arg: chomp, chop, comb
+is "hello\n".chomp, "hello", 'chomp removes trailing newline';
+is "hello".chomp, "hello", 'chomp no-op without newline';
+is "hello".chop, "hell", 'chop removes last char';
+is "abc".comb.join(","), "a,b,c", 'comb splits into chars';
+
+# Zero-arg: gist/raku/perl
+is 42.gist, "42", 'gist on Int';
+is "hello".gist, "hello", 'gist on Str';
+is True.gist, "True", 'gist on Bool';
+
+# Zero-arg: head/tail/first on arrays
+is (1,2,3).head, 1, 'head returns first element';
+is (1,2,3).tail, 3, 'tail returns last element';
+is (1,2,3).first, 1, 'first returns first element';
+
+# One-arg: contains, starts-with, ends-with
+is "hello world".contains("world"), True, 'contains finds substring';
+is "hello world".contains("xyz"), False, 'contains rejects missing substring';
+is "hello".starts-with("hel"), True, 'starts-with matches prefix';
+is "hello".starts-with("xyz"), False, 'starts-with rejects non-prefix';
+is "hello".ends-with("llo"), True, 'ends-with matches suffix';
+is "hello".ends-with("xyz"), False, 'ends-with rejects non-suffix';
+
+# One-arg: index
+is "hello world".index("world"), 6, 'index finds substring position';
+is "hello".index("xyz"), Nil, 'index returns Nil for missing';
+
+# One-arg: substr
+is "hello".substr(2), "llo", 'substr from position';
+is "hello".substr(0), "hello", 'substr from 0';
+
+# One-arg: split
+is "a,b,c".split(",").join(":"), "a:b:c", 'split by comma then join';
+
+# One-arg: join
+is (1,2,3).join("-"), "1-2-3", 'join with separator';
+
+# One-arg: head(n), tail(n)
+is (1,2,3,4,5).head(3).join(","), "1,2,3", 'head(n) takes first n elements';
+is (1,2,3,4,5).tail(2).join(","), "4,5", 'tail(n) takes last n elements';
+
+# One-arg: base
+is 255.base(16), "FF", 'base 16';
+is 10.base(2), "1010", 'base 2';
+is 511.base(8), "777", 'base 8';
