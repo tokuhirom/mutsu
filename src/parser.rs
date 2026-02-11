@@ -1236,10 +1236,10 @@ impl Parser {
                 });
             }
         }
-        let expr = self.parse_ternary()?;
+        let expr = self.parse_or()?;
         // Handle => (fat arrow / pair constructor)
         if self.match_kind(TokenKind::FatArrow) {
-            let value = self.parse_ternary()?;
+            let value = self.parse_or()?;
             return Ok(Expr::Binary {
                 left: Box::new(expr),
                 op: TokenKind::FatArrow,
@@ -1387,13 +1387,13 @@ impl Parser {
     }
 
     fn parse_ternary(&mut self) -> Result<Expr, RuntimeError> {
-        let mut expr = self.parse_or()?;
+        let mut expr = self.parse_tight_or()?;
         if self.match_kind(TokenKind::QuestionQuestion) {
-            let then_expr = self.parse_or()?;
+            let then_expr = self.parse_ternary()?;
             if !self.match_kind(TokenKind::BangBang) {
                 return Err(RuntimeError::new("Expected !! in ternary"));
             }
-            let else_expr = self.parse_or()?;
+            let else_expr = self.parse_ternary()?;
             expr = Expr::Ternary {
                 cond: Box::new(expr),
                 then_expr: Box::new(then_expr),
@@ -1423,25 +1423,55 @@ impl Parser {
         }
     }
 
+    // Loose `or` / `orelse` — lowest precedence binary ops
     fn parse_or(&mut self) -> Result<Expr, RuntimeError> {
         let mut expr = self.parse_and()?;
         loop {
-            if self.match_kind(TokenKind::OrOr) {
-                let right = self.parse_and()?;
-                expr = Expr::Binary {
-                    left: Box::new(expr),
-                    op: TokenKind::OrOr,
-                    right: Box::new(right),
-                };
-            } else if self.match_kind(TokenKind::OrWord) {
+            if self.match_kind(TokenKind::OrWord) {
                 let right = self.parse_and()?;
                 expr = Expr::Binary {
                     left: Box::new(expr),
                     op: TokenKind::OrWord,
                     right: Box::new(right),
                 };
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
+    }
+
+    // Loose `and` — lower precedence than ?? !!
+    fn parse_and(&mut self) -> Result<Expr, RuntimeError> {
+        let mut expr = self.parse_ternary()?;
+        loop {
+            if self.match_ident("and") {
+                let right = self.parse_ternary()?;
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op: TokenKind::AndAnd,
+                    right: Box::new(right),
+                };
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
+    }
+
+    // Tight `||` / `//` — higher precedence than ?? !!
+    fn parse_tight_or(&mut self) -> Result<Expr, RuntimeError> {
+        let mut expr = self.parse_tight_and()?;
+        loop {
+            if self.match_kind(TokenKind::OrOr) {
+                let right = self.parse_tight_and()?;
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op: TokenKind::OrOr,
+                    right: Box::new(right),
+                };
             } else if self.match_kind(TokenKind::SlashSlash) {
-                let right = self.parse_and()?;
+                let right = self.parse_tight_and()?;
                 expr = Expr::Binary {
                     left: Box::new(expr),
                     op: TokenKind::SlashSlash,
@@ -1454,10 +1484,11 @@ impl Parser {
         Ok(expr)
     }
 
-    fn parse_and(&mut self) -> Result<Expr, RuntimeError> {
+    // Tight `&&` — higher precedence than ?? !!
+    fn parse_tight_and(&mut self) -> Result<Expr, RuntimeError> {
         let mut expr = self.parse_equality()?;
         loop {
-            if self.match_kind(TokenKind::AndAnd) || self.match_ident("and") {
+            if self.match_kind(TokenKind::AndAnd) {
                 let right = self.parse_equality()?;
                 expr = Expr::Binary {
                     left: Box::new(expr),
