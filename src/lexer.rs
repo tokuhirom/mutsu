@@ -1048,6 +1048,14 @@ impl Lexer {
                                 j += 1;
                             }
                             if marker == "=end" {
+                                // Skip the rest of the =end line
+                                while j < self.src.len() && self.src[j] != '\n' {
+                                    j += 1;
+                                }
+                                if j < self.src.len() {
+                                    j += 1; // skip the newline
+                                    self.line += 1;
+                                }
                                 self.pos = j;
                                 break;
                             }

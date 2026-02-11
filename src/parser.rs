@@ -2188,6 +2188,9 @@ impl Parser {
             if !self.check(&TokenKind::RBracket) {
                 items.push(self.parse_expr_or_true());
                 while self.match_kind(TokenKind::Comma) {
+                    if self.check(&TokenKind::RBracket) {
+                        break; // trailing comma
+                    }
                     items.push(self.parse_expr_or_true());
                 }
             }
@@ -2408,7 +2411,9 @@ impl Parser {
                 Expr::Hash(pairs)
             } else {
                 let body = self.parse_block_body()?;
-                Expr::Block(body)
+                // Blocks in expression context are closures, not immediate execution.
+                // Immediate execution (do { ... }) uses Expr::Block instead.
+                Expr::AnonSub(body)
             }
         } else if self.check(&TokenKind::Lt) {
             self.parse_angle_literal()

@@ -20,7 +20,7 @@
 - [ ] roast/S02-lexical-conventions/finish-pod.t
 - [ ] roast/S02-lexical-conventions/minimal-whitespace.t
 - [ ] roast/S02-lexical-conventions/one-pass-parsing.t
-- [ ] roast/S02-lexical-conventions/pod-in-multi-line-exprs.t
+- [x] roast/S02-lexical-conventions/pod-in-multi-line-exprs.t
 - [ ] roast/S02-lexical-conventions/sub-block-parsing.t
 - [ ] roast/S02-lexical-conventions/unicode.t
 - [ ] roast/S02-lexical-conventions/unicode-whitespace.t

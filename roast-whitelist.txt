@@ -1,1 +1,2 @@
 roast/S02-lexical-conventions/bom.t
+roast/S02-lexical-conventions/pod-in-multi-line-exprs.t

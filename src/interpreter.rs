@@ -1840,7 +1840,9 @@ impl Interpreter {
                 let desc = self.positional_arg_value(args, 1)?;
                 let todo = self.named_arg_bool(args, "todo")?;
                 let ok = match block {
-                    Expr::Block(body) => self.eval_block_value(body).is_ok(),
+                    Expr::Block(body) | Expr::AnonSub(body) => {
+                        self.eval_block_value(body).is_ok()
+                    }
                     _ => self.eval_expr(block).is_ok(),
                 };
                 self.test_ok(ok, &desc, todo)?;
@@ -1850,7 +1852,9 @@ impl Interpreter {
                 let desc = self.positional_arg_value(args, 1)?;
                 let todo = self.named_arg_bool(args, "todo")?;
                 let ok = match block {
-                    Expr::Block(body) => self.eval_block_value(body).is_err(),
+                    Expr::Block(body) | Expr::AnonSub(body) => {
+                        self.eval_block_value(body).is_err()
+                    }
                     _ => self.eval_expr(block).is_err(),
                 };
                 self.test_ok(ok, &desc, todo)?;
@@ -1890,7 +1894,9 @@ impl Interpreter {
                     _ => String::new(),
                 };
                 let result = match code_expr {
-                    Expr::Block(body) => self.eval_block_value(body),
+                    Expr::Block(body) | Expr::AnonSub(body) => {
+                        self.eval_block_value(body)
+                    }
                     _ => {
                         let code = match self.eval_expr(code_expr)? {
                             Value::Str(s) => s,
@@ -7270,7 +7276,7 @@ impl Interpreter {
                     );
                     let result = if let Some(body) = args.get(1) {
                         match body {
-                            Expr::Block(body_stmts) => self.eval_block_value(body_stmts),
+                            Expr::Block(body_stmts) | Expr::AnonSub(body_stmts) => self.eval_block_value(body_stmts),
                             other => self.eval_expr(other),
                         }
                     } else {
