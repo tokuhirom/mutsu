@@ -221,33 +221,94 @@ Implement Raku regex/grammar.
 
 Aim to exceed MoarVM performance.
 
-### Compiler Infrastructure
-- [x] AST -> bytecode compilation (stack-based VM with fallback to tree-walker)
-  - [x] `src/opcode.rs`: OpCode enum, CompiledCode struct
-  - [x] `src/compiler.rs`: AST -> bytecode compiler
-  - [x] `src/vm.rs`: Stack-based bytecode VM
-  - [x] Literals, variables, arithmetic, comparison, string ops
-  - [x] Short-circuit operators (`&&`, `||`, `//`, `andthen`, `orelse`)
-  - [x] Control flow (`if`/`else`, ternary, `return`)
-  - [x] Loops (`while`, `for`) with `last`/`next`/`redo` and labeled loop support
-  - [x] `say`, `print` I/O ops
-  - [x] Fallback opcodes (`InterpretExpr`/`InterpretStmt`) for unsupported constructs
-  - [ ] Local variable slots (`GetLocal`/`SetLocal` — indexed, no HashMap)
-  - [ ] Functions/closures in VM (`MakeClosure`, upvalues, `CallNamed`)
-  - [ ] Method dispatch in VM
-  - [ ] Remove fallback opcodes (full native compilation)
-- [ ] Register-based VM or native code generation
-- [ ] Constant folding
-- [ ] Inlining
-- [ ] Type inference optimization
-- [ ] Escape analysis
+### Bytecode VM — Compilation Progress
 
-### Runtime
-- [ ] GC (generational or reference counting + cycle detection)
-- [ ] Native int/num (avoid boxing)
-- [ ] String rope / CoW
-- [ ] Hash optimization (small hash optimization)
+Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretStmt`).
+
+**Phase 1–2 (done):** Literals, `$` variables, arithmetic, comparison (`==`/`!=`/`<`/`>`/`eq`/`ne`), string concat/interpolation, short-circuit operators (`&&`/`||`/`//`/`andthen`/`orelse`), control flow (`if`/`else`, ternary), loops (`while`/`for`/C-style `loop`) with `last`/`next`/`redo`/labeled loops, `say`/`print`, `return`.
+
+**Phase 3 (done):** Function calls (`CallFunc`/`ExecCall`), method calls on non-variable targets (`CallMethod`), array/hash indexing (`Index`), string interpolation (`StringConcat`), postfix `++`/`--`, hash literals (`MakeHash`), `AssignExpr`, C-style loop (`CStyleLoop`).
+
+**Phase 4 (done):** `@`/`%` variable access (`GetArrayVar`/`GetHashVar`), bareword resolution (`GetBareWord`), range ops (`MakeRange`/`MakeRangeExcl`/`MakeRangeExclStart`/`MakeRangeExclBoth`), string comparisons (`StrLt`/`StrGt`/`StrLe`/`StrGe`), method calls on variable targets with writeback (`CallMethodMut`), `die`.
+
+#### Remaining: Expressions (still InterpretExpr)
+- [ ] `CaptureVar` ($0, $1, …)
+- [ ] `CodeVar` (&foo)
+- [ ] `EnvIndex` (%*ENV<key>)
+- [ ] `Subst` (s///)
+- [ ] `Exists` (:exists)
+- [ ] `Block` / `AnonSub` (as expression value)
+- [ ] `Lambda` (-> $x { })
+- [ ] `CallOn` (target.())
+- [ ] `Try` (try { } CATCH { })
+- [ ] `Gather` (gather { take … })
+- [ ] `Reduction` ([+] @arr)
+- [ ] `InfixFunc` (min, max infix)
+- [ ] `HyperOp` (>>op<<)
+- [ ] `MetaOp` (Rop, Xop, Zop)
+- [ ] `RoutineMagic` / `BlockMagic`
+- [ ] Unary ops beyond `-`, `!`, `?` (e.g. `+`, `~`, `so`, `not`)
+
+#### Remaining: Statements (still InterpretStmt)
+- [ ] `Assign` with compound ops (`+=`, `-=`, `~=`, etc.) and bind (`:=`)
+- [ ] `Unless`
+- [ ] `Given` / `When` / `Default`
+- [ ] `Loop` with `repeat` flag
+- [ ] `Call` with named args / Block / AnonSub args
+- [ ] `SubDecl` / `MultiSubDecl` / `ProtoDecl`
+- [ ] `ClassDecl` / `RoleDecl` / `HasDecl` / `MethodDecl` / `DoesDecl`
+- [ ] `EnumDecl` / `SubsetDecl`
+- [ ] `GrammarDecl` / `TokenDecl` / `RuleDecl` / `ProtoToken`
+- [ ] `Use` / `Package`
+- [ ] `Phaser` (BEGIN, END, ENTER, LEAVE, …)
+- [ ] `Catch` / `Control`
+- [ ] `Take`
+- [ ] `React` / `Whenever` / `Supply` / `Emit`
+- [ ] `Subtest`
+
+#### Remaining: VM Architecture
+- [ ] Local variable slots (`GetLocal`/`SetLocal` — indexed, no HashMap lookup)
+- [ ] Scope management (push/pop env frames in VM)
+- [ ] Functions/closures in VM (`MakeClosure`, upvalues)
+- [ ] Native method dispatch in VM (bypass interpreter bridge)
+- [ ] Remove fallback opcodes (full native compilation)
+
+### Optimization Pipeline
+- [ ] Constant folding
+- [ ] Dead code elimination
+- [ ] Inlining (small subs)
+- [ ] Type inference (speculative optimization)
+- [ ] Escape analysis
+- [ ] Register-based VM or native code generation
+
+### Runtime / Memory
+- [ ] GC or memory management strategy (see notes below)
+- [ ] Native int/num (avoid boxing for hot paths)
+- [ ] String rope / CoW (reduce clone overhead)
+- [ ] Small hash optimization (inline ≤4 entries)
 - [ ] Tail call optimization
+
+#### GC Status and Plan
+Currently Rust ownership handles deallocation. All `Value` instances are owned
+(`String`, `Vec`, `HashMap`) and freed when dropped. `Rc<LazyList>` is the only
+reference-counted type. `clone()` is used extensively to pass values across env
+boundaries.
+
+**Current issues:**
+- Excessive cloning: every variable read/write clones the `Value`, including
+  deep structures like `Array(Vec<Value>)` and `Hash(HashMap<…>)`.
+- Env grows monotonically: variables are never removed from the flat `HashMap`.
+- No cycle detection needed yet (`Value` types cannot form cycles), but user-defined
+  objects with mutual references could in the future.
+
+**Recommended roadmap:**
+1. **Short-term:** Introduce `Rc<Value>` (or `Rc<RefCell<Value>>`) for large values
+   to replace deep clones with reference bumps. Measure impact.
+2. **Medium-term:** Implement scoped environments (stack of frames) so local
+   variables are naturally freed on scope exit. Pairs with `GetLocal`/`SetLocal`.
+3. **Long-term:** If cycles become possible (e.g. closures capturing themselves,
+   circular object graphs), add either tracing GC or weak-ref cycle collector on
+   top of Rc.
 
 ### Practicality
 - [ ] REPL
