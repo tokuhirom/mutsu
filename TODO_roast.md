@@ -211,79 +211,141 @@
 - [ ] roast/S03-metaops/reverse.t
 - [ ] roast/S03-metaops/zip.t
 - [ ] roast/S03-operators/adverbial-modifiers.t
+  - 4/42 pass.
 - [ ] roast/S03-operators/also.t
+  - 7/8 pass.
 - [ ] roast/S03-operators/andthen.t
+  - 2/14 pass.
 - [ ] roast/S03-operators/arith.t
-  - Panic: `attempt to multiply with overflow` in `i64::pow` at interpreter.rs:7760. The `**` operator uses native i64 without overflow protection. Needs BigInt or checked arithmetic
+  - 0/? pass. Panic: `attempt to multiply with overflow` in `i64::pow`. Needs BigInt or checked arithmetic.
 - [ ] roast/S03-operators/assign-is-not-binding.t
+  - 8/9 pass.
 - [ ] roast/S03-operators/assign.t
+  - 36/302 pass.
 - [ ] roast/S03-operators/autoincrement-range.t
+  - 5/104 pass.
 - [ ] roast/S03-operators/autoincrement.t
+  - 20/? pass. Crashes mid-run.
 - [ ] roast/S03-operators/autovivification.t
+  - 9/23 pass.
 - [ ] roast/S03-operators/basic-types.t
+  - 18/19 pass.
 - [ ] roast/S03-operators/bit.t
-- [ ] roast/S03-operators/boolean-bitwise.t
+  - 10/49 pass.
+- [x] roast/S03-operators/boolean-bitwise.t
 - [ ] roast/S03-operators/brainos.t
+  - 5/9 pass.
 - [ ] roast/S03-operators/buf.t
+  - 54/194 pass.
 - [ ] roast/S03-operators/chained-declarators.t
+  - 1/5 pass.
 - [ ] roast/S03-operators/cmp.t
+  - 12/64 pass.
 - [x] roast/S03-operators/comparison-simple.t
 - [ ] roast/S03-operators/comparison.t
+  - 23/112 pass.
 - [ ] roast/S03-operators/composition.t
+  - 0/13 pass.
 - [ ] roast/S03-operators/context-forcers.t
+  - 0/103 pass.
 - [ ] roast/S03-operators/context.t
+  - 6/38 pass.
 - [ ] roast/S03-operators/custom.t
+  - 0/1 pass.
 - [ ] roast/S03-operators/div.t
+  - 0/8 pass.
 - [ ] roast/S03-operators/equality.t
+  - 40/46 pass.
 - [ ] roast/S03-operators/eqv.t
+  - 46/64 pass.
 - [ ] roast/S03-operators/flip-flop.t
+  - 2/40 pass.
 - [ ] roast/S03-operators/gcd.t
-  - 12/15 pass. Tests 12, 14, 15 fail due to i64 overflow with big integers (e.g. 123123123123123123123123123).
+  - 12/15 pass. Tests 12, 14, 15 fail due to i64 overflow with big integers.
 - [ ] roast/S03-operators/identity.t
+  - 20/46 pass.
 - [ ] roast/S03-operators/increment.t
+  - 11/41 pass.
 - [ ] roast/S03-operators/infixed-function.t
+  - 0/5 pass.
 - [ ] roast/S03-operators/inplace.t
+  - 14/38 pass.
 - [ ] roast/S03-operators/is-divisible-by.t
+  - 7/16 pass.
 - [x] roast/S03-operators/lcm.t
 - [ ] roast/S03-operators/list-quote-junction.t
+  - 6/16 pass.
 - [ ] roast/S03-operators/minmax.t
+  - 4/39 pass.
 - [ ] roast/S03-operators/misc.t
+  - 18/78 pass.
 - [ ] roast/S03-operators/names.t
+  - 2/7 pass.
 - [ ] roast/S03-operators/nesting.t
+  - 7/26 pass.
 - [ ] roast/S03-operators/notandthen.t
-- [ ] roast/S03-operators/not.t
+  - 0/6 pass.
+- [x] roast/S03-operators/not.t
 - [ ] roast/S03-operators/numeric-shift.t
+  - 0/38 pass.
 - [ ] roast/S03-operators/orelse.t
+  - 5/16 pass.
 - [ ] roast/S03-operators/overflow.t
+  - 23/98 pass.
 - [ ] roast/S03-operators/precedence.t
+  - 34/77 pass.
 - [ ] roast/S03-operators/range-basic.t
+  - 6/115 pass.
 - [ ] roast/S03-operators/range-int.t
+  - 0/? pass. Crashes mid-run.
 - [ ] roast/S03-operators/range.t
+  - 6/181 pass.
 - [ ] roast/S03-operators/reduce-le1arg.t
+  - 10/54 pass.
 - [ ] roast/S03-operators/relational.t
+  - 60/179 pass.
 - [ ] roast/S03-operators/repeat.t
+  - 20/63 pass.
 - [ ] roast/S03-operators/scalar-assign.t
+  - 2/4 pass.
 - [ ] roast/S03-operators/set_addition.t
+  - 0/? pass. Crashes mid-run.
 - [ ] roast/S03-operators/set_difference.t
+  - 0/? pass. Crashes mid-run.
 - [ ] roast/S03-operators/set_elem.t
+  - 0/? pass. Crashes mid-run.
 - [ ] roast/S03-operators/set_equality.t
+  - 0/? pass. Crashes mid-run.
 - [ ] roast/S03-operators/set_intersection.t
+  - 0/? pass. Crashes mid-run.
 - [ ] roast/S03-operators/set_multiply.t
+  - 0/? pass. Crashes mid-run.
 - [ ] roast/S03-operators/set_proper_subset.t
+  - 0/? pass. Crashes mid-run.
 - [ ] roast/S03-operators/set_subset.t
+  - 0/? pass. Crashes mid-run.
 - [ ] roast/S03-operators/set_symmetric_difference.t
+  - 0/? pass. Crashes mid-run.
 - [ ] roast/S03-operators/set_union.t
+  - 0/? pass. Crashes mid-run.
 - [ ] roast/S03-operators/short-circuit.t
-  - ~30/84 pass. Failures: `||`/`&&`/`//`/`orelse` short-circuit side-effect tracking (tests 1,3,5,6), `^^`/`xor` return value semantics (tests 10,12,18-25,28-38), Array `^^` operations (tests 46-47,50-51), chained comparison short-circuit (tests 58,60), coderef shortcircuit idiom (test 61), `||=` on fresh variable (test 64)
+  - 34/84 pass.
 - [ ] roast/S03-operators/so.t
+  - 13/15 pass.
 - [ ] roast/S03-operators/spaceship-and-containers.t
+  - 4/6 pass.
 - [ ] roast/S03-operators/spaceship.t
+  - 3/7 pass.
 - [ ] roast/S03-operators/subscript-adverbs.t
+  - 0/110 pass.
 - [ ] roast/S03-operators/subscript-vs-lt.t
+  - 2/4 pass.
 - [ ] roast/S03-operators/ternary.t
-  - 6/28 pass (tests 1-4, 12-14). Failures: nested `?? !!` (tests 5-8), `?? !!` in array context (test 9), operator priority with `?? !!` (tests 10-11)
+  - 7/28 pass.
 - [ ] roast/S03-operators/u2212-minus.t
+  - 0/54 pass.
 - [ ] roast/S03-operators/value_equivalence.t
+  - 47/59 pass.
 - [ ] roast/S03-sequence/arity0.t
 - [ ] roast/S03-sequence/arity-2-or-more.t
 - [ ] roast/S03-sequence/basic.t
