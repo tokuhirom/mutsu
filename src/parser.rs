@@ -1466,6 +1466,13 @@ impl Parser {
                     op: TokenKind::AndThen,
                     right: Box::new(right),
                 };
+            } else if self.match_kind(TokenKind::NotAndThen) {
+                let right = self.parse_ternary()?;
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op: TokenKind::NotAndThen,
+                    right: Box::new(right),
+                };
             } else {
                 break;
             }
@@ -2964,7 +2971,8 @@ impl Parser {
                 | TokenKind::BitOr
                 | TokenKind::BitXor
                 | TokenKind::OrElse
-                | TokenKind::AndThen,
+                | TokenKind::AndThen
+                | TokenKind::NotAndThen,
             ) => true,
             Some(TokenKind::Ident(name)) => matches!(
                 name.as_str(),

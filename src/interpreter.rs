@@ -6127,6 +6127,13 @@ impl Interpreter {
                         }
                         return self.eval_expr(right);
                     }
+                    TokenKind::NotAndThen => {
+                        let l = self.eval_expr(left)?;
+                        if matches!(l, Value::Nil) {
+                            return self.eval_expr(right);
+                        }
+                        return Ok(Value::Nil);
+                    }
                     _ => {}
                 }
                 let l = self.eval_expr(left)?;
@@ -7958,6 +7965,13 @@ impl Interpreter {
                     Ok(Value::Nil)
                 } else {
                     Ok(right)
+                }
+            }
+            TokenKind::NotAndThen => {
+                if matches!(left, Value::Nil) {
+                    Ok(right)
+                } else {
+                    Ok(Value::Nil)
                 }
             }
             TokenKind::DotDot => match (left, right) {
