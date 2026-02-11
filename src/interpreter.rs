@@ -273,6 +273,48 @@ impl Interpreter {
         &mut self.env
     }
 
+    pub(crate) fn when_matched(&self) -> bool {
+        self.when_matched
+    }
+
+    pub(crate) fn set_when_matched(&mut self, v: bool) {
+        self.when_matched = v;
+    }
+
+    pub(crate) fn smart_match_values(&mut self, left: &Value, right: &Value) -> bool {
+        self.smart_match(left, right)
+    }
+
+    pub(crate) fn resolve_code_var(&self, name: &str) -> Value {
+        // Check if stored as a variable first (my &f = ...)
+        let var_key = format!("&{}", name);
+        if let Some(val) = self.env.get(&var_key) {
+            return val.clone();
+        }
+        // Look up as a function reference (including multi subs)
+        let def = self.resolve_function(name).or_else(|| {
+            let prefix_local = format!("{}::{}/", self.current_package, name);
+            let prefix_global = format!("GLOBAL::{}/", name);
+            self.functions
+                .iter()
+                .find(|(k, _)| {
+                    k.starts_with(&prefix_local) || k.starts_with(&prefix_global)
+                })
+                .map(|(_, v)| v.clone())
+        });
+        if let Some(def) = def {
+            Value::Sub {
+                package: def.package,
+                name: def.name,
+                param: def.params.first().cloned(),
+                body: def.body,
+                env: self.env.clone(),
+            }
+        } else {
+            Value::Nil
+        }
+    }
+
     fn init_order_enum(&mut self) {
         let variants = vec![
             ("Less".to_string(), -1i64),
@@ -6111,6 +6153,7 @@ impl Interpreter {
                     match op {
                         TokenKind::Plus => match value {
                             Value::Int(i) => Ok(Value::Int(i)),
+                            Value::Bool(b) => Ok(Value::Int(if b { 1 } else { 0 })),
                             Value::Array(items) => Ok(Value::Int(items.len() as i64)),
                             Value::Str(s) => Ok(Value::Int(s.parse::<i64>().unwrap_or(0))),
                             Value::Enum { value, .. } => Ok(Value::Int(value)),

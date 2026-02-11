@@ -58,7 +58,7 @@ impl Compiler {
             Stmt::Assign {
                 name,
                 expr,
-                op: AssignOp::Assign,
+                op: AssignOp::Assign | AssignOp::Bind,
             } if name != "*PID" => {
                 self.compile_expr(expr);
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
@@ -193,6 +193,66 @@ impl Compiler {
                 self.compile_expr(expr);
                 self.code.emit(OpCode::Die);
             }
+            // Given/When/Default
+            Stmt::Given { topic, body } if !Self::has_phasers(body) => {
+                self.compile_expr(topic);
+                let given_idx = self.code.emit(OpCode::Given { body_end: 0 });
+                for s in body {
+                    self.compile_stmt(s);
+                }
+                self.code.patch_body_end(given_idx);
+            }
+            Stmt::When { cond, body } if !Self::has_phasers(body) => {
+                self.compile_expr(cond);
+                let when_idx = self.code.emit(OpCode::When { body_end: 0 });
+                for s in body {
+                    self.compile_stmt(s);
+                }
+                self.code.patch_body_end(when_idx);
+            }
+            Stmt::Default(body) if !Self::has_phasers(body) => {
+                let default_idx = self.code.emit(OpCode::Default { body_end: 0 });
+                for s in body {
+                    self.compile_stmt(s);
+                }
+                self.code.patch_body_end(default_idx);
+            }
+            // Repeat loop (repeat while / repeat until)
+            Stmt::Loop {
+                init,
+                cond,
+                step,
+                body,
+                repeat,
+                label,
+            } if *repeat && !Self::has_phasers(body) => {
+                if let Some(init_stmt) = init {
+                    self.compile_stmt(init_stmt);
+                }
+                // Layout: [RepeatLoop] [body..] [cond..]
+                let loop_idx = self.code.emit(OpCode::RepeatLoop {
+                    cond_end: 0,
+                    body_end: 0,
+                    label: label.clone(),
+                });
+                // Compile body
+                for s in body {
+                    self.compile_stmt(s);
+                }
+                self.code.patch_repeat_cond_end(loop_idx);
+                // Compile condition (or push True if none)
+                if let Some(cond_expr) = cond {
+                    self.compile_expr(cond_expr);
+                } else {
+                    self.code.emit(OpCode::LoadTrue);
+                }
+                // Compile step (if any)
+                if let Some(step_expr) = step {
+                    self.compile_expr(step_expr);
+                    self.code.emit(OpCode::Pop);
+                }
+                self.code.patch_loop_end(loop_idx);
+            }
             // Fallback for everything else
             _ => {
                 let idx = self.code.add_stmt(stmt.clone());
@@ -246,6 +306,44 @@ impl Compiler {
                 TokenKind::Question => {
                     self.compile_expr(expr);
                     self.code.emit(OpCode::BoolCoerce);
+                }
+                TokenKind::Plus => {
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::NumCoerce);
+                }
+                TokenKind::Tilde => {
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::StrCoerce);
+                }
+                TokenKind::Caret => {
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::UptoRange);
+                }
+                TokenKind::Ident(name) if name == "so" => {
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::BoolCoerce);
+                }
+                TokenKind::PlusPlus => {
+                    if let Expr::Var(name) = expr.as_ref() {
+                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        self.code.emit(OpCode::PreIncrement(name_idx));
+                    } else {
+                        self.fallback_expr(&Expr::Unary {
+                            op: op.clone(),
+                            expr: expr.clone(),
+                        });
+                    }
+                }
+                TokenKind::MinusMinus => {
+                    if let Expr::Var(name) = expr.as_ref() {
+                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        self.code.emit(OpCode::PreDecrement(name_idx));
+                    } else {
+                        self.fallback_expr(&Expr::Unary {
+                            op: op.clone(),
+                            expr: expr.clone(),
+                        });
+                    }
                 }
                 _ => {
                     self.fallback_expr(&Expr::Unary {
@@ -408,6 +506,16 @@ impl Compiler {
                 self.compile_expr(expr);
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
                 self.code.emit(OpCode::AssignExpr(name_idx));
+            }
+            // Capture variable ($0, $1, etc.)
+            Expr::CaptureVar(name) => {
+                let name_idx = self.code.add_constant(Value::Str(format!("<{}>", name)));
+                self.code.emit(OpCode::GetCaptureVar(name_idx));
+            }
+            // Code variable (&foo)
+            Expr::CodeVar(name) => {
+                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                self.code.emit(OpCode::GetCodeVar(name_idx));
             }
             // Hash literal
             Expr::Hash(pairs) => {

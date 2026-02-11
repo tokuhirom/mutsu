@@ -1,5 +1,5 @@
 use Test;
-plan 75;
+plan 91;
 
 # Literal compilation
 is 42, 42, 'integer literal';
@@ -238,3 +238,69 @@ is $died, True, 'die compiled to Die opcode';
 
 # Method call on literal target still works (compiled CallMethod)
 is "HELLO".lc, "hello", 'method call on literal still uses CallMethod';
+
+# --- Phase 5: newly compiled constructs ---
+
+# Prefix + (numeric coercion, compiled NumCoerce)
+is +"42", 42, 'prefix + on string coerces to Int';
+is +True, 1, 'prefix + on True returns 1';
+
+# Prefix ~ (string coercion, compiled StrCoerce)
+is ~42, "42", 'prefix ~ on int coerces to Str';
+is ~True, "True", 'prefix ~ on True coerces to Str';
+
+# Prefix ^ (upto range, compiled UptoRange)
+my $upto_sum = 0;
+for ^5 -> $n { $upto_sum = $upto_sum + $n; }
+is $upto_sum, 10, 'prefix ^ creates 0..^n range';
+
+# so keyword (boolean coercion, compiled BoolCoerce)
+is so 1, True, 'so keyword coerces truthy to True';
+is so 0, False, 'so keyword coerces falsy to False';
+
+# Prefix ++ (compiled PreIncrement)
+my $pre_inc = 5;
+my $pre_inc_val = ++$pre_inc;
+is $pre_inc_val, 6, 'prefix ++ returns new value';
+is $pre_inc, 6, 'prefix ++ increments variable';
+
+# Prefix -- (compiled PreDecrement)
+my $pre_dec = 10;
+my $pre_dec_val = --$pre_dec;
+is $pre_dec_val, 9, 'prefix -- returns new value';
+is $pre_dec, 9, 'prefix -- decrements variable';
+
+# given/when (compiled Given/When)
+my $gw_result = "";
+given 42 {
+    when 10 { $gw_result = "ten" }
+    when 42 { $gw_result = "forty-two" }
+    when 99 { $gw_result = "ninety-nine" }
+}
+is $gw_result, "forty-two", 'given/when integer matching';
+
+# given/when/default (compiled Default)
+my $gd_result = "";
+given "unknown" {
+    when "hello" { $gd_result = "greeting" }
+    default { $gd_result = "other" }
+}
+is $gd_result, "other", 'given/when/default with default branch';
+
+# repeat while loop (compiled RepeatLoop)
+my $rw_count = 0;
+repeat {
+    $rw_count = $rw_count + 1;
+} while $rw_count < 3;
+is $rw_count, 3, 'repeat while loop';
+
+# repeat while runs at least once
+my $rw_once = 0;
+repeat {
+    $rw_once = $rw_once + 1;
+} while False;
+is $rw_once, 1, 'repeat while runs body at least once';
+
+# := bind assignment (compiled same as =)
+my $bind_val := 42;
+is $bind_val, 42, ':= bind assignment works';

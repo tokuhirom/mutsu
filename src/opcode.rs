@@ -102,6 +102,19 @@ pub(crate) enum OpCode {
     Next(Option<String>),
     Redo,
 
+    // -- Unary coercion --
+    NumCoerce,
+    StrCoerce,
+    UptoRange,
+
+    // -- Prefix increment/decrement (returns NEW value) --
+    PreIncrement(u32),
+    PreDecrement(u32),
+
+    // -- Variable access --
+    GetCaptureVar(u32),
+    GetCodeVar(u32),
+
     // -- Postfix operators --
     PostIncrement(u32),
     PostDecrement(u32),
@@ -120,6 +133,14 @@ pub(crate) enum OpCode {
     /// Layout after CStyleLoop: cond at [ip+1..cond_end), body at [cond_end..step_start),
     /// step at [step_start..body_end).
     CStyleLoop { cond_end: u32, step_start: u32, body_end: u32, label: Option<String> },
+
+    // -- Given/When/Default (compound opcodes) --
+    Given { body_end: u32 },
+    When { body_end: u32 },
+    Default { body_end: u32 },
+
+    // -- Repeat loop (compound opcode) --
+    RepeatLoop { cond_end: u32, body_end: u32, label: Option<String> },
 
     // -- Error handling --
     Die,
@@ -185,7 +206,26 @@ impl CompiledCode {
             OpCode::WhileLoop { body_end, .. } => *body_end = target,
             OpCode::ForLoop { body_end, .. } => *body_end = target,
             OpCode::CStyleLoop { body_end, .. } => *body_end = target,
+            OpCode::RepeatLoop { body_end, .. } => *body_end = target,
             _ => panic!("patch_loop_end on non-loop opcode"),
+        }
+    }
+
+    pub(crate) fn patch_repeat_cond_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::RepeatLoop { cond_end, .. } => *cond_end = target,
+            _ => panic!("patch_repeat_cond_end on non-RepeatLoop opcode"),
+        }
+    }
+
+    pub(crate) fn patch_body_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::Given { body_end, .. } => *body_end = target,
+            OpCode::When { body_end, .. } => *body_end = target,
+            OpCode::Default { body_end, .. } => *body_end = target,
+            _ => panic!("patch_body_end on non-Given/When/Default opcode"),
         }
     }
 

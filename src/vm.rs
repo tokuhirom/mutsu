@@ -468,6 +468,75 @@ impl VM {
                 *ip += 1;
             }
 
+            // -- Unary coercion --
+            OpCode::NumCoerce => {
+                let val = self.stack.pop().unwrap();
+                let result = match val {
+                    Value::Int(i) => Value::Int(i),
+                    Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
+                    Value::Array(items) => Value::Int(items.len() as i64),
+                    Value::Str(s) => Value::Int(s.parse::<i64>().unwrap_or(0)),
+                    Value::Enum { value, .. } => Value::Int(value),
+                    _ => Value::Int(0),
+                };
+                self.stack.push(result);
+                *ip += 1;
+            }
+            OpCode::StrCoerce => {
+                let val = self.stack.pop().unwrap();
+                self.stack.push(Value::Str(val.to_string_value()));
+                *ip += 1;
+            }
+            OpCode::UptoRange => {
+                let val = self.stack.pop().unwrap();
+                let n = match val {
+                    Value::Int(i) => i,
+                    _ => 0,
+                };
+                self.stack.push(Value::RangeExcl(0, n));
+                *ip += 1;
+            }
+
+            // -- Prefix increment/decrement --
+            OpCode::PreIncrement(name_idx) => {
+                let name = Self::const_str(code, *name_idx);
+                let val = self.interpreter.env().get(name).cloned().unwrap_or(Value::Int(0));
+                let new_val = match val {
+                    Value::Int(i) => Value::Int(i + 1),
+                    Value::Rat(n, d) => make_rat(n + d, d),
+                    _ => Value::Int(1),
+                };
+                self.interpreter.env_mut().insert(name.to_string(), new_val.clone());
+                self.stack.push(new_val);
+                *ip += 1;
+            }
+            OpCode::PreDecrement(name_idx) => {
+                let name = Self::const_str(code, *name_idx);
+                let val = self.interpreter.env().get(name).cloned().unwrap_or(Value::Int(0));
+                let new_val = match val {
+                    Value::Int(i) => Value::Int(i - 1),
+                    Value::Rat(n, d) => make_rat(n - d, d),
+                    _ => Value::Int(-1),
+                };
+                self.interpreter.env_mut().insert(name.to_string(), new_val.clone());
+                self.stack.push(new_val);
+                *ip += 1;
+            }
+
+            // -- Variable access --
+            OpCode::GetCaptureVar(name_idx) => {
+                let name = Self::const_str(code, *name_idx);
+                let val = self.interpreter.env().get(name).cloned().unwrap_or(Value::Nil);
+                self.stack.push(val);
+                *ip += 1;
+            }
+            OpCode::GetCodeVar(name_idx) => {
+                let name = Self::const_str(code, *name_idx);
+                let val = self.interpreter.resolve_code_var(name);
+                self.stack.push(val);
+                *ip += 1;
+            }
+
             // -- Assignment as expression --
             OpCode::AssignExpr(name_idx) => {
                 let name = match &code.constants[*name_idx as usize] {
@@ -583,6 +652,112 @@ impl VM {
                     }
                     // Execute step
                     self.run_range(code, step_begin, loop_end)?;
+                }
+                *ip = loop_end;
+            }
+
+            // -- Given/When/Default --
+            OpCode::Given { body_end } => {
+                let topic = self.stack.pop().unwrap();
+                let body_start = *ip + 1;
+                let end = *body_end as usize;
+
+                // Save and set topic + when_matched
+                let saved_topic = self.interpreter.env().get("_").cloned();
+                let saved_when = self.interpreter.when_matched();
+                self.interpreter.env_mut().insert("_".to_string(), topic);
+                self.interpreter.set_when_matched(false);
+
+                // Run body, stop if when_matched
+                let mut inner_ip = body_start;
+                while inner_ip < end {
+                    if let Err(e) = self.exec_one(code, &mut inner_ip) {
+                        // Restore state before propagating
+                        self.interpreter.set_when_matched(saved_when);
+                        if let Some(v) = saved_topic {
+                            self.interpreter.env_mut().insert("_".to_string(), v);
+                        } else {
+                            self.interpreter.env_mut().remove("_");
+                        }
+                        return Err(e);
+                    }
+                    if self.interpreter.when_matched() || self.interpreter.is_halted() {
+                        break;
+                    }
+                }
+
+                // Restore
+                self.interpreter.set_when_matched(saved_when);
+                if let Some(v) = saved_topic {
+                    self.interpreter.env_mut().insert("_".to_string(), v);
+                } else {
+                    self.interpreter.env_mut().remove("_");
+                }
+                *ip = end;
+            }
+            OpCode::When { body_end } => {
+                let cond_val = self.stack.pop().unwrap();
+                let body_start = *ip + 1;
+                let end = *body_end as usize;
+
+                let topic = self.interpreter.env().get("_").cloned().unwrap_or(Value::Nil);
+                if self.interpreter.smart_match_values(&topic, &cond_val) {
+                    let mut did_proceed = false;
+                    match self.run_range(code, body_start, end) {
+                        Ok(()) => {}
+                        Err(e) if e.is_proceed => {
+                            did_proceed = true;
+                        }
+                        Err(e) if e.is_succeed => {
+                            // succeed: stop but mark matched
+                        }
+                        Err(e) => return Err(e),
+                    }
+                    if !did_proceed {
+                        self.interpreter.set_when_matched(true);
+                    }
+                }
+                *ip = end;
+            }
+            OpCode::Default { body_end } => {
+                let body_start = *ip + 1;
+                let end = *body_end as usize;
+                self.run_range(code, body_start, end)?;
+                self.interpreter.set_when_matched(true);
+                *ip = end;
+            }
+
+            // -- Repeat loop --
+            OpCode::RepeatLoop { cond_end, body_end, label } => {
+                let body_start = *ip + 1;
+                let cond_start = *cond_end as usize;
+                let loop_end = *body_end as usize;
+                let label = label.clone();
+
+                let mut first = true;
+                'repeat_loop: loop {
+                    if !first {
+                        // Evaluate condition
+                        self.run_range(code, cond_start, loop_end)?;
+                        let cond_val = self.stack.pop().unwrap();
+                        if !cond_val.truthy() {
+                            break;
+                        }
+                    }
+                    first = false;
+                    // Execute body with redo support
+                    'body_redo: loop {
+                        match self.run_range(code, body_start, cond_start) {
+                            Ok(()) => break 'body_redo,
+                            Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => continue 'body_redo,
+                            Err(e) if e.is_last && Self::label_matches(&e.label, &label) => break 'repeat_loop,
+                            Err(e) if e.is_next && Self::label_matches(&e.label, &label) => break 'body_redo,
+                            Err(e) => return Err(e),
+                        }
+                    }
+                    if self.interpreter.is_halted() {
+                        break;
+                    }
                 }
                 *ip = loop_end;
             }
