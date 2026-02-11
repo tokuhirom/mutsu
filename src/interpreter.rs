@@ -151,6 +151,12 @@ pub struct Interpreter {
     chroot_root: Option<PathBuf>,
 }
 
+impl Default for Interpreter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Interpreter {
     pub fn new() -> Self {
         let mut env = HashMap::new();
@@ -249,6 +255,18 @@ impl Interpreter {
 
     pub fn output(&self) -> &str {
         &self.output
+    }
+
+    pub(crate) fn is_halted(&self) -> bool {
+        self.halted
+    }
+
+    pub(crate) fn env(&self) -> &HashMap<String, Value> {
+        &self.env
+    }
+
+    pub(crate) fn env_mut(&mut self) -> &mut HashMap<String, Value> {
+        &mut self.env
     }
 
     fn init_order_enum(&mut self) {
@@ -921,7 +939,22 @@ impl Interpreter {
         self.env.insert("?LINE".to_string(), Value::Int(1));
         let mut parser = Parser::new(tokens);
         let stmts = parser.parse_program()?;
-        self.run_block(&stmts)?;
+        // Run through the bytecode VM (Phase 1: full fallback to tree-walker)
+        {
+            let (enter_ph, leave_ph, body_main) = self.split_block_phasers(&stmts);
+            self.run_block_raw(&enter_ph)?;
+            let compiler = crate::compiler::Compiler::new();
+            let code = compiler.compile(&body_main);
+            let interp = std::mem::take(self);
+            let vm = crate::vm::VM::new(interp);
+            let (interp, body_result) = vm.run(&code);
+            *self = interp;
+            let leave_result = self.run_block_raw(&leave_ph);
+            if leave_result.is_err() && body_result.is_ok() {
+                leave_result?;
+            }
+            body_result?;
+        }
         // Auto-call MAIN sub if defined
         if let Some(main_def) = self.resolve_function("MAIN") {
             let args_val = self
@@ -961,7 +994,7 @@ impl Interpreter {
         tokens
     }
 
-    fn exec_stmt(&mut self, stmt: &Stmt) -> Result<(), RuntimeError> {
+    pub(crate) fn exec_stmt(&mut self, stmt: &Stmt) -> Result<(), RuntimeError> {
         match stmt {
             Stmt::VarDecl { name, expr } => {
                 let value = self.eval_expr(expr)?;
@@ -2275,7 +2308,7 @@ impl Interpreter {
         self.proto_tokens.contains(&format!("GLOBAL::{}", name))
     }
 
-    fn gist_value(&self, value: &Value) -> String {
+    pub(crate) fn gist_value(&self, value: &Value) -> String {
         match value {
             Value::Rat(n, d) => {
                 if *d == 0 {
@@ -3115,7 +3148,7 @@ impl Interpreter {
         Ok(())
     }
 
-    fn eval_expr(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
+    pub(crate) fn eval_expr(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
         match expr {
             Expr::Literal(v) => Ok(v.clone()),
             Expr::BareWord(name) => {
@@ -7742,7 +7775,7 @@ impl Interpreter {
         }
     }
 
-    fn eval_binary(
+    pub(crate) fn eval_binary(
         &mut self,
         left: Value,
         op: &TokenKind,
