@@ -210,7 +210,8 @@ impl Lexer {
                                 match ident.as_str() {
                                     "True" => TokenKind::True,
                                     "False" => TokenKind::False,
-                                    "Nil" | "Mu" | "Any" => TokenKind::Nil,
+                                    "Nil" | "Mu" => TokenKind::Nil,
+                                    "Any" => TokenKind::Ident("Any".to_string()),
                                     "or" => TokenKind::OrWord,
                                     _ => TokenKind::Ident(ident),
                                 }
@@ -308,7 +309,8 @@ impl Lexer {
                         match ident.as_str() {
                             "True" => TokenKind::True,
                             "False" => TokenKind::False,
-                            "Nil" | "Mu" | "Any" => TokenKind::Nil,
+                            "Nil" | "Mu" => TokenKind::Nil,
+                                    "Any" => TokenKind::Ident("Any".to_string()),
                             "or" => TokenKind::OrWord,
                             _ => TokenKind::Ident(ident),
                         }
@@ -324,7 +326,8 @@ impl Lexer {
                         match ident.as_str() {
                             "True" => TokenKind::True,
                             "False" => TokenKind::False,
-                            "Nil" | "Mu" | "Any" => TokenKind::Nil,
+                            "Nil" | "Mu" => TokenKind::Nil,
+                                    "Any" => TokenKind::Ident("Any".to_string()),
                             _ => TokenKind::Ident(ident),
                         }
                     }
@@ -344,7 +347,8 @@ impl Lexer {
                         match ident.as_str() {
                             "True" => TokenKind::True,
                             "False" => TokenKind::False,
-                            "Nil" | "Mu" | "Any" => TokenKind::Nil,
+                            "Nil" | "Mu" => TokenKind::Nil,
+                                    "Any" => TokenKind::Ident("Any".to_string()),
                             _ => TokenKind::Ident(ident),
                         }
                     }
@@ -363,7 +367,8 @@ impl Lexer {
                         match ident.as_str() {
                             "True" => TokenKind::True,
                             "False" => TokenKind::False,
-                            "Nil" | "Mu" | "Any" => TokenKind::Nil,
+                            "Nil" | "Mu" => TokenKind::Nil,
+                                    "Any" => TokenKind::Ident("Any".to_string()),
                             _ => TokenKind::Ident(ident),
                         }
                     }
@@ -959,7 +964,8 @@ impl Lexer {
                         match ident.as_str() {
                             "True" => TokenKind::True,
                             "False" => TokenKind::False,
-                            "Nil" | "Mu" | "Any" => TokenKind::Nil,
+                            "Nil" | "Mu" => TokenKind::Nil,
+                                    "Any" => TokenKind::Ident("Any".to_string()),
                             "or" => TokenKind::OrWord,
                             _ => TokenKind::Ident(ident),
                         }

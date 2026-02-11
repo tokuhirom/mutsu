@@ -228,8 +228,7 @@
   - 20/? pass. Crashes mid-run.
 - [ ] roast/S03-operators/autovivification.t
   - 9/23 pass.
-- [ ] roast/S03-operators/basic-types.t
-  - 18/19 pass.
+- [x] roast/S03-operators/basic-types.t
 - [ ] roast/S03-operators/bit.t
   - 10/49 pass.
 - [x] roast/S03-operators/boolean-bitwise.t

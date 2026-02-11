@@ -226,6 +226,9 @@ impl Interpreter {
         interpreter.init_io_environment();
         interpreter.init_order_enum();
         interpreter
+            .env
+            .insert("Any".to_string(), Value::Nil);
+        interpreter
     }
 
     pub fn set_pid(&mut self, pid: i64) {
@@ -3059,7 +3062,7 @@ impl Interpreter {
             Expr::BareWord(name) => {
                 // Check if bare word matches an enum value or type in env
                 if let Some(val) = self.env.get(name.as_str()) {
-                    if matches!(val, Value::Enum { .. }) {
+                    if matches!(val, Value::Enum { .. } | Value::Nil) {
                         return Ok(val.clone());
                     }
                 }
@@ -4473,7 +4476,7 @@ impl Interpreter {
                             Value::Mix(_) => "Mix",
                             Value::Pair(_, _) => "Pair",
                             Value::Enum { enum_type, .. } => enum_type.as_str(),
-                            Value::Nil => "Nil",
+                            Value::Nil => "Any",
                             Value::Package(_) => "Package",
                             Value::Routine { .. } => "Routine",
                             Value::Sub { .. } => "Sub",
@@ -5048,6 +5051,7 @@ impl Interpreter {
                     }
                     "Bool" => Ok(Value::Bool(base.truthy())),
                     "gist" | "raku" | "perl" => match base {
+                        Value::Nil => Ok(Value::Str("(Any)".to_string())),
                         Value::Rat(n, d) => {
                             if d == 0 {
                                 if n == 0 {

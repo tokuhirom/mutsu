@@ -1,6 +1,7 @@
 roast/S02-lexical-conventions/bom.t
 roast/S02-lexical-conventions/pod-in-multi-line-exprs.t
 roast/S02-magicals/pid.t
+roast/S03-operators/basic-types.t
 roast/S03-operators/boolean-bitwise.t
 roast/S03-operators/comparison-simple.t
 roast/S03-operators/lcm.t
