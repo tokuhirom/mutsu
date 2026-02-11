@@ -1418,6 +1418,7 @@ impl Parser {
         while !self.check(&TokenKind::Comma)
             && !self.check(&TokenKind::Semicolon)
             && !self.check(&TokenKind::RParen)
+            && !self.check(&TokenKind::RBrace)
             && !self.check(&TokenKind::Eof)
         {
             self.pos += 1;
@@ -2531,6 +2532,18 @@ impl Parser {
                         }
                     }
                     self.consume_kind(TokenKind::RParen)?;
+                } else if self.check(&TokenKind::Colon)
+                    && !matches!(
+                        self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                        Some(TokenKind::Ident(_))
+                    )
+                {
+                    // Colon method call syntax: .method: arg1, arg2
+                    self.pos += 1; // consume ':'
+                    args.push(self.parse_method_arg());
+                    while self.match_kind(TokenKind::Comma) {
+                        args.push(self.parse_method_arg());
+                    }
                 }
                 expr = Expr::MethodCall {
                     target: Box::new(expr),

@@ -238,7 +238,7 @@ impl Interpreter {
     pub fn set_program_path(&mut self, path: &str) {
         self.program_path = Some(path.to_string());
         self.env
-            .insert("*PROGRAM".to_string(), Value::Str(path.to_string()));
+            .insert("*PROGRAM".to_string(), self.make_io_path_instance(path));
         self.env
             .insert("*PROGRAM-NAME".to_string(), Value::Str(path.to_string()));
     }
@@ -3988,19 +3988,35 @@ impl Interpreter {
                                     return Ok(Value::Str(bname));
                                 }
                                 "parent" => {
-                                    let parent = original
-                                        .parent()
-                                        .map(|s| s.to_string_lossy().to_string())
-                                        .unwrap_or_else(|| ".".to_string());
-                                    return Ok(self.make_io_path_instance(&parent));
+                                    let mut levels = 1i64;
+                                    if let Some(arg) = args.get(0) {
+                                        if let Value::Int(i) = self.eval_expr(arg)? {
+                                            levels = i.max(1);
+                                        }
+                                    }
+                                    let mut path = p.clone();
+                                    for _ in 0..levels {
+                                        if let Some(par) = Path::new(&path).parent() {
+                                            let s = par.to_string_lossy().to_string();
+                                            if s.is_empty() {
+                                                path = ".".to_string();
+                                                break;
+                                            }
+                                            path = s;
+                                        } else {
+                                            path = ".".to_string();
+                                            break;
+                                        }
+                                    }
+                                    return Ok(self.make_io_path_instance(&path));
                                 }
-                                "child" => {
+                                "child" | "add" => {
                                     let child_name = args
                                         .get(0)
                                         .and_then(|a| self.eval_expr(a).ok())
                                         .map(|v| v.to_string_value())
                                         .unwrap_or_default();
-                                    let joined = Self::stringify_path(&path_buf.join(&child_name));
+                                    let joined = Self::stringify_path(&original.join(&child_name));
                                     return Ok(self.make_io_path_instance(&joined));
                                 }
                                 "extension" => {
@@ -4581,9 +4597,14 @@ impl Interpreter {
                         let mut path = base.to_string_value();
                         for _ in 0..levels {
                             if let Some(parent) = Path::new(&path).parent() {
-                                path = parent.to_string_lossy().to_string();
+                                let s = parent.to_string_lossy().to_string();
+                                if s.is_empty() {
+                                    path = ".".to_string();
+                                    break;
+                                }
+                                path = s;
                             } else {
-                                path.clear();
+                                path = ".".to_string();
                                 break;
                             }
                         }
