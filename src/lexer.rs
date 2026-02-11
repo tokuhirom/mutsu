@@ -703,7 +703,7 @@ impl Lexer {
                         if self
                             .src
                             .get(self.pos + 1)
-                            .map_or(false, |c| c.is_ascii_alphabetic() || *c == '_')
+                            .map_or(false, |c| c.is_ascii_alphabetic() || c.is_alphabetic() || *c == '_')
                         {
                             self.pos += 1; // skip '!'
                             let name = self.read_ident();
@@ -717,7 +717,7 @@ impl Lexer {
                         if self
                             .src
                             .get(self.pos + 1)
-                            .map_or(false, |c| c.is_ascii_alphabetic() || *c == '_')
+                            .map_or(false, |c| c.is_ascii_alphabetic() || c.is_alphabetic() || *c == '_')
                         {
                             self.pos += 1; // skip '.'
                             let name = self.read_ident();
@@ -740,7 +740,7 @@ impl Lexer {
                         TokenKind::PercentPercent
                     } else if self
                         .peek()
-                        .map_or(true, |c| c.is_ascii_alphabetic() || c == '_' || c == '*')
+                        .map_or(true, |c| c.is_ascii_alphabetic() || c.is_alphabetic() || c == '_' || c == '*')
                     {
                         let ident = self.read_ident();
                         TokenKind::HashVar(ident)
@@ -872,11 +872,11 @@ impl Lexer {
                         TokenKind::AndAnd
                     } else if self
                         .peek()
-                        .map_or(false, |c| c.is_ascii_alphabetic() || c == '_')
+                        .map_or(false, |c| c.is_ascii_alphabetic() || c.is_alphabetic() || c == '_')
                     {
                         let mut name = String::new();
                         while let Some(c) = self.peek() {
-                            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                            if c.is_ascii_alphanumeric() || c.is_alphabetic() || c == '_' || c == '-' {
                                 name.push(c);
                                 self.pos += 1;
                             } else {
@@ -968,7 +968,7 @@ impl Lexer {
                 '\u{00ab}' => TokenKind::HyperLeft,         // «
                 '\u{00bb}' => TokenKind::HyperRight,        // »
                 _ => {
-                    if ch.is_ascii_alphabetic() || ch == '_' {
+                    if ch.is_ascii_alphabetic() || ch.is_alphabetic() || ch == '_' {
                         let ident = self.read_ident_start(ch);
                         match ident.as_str() {
                             "True" => TokenKind::True,
@@ -1011,7 +1011,7 @@ impl Lexer {
 
     fn read_ident_tail(&mut self, ident: &mut String) {
         while let Some(c) = self.peek() {
-            if c.is_ascii_alphanumeric() || c == '_' || self.is_ident_hyphen(c) {
+            if c.is_ascii_alphanumeric() || c.is_alphabetic() || c == '_' || self.is_ident_hyphen(c) {
                 ident.push(c);
                 self.pos += 1;
                 continue;
@@ -1195,7 +1195,7 @@ impl Lexer {
         c == '-'
             && self
                 .peek_next()
-                .map(|n| n.is_ascii_alphabetic())
+                .map(|n| n.is_ascii_alphabetic() || n.is_alphabetic())
                 .unwrap_or(false)
     }
 
