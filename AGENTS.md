@@ -22,6 +22,7 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - Run: `cargo run -- <file.p6>`
 - Test: `cargo test`
 - Full test (cargo + prove): `make test`
+- Temporary test scripts: write to `tmp/` in the project root using the Write tool (not cat/heredoc). The `tmp/` directory is gitignored.
 
 ## Spec sources
 - Design docs live at `./old-design-docs/`.

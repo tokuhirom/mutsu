@@ -426,7 +426,8 @@
 - [ ] roast/S04-statement-modifiers/if.t
 - [ ] roast/S04-statement-modifiers/unless.t
 - [ ] roast/S04-statement-modifiers/until.t
-- [ ] roast/S04-statement-modifiers/values_in_bool_context.t
+- [x] roast/S04-statement-modifiers/values_in_bool_context.t
+  - 24/24 pass.
 - [ ] roast/S04-statement-modifiers/while.t
 - [ ] roast/S04-statement-modifiers/without.t
 - [ ] roast/S04-statement-modifiers/with.t
@@ -461,7 +462,8 @@
 - [ ] roast/S04-statements/terminator.t
 - [ ] roast/S04-statements/try.t
 - [ ] roast/S04-statements/unless.t
-- [ ] roast/S04-statements/until.t
+- [x] roast/S04-statements/until.t
+  - 4/4 pass.
 - [ ] roast/S04-statements/when.t
 - [ ] roast/S04-statements/while.t
 - [ ] roast/S04-statements/with.t
@@ -487,12 +489,17 @@
 - [ ] roast/S05-interpolation/lexicals.t
 - [ ] roast/S05-interpolation/regex-in-variable.t
 - [ ] roast/S05-mass/charsets.t
-- [ ] roast/S05-mass/named-chars.t
-- [ ] roast/S05-mass/properties-block.t
-- [ ] roast/S05-mass/properties-contributory.t
-- [ ] roast/S05-mass/properties-derived.t
+- [x] roast/S05-mass/named-chars.t
+  - 431/431 pass.
+- [x] roast/S05-mass/properties-block.t
+  - 670/670 pass.
+- [x] roast/S05-mass/properties-contributory.t
+  - 41/41 pass.
+- [x] roast/S05-mass/properties-derived.t
+  - 213/213 pass.
 - [ ] roast/S05-mass/properties-general.t
-- [ ] roast/S05-mass/properties-script.t
+- [x] roast/S05-mass/properties-script.t
+  - 360/360 pass.
 - [ ] roast/S05-mass/recursive.t
 - [ ] roast/S05-mass/rx.t
 - [ ] roast/S05-mass/stdrules.t
@@ -650,7 +657,8 @@
 - [ ] roast/S06-traits/as.t
 - [ ] roast/S06-traits/is-assoc.t
 - [ ] roast/S06-traits/is-copy.t
-- [ ] roast/S06-traits/is-readonly.t
+- [x] roast/S06-traits/is-readonly.t
+  - 1/1 pass.
 - [ ] roast/S06-traits/is-rw.t
 - [ ] roast/S06-traits/misc.t
 - [ ] roast/S06-traits/native-is-copy.t
@@ -708,10 +716,12 @@
 - [ ] roast/S11-modules/module.t
 - [ ] roast/S11-modules/need.t
 - [ ] roast/S11-modules/nested.t
-- [ ] roast/S11-modules/rakulib.t
+- [x] roast/S11-modules/rakulib.t
+  - 1/1 pass.
 - [ ] roast/S11-modules/re-export.t
 - [ ] roast/S11-modules/require.t
-- [ ] roast/S11-modules/runtime.t
+- [x] roast/S11-modules/runtime.t
+  - 1/1 pass.
 - [ ] roast/S11-modules/versioning.t
 - [ ] roast/S11-repository/cur-candidates.t
 - [ ] roast/S11-repository/cur-current-distribution.t
@@ -756,7 +766,8 @@
 - [ ] roast/S12-coercion/coercion-return.t
 - [ ] roast/S12-coercion/coercion-types.t
 - [ ] roast/S12-coercion/parameterized.t
-- [ ] roast/S12-construction/autopairs.t
+- [x] roast/S12-construction/autopairs.t
+  - 4/4 pass.
 - [ ] roast/S12-construction/BUILD.t
 - [ ] roast/S12-construction/construction.t
 - [ ] roast/S12-construction/destruction.t
@@ -765,7 +776,8 @@
 - [ ] roast/S12-construction/roles-6e.t
 - [ ] roast/S12-construction/TWEAK.t
 - [ ] roast/S12-enums/anonymous.t
-- [ ] roast/S12-enums/as-role.t
+- [x] roast/S12-enums/as-role.t
+  - 9/9 pass.
 - [ ] roast/S12-enums/basic.t
 - [ ] roast/S12-enums/misc.t
 - [ ] roast/S12-enums/non-int.t
@@ -827,11 +839,13 @@
 - [ ] roast/S14-roles/anonymous.t
 - [ ] roast/S14-roles/attributes-6e.t
 - [ ] roast/S14-roles/basic.t
-- [ ] roast/S14-roles/bool.t
+- [x] roast/S14-roles/bool.t
+  - 3/3 pass.
 - [ ] roast/S14-roles/composition.t
 - [ ] roast/S14-roles/conflicts.t
 - [ ] roast/S14-roles/crony.t
-- [ ] roast/S14-roles/generic-subtyping.t
+- [x] roast/S14-roles/generic-subtyping.t
+  - 5/5 pass.
 - [ ] roast/S14-roles/instantiation.t
 - [ ] roast/S14-roles/lexical.t
 - [ ] roast/S14-roles/mixin-6e.t
@@ -859,7 +873,8 @@
 - [ ] roast/S15-nfg/emoji-test.t
 - [ ] roast/S15-nfg/from-buf.t
 - [ ] roast/S15-nfg/from-file.t
-- [ ] roast/S15-nfg/grapheme-break.t
+- [x] roast/S15-nfg/grapheme-break.t
+  - 1/1 pass.
 - [ ] roast/S15-nfg/GraphemeBreakTest-0.t
 - [ ] roast/S15-nfg/GraphemeBreakTest-1.t
 - [ ] roast/S15-nfg/GraphemeBreakTest-2.t
@@ -868,60 +883,64 @@
 - [ ] roast/S15-nfg/many-combiners.t
 - [ ] roast/S15-nfg/many-threads.t
 - [ ] roast/S15-nfg/mass-equality.t
-- [ ] roast/S15-nfg/mass-roundtrip-nfc.t
-- [ ] roast/S15-nfg/mass-roundtrip-nfd.t
-- [ ] roast/S15-nfg/mass-roundtrip-nfkc.t
-- [ ] roast/S15-nfg/mass-roundtrip-nfkd.t
+- [x] roast/S15-nfg/mass-roundtrip-nfc.t
+  - 500/500 pass.
+- [x] roast/S15-nfg/mass-roundtrip-nfd.t
+  - 88/88 pass.
+- [x] roast/S15-nfg/mass-roundtrip-nfkc.t
+  - 100/100 pass.
+- [x] roast/S15-nfg/mass-roundtrip-nfkd.t
+  - 100/100 pass.
 - [ ] roast/S15-nfg/regex.t
-- [ ] roast/S15-normalization/nfc-0.t
-- [ ] roast/S15-normalization/nfc-10.t
-- [ ] roast/S15-normalization/nfc-1.t
-- [ ] roast/S15-normalization/nfc-2.t
-- [ ] roast/S15-normalization/nfc-3.t
-- [ ] roast/S15-normalization/nfc-4.t
-- [ ] roast/S15-normalization/nfc-5.t
-- [ ] roast/S15-normalization/nfc-6.t
-- [ ] roast/S15-normalization/nfc-7.t
-- [ ] roast/S15-normalization/nfc-8.t
-- [ ] roast/S15-normalization/nfc-9.t
-- [ ] roast/S15-normalization/nfc-concat.t
-- [ ] roast/S15-normalization/nfc-sanity.t
-- [ ] roast/S15-normalization/nfd-0.t
-- [ ] roast/S15-normalization/nfd-10.t
-- [ ] roast/S15-normalization/nfd-1.t
-- [ ] roast/S15-normalization/nfd-2.t
-- [ ] roast/S15-normalization/nfd-3.t
-- [ ] roast/S15-normalization/nfd-4.t
-- [ ] roast/S15-normalization/nfd-5.t
-- [ ] roast/S15-normalization/nfd-6.t
-- [ ] roast/S15-normalization/nfd-7.t
-- [ ] roast/S15-normalization/nfd-8.t
-- [ ] roast/S15-normalization/nfd-9.t
-- [ ] roast/S15-normalization/nfd-sanity.t
-- [ ] roast/S15-normalization/nfkc-0.t
-- [ ] roast/S15-normalization/nfkc-10.t
-- [ ] roast/S15-normalization/nfkc-1.t
-- [ ] roast/S15-normalization/nfkc-2.t
-- [ ] roast/S15-normalization/nfkc-3.t
-- [ ] roast/S15-normalization/nfkc-4.t
-- [ ] roast/S15-normalization/nfkc-5.t
-- [ ] roast/S15-normalization/nfkc-6.t
-- [ ] roast/S15-normalization/nfkc-7.t
-- [ ] roast/S15-normalization/nfkc-8.t
-- [ ] roast/S15-normalization/nfkc-9.t
-- [ ] roast/S15-normalization/nfkc-sanity.t
-- [ ] roast/S15-normalization/nfkd-0.t
-- [ ] roast/S15-normalization/nfkd-10.t
-- [ ] roast/S15-normalization/nfkd-1.t
-- [ ] roast/S15-normalization/nfkd-2.t
-- [ ] roast/S15-normalization/nfkd-3.t
-- [ ] roast/S15-normalization/nfkd-4.t
-- [ ] roast/S15-normalization/nfkd-5.t
-- [ ] roast/S15-normalization/nfkd-6.t
-- [ ] roast/S15-normalization/nfkd-7.t
-- [ ] roast/S15-normalization/nfkd-8.t
-- [ ] roast/S15-normalization/nfkd-9.t
-- [ ] roast/S15-normalization/nfkd-sanity.t
+- [x] roast/S15-normalization/nfc-0.t
+- [x] roast/S15-normalization/nfc-10.t
+- [x] roast/S15-normalization/nfc-1.t
+- [x] roast/S15-normalization/nfc-2.t
+- [x] roast/S15-normalization/nfc-3.t
+- [x] roast/S15-normalization/nfc-4.t
+- [x] roast/S15-normalization/nfc-5.t
+- [x] roast/S15-normalization/nfc-6.t
+- [x] roast/S15-normalization/nfc-7.t
+- [x] roast/S15-normalization/nfc-8.t
+- [x] roast/S15-normalization/nfc-9.t
+- [x] roast/S15-normalization/nfc-concat.t
+- [x] roast/S15-normalization/nfc-sanity.t
+- [x] roast/S15-normalization/nfd-0.t
+- [x] roast/S15-normalization/nfd-10.t
+- [x] roast/S15-normalization/nfd-1.t
+- [x] roast/S15-normalization/nfd-2.t
+- [x] roast/S15-normalization/nfd-3.t
+- [x] roast/S15-normalization/nfd-4.t
+- [x] roast/S15-normalization/nfd-5.t
+- [x] roast/S15-normalization/nfd-6.t
+- [x] roast/S15-normalization/nfd-7.t
+- [x] roast/S15-normalization/nfd-8.t
+- [x] roast/S15-normalization/nfd-9.t
+- [x] roast/S15-normalization/nfd-sanity.t
+- [x] roast/S15-normalization/nfkc-0.t
+- [x] roast/S15-normalization/nfkc-10.t
+- [x] roast/S15-normalization/nfkc-1.t
+- [x] roast/S15-normalization/nfkc-2.t
+- [x] roast/S15-normalization/nfkc-3.t
+- [x] roast/S15-normalization/nfkc-4.t
+- [x] roast/S15-normalization/nfkc-5.t
+- [x] roast/S15-normalization/nfkc-6.t
+- [x] roast/S15-normalization/nfkc-7.t
+- [x] roast/S15-normalization/nfkc-8.t
+- [x] roast/S15-normalization/nfkc-9.t
+- [x] roast/S15-normalization/nfkc-sanity.t
+- [x] roast/S15-normalization/nfkd-0.t
+- [x] roast/S15-normalization/nfkd-10.t
+- [x] roast/S15-normalization/nfkd-1.t
+- [x] roast/S15-normalization/nfkd-2.t
+- [x] roast/S15-normalization/nfkd-3.t
+- [x] roast/S15-normalization/nfkd-4.t
+- [x] roast/S15-normalization/nfkd-5.t
+- [x] roast/S15-normalization/nfkd-6.t
+- [x] roast/S15-normalization/nfkd-7.t
+- [x] roast/S15-normalization/nfkd-8.t
+- [x] roast/S15-normalization/nfkd-9.t
+- [x] roast/S15-normalization/nfkd-sanity.t
 - [ ] roast/S15-string-types/NFK-types.t
 - [ ] roast/S15-string-types/NF-types.t
 - [ ] roast/S15-string-types/Str.t
@@ -937,7 +956,8 @@
 - [ ] roast/S16-filehandles/io_in_for_loops.t
 - [ ] roast/S16-filehandles/io_in_while_loops.t
 - [ ] roast/S16-filehandles/io.t
-- [ ] roast/S16-filehandles/misc.t
+- [x] roast/S16-filehandles/misc.t
+  - 2/2 pass.
 - [ ] roast/S16-filehandles/mkdir_rmdir.t
 - [ ] roast/S16-filehandles/mode.t
 - [ ] roast/S16-filehandles/open.t
@@ -946,7 +966,8 @@
 - [ ] roast/S16-io/basic-open.t
 - [ ] roast/S16-io/bom.t
 - [ ] roast/S16-io/comb.t
-- [ ] roast/S16-io/cwd.t
+- [x] roast/S16-io/cwd.t
+  - 3/3 pass.
 - [ ] roast/S16-io/eof.t
 - [ ] roast/S16-io/getc.t
 - [ ] roast/S16-io/handles-between-threads.t
@@ -969,7 +990,8 @@
 - [ ] roast/S16-unfiled/rebindstdhandles.t
 - [ ] roast/S17-channel/basic.t
 - [ ] roast/S17-channel/stress.t
-- [ ] roast/S17-channel/subscription-drain-in-react.t
+- [x] roast/S17-channel/subscription-drain-in-react.t
+  - 1/1 pass.
 - [ ] roast/S17-lowlevel/atomic-ops.t
 - [ ] roast/S17-lowlevel/atomic.t
 - [ ] roast/S17-lowlevel/cas-int.t
@@ -978,7 +1000,8 @@
 - [ ] roast/S17-lowlevel/cas.t
 - [ ] roast/S17-lowlevel/lock.t
 - [ ] roast/S17-lowlevel/semaphore.t
-- [ ] roast/S17-lowlevel/thread-start-join-stress.t
+- [x] roast/S17-lowlevel/thread-start-join-stress.t
+  - 1/1 pass.
 - [ ] roast/S17-lowlevel/thread.t
 - [ ] roast/S17-procasync/basic.t
 - [ ] roast/S17-procasync/bind-handles.t
@@ -1128,7 +1151,8 @@
 - [ ] roast/S26-documentation/block-leading.t
 - [ ] roast/S26-documentation/block-leading-user-format.t
 - [ ] roast/S26-documentation/block-trailing.t
-- [ ] roast/S26-documentation/module-comment.t
+- [x] roast/S26-documentation/module-comment.t
+  - 1/1 pass.
 - [ ] roast/S26-documentation/multiline-leading.t
 - [ ] roast/S26-documentation/multiline-trailing.t
 - [ ] roast/S26-documentation/wacky.t
@@ -1139,7 +1163,8 @@
 - [ ] roast/S28-named-variables/init-instant.t
 - [ ] roast/S28-named-variables/slangs.t
 - [ ] roast/S29-any/are.t
-- [ ] roast/S29-any/cmp.t
+- [x] roast/S29-any/cmp.t
+  - 6/6 pass.
 - [ ] roast/S29-any/deg-trans.t
 - [ ] roast/S29-any/isa.t
 - [ ] roast/S29-any/minpairs-maxpairs.t
@@ -1178,7 +1203,8 @@
 - [ ] roast/S32-basics/xxPOS-native.t
 - [ ] roast/S32-basics/xxPOS.t
 - [ ] roast/S32-container/buf.t
-- [ ] roast/S32-container/cat.t
+- [x] roast/S32-container/cat.t
+  - 6/6 pass.
 - [ ] roast/S32-container/roundrobin.t
 - [ ] roast/S32-container/stringify.t
 - [ ] roast/S32-container/zip.t
@@ -1204,7 +1230,8 @@
 - [ ] roast/S32-hash/perl.t
 - [ ] roast/S32-hash/push.t
 - [ ] roast/S32-hash/slice.t
-- [ ] roast/S32-io/chdir-process.t
+- [x] roast/S32-io/chdir-process.t
+  - 0/0 pass (skipped).
 - [ ] roast/S32-io/chdir.t
 - [ ] roast/S32-io/child-secure.t
 - [ ] roast/S32-io/copy.t
@@ -1237,13 +1264,15 @@
 - [ ] roast/S32-io/null-char.t
 - [ ] roast/S32-io/open.t
 - [ ] roast/S32-io/other-stress.t
-- [ ] roast/S32-io/other.t
+- [x] roast/S32-io/other.t
+  - 1/1 pass.
 - [ ] roast/S32-io/out-buffering.t
 - [ ] roast/S32-io/pipe.t
 - [ ] roast/S32-io/pi.txt
 - [ ] roast/S32-io/rename.t
 - [ ] roast/S32-io/seek.t
-- [ ] roast/S32-io/signals.t
+- [x] roast/S32-io/signals.t
+  - 1/1 pass.
 - [ ] roast/S32-io/slurp.t
 - [ ] roast/S32-io/socket-accept-and-working-threads.t
 - [ ] roast/S32-io/socket-fail-invalid-values.t
