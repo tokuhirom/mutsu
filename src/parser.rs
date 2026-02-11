@@ -1434,6 +1434,13 @@ impl Parser {
                     op: TokenKind::OrWord,
                     right: Box::new(right),
                 };
+            } else if self.match_kind(TokenKind::OrElse) {
+                let right = self.parse_and()?;
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op: TokenKind::OrElse,
+                    right: Box::new(right),
+                };
             } else {
                 break;
             }
@@ -1441,7 +1448,7 @@ impl Parser {
         Ok(expr)
     }
 
-    // Loose `and` — lower precedence than ?? !!
+    // Loose `and` / `andthen` — lower precedence than ?? !!
     fn parse_and(&mut self) -> Result<Expr, RuntimeError> {
         let mut expr = self.parse_ternary()?;
         loop {
@@ -1450,6 +1457,13 @@ impl Parser {
                 expr = Expr::Binary {
                     left: Box::new(expr),
                     op: TokenKind::AndAnd,
+                    right: Box::new(right),
+                };
+            } else if self.match_kind(TokenKind::AndThen) {
+                let right = self.parse_ternary()?;
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op: TokenKind::AndThen,
                     right: Box::new(right),
                 };
             } else {
@@ -2948,7 +2962,9 @@ impl Parser {
                 | TokenKind::Gte
                 | TokenKind::BitAnd
                 | TokenKind::BitOr
-                | TokenKind::BitXor,
+                | TokenKind::BitXor
+                | TokenKind::OrElse
+                | TokenKind::AndThen,
             ) => true,
             Some(TokenKind::Ident(name)) => matches!(
                 name.as_str(),

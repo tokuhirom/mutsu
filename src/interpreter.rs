@@ -6113,10 +6113,17 @@ impl Interpreter {
                         }
                         return self.eval_expr(right);
                     }
-                    TokenKind::SlashSlash => {
+                    TokenKind::SlashSlash | TokenKind::OrElse => {
                         let l = self.eval_expr(left)?;
                         if !matches!(l, Value::Nil) {
                             return Ok(l);
+                        }
+                        return self.eval_expr(right);
+                    }
+                    TokenKind::AndThen => {
+                        let l = self.eval_expr(left)?;
+                        if matches!(l, Value::Nil) {
+                            return Ok(Value::Nil);
                         }
                         return self.eval_expr(right);
                     }
@@ -7939,9 +7946,16 @@ impl Interpreter {
                     Ok(right)
                 }
             }
-            TokenKind::SlashSlash => {
+            TokenKind::SlashSlash | TokenKind::OrElse => {
                 if !matches!(left, Value::Nil) {
                     Ok(left)
+                } else {
+                    Ok(right)
+                }
+            }
+            TokenKind::AndThen => {
+                if matches!(left, Value::Nil) {
+                    Ok(Value::Nil)
                 } else {
                     Ok(right)
                 }

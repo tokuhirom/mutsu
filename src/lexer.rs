@@ -58,6 +58,8 @@ pub(crate) enum TokenKind {
     AndAnd,
     OrOr,
     OrWord,
+    OrElse,
+    AndThen,
     Bang,
     QuestionQuestion,
     Ampersand,
@@ -213,6 +215,8 @@ impl Lexer {
                                     "Nil" | "Mu" => TokenKind::Nil,
                                     "Any" => TokenKind::Ident("Any".to_string()),
                                     "or" => TokenKind::OrWord,
+                                    "orelse" => TokenKind::OrElse,
+                                    "andthen" => TokenKind::AndThen,
                                     _ => TokenKind::Ident(ident),
                                 }
                             }
@@ -312,6 +316,8 @@ impl Lexer {
                             "Nil" | "Mu" => TokenKind::Nil,
                                     "Any" => TokenKind::Ident("Any".to_string()),
                             "or" => TokenKind::OrWord,
+                            "orelse" => TokenKind::OrElse,
+                            "andthen" => TokenKind::AndThen,
                             _ => TokenKind::Ident(ident),
                         }
                     }
@@ -967,6 +973,8 @@ impl Lexer {
                             "Nil" | "Mu" => TokenKind::Nil,
                                     "Any" => TokenKind::Ident("Any".to_string()),
                             "or" => TokenKind::OrWord,
+                            "orelse" => TokenKind::OrElse,
+                            "andthen" => TokenKind::AndThen,
                             _ => TokenKind::Ident(ident),
                         }
                     } else {
