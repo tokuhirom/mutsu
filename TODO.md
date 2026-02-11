@@ -222,7 +222,20 @@ Implement Raku regex/grammar.
 Aim to exceed MoarVM performance.
 
 ### Compiler Infrastructure
-- [ ] AST -> bytecode compilation
+- [x] AST -> bytecode compilation (stack-based VM with fallback to tree-walker)
+  - [x] `src/opcode.rs`: OpCode enum, CompiledCode struct
+  - [x] `src/compiler.rs`: AST -> bytecode compiler
+  - [x] `src/vm.rs`: Stack-based bytecode VM
+  - [x] Literals, variables, arithmetic, comparison, string ops
+  - [x] Short-circuit operators (`&&`, `||`, `//`, `andthen`, `orelse`)
+  - [x] Control flow (`if`/`else`, ternary, `return`)
+  - [x] Loops (`while`, `for`) with `last`/`next`/`redo` and labeled loop support
+  - [x] `say`, `print` I/O ops
+  - [x] Fallback opcodes (`InterpretExpr`/`InterpretStmt`) for unsupported constructs
+  - [ ] Local variable slots (`GetLocal`/`SetLocal` — indexed, no HashMap)
+  - [ ] Functions/closures in VM (`MakeClosure`, upvalues, `CallNamed`)
+  - [ ] Method dispatch in VM
+  - [ ] Remove fallback opcodes (full native compilation)
 - [ ] Register-based VM or native code generation
 - [ ] Constant folding
 - [ ] Inlining
