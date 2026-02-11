@@ -2594,6 +2594,14 @@ impl Parser {
             }
             self.consume_kind(TokenKind::RBracket)?;
             Expr::ArrayLiteral(items)
+        } else if let Some(token) =
+            self.advance_if(|k| matches!(k, TokenKind::VersionLiteral { .. }))
+        {
+            if let TokenKind::VersionLiteral { parts, plus, minus } = token.kind {
+                Expr::Literal(Value::Version { parts, plus, minus })
+            } else {
+                Expr::Literal(Value::Nil)
+            }
         } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Number(_))) {
             if let TokenKind::Number(value) = token.kind {
                 Expr::Literal(Value::Int(value))

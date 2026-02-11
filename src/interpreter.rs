@@ -415,6 +415,120 @@ impl Interpreter {
         }
     }
 
+    fn version_from_value(arg: Value) -> Value {
+        use crate::value::VersionPart;
+        match arg {
+            Value::Str(s) => {
+                if s.is_empty() {
+                    return Value::Version {
+                        parts: Vec::new(),
+                        plus: false,
+                        minus: false,
+                    };
+                }
+                let mut plus = false;
+                let mut minus = false;
+                let mut raw = s.as_str();
+                if let Some(stripped) = raw.strip_suffix('+') {
+                    plus = true;
+                    raw = stripped;
+                } else if let Some(stripped) = raw.strip_suffix('-') {
+                    minus = true;
+                    raw = stripped;
+                }
+                let parts: Vec<VersionPart> = raw
+                    .split('.')
+                    .map(|p| {
+                        if p == "*" {
+                            VersionPart::Whatever
+                        } else {
+                            VersionPart::Num(p.parse::<i64>().unwrap_or(0))
+                        }
+                    })
+                    .collect();
+                Value::Version { parts, plus, minus }
+            }
+            // Version.new(*) - Whatever argument (Inf is how * is represented)
+            Value::Num(f) if f.is_infinite() && f.is_sign_positive() => Value::Version {
+                parts: vec![VersionPart::Whatever],
+                plus: false,
+                minus: false,
+            },
+            _ => {
+                let s = arg.to_string_value();
+                Self::version_from_value(Value::Str(s))
+            }
+        }
+    }
+
+    pub(crate) fn version_cmp_parts(
+        a_parts: &[crate::value::VersionPart],
+        b_parts: &[crate::value::VersionPart],
+    ) -> std::cmp::Ordering {
+        use crate::value::VersionPart;
+        let max_len = a_parts.len().max(b_parts.len());
+        for i in 0..max_len {
+            let a = a_parts.get(i).unwrap_or(&VersionPart::Num(0));
+            let b = b_parts.get(i).unwrap_or(&VersionPart::Num(0));
+            match (a, b) {
+                (VersionPart::Num(an), VersionPart::Num(bn)) => match an.cmp(bn) {
+                    std::cmp::Ordering::Equal => continue,
+                    other => return other,
+                },
+                _ => continue, // Whatever matches anything
+            }
+        }
+        std::cmp::Ordering::Equal
+    }
+
+    fn version_smart_match(
+        left: &Value,
+        right_parts: &[crate::value::VersionPart],
+        right_plus: bool,
+        right_minus: bool,
+    ) -> bool {
+        use crate::value::VersionPart;
+        if let Value::Version {
+            parts: left_parts, ..
+        } = left
+        {
+            if right_plus {
+                // LHS >= RHS (base version without +)
+                Self::version_cmp_parts(left_parts, right_parts) != std::cmp::Ordering::Less
+            } else if right_minus {
+                // LHS <= RHS (base version without -)
+                Self::version_cmp_parts(left_parts, right_parts) != std::cmp::Ordering::Greater
+            } else {
+                // Compare up to the length of the RHS; extra LHS parts are ignored
+                let rhs_len = right_parts.len();
+                for i in 0..rhs_len {
+                    let l = left_parts.get(i).unwrap_or(&VersionPart::Num(0));
+                    let r = right_parts.get(i).unwrap_or(&VersionPart::Num(0));
+                    match (l, r) {
+                        (VersionPart::Whatever, _) | (_, VersionPart::Whatever) => continue,
+                        (VersionPart::Num(a), VersionPart::Num(b)) => {
+                            if a != b {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                // If RHS is longer than LHS, extra RHS parts must be zero
+                if rhs_len > left_parts.len() {
+                    for p in &right_parts[left_parts.len()..] {
+                        match p {
+                            VersionPart::Num(n) if *n != 0 => return false,
+                            _ => {}
+                        }
+                    }
+                }
+                true
+            }
+        } else {
+            false
+        }
+    }
+
     /// Convert a value to Value::Hash for hash variable assignment.
     /// Handles arrays of Pairs, flat key-value lists, and existing hashes.
     pub(crate) fn coerce_to_hash(value: Value) -> Value {
@@ -2576,6 +2690,7 @@ impl Interpreter {
                 .collect::<Vec<_>>()
                 .join("\n"),
             Value::Pair(k, v) => format!("{}\t{}", k, Self::gist_value(v)),
+            Value::Version { .. } => format!("v{}", value.to_string_value()),
             _ => value.to_string_value(),
         }
     }
@@ -3148,6 +3263,7 @@ impl Interpreter {
             Value::Instance { .. } => "Any",
             Value::Junction { .. } => "Junction",
             Value::Regex(_) => "Regex",
+            Value::Version { .. } => "Version",
         }
     }
 
@@ -3417,6 +3533,7 @@ impl Interpreter {
                         | "Failure"
                         | "Exception"
                         | "Order"
+                        | "Version"
                         | "Nil"
                 ) {
                     return Ok(Value::Package(name.clone()));
@@ -3836,6 +3953,14 @@ impl Interpreter {
                                 }
                             }
                             return Ok(Value::Hash(map));
+                        }
+                        if class_name == "Version" {
+                            let arg = args
+                                .first()
+                                .map(|a| self.eval_expr(a))
+                                .transpose()?
+                                .unwrap_or(Value::Nil);
+                            return Ok(Self::version_from_value(arg));
                         }
                         if class_name == "Promise" {
                             return Ok(self.make_promise_instance("Planned", Value::Nil));
@@ -5044,6 +5169,7 @@ impl Interpreter {
                             Value::Instance { class_name, .. } => class_name.as_str(),
                             Value::Junction { .. } => "Junction",
                             Value::Regex(_) => "Regex",
+                            Value::Version { .. } => "Version",
                         };
                         Ok(Value::Package(type_name.to_string()))
                     }
@@ -5079,6 +5205,7 @@ impl Interpreter {
                             Value::Instance { class_name, .. } => class_name.clone(),
                             Value::Junction { .. } => "Junction".to_string(),
                             Value::Regex(_) => "Regex".to_string(),
+                            Value::Version { .. } => "Version".to_string(),
                         }))
                     }
                     "defined" => Ok(Value::Bool(!matches!(base, Value::Nil | Value::Package(_)))),
@@ -5651,6 +5778,21 @@ impl Interpreter {
                                     Ok(Value::Str(format!("<{}/{}>", n, d)))
                                 }
                             }
+                        }
+                        Value::Version {
+                            ref parts,
+                            plus,
+                            minus,
+                        } => {
+                            let s = Value::version_parts_to_string(parts);
+                            let suffix = if plus {
+                                "+"
+                            } else if minus {
+                                "-"
+                            } else {
+                                ""
+                            };
+                            Ok(Value::Str(format!("v{}{}", s, suffix)))
                         }
                         _ => Ok(Value::Str(base.to_string_value())),
                     },
@@ -8654,6 +8796,9 @@ impl Interpreter {
                     (Value::Num(a), Value::Int(b)) => a
                         .partial_cmp(&(*b as f64))
                         .unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
+                        Self::version_cmp_parts(ap, bp)
+                    }
                     _ => left.to_string_value().cmp(&right.to_string_value()),
                 };
                 Ok(Self::make_order(ord))
@@ -8906,6 +9051,9 @@ impl Interpreter {
 
     fn smart_match(&mut self, left: &Value, right: &Value) -> bool {
         match (left, right) {
+            (Value::Version { .. }, Value::Version { parts, plus, minus }) => {
+                Self::version_smart_match(left, parts, *plus, *minus)
+            }
             (_, Value::Regex(pat)) => {
                 if let Some(captures) = self.regex_match_with_captures(pat, &left.to_string_value())
                 {
@@ -9616,6 +9764,9 @@ impl Interpreter {
                     (Value::Num(a), Value::Int(b)) => a
                         .partial_cmp(&(*b as f64))
                         .unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
+                        Self::version_cmp_parts(ap, bp)
+                    }
                     _ => left.to_string_value().cmp(&right.to_string_value()),
                 };
                 Ok(Self::make_order(ord))

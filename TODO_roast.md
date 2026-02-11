@@ -66,7 +66,8 @@
 - [ ] roast/S02-literals/types.t
 - [ ] roast/S02-literals/underscores.t
   - 5/19 pass (tests 1, 11-13, 16). Failures: multiple underscores, leading/trailing underscores, underscore before/after `.`/`e`/`E` should fail; `2._foo` / `2._123` should parse as method calls
-- [ ] roast/S02-literals/version.t
+- [x] roast/S02-literals/version.t
+  - 37/37 pass. Version literals, eqv, ===, ~~, cmp, Version.new().
 - [x] roast/S02-magicals/78258.t
   - 1/1 pass.
 - [ ] roast/S02-magicals/args.t

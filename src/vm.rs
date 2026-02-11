@@ -95,6 +95,7 @@ impl VM {
                 | "Failure"
                 | "Exception"
                 | "Order"
+                | "Version"
                 | "Nil"
         )
     }
@@ -619,6 +620,9 @@ impl VM {
                     (Value::Num(a), Value::Int(b)) => a
                         .partial_cmp(&(*b as f64))
                         .unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
+                        Interpreter::version_cmp_parts(ap, bp)
+                    }
                     _ => left.to_string_value().cmp(&right.to_string_value()),
                 };
                 self.stack.push(Interpreter::make_order(ord));
@@ -651,6 +655,9 @@ impl VM {
                     (Value::Num(a), Value::Int(b)) => a
                         .partial_cmp(&(*b as f64))
                         .unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
+                        Interpreter::version_cmp_parts(ap, bp)
+                    }
                     _ => left.to_string_value().cmp(&right.to_string_value()),
                 };
                 self.stack.push(Interpreter::make_order(ord));
@@ -2574,6 +2581,17 @@ impl VM {
                 }
                 // Complex types fall through to interpreter
                 Value::Package(_) | Value::Instance { .. } | Value::Enum { .. } => None,
+                Value::Version { parts, plus, minus } => {
+                    let s = Value::version_parts_to_string(parts);
+                    let suffix = if *plus {
+                        "+"
+                    } else if *minus {
+                        "-"
+                    } else {
+                        ""
+                    };
+                    Some(Ok(Value::Str(format!("v{}{}", s, suffix))))
+                }
                 _ => Some(Ok(Value::Str(target.to_string_value()))),
             },
             "head" => match target {

@@ -1,3 +1,5 @@
+use crate::value::VersionPart;
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum DStrPart {
     Lit(String),
@@ -104,6 +106,11 @@ pub(crate) enum TokenKind {
     SetStrictSuperset, // (>) ⊃
     HyperLeft,         // << or «
     HyperRight,        // >> or »
+    VersionLiteral {
+        parts: Vec<VersionPart>,
+        plus: bool,
+        minus: bool,
+    },
     Semicolon,
     Eof,
 }
@@ -983,7 +990,9 @@ impl Lexer {
                 '\u{00ab}' => TokenKind::HyperLeft,         // «
                 '\u{00bb}' => TokenKind::HyperRight,        // »
                 _ => {
-                    if ch.is_ascii_alphabetic() || ch.is_alphabetic() || ch == '_' {
+                    if ch == 'v' && self.peek().is_some_and(|c| c.is_ascii_digit()) {
+                        self.read_version_literal()
+                    } else if ch.is_ascii_alphabetic() || ch.is_alphabetic() || ch == '_' {
                         let ident = self.read_ident_start(ch);
                         match ident.as_str() {
                             "True" => TokenKind::True,
@@ -1018,6 +1027,59 @@ impl Lexer {
         }
         self.read_ident_tail(&mut ident);
         ident
+    }
+
+    fn read_version_literal(&mut self) -> TokenKind {
+        // Already consumed 'v', peek is a digit
+        let mut parts = Vec::new();
+        // Read first part (must be a number since we checked peek is digit)
+        let mut num = 0i64;
+        while let Some(c) = self.peek() {
+            if c.is_ascii_digit() {
+                num = num * 10 + (c as i64 - '0' as i64);
+                self.pos += 1;
+            } else {
+                break;
+            }
+        }
+        parts.push(VersionPart::Num(num));
+        // Read subsequent .part segments
+        while self.peek() == Some('.') {
+            // Check what follows the dot
+            let after_dot = self.src.get(self.pos + 1).copied();
+            match after_dot {
+                Some(c) if c.is_ascii_digit() => {
+                    self.pos += 1; // consume '.'
+                    let mut n = 0i64;
+                    while let Some(c) = self.peek() {
+                        if c.is_ascii_digit() {
+                            n = n * 10 + (c as i64 - '0' as i64);
+                            self.pos += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    parts.push(VersionPart::Num(n));
+                }
+                Some('*') => {
+                    self.pos += 1; // consume '.'
+                    self.pos += 1; // consume '*'
+                    parts.push(VersionPart::Whatever);
+                }
+                _ => break,
+            }
+        }
+        // Check for trailing + or -
+        let mut plus = false;
+        let mut minus = false;
+        if self.peek() == Some('+') {
+            plus = true;
+            self.pos += 1;
+        } else if self.peek() == Some('-') {
+            minus = true;
+            self.pos += 1;
+        }
+        TokenKind::VersionLiteral { parts, plus, minus }
     }
 
     fn read_ident_start(&mut self, first: char) -> String {

@@ -110,7 +110,18 @@ pub enum Value {
         values: Vec<Value>,
     },
     LazyList(Rc<LazyList>),
+    Version {
+        parts: Vec<VersionPart>,
+        plus: bool,
+        minus: bool,
+    },
     Nil,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum VersionPart {
+    Num(i64),
+    Whatever,
 }
 
 #[derive(Debug, Clone)]
@@ -211,6 +222,26 @@ impl PartialEq for Value {
                 },
             ) => ak == bk && av == bv,
             (Value::LazyList(a), Value::LazyList(b)) => Rc::ptr_eq(a, b),
+            (
+                Value::Version {
+                    parts: ap,
+                    plus: aplus,
+                    minus: aminus,
+                },
+                Value::Version {
+                    parts: bp,
+                    plus: bplus,
+                    minus: bminus,
+                },
+            ) => {
+                if aplus != bplus || aminus != bminus {
+                    return false;
+                }
+                // Normalize trailing zeroes: compare after stripping trailing Num(0)
+                let a_norm = Self::version_strip_trailing_zeros(ap);
+                let b_norm = Self::version_strip_trailing_zeros(bp);
+                a_norm == b_norm
+            }
             (Value::Nil, Value::Nil) => true,
             _ => false,
         }
@@ -218,6 +249,18 @@ impl PartialEq for Value {
 }
 
 impl Value {
+    pub(crate) fn version_strip_trailing_zeros(parts: &[VersionPart]) -> Vec<VersionPart> {
+        let mut v: Vec<VersionPart> = parts.to_vec();
+        while v.last() == Some(&VersionPart::Num(0)) {
+            v.pop();
+        }
+        if v.is_empty() {
+            vec![VersionPart::Num(0)]
+        } else {
+            v
+        }
+    }
+
     pub(crate) fn truthy(&self) -> bool {
         match self {
             Value::Bool(b) => *b,
@@ -251,6 +294,7 @@ impl Value {
             },
             Value::LazyList(_) => true,
             Value::Regex(_) => true,
+            Value::Version { .. } => true,
             Value::Nil => false,
         }
     }
@@ -381,8 +425,29 @@ impl Value {
                 format!("{}({})", kind_str, elems)
             }
             Value::Regex(pattern) => format!("/{}/", pattern),
+            Value::Version { parts, plus, minus } => {
+                let s = Self::version_parts_to_string(parts);
+                if *plus {
+                    format!("{}+", s)
+                } else if *minus {
+                    format!("{}-", s)
+                } else {
+                    s
+                }
+            }
             Value::Nil => "Nil".to_string(),
         }
+    }
+
+    pub(crate) fn version_parts_to_string(parts: &[VersionPart]) -> String {
+        parts
+            .iter()
+            .map(|p| match p {
+                VersionPart::Num(n) => n.to_string(),
+                VersionPart::Whatever => "*".to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join(".")
     }
 }
 
