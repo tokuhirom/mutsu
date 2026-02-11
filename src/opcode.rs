@@ -67,6 +67,14 @@ pub(crate) enum OpCode {
     Say(u32),
     Print(u32),
 
+    // -- Loops (compound opcodes) --
+    /// While loop. Condition opcodes follow at [ip+1..cond_end).
+    /// Body opcodes at [cond_end..body_end). VM loops internally.
+    WhileLoop { cond_end: u32, body_end: u32, label: Option<String> },
+    /// For loop. Iterable value must be on stack.
+    /// Body opcodes at [ip+1..body_end). VM iterates internally.
+    ForLoop { param_idx: Option<u32>, body_end: u32, label: Option<String> },
+
     // -- Functions --
     Return,
 
@@ -119,6 +127,24 @@ impl CompiledCode {
 
     pub(crate) fn current_pos(&self) -> usize {
         self.ops.len()
+    }
+
+    /// Patch the body_end / cond_end fields of a loop opcode.
+    pub(crate) fn patch_loop_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::WhileLoop { body_end, .. } => *body_end = target,
+            OpCode::ForLoop { body_end, .. } => *body_end = target,
+            _ => panic!("patch_loop_end on non-loop opcode"),
+        }
+    }
+
+    pub(crate) fn patch_while_cond_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::WhileLoop { cond_end, .. } => *cond_end = target,
+            _ => panic!("patch_while_cond_end on non-WhileLoop opcode"),
+        }
     }
 
     pub(crate) fn add_constant(&mut self, value: Value) -> u32 {

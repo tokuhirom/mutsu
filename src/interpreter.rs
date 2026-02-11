@@ -2420,7 +2420,7 @@ impl Interpreter {
         Ok(items)
     }
 
-    fn list_from_value(&mut self, value: Value) -> Result<Vec<Value>, RuntimeError> {
+    pub(crate) fn list_from_value(&mut self, value: Value) -> Result<Vec<Value>, RuntimeError> {
         Ok(match value {
             Value::Array(items) => items,
             Value::Range(a, b) => (a..=b).map(Value::Int).collect(),

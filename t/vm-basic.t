@@ -1,5 +1,5 @@
 use Test;
-plan 30;
+plan 39;
 
 # Literal compilation
 is 42, 42, 'integer literal';
@@ -57,3 +57,59 @@ is $result, "then", 'if-then compiled';
 # Array literal (compiled)
 my @arr = (1, 2, 3);
 is @arr.elems, 3, 'array literal compiled';
+
+# While loop (compiled WhileLoop opcode)
+my $w = 0;
+my $wsum = 0;
+while $w < 5 { $wsum = $wsum + $w; $w = $w + 1; }
+is $wsum, 10, 'while loop compiled';
+
+# For loop (compiled ForLoop opcode)
+my $fsum = 0;
+for 1..4 -> $n { $fsum = $fsum + $n; }
+is $fsum, 10, 'for loop compiled';
+
+# For loop with $_ default
+my $usum = 0;
+for 1..3 { $usum = $usum + $_; }
+is $usum, 6, 'for loop with $_ compiled';
+
+# Block compilation (phaser-free)
+my $bval = 0;
+{ $bval = 42; }
+is $bval, 42, 'block compiled inline';
+
+# Simple assignment (compiled)
+my $aval = 1;
+$aval = 99;
+is $aval, 99, 'simple assign compiled';
+
+# Loop control: last
+my $lsum = 0;
+for 1..5 -> $n { last if $n == 4; $lsum = $lsum + $n; }
+is $lsum, 6, 'last in for loop';
+
+# Loop control: next
+my $nsum = 0;
+for 1..5 -> $n { next if $n == 3; $nsum = $nsum + $n; }
+is $nsum, 12, 'next in for loop';
+
+# Labeled loop: next LABEL
+my $lr = '';
+OUTER: for 1..2 -> $i {
+    for 1..2 -> $j {
+        next OUTER if $j == 2;
+        $lr = $lr ~ "$i.$j ";
+    }
+}
+is $lr, '1.1 2.1 ', 'next LABEL in compiled for loop';
+
+# Labeled loop: last LABEL
+my $lr2 = '';
+DONE: for 1..3 -> $i {
+    for 1..3 -> $j {
+        last DONE if $i == 2;
+        $lr2 = $lr2 ~ "$i.$j ";
+    }
+}
+is $lr2, '1.1 1.2 1.3 ', 'last LABEL in compiled for loop';
