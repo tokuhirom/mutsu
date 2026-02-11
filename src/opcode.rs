@@ -197,6 +197,23 @@ pub(crate) enum OpCode {
     // -- Repeat loop (compound opcode) --
     RepeatLoop { cond_end: u32, body_end: u32, label: Option<String> },
 
+    // -- Environment variable access --
+    GetEnvIndex(u32),
+
+    // -- Exists check --
+    ExistsEnvIndex(u32),
+    ExistsExpr,
+
+    // -- Reduction ([+] @arr) --
+    Reduction(u32),
+
+    // -- Magic variables --
+    RoutineMagic,
+    BlockMagic,
+
+    // -- Substitution (s///) --
+    Subst { pattern_idx: u32, replacement_idx: u32 },
+
     // -- Error handling --
     Die,
 

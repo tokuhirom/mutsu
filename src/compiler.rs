@@ -550,6 +550,44 @@ impl Compiler {
                 }
                 self.code.emit(OpCode::MakeHash(n));
             }
+            // Environment variable access (%*ENV<key>)
+            Expr::EnvIndex(key) => {
+                let key_idx = self.code.add_constant(Value::Str(key.clone()));
+                self.code.emit(OpCode::GetEnvIndex(key_idx));
+            }
+            // Exists check (:exists)
+            Expr::Exists(inner) => {
+                match inner.as_ref() {
+                    Expr::EnvIndex(key) => {
+                        let key_idx = self.code.add_constant(Value::Str(key.clone()));
+                        self.code.emit(OpCode::ExistsEnvIndex(key_idx));
+                    }
+                    _ => {
+                        self.compile_expr(inner);
+                        self.code.emit(OpCode::ExistsExpr);
+                    }
+                }
+            }
+            // Reduction ([+] @arr)
+            Expr::Reduction { op, expr } => {
+                self.compile_expr(expr);
+                let op_idx = self.code.add_constant(Value::Str(op.clone()));
+                self.code.emit(OpCode::Reduction(op_idx));
+            }
+            // __ROUTINE__ magic
+            Expr::RoutineMagic => {
+                self.code.emit(OpCode::RoutineMagic);
+            }
+            // __BLOCK__ magic
+            Expr::BlockMagic => {
+                self.code.emit(OpCode::BlockMagic);
+            }
+            // s/// substitution
+            Expr::Subst { pattern, replacement } => {
+                let pattern_idx = self.code.add_constant(Value::Str(pattern.clone()));
+                let replacement_idx = self.code.add_constant(Value::Str(replacement.clone()));
+                self.code.emit(OpCode::Subst { pattern_idx, replacement_idx });
+            }
             _ => {
                 self.fallback_expr(expr);
             }

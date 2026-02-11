@@ -904,6 +904,94 @@ impl VM {
                 });
             }
 
+            // -- Environment variable access --
+            OpCode::GetEnvIndex(key_idx) => {
+                let key = Self::const_str(code, *key_idx);
+                let val = if let Some(value) = std::env::var_os(key) {
+                    Value::Str(value.to_string_lossy().to_string())
+                } else {
+                    Value::Nil
+                };
+                self.stack.push(val);
+                *ip += 1;
+            }
+
+            // -- Exists check --
+            OpCode::ExistsEnvIndex(key_idx) => {
+                let key = Self::const_str(code, *key_idx);
+                self.stack.push(Value::Bool(std::env::var_os(key).is_some()));
+                *ip += 1;
+            }
+            OpCode::ExistsExpr => {
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                self.stack.push(Value::Bool(val.truthy()));
+                *ip += 1;
+            }
+
+            // -- Reduction ([+] @arr) --
+            OpCode::Reduction(op_idx) => {
+                let op = Self::const_str(code, *op_idx).to_string();
+                let list_value = self.stack.pop().unwrap_or(Value::Nil);
+                let list = self.interpreter.list_from_value(list_value)?;
+                if list.is_empty() {
+                    self.stack.push(self.interpreter.reduction_identity_value(&op));
+                } else {
+                    let mut acc = list[0].clone();
+                    for item in &list[1..] {
+                        acc = self.interpreter.apply_reduction_op_values(&op, &acc, item)?;
+                    }
+                    self.stack.push(acc);
+                }
+                *ip += 1;
+            }
+
+            // -- Magic variables --
+            OpCode::RoutineMagic => {
+                if let Some((package, name)) = self.interpreter.routine_stack_top() {
+                    self.stack.push(Value::Routine {
+                        package: package.clone(),
+                        name: name.clone(),
+                    });
+                } else {
+                    return Err(RuntimeError::new("X::Undeclared::Symbols"));
+                }
+                *ip += 1;
+            }
+            OpCode::BlockMagic => {
+                if let Some(val) = self.interpreter.block_stack_top().cloned() {
+                    if matches!(val, Value::Sub { .. }) {
+                        self.stack.push(val);
+                    } else {
+                        return Err(RuntimeError::new("X::Undeclared::Symbols"));
+                    }
+                } else {
+                    return Err(RuntimeError::new("X::Undeclared::Symbols"));
+                }
+                *ip += 1;
+            }
+
+            // -- Substitution (s///) --
+            OpCode::Subst { pattern_idx, replacement_idx } => {
+                let pattern = Self::const_str(code, *pattern_idx).to_string();
+                let replacement = Self::const_str(code, *replacement_idx).to_string();
+                let target = self.interpreter.env().get("_").cloned().unwrap_or(Value::Nil);
+                let text = target.to_string_value();
+                if let Some((start, end)) = self.interpreter.regex_find_first_bridge(&pattern, &text) {
+                    let start_b = Interpreter::char_idx_to_byte_bridge(&text, start);
+                    let end_b = Interpreter::char_idx_to_byte_bridge(&text, end);
+                    let mut out = String::new();
+                    out.push_str(&text[..start_b]);
+                    out.push_str(&replacement);
+                    out.push_str(&text[end_b..]);
+                    let result = Value::Str(out);
+                    self.interpreter.env_mut().insert("_".to_string(), result.clone());
+                    self.stack.push(result);
+                } else {
+                    self.stack.push(Value::Str(text));
+                }
+                *ip += 1;
+            }
+
             // -- Fallback to tree-walker --
             OpCode::InterpretStmt(idx) => {
                 let stmt = &code.stmt_pool[*idx as usize];

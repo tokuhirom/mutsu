@@ -235,6 +235,8 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
 
 **Phase 6 (done):** All remaining binary ops (`~~`/`!~~`/`<=>`/`cmp`/`leg`/`===`/`eqv`/`%%`/`div`/`mod`/`gcd`/`lcm`/`x`/`xx`/`=>`/bitwise/set ops/`...`), `proceed`/`succeed`, match-assign (`=~`).
 
+**Phase 7 (done):** Expression compilation: `EnvIndex` (%*ENV<key>), `Exists` (:exists), `Reduction` ([+] @arr), `Subst` (s///), `RoutineMagic`/`BlockMagic`.
+
 #### Compiled Binary Ops
 - [x] Arithmetic: `+`, `-`, `*`, `/`, `%`, `**`
 - [x] String: `~` (concat)
@@ -265,19 +267,19 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
 - [x] `Index`, `StringInterpolation`
 - [x] `PostfixOp` (++/-- on Var), `AssignExpr`
 - [x] `CaptureVar`, `CodeVar`
-- [ ] `EnvIndex` (%*ENV<key>)
-- [ ] `Subst` (s///)
-- [ ] `Exists` (:exists)
+- [x] `EnvIndex` (%*ENV<key>)
+- [x] `Subst` (s///)
+- [x] `Exists` (:exists)
+- [x] `Reduction` ([+] @arr)
+- [x] `RoutineMagic` / `BlockMagic`
 - [ ] `Block` / `AnonSub` (as expression value)
 - [ ] `Lambda` (-> $x { })
 - [ ] `CallOn` (target.())
 - [ ] `Try` (try { } CATCH { })
 - [ ] `Gather` (gather { take … })
-- [ ] `Reduction` ([+] @arr)
 - [ ] `InfixFunc` (min, max infix)
 - [ ] `HyperOp` (>>op<<)
 - [ ] `MetaOp` (Rop, Xop, Zop)
-- [ ] `RoutineMagic` / `BlockMagic`
 
 #### Compiled Statements
 - [x] `Expr`, `Block`, `Say`, `Print`, `VarDecl`

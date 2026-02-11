@@ -315,6 +315,39 @@ impl Interpreter {
         }
     }
 
+    pub(crate) fn reduction_identity_value(&self, op: &str) -> Value {
+        self.reduction_identity(op)
+    }
+
+    pub(crate) fn apply_reduction_op_values(
+        &self,
+        op: &str,
+        left: &Value,
+        right: &Value,
+    ) -> Result<Value, RuntimeError> {
+        self.apply_reduction_op(op, left, right)
+    }
+
+    pub(crate) fn routine_stack_top(&self) -> Option<&(String, String)> {
+        self.routine_stack.last()
+    }
+
+    pub(crate) fn block_stack_top(&self) -> Option<&Value> {
+        self.block_stack.last()
+    }
+
+    pub(crate) fn regex_find_first_bridge(
+        &self,
+        pattern: &str,
+        text: &str,
+    ) -> Option<(usize, usize)> {
+        self.regex_find_first(pattern, text)
+    }
+
+    pub(crate) fn char_idx_to_byte_bridge(text: &str, idx: usize) -> usize {
+        Self::char_idx_to_byte(text, idx)
+    }
+
     fn init_order_enum(&mut self) {
         let variants = vec![
             ("Less".to_string(), -1i64),

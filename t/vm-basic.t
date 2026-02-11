@@ -1,5 +1,5 @@
 use Test;
-plan 113;
+plan 123;
 
 # Literal compilation
 is 42, 42, 'integer literal';
@@ -353,3 +353,29 @@ is $ps_result, "first+second", 'proceed continues to next when';
 my $ma_val = 42;
 $ma_val =~ "hello";
 is $ma_val, "hello", 'match-assign coerces to string';
+
+# --- Phase 7: newly compiled expressions ---
+
+# EnvIndex (%*ENV<key> compiled to GetEnvIndex)
+my $env_path = %*ENV<PATH>;
+ok $env_path.defined, '%*ENV<PATH> is defined (compiled to GetEnvIndex)';
+ok $env_path.chars > 0, '%*ENV<PATH> has content';
+
+# Exists on env var (compiled to ExistsEnvIndex)
+my $env_exists = %*ENV<PATH>:exists;
+is $env_exists, True, '%*ENV<PATH>:exists returns True';
+
+# Exists on non-existent env var
+my $env_noexist = %*ENV<MUTSU_TEST_NONEXISTENT_VAR_XYZ>:exists;
+is $env_noexist, False, 'non-existent env var :exists returns False';
+
+# Reduction ([+] compiled to Reduction opcode)
+my @rlist = (1, 2, 3, 4, 5);
+is ([+] @rlist), 15, '[+] reduction on array';
+is ([*] @rlist), 120, '[*] reduction on array';
+is ([~] <a b c>), "abc", '[~] reduction on string list';
+
+# Reduction on empty list returns identity
+is ([+] ()), 0, '[+] on empty list returns 0';
+is ([*] ()), 1, '[*] on empty list returns 1';
+is ([~] ()), "", '[~] on empty list returns ""';
