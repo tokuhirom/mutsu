@@ -8,6 +8,7 @@ roast/S02-magicals/pid.t
 roast/S02-magicals/progname.t
 roast/S02-magicals/subname.t
 roast/S02-magicals/USER.t
+roast/S02-magicals/file_line.t
 roast/S02-types/fatrat.t
 roast/S02-types/parsing-bool.t
 roast/S03-operators/basic-types.t

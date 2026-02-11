@@ -1106,6 +1106,7 @@ impl Parser {
         let mut slice = self.tokens[start..self.pos].to_vec();
         slice.push(Token {
             kind: TokenKind::Eof,
+            line: 0,
         });
         let mut parser = Parser::new(slice);
         parser
@@ -2475,8 +2476,13 @@ impl Parser {
             let body = self.parse_block()?;
             Expr::Lambda { param, body }
         } else if self.peek_is_var() {
+            let var_line = self.tokens.get(self.pos).map(|t| t.line).unwrap_or(0);
             let name = self.consume_var()?;
-            Expr::Var(name)
+            if name == "?LINE" {
+                Expr::Literal(Value::Int(var_line as i64))
+            } else {
+                Expr::Var(name)
+            }
         } else if self.match_kind(TokenKind::LBrace) {
             if self.is_hash_literal_start() {
                 let pairs = self.parse_hash_literal()?;

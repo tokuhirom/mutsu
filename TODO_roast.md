@@ -27,7 +27,7 @@
 - [ ] roast/S02-lexical-conventions/sub-block-parsing.t
   - 3/11 pass (tests 1-3). Failures: passing arguments to immediately-invoked `sub {}()`, block parsing with newline/semicolon context, sub/hash disambiguation (`fa`/`fb` old syntax)
 - [ ] roast/S02-lexical-conventions/unicode.t
-  - 31/44 pass. Failures: some Unicode string evaluations (umlauts, french, hindi), Unicode sub names with parameters/named-params/placeholders (tests 25-30), bracket mapping edge cases (U+298D, U+301D→U+301F)
+  - 36/44 pass. Failures: Unicode string evaluations in `do {}` blocks (tests 4-5), Unicode sub names with named-params/placeholders (tests 27-30), bracket mapping edge cases (U+298D, U+301D→U+301F)
 - [ ] roast/S02-lexical-conventions/unicode-whitespace.t
   - 0/50 pass. Requires `uniprop` function and Unicode whitespace recognition in expressions (OGHAM SPACE MARK, EN QUAD, etc.) and "long dot" contexts. Needs `uniprop($char, "White_Space")` support
 - [ ] roast/S02-lexical-conventions/unspace.t
@@ -80,7 +80,7 @@
   - 0/23 pass. Fatal: `is expects right` early abort. `$_` aliasing in bare blocks, if/else/elsif/while/until not working correctly
 - [ ] roast/S02-magicals/env.t
   - 7/18 pass. Failures: `%*ENV.keys` (test 1), `%*ENV` rw assignment (test 6), `use MONKEY-SEE-NO-EVAL` required for %ENV tests (tests 9-11), env persistence to child processes (test 14), `.gist`/`.raku` on %*ENV (tests 15-16)
-- [ ] roast/S02-magicals/file_line.t
+- [x] roast/S02-magicals/file_line.t
 - [x] roast/S02-magicals/GROUP.t
   - 1/1 pass.
 - [ ] roast/S02-magicals/KERNEL.t
@@ -224,7 +224,7 @@
 - [ ] roast/S03-operators/also.t
   - 7/8 pass. Test 6 fails: closures cannot mutate outer lexical variables (env is cloned by value, not shared by reference).
 - [ ] roast/S03-operators/andthen.t
-  - 2/14 pass.
+  - 4/14 pass. Tests 5-6: type objects not properly undefined. Tests 7-8: andthen thunking (closure as rhs). Tests 9-14: need try/die, `is-deeply`, `infix:<andthen>()`.
 - [ ] roast/S03-operators/arith.t
   - 0/? pass. Panic: `attempt to multiply with overflow` in `i64::pow`. Needs BigInt or checked arithmetic.
 - [ ] roast/S03-operators/assign-is-not-binding.t
@@ -292,12 +292,12 @@
 - [ ] roast/S03-operators/nesting.t
   - 7/26 pass.
 - [ ] roast/S03-operators/notandthen.t
-  - 0/6 pass.
+  - 2/6 pass. Failures: `&infix:<notandthen>` function reference (tests 3-4), type object definedness checks (tests 5-6)
 - [x] roast/S03-operators/not.t
 - [ ] roast/S03-operators/numeric-shift.t
   - 0/38 pass.
 - [ ] roast/S03-operators/orelse.t
-  - 5/16 pass.
+  - 8/16 pass. Tests 3,9: type objects (Any, Int) not properly undefined. Tests 11-16: need `cmp-ok`, `infix:<orelse>()` operator ref, class definitions.
 - [ ] roast/S03-operators/overflow.t
   - 23/98 pass.
 - [ ] roast/S03-operators/precedence.t

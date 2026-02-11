@@ -109,6 +109,7 @@ pub(crate) enum TokenKind {
 #[derive(Debug, Clone)]
 pub(crate) struct Token {
     pub(crate) kind: TokenKind,
+    pub(crate) line: usize,
 }
 
 pub(crate) struct Lexer {
@@ -129,9 +130,11 @@ impl Lexer {
     pub(crate) fn next_token(&mut self) -> Token {
         loop {
             self.skip_ws_and_comments();
+            let token_line = self.line;
             if self.pos >= self.src.len() {
                 return Token {
                     kind: TokenKind::Eof,
+                    line: token_line,
                 };
             }
             let ch = self.bump();
@@ -401,6 +404,7 @@ impl Lexer {
                             let value = i64::from_str_radix(&hex, 16).unwrap_or(0);
                             return Token {
                                 kind: TokenKind::Number(value),
+                                line: token_line,
                             };
                         }
                         if self.peek() == Some('o') || self.peek() == Some('O') {
@@ -419,6 +423,7 @@ impl Lexer {
                             let value = i64::from_str_radix(&oct, 8).unwrap_or(0);
                             return Token {
                                 kind: TokenKind::Number(value),
+                                line: token_line,
                             };
                         }
                         if self.peek() == Some('b') || self.peek() == Some('B') {
@@ -437,6 +442,7 @@ impl Lexer {
                             let value = i64::from_str_radix(&bin, 2).unwrap_or(0);
                             return Token {
                                 kind: TokenKind::Number(value),
+                                line: token_line,
                             };
                         }
                     }
@@ -986,7 +992,7 @@ impl Lexer {
                     }
                 }
             };
-            return Token { kind };
+            return Token { kind, line: token_line };
         }
     }
 
