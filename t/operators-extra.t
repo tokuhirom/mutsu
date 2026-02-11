@@ -11,18 +11,18 @@ is ?"", False, '?"" is False';
 is-deeply (^5).list, [0, 1, 2, 3, 4], '^5 produces 0..^5';
 
 # <=> numeric comparison
-is (1 <=> 2), -1, '1 <=> 2 is -1';
-is (2 <=> 2), 0, '2 <=> 2 is 0';
-is (3 <=> 2), 1, '3 <=> 2 is 1';
+is (1 <=> 2), Order::Less, '1 <=> 2 is Less';
+is (2 <=> 2), Order::Same, '2 <=> 2 is Same';
+is (3 <=> 2), Order::More, '3 <=> 2 is More';
 
 # cmp (polymorphic)
-is (1 cmp 2), -1, '1 cmp 2 is -1';
-is ("a" cmp "b"), -1, '"a" cmp "b" is -1';
+is (1 cmp 2), Order::Less, '1 cmp 2 is Less';
+is ("a" cmp "b"), Order::Less, '"a" cmp "b" is Less';
 
 # eqv
 ok (1 eqv 1), '1 eqv 1';
 nok (1 eqv 2), 'not 1 eqv 2';
 
 # leg
-is ("abc" leg "abd"), -1, '"abc" leg "abd"';
-is ("abc" leg "abc"), 0, '"abc" leg "abc"';
+is ("abc" leg "abd"), Order::Less, '"abc" leg "abd"';
+is ("abc" leg "abc"), Order::Same, '"abc" leg "abc"';

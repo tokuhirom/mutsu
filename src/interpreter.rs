@@ -224,6 +224,7 @@ impl Interpreter {
             chroot_root: None,
         };
         interpreter.init_io_environment();
+        interpreter.init_order_enum();
         interpreter
     }
 
@@ -245,6 +246,51 @@ impl Interpreter {
 
     pub fn output(&self) -> &str {
         &self.output
+    }
+
+    fn init_order_enum(&mut self) {
+        let variants = vec![
+            ("Less".to_string(), -1i64),
+            ("Same".to_string(), 0i64),
+            ("More".to_string(), 1i64),
+        ];
+        self.enum_types
+            .insert("Order".to_string(), variants.clone());
+        self.env
+            .insert("Order".to_string(), Value::Str("Order".to_string()));
+        for (index, (key, val)) in variants.iter().enumerate() {
+            let enum_val = Value::Enum {
+                enum_type: "Order".to_string(),
+                key: key.clone(),
+                value: *val,
+                index,
+            };
+            self.env
+                .insert(format!("Order::{}", key), enum_val.clone());
+        }
+    }
+
+    fn make_order(ord: std::cmp::Ordering) -> Value {
+        match ord {
+            std::cmp::Ordering::Less => Value::Enum {
+                enum_type: "Order".to_string(),
+                key: "Less".to_string(),
+                value: -1,
+                index: 0,
+            },
+            std::cmp::Ordering::Equal => Value::Enum {
+                enum_type: "Order".to_string(),
+                key: "Same".to_string(),
+                value: 0,
+                index: 1,
+            },
+            std::cmp::Ordering::Greater => Value::Enum {
+                enum_type: "Order".to_string(),
+                key: "More".to_string(),
+                value: 1,
+                index: 2,
+            },
+        }
     }
 
     fn init_io_environment(&mut self) {
@@ -5190,6 +5236,11 @@ impl Interpreter {
                                         self.env = saved;
                                         match result {
                                             Value::Int(n) => n.cmp(&0),
+                                            Value::Enum { enum_type, value, .. }
+                                                if enum_type == "Order" =>
+                                            {
+                                                value.cmp(&0)
+                                            }
                                             _ => std::cmp::Ordering::Equal,
                                         }
                                     });
@@ -7860,6 +7911,16 @@ impl Interpreter {
             TokenKind::LtEqGt => {
                 let ord = match (&left, &right) {
                     (Value::Int(a), Value::Int(b)) => a.cmp(b),
+                    (Value::Rat(_, _), _) | (_, Value::Rat(_, _))
+                    | (Value::FatRat(_, _), _) | (_, Value::FatRat(_, _)) => {
+                        if let (Some((an, ad)), Some((bn, bd))) =
+                            (Self::to_rat_parts(&left), Self::to_rat_parts(&right))
+                        {
+                            (an * bd).cmp(&(bn * ad))
+                        } else {
+                            left.to_string_value().cmp(&right.to_string_value())
+                        }
+                    }
                     (Value::Num(a), Value::Num(b)) => {
                         a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
                     }
@@ -7871,11 +7932,7 @@ impl Interpreter {
                         .unwrap_or(std::cmp::Ordering::Equal),
                     _ => left.to_string_value().cmp(&right.to_string_value()),
                 };
-                Ok(Value::Int(match ord {
-                    std::cmp::Ordering::Less => -1,
-                    std::cmp::Ordering::Equal => 0,
-                    std::cmp::Ordering::Greater => 1,
-                }))
+                Ok(Self::make_order(ord))
             }
             TokenKind::SmartMatch => Ok(Value::Bool(self.smart_match(&left, &right))),
             TokenKind::BangTilde => Ok(Value::Bool(!self.smart_match(&left, &right))),
@@ -7909,15 +7966,21 @@ impl Interpreter {
             )),
             TokenKind::Ident(name) if name == "leg" => {
                 let ord = left.to_string_value().cmp(&right.to_string_value());
-                Ok(Value::Int(match ord {
-                    std::cmp::Ordering::Less => -1,
-                    std::cmp::Ordering::Equal => 0,
-                    std::cmp::Ordering::Greater => 1,
-                }))
+                Ok(Self::make_order(ord))
             }
             TokenKind::Ident(name) if name == "cmp" => {
                 let ord = match (&left, &right) {
                     (Value::Int(a), Value::Int(b)) => a.cmp(b),
+                    (Value::Rat(_, _), _) | (_, Value::Rat(_, _))
+                    | (Value::FatRat(_, _), _) | (_, Value::FatRat(_, _)) => {
+                        if let (Some((an, ad)), Some((bn, bd))) =
+                            (Self::to_rat_parts(&left), Self::to_rat_parts(&right))
+                        {
+                            (an * bd).cmp(&(bn * ad))
+                        } else {
+                            left.to_string_value().cmp(&right.to_string_value())
+                        }
+                    }
                     (Value::Num(a), Value::Num(b)) => {
                         a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
                     }
@@ -7929,11 +7992,7 @@ impl Interpreter {
                         .unwrap_or(std::cmp::Ordering::Equal),
                     _ => left.to_string_value().cmp(&right.to_string_value()),
                 };
-                Ok(Value::Int(match ord {
-                    std::cmp::Ordering::Less => -1,
-                    std::cmp::Ordering::Equal => 0,
-                    std::cmp::Ordering::Greater => 1,
-                }))
+                Ok(Self::make_order(ord))
             }
             TokenKind::Ident(name) if name == "eqv" => Ok(Value::Bool(left == right)),
             TokenKind::Ident(name) if name == "x" => {
@@ -8801,15 +8860,21 @@ impl Interpreter {
             )),
             "leg" => {
                 let ord = left.to_string_value().cmp(&right.to_string_value());
-                Ok(Value::Int(match ord {
-                    std::cmp::Ordering::Less => -1,
-                    std::cmp::Ordering::Equal => 0,
-                    std::cmp::Ordering::Greater => 1,
-                }))
+                Ok(Self::make_order(ord))
             }
             "cmp" => {
                 let ord = match (left, right) {
                     (Value::Int(a), Value::Int(b)) => a.cmp(b),
+                    (Value::Rat(_, _), _) | (_, Value::Rat(_, _))
+                    | (Value::FatRat(_, _), _) | (_, Value::FatRat(_, _)) => {
+                        if let (Some((an, ad)), Some((bn, bd))) =
+                            (Self::to_rat_parts(left), Self::to_rat_parts(right))
+                        {
+                            (an * bd).cmp(&(bn * ad))
+                        } else {
+                            left.to_string_value().cmp(&right.to_string_value())
+                        }
+                    }
                     (Value::Num(a), Value::Num(b)) => {
                         a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
                     }
@@ -8821,11 +8886,7 @@ impl Interpreter {
                         .unwrap_or(std::cmp::Ordering::Equal),
                     _ => left.to_string_value().cmp(&right.to_string_value()),
                 };
-                Ok(Value::Int(match ord {
-                    std::cmp::Ordering::Less => -1,
-                    std::cmp::Ordering::Equal => 0,
-                    std::cmp::Ordering::Greater => 1,
-                }))
+                Ok(Self::make_order(ord))
             }
             "gcd" => {
                 let (mut a, mut b) = (to_int(left).abs(), to_int(right).abs());

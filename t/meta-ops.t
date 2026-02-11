@@ -10,7 +10,7 @@ is 10 R% 3, 3, 'R% reverses modulo: 3 % 10 = 3';
 is "world" R~ "hello ", "hello world", 'R~ reverses concatenation';
 
 # R with comparison operators
-is (1 Rcmp 2), 1, 'Rcmp reverses comparison: 2 cmp 1 = More';
+is (1 Rcmp 2), Order::More, 'Rcmp reverses comparison: 2 cmp 1 = More';
 
 # === X (Cross) meta operator ===
 # X applies operator across all pairings (Cartesian product)

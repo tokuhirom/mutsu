@@ -225,8 +225,7 @@
 - [ ] roast/S03-operators/buf.t
 - [ ] roast/S03-operators/chained-declarators.t
 - [ ] roast/S03-operators/cmp.t
-- [ ] roast/S03-operators/comparison-simple.t
-  - 0/24 pass. `<=>` returns Order enum (Less/Same/More) but interpreter likely returns Int. `leg` and `cmp` operators also return wrong types
+- [x] roast/S03-operators/comparison-simple.t
 - [ ] roast/S03-operators/comparison.t
 - [ ] roast/S03-operators/composition.t
 - [ ] roast/S03-operators/context-forcers.t
