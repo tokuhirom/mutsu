@@ -245,6 +245,8 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
 
 **Phase 11 (done):** Compiled function bodies — `SubDecl` bodies compiled to `CompiledFunction` bytecode chunks, executed natively in VM via `call_compiled_function_named` with proper `routine_stack` management. `TryCatch` compound opcode for compiled exception handling (CONTROL blocks fall back to interpreter). Block inlining for `Expr::Block` without placeholders. Extended native method dispatch with 17 additional zero-arg methods (`.flat`/`.sort`/`.reverse`/`.unique`/`.keys`/`.values`/`.floor`/`.ceiling`/`.round`/`.sqrt`/`.words`/`.lines`/`.trim`/`.trim-leading`/`.trim-trailing`/`.so`/`.not`).
 
+**Phase 12 (done):** Native binary operations in VM — all ~50 binary ops now execute directly in VM without delegating to `interpreter.eval_binary()`. Arithmetic (Add/Sub/Mul/Div/Mod/Pow) handle Int/Num/Rat/Complex natively. Numeric/string comparison ops include native junction auto-threading via `eval_binary_with_junctions`. Three-way comparisons (Spaceship/Cmp/Leg), identity/equality (StrictEq/Eqv), divisibility, keyword math (div/mod/gcd/lcm), repetition (x/xx), pair construction, bitwise ops, set operations, and range creation all run natively. Only SmartMatch/NotMatch (regex state) and Sequence (value_to_list) remain as interpreter bridges. Removed `binary_op` helper entirely.
+
 #### Compiled Binary Ops
 - [x] Arithmetic: `+`, `-`, `*`, `/`, `%`, `**`
 - [x] String: `~` (concat)

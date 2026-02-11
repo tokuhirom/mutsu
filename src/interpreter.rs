@@ -423,7 +423,7 @@ impl Interpreter {
         }
     }
 
-    fn make_order(ord: std::cmp::Ordering) -> Value {
+    pub(crate) fn make_order(ord: std::cmp::Ordering) -> Value {
         match ord {
             std::cmp::Ordering::Less => Value::Enum {
                 enum_type: "Order".to_string(),
@@ -9826,7 +9826,7 @@ impl Interpreter {
         out
     }
 
-    fn coerce_to_numeric(val: Value) -> Value {
+    pub(crate) fn coerce_to_numeric(val: Value) -> Value {
         match val {
             Value::Int(_)
             | Value::Num(_)
@@ -9851,7 +9851,7 @@ impl Interpreter {
         }
     }
 
-    fn coerce_to_set(val: &Value) -> HashSet<String> {
+    pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
         match val {
             Value::Set(s) => s.clone(),
             Value::Bag(b) => b.keys().cloned().collect(),
@@ -9868,7 +9868,7 @@ impl Interpreter {
         }
     }
 
-    fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
+    pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
         let l = match &left {
             Value::Int(_)
             | Value::Num(_)
@@ -9888,7 +9888,7 @@ impl Interpreter {
         (l, r)
     }
 
-    fn to_rat_parts(val: &Value) -> Option<(i64, i64)> {
+    pub(crate) fn to_rat_parts(val: &Value) -> Option<(i64, i64)> {
         match val {
             Value::Int(i) => Some((*i, 1)),
             Value::Rat(n, d) => Some((*n, *d)),
@@ -9928,7 +9928,7 @@ impl Interpreter {
         }
     }
 
-    fn to_complex_parts(val: &Value) -> Option<(f64, f64)> {
+    pub(crate) fn to_complex_parts(val: &Value) -> Option<(f64, f64)> {
         match val {
             Value::Complex(r, i) => Some((*r, *i)),
             Value::Int(n) => Some((*n as f64, 0.0)),
@@ -10067,14 +10067,14 @@ impl Interpreter {
         }
     }
 
-    fn merge_junction(kind: JunctionKind, left: Value, right: Value) -> Value {
+    pub(crate) fn merge_junction(kind: JunctionKind, left: Value, right: Value) -> Value {
         let mut values = Vec::new();
         Self::push_junction_value(&kind, left, &mut values);
         Self::push_junction_value(&kind, right, &mut values);
         Value::Junction { kind, values }
     }
 
-    fn push_junction_value(kind: &JunctionKind, value: Value, out: &mut Vec<Value>) {
+    pub(crate) fn push_junction_value(kind: &JunctionKind, value: Value, out: &mut Vec<Value>) {
         match value {
             Value::Junction {
                 kind: inner_kind,
@@ -10086,7 +10086,7 @@ impl Interpreter {
         }
     }
 
-    fn compare_values(a: &Value, b: &Value) -> i32 {
+    pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
         match (a, b) {
             (Value::Int(a), Value::Int(b)) => a.cmp(b) as i32,
             (Value::Num(a), Value::Num(b)) => {
@@ -10113,7 +10113,7 @@ impl Interpreter {
         }
     }
 
-    fn to_int(v: &Value) -> i64 {
+    pub(crate) fn to_int(v: &Value) -> i64 {
         match v {
             Value::Int(i) => *i,
             Value::Num(f) => *f as i64,
@@ -10149,7 +10149,7 @@ impl Interpreter {
         }
     }
 
-    fn compare(left: Value, right: Value, f: fn(i32) -> bool) -> Result<Value, RuntimeError> {
+    pub(crate) fn compare(left: Value, right: Value, f: fn(i32) -> bool) -> Result<Value, RuntimeError> {
         let (l, r) = Self::coerce_numeric(left, right);
         if let (Some((an, ad)), Some((bn, bd))) = (Self::to_rat_parts(&l), Self::to_rat_parts(&r)) {
             if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {

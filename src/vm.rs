@@ -164,24 +164,206 @@ impl VM {
                 *ip += 1;
             }
 
-            // -- Arithmetic (delegate to interpreter's eval_binary) --
+            // -- Arithmetic (native) --
             OpCode::Add => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Plus)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let (l, r) = Interpreter::coerce_numeric(left, right);
+                let result = if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+                    let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                    let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                    Value::Complex(ar + br, ai + bi)
+                } else if let (Some((an, ad)), Some((bn, bd))) = (Interpreter::to_rat_parts(&l), Interpreter::to_rat_parts(&r)) {
+                    if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
+                        make_rat(an * bd + bn * ad, ad * bd)
+                    } else {
+                        match (l, r) {
+                            (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_add(b)),
+                            (Value::Num(a), Value::Num(b)) => Value::Num(a + b),
+                            (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 + b),
+                            (Value::Num(a), Value::Int(b)) => Value::Num(a + b as f64),
+                            _ => Value::Int(0),
+                        }
+                    }
+                } else {
+                    match (l, r) {
+                        (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_add(b)),
+                        (Value::Num(a), Value::Num(b)) => Value::Num(a + b),
+                        (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 + b),
+                        (Value::Num(a), Value::Int(b)) => Value::Num(a + b as f64),
+                        _ => Value::Int(0),
+                    }
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::Sub => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Minus)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let (l, r) = Interpreter::coerce_numeric(left, right);
+                let result = if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+                    let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                    let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                    Value::Complex(ar - br, ai - bi)
+                } else if let (Some((an, ad)), Some((bn, bd))) = (Interpreter::to_rat_parts(&l), Interpreter::to_rat_parts(&r)) {
+                    if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
+                        make_rat(an * bd - bn * ad, ad * bd)
+                    } else {
+                        match (l, r) {
+                            (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_sub(b)),
+                            (Value::Num(a), Value::Num(b)) => Value::Num(a - b),
+                            (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 - b),
+                            (Value::Num(a), Value::Int(b)) => Value::Num(a - b as f64),
+                            _ => Value::Int(0),
+                        }
+                    }
+                } else {
+                    match (l, r) {
+                        (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_sub(b)),
+                        (Value::Num(a), Value::Num(b)) => Value::Num(a - b),
+                        (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 - b),
+                        (Value::Num(a), Value::Int(b)) => Value::Num(a - b as f64),
+                        _ => Value::Int(0),
+                    }
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::Mul => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Star)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let (l, r) = Interpreter::coerce_numeric(left, right);
+                let result = if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+                    let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                    let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                    Value::Complex(ar * br - ai * bi, ar * bi + ai * br)
+                } else if let (Some((an, ad)), Some((bn, bd))) = (Interpreter::to_rat_parts(&l), Interpreter::to_rat_parts(&r)) {
+                    if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
+                        make_rat(an * bn, ad * bd)
+                    } else {
+                        match (l, r) {
+                            (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_mul(b)),
+                            (Value::Num(a), Value::Num(b)) => Value::Num(a * b),
+                            (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 * b),
+                            (Value::Num(a), Value::Int(b)) => Value::Num(a * b as f64),
+                            _ => Value::Int(0),
+                        }
+                    }
+                } else {
+                    match (l, r) {
+                        (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_mul(b)),
+                        (Value::Num(a), Value::Num(b)) => Value::Num(a * b),
+                        (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 * b),
+                        (Value::Num(a), Value::Int(b)) => Value::Num(a * b as f64),
+                        _ => Value::Int(0),
+                    }
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::Div => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Slash)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let (l, r) = Interpreter::coerce_numeric(left, right);
+                let result = if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+                    let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                    let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                    let denom = br * br + bi * bi;
+                    if denom == 0.0 {
+                        return Err(RuntimeError::new("Division by zero"));
+                    }
+                    Value::Complex((ar * br + ai * bi) / denom, (ai * br - ar * bi) / denom)
+                } else {
+                    match (&l, &r) {
+                        (Value::Rat(_, _), _) | (_, Value::Rat(_, _)) | (Value::Int(_), Value::Int(_)) => {
+                            let (an, ad) = Interpreter::to_rat_parts(&l).unwrap_or((0, 1));
+                            let (bn, bd) = Interpreter::to_rat_parts(&r).unwrap_or((0, 1));
+                            if bn == 0 {
+                                return Err(RuntimeError::new("Division by zero"));
+                            }
+                            make_rat(an * bd, ad * bn)
+                        }
+                        (Value::Num(a), Value::Num(b)) => Value::Num(a / b),
+                        (Value::Int(a), Value::Num(b)) => Value::Num(*a as f64 / b),
+                        (Value::Num(a), Value::Int(b)) => Value::Num(a / *b as f64),
+                        _ => Value::Int(0),
+                    }
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::Mod => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Percent)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let (l, r) = Interpreter::coerce_numeric(left, right);
+                let result = if let (Some((an, ad)), Some((bn, bd))) = (Interpreter::to_rat_parts(&l), Interpreter::to_rat_parts(&r)) {
+                    if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
+                        if bn == 0 {
+                            return Err(RuntimeError::new("Modulo by zero"));
+                        }
+                        let lf = an as f64 / ad as f64;
+                        let rf = bn as f64 / bd as f64;
+                        Value::Num(lf % rf)
+                    } else {
+                        match (l, r) {
+                            (Value::Int(_), Value::Int(0)) => return Err(RuntimeError::new("Modulo by zero")),
+                            (Value::Int(a), Value::Int(b)) => Value::Int(a % b),
+                            (Value::Num(a), Value::Num(b)) => Value::Num(a % b),
+                            (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 % b),
+                            (Value::Num(a), Value::Int(b)) => Value::Num(a % b as f64),
+                            _ => Value::Int(0),
+                        }
+                    }
+                } else {
+                    match (l, r) {
+                        (Value::Int(_), Value::Int(0)) => return Err(RuntimeError::new("Modulo by zero")),
+                        (Value::Int(a), Value::Int(b)) => Value::Int(a % b),
+                        (Value::Num(a), Value::Num(b)) => Value::Num(a % b),
+                        (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 % b),
+                        (Value::Num(a), Value::Int(b)) => Value::Num(a % b as f64),
+                        _ => Value::Int(0),
+                    }
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::Pow => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::StarStar)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let (l, r) = Interpreter::coerce_numeric(left, right);
+                let result = if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+                    let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                    let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                    let ln_r = (ar * ar + ai * ai).sqrt().ln();
+                    let ln_i = ai.atan2(ar);
+                    let wr = br * ln_r - bi * ln_i;
+                    let wi = br * ln_i + bi * ln_r;
+                    let mag = wr.exp();
+                    Value::Complex(mag * wi.cos(), mag * wi.sin())
+                } else {
+                    match (l, r) {
+                        (Value::Int(a), Value::Int(b)) if b >= 0 => Value::Int(a.pow(b as u32)),
+                        (Value::Int(a), Value::Int(b)) => {
+                            let pos = (-b) as u32;
+                            let base = a.pow(pos);
+                            make_rat(1, base)
+                        }
+                        (Value::Rat(n, d), Value::Int(b)) if b >= 0 => {
+                            let p = b as u32;
+                            make_rat(n.pow(p), d.pow(p))
+                        }
+                        (Value::Rat(n, d), Value::Int(b)) => {
+                            let p = (-b) as u32;
+                            make_rat(d.pow(p), n.pow(p))
+                        }
+                        (Value::Num(a), Value::Int(b)) => Value::Num(a.powi(b as i32)),
+                        (Value::Int(a), Value::Num(b)) => Value::Num((a as f64).powf(b)),
+                        (Value::Num(a), Value::Num(b)) => Value::Num(a.powf(b)),
+                        _ => Value::Int(0),
+                    }
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::Negate => {
                 let val = self.stack.pop().unwrap();
@@ -217,162 +399,532 @@ impl VM {
                 *ip += 1;
             }
 
-            // -- String --
+            // -- String (native) --
             OpCode::Concat => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Tilde)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                self.stack.push(Value::Str(format!("{}{}", left.to_string_value(), right.to_string_value())));
+                *ip += 1;
             }
 
-            // -- Numeric comparison --
+            // -- Numeric comparison (native with junction threading) --
             OpCode::NumEq => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::EqEq)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = self.eval_binary_with_junctions(left, right, |_, l, r| Ok(Value::Bool(l == r)))?;
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::NumNe => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::BangEq)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = self.eval_binary_with_junctions(left, right, |_, l, r| Ok(Value::Bool(l != r)))?;
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::NumLt => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Lt)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = self.eval_binary_with_junctions(left, right, |_, l, r| Interpreter::compare(l, r, |o| o < 0))?;
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::NumLe => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Lte)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = self.eval_binary_with_junctions(left, right, |_, l, r| Interpreter::compare(l, r, |o| o <= 0))?;
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::NumGt => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Gt)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = self.eval_binary_with_junctions(left, right, |_, l, r| Interpreter::compare(l, r, |o| o > 0))?;
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::NumGe => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Gte)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = self.eval_binary_with_junctions(left, right, |_, l, r| Interpreter::compare(l, r, |o| o >= 0))?;
+                self.stack.push(result);
+                *ip += 1;
             }
 
-            // -- String comparison (delegated to eval_binary for junction support) --
+            // -- String comparison (native with junction threading) --
             OpCode::StrEq => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("eq".to_string()))?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+                    Ok(Value::Bool(l.to_string_value() == r.to_string_value()))
+                })?;
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::StrNe => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("ne".to_string()))?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+                    Ok(Value::Bool(l.to_string_value() != r.to_string_value()))
+                })?;
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::StrLt => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("lt".to_string()))?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+                    Ok(Value::Bool(l.to_string_value() < r.to_string_value()))
+                })?;
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::StrGt => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("gt".to_string()))?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+                    Ok(Value::Bool(l.to_string_value() > r.to_string_value()))
+                })?;
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::StrLe => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("le".to_string()))?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+                    Ok(Value::Bool(l.to_string_value() <= r.to_string_value()))
+                })?;
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::StrGe => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("ge".to_string()))?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+                    Ok(Value::Bool(l.to_string_value() >= r.to_string_value()))
+                })?;
+                self.stack.push(result);
+                *ip += 1;
             }
 
-            // -- Smart match --
+            // -- Smart match (interpreter bridge - needs regex state) --
             OpCode::SmartMatch => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::SmartMatch)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = self.eval_binary_with_junctions(left, right, |s, l, r| {
+                    Ok(Value::Bool(s.interpreter.smart_match_values(&l, &r)))
+                })?;
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::NotMatch => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::BangTilde)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = self.eval_binary_with_junctions(left, right, |s, l, r| {
+                    Ok(Value::Bool(!s.interpreter.smart_match_values(&l, &r)))
+                })?;
+                self.stack.push(result);
+                *ip += 1;
             }
 
-            // -- Three-way comparison --
+            // -- Three-way comparison (native) --
             OpCode::Spaceship => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::LtEqGt)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let ord = match (&left, &right) {
+                    (Value::Int(a), Value::Int(b)) => a.cmp(b),
+                    (Value::Rat(_, _), _) | (_, Value::Rat(_, _))
+                    | (Value::FatRat(_, _), _) | (_, Value::FatRat(_, _)) => {
+                        if let (Some((an, ad)), Some((bn, bd))) = (Interpreter::to_rat_parts(&left), Interpreter::to_rat_parts(&right)) {
+                            (an * bd).cmp(&(bn * ad))
+                        } else {
+                            left.to_string_value().cmp(&right.to_string_value())
+                        }
+                    }
+                    (Value::Num(a), Value::Num(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Int(a), Value::Num(b)) => (*a as f64).partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Num(a), Value::Int(b)) => a.partial_cmp(&(*b as f64)).unwrap_or(std::cmp::Ordering::Equal),
+                    _ => left.to_string_value().cmp(&right.to_string_value()),
+                };
+                self.stack.push(Interpreter::make_order(ord));
+                *ip += 1;
             }
             OpCode::Cmp => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("cmp".to_string()))?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let ord = match (&left, &right) {
+                    (Value::Int(a), Value::Int(b)) => a.cmp(b),
+                    (Value::Rat(_, _), _) | (_, Value::Rat(_, _))
+                    | (Value::FatRat(_, _), _) | (_, Value::FatRat(_, _)) => {
+                        if let (Some((an, ad)), Some((bn, bd))) = (Interpreter::to_rat_parts(&left), Interpreter::to_rat_parts(&right)) {
+                            (an * bd).cmp(&(bn * ad))
+                        } else {
+                            left.to_string_value().cmp(&right.to_string_value())
+                        }
+                    }
+                    (Value::Num(a), Value::Num(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Int(a), Value::Num(b)) => (*a as f64).partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Num(a), Value::Int(b)) => a.partial_cmp(&(*b as f64)).unwrap_or(std::cmp::Ordering::Equal),
+                    _ => left.to_string_value().cmp(&right.to_string_value()),
+                };
+                self.stack.push(Interpreter::make_order(ord));
+                *ip += 1;
             }
             OpCode::Leg => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("leg".to_string()))?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let ord = left.to_string_value().cmp(&right.to_string_value());
+                self.stack.push(Interpreter::make_order(ord));
+                *ip += 1;
             }
 
-            // -- Identity/value equality --
+            // -- Identity/value equality (native) --
             OpCode::StrictEq => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::EqEqEq)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                self.stack.push(Value::Bool(left == right));
+                *ip += 1;
             }
             OpCode::Eqv => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("eqv".to_string()))?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                self.stack.push(Value::Bool(left == right));
+                *ip += 1;
             }
 
-            // -- Divisibility --
+            // -- Divisibility (native) --
             OpCode::DivisibleBy => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::PercentPercent)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let (l, r) = Interpreter::coerce_numeric(left, right);
+                let result = match (l, r) {
+                    (Value::Int(_), Value::Int(0)) => return Err(RuntimeError::new("Divisibility by zero")),
+                    (Value::Int(a), Value::Int(b)) => Value::Bool(a % b == 0),
+                    _ => Value::Bool(false),
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
 
-            // -- Keyword math --
+            // -- Keyword math (native) --
             OpCode::IntDiv => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("div".to_string()))?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = match (left, right) {
+                    (Value::Int(a), Value::Int(b)) if b != 0 => Value::Int(a.div_euclid(b)),
+                    (Value::Int(_), Value::Int(_)) => return Err(RuntimeError::new("Division by zero")),
+                    _ => return Err(RuntimeError::new("div expects Int")),
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::IntMod => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("mod".to_string()))?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = match (left, right) {
+                    (Value::Int(a), Value::Int(b)) if b != 0 => Value::Int(a.rem_euclid(b)),
+                    (Value::Int(_), Value::Int(_)) => return Err(RuntimeError::new("Modulo by zero")),
+                    _ => return Err(RuntimeError::new("mod expects Int")),
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::Gcd => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("gcd".to_string()))?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let (mut a, mut b) = (Interpreter::to_int(&left).abs(), Interpreter::to_int(&right).abs());
+                while b != 0 {
+                    let t = b;
+                    b = a % b;
+                    a = t;
+                }
+                self.stack.push(Value::Int(a));
+                *ip += 1;
             }
             OpCode::Lcm => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("lcm".to_string()))?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let (a, b) = (Interpreter::to_int(&left).abs(), Interpreter::to_int(&right).abs());
+                let result = if a == 0 && b == 0 {
+                    Value::Int(0)
+                } else {
+                    let mut ga = a;
+                    let mut gb = b;
+                    while gb != 0 {
+                        let t = gb;
+                        gb = ga % gb;
+                        ga = t;
+                    }
+                    Value::Int(a / ga * b)
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
 
-            // -- Repetition --
+            // -- Repetition (native) --
             OpCode::StringRepeat => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("x".to_string()))?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let s = left.to_string_value();
+                let n = match right {
+                    Value::Int(n) => n.max(0) as usize,
+                    _ => 0,
+                };
+                self.stack.push(Value::Str(s.repeat(n)));
+                *ip += 1;
             }
             OpCode::ListRepeat => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("xx".to_string()))?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let n = match right {
+                    Value::Int(n) => n.max(0) as usize,
+                    _ => 0,
+                };
+                let items: Vec<Value> = std::iter::repeat(left).take(n).collect();
+                self.stack.push(Value::Array(items));
+                *ip += 1;
             }
 
-            // -- Pair --
+            // -- Pair (native) --
             OpCode::MakePair => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::FatArrow)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let key = left.to_string_value();
+                self.stack.push(Value::Pair(key, Box::new(right)));
+                *ip += 1;
             }
 
-            // -- Bitwise --
+            // -- Bitwise (native) --
             OpCode::BitAnd => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::BitAnd)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let (l, r) = Interpreter::coerce_numeric(left, right);
+                let result = match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Value::Int(a & b),
+                    _ => Value::Int(0),
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::BitOr => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::BitOr)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let (l, r) = Interpreter::coerce_numeric(left, right);
+                let result = match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Value::Int(a | b),
+                    _ => Value::Int(0),
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::BitXor => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::BitXor)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let (l, r) = Interpreter::coerce_numeric(left, right);
+                let result = match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Value::Int(a ^ b),
+                    _ => Value::Int(0),
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::BitShiftLeft => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::BitShiftLeft)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let (l, r) = Interpreter::coerce_numeric(left, right);
+                let result = match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Value::Int(a << b),
+                    _ => Value::Int(0),
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::BitShiftRight => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::BitShiftRight)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let (l, r) = Interpreter::coerce_numeric(left, right);
+                let result = match (l, r) {
+                    (Value::Int(a), Value::Int(b)) => Value::Int(a >> b),
+                    _ => Value::Int(0),
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
 
-            // -- Set operations --
+            // -- Set operations (native) --
             OpCode::SetElem => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::SetElem)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let key = left.to_string_value();
+                let result = match &right {
+                    Value::Set(s) => s.contains(&key),
+                    Value::Bag(b) => b.contains_key(&key),
+                    Value::Mix(m) => m.contains_key(&key),
+                    _ => false,
+                };
+                self.stack.push(Value::Bool(result));
+                *ip += 1;
             }
             OpCode::SetCont => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::SetCont)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let key = right.to_string_value();
+                let result = match &left {
+                    Value::Set(s) => s.contains(&key),
+                    Value::Bag(b) => b.contains_key(&key),
+                    Value::Mix(m) => m.contains_key(&key),
+                    _ => false,
+                };
+                self.stack.push(Value::Bool(result));
+                *ip += 1;
             }
             OpCode::SetUnion => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::SetUnion)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = match (left, right) {
+                    (Value::Set(mut a), Value::Set(b)) => {
+                        for elem in b { a.insert(elem); }
+                        Value::Set(a)
+                    }
+                    (Value::Bag(mut a), Value::Bag(b)) => {
+                        for (k, v) in b { let e = a.entry(k).or_insert(0); *e = (*e).max(v); }
+                        Value::Bag(a)
+                    }
+                    (Value::Mix(mut a), Value::Mix(b)) => {
+                        for (k, v) in b { let e = a.entry(k).or_insert(0.0); *e = e.max(v); }
+                        Value::Mix(a)
+                    }
+                    (Value::Set(a), Value::Bag(mut b)) => {
+                        for elem in a { b.entry(elem).or_insert(1); }
+                        Value::Bag(b)
+                    }
+                    (Value::Bag(mut a), Value::Set(b)) => {
+                        for elem in b { a.entry(elem).or_insert(1); }
+                        Value::Bag(a)
+                    }
+                    (l, r) => {
+                        let a = Interpreter::coerce_to_set(&l);
+                        let b = Interpreter::coerce_to_set(&r);
+                        let mut result = a;
+                        for elem in b { result.insert(elem); }
+                        Value::Set(result)
+                    }
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::SetIntersect => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::SetIntersect)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = match (left, right) {
+                    (Value::Set(a), Value::Set(b)) => Value::Set(a.intersection(&b).cloned().collect()),
+                    (Value::Bag(a), Value::Bag(b)) => {
+                        let mut result = HashMap::new();
+                        for (k, v) in &a {
+                            if let Some(bv) = b.get(k) { result.insert(k.clone(), (*v).min(*bv)); }
+                        }
+                        Value::Bag(result)
+                    }
+                    (Value::Mix(a), Value::Mix(b)) => {
+                        let mut result = HashMap::new();
+                        for (k, v) in &a {
+                            if let Some(bv) = b.get(k) { result.insert(k.clone(), v.min(*bv)); }
+                        }
+                        Value::Mix(result)
+                    }
+                    (l, r) => {
+                        let a = Interpreter::coerce_to_set(&l);
+                        let b = Interpreter::coerce_to_set(&r);
+                        Value::Set(a.intersection(&b).cloned().collect())
+                    }
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::SetDiff => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::SetDiff)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = match (left, right) {
+                    (Value::Set(a), Value::Set(b)) => Value::Set(a.difference(&b).cloned().collect()),
+                    (Value::Bag(a), Value::Bag(b)) => {
+                        let mut result = HashMap::new();
+                        for (k, v) in a {
+                            let bv = b.get(&k).copied().unwrap_or(0);
+                            if v > bv { result.insert(k, v - bv); }
+                        }
+                        Value::Bag(result)
+                    }
+                    (Value::Mix(a), Value::Mix(b)) => {
+                        let mut result = HashMap::new();
+                        for (k, v) in a {
+                            let bv = b.get(&k).copied().unwrap_or(0.0);
+                            if v > bv { result.insert(k, v - bv); }
+                        }
+                        Value::Mix(result)
+                    }
+                    (l, r) => {
+                        let a = Interpreter::coerce_to_set(&l);
+                        let b = Interpreter::coerce_to_set(&r);
+                        Value::Set(a.difference(&b).cloned().collect())
+                    }
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::SetSymDiff => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::SetSymDiff)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = match (left, right) {
+                    (Value::Set(a), Value::Set(b)) => Value::Set(a.symmetric_difference(&b).cloned().collect()),
+                    (l, r) => {
+                        let a = Interpreter::coerce_to_set(&l);
+                        let b = Interpreter::coerce_to_set(&r);
+                        Value::Set(a.symmetric_difference(&b).cloned().collect())
+                    }
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::SetSubset => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::SetSubset)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let a = Interpreter::coerce_to_set(&left);
+                let b = Interpreter::coerce_to_set(&right);
+                self.stack.push(Value::Bool(a.is_subset(&b)));
+                *ip += 1;
             }
             OpCode::SetSuperset => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::SetSuperset)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let a = Interpreter::coerce_to_set(&left);
+                let b = Interpreter::coerce_to_set(&right);
+                self.stack.push(Value::Bool(a.is_superset(&b)));
+                *ip += 1;
             }
             OpCode::SetStrictSubset => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::SetStrictSubset)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let a = Interpreter::coerce_to_set(&left);
+                let b = Interpreter::coerce_to_set(&right);
+                self.stack.push(Value::Bool(a.is_subset(&b) && a.len() < b.len()));
+                *ip += 1;
             }
             OpCode::SetStrictSuperset => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::SetStrictSuperset)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let a = Interpreter::coerce_to_set(&left);
+                let b = Interpreter::coerce_to_set(&right);
+                self.stack.push(Value::Bool(a.is_superset(&b) && a.len() > b.len()));
+                *ip += 1;
             }
 
-            // -- Sequence --
+            // -- Sequence (interpreter bridge - needs value_to_list) --
             OpCode::Sequence => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::DotDotDot)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = self.interpreter.eval_binary(left, &crate::lexer::TokenKind::DotDotDot, right)?;
+                self.stack.push(result);
+                *ip += 1;
             }
 
             // -- Nil check --
@@ -430,18 +982,46 @@ impl VM {
                 *ip += 1;
             }
 
-            // -- Range creation --
+            // -- Range creation (native) --
             OpCode::MakeRange => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::DotDot)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = match (left, right) {
+                    (Value::Int(a), Value::Int(b)) => Value::Range(a, b),
+                    _ => Value::Nil,
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::MakeRangeExcl => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::DotDotCaret)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = match (left, right) {
+                    (Value::Int(a), Value::Int(b)) => Value::RangeExcl(a, b),
+                    _ => Value::Nil,
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::MakeRangeExclStart => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::CaretDotDot)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = match (left, right) {
+                    (Value::Int(a), Value::Int(b)) => Value::RangeExclStart(a, b),
+                    _ => Value::Nil,
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
             OpCode::MakeRangeExclBoth => {
-                self.binary_op(code, ip, &crate::lexer::TokenKind::CaretDotDotCaret)?;
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = match (left, right) {
+                    (Value::Int(a), Value::Int(b)) => Value::RangeExclBoth(a, b),
+                    _ => Value::Nil,
+                };
+                self.stack.push(result);
+                *ip += 1;
             }
 
             // -- Composite --
@@ -1296,19 +1876,28 @@ impl VM {
         }
     }
 
-    /// Helper for binary operations that delegate to interpreter.eval_binary.
-    fn binary_op(
+    /// Junction auto-threading for binary comparison operators.
+    fn eval_binary_with_junctions(
         &mut self,
-        _code: &CompiledCode,
-        ip: &mut usize,
-        token: &crate::lexer::TokenKind,
-    ) -> Result<(), RuntimeError> {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
-        let result = self.interpreter.eval_binary(left, token, right)?;
-        self.stack.push(result);
-        *ip += 1;
-        Ok(())
+        left: Value,
+        right: Value,
+        f: fn(&mut Self, Value, Value) -> Result<Value, RuntimeError>,
+    ) -> Result<Value, RuntimeError> {
+        if let Value::Junction { kind, values } = left {
+            let results: Result<Vec<Value>, RuntimeError> = values
+                .into_iter()
+                .map(|v| self.eval_binary_with_junctions(v, right.clone(), f))
+                .collect();
+            return Ok(Value::Junction { kind, values: results? });
+        }
+        if let Value::Junction { kind, values } = right {
+            let results: Result<Vec<Value>, RuntimeError> = values
+                .into_iter()
+                .map(|v| self.eval_binary_with_junctions(left.clone(), v, f))
+                .collect();
+            return Ok(Value::Junction { kind, values: results? });
+        }
+        f(self, left, right)
     }
 
     /// Sync local variable slots from the interpreter environment.

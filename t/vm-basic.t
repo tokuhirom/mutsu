@@ -1,5 +1,5 @@
 use Test;
-plan 209;
+plan 226;
 
 # Literal compilation
 is 42, 42, 'integer literal';
@@ -642,3 +642,38 @@ is 0.not, True, 'native .not falsy';
 my %kv = a => 1, b => 2;
 is %kv.keys.sort.join(","), "a,b", 'native .keys on hash';
 is %kv.values.sort.join(","), "1,2", 'native .values on hash';
+
+# === VM Phase 12: Native binary operations ===
+
+# Rat arithmetic (native in VM)
+is 1/3 + 1/6, 0.5, 'Rat addition natively in VM';
+is 1/2 - 1/4, 0.25, 'Rat subtraction natively in VM';
+is 2/3 * 3/4, 0.5, 'Rat multiplication natively in VM';
+
+# Complex arithmetic (native in VM)
+is (1+2i) + (3+4i), 4+6i, 'Complex addition natively in VM';
+is (5+3i) - (2+1i), 3+2i, 'Complex subtraction natively in VM';
+
+# Junction threading with == (native in VM)
+ok 5 == any(3, 5, 7), 'junction == with any';
+ok 5 != all(3, 4, 6), 'junction != with all';
+
+# Junction with string compare (native in VM)
+ok "b" eq any("a", "b", "c"), 'junction eq with any';
+
+# Bitwise ops (native in VM)
+is (0b1100 +& 0b1010), 8, 'bitwise AND native';
+is (0b1100 +| 0b1010), 14, 'bitwise OR native';
+is (0b1100 +^ 0b1010), 6, 'bitwise XOR native';
+
+# Integer division/mod (native in VM)
+is 7 div 3, 2, 'div native in VM';
+is 7 mod 3, 1, 'mod native in VM';
+
+# String repeat (native in VM)
+is "ab" x 3, "ababab", 'string repeat x native';
+
+# Spaceship (native in VM)
+is (1 <=> 2), Less, 'spaceship Less native';
+is (2 <=> 2), Same, 'spaceship Same native';
+is (3 <=> 1), More, 'spaceship More native';
