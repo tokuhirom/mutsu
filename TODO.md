@@ -247,6 +247,8 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
 
 **Phase 12 (done):** Native binary operations in VM — all ~50 binary ops now execute directly in VM without delegating to `interpreter.eval_binary()`. Arithmetic (Add/Sub/Mul/Div/Mod/Pow) handle Int/Num/Rat/Complex natively. Numeric/string comparison ops include native junction auto-threading via `eval_binary_with_junctions`. Three-way comparisons (Spaceship/Cmp/Leg), identity/equality (StrictEq/Eqv), divisibility, keyword math (div/mod/gcd/lcm), repetition (x/xx), pair construction, bitwise ops, set operations, and range creation all run natively. Only SmartMatch/NotMatch (regex state) and Sequence (value_to_list) remain as interpreter bridges. Removed `binary_op` helper entirely.
 
+**Phase 13 (done):** Eliminate remaining interpreter dependencies — converted 5 interpreter methods (`value_to_list`, `reduction_identity`, `apply_reduction_op`, `eval_hyper_op`, `gist_value`) from instance methods to `pub(crate)` static associated functions, removing `&self` dependency. Inlined Sequence (`...`) and Index operators directly in VM, eliminating `eval_binary` and `eval_expr` bridges. Replaced `list_from_value` calls in ForLoop and Reduction with static `value_to_list` plus LazyList fallback. Removed 4 bridge wrappers (`value_to_list_bridge`, `reduction_identity_value`, `apply_reduction_op_values`, `eval_hyper_op_values`). Added `force_lazy_list_bridge` for LazyList support in VM. ~15 interpreter bridge calls eliminated.
+
 #### Compiled Binary Ops
 - [x] Arithmetic: `+`, `-`, `*`, `/`, `%`, `**`
 - [x] String: `~` (concat)

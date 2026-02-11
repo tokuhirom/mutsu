@@ -1,5 +1,5 @@
 use Test;
-plan 226;
+plan 235;
 
 # Literal compilation
 is 42, 42, 'integer literal';
@@ -677,3 +677,20 @@ is "ab" x 3, "ababab", 'string repeat x native';
 is (1 <=> 2), Less, 'spaceship Less native';
 is (2 <=> 2), Same, 'spaceship Same native';
 is (3 <=> 1), More, 'spaceship More native';
+
+# === VM Phase 13: Native Sequence/Index ===
+
+# Sequence operator
+is (1, 2, 3 ... 7).join(","), "1,2,3,4,5,6,7", 'sequence 1..7 native';
+is (1, 3 ... 9).join(","), "1,3,5,7,9", 'sequence 1,3...9 step 2 native';
+is (10, 8 ... 2).join(","), "10,8,6,4,2", 'sequence 10,8...2 step -2 native';
+is (1 ... 5).join(","), "1,2,3,4,5", 'sequence single seed native';
+
+# Index operator
+my @idx-arr = 10, 20, 30, 40, 50;
+is @idx-arr[2], 30, 'array index native';
+is @idx-arr[0], 10, 'array index 0 native';
+is @idx-arr[4], 50, 'array index last native';
+my %idx-hash = x => 42, y => 99;
+is %idx-hash<x>, 42, 'hash index native';
+is %idx-hash<y>, 99, 'hash index str native';

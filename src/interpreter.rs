@@ -315,18 +315,7 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn reduction_identity_value(&self, op: &str) -> Value {
-        self.reduction_identity(op)
-    }
 
-    pub(crate) fn apply_reduction_op_values(
-        &self,
-        op: &str,
-        left: &Value,
-        right: &Value,
-    ) -> Result<Value, RuntimeError> {
-        self.apply_reduction_op(op, left, right)
-    }
 
     pub(crate) fn routine_stack_top(&self) -> Option<&(String, String)> {
         self.routine_stack.last()
@@ -374,20 +363,7 @@ impl Interpreter {
         self.end_phasers.push(body);
     }
 
-    pub(crate) fn eval_hyper_op_values(
-        &self,
-        op: &str,
-        left: &Value,
-        right: &Value,
-        dwim_left: bool,
-        dwim_right: bool,
-    ) -> Result<Value, RuntimeError> {
-        self.eval_hyper_op(op, left, right, dwim_left, dwim_right)
-    }
 
-    pub(crate) fn value_to_list_bridge(&self, val: &Value) -> Vec<Value> {
-        self.value_to_list(val)
-    }
 
     pub(crate) fn format_sprintf_bridge(&self, fmt: &str, arg: Option<&Value>) -> String {
         self.format_sprintf(fmt, arg)
@@ -1249,7 +1225,7 @@ impl Interpreter {
                 let mut parts = Vec::new();
                 for expr in exprs {
                     let value = self.eval_expr(expr)?;
-                    parts.push(self.gist_value(&value));
+                    parts.push(Self::gist_value(&value));
                 }
                 let line = parts.join(" ");
                 self.write_to_named_handle("$*OUT", &line, true)?;
@@ -2440,7 +2416,7 @@ impl Interpreter {
         self.proto_tokens.contains(&format!("GLOBAL::{}", name))
     }
 
-    pub(crate) fn gist_value(&self, value: &Value) -> String {
+    pub(crate) fn gist_value(value: &Value) -> String {
         match value {
             Value::Rat(n, d) => {
                 if *d == 0 {
@@ -2474,15 +2450,15 @@ impl Interpreter {
             }
             Value::Array(items) => items
                 .iter()
-                .map(|v| self.gist_value(v))
+                .map(|v| Self::gist_value(v))
                 .collect::<Vec<_>>()
                 .join(" "),
             Value::Hash(items) => items
                 .iter()
-                .map(|(k, v)| format!("{}\t{}", k, self.gist_value(v)))
+                .map(|(k, v)| format!("{}\t{}", k, Self::gist_value(v)))
                 .collect::<Vec<_>>()
                 .join("\n"),
-            Value::Pair(k, v) => format!("{}\t{}", k, self.gist_value(v)),
+            Value::Pair(k, v) => format!("{}\t{}", k, Self::gist_value(v)),
             _ => value.to_string_value(),
         }
     }
@@ -2562,6 +2538,13 @@ impl Interpreter {
             Value::LazyList(list) => self.force_lazy_list(&list)?,
             other => vec![other],
         })
+    }
+
+    pub(crate) fn force_lazy_list_bridge(
+        &mut self,
+        list: &crate::value::LazyList,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        self.force_lazy_list(list)
     }
 
     fn split_block_phasers(&self, stmts: &[Stmt]) -> (Vec<Stmt>, Vec<Stmt>, Vec<Stmt>) {
@@ -6620,7 +6603,7 @@ impl Interpreter {
                     let mut flat_values = Vec::new();
                     for arg in args {
                         let val = self.eval_expr(arg)?;
-                        flat_values.extend(self.value_to_list(&val));
+                        flat_values.extend(Self::value_to_list(&val));
                     }
                     let mut map = HashMap::new();
                     let mut iter = flat_values.into_iter();
@@ -6832,7 +6815,7 @@ impl Interpreter {
                     let mut result = Vec::new();
                     for arg in args {
                         let val = self.eval_expr(arg)?;
-                        for item in self.value_to_list(&val) {
+                        for item in Self::value_to_list(&val) {
                             result.push(item);
                         }
                     }
@@ -7090,7 +7073,7 @@ impl Interpreter {
                     let mut result = String::new();
                     for arg in args {
                         let val = self.eval_expr(arg)?;
-                        for item in self.value_to_list(&val) {
+                        for item in Self::value_to_list(&val) {
                             if let Value::Int(i) = item {
                                 if i >= 0 && (i as u64) <= 0x10ffff {
                                     if let Some(ch) = std::char::from_u32(i as u32) {
@@ -7784,11 +7767,11 @@ impl Interpreter {
                 let list_value = self.eval_expr(expr)?;
                 let list = self.list_from_value(list_value)?;
                 if list.is_empty() {
-                    return Ok(self.reduction_identity(op));
+                    return Ok(Self::reduction_identity(op));
                 }
                 let mut acc = list[0].clone();
                 for item in &list[1..] {
-                    acc = self.apply_reduction_op(op, &acc, item)?;
+                    acc = Self::apply_reduction_op(op, &acc, item)?;
                 }
                 Ok(acc)
             }
@@ -7801,7 +7784,7 @@ impl Interpreter {
             } => {
                 let left_val = self.eval_expr(left)?;
                 let right_val = self.eval_expr(right)?;
-                self.eval_hyper_op(op, &left_val, &right_val, *dwim_left, *dwim_right)
+                Self::eval_hyper_op(op, &left_val, &right_val, *dwim_left, *dwim_right)
             }
             Expr::MetaOp {
                 meta,
@@ -7812,21 +7795,21 @@ impl Interpreter {
                 let left_val = self.eval_expr(left)?;
                 let right_val = self.eval_expr(right)?;
                 match meta.as_str() {
-                    "R" => self.apply_reduction_op(op, &right_val, &left_val),
+                    "R" => Self::apply_reduction_op(op, &right_val, &left_val),
                     "X" => {
-                        let left_list = self.value_to_list(&left_val);
-                        let right_list = self.value_to_list(&right_val);
+                        let left_list = Self::value_to_list(&left_val);
+                        let right_list = Self::value_to_list(&right_val);
                         let mut results = Vec::new();
                         for l in &left_list {
                             for r in &right_list {
-                                results.push(self.apply_reduction_op(op, l, r)?);
+                                results.push(Self::apply_reduction_op(op, l, r)?);
                             }
                         }
                         Ok(Value::Array(results))
                     }
                     "Z" => {
-                        let left_list = self.value_to_list(&left_val);
-                        let right_list = self.value_to_list(&right_val);
+                        let left_list = Self::value_to_list(&left_val);
+                        let right_list = Self::value_to_list(&right_val);
                         let len = left_list.len().min(right_list.len());
                         let mut results = Vec::new();
                         if op.is_empty() || op == "," {
@@ -7848,7 +7831,7 @@ impl Interpreter {
                             }
                         } else {
                             for i in 0..len {
-                                results.push(self.apply_reduction_op(
+                                results.push(Self::apply_reduction_op(
                                     op,
                                     &left_list[i],
                                     &right_list[i],
@@ -8205,7 +8188,7 @@ impl Interpreter {
             TokenKind::DotDotDot => {
                 // Sequence operator: left ... right
                 // left is typically an array of seed values, right is the endpoint
-                let seeds = self.value_to_list(&left);
+                let seeds = Self::value_to_list(&left);
                 if seeds.is_empty() {
                     return Ok(Value::Array(vec![]));
                 }
@@ -9137,7 +9120,7 @@ impl Interpreter {
         Some(CharClass { negated, items })
     }
 
-    fn reduction_identity(&self, op: &str) -> Value {
+    pub(crate) fn reduction_identity(op: &str) -> Value {
         match op {
             "+" => Value::Int(0),
             "*" => Value::Int(1),
@@ -9151,8 +9134,7 @@ impl Interpreter {
         }
     }
 
-    fn apply_reduction_op(
-        &self,
+    pub(crate) fn apply_reduction_op(
         op: &str,
         left: &Value,
         right: &Value,
@@ -9355,7 +9337,7 @@ impl Interpreter {
         }
     }
 
-    fn value_to_list(&self, val: &Value) -> Vec<Value> {
+    pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         match val {
             Value::Array(items) => items.clone(),
             Value::Range(a, b) => (*a..=*b).map(Value::Int).collect(),
@@ -9366,16 +9348,15 @@ impl Interpreter {
         }
     }
 
-    fn eval_hyper_op(
-        &self,
+    pub(crate) fn eval_hyper_op(
         op: &str,
         left: &Value,
         right: &Value,
         dwim_left: bool,
         dwim_right: bool,
     ) -> Result<Value, RuntimeError> {
-        let left_list = self.value_to_list(left);
-        let right_list = self.value_to_list(right);
+        let left_list = Self::value_to_list(left);
+        let right_list = Self::value_to_list(right);
         let left_len = left_list.len();
         let right_len = right_list.len();
 
@@ -9416,7 +9397,7 @@ impl Interpreter {
             } else {
                 &right_list[i % right_len]
             };
-            results.push(self.apply_reduction_op(op, l, r)?);
+            results.push(Self::apply_reduction_op(op, l, r)?);
         }
         Ok(Value::Array(results))
     }

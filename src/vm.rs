@@ -918,12 +918,55 @@ impl VM {
                 *ip += 1;
             }
 
-            // -- Sequence (interpreter bridge - needs value_to_list) --
+            // -- Sequence (...) --
             OpCode::Sequence => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let result = self.interpreter.eval_binary(left, &crate::lexer::TokenKind::DotDotDot, right)?;
-                self.stack.push(result);
+                let seeds = Interpreter::value_to_list(&left);
+                if seeds.is_empty() {
+                    self.stack.push(Value::Array(vec![]));
+                } else {
+                    let endpoint = match &right {
+                        Value::Num(f) if f.is_infinite() => None,
+                        Value::Int(n) => Some(*n),
+                        _ => {
+                            self.stack.push(Value::Array(seeds));
+                            *ip += 1;
+                            return Ok(());
+                        }
+                    };
+                    let mut result: Vec<Value> = seeds.clone();
+                    let step = if seeds.len() >= 2 {
+                        match (&seeds[seeds.len() - 1], &seeds[seeds.len() - 2]) {
+                            (Value::Int(b), Value::Int(a)) => b - a,
+                            _ => 1,
+                        }
+                    } else {
+                        1
+                    };
+                    let last = match seeds.last() {
+                        Some(Value::Int(n)) => *n,
+                        _ => {
+                            self.stack.push(Value::Array(result));
+                            *ip += 1;
+                            return Ok(());
+                        }
+                    };
+                    let mut cur = last + step;
+                    let limit = endpoint.unwrap_or(last + 1000);
+                    if step > 0 {
+                        while cur <= limit {
+                            result.push(Value::Int(cur));
+                            cur += step;
+                        }
+                    } else if step < 0 {
+                        while cur >= limit {
+                            result.push(Value::Int(cur));
+                            cur += step;
+                        }
+                    }
+                    self.stack.push(Value::Array(result));
+                }
                 *ip += 1;
             }
 
@@ -1053,7 +1096,7 @@ impl VM {
                 let values: Vec<Value> = self.stack.drain(start..).collect();
                 let mut parts = Vec::new();
                 for v in &values {
-                    parts.push(self.interpreter.gist_value(v));
+                    parts.push(Interpreter::gist_value(v));
                 }
                 let line = parts.join(" ");
                 self.interpreter
@@ -1143,12 +1186,66 @@ impl VM {
             // -- Indexing --
             OpCode::Index => {
                 let index = self.stack.pop().unwrap();
-                let target = self.stack.pop().unwrap();
-                // Delegate to interpreter's Expr::Index evaluation
-                let result = self.interpreter.eval_expr(&crate::ast::Expr::Index {
-                    target: Box::new(crate::ast::Expr::Literal(target)),
-                    index: Box::new(crate::ast::Expr::Literal(index)),
-                })?;
+                let mut target = self.stack.pop().unwrap();
+                if let Value::LazyList(ref ll) = target {
+                    target = Value::Array(self.interpreter.force_lazy_list_bridge(ll)?);
+                }
+                let result = match (target, index) {
+                    (Value::Array(items), Value::Int(i)) => {
+                        if i < 0 {
+                            Value::Nil
+                        } else {
+                            items.get(i as usize).cloned().unwrap_or(Value::Nil)
+                        }
+                    }
+                    (Value::Array(items), Value::Range(a, b)) => {
+                        let start = a.max(0) as usize;
+                        let end = b.max(-1) as usize;
+                        let slice = if start >= items.len() {
+                            Vec::new()
+                        } else {
+                            let end = end.min(items.len().saturating_sub(1));
+                            items[start..=end].to_vec()
+                        };
+                        Value::Array(slice)
+                    }
+                    (Value::Array(items), Value::RangeExcl(a, b)) => {
+                        let start = a.max(0) as usize;
+                        let end_excl = b.max(0) as usize;
+                        let slice = if start >= items.len() {
+                            Vec::new()
+                        } else {
+                            let end_excl = end_excl.min(items.len());
+                            if start >= end_excl {
+                                Vec::new()
+                            } else {
+                                items[start..end_excl].to_vec()
+                            }
+                        };
+                        Value::Array(slice)
+                    }
+                    (Value::Hash(items), Value::Str(key)) => {
+                        items.get(&key).cloned().unwrap_or(Value::Nil)
+                    }
+                    (Value::Hash(items), Value::Int(key)) => {
+                        items.get(&key.to_string()).cloned().unwrap_or(Value::Nil)
+                    }
+                    (Value::Set(s), Value::Str(key)) => Value::Bool(s.contains(&key)),
+                    (Value::Set(s), idx) => Value::Bool(s.contains(&idx.to_string_value())),
+                    (Value::Bag(b), Value::Str(key)) => {
+                        Value::Int(*b.get(&key).unwrap_or(&0))
+                    }
+                    (Value::Bag(b), idx) => {
+                        Value::Int(*b.get(&idx.to_string_value()).unwrap_or(&0))
+                    }
+                    (Value::Mix(m), Value::Str(key)) => {
+                        Value::Num(*m.get(&key).unwrap_or(&0.0))
+                    }
+                    (Value::Mix(m), idx) => {
+                        Value::Num(*m.get(&idx.to_string_value()).unwrap_or(&0.0))
+                    }
+                    _ => Value::Nil,
+                };
                 self.stack.push(result);
                 *ip += 1;
             }
@@ -1337,7 +1434,11 @@ impl VM {
                 label,
             } => {
                 let iterable = self.stack.pop().unwrap();
-                let items = self.interpreter.list_from_value(iterable)?;
+                let items = if let Value::LazyList(ref ll) = iterable {
+                    self.interpreter.force_lazy_list_bridge(ll)?
+                } else {
+                    Interpreter::value_to_list(&iterable)
+                };
                 self.sync_locals_from_env(code);
                 let body_start = *ip + 1;
                 let loop_end = *body_end as usize;
@@ -1612,13 +1713,17 @@ impl VM {
             OpCode::Reduction(op_idx) => {
                 let op = Self::const_str(code, *op_idx).to_string();
                 let list_value = self.stack.pop().unwrap_or(Value::Nil);
-                let list = self.interpreter.list_from_value(list_value)?;
+                let list = if let Value::LazyList(ref ll) = list_value {
+                    self.interpreter.force_lazy_list_bridge(ll)?
+                } else {
+                    Interpreter::value_to_list(&list_value)
+                };
                 if list.is_empty() {
-                    self.stack.push(self.interpreter.reduction_identity_value(&op));
+                    self.stack.push(Interpreter::reduction_identity(&op));
                 } else {
                     let mut acc = list[0].clone();
                     for item in &list[1..] {
-                        acc = self.interpreter.apply_reduction_op_values(&op, &acc, item)?;
+                        acc = Interpreter::apply_reduction_op(&op, &acc, item)?;
                     }
                     self.stack.push(acc);
                 }
@@ -1704,7 +1809,7 @@ impl VM {
                 let right = self.stack.pop().unwrap_or(Value::Nil);
                 let left = self.stack.pop().unwrap_or(Value::Nil);
                 let op = Self::const_str(code, *op_idx);
-                let result = self.interpreter.eval_hyper_op_values(
+                let result = Interpreter::eval_hyper_op(
                     op, &left, &right, *dwim_left, *dwim_right,
                 )?;
                 self.stack.push(result);
@@ -1719,24 +1824,24 @@ impl VM {
                 let op = Self::const_str(code, *op_idx).to_string();
                 let result = match meta.as_str() {
                     "R" => {
-                        self.interpreter.apply_reduction_op_values(&op, &right, &left)?
+                        Interpreter::apply_reduction_op(&op, &right, &left)?
                     }
                     "X" => {
-                        let left_list = self.interpreter.value_to_list_bridge(&left);
-                        let right_list = self.interpreter.value_to_list_bridge(&right);
+                        let left_list = Interpreter::value_to_list(&left);
+                        let right_list = Interpreter::value_to_list(&right);
                         let mut results = Vec::new();
                         for l in &left_list {
                             for r in &right_list {
                                 results.push(
-                                    self.interpreter.apply_reduction_op_values(&op, l, r)?,
+                                    Interpreter::apply_reduction_op(&op, l, r)?,
                                 );
                             }
                         }
                         Value::Array(results)
                     }
                     "Z" => {
-                        let left_list = self.interpreter.value_to_list_bridge(&left);
-                        let right_list = self.interpreter.value_to_list_bridge(&right);
+                        let left_list = Interpreter::value_to_list(&left);
+                        let right_list = Interpreter::value_to_list(&right);
                         let len = left_list.len().min(right_list.len());
                         let mut results = Vec::new();
                         if op.is_empty() || op == "," {
@@ -1757,7 +1862,7 @@ impl VM {
                         } else {
                             for i in 0..len {
                                 results.push(
-                                    self.interpreter.apply_reduction_op_values(
+                                    Interpreter::apply_reduction_op(
                                         &op,
                                         &left_list[i],
                                         &right_list[i],
