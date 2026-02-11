@@ -219,7 +219,7 @@
 - [ ] roast/S03-operators/arith.t
   - 0/? pass. Panic: `attempt to multiply with overflow` in `i64::pow`. Needs BigInt or checked arithmetic.
 - [ ] roast/S03-operators/assign-is-not-binding.t
-  - 8/9 pass. Test 9: `my @list = ($a)` results in Nil. Parenthesized expressions `(expr, expr)` are not parsed as lists; the parser's `parse_primary` only parses a single expression inside parens.
+  - 8/9 pass. Test 9: `my @list = ($a)` — assigning a scalar to an array variable doesn't auto-wrap in a single-element array.
 - [ ] roast/S03-operators/assign.t
   - 36/302 pass.
 - [ ] roast/S03-operators/autoincrement-range.t
@@ -331,8 +331,8 @@
   - 34/84 pass.
 - [ ] roast/S03-operators/so.t
   - 13/15 pass. Test 11: `Bool.so` returns True instead of False (type objects like `Bool` are Value::Str, not undefined). Test 15: `my` declaration inside `ok(...)` arguments does not propagate to outer scope (env cloned during built-in call evaluation).
-- [ ] roast/S03-operators/spaceship-and-containers.t
-  - 4/6 pass.
+- [x] roast/S03-operators/spaceship-and-containers.t
+  - 6/6 pass.
 - [ ] roast/S03-operators/spaceship.t
   - 3/7 pass.
 - [ ] roast/S03-operators/subscript-adverbs.t

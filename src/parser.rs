@@ -1236,7 +1236,17 @@ impl Parser {
                 });
             }
         }
-        self.parse_ternary()
+        let expr = self.parse_ternary()?;
+        // Handle => (fat arrow / pair constructor)
+        if self.match_kind(TokenKind::FatArrow) {
+            let value = self.parse_ternary()?;
+            return Ok(Expr::Binary {
+                left: Box::new(expr),
+                op: TokenKind::FatArrow,
+                right: Box::new(value),
+            });
+        }
+        Ok(expr)
     }
 
     fn parse_comma_expr(&mut self) -> Result<Expr, RuntimeError> {
@@ -2182,9 +2192,15 @@ impl Parser {
                 args: Vec::new(),
             }
         } else if self.match_kind(TokenKind::LParen) {
-            let expr = self.parse_expr()?;
-            self.consume_kind(TokenKind::RParen)?;
-            expr
+            if self.check(&TokenKind::RParen) {
+                // Empty parens: ()
+                self.consume_kind(TokenKind::RParen)?;
+                Expr::ArrayLiteral(Vec::new())
+            } else {
+                let expr = self.parse_comma_expr()?;
+                self.consume_kind(TokenKind::RParen)?;
+                expr
+            }
         } else if self.check(&TokenKind::LBracket) && self.is_reduction_op() {
             self.parse_reduction()?
         } else if self.match_kind(TokenKind::LBracket) {

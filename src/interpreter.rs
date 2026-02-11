@@ -296,6 +296,46 @@ impl Interpreter {
         }
     }
 
+    /// Convert a value to Value::Hash for hash variable assignment.
+    /// Handles arrays of Pairs, flat key-value lists, and existing hashes.
+    fn coerce_to_hash(value: Value) -> Value {
+        match value {
+            Value::Hash(_) => value,
+            Value::Array(items) => {
+                let mut map = std::collections::HashMap::new();
+                let mut i = 0;
+                while i < items.len() {
+                    if let Value::Pair(k, v) = &items[i] {
+                        map.insert(k.clone(), *v.clone());
+                        i += 1;
+                    } else {
+                        // Flat list: key, value, key, value, ...
+                        let key = items[i].to_string_value();
+                        let val = if i + 1 < items.len() {
+                            items[i + 1].clone()
+                        } else {
+                            Value::Nil
+                        };
+                        map.insert(key, val);
+                        i += 2;
+                    }
+                }
+                Value::Hash(map)
+            }
+            Value::Pair(k, v) => {
+                let mut map = std::collections::HashMap::new();
+                map.insert(k, *v);
+                Value::Hash(map)
+            }
+            Value::Nil => Value::Hash(std::collections::HashMap::new()),
+            _ => {
+                let mut map = std::collections::HashMap::new();
+                map.insert(value.to_string_value(), Value::Nil);
+                Value::Hash(map)
+            }
+        }
+    }
+
     fn init_io_environment(&mut self) {
         let stdout = self.create_handle(
             IoHandleTarget::Stdout,
@@ -925,6 +965,11 @@ impl Interpreter {
         match stmt {
             Stmt::VarDecl { name, expr } => {
                 let value = self.eval_expr(expr)?;
+                let value = if name.starts_with('%') {
+                    Self::coerce_to_hash(value)
+                } else {
+                    value
+                };
                 self.env.insert(name.clone(), value);
             }
             Stmt::Assign { name, expr, op } => {
@@ -935,6 +980,11 @@ impl Interpreter {
                 let value = match op {
                     AssignOp::Assign | AssignOp::Bind => value,
                     AssignOp::MatchAssign => Value::Str(value.to_string_value()),
+                };
+                let value = if name.starts_with('%') {
+                    Self::coerce_to_hash(value)
+                } else {
+                    value
                 };
                 self.env.insert(name.clone(), value);
             }
