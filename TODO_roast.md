@@ -118,6 +118,8 @@
 - [ ] roast/S02-types/array_ref.t
 - [ ] roast/S02-types/array-shapes.t
 - [ ] roast/S02-types/array.t
+  - 7/108 pass (tests 16,24,27,32,49,50,51). Crashes at test 54 with "is expects right".
+  - Blockers: `use lib $*PROGRAM.parent(2).add:` not supported (Test::Util unavailable), `$(...)` / `$[...]` itemization syntax missing, `*-1` WhateverCode in indices missing, `@array.[0]` dot indexing missing, postfix `for` treats comma list as single item, `.raku` not implemented for arrays.
 - [ ] roast/S02-types/assigning-refs.t
 - [ ] roast/S02-types/autovivification.t
 - [ ] roast/S02-types/baggy.t
