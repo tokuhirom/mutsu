@@ -219,7 +219,7 @@
 - [ ] roast/S03-operators/arith.t
   - 0/? pass. Panic: `attempt to multiply with overflow` in `i64::pow`. Needs BigInt or checked arithmetic.
 - [ ] roast/S03-operators/assign-is-not-binding.t
-  - 8/9 pass.
+  - 8/9 pass. Test 9: `my @list = ($a)` results in Nil. Parenthesized expressions `(expr, expr)` are not parsed as lists; the parser's `parse_primary` only parses a single expression inside parens.
 - [ ] roast/S03-operators/assign.t
   - 36/302 pass.
 - [ ] roast/S03-operators/autoincrement-range.t
@@ -254,7 +254,7 @@
 - [ ] roast/S03-operators/div.t
   - 0/8 pass.
 - [ ] roast/S03-operators/equality.t
-  - 40/46 pass.
+  - 40/46 pass. Tests 19-24: `&infix:<==>(...)` operator reference syntax not implemented.
 - [ ] roast/S03-operators/eqv.t
   - 46/64 pass.
 - [ ] roast/S03-operators/flip-flop.t
