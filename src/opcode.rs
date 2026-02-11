@@ -62,10 +62,37 @@ pub(crate) enum OpCode {
 
     // -- Composite --
     MakeArray(u32),
+    MakeHash(u32),
 
     // -- I/O --
     Say(u32),
     Print(u32),
+
+    // -- Calls (args compiled to bytecode, dispatch delegated to interpreter) --
+    /// Expression-level function call: pop `arity` args, call name, push result.
+    CallFunc { name_idx: u32, arity: u32 },
+    /// Method call: pop `arity` args + target, call method, push result.
+    CallMethod { name_idx: u32, arity: u32 },
+    /// Statement-level call: pop `arity` args, call name (no push).
+    ExecCall { name_idx: u32, arity: u32 },
+
+    // -- Indexing --
+    Index,
+
+    // -- String interpolation --
+    StringConcat(u32),
+
+    // -- Loop control --
+    Last(Option<String>),
+    Next(Option<String>),
+    Redo,
+
+    // -- Postfix operators --
+    PostIncrement(u32),
+    PostDecrement(u32),
+
+    // -- Assignment as expression --
+    AssignExpr(u32),
 
     // -- Loops (compound opcodes) --
     /// While loop. Condition opcodes follow at [ip+1..cond_end).
@@ -74,6 +101,10 @@ pub(crate) enum OpCode {
     /// For loop. Iterable value must be on stack.
     /// Body opcodes at [ip+1..body_end). VM iterates internally.
     ForLoop { param_idx: Option<u32>, body_end: u32, label: Option<String> },
+    /// C-style loop: [cond opcodes][body opcodes][step opcodes].
+    /// Layout after CStyleLoop: cond at [ip+1..cond_end), body at [cond_end..step_start),
+    /// step at [step_start..body_end).
+    CStyleLoop { cond_end: u32, step_start: u32, body_end: u32, label: Option<String> },
 
     // -- Functions --
     Return,
@@ -129,12 +160,13 @@ impl CompiledCode {
         self.ops.len()
     }
 
-    /// Patch the body_end / cond_end fields of a loop opcode.
+    /// Patch the body_end field of a loop opcode.
     pub(crate) fn patch_loop_end(&mut self, idx: usize) {
         let target = self.ops.len() as u32;
         match &mut self.ops[idx] {
             OpCode::WhileLoop { body_end, .. } => *body_end = target,
             OpCode::ForLoop { body_end, .. } => *body_end = target,
+            OpCode::CStyleLoop { body_end, .. } => *body_end = target,
             _ => panic!("patch_loop_end on non-loop opcode"),
         }
     }
@@ -144,6 +176,22 @@ impl CompiledCode {
         match &mut self.ops[idx] {
             OpCode::WhileLoop { cond_end, .. } => *cond_end = target,
             _ => panic!("patch_while_cond_end on non-WhileLoop opcode"),
+        }
+    }
+
+    pub(crate) fn patch_cstyle_cond_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::CStyleLoop { cond_end, .. } => *cond_end = target,
+            _ => panic!("patch_cstyle_cond_end on non-CStyleLoop opcode"),
+        }
+    }
+
+    pub(crate) fn patch_cstyle_step_start(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::CStyleLoop { step_start, .. } => *step_start = target,
+            _ => panic!("patch_cstyle_step_start on non-CStyleLoop opcode"),
         }
     }
 

@@ -1,4 +1,4 @@
-use crate::ast::{AssignOp, Expr, PhaserKind, Stmt};
+use crate::ast::{AssignOp, CallArg, Expr, PhaserKind, Stmt};
 use crate::lexer::TokenKind;
 use crate::opcode::{CompiledCode, OpCode};
 use crate::value::Value;
@@ -86,17 +86,13 @@ impl Compiler {
                 }
             }
             Stmt::While { cond, body, label } if !Self::has_phasers(body) => {
-                // Emit WhileLoop compound opcode
-                // Layout: [WhileLoop] [cond ops..] [body ops..]
                 let loop_idx = self.code.emit(OpCode::WhileLoop {
                     cond_end: 0,
                     body_end: 0,
                     label: label.clone(),
                 });
-                // Compile condition
                 self.compile_expr(cond);
                 self.code.patch_while_cond_end(loop_idx);
-                // Compile body
                 for s in body {
                     self.compile_stmt(s);
                 }
@@ -108,7 +104,6 @@ impl Compiler {
                 body,
                 label,
             } if !Self::has_phasers(body) => {
-                // Compile iterable, push on stack
                 self.compile_expr(iterable);
                 let param_idx = param
                     .as_ref()
@@ -118,11 +113,77 @@ impl Compiler {
                     body_end: 0,
                     label: label.clone(),
                 });
-                // Compile body
                 for s in body {
                     self.compile_stmt(s);
                 }
                 self.code.patch_loop_end(loop_idx);
+            }
+            // C-style loop (non-repeat, no phasers)
+            Stmt::Loop {
+                init,
+                cond,
+                step,
+                body,
+                repeat,
+                label,
+            } if !*repeat && !Self::has_phasers(body) => {
+                // Compile init statement (if any) before the loop opcode
+                if let Some(init_stmt) = init {
+                    self.compile_stmt(init_stmt);
+                }
+                // Layout: [CStyleLoop] [cond..] [body..] [step..]
+                let loop_idx = self.code.emit(OpCode::CStyleLoop {
+                    cond_end: 0,
+                    step_start: 0,
+                    body_end: 0,
+                    label: label.clone(),
+                });
+                // Compile condition (or push True if none)
+                if let Some(cond_expr) = cond {
+                    self.compile_expr(cond_expr);
+                } else {
+                    self.code.emit(OpCode::LoadTrue);
+                }
+                self.code.patch_cstyle_cond_end(loop_idx);
+                // Compile body
+                for s in body {
+                    self.compile_stmt(s);
+                }
+                self.code.patch_cstyle_step_start(loop_idx);
+                // Compile step (if any)
+                if let Some(step_expr) = step {
+                    self.compile_expr(step_expr);
+                    self.code.emit(OpCode::Pop);
+                }
+                self.code.patch_loop_end(loop_idx);
+            }
+            // Statement-level call: compile positional args only.
+            // Fall back if named args or Block/AnonSub args exist (exec_call
+            // inspects raw expressions for throws-like, lives-ok, etc.).
+            Stmt::Call { name, args }
+                if args.iter().all(|a| match a {
+                    CallArg::Positional(expr) => !Self::needs_raw_expr(expr),
+                    _ => false,
+                }) =>
+            {
+                let arity = args.len() as u32;
+                for arg in args {
+                    if let CallArg::Positional(expr) = arg {
+                        self.compile_expr(expr);
+                    }
+                }
+                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                self.code.emit(OpCode::ExecCall { name_idx, arity });
+            }
+            // Loop control
+            Stmt::Last(label) => {
+                self.code.emit(OpCode::Last(label.clone()));
+            }
+            Stmt::Next(label) => {
+                self.code.emit(OpCode::Next(label.clone()));
+            }
+            Stmt::Redo => {
+                self.code.emit(OpCode::Redo);
             }
             Stmt::Return(expr) => {
                 self.compile_expr(expr);
@@ -250,6 +311,88 @@ impl Compiler {
                 }
                 self.code.emit(OpCode::MakeArray(elems.len() as u32));
             }
+            // Expression-level function call
+            Expr::Call { name, args } => {
+                let arity = args.len() as u32;
+                for arg in args {
+                    self.compile_expr(arg);
+                }
+                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                self.code.emit(OpCode::CallFunc { name_idx, arity });
+            }
+            // Method call: fall back if target is a variable (method may mutate via
+            // update_instance_target, which needs the Expr name for writeback).
+            Expr::MethodCall { target, name, args }
+                if !Self::is_mutable_target(target) =>
+            {
+                self.compile_expr(target);
+                let arity = args.len() as u32;
+                for arg in args {
+                    self.compile_expr(arg);
+                }
+                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                self.code.emit(OpCode::CallMethod { name_idx, arity });
+            }
+            // Indexing
+            Expr::Index { target, index } => {
+                self.compile_expr(target);
+                self.compile_expr(index);
+                self.code.emit(OpCode::Index);
+            }
+            // String interpolation
+            Expr::StringInterpolation(parts) => {
+                let n = parts.len() as u32;
+                for part in parts {
+                    self.compile_expr(part);
+                }
+                self.code.emit(OpCode::StringConcat(n));
+            }
+            // Postfix ++ on variable
+            Expr::PostfixOp { op, expr } if matches!(op, TokenKind::PlusPlus) => {
+                if let Expr::Var(name) = expr.as_ref() {
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::PostIncrement(name_idx));
+                } else {
+                    self.fallback_expr(&Expr::PostfixOp {
+                        op: op.clone(),
+                        expr: expr.clone(),
+                    });
+                }
+            }
+            // Postfix -- on variable
+            Expr::PostfixOp { op, expr } if matches!(op, TokenKind::MinusMinus) => {
+                if let Expr::Var(name) = expr.as_ref() {
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::PostDecrement(name_idx));
+                } else {
+                    self.fallback_expr(&Expr::PostfixOp {
+                        op: op.clone(),
+                        expr: expr.clone(),
+                    });
+                }
+            }
+            // Assignment as expression
+            Expr::AssignExpr { name, expr } => {
+                self.compile_expr(expr);
+                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                self.code.emit(OpCode::AssignExpr(name_idx));
+            }
+            // Hash literal
+            Expr::Hash(pairs) => {
+                let n = pairs.len() as u32;
+                for (key, val_opt) in pairs {
+                    // Push key as string constant
+                    let key_idx = self.code.add_constant(Value::Str(key.clone()));
+                    self.code.emit(OpCode::LoadConst(key_idx));
+                    // Push value (or Nil if none)
+                    if let Some(val_expr) = val_opt {
+                        self.compile_expr(val_expr);
+                    } else {
+                        self.code.emit(OpCode::LoadNil);
+                    }
+                }
+                self.code.emit(OpCode::MakeHash(n));
+            }
             _ => {
                 self.fallback_expr(expr);
             }
@@ -280,6 +423,21 @@ impl Compiler {
             TokenKind::Ident(name) if name == "ne" => Some(OpCode::StrNe),
             _ => None,
         }
+    }
+
+    /// Returns true if the expression must be kept as a raw Expr for
+    /// exec_call handlers (e.g. throws-like needs Expr::Block to run code).
+    fn needs_raw_expr(expr: &Expr) -> bool {
+        matches!(expr, Expr::Block(_) | Expr::AnonSub(_))
+    }
+
+    /// Returns true if the expression is a variable that methods may mutate
+    /// (requiring update_instance_target writeback to the env).
+    fn is_mutable_target(expr: &Expr) -> bool {
+        matches!(
+            expr,
+            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)
+        )
     }
 
     fn has_phasers(stmts: &[Stmt]) -> bool {

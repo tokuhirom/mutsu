@@ -1,5 +1,5 @@
 use Test;
-plan 39;
+plan 58;
 
 # Literal compilation
 is 42, 42, 'integer literal';
@@ -113,3 +113,77 @@ DONE: for 1..3 -> $i {
     }
 }
 is $lr2, '1.1 1.2 1.3 ', 'last LABEL in compiled for loop';
+
+# --- Phase 3: newly compiled constructs ---
+
+# Expression-level function call (compiled CallFunc)
+sub add($a, $b) { $a + $b }
+is add(3, 4), 7, 'function call compiled to CallFunc';
+
+# Method call on non-variable target (compiled CallMethod)
+is (1, 2, 3).elems, 3, 'method call on literal compiled to CallMethod';
+is "hello".chars, 5, 'method call on string literal compiled';
+
+# Statement-level call (compiled ExecCall) -- is/ok themselves use ExecCall
+ok 1 == 1, 'statement call compiled to ExecCall';
+
+# Indexing (compiled Index)
+my @idx = (10, 20, 30);
+is @idx[1], 20, 'array indexing compiled to Index';
+
+# String interpolation (compiled StringConcat)
+my $who = "world";
+is "hello $who", "hello world", 'string interpolation compiled to StringConcat';
+
+# Postfix ++ (compiled PostIncrement)
+my $pi = 5;
+my $old_pi = $pi++;
+is $old_pi, 5, 'postfix ++ returns old value';
+is $pi, 6, 'postfix ++ increments variable';
+
+# Postfix -- (compiled PostDecrement)
+my $pd = 10;
+my $old_pd = $pd--;
+is $old_pd, 10, 'postfix -- returns old value';
+is $pd, 9, 'postfix -- decrements variable';
+
+# C-style loop (compiled CStyleLoop)
+my $csum = 0;
+loop (my $ci = 1; $ci <= 5; $ci++) { $csum = $csum + $ci; }
+is $csum, 15, 'C-style loop compiled to CStyleLoop';
+
+# C-style loop with last
+my $clsum = 0;
+loop (my $cl = 1; $cl <= 10; $cl++) { last if $cl > 3; $clsum = $clsum + $cl; }
+is $clsum, 6, 'C-style loop with last';
+
+# C-style loop with next
+my $cnsum = 0;
+loop (my $cn = 1; $cn <= 5; $cn++) { next if $cn == 3; $cnsum = $cnsum + $cn; }
+is $cnsum, 12, 'C-style loop with next';
+
+# Hash literal (compiled MakeHash)
+my %h = (a => 1, b => 2);
+is %h<a>, 1, 'hash literal compiled to MakeHash';
+is %h<b>, 2, 'hash literal second key';
+
+# Assignment as expression (compiled AssignExpr)
+my $ae;
+my $ae_val = ($ae = 42);
+is $ae, 42, 'assign expr sets variable';
+is $ae_val, 42, 'assign expr returns value';
+
+# Loop control: last/next/redo as opcodes
+my $redo_count = 0;
+my $redo_done = 0;
+for 1..1 {
+    $redo_count = $redo_count + 1;
+    if $redo_count < 3 && !$redo_done {
+        redo if $redo_count < 3;
+    }
+    $redo_done = 1;
+}
+is $redo_count, 3, 'redo as compiled opcode';
+
+# Negate on string-numeric values (Inf, NaN)
+is -Inf, -Inf, 'negate Inf bareword';

@@ -1,6 +1,8 @@
+use std::collections::HashMap;
+
 use crate::interpreter::Interpreter;
 use crate::opcode::{CompiledCode, OpCode};
-use crate::value::{RuntimeError, Value};
+use crate::value::{make_rat, RuntimeError, Value};
 
 pub(crate) struct VM {
     interpreter: Interpreter,
@@ -47,6 +49,14 @@ impl VM {
         Ok(())
     }
 
+    /// Resolve a string constant name from index.
+    fn const_str<'a>(code: &'a CompiledCode, idx: u32) -> &'a str {
+        match &code.constants[idx as usize] {
+            Value::Str(s) => s.as_str(),
+            _ => unreachable!("expected string constant"),
+        }
+    }
+
     /// Execute one opcode at *ip, advancing ip for the next instruction.
     fn exec_one(&mut self, code: &CompiledCode, ip: &mut usize) -> Result<(), RuntimeError> {
         match &code.ops[*ip] {
@@ -70,10 +80,7 @@ impl VM {
 
             // -- Variables --
             OpCode::GetGlobal(name_idx) => {
-                let name = match &code.constants[*name_idx as usize] {
-                    Value::Str(s) => s.as_str(),
-                    _ => unreachable!("GetGlobal name must be a string constant"),
-                };
+                let name = Self::const_str(code, *name_idx);
                 let val = self
                     .interpreter
                     .env()
@@ -124,6 +131,15 @@ impl VM {
                     Value::Num(f) => Value::Num(-f),
                     Value::Rat(n, d) => Value::Rat(-n, d),
                     Value::Complex(r, i) => Value::Complex(-r, -i),
+                    Value::Str(ref s) => {
+                        if let Ok(i) = s.trim().parse::<i64>() {
+                            Value::Int(-i)
+                        } else if let Ok(f) = s.trim().parse::<f64>() {
+                            Value::Num(-f)
+                        } else {
+                            return Err(RuntimeError::new("Unary - expects numeric"));
+                        }
+                    }
                     _ => return Err(RuntimeError::new("Unary - expects numeric")),
                 };
                 self.stack.push(result);
@@ -167,22 +183,12 @@ impl VM {
                 self.binary_op(code, ip, &crate::lexer::TokenKind::Gte)?;
             }
 
-            // -- String comparison --
+            // -- String comparison (delegated to eval_binary for junction support) --
             OpCode::StrEq => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                self.stack.push(Value::Bool(
-                    left.to_string_value() == right.to_string_value(),
-                ));
-                *ip += 1;
+                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("eq".to_string()))?;
             }
             OpCode::StrNe => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                self.stack.push(Value::Bool(
-                    left.to_string_value() != right.to_string_value(),
-                ));
-                *ip += 1;
+                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("ne".to_string()))?;
             }
 
             // -- Nil check --
@@ -248,6 +254,19 @@ impl VM {
                 self.stack.push(Value::Array(elems));
                 *ip += 1;
             }
+            OpCode::MakeHash(n) => {
+                let n = *n as usize;
+                let start = self.stack.len() - n * 2;
+                let items: Vec<Value> = self.stack.drain(start..).collect();
+                let mut map = HashMap::new();
+                for pair in items.chunks(2) {
+                    let key = pair[0].to_string_value();
+                    let val = pair[1].clone();
+                    map.insert(key, val);
+                }
+                self.stack.push(Value::Hash(map));
+                *ip += 1;
+            }
 
             // -- I/O --
             OpCode::Say(n) => {
@@ -273,6 +292,113 @@ impl VM {
                 }
                 self.interpreter
                     .write_to_named_handle("$*OUT", &content, false)?;
+                *ip += 1;
+            }
+
+            // -- Calls --
+            OpCode::CallFunc { name_idx, arity } => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                let arity = *arity as usize;
+                let start = self.stack.len() - arity;
+                let args: Vec<Value> = self.stack.drain(start..).collect();
+                let result = self.interpreter.eval_call_with_values(&name, args)?;
+                self.stack.push(result);
+                *ip += 1;
+            }
+            OpCode::CallMethod { name_idx, arity } => {
+                let method = Self::const_str(code, *name_idx).to_string();
+                let arity = *arity as usize;
+                let start = self.stack.len() - arity;
+                let args: Vec<Value> = self.stack.drain(start..).collect();
+                let target = self.stack.pop().unwrap();
+                let result = self.interpreter.eval_method_call_with_values(target, &method, args)?;
+                self.stack.push(result);
+                *ip += 1;
+            }
+            OpCode::ExecCall { name_idx, arity } => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                let arity = *arity as usize;
+                let start = self.stack.len() - arity;
+                let args: Vec<Value> = self.stack.drain(start..).collect();
+                self.interpreter.exec_call_with_values(&name, args)?;
+                *ip += 1;
+            }
+
+            // -- Indexing --
+            OpCode::Index => {
+                let index = self.stack.pop().unwrap();
+                let target = self.stack.pop().unwrap();
+                // Delegate to interpreter's Expr::Index evaluation
+                let result = self.interpreter.eval_expr(&crate::ast::Expr::Index {
+                    target: Box::new(crate::ast::Expr::Literal(target)),
+                    index: Box::new(crate::ast::Expr::Literal(index)),
+                })?;
+                self.stack.push(result);
+                *ip += 1;
+            }
+
+            // -- String interpolation --
+            OpCode::StringConcat(n) => {
+                let n = *n as usize;
+                let start = self.stack.len() - n;
+                let values: Vec<Value> = self.stack.drain(start..).collect();
+                let mut result = String::new();
+                for v in values {
+                    result.push_str(&v.to_string_value());
+                }
+                self.stack.push(Value::Str(result));
+                *ip += 1;
+            }
+
+            // -- Loop control --
+            OpCode::Last(label) => {
+                let mut sig = RuntimeError::last_signal();
+                sig.label = label.clone();
+                return Err(sig);
+            }
+            OpCode::Next(label) => {
+                let mut sig = RuntimeError::next_signal();
+                sig.label = label.clone();
+                return Err(sig);
+            }
+            OpCode::Redo => {
+                return Err(RuntimeError::redo_signal());
+            }
+
+            // -- Postfix operators --
+            OpCode::PostIncrement(name_idx) => {
+                let name = Self::const_str(code, *name_idx);
+                let val = self.interpreter.env().get(name).cloned().unwrap_or(Value::Int(0));
+                let new_val = match &val {
+                    Value::Int(i) => Value::Int(i + 1),
+                    Value::Rat(n, d) => make_rat(n + d, *d),
+                    _ => Value::Int(1),
+                };
+                self.interpreter.env_mut().insert(name.to_string(), new_val);
+                self.stack.push(val);
+                *ip += 1;
+            }
+            OpCode::PostDecrement(name_idx) => {
+                let name = Self::const_str(code, *name_idx);
+                let val = self.interpreter.env().get(name).cloned().unwrap_or(Value::Int(0));
+                let new_val = match &val {
+                    Value::Int(i) => Value::Int(i - 1),
+                    Value::Rat(n, d) => make_rat(n - d, *d),
+                    _ => Value::Int(-1),
+                };
+                self.interpreter.env_mut().insert(name.to_string(), new_val);
+                self.stack.push(val);
+                *ip += 1;
+            }
+
+            // -- Assignment as expression --
+            OpCode::AssignExpr(name_idx) => {
+                let name = match &code.constants[*name_idx as usize] {
+                    Value::Str(s) => s.clone(),
+                    _ => unreachable!("AssignExpr name must be a string constant"),
+                };
+                let val = self.stack.last().unwrap().clone();
+                self.interpreter.env_mut().insert(name, val);
                 *ip += 1;
             }
 
@@ -343,6 +469,43 @@ impl VM {
                     if self.interpreter.is_halted() {
                         break;
                     }
+                }
+                *ip = loop_end;
+            }
+            OpCode::CStyleLoop {
+                cond_end,
+                step_start,
+                body_end,
+                label,
+            } => {
+                let cond_start = *ip + 1;
+                let body_start = *cond_end as usize;
+                let step_begin = *step_start as usize;
+                let loop_end = *body_end as usize;
+                let label = label.clone();
+
+                'c_loop: loop {
+                    // Evaluate condition
+                    self.run_range(code, cond_start, body_start)?;
+                    let cond_val = self.stack.pop().unwrap();
+                    if !cond_val.truthy() {
+                        break;
+                    }
+                    // Execute body with redo support
+                    'body_redo: loop {
+                        match self.run_range(code, body_start, step_begin) {
+                            Ok(()) => break 'body_redo,
+                            Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => continue 'body_redo,
+                            Err(e) if e.is_last && Self::label_matches(&e.label, &label) => break 'c_loop,
+                            Err(e) if e.is_next && Self::label_matches(&e.label, &label) => break 'body_redo,
+                            Err(e) => return Err(e),
+                        }
+                    }
+                    if self.interpreter.is_halted() {
+                        break;
+                    }
+                    // Execute step
+                    self.run_range(code, step_begin, loop_end)?;
                 }
                 *ip = loop_end;
             }

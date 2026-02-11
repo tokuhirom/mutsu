@@ -6117,6 +6117,15 @@ impl Interpreter {
                             Value::Num(f) => Ok(Value::Num(-f)),
                             Value::Rat(n, d) => Ok(Value::Rat(-n, d)),
                             Value::Complex(r, i) => Ok(Value::Complex(-r, -i)),
+                            Value::Str(ref s) => {
+                                if let Ok(i) = s.trim().parse::<i64>() {
+                                    Ok(Value::Int(-i))
+                                } else if let Ok(f) = s.trim().parse::<f64>() {
+                                    Ok(Value::Num(-f))
+                                } else {
+                                    Err(RuntimeError::new("Unary - expects numeric"))
+                                }
+                            }
                             _ => Err(RuntimeError::new("Unary - expects numeric")),
                         },
                         TokenKind::Tilde => Ok(Value::Str(value.to_string_value())),
@@ -8398,6 +8407,48 @@ impl Interpreter {
             }
             _ => Err(RuntimeError::new("Unknown binary operator")),
         }
+    }
+
+    /// Bridge: call a named function with pre-evaluated values (for VM).
+    /// Wraps each value in Expr::Literal and delegates to eval_expr(Expr::Call).
+    pub(crate) fn eval_call_with_values(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let arg_exprs: Vec<Expr> = args.into_iter().map(Expr::Literal).collect();
+        self.eval_expr(&Expr::Call {
+            name: name.to_string(),
+            args: arg_exprs,
+        })
+    }
+
+    /// Bridge: call a method on a pre-evaluated target with pre-evaluated args (for VM).
+    pub(crate) fn eval_method_call_with_values(
+        &mut self,
+        target: Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let arg_exprs: Vec<Expr> = args.into_iter().map(Expr::Literal).collect();
+        self.eval_expr(&Expr::MethodCall {
+            target: Box::new(Expr::Literal(target)),
+            name: method.to_string(),
+            args: arg_exprs,
+        })
+    }
+
+    /// Bridge: execute a statement-level call with pre-evaluated positional values (for VM).
+    pub(crate) fn exec_call_with_values(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+    ) -> Result<(), RuntimeError> {
+        let call_args: Vec<CallArg> = args
+            .into_iter()
+            .map(|v| CallArg::Positional(Expr::Literal(v)))
+            .collect();
+        self.exec_call(name, &call_args)
     }
 
     fn smart_match(&mut self, left: &Value, right: &Value) -> bool {
