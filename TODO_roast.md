@@ -180,6 +180,7 @@
 - [ ] roast/S02-types/sethash.t
 - [ ] roast/S02-types/set-iterator.t
 - [ ] roast/S02-types/set.t
+  - 0/248 pass. Program silently aborts on `dies-ok { $s<a> = True }` because the parser does not support subscript assignment (`$expr<key> = value`). Other blockers: `set <a b foo>` listop syntax without parens is parsed as comparison (not function call), `.default` method not implemented on Set, many Set-specific methods missing (`.raku`, `.total`, `.roll`, `.pick`, `.grab`, `.kv`, `.fmt`, `.minpairs`, `.maxpairs`, parameterized `Set[Str]`, `is Set` trait, etc.)
 - [ ] roast/S02-types/sigils-and-types.t
 - [ ] roast/S02-types/signed-unsigned-native.t
 - [ ] roast/S02-types/stash.t
