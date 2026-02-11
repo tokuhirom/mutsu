@@ -18,15 +18,24 @@
   - Tests 23-26 fail: `throws-like` does not detect expected compilation errors for invalid embedded comments
   - Tests 29+ fail: multi-character bracket delimiters (`#`<<...>>`, `#`{{...}}`) not supported in embedded comments
 - [ ] roast/S02-lexical-conventions/finish-pod.t
+  - 1/2 pass. Test 2 fails: content after `=finish` marker is not handled (should stop execution like `__END__` in Perl 5)
 - [ ] roast/S02-lexical-conventions/minimal-whitespace.t
+  - 4/18 pass (tests 4-7, 12). Failures: space before `[`/`{` in array/hash constructors not rejected; postfix whitespace rules (`i`, `++`) not enforced; `[+]` without whitespace should die; colonpair after dot-digit not rejected
 - [ ] roast/S02-lexical-conventions/one-pass-parsing.t
+  - 3/5 pass. Test 3: calling sub `if` without parens should parsefail (keyword disambiguation). Test 5: keyword `if` without following whitespace should fail
 - [x] roast/S02-lexical-conventions/pod-in-multi-line-exprs.t
 - [ ] roast/S02-lexical-conventions/sub-block-parsing.t
+  - 3/11 pass (tests 1-3). Failures: passing arguments to immediately-invoked `sub {}()`, block parsing with newline/semicolon context, sub/hash disambiguation (`fa`/`fb` old syntax)
 - [ ] roast/S02-lexical-conventions/unicode.t
+  - 31/44 pass. Failures: some Unicode string evaluations (umlauts, french, hindi), Unicode sub names with parameters/named-params/placeholders (tests 25-30), bracket mapping edge cases (U+298D, U+301D→U+301F)
 - [ ] roast/S02-lexical-conventions/unicode-whitespace.t
+  - 0/50 pass. Requires `uniprop` function and Unicode whitespace recognition in expressions (OGHAM SPACE MARK, EN QUAD, etc.) and "long dot" contexts. Needs `uniprop($char, "White_Space")` support
 - [ ] roast/S02-lexical-conventions/unspace.t
+  - Fatal: `Module not found: MONKEY-TYPING`. Requires `use MONKEY-TYPING` pragma
 - [ ] roast/S02-lists/indexing.t
+  - 0/4 pass. Fatal: `is expects right` — likely `is` called with wrong argument form (possible `is()` parsing issue with list context)
 - [ ] roast/S02-lists/tree.t
+  - 0/14 pass. Fatal: `is expects right` — same `is()` argument parsing issue
 - [ ] roast/S02-literals/adverbs.t
 - [ ] roast/S02-literals/allomorphic.t
 - [ ] roast/S02-literals/array-interpolation.t
@@ -42,30 +51,37 @@
 - [ ] roast/S02-literals/listquote-whitespace.t
 - [ ] roast/S02-literals/misc-interpolation.t
 - [ ] roast/S02-literals/numeric.t
+  - 6/71 pass. Fatal: `is-approx expects expected` — `is-approx` function does not handle all argument forms. Tests cover Int/Num/Real type checks
 - [ ] roast/S02-literals/pair-boolean.t
 - [ ] roast/S02-literals/pairs.t
+  - ~6/84 pass. Most failures: Pair type introspection (`.key`, `.value`, `:a(42)` colonpair syntax), `isa(Pair)` checks, nested pairs, Pair destructuring, variables as pair keys
 - [ ] roast/S02-literals/pod.t
 - [ ] roast/S02-literals/quoting.t
 - [ ] roast/S02-literals/quoting-unicode.t
 - [ ] roast/S02-literals/radix.t
+  - 1/158 pass. `:10<42>`, `:16<FF>` etc. radix notation not implemented. Only `0xffffffff` hex literal works
 - [ ] roast/S02-literals/string-interpolation.t
 - [ ] roast/S02-literals/sub-calls.t
 - [ ] roast/S02-literals/subscript.t
 - [ ] roast/S02-literals/types.t
 - [ ] roast/S02-literals/underscores.t
+  - 5/19 pass (tests 1, 11-13, 16). Failures: multiple underscores, leading/trailing underscores, underscore before/after `.`/`e`/`E` should fail; `2._foo` / `2._123` should parse as method calls
 - [ ] roast/S02-literals/version.t
 - [ ] roast/S02-magicals/78258.t
 - [ ] roast/S02-magicals/args.t
 - [ ] roast/S02-magicals/block.t
 - [ ] roast/S02-magicals/DISTRO.t
 - [ ] roast/S02-magicals/dollar_bang.t
+  - 9/15 pass. Failures: `$!` not set correctly by try blocks (test 1), nonexisting method calls (test 3), wrong-signature calls (test 4), divide-by-zero (test 6), constant modification (test 7), die (test 8), EVAL error value (test 14)
 - [ ] roast/S02-magicals/dollar-underscore.t
+  - 0/23 pass. Fatal: `is expects right` early abort. `$_` aliasing in bare blocks, if/else/elsif/while/until not working correctly
 - [ ] roast/S02-magicals/env.t
+  - 7/18 pass. Failures: `%*ENV.keys` (test 1), `%*ENV` rw assignment (test 6), `use MONKEY-SEE-NO-EVAL` required for %ENV tests (tests 9-11), env persistence to child processes (test 14), `.gist`/`.raku` on %*ENV (tests 15-16)
 - [ ] roast/S02-magicals/file_line.t
 - [ ] roast/S02-magicals/GROUP.t
 - [ ] roast/S02-magicals/KERNEL.t
 - [ ] roast/S02-magicals/PERL.t
-- [ ] roast/S02-magicals/pid.t
+- [x] roast/S02-magicals/pid.t
 - [ ] roast/S02-magicals/progname.t
 - [ ] roast/S02-magicals/RAKU.t
 - [ ] roast/S02-magicals/subname.t
@@ -109,6 +125,7 @@
 - [ ] roast/S02-types/bag-iterator.t
 - [ ] roast/S02-types/bag.t
 - [ ] roast/S02-types/bool.t
+  - ~28/69 pass. Failures: `.raku` method (tests 23-24), `True` numifies to wrong type (test 25), `++`/`--` on Bool (tests 29-32), `.but` mixin (tests 34, 36), `.key` method (tests 37-38), `Bool.pick(*)` (test 40), `Bool.roll(*)` (test 43), `Bool ~~ Int` (test 45), `Bool:U` type smiley checks (tests 47-48)
 - [ ] roast/S02-types/built-in.t
 - [ ] roast/S02-types/capture.t
 - [ ] roast/S02-types/catch_type_cast_mismatch.t
@@ -139,12 +156,15 @@
 - [ ] roast/S02-types/nested_arrays.t
 - [ ] roast/S02-types/nested_pairs.t
 - [ ] roast/S02-types/nil.t
+  - ~14/67 pass. Failures: `return_nil() === Nil` identity (test 15), `.raku` on Nil (test 16), variable holding nil defined check (test 18), subset type assignment (test 26), mandatory param with Nil (test 28), optional param Nil handling (tests 29-30)
 - [ ] roast/S02-types/nominalizables.t
 - [ ] roast/S02-types/num.t
 - [ ] roast/S02-types/pair.t
+  - ~5/182 pass. Fatal: `Type check failed for pair: expected Pair, got Any`. Most Pair introspection (`.key`, `.value`, colonpair `:a(42)`, nested pairs, `isa(Pair)`) fails. Pair type system not fully implemented
 - [ ] roast/S02-types/parsing-bool.t
 - [ ] roast/S02-types/range-iterator.t
 - [ ] roast/S02-types/range.t
+  - ~20/259 pass. Failures: `.raku` for `^..` and `^..^` ranges (tests 5,7), Range-to-array reification (tests 8,11,13), `.reverse.raku` (test 17), numification of ranges (tests 32,35-43)
 - [ ] roast/S02-types/resolved-in-setting.t
 - [ ] roast/S02-types/sethash.t
 - [ ] roast/S02-types/set-iterator.t
@@ -160,6 +180,7 @@
 - [ ] roast/S02-types/version-stress.t
 - [ ] roast/S02-types/version.t
 - [ ] roast/S02-types/whatever.t
+  - ~9/131 pass. Failures: Whatever type constraint (test 2), `*-1` as Code (test 5), WhateverCode execution (test 7), `*.meth` closure (test 13), `*.uc eq $str` Callable creation (tests 15-16), `@a[1..*]` slicing (test 18)
 - [ ] roast/S02-types/WHICH.t
 - [ ] roast/S03-binding/arrays.t
 - [ ] roast/S03-binding/attributes.t
@@ -191,6 +212,7 @@
 - [ ] roast/S03-operators/also.t
 - [ ] roast/S03-operators/andthen.t
 - [ ] roast/S03-operators/arith.t
+  - Panic: `attempt to multiply with overflow` in `i64::pow` at interpreter.rs:7760. The `**` operator uses native i64 without overflow protection. Needs BigInt or checked arithmetic
 - [ ] roast/S03-operators/assign-is-not-binding.t
 - [ ] roast/S03-operators/assign.t
 - [ ] roast/S03-operators/autoincrement-range.t
@@ -204,6 +226,7 @@
 - [ ] roast/S03-operators/chained-declarators.t
 - [ ] roast/S03-operators/cmp.t
 - [ ] roast/S03-operators/comparison-simple.t
+  - 0/24 pass. `<=>` returns Order enum (Less/Same/More) but interpreter likely returns Int. `leg` and `cmp` operators also return wrong types
 - [ ] roast/S03-operators/comparison.t
 - [ ] roast/S03-operators/composition.t
 - [ ] roast/S03-operators/context-forcers.t
@@ -249,12 +272,14 @@
 - [ ] roast/S03-operators/set_symmetric_difference.t
 - [ ] roast/S03-operators/set_union.t
 - [ ] roast/S03-operators/short-circuit.t
+  - ~30/84 pass. Failures: `||`/`&&`/`//`/`orelse` short-circuit side-effect tracking (tests 1,3,5,6), `^^`/`xor` return value semantics (tests 10,12,18-25,28-38), Array `^^` operations (tests 46-47,50-51), chained comparison short-circuit (tests 58,60), coderef shortcircuit idiom (test 61), `||=` on fresh variable (test 64)
 - [ ] roast/S03-operators/so.t
 - [ ] roast/S03-operators/spaceship-and-containers.t
 - [ ] roast/S03-operators/spaceship.t
 - [ ] roast/S03-operators/subscript-adverbs.t
 - [ ] roast/S03-operators/subscript-vs-lt.t
 - [ ] roast/S03-operators/ternary.t
+  - 6/28 pass (tests 1-4, 12-14). Failures: nested `?? !!` (tests 5-8), `?? !!` in array context (test 9), operator priority with `?? !!` (tests 10-11)
 - [ ] roast/S03-operators/u2212-minus.t
 - [ ] roast/S03-operators/value_equivalence.t
 - [ ] roast/S03-sequence/arity0.t
@@ -337,16 +362,21 @@
 - [ ] roast/S04-statements/do.t
 - [ ] roast/S04-statements/for-scope.t
 - [ ] roast/S04-statements/for.t
+  - Fatal: `Module not found: MONKEY-TYPING`. Requires `use MONKEY-TYPING` pragma
 - [ ] roast/S04-statements/for_with_only_one_item.t
 - [ ] roast/S04-statements/gather.t
+  - ~3/39 pass. Failures: gathered element count (test 2), `.shift`/`.pop` on gathered list (tests 4-5), nested gather (tests 6-7), take on lists (test 8), dynamic scoping of gather (test 9), gather as statement_prefix (test 11), laziness (test 12), gather with nested while/loop (tests 13-14), decontainerization (test 18)
 - [ ] roast/S04-statements/given.t
+  - ~22/54 pass. Failures: regex match object in when-clause (test 8), for+given iteration ordering (test 21), given return value (tests 26-29)
 - [ ] roast/S04-statements/goto.t
 - [ ] roast/S04-statements/if.t
+  - ~16/44 pass. Failures: function call without parens in if cond (test 17), `if` without block should error (test 19), `-> $a` binding in if/elsif/else (tests 20-23), condition evaluation order (tests 24-27), if/elsif/else return value as expression (tests 28-34)
 - [ ] roast/S04-statements/label.t
 - [ ] roast/S04-statements/last.t
 - [ ] roast/S04-statements/lazy.t
 - [ ] roast/S04-statements/leave.t
 - [ ] roast/S04-statements/loop.t
+  - 11/18 pass. Failures: loop with two variables in init (test 12), `loop {} while` syntax error detection (test 14), gather+take+loop interaction (test 15)
 - [ ] roast/S04-statements/map-and-sort-in-for.t
 - [ ] roast/S04-statements/next.t
 - [ ] roast/S04-statements/no-implicit-block.t
