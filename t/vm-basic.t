@@ -1,5 +1,5 @@
 use Test;
-plan 262;
+plan 298;
 
 # Literal compilation
 is 42, 42, 'integer literal';
@@ -743,3 +743,51 @@ is (1,2,3,4,5).tail(2).join(","), "4,5", 'tail(n) takes last n elements';
 is 255.base(16), "FF", 'base 16';
 is 10.base(2), "1010", 'base 2';
 is 511.base(8), "777", 'base 8';
+
+# === VM Phase 15: Native Function Dispatch, Two-Arg Methods & Bridge Elimination ===
+
+# Two-arg method: substr(start, len)
+is "hello world".substr(0, 5), "hello", 'substr 2-arg from 0';
+is "hello world".substr(6, 5), "world", 'substr 2-arg mid';
+is "hello".substr(2, 10), "llo", 'substr 2-arg clamp len';
+is "hello".substr(0, 0), "", 'substr 2-arg zero len';
+
+# One-arg methods: rindex, fmt, parse-base
+is "hello world hello".rindex("hello"), 12, 'rindex finds last occurrence';
+is "hello".rindex("xyz"), Nil, 'rindex returns Nil for missing';
+is "hello world".rindex("world"), 6, 'rindex finds substring';
+is 42.fmt("%05d"), "00042", 'fmt zero-padded int';
+is 3.14.fmt("%.1f"), "3.1", 'fmt float precision';
+is "ff".parse-base(16), 255, 'parse-base hex';
+is "1010".parse-base(2), 10, 'parse-base binary';
+
+# Function-form: string functions
+is abs(-42), 42, 'abs function';
+is abs(3.14), 3.14, 'abs function float';
+is chars("hello"), 5, 'chars function';
+is uc("hello"), "HELLO", 'uc function';
+is lc("HELLO"), "hello", 'lc function';
+is tc("hello world"), "Hello world", 'tc function';
+is chomp("hello\n"), "hello", 'chomp function';
+is chop("hello"), "hell", 'chop function';
+is trim("  hi  "), "hi", 'trim function';
+is flip("abc"), "cba", 'flip function';
+is chr(65), "A", 'chr function';
+is ord("A"), 65, 'ord function';
+
+# Function-form: math functions
+is sqrt(4), 2e0, 'sqrt function';
+is floor(3.7), 3, 'floor function';
+is ceiling(3.2), 4, 'ceiling function';
+is round(3.5), 4, 'round function';
+is defined(42), True, 'defined function true';
+is defined(Nil), False, 'defined function nil';
+is elems([1,2,3]), 3, 'elems function';
+is reverse([1,2,3]).join(","), "3,2,1", 'reverse function';
+
+# Function-form: 2-arg functions
+is join(",", [1,2,3]), "1,2,3", 'join function';
+is index("hello world", "world"), 6, 'index function';
+ok sin(0) == 0e0, 'sin function';
+ok cos(0) == 1e0, 'cos function';
+ok exp(0) == 1e0, 'exp function';

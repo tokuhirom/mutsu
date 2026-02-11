@@ -341,9 +341,6 @@ impl Interpreter {
         self.regex_find_first(pattern, text)
     }
 
-    pub(crate) fn char_idx_to_byte_bridge(text: &str, idx: usize) -> usize {
-        Self::char_idx_to_byte(text, idx)
-    }
 
     pub(crate) fn take_value(&mut self, val: Value) {
         if let Some(items) = self.gather_items.last_mut() {
@@ -366,13 +363,6 @@ impl Interpreter {
 
 
 
-    pub(crate) fn to_float_value_bridge(val: &Value) -> Option<f64> {
-        Self::to_float_value(val)
-    }
-
-    pub(crate) fn value_type_name_bridge(val: &Value) -> String {
-        Self::value_type_name(val).to_string()
-    }
 
     fn init_order_enum(&mut self) {
         let variants = vec![
@@ -2996,7 +2986,7 @@ impl Interpreter {
         self.proto_subs.contains(&format!("GLOBAL::{}", name))
     }
 
-    fn value_type_name(value: &Value) -> &'static str {
+    pub(crate) fn value_type_name(value: &Value) -> &'static str {
         match value {
             Value::Int(_) => "Int",
             Value::Num(_) => "Num",
@@ -8826,7 +8816,7 @@ impl Interpreter {
         None
     }
 
-    fn char_idx_to_byte(text: &str, idx: usize) -> usize {
+    pub(crate) fn char_idx_to_byte(text: &str, idx: usize) -> usize {
         if idx == 0 {
             return 0;
         }
@@ -9875,7 +9865,7 @@ impl Interpreter {
         }
     }
 
-    fn to_float_value(val: &Value) -> Option<f64> {
+    pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
         match val {
             Value::Num(f) => Some(*f),
             Value::Int(i) => Some(*i as f64),

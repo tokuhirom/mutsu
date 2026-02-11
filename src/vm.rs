@@ -1127,6 +1127,8 @@ impl VM {
                     let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
                     self.stack.push(result);
                     self.sync_locals_from_env(code);
+                } else if let Some(native_result) = Self::try_native_function(&name, &args) {
+                    self.stack.push(native_result?);
                 } else {
                     let result = self.interpreter.eval_call_with_values(&name, args)?;
                     self.stack.push(result);
@@ -1176,6 +1178,8 @@ impl VM {
                     let pkg = self.interpreter.current_package().to_string();
                     let _result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
                     self.sync_locals_from_env(code);
+                } else if let Some(native_result) = Self::try_native_function(&name, &args) {
+                    native_result?;
                 } else {
                     self.interpreter.exec_call_with_values(&name, args)?;
                     self.sync_locals_from_env(code);
@@ -1762,8 +1766,8 @@ impl VM {
                 let target = self.interpreter.env().get("_").cloned().unwrap_or(Value::Nil);
                 let text = target.to_string_value();
                 if let Some((start, end)) = self.interpreter.regex_find_first_bridge(&pattern, &text) {
-                    let start_b = Interpreter::char_idx_to_byte_bridge(&text, start);
-                    let end_b = Interpreter::char_idx_to_byte_bridge(&text, end);
+                    let start_b = Interpreter::char_idx_to_byte(&text, start);
+                    let end_b = Interpreter::char_idx_to_byte(&text, end);
                     let mut out = String::new();
                     out.push_str(&text[..start_b]);
                     out.push_str(&replacement);
@@ -1896,9 +1900,9 @@ impl VM {
                 let result = if name == "atan2" {
                     let mut x = right_vals
                         .first()
-                        .and_then(|v| Interpreter::to_float_value_bridge(v))
+                        .and_then(|v| Interpreter::to_float_value(v))
                         .unwrap_or(0.0);
-                    let mut y = Interpreter::to_float_value_bridge(&left_val).unwrap_or(0.0);
+                    let mut y = Interpreter::to_float_value(&left_val).unwrap_or(0.0);
                     if modifier.as_deref() == Some("R") {
                         std::mem::swap(&mut x, &mut y);
                     }
@@ -2030,6 +2034,9 @@ impl VM {
     /// Try to dispatch a method call natively (without interpreter bridge).
     /// Returns Some(result) on success, None if the method should fall through.
     fn try_native_method(target: &Value, method: &str, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+        if args.len() == 2 {
+            return Self::try_native_method_2arg(target, method, &args[0], &args[1]);
+        }
         if args.len() == 1 {
             return Self::try_native_method_1arg(target, method, &args[0]);
         }
@@ -2154,8 +2161,8 @@ impl VM {
                     Value::Array(items) => {
                         let mut sorted = items.clone();
                         sorted.sort_by(|a, b| {
-                            let fa = Interpreter::to_float_value_bridge(a).unwrap_or(0.0);
-                            let fb = Interpreter::to_float_value_bridge(b).unwrap_or(0.0);
+                            let fa = Interpreter::to_float_value(a).unwrap_or(0.0);
+                            let fb = Interpreter::to_float_value(b).unwrap_or(0.0);
                             fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
                         });
                         Some(Ok(Value::Array(sorted)))
@@ -2416,6 +2423,36 @@ impl VM {
                 }
                 _ => None,
             },
+            "rindex" => {
+                let s = target.to_string_value();
+                let needle = arg.to_string_value();
+                match s.rfind(&needle) {
+                    Some(pos) => {
+                        let char_pos = s[..pos].chars().count();
+                        Some(Ok(Value::Int(char_pos as i64)))
+                    }
+                    None => Some(Ok(Value::Nil)),
+                }
+            }
+            "fmt" => {
+                let fmt = arg.to_string_value();
+                let rendered = Interpreter::format_sprintf(&fmt, Some(target));
+                Some(Ok(Value::Str(rendered)))
+            }
+            "parse-base" => {
+                let radix = match arg {
+                    Value::Int(n) => *n as u32,
+                    _ => return None,
+                };
+                let s = target.to_string_value();
+                match i64::from_str_radix(&s, radix) {
+                    Ok(n) => Some(Ok(Value::Int(n))),
+                    Err(_) => Some(Err(RuntimeError::new(format!(
+                        "Cannot parse '{}' as base {}",
+                        s, radix
+                    )))),
+                }
+            }
             // Numeric methods
             "base" => match target {
                 Value::Int(i) => {
@@ -2434,6 +2471,231 @@ impl VM {
         }
     }
 
+    /// Try to dispatch a function call natively (pure built-in functions).
+    fn try_native_function(name: &str, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+        match args.len() {
+            1 => Self::try_native_function_1arg(name, &args[0]),
+            2 => Self::try_native_function_2arg(name, &args[0], &args[1]),
+            _ => None,
+        }
+    }
+
+    /// Native dispatch for one-arg built-in functions.
+    fn try_native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, RuntimeError>> {
+        match name {
+            // String functions
+            "uc" => Some(Ok(Value::Str(arg.to_string_value().to_uppercase()))),
+            "lc" => Some(Ok(Value::Str(arg.to_string_value().to_lowercase()))),
+            "tc" => {
+                let s = arg.to_string_value();
+                let mut result = String::new();
+                let mut capitalize = true;
+                for ch in s.chars() {
+                    if capitalize {
+                        for c in ch.to_uppercase() {
+                            result.push(c);
+                        }
+                        capitalize = false;
+                    } else {
+                        result.push(ch);
+                    }
+                }
+                Some(Ok(Value::Str(result)))
+            }
+            "chomp" => {
+                Some(Ok(Value::Str(arg.to_string_value().trim_end_matches('\n').to_string())))
+            }
+            "chop" => {
+                let mut s = arg.to_string_value();
+                s.pop();
+                Some(Ok(Value::Str(s)))
+            }
+            "trim" => {
+                Some(Ok(Value::Str(arg.to_string_value().trim().to_string())))
+            }
+            "flip" => {
+                Some(Ok(Value::Str(arg.to_string_value().chars().rev().collect())))
+            }
+            "words" => {
+                let s = arg.to_string_value();
+                let parts: Vec<Value> = s.split_whitespace().map(|p| Value::Str(p.to_string())).collect();
+                Some(Ok(Value::Array(parts)))
+            }
+            "chars" => {
+                Some(Ok(Value::Int(arg.to_string_value().chars().count() as i64)))
+            }
+            // Char/Ord
+            "chr" => {
+                if let Value::Int(i) = arg {
+                    if *i >= 0 {
+                        if let Some(ch) = std::char::from_u32(*i as u32) {
+                            return Some(Ok(Value::Str(ch.to_string())));
+                        }
+                    }
+                }
+                Some(Ok(Value::Str(String::new())))
+            }
+            "ord" => {
+                if let Some(ch) = arg.to_string_value().chars().next() {
+                    Some(Ok(Value::Int(ch as u32 as i64)))
+                } else {
+                    Some(Ok(Value::Nil))
+                }
+            }
+            // Math
+            "abs" => Some(Ok(match arg {
+                Value::Int(i) => Value::Int(i.abs()),
+                Value::Num(f) => Value::Num(f.abs()),
+                _ => Value::Int(0),
+            })),
+            "sqrt" => Some(Ok(match arg {
+                Value::Int(i) => Value::Num((*i as f64).sqrt()),
+                Value::Num(f) => Value::Num(f.sqrt()),
+                _ => Value::Num(f64::NAN),
+            })),
+            "floor" => Some(Ok(match arg {
+                Value::Num(f) => Value::Int(f.floor() as i64),
+                Value::Int(i) => Value::Int(*i),
+                _ => Value::Int(0),
+            })),
+            "ceiling" | "ceil" => Some(Ok(match arg {
+                Value::Num(f) => Value::Int(f.ceil() as i64),
+                Value::Int(i) => Value::Int(*i),
+                _ => Value::Int(0),
+            })),
+            "round" => Some(Ok(match arg {
+                Value::Num(f) => Value::Int(f.round() as i64),
+                Value::Int(i) => Value::Int(*i),
+                _ => Value::Int(0),
+            })),
+            "exp" => Some(Ok(match arg {
+                Value::Int(i) => Value::Num((*i as f64).exp()),
+                Value::Num(f) => Value::Num(f.exp()),
+                _ => Value::Num(f64::NAN),
+            })),
+            "log" => {
+                let x = Interpreter::to_float_value(arg).unwrap_or(f64::NAN);
+                Some(Ok(Value::Num(x.ln())))
+            }
+            "sin" | "cos" | "tan" => {
+                let x = Interpreter::to_float_value(arg).unwrap_or(0.0);
+                let result = match name {
+                    "sin" => x.sin(),
+                    "cos" => x.cos(),
+                    "tan" => x.tan(),
+                    _ => 0.0,
+                };
+                Some(Ok(Value::Num(result)))
+            }
+            "truncate" => {
+                if let Some(num) = Interpreter::to_float_value(arg) {
+                    Some(Ok(Value::Int(num.trunc() as i64)))
+                } else {
+                    Some(Ok(Value::Int(Interpreter::to_int(arg))))
+                }
+            }
+            // Query
+            "defined" => {
+                Some(Ok(Value::Bool(!matches!(arg, Value::Nil))))
+            }
+            "elems" => Some(Ok(match arg {
+                Value::Array(items) => Value::Int(items.len() as i64),
+                Value::Hash(items) => Value::Int(items.len() as i64),
+                Value::Str(s) => Value::Int(s.chars().count() as i64),
+                _ => Value::Int(0),
+            })),
+            // Collection
+            "reverse" => Some(Ok(match arg {
+                Value::Array(items) => {
+                    let mut reversed = items.clone();
+                    reversed.reverse();
+                    Value::Array(reversed)
+                }
+                Value::Str(s) => Value::Str(s.chars().rev().collect()),
+                _ => Value::Nil,
+            })),
+            "sort" => Some(Ok(match arg {
+                Value::Array(items) => {
+                    let mut sorted = items.clone();
+                    sorted.sort_by(|a, b| a.to_string_value().cmp(&b.to_string_value()));
+                    Value::Array(sorted)
+                }
+                _ => Value::Nil,
+            })),
+            _ => None,
+        }
+    }
+
+    /// Native dispatch for two-arg built-in functions.
+    fn try_native_function_2arg(name: &str, arg1: &Value, arg2: &Value) -> Option<Result<Value, RuntimeError>> {
+        match name {
+            "join" => {
+                let sep = arg1.to_string_value();
+                match arg2 {
+                    Value::Array(items) => {
+                        let joined = items
+                            .iter()
+                            .map(|v| v.to_string_value())
+                            .collect::<Vec<_>>()
+                            .join(&sep);
+                        Some(Ok(Value::Str(joined)))
+                    }
+                    _ => Some(Ok(Value::Str(String::new()))),
+                }
+            }
+            "index" => {
+                let s = arg1.to_string_value();
+                let needle = arg2.to_string_value();
+                Some(Ok(match s.find(&needle) {
+                    Some(pos) => Value::Int(s[..pos].chars().count() as i64),
+                    None => Value::Nil,
+                }))
+            }
+            "substr" => {
+                let s = arg1.to_string_value();
+                let start = match arg2 {
+                    Value::Int(i) => (*i).max(0) as usize,
+                    _ => return None,
+                };
+                let chars: Vec<char> = s.chars().collect();
+                Some(Ok(Value::Str(chars[start.min(chars.len())..].iter().collect())))
+            }
+            "atan2" => {
+                let y = Interpreter::to_float_value(arg1).unwrap_or(0.0);
+                let x = Interpreter::to_float_value(arg2).unwrap_or(0.0);
+                Some(Ok(Value::Num(y.atan2(x))))
+            }
+            _ => None,
+        }
+    }
+
+    /// Try to dispatch a two-arg method call natively.
+    fn try_native_method_2arg(
+        target: &Value,
+        method: &str,
+        arg1: &Value,
+        arg2: &Value,
+    ) -> Option<Result<Value, RuntimeError>> {
+        match method {
+            "substr" => {
+                let s = target.to_string_value();
+                let start = match arg1 {
+                    Value::Int(i) => (*i).max(0) as usize,
+                    _ => return None,
+                };
+                let len = match arg2 {
+                    Value::Int(i) => (*i).max(0) as usize,
+                    _ => return None,
+                };
+                let chars: Vec<char> = s.chars().collect();
+                let end = (start + len).min(chars.len());
+                let start = start.min(chars.len());
+                Some(Ok(Value::Str(chars[start..end].iter().collect())))
+            }
+            _ => None,
+        }
+    }
+
     /// Look up a compiled function by name, trying multi-dispatch keys first.
     fn find_compiled_function<'a>(
         &self,
@@ -2444,7 +2706,7 @@ impl VM {
         let pkg = self.interpreter.current_package();
         let arity = args.len();
         // Try package::name/arity:types (multi-dispatch with types)
-        let type_sig: Vec<String> = args.iter().map(|v| Interpreter::value_type_name_bridge(v)).collect();
+        let type_sig: Vec<String> = args.iter().map(|v| Interpreter::value_type_name(v).to_string()).collect();
         let key_typed = format!("{}::{}/{}:{}", pkg, name, arity, type_sig.join(","));
         if let Some(cf) = compiled_fns.get(&key_typed) {
             return Some(cf);
