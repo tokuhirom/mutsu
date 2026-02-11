@@ -1,4 +1,4 @@
-use crate::ast::{Expr, Stmt};
+use crate::ast::{Expr, ParamDef, Stmt};
 use crate::value::Value;
 
 /// Bytecode operations for the VM.
@@ -234,6 +234,10 @@ pub(crate) enum OpCode {
     // -- InfixFunc (atan2, sprintf) --
     InfixFunc { name_idx: u32, right_arity: u32, modifier_idx: Option<u32> },
 
+    // -- Exception handling --
+    /// Try/catch block. Body at [ip+1..catch_start), catch at [catch_start..body_end).
+    TryCatch { catch_start: u32, body_end: u32 },
+
     // -- Error handling --
     Die,
 
@@ -322,6 +326,22 @@ impl CompiledCode {
         }
     }
 
+    pub(crate) fn patch_try_catch_start(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::TryCatch { catch_start, .. } => *catch_start = target,
+            _ => panic!("patch_try_catch_start on non-TryCatch opcode"),
+        }
+    }
+
+    pub(crate) fn patch_try_body_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::TryCatch { body_end, .. } => *body_end = target,
+            _ => panic!("patch_try_body_end on non-TryCatch opcode"),
+        }
+    }
+
     pub(crate) fn patch_while_cond_end(&mut self, idx: usize) {
         let target = self.ops.len() as u32;
         match &mut self.ops[idx] {
@@ -363,4 +383,12 @@ impl CompiledCode {
         self.stmt_pool.push(stmt);
         idx
     }
+}
+
+/// A compiled function body (SubDecl compiled to bytecode).
+#[derive(Debug)]
+pub(crate) struct CompiledFunction {
+    pub(crate) code: CompiledCode,
+    pub(crate) params: Vec<String>,
+    pub(crate) param_defs: Vec<ParamDef>,
 }

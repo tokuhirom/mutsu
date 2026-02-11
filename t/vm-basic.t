@@ -1,5 +1,5 @@
 use Test;
-plan 179;
+plan 209;
 
 # Literal compilation
 is 42, 42, 'integer literal';
@@ -544,3 +544,101 @@ is 0.sign, 0, 'native .sign zero';
 # Native .end dispatch
 my @end_arr = (10, 20, 30, 40);
 is @end_arr.end, 3, 'native .end on array';
+
+# === VM Phase 11: Compiled function bodies ===
+
+# Compiled function call
+sub vm_add($a, $b) { $a + $b }
+is vm_add(3, 4), 7, 'compiled function call';
+
+# Implicit return (last expression value)
+sub vm_last_val { 42 }
+is vm_last_val(), 42, 'compiled function implicit return';
+
+# Explicit return
+sub vm_early($n) { return $n * 2; 999 }
+is vm_early(5), 10, 'compiled function explicit return';
+
+# Function with default param
+sub vm_greet($name = "World") { "Hello, $name" }
+is vm_greet(), "Hello, World", 'compiled function default param';
+is vm_greet("Raku"), "Hello, Raku", 'compiled function with arg';
+
+# Recursive function
+sub vm_fact($n) { $n <= 1 ?? 1 !! $n * vm_fact($n - 1) }
+is vm_fact(5), 120, 'compiled recursive function';
+
+# Nested function calls
+sub vm_double($n) { $n * 2 }
+sub vm_quad($n) { vm_double(vm_double($n)) }
+is vm_quad(3), 12, 'compiled nested function calls';
+
+# Function with string operations
+sub vm_shout($s) { $s.uc }
+is vm_shout("hello"), "HELLO", 'compiled function with method call';
+
+# === Try/Catch ===
+
+# Basic try/catch
+my $try_result = try { die "oops"; CATCH { default { "caught" } } };
+is $try_result, Nil, 'try/catch catches error';
+
+# try without error
+my $try_ok = try { 42 };
+is $try_ok, 42, 'try without error returns value';
+
+# try with $! access
+try { die "boom"; CATCH { default { is $!, "boom", 'try/catch sets $!' } } };
+
+# === Block inlining ===
+
+# do block
+my $do_val = do { 42 };
+is $do_val, 42, 'do block returns value';
+
+# Block with multiple statements
+my $block_val = do { my $x = 10; my $y = 20; $x + $y };
+is $block_val, 30, 'block with multiple stmts returns last value';
+
+# === Additional native methods ===
+
+# .flat
+my @nested = (1, (2, 3), (4, 5));
+is @nested.flat.elems, 5, 'native .flat flattens array';
+
+# .reverse
+my @rev = (1, 2, 3);
+is @rev.reverse.join(","), "3,2,1", 'native .reverse on array';
+is "abc".reverse, "cba", 'native .reverse on string';
+
+# .unique
+my @dup = (1, 2, 2, 3, 1);
+is @dup.unique.join(","), "1,2,3", 'native .unique removes duplicates';
+
+# .floor / .ceiling / .round
+is 3.7.floor, 3, 'native .floor';
+is 3.2.ceiling, 4, 'native .ceiling';
+is 3.5.round, 4, 'native .round';
+
+# .sqrt
+is 9.sqrt, 3e0, 'native .sqrt';
+
+# .words
+is "hello world foo".words.elems, 3, 'native .words';
+
+# .lines
+is "a\nb\nc".lines.elems, 3, 'native .lines';
+
+# .trim
+is "  hello  ".trim, "hello", 'native .trim';
+is "  hello  ".trim-leading, "hello  ", 'native .trim-leading';
+is "  hello  ".trim-trailing, "  hello", 'native .trim-trailing';
+
+# .so / .not
+is 1.so, True, 'native .so truthy';
+is 0.not, True, 'native .not falsy';
+
+# .keys / .values
+my %kv = a => 1, b => 2;
+is %kv.keys.sort.join(","), "a,b", 'native .keys on hash';
+is %kv.values.sort.join(","), "1,2", 'native .values on hash';

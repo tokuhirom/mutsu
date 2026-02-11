@@ -2,12 +2,14 @@ use std::collections::HashMap;
 
 use crate::ast::{AssignOp, CallArg, Expr, PhaserKind, Stmt};
 use crate::lexer::TokenKind;
-use crate::opcode::{CompiledCode, OpCode};
+use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::value::Value;
 
 pub(crate) struct Compiler {
     code: CompiledCode,
     local_map: HashMap<String, u32>,
+    compiled_functions: HashMap<String, CompiledFunction>,
+    current_package: String,
 }
 
 impl Compiler {
@@ -15,6 +17,8 @@ impl Compiler {
         Self {
             code: CompiledCode::new(),
             local_map: HashMap::new(),
+            compiled_functions: HashMap::new(),
+            current_package: "GLOBAL".to_string(),
         }
     }
 
@@ -28,11 +32,11 @@ impl Compiler {
         slot
     }
 
-    pub(crate) fn compile(mut self, stmts: &[Stmt]) -> CompiledCode {
+    pub(crate) fn compile(mut self, stmts: &[Stmt]) -> (CompiledCode, HashMap<String, CompiledFunction>) {
         for stmt in stmts {
             self.compile_stmt(stmt);
         }
-        self.code
+        (self.code, self.compiled_functions)
     }
 
     fn compile_stmt(&mut self, stmt: &Stmt) {
@@ -317,9 +321,12 @@ impl Compiler {
             Stmt::Package { name, body } if !Self::has_phasers(body) => {
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
                 let pkg_idx = self.code.emit(OpCode::PackageScope { name_idx, body_end: 0 });
+                let saved_package = self.current_package.clone();
+                self.current_package = name.clone();
                 for s in body {
                     self.compile_stmt(s);
                 }
+                self.current_package = saved_package;
                 self.code.patch_body_end(pkg_idx);
             }
 
@@ -337,9 +344,17 @@ impl Compiler {
                 self.code.emit(OpCode::PhaserEnd(idx));
             }
 
+            // --- SubDecl: delegate to interpreter AND compile body ---
+            Stmt::SubDecl { name, params, param_defs, body, multi } => {
+                // Still emit InterpretStmt so interpreter registers the FunctionDef
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::InterpretStmt(idx));
+                // Also compile the body to bytecode for VM-native dispatch
+                self.compile_sub_body(name, params, param_defs, body, *multi);
+            }
+
             // --- Declarations: delegate to interpreter (run once, complex state) ---
-            Stmt::SubDecl { .. }
-            | Stmt::ProtoDecl { .. }
+            Stmt::ProtoDecl { .. }
             | Stmt::ClassDecl { .. }
             | Stmt::RoleDecl { .. }
             | Stmt::EnumDecl { .. }
@@ -722,15 +737,25 @@ impl Compiler {
                     modifier_idx,
                 });
             }
-            // Block / AnonSub / Lambda / Gather / CallOn / Try:
+            // Try/Catch: compile to TryCatch opcode (only if no CONTROL blocks)
+            Expr::Try { body, catch } if !body.iter().any(|s| matches!(s, Stmt::Control(_))) => {
+                self.compile_try(body, catch);
+            }
+            // Block inlining: compile inline if no placeholders
+            Expr::Block(stmts) => {
+                if Self::has_block_placeholders(stmts) {
+                    self.fallback_expr(expr);
+                } else {
+                    self.compile_block_inline(stmts);
+                }
+            }
+            // AnonSub / Lambda / Gather / CallOn:
             // These capture env or have complex state interactions.
             // Delegate entirely to interpreter.
-            Expr::Block(_)
-            | Expr::AnonSub(_)
+            Expr::AnonSub(_)
             | Expr::Lambda { .. }
             | Expr::Gather(_)
-            | Expr::CallOn { .. }
-            | Expr::Try { .. } => {
+            | Expr::CallOn { .. } => {
                 self.fallback_expr(expr);
             }
             _ => {
@@ -824,5 +849,180 @@ impl Compiler {
         stmts
             .iter()
             .any(|s| matches!(s, Stmt::Phaser { kind, .. } if matches!(kind, PhaserKind::Enter | PhaserKind::Leave | PhaserKind::First | PhaserKind::Next | PhaserKind::Last)))
+    }
+
+    /// Check if a block body contains placeholder variables ($^a, $^b, etc.)
+    fn has_block_placeholders(stmts: &[Stmt]) -> bool {
+        for stmt in stmts {
+            if Self::stmt_has_placeholder(stmt) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn stmt_has_placeholder(stmt: &Stmt) -> bool {
+        match stmt {
+            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Take(e) => Self::expr_has_placeholder(e),
+            Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => Self::expr_has_placeholder(expr),
+            Stmt::Say(es) | Stmt::Print(es) => es.iter().any(|e| Self::expr_has_placeholder(e)),
+            Stmt::If { cond, then_branch, else_branch } => {
+                Self::expr_has_placeholder(cond)
+                    || then_branch.iter().any(|s| Self::stmt_has_placeholder(s))
+                    || else_branch.iter().any(|s| Self::stmt_has_placeholder(s))
+            }
+            Stmt::Block(stmts) => stmts.iter().any(|s| Self::stmt_has_placeholder(s)),
+            _ => false,
+        }
+    }
+
+    fn expr_has_placeholder(expr: &Expr) -> bool {
+        match expr {
+            Expr::Var(name) => name.starts_with("$^"),
+            Expr::Binary { left, right, .. } => {
+                Self::expr_has_placeholder(left) || Self::expr_has_placeholder(right)
+            }
+            Expr::Unary { expr, .. } => Self::expr_has_placeholder(expr),
+            Expr::Ternary { cond, then_expr, else_expr } => {
+                Self::expr_has_placeholder(cond)
+                    || Self::expr_has_placeholder(then_expr)
+                    || Self::expr_has_placeholder(else_expr)
+            }
+            Expr::Call { args, .. } => args.iter().any(|e| Self::expr_has_placeholder(e)),
+            Expr::MethodCall { target, args, .. } => {
+                Self::expr_has_placeholder(target) || args.iter().any(|e| Self::expr_has_placeholder(e))
+            }
+            Expr::Index { target, index } => {
+                Self::expr_has_placeholder(target) || Self::expr_has_placeholder(index)
+            }
+            Expr::StringInterpolation(parts) | Expr::ArrayLiteral(parts) => {
+                parts.iter().any(|e| Self::expr_has_placeholder(e))
+            }
+            _ => false,
+        }
+    }
+
+    /// Compile a SubDecl body to a CompiledFunction and store it.
+    fn compile_sub_body(
+        &mut self,
+        name: &str,
+        params: &[String],
+        param_defs: &[crate::ast::ParamDef],
+        body: &[Stmt],
+        multi: bool,
+    ) {
+        let mut sub_compiler = Compiler::new();
+        // Pre-allocate locals for parameters
+        for param in params {
+            sub_compiler.alloc_local(param);
+        }
+        // Also allocate from param_defs in case param names differ
+        for pd in param_defs {
+            if !pd.name.is_empty() {
+                sub_compiler.alloc_local(&pd.name);
+            }
+        }
+        // Compile body statements; last Stmt::Expr should NOT emit Pop (implicit return)
+        for (i, stmt) in body.iter().enumerate() {
+            let is_last = i == body.len() - 1;
+            if is_last {
+                if let Stmt::Expr(expr) = stmt {
+                    sub_compiler.compile_expr(expr);
+                    // Don't emit Pop — leave value on stack as implicit return
+                    continue;
+                }
+            }
+            sub_compiler.compile_stmt(stmt);
+        }
+
+        let key = if multi {
+            let arity = param_defs.len();
+            let type_sig: Vec<String> = param_defs.iter().map(|pd| {
+                pd.type_constraint.clone().unwrap_or_default()
+            }).collect();
+            format!("{}::{}{}",
+                self.current_package,
+                name,
+                if !type_sig.is_empty() {
+                    format!("/{}:{}", arity, type_sig.join(","))
+                } else {
+                    format!("/{}", arity)
+                }
+            )
+        } else {
+            format!("{}::{}", self.current_package, name)
+        };
+
+        let cf = CompiledFunction {
+            code: sub_compiler.code,
+            params: params.to_vec(),
+            param_defs: param_defs.to_vec(),
+        };
+        self.compiled_functions.insert(key, cf);
+    }
+
+    /// Compile Expr::Try { body, catch } to TryCatch opcode.
+    fn compile_try(&mut self, body: &[Stmt], catch: &Option<Vec<Stmt>>) {
+        // Separate CATCH/CONTROL blocks from body
+        let mut main_stmts = Vec::new();
+        let mut catch_stmts = catch.clone();
+        for stmt in body {
+            if let Stmt::Catch(catch_body) = stmt {
+                catch_stmts = Some(catch_body.clone());
+            } else {
+                main_stmts.push(stmt.clone());
+            }
+        }
+        // Emit TryCatch placeholder
+        let try_idx = self.code.emit(OpCode::TryCatch { catch_start: 0, body_end: 0 });
+        // Compile main body (last Stmt::Expr leaves value on stack)
+        for (i, stmt) in main_stmts.iter().enumerate() {
+            let is_last = i == main_stmts.len() - 1;
+            if is_last {
+                if let Stmt::Expr(expr) = stmt {
+                    self.compile_expr(expr);
+                    continue;
+                }
+            }
+            self.compile_stmt(stmt);
+        }
+        if main_stmts.is_empty() {
+            self.code.emit(OpCode::LoadNil);
+        }
+        // Jump over catch on success
+        let jump_end = self.code.emit(OpCode::Jump(0));
+        // Patch catch_start
+        self.code.patch_try_catch_start(try_idx);
+        // Compile catch block
+        if let Some(ref catch_body) = catch_stmts {
+            for stmt in catch_body {
+                self.compile_stmt(stmt);
+            }
+        }
+        self.code.emit(OpCode::LoadNil); // catch result is Nil
+        // Patch body_end and jump_end
+        self.code.patch_try_body_end(try_idx);
+        self.code.patch_jump(jump_end);
+    }
+
+    /// Compile a block inline (for blocks without placeholders).
+    fn compile_block_inline(&mut self, stmts: &[Stmt]) {
+        if stmts.is_empty() {
+            self.code.emit(OpCode::LoadNil);
+            return;
+        }
+        for (i, stmt) in stmts.iter().enumerate() {
+            let is_last = i == stmts.len() - 1;
+            if is_last {
+                if let Stmt::Expr(expr) = stmt {
+                    self.compile_expr(expr);
+                    // Don't emit Pop — leave value on stack as block's return value
+                    return;
+                }
+            }
+            self.compile_stmt(stmt);
+        }
+        // If last statement wasn't an expression, push Nil
+        self.code.emit(OpCode::LoadNil);
     }
 }

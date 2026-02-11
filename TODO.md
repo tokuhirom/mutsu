@@ -243,6 +243,8 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
 
 **Phase 10 (done):** Local variable slots (`GetLocal`/`SetLocal` with indexed O(1) access), compiler `local_map` for `VarDecl`/`Assign`/`Var`/`ForLoop` params, dual-write to env for interpreter bridge compatibility, `sync_locals_from_env` after fallback opcodes. Native method dispatch for 12 zero-arg methods (`.defined`/`.Bool`/`.Str`/`.Int`/`.Numeric`/`.Num`/`.chars`/`.elems`/`.abs`/`.uc`/`.lc`/`.sign`/`.end`) bypassing interpreter bridge.
 
+**Phase 11 (done):** Compiled function bodies — `SubDecl` bodies compiled to `CompiledFunction` bytecode chunks, executed natively in VM via `call_compiled_function_named` with proper `routine_stack` management. `TryCatch` compound opcode for compiled exception handling (CONTROL blocks fall back to interpreter). Block inlining for `Expr::Block` without placeholders. Extended native method dispatch with 17 additional zero-arg methods (`.flat`/`.sort`/`.reverse`/`.unique`/`.keys`/`.values`/`.floor`/`.ceiling`/`.round`/`.sqrt`/`.words`/`.lines`/`.trim`/`.trim-leading`/`.trim-trailing`/`.so`/`.not`).
+
 #### Compiled Binary Ops
 - [x] Arithmetic: `+`, `-`, `*`, `/`, `%`, `**`
 - [x] String: `~` (concat)
@@ -281,10 +283,11 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
 - [x] `HyperOp` (>>op<< — sub-expressions compiled, operation bridges)
 - [x] `MetaOp` (Rop, Xop, Zop — sub-expressions compiled, operation bridges)
 - [x] `InfixFunc` (atan2, sprintf — sub-expressions compiled, operation bridges)
-- [x] `Block` / `AnonSub` (delegate to interpreter — env capture)
+- [x] `Block` (inline if no placeholders; delegate if placeholders)
+- [x] `AnonSub` (delegate to interpreter — env capture)
 - [x] `Lambda` (-> $x { } — delegate to interpreter — env capture)
 - [x] `CallOn` (target.() — delegate to interpreter — complex state)
-- [x] `Try` (try { } CATCH { } — delegate to interpreter — error handling)
+- [x] `Try` (compiled to `TryCatch` opcode; CONTROL blocks delegate to interpreter)
 - [x] `Gather` (gather { take … } — delegate to interpreter — env capture)
 
 #### Compiled Statements
@@ -293,7 +296,7 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
 - [x] `Call` (positional args only), `Last`, `Next`, `Redo`, `Return`, `Die`
 - [x] `Given`, `When`, `Default`, `Proceed`, `Succeed`
 - [x] `Call` with named args / Block / AnonSub args (delegate to interpreter)
-- [x] `SubDecl` / `ProtoDecl` (delegate to interpreter)
+- [x] `SubDecl` (body compiled to `CompiledFunction`; also delegates to interpreter for registration) / `ProtoDecl` (delegate)
 - [x] `ClassDecl` / `RoleDecl` (delegate to interpreter)
 - [x] `HasDecl` / `MethodDecl` / `DoesDecl` (no-op outside class)
 - [x] `EnumDecl` / `SubsetDecl` (delegate to interpreter)
@@ -308,12 +311,17 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
 #### VM Architecture
 - [x] Local variable slots (`GetLocal`/`SetLocal` — indexed, no HashMap lookup)
 - [x] Scope management (dual-write locals + env sync after interpreter bridges)
-- [ ] Functions/closures in VM (`MakeClosure`, upvalues)
-  - Requires compiling function bodies to separate CompiledCode chunks, call frame stack, upvalue capture
+- [x] Compiled function bodies (`CompiledFunction` struct, `call_compiled_function_named`)
+  - Sub bodies compiled to bytecode, executed natively with env save/restore and routine_stack
+  - Multi-dispatch lookup by `pkg::name/arity:types` keys
+  - Closures (`Lambda`/`AnonSub`/`Gather`) remain as interpreter fallbacks
+- [x] `TryCatch` compound opcode for exception handling
+- [x] Block inlining (eager blocks without placeholders compiled inline)
 - [x] Native method dispatch in VM (bypass interpreter bridge)
   - Tier 1: `.defined`, `.Bool`, `.Str`, `.Int`, `.Numeric`/`.Num`, `.chars`, `.elems`, `.abs`, `.uc`, `.lc`, `.sign`, `.end`
+  - Tier 2: `.flat`, `.sort`, `.reverse`, `.unique`, `.keys`, `.values`, `.floor`, `.ceiling`, `.round`, `.sqrt`, `.words`, `.lines`, `.trim`, `.trim-leading`, `.trim-trailing`, `.so`, `.not`
 - [ ] Remove fallback opcodes (full native compilation)
-  - Depends on functions/closures + natively compiling all declaration types
+  - Depends on closures + natively compiling all declaration types
 
 ### Optimization Pipeline
 - [ ] Constant folding

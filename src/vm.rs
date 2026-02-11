@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::interpreter::Interpreter;
-use crate::opcode::{CompiledCode, OpCode};
+use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::value::{make_rat, RuntimeError, Value};
 
 pub(crate) struct VM {
@@ -21,7 +21,11 @@ impl VM {
 
     /// Run the compiled bytecode. Always returns the interpreter back
     /// (even on error) so the caller can restore it.
-    pub(crate) fn run(mut self, code: &CompiledCode) -> (Interpreter, Result<(), RuntimeError>) {
+    pub(crate) fn run(
+        mut self,
+        code: &CompiledCode,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> (Interpreter, Result<(), RuntimeError>) {
         // Initialize local variable slots
         self.locals = vec![Value::Nil; code.locals.len()];
         for (i, name) in code.locals.iter().enumerate() {
@@ -31,7 +35,7 @@ impl VM {
         }
         let mut ip = 0;
         while ip < code.ops.len() {
-            if let Err(e) = self.exec_one(code, &mut ip) {
+            if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
                 return (self.interpreter, Err(e));
             }
             if self.interpreter.is_halted() {
@@ -47,10 +51,11 @@ impl VM {
         code: &CompiledCode,
         start: usize,
         end: usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let mut ip = start;
         while ip < end {
-            self.exec_one(code, &mut ip)?;
+            self.exec_one(code, &mut ip, compiled_fns)?;
             if self.interpreter.is_halted() {
                 break;
             }
@@ -67,7 +72,12 @@ impl VM {
     }
 
     /// Execute one opcode at *ip, advancing ip for the next instruction.
-    fn exec_one(&mut self, code: &CompiledCode, ip: &mut usize) -> Result<(), RuntimeError> {
+    fn exec_one(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
         match &code.ops[*ip] {
             // -- Constants --
             OpCode::LoadConst(idx) => {
@@ -489,9 +499,16 @@ impl VM {
                 let arity = *arity as usize;
                 let start = self.stack.len() - arity;
                 let args: Vec<Value> = self.stack.drain(start..).collect();
-                let result = self.interpreter.eval_call_with_values(&name, args)?;
-                self.stack.push(result);
-                self.sync_locals_from_env(code);
+                if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
+                    let pkg = self.interpreter.current_package().to_string();
+                    let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
+                    self.stack.push(result);
+                    self.sync_locals_from_env(code);
+                } else {
+                    let result = self.interpreter.eval_call_with_values(&name, args)?;
+                    self.stack.push(result);
+                    self.sync_locals_from_env(code);
+                }
                 *ip += 1;
             }
             OpCode::CallMethod { name_idx, arity } => {
@@ -532,8 +549,14 @@ impl VM {
                 let arity = *arity as usize;
                 let start = self.stack.len() - arity;
                 let args: Vec<Value> = self.stack.drain(start..).collect();
-                self.interpreter.exec_call_with_values(&name, args)?;
-                self.sync_locals_from_env(code);
+                if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
+                    let pkg = self.interpreter.current_package().to_string();
+                    let _result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
+                    self.sync_locals_from_env(code);
+                } else {
+                    self.interpreter.exec_call_with_values(&name, args)?;
+                    self.sync_locals_from_env(code);
+                }
                 *ip += 1;
             }
 
@@ -706,14 +729,14 @@ impl VM {
 
                 'while_loop: loop {
                     // Evaluate condition
-                    self.run_range(code, cond_start, body_start)?;
+                    self.run_range(code, cond_start, body_start, compiled_fns)?;
                     let cond_val = self.stack.pop().unwrap();
                     if !cond_val.truthy() {
                         break;
                     }
                     // Execute body with redo support
                     'body_redo: loop {
-                        match self.run_range(code, body_start, loop_end) {
+                        match self.run_range(code, body_start, loop_end, compiled_fns) {
                             Ok(()) => break 'body_redo,
                             Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => continue 'body_redo,
                             Err(e) if e.is_last && Self::label_matches(&e.label, &label) => break 'while_loop,
@@ -759,7 +782,7 @@ impl VM {
                         self.locals[slot as usize] = item;
                     }
                     'body_redo: loop {
-                        match self.run_range(code, body_start, loop_end) {
+                        match self.run_range(code, body_start, loop_end, compiled_fns) {
                             Ok(()) => break 'body_redo,
                             Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => continue 'body_redo,
                             Err(e) if e.is_last && Self::label_matches(&e.label, &label) => break 'for_loop,
@@ -787,14 +810,14 @@ impl VM {
 
                 'c_loop: loop {
                     // Evaluate condition
-                    self.run_range(code, cond_start, body_start)?;
+                    self.run_range(code, cond_start, body_start, compiled_fns)?;
                     let cond_val = self.stack.pop().unwrap();
                     if !cond_val.truthy() {
                         break;
                     }
                     // Execute body with redo support
                     'body_redo: loop {
-                        match self.run_range(code, body_start, step_begin) {
+                        match self.run_range(code, body_start, step_begin, compiled_fns) {
                             Ok(()) => break 'body_redo,
                             Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => continue 'body_redo,
                             Err(e) if e.is_last && Self::label_matches(&e.label, &label) => break 'c_loop,
@@ -806,7 +829,7 @@ impl VM {
                         break;
                     }
                     // Execute step
-                    self.run_range(code, step_begin, loop_end)?;
+                    self.run_range(code, step_begin, loop_end, compiled_fns)?;
                 }
                 *ip = loop_end;
             }
@@ -826,7 +849,7 @@ impl VM {
                 // Run body, stop if when_matched
                 let mut inner_ip = body_start;
                 while inner_ip < end {
-                    if let Err(e) = self.exec_one(code, &mut inner_ip) {
+                    if let Err(e) = self.exec_one(code, &mut inner_ip, compiled_fns) {
                         // Restore state before propagating
                         self.interpreter.set_when_matched(saved_when);
                         if let Some(v) = saved_topic {
@@ -858,7 +881,7 @@ impl VM {
                 let topic = self.interpreter.env().get("_").cloned().unwrap_or(Value::Nil);
                 if self.interpreter.smart_match_values(&topic, &cond_val) {
                     let mut did_proceed = false;
-                    match self.run_range(code, body_start, end) {
+                    match self.run_range(code, body_start, end, compiled_fns) {
                         Ok(()) => {}
                         Err(e) if e.is_proceed => {
                             did_proceed = true;
@@ -877,7 +900,7 @@ impl VM {
             OpCode::Default { body_end } => {
                 let body_start = *ip + 1;
                 let end = *body_end as usize;
-                self.run_range(code, body_start, end)?;
+                self.run_range(code, body_start, end, compiled_fns)?;
                 self.interpreter.set_when_matched(true);
                 *ip = end;
             }
@@ -893,7 +916,7 @@ impl VM {
                 'repeat_loop: loop {
                     if !first {
                         // Evaluate condition
-                        self.run_range(code, cond_start, loop_end)?;
+                        self.run_range(code, cond_start, loop_end, compiled_fns)?;
                         let cond_val = self.stack.pop().unwrap();
                         if !cond_val.truthy() {
                             break;
@@ -902,7 +925,7 @@ impl VM {
                     first = false;
                     // Execute body with redo support
                     'body_redo: loop {
-                        match self.run_range(code, body_start, cond_start) {
+                        match self.run_range(code, body_start, cond_start, compiled_fns) {
                             Ok(()) => break 'body_redo,
                             Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => continue 'body_redo,
                             Err(e) if e.is_last && Self::label_matches(&e.label, &label) => break 'repeat_loop,
@@ -915,6 +938,49 @@ impl VM {
                     }
                 }
                 *ip = loop_end;
+            }
+
+            // -- Exception handling (try/catch) --
+            OpCode::TryCatch { catch_start, body_end } => {
+                let saved_depth = self.stack.len();
+                let body_start = *ip + 1;
+                let catch_begin = *catch_start as usize;
+                let end = *body_end as usize;
+                match self.run_range(code, body_start, catch_begin, compiled_fns) {
+                    Ok(()) => {
+                        // Success — body result is on stack, skip catch
+                        *ip = end;
+                    }
+                    Err(e) if e.return_value.is_some() => return Err(e),
+                    Err(e) if e.is_last || e.is_next || e.is_redo || e.is_proceed || e.is_succeed => return Err(e),
+                    Err(e) => {
+                        // Error caught
+                        self.stack.truncate(saved_depth);
+                        let err_val = Value::Str(e.message.clone());
+                        let saved_err = self.interpreter.env().get("!").cloned();
+                        let saved_topic = self.interpreter.env().get("_").cloned();
+                        self.interpreter.env_mut().insert("!".to_string(), err_val.clone());
+                        self.interpreter.env_mut().insert("_".to_string(), err_val);
+                        // Run catch block
+                        let saved_when = self.interpreter.when_matched();
+                        self.interpreter.set_when_matched(false);
+                        self.run_range(code, catch_begin, end, compiled_fns)?;
+                        self.interpreter.set_when_matched(saved_when);
+                        // Restore $! and $_
+                        if let Some(v) = saved_err {
+                            self.interpreter.env_mut().insert("!".to_string(), v);
+                        } else {
+                            self.interpreter.env_mut().remove("!");
+                        }
+                        if let Some(v) = saved_topic {
+                            self.interpreter.env_mut().insert("_".to_string(), v);
+                        } else {
+                            self.interpreter.env_mut().remove("_");
+                        }
+                        // catch result is Nil (pushed by compiler)
+                        *ip = end;
+                    }
+                }
             }
 
             // -- Error handling --
@@ -1039,7 +1105,7 @@ impl VM {
                 let body_end = *body_end as usize;
                 let saved = self.interpreter.current_package().to_string();
                 self.interpreter.set_current_package(name);
-                self.run_range(code, *ip + 1, body_end)?;
+                self.run_range(code, *ip + 1, body_end, compiled_fns)?;
                 self.interpreter.set_current_package(saved);
                 *ip = body_end;
             }
@@ -1371,7 +1437,274 @@ impl VM {
                     _ => None,
                 }
             }
+            "flat" => {
+                match target {
+                    Value::Array(items) => {
+                        let mut result = Vec::new();
+                        for item in items {
+                            match item {
+                                Value::Array(inner) => result.extend(inner.iter().cloned()),
+                                other => result.push(other.clone()),
+                            }
+                        }
+                        Some(Ok(Value::Array(result)))
+                    }
+                    _ => None,
+                }
+            }
+            "sort" => {
+                match target {
+                    Value::Array(items) => {
+                        let mut sorted = items.clone();
+                        sorted.sort_by(|a, b| {
+                            let fa = Interpreter::to_float_value_bridge(a).unwrap_or(0.0);
+                            let fb = Interpreter::to_float_value_bridge(b).unwrap_or(0.0);
+                            fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
+                        });
+                        Some(Ok(Value::Array(sorted)))
+                    }
+                    _ => None,
+                }
+            }
+            "reverse" => {
+                match target {
+                    Value::Array(items) => {
+                        let mut reversed = items.clone();
+                        reversed.reverse();
+                        Some(Ok(Value::Array(reversed)))
+                    }
+                    Value::Str(s) => {
+                        Some(Ok(Value::Str(s.chars().rev().collect())))
+                    }
+                    _ => None,
+                }
+            }
+            "unique" => {
+                match target {
+                    Value::Array(items) => {
+                        let mut seen = Vec::new();
+                        let mut result = Vec::new();
+                        for item in items {
+                            let key = item.to_string_value();
+                            if !seen.contains(&key) {
+                                seen.push(key);
+                                result.push(item.clone());
+                            }
+                        }
+                        Some(Ok(Value::Array(result)))
+                    }
+                    _ => None,
+                }
+            }
+            "keys" => {
+                match target {
+                    Value::Hash(map) => {
+                        let keys: Vec<Value> = map.keys().map(|k| Value::Str(k.clone())).collect();
+                        Some(Ok(Value::Array(keys)))
+                    }
+                    _ => None,
+                }
+            }
+            "values" => {
+                match target {
+                    Value::Hash(map) => {
+                        let values: Vec<Value> = map.values().cloned().collect();
+                        Some(Ok(Value::Array(values)))
+                    }
+                    _ => None,
+                }
+            }
+            "floor" => {
+                match target {
+                    Value::Num(f) => Some(Ok(Value::Int(f.floor() as i64))),
+                    Value::Int(i) => Some(Ok(Value::Int(*i))),
+                    Value::Rat(n, d) if *d != 0 => {
+                        let q = *n / *d;
+                        let r = *n % *d;
+                        if r != 0 && (*n < 0) != (*d < 0) {
+                            Some(Ok(Value::Int(q - 1)))
+                        } else {
+                            Some(Ok(Value::Int(q)))
+                        }
+                    }
+                    _ => None,
+                }
+            }
+            "ceiling" => {
+                match target {
+                    Value::Num(f) => Some(Ok(Value::Int(f.ceil() as i64))),
+                    Value::Int(i) => Some(Ok(Value::Int(*i))),
+                    Value::Rat(n, d) if *d != 0 => {
+                        let q = *n / *d;
+                        let r = *n % *d;
+                        if r != 0 && (*n < 0) == (*d < 0) {
+                            Some(Ok(Value::Int(q + 1)))
+                        } else {
+                            Some(Ok(Value::Int(q)))
+                        }
+                    }
+                    _ => None,
+                }
+            }
+            "round" => {
+                match target {
+                    Value::Num(f) => Some(Ok(Value::Int(f.round() as i64))),
+                    Value::Int(i) => Some(Ok(Value::Int(*i))),
+                    _ => None,
+                }
+            }
+            "sqrt" => {
+                match target {
+                    Value::Int(i) => Some(Ok(Value::Num((*i as f64).sqrt()))),
+                    Value::Num(f) => Some(Ok(Value::Num(f.sqrt()))),
+                    _ => None,
+                }
+            }
+            "words" => {
+                let s = target.to_string_value();
+                let words: Vec<Value> = s.split_whitespace().map(|w| Value::Str(w.to_string())).collect();
+                Some(Ok(Value::Array(words)))
+            }
+            "lines" => {
+                let s = target.to_string_value();
+                let lines: Vec<Value> = s.lines().map(|l| Value::Str(l.to_string())).collect();
+                Some(Ok(Value::Array(lines)))
+            }
+            "trim" => {
+                Some(Ok(Value::Str(target.to_string_value().trim().to_string())))
+            }
+            "trim-leading" => {
+                Some(Ok(Value::Str(target.to_string_value().trim_start().to_string())))
+            }
+            "trim-trailing" => {
+                Some(Ok(Value::Str(target.to_string_value().trim_end().to_string())))
+            }
+            "so" => Some(Ok(Value::Bool(target.truthy()))),
+            "not" => Some(Ok(Value::Bool(!target.truthy()))),
             _ => None,
+        }
+    }
+
+    /// Look up a compiled function by name, trying multi-dispatch keys first.
+    fn find_compiled_function<'a>(
+        &self,
+        compiled_fns: &'a HashMap<String, CompiledFunction>,
+        name: &str,
+        args: &[Value],
+    ) -> Option<&'a CompiledFunction> {
+        let pkg = self.interpreter.current_package();
+        let arity = args.len();
+        // Try package::name/arity:types (multi-dispatch with types)
+        let type_sig: Vec<String> = args.iter().map(|v| Interpreter::value_type_name_bridge(v)).collect();
+        let key_typed = format!("{}::{}/{}:{}", pkg, name, arity, type_sig.join(","));
+        if let Some(cf) = compiled_fns.get(&key_typed) {
+            return Some(cf);
+        }
+        // Try package::name/arity (multi-dispatch without types)
+        let key_arity = format!("{}::{}/{}", pkg, name, arity);
+        if let Some(cf) = compiled_fns.get(&key_arity) {
+            return Some(cf);
+        }
+        // Try package::name
+        let key_simple = format!("{}::{}", pkg, name);
+        if let Some(cf) = compiled_fns.get(&key_simple) {
+            return Some(cf);
+        }
+        // Try GLOBAL::name
+        if pkg != "GLOBAL" {
+            let key_global = format!("GLOBAL::{}", name);
+            if let Some(cf) = compiled_fns.get(&key_global) {
+                return Some(cf);
+            }
+        }
+        // Try fully qualified name (if name already contains ::)
+        if name.contains("::") {
+            compiled_fns.get(name)
+        } else {
+            None
+        }
+    }
+
+    /// Execute a compiled function with the given arguments.
+    fn call_compiled_function_named(
+        &mut self,
+        cf: &CompiledFunction,
+        args: Vec<Value>,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+        fn_package: &str,
+        fn_name: &str,
+    ) -> Result<Value, RuntimeError> {
+        // Save caller state
+        let saved_env = self.interpreter.env().clone();
+        let saved_locals = std::mem::take(&mut self.locals);
+        let saved_stack_depth = self.stack.len();
+
+        // Push to routine stack for &?ROUTINE support
+        if !fn_name.is_empty() {
+            self.interpreter.push_routine(fn_package.to_string(), fn_name.to_string());
+        }
+
+        // Bind arguments using interpreter's parameter binding
+        self.interpreter.bind_function_args_values(&cf.param_defs, &cf.params, &args)?;
+
+        // Initialize function locals from env
+        self.locals = vec![Value::Nil; cf.code.locals.len()];
+        for (i, local_name) in cf.code.locals.iter().enumerate() {
+            if let Some(val) = self.interpreter.env().get(local_name) {
+                self.locals[i] = val.clone();
+            }
+        }
+
+        // Execute function body
+        let mut ip = 0;
+        let mut result = Ok(());
+        while ip < cf.code.ops.len() {
+            match self.exec_one(&cf.code, &mut ip, compiled_fns) {
+                Ok(()) => {}
+                Err(e) if e.return_value.is_some() => {
+                    // Explicit return
+                    let ret_val = e.return_value.unwrap();
+                    self.stack.truncate(saved_stack_depth);
+                    self.stack.push(ret_val);
+                    result = Ok(());
+                    break;
+                }
+                Err(e) => {
+                    result = Err(e);
+                    break;
+                }
+            }
+            if self.interpreter.is_halted() {
+                break;
+            }
+        }
+
+        // Extract return value from stack (implicit return)
+        let ret_val = if result.is_ok() {
+            if self.stack.len() > saved_stack_depth {
+                self.stack.pop().unwrap_or(Value::Nil)
+            } else {
+                Value::Nil
+            }
+        } else {
+            Value::Nil
+        };
+
+        // Clean up stack
+        self.stack.truncate(saved_stack_depth);
+
+        // Pop routine stack
+        if !fn_name.is_empty() {
+            self.interpreter.pop_routine();
+        }
+
+        // Restore caller state
+        self.locals = saved_locals;
+        *self.interpreter.env_mut() = saved_env;
+
+        match result {
+            Ok(()) => Ok(ret_val),
+            Err(e) => Err(e),
         }
     }
 }

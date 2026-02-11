@@ -332,6 +332,14 @@ impl Interpreter {
         self.routine_stack.last()
     }
 
+    pub(crate) fn push_routine(&mut self, package: String, name: String) {
+        self.routine_stack.push((package, name));
+    }
+
+    pub(crate) fn pop_routine(&mut self) {
+        self.routine_stack.pop();
+    }
+
     pub(crate) fn block_stack_top(&self) -> Option<&Value> {
         self.block_stack.last()
     }
@@ -387,6 +395,10 @@ impl Interpreter {
 
     pub(crate) fn to_float_value_bridge(val: &Value) -> Option<f64> {
         Self::to_float_value(val)
+    }
+
+    pub(crate) fn value_type_name_bridge(val: &Value) -> String {
+        Self::value_type_name(val).to_string()
     }
 
     fn init_order_enum(&mut self) {
@@ -1064,10 +1076,10 @@ impl Interpreter {
             let (enter_ph, leave_ph, body_main) = self.split_block_phasers(&stmts);
             self.run_block_raw(&enter_ph)?;
             let compiler = crate::compiler::Compiler::new();
-            let code = compiler.compile(&body_main);
+            let (code, compiled_fns) = compiler.compile(&body_main);
             let interp = std::mem::take(self);
             let vm = crate::vm::VM::new(interp);
-            let (interp, body_result) = vm.run(&code);
+            let (interp, body_result) = vm.run(&code, &compiled_fns);
             *self = interp;
             let leave_result = self.run_block_raw(&leave_ph);
             if leave_result.is_err() && body_result.is_ok() {
@@ -9477,6 +9489,70 @@ impl Interpreter {
                 // Positional param
                 if positional_idx < args.len() {
                     let value = self.eval_expr(&args[positional_idx])?;
+                    if let Some(constraint) = &pd.type_constraint {
+                        if !self.type_matches_value(constraint, &value) {
+                            return Err(RuntimeError::new(format!(
+                                "Type check failed for {}: expected {}, got {}",
+                                pd.name,
+                                constraint,
+                                Self::value_type_name(&value)
+                            )));
+                        }
+                    }
+                    if !pd.name.is_empty() {
+                        self.env.insert(pd.name.clone(), value);
+                    }
+                    positional_idx += 1;
+                } else if let Some(default_expr) = &pd.default {
+                    let value = self.eval_expr(default_expr)?;
+                    if !pd.name.is_empty() {
+                        self.env.insert(pd.name.clone(), value);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Bind function arguments from pre-evaluated values (for VM compiled function dispatch).
+    pub(crate) fn bind_function_args_values(
+        &mut self,
+        param_defs: &[ParamDef],
+        params: &[String],
+        args: &[Value],
+    ) -> Result<(), RuntimeError> {
+        if param_defs.is_empty() {
+            // Legacy path: just bind by position
+            for (i, param) in params.iter().enumerate() {
+                if let Some(value) = args.get(i) {
+                    self.env.insert(param.clone(), value.clone());
+                }
+            }
+            return Ok(());
+        }
+        let mut positional_idx = 0usize;
+        for pd in param_defs {
+            if pd.slurpy {
+                let mut items = Vec::new();
+                while positional_idx < args.len() {
+                    items.push(args[positional_idx].clone());
+                    positional_idx += 1;
+                }
+                if !pd.name.is_empty() {
+                    self.env.insert(pd.name.clone(), Value::Array(items));
+                }
+            } else if pd.named {
+                // Named params not supported with pre-evaluated values, use default
+                if let Some(default_expr) = &pd.default {
+                    let value = self.eval_expr(default_expr)?;
+                    if !pd.name.is_empty() {
+                        self.env.insert(pd.name.clone(), value);
+                    }
+                }
+            } else {
+                // Positional param
+                if positional_idx < args.len() {
+                    let value = args[positional_idx].clone();
                     if let Some(constraint) = &pd.type_constraint {
                         if !self.type_matches_value(constraint, &value) {
                             return Err(RuntimeError::new(format!(
