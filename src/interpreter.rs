@@ -7946,6 +7946,30 @@ impl Interpreter {
                 (Value::Int(_), Value::Int(_)) => Err(RuntimeError::new("Modulo by zero")),
                 _ => Err(RuntimeError::new("mod expects Int")),
             },
+            TokenKind::Ident(name) if name == "gcd" => {
+                let (mut a, mut b) = (Self::to_int(&left).abs(), Self::to_int(&right).abs());
+                while b != 0 {
+                    let t = b;
+                    b = a % b;
+                    a = t;
+                }
+                Ok(Value::Int(a))
+            }
+            TokenKind::Ident(name) if name == "lcm" => {
+                let (a, b) = (Self::to_int(&left).abs(), Self::to_int(&right).abs());
+                if a == 0 && b == 0 {
+                    Ok(Value::Int(0))
+                } else {
+                    let mut ga = a;
+                    let mut gb = b;
+                    while gb != 0 {
+                        let t = gb;
+                        gb = ga % gb;
+                        ga = t;
+                    }
+                    Ok(Value::Int(a / ga * b))
+                }
+            }
             TokenKind::Ident(name) if name == "eq" => Ok(Value::Bool(
                 left.to_string_value() == right.to_string_value(),
             )),

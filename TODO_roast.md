@@ -238,12 +238,13 @@
 - [ ] roast/S03-operators/eqv.t
 - [ ] roast/S03-operators/flip-flop.t
 - [ ] roast/S03-operators/gcd.t
+  - 12/15 pass. Tests 12, 14, 15 fail due to i64 overflow with big integers (e.g. 123123123123123123123123123).
 - [ ] roast/S03-operators/identity.t
 - [ ] roast/S03-operators/increment.t
 - [ ] roast/S03-operators/infixed-function.t
 - [ ] roast/S03-operators/inplace.t
 - [ ] roast/S03-operators/is-divisible-by.t
-- [ ] roast/S03-operators/lcm.t
+- [x] roast/S03-operators/lcm.t
 - [ ] roast/S03-operators/list-quote-junction.t
 - [ ] roast/S03-operators/minmax.t
 - [ ] roast/S03-operators/misc.t

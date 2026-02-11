@@ -2027,6 +2027,10 @@ impl Parser {
                 Some(TokenKind::Ident("div".to_string()))
             } else if self.match_ident("mod") {
                 Some(TokenKind::Ident("mod".to_string()))
+            } else if self.match_ident("gcd") {
+                Some(TokenKind::Ident("gcd".to_string()))
+            } else if self.match_ident("lcm") {
+                Some(TokenKind::Ident("lcm".to_string()))
             } else {
                 None
             };
