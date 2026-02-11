@@ -23,6 +23,12 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - Test: `cargo test`
 - Full test (cargo + prove): `make test`
 - Temporary test scripts: write to `tmp/` in the project root using the Write tool (not cat/heredoc). The `tmp/` directory is gitignored.
+- Do not use `echo`, `cat`, or heredoc via Bash to create files. Always use the Write tool.
+- When verifying behavior manually, build first with `cargo build`, then run with `./target/debug/mutsu ./tmp/<file>`.
+
+## Reference implementation
+- The reference Raku implementation is available as `raku` on this system.
+- Use `raku -e '<code>'` to check expected behavior when the spec is unclear.
 
 ## Spec sources
 - Design docs live at `./old-design-docs/`.

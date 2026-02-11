@@ -126,9 +126,10 @@ impl Compiler {
             Stmt::For {
                 iterable,
                 param,
+                params,
                 body,
                 label,
-            } if !Self::has_phasers(body) => {
+            } if !Self::has_phasers(body) && params.is_empty() => {
                 self.compile_expr(iterable);
                 let param_idx = param
                     .as_ref()
@@ -949,7 +950,7 @@ impl Compiler {
             Expr::MethodCall { target, args, .. } => {
                 Self::expr_has_placeholder(target) || args.iter().any(Self::expr_has_placeholder)
             }
-            Expr::Index { target, index } => {
+            Expr::Index { target, index } | Expr::IndexAssign { target, index, .. } => {
                 Self::expr_has_placeholder(target) || Self::expr_has_placeholder(index)
             }
             Expr::StringInterpolation(parts) | Expr::ArrayLiteral(parts) => {

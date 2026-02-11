@@ -70,6 +70,11 @@ pub(crate) enum Expr {
         target: Box<Expr>,
         index: Box<Expr>,
     },
+    IndexAssign {
+        target: Box<Expr>,
+        index: Box<Expr>,
+        value: Box<Expr>,
+    },
     Ternary {
         cond: Box<Expr>,
         then_expr: Box<Expr>,
@@ -182,6 +187,7 @@ pub(crate) enum Stmt {
     For {
         iterable: Expr,
         param: Option<String>,
+        params: Vec<String>,
         body: Vec<Stmt>,
         label: Option<String>,
     },

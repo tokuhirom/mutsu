@@ -268,6 +268,23 @@ impl Interpreter {
         self.classes.contains_key(name)
     }
 
+    pub(crate) fn has_function(&self, name: &str) -> bool {
+        let fq = format!("{}::{}", self.current_package, name);
+        self.functions.contains_key(&fq) || self.functions.contains_key(name)
+    }
+
+    pub(crate) fn call_function(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let arg_exprs: Vec<Expr> = args.into_iter().map(Expr::Literal).collect();
+        self.eval_expr(&Expr::Call {
+            name: name.to_string(),
+            args: arg_exprs,
+        })
+    }
+
     pub(crate) fn env_mut(&mut self) -> &mut HashMap<String, Value> {
         &mut self.env
     }
@@ -1212,7 +1229,38 @@ impl Interpreter {
                 self.write_to_named_handle("$*OUT", &content, false)?;
             }
             Stmt::Call { name, args } => {
-                self.exec_call(name, args)?;
+                if let Err(e) = self.exec_call(name, args) {
+                    // If this is a test function call and it errors, emit "not ok" and continue
+                    if matches!(
+                        name.as_str(),
+                        "is" | "ok"
+                            | "nok"
+                            | "isnt"
+                            | "is-deeply"
+                            | "is-approx"
+                            | "like"
+                            | "unlike"
+                            | "cmp-ok"
+                            | "does-ok"
+                            | "isa-ok"
+                            | "lives-ok"
+                            | "dies-ok"
+                            | "eval-lives-ok"
+                            | "throws-like"
+                            | "can-ok"
+                            | "pass"
+                            | "flunk"
+                    ) && !e.is_last
+                        && !e.is_next
+                        && !e.is_redo
+                        && e.return_value.is_none()
+                    {
+                        eprintln!("Runtime error: {}", e.message);
+                        self.test_ok(false, &e.message, false)?;
+                    } else {
+                        return Err(e);
+                    }
+                }
             }
             Stmt::Use { module, arg } => {
                 if module == "lib" {
@@ -1516,6 +1564,7 @@ impl Interpreter {
             Stmt::For {
                 iterable,
                 param,
+                params,
                 body,
                 label,
             } => {
@@ -1524,64 +1573,129 @@ impl Interpreter {
                 let (enter_ph, leave_ph, first_ph, next_ph, last_ph, body_main) =
                     self.split_loop_phasers(body);
                 let mut iter_idx = 0usize;
-                'for_loop: for value in values {
-                    self.env.insert("_".to_string(), value.clone());
-                    if let Some(p) = param {
-                        self.env.insert(p.clone(), value);
-                    }
-                    loop {
-                        let mut should_redo = false;
-                        let mut control: Option<RuntimeError> = None;
-                        self.run_block(&enter_ph)?;
-                        if iter_idx == 0 {
-                            self.run_block(&first_ph)?;
-                        } else {
-                            self.run_block(&next_ph)?;
+                if !params.is_empty() {
+                    // Multi-param for loop: take N values per iteration
+                    let chunk_size = params.len();
+                    let mut i = 0;
+                    'for_loop_multi: while i + chunk_size <= values.len() {
+                        for (pi, p) in params.iter().enumerate() {
+                            self.env.insert(p.clone(), values[i + pi].clone());
                         }
-                        for stmt in &body_main {
-                            match self.exec_stmt(stmt) {
-                                Err(e) if e.is_redo => {
-                                    should_redo = true;
-                                    break;
-                                }
-                                Err(e) => {
-                                    control = Some(e);
-                                    break;
-                                }
-                                Ok(()) => {}
+                        self.env.insert("_".to_string(), values[i].clone());
+                        loop {
+                            let mut should_redo = false;
+                            let mut control: Option<RuntimeError> = None;
+                            self.run_block(&enter_ph)?;
+                            if iter_idx == 0 {
+                                self.run_block(&first_ph)?;
+                            } else {
+                                self.run_block(&next_ph)?;
                             }
-                        }
-                        if should_redo {
-                            continue;
-                        }
-                        let leave_res = self.run_block(&leave_ph);
-                        if let Err(e) = leave_res
-                            && control.is_none()
-                        {
-                            return Err(e);
-                        }
-                        if let Some(e) = control {
-                            if e.is_last {
-                                if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                                    break 'for_loop;
+                            for stmt in &body_main {
+                                match self.exec_stmt(stmt) {
+                                    Err(e) if e.is_redo => {
+                                        should_redo = true;
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        control = Some(e);
+                                        break;
+                                    }
+                                    Ok(()) => {}
+                                }
+                            }
+                            if should_redo {
+                                continue;
+                            }
+                            let leave_res = self.run_block(&leave_ph);
+                            if let Err(e) = leave_res
+                                && control.is_none()
+                            {
+                                return Err(e);
+                            }
+                            if let Some(e) = control {
+                                if e.is_last {
+                                    if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                        break 'for_loop_multi;
+                                    }
+                                    return Err(e);
+                                }
+                                if e.is_next {
+                                    if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                        break;
+                                    }
+                                    return Err(e);
                                 }
                                 return Err(e);
                             }
-                            if e.is_next {
-                                if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                                    break;
+                            break;
+                        }
+                        i += chunk_size;
+                        iter_idx += 1;
+                    }
+                    if iter_idx > 0 {
+                        self.run_block(&last_ph)?;
+                    }
+                } else {
+                    'for_loop: for value in values {
+                        self.env.insert("_".to_string(), value.clone());
+                        if let Some(p) = param {
+                            self.env.insert(p.clone(), value);
+                        }
+                        loop {
+                            let mut should_redo = false;
+                            let mut control: Option<RuntimeError> = None;
+                            self.run_block(&enter_ph)?;
+                            if iter_idx == 0 {
+                                self.run_block(&first_ph)?;
+                            } else {
+                                self.run_block(&next_ph)?;
+                            }
+                            for stmt in &body_main {
+                                match self.exec_stmt(stmt) {
+                                    Err(e) if e.is_redo => {
+                                        should_redo = true;
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        control = Some(e);
+                                        break;
+                                    }
+                                    Ok(()) => {}
+                                }
+                            }
+                            if should_redo {
+                                continue;
+                            }
+                            let leave_res = self.run_block(&leave_ph);
+                            if let Err(e) = leave_res
+                                && control.is_none()
+                            {
+                                return Err(e);
+                            }
+                            if let Some(e) = control {
+                                if e.is_last {
+                                    if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                        break 'for_loop;
+                                    }
+                                    return Err(e);
+                                }
+                                if e.is_next {
+                                    if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                        break;
+                                    }
+                                    return Err(e);
                                 }
                                 return Err(e);
                             }
-                            return Err(e);
+                            break;
                         }
-                        break;
+                        iter_idx += 1;
                     }
-                    iter_idx += 1;
-                }
-                if iter_idx > 0 {
-                    self.run_block(&last_ph)?;
-                }
+                    if iter_idx > 0 {
+                        self.run_block(&last_ph)?;
+                    }
+                } // end else (single-param for loop)
             }
             Stmt::Die(expr) => {
                 let msg = self.eval_expr(expr)?.to_string_value();
@@ -1931,16 +2045,25 @@ impl Interpreter {
                 if self.loose_ok {
                     self.test_ok(true, &desc, todo)?;
                 } else {
-                    let left =
-                        self.eval_expr(self.positional_arg(args, 0, "is expects left")?)?;
-                    let right =
-                        self.eval_expr(self.positional_arg(args, 1, "is expects right")?)?;
-                    // Raku's `is` compares using string semantics (eq)
-                    self.test_ok(
-                        left.to_string_value() == right.to_string_value(),
-                        &desc,
-                        todo,
-                    )?;
+                    let left_res = self
+                        .positional_arg(args, 0, "is expects left")
+                        .and_then(|e| self.eval_expr(e));
+                    let right_res = self
+                        .positional_arg(args, 1, "is expects right")
+                        .and_then(|e| self.eval_expr(e));
+                    match (left_res, right_res) {
+                        (Ok(left), Ok(right)) => {
+                            // Raku's `is` compares using string semantics (eq)
+                            self.test_ok(
+                                left.to_string_value() == right.to_string_value(),
+                                &desc,
+                                todo,
+                            )?;
+                        }
+                        _ => {
+                            self.test_ok(false, &desc, todo)?;
+                        }
+                    }
                 }
             }
             "isnt" => {
@@ -2492,6 +2615,10 @@ impl Interpreter {
     pub(crate) fn list_from_value(&mut self, value: Value) -> Result<Vec<Value>, RuntimeError> {
         Ok(match value {
             Value::Array(items) => items,
+            Value::Hash(items) => items
+                .into_iter()
+                .map(|(k, v)| Value::Pair(k, Box::new(v)))
+                .collect(),
             Value::Range(a, b) => (a..=b).map(Value::Int).collect(),
             Value::RangeExcl(a, b) => (a..b).map(Value::Int).collect(),
             Value::RangeExclStart(a, b) => (a + 1..=b).map(Value::Int).collect(),
@@ -3234,6 +3361,40 @@ impl Interpreter {
                 if self.classes.contains_key(name.as_str()) {
                     return Ok(Value::Package(name.clone()));
                 }
+                // Built-in type names as type objects
+                if matches!(
+                    name.as_str(),
+                    "Hash"
+                        | "Array"
+                        | "Int"
+                        | "Num"
+                        | "Str"
+                        | "Bool"
+                        | "Pair"
+                        | "Map"
+                        | "Set"
+                        | "Bag"
+                        | "Mix"
+                        | "List"
+                        | "Seq"
+                        | "Range"
+                        | "Any"
+                        | "Mu"
+                        | "Cool"
+                        | "Failure"
+                        | "Exception"
+                        | "Order"
+                        | "Nil"
+                ) {
+                    return Ok(Value::Package(name.clone()));
+                }
+                // Check if bare word is a known function — call it with zero args
+                if self.has_function(name.as_str()) {
+                    return self.eval_expr(&Expr::Call {
+                        name: name.clone(),
+                        args: Vec::new(),
+                    });
+                }
                 Ok(Value::Str(name.clone()))
             }
             Expr::StringInterpolation(parts) => {
@@ -3386,6 +3547,26 @@ impl Interpreter {
                         };
                         Ok(Value::Array(slice))
                     }
+                    (Value::Hash(items), Value::Num(f)) if f.is_infinite() && f > 0.0 => {
+                        // Whatever slice: %h{*} returns all values
+                        let values: Vec<Value> = items.values().cloned().collect();
+                        Ok(Value::Array(values))
+                    }
+                    (Value::Hash(items), Value::Nil) => {
+                        // Zen slice: %h{} returns the hash itself
+                        Ok(Value::Hash(items))
+                    }
+                    (Value::Hash(items), Value::Array(keys)) => {
+                        // Hash slicing: %hash{"one", "three"} returns array of values
+                        let values: Vec<Value> = keys
+                            .iter()
+                            .map(|k| {
+                                let key = k.to_string_value();
+                                items.get(&key).cloned().unwrap_or(Value::Nil)
+                            })
+                            .collect();
+                        Ok(Value::Array(values))
+                    }
                     (Value::Hash(items), Value::Str(key)) => {
                         Ok(items.get(&key).cloned().unwrap_or(Value::Nil))
                     }
@@ -3405,6 +3586,86 @@ impl Interpreter {
                         Ok(Value::Num(*m.get(&idx.to_string_value()).unwrap_or(&0.0)))
                     }
                     _ => Ok(Value::Nil),
+                }
+            }
+            Expr::IndexAssign {
+                target,
+                index,
+                value,
+            } => {
+                let val = self.eval_expr(value)?;
+                let idx = self.eval_expr(index)?;
+
+                // Handle chained index assignment: %h<foo><bar> = "baz"
+                if let Expr::Index {
+                    target: inner_target,
+                    index: inner_index,
+                } = target.as_ref()
+                {
+                    let inner_var = match inner_target.as_ref() {
+                        Expr::HashVar(name) => format!("%{}", name),
+                        Expr::ArrayVar(name) => format!("@{}", name),
+                        Expr::Var(name) => name.clone(),
+                        _ => return Err(RuntimeError::new("Invalid assignment target")),
+                    };
+                    let inner_key = self.eval_expr(inner_index)?.to_string_value();
+                    let outer_key = idx.to_string_value();
+                    // Ensure the outer hash exists
+                    if !self.env.contains_key(&inner_var) {
+                        self.env.insert(
+                            inner_var.clone(),
+                            Value::Hash(std::collections::HashMap::new()),
+                        );
+                    }
+                    if let Some(Value::Hash(outer_hash)) = self.env.get_mut(&inner_var) {
+                        // Get or create inner hash
+                        let inner_hash = outer_hash
+                            .entry(inner_key)
+                            .or_insert_with(|| Value::Hash(std::collections::HashMap::new()));
+                        if let Value::Hash(h) = inner_hash {
+                            h.insert(outer_key, val.clone());
+                        }
+                    }
+                    return Ok(val);
+                }
+
+                // Get the variable name from the target expression
+                let var_name = match target.as_ref() {
+                    Expr::HashVar(name) => format!("%{}", name),
+                    Expr::ArrayVar(name) => format!("@{}", name),
+                    Expr::Var(name) => name.clone(),
+                    _ => {
+                        return Err(RuntimeError::new("Invalid assignment target"));
+                    }
+                };
+                match &idx {
+                    Value::Array(keys) => {
+                        // Slice assignment: %hash{"one","three"} = (5, 10)
+                        let vals = match &val {
+                            Value::Array(v) => v.clone(),
+                            _ => vec![val.clone()],
+                        };
+                        if let Some(Value::Hash(hash)) = self.env.get_mut(&var_name) {
+                            for (i, key) in keys.iter().enumerate() {
+                                let k = key.to_string_value();
+                                let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                                hash.insert(k, v);
+                            }
+                        }
+                        Ok(val)
+                    }
+                    _ => {
+                        let key = idx.to_string_value();
+                        if let Some(Value::Hash(hash)) = self.env.get_mut(&var_name) {
+                            hash.insert(key, val.clone());
+                        } else {
+                            // Auto-vivify: create a new hash
+                            let mut hash = std::collections::HashMap::new();
+                            hash.insert(key, val.clone());
+                            self.env.insert(var_name, Value::Hash(hash));
+                        }
+                        Ok(val)
+                    }
                 }
             }
             Expr::AssignExpr { name, expr } => {
@@ -3430,6 +3691,29 @@ impl Interpreter {
                 if name == "new" {
                     let base = self.eval_expr(target)?;
                     if let Value::Package(class_name) = &base {
+                        if class_name == "Hash" {
+                            // Hash.new("a", 1, "b", 2) or Hash.new(:42a, :666b)
+                            let mut flat_values = Vec::new();
+                            for arg in args {
+                                let val = self.eval_expr(arg)?;
+                                flat_values.extend(Self::value_to_list(&val));
+                            }
+                            let mut map = HashMap::new();
+                            let mut iter = flat_values.into_iter();
+                            while let Some(item) = iter.next() {
+                                match item {
+                                    Value::Pair(key, boxed_val) => {
+                                        map.insert(key, *boxed_val);
+                                    }
+                                    other => {
+                                        let key = other.to_string_value();
+                                        let value = iter.next().unwrap_or(Value::Nil);
+                                        map.insert(key, value);
+                                    }
+                                }
+                            }
+                            return Ok(Value::Hash(map));
+                        }
                         if class_name == "Promise" {
                             return Ok(self.make_promise_instance("Planned", Value::Nil));
                         }
@@ -4608,9 +4892,8 @@ impl Interpreter {
                     return Ok(Value::Hash(map));
                 }
                 match name.as_str() {
-                    "WHAT" => Ok(Value::Str(format!(
-                        "({})",
-                        match &base {
+                    "WHAT" => {
+                        let type_name = match &base {
                             Value::Int(_) => "Int",
                             Value::Num(_) => "Num",
                             Value::Str(_) => "Str",
@@ -4631,15 +4914,16 @@ impl Interpreter {
                             Value::Pair(_, _) => "Pair",
                             Value::Enum { enum_type, .. } => enum_type.as_str(),
                             Value::Nil => "Any",
-                            Value::Package(_) => "Package",
+                            Value::Package(name) => name.as_str(),
                             Value::Routine { .. } => "Routine",
                             Value::Sub { .. } => "Sub",
                             Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
                             Value::Instance { class_name, .. } => class_name.as_str(),
                             Value::Junction { .. } => "Junction",
                             Value::Regex(_) => "Regex",
-                        }
-                    ))),
+                        };
+                        Ok(Value::Package(type_name.to_string()))
+                    }
                     "^name" => {
                         // Meta-method: type name
                         Ok(Value::Str(match &base {
@@ -4674,7 +4958,11 @@ impl Interpreter {
                             Value::Regex(_) => "Regex".to_string(),
                         }))
                     }
-                    "defined" => Ok(Value::Bool(!matches!(base, Value::Nil))),
+                    "defined" => Ok(Value::Bool(!matches!(base, Value::Nil | Value::Package(_)))),
+                    "of" => {
+                        // Hash.of returns Mu (the default value type)
+                        Ok(Value::Package("Mu".to_string()))
+                    }
                     "parent" => {
                         let mut levels = 1i64;
                         if let Some(arg) = args.first()
@@ -4920,6 +5208,12 @@ impl Interpreter {
                         // stub
                         Ok(base)
                     }
+                    "hash" | "Hash" => Ok(Self::coerce_to_hash(base)),
+                    "clone" => match base {
+                        Value::Hash(items) => Ok(Value::Hash(items.clone())),
+                        Value::Array(items) => Ok(Value::Array(items.clone())),
+                        other => Ok(other),
+                    },
                     "classify" => {
                         // Returns empty hash as stub
                         Ok(Value::Hash(HashMap::new()))
@@ -5199,6 +5493,7 @@ impl Interpreter {
                     }
                     "Bool" => Ok(Value::Bool(base.truthy())),
                     "gist" | "raku" | "perl" => match base {
+                        Value::Package(name) => Ok(Value::Str(format!("({})", name))),
                         Value::Nil => Ok(Value::Str("(Any)".to_string())),
                         Value::Rat(n, d) => {
                             if d == 0 {
@@ -5334,7 +5629,7 @@ impl Interpreter {
                         Value::Hash(items) => {
                             let pairs: Vec<Value> = items
                                 .iter()
-                                .map(|(k, v)| Value::Str(format!("{}\t{}", k, v.to_string_value())))
+                                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
                                 .collect();
                             Ok(Value::Array(pairs))
                         }
@@ -5370,30 +5665,63 @@ impl Interpreter {
                                 } = func
                                 {
                                     let placeholders = collect_placeholders(&body);
-                                    items.sort_by(|a, b| {
-                                        let saved = self.env.clone();
-                                        for (k, v) in &env {
-                                            self.env.insert(k.clone(), v.clone());
-                                        }
-                                        if let Some(p) = &param {
-                                            self.env.insert(p.clone(), a.clone());
-                                        }
-                                        if placeholders.len() >= 2 {
-                                            self.env.insert(placeholders[0].clone(), a.clone());
-                                            self.env.insert(placeholders[1].clone(), b.clone());
-                                        }
-                                        self.env.insert("_".to_string(), a.clone());
-                                        let result =
-                                            self.eval_block_value(&body).unwrap_or(Value::Int(0));
-                                        self.env = saved;
-                                        match result {
-                                            Value::Int(n) => n.cmp(&0),
-                                            Value::Enum {
-                                                enum_type, value, ..
-                                            } if enum_type == "Order" => value.cmp(&0),
-                                            _ => std::cmp::Ordering::Equal,
-                                        }
-                                    });
+                                    let is_key_extractor = placeholders.len() < 2
+                                        && param.is_some()
+                                        || placeholders.len() == 1;
+                                    if is_key_extractor {
+                                        // 1-arg function: use as key extractor
+                                        items.sort_by(|a, b| {
+                                            let saved = self.env.clone();
+                                            for (k, v) in &env {
+                                                self.env.insert(k.clone(), v.clone());
+                                            }
+                                            if let Some(p) = &param {
+                                                self.env.insert(p.clone(), a.clone());
+                                            }
+                                            self.env.insert("_".to_string(), a.clone());
+                                            let key_a =
+                                                self.eval_block_value(&body).unwrap_or(Value::Nil);
+                                            self.env = saved.clone();
+                                            for (k, v) in &env {
+                                                self.env.insert(k.clone(), v.clone());
+                                            }
+                                            if let Some(p) = &param {
+                                                self.env.insert(p.clone(), b.clone());
+                                            }
+                                            self.env.insert("_".to_string(), b.clone());
+                                            let key_b =
+                                                self.eval_block_value(&body).unwrap_or(Value::Nil);
+                                            self.env = saved;
+                                            key_a.to_string_value().cmp(&key_b.to_string_value())
+                                        });
+                                    } else {
+                                        // 2-arg function: use as comparator
+                                        items.sort_by(|a, b| {
+                                            let saved = self.env.clone();
+                                            for (k, v) in &env {
+                                                self.env.insert(k.clone(), v.clone());
+                                            }
+                                            if let Some(p) = &param {
+                                                self.env.insert(p.clone(), a.clone());
+                                            }
+                                            if placeholders.len() >= 2 {
+                                                self.env.insert(placeholders[0].clone(), a.clone());
+                                                self.env.insert(placeholders[1].clone(), b.clone());
+                                            }
+                                            self.env.insert("_".to_string(), a.clone());
+                                            let result = self
+                                                .eval_block_value(&body)
+                                                .unwrap_or(Value::Int(0));
+                                            self.env = saved;
+                                            match result {
+                                                Value::Int(n) => n.cmp(&0),
+                                                Value::Enum {
+                                                    enum_type, value, ..
+                                                } if enum_type == "Order" => value.cmp(&0),
+                                                _ => std::cmp::Ordering::Equal,
+                                            }
+                                        });
+                                    }
                                     Ok(Value::Array(items))
                                 } else {
                                     items.sort_by(|a, b| {
@@ -5875,6 +6203,19 @@ impl Interpreter {
                                 .join(&sep);
                             Ok(Value::Str(joined))
                         }
+                        Value::Hash(items) => {
+                            let sep = args
+                                .first()
+                                .and_then(|arg| self.eval_expr(arg).ok())
+                                .map(|v| v.to_string_value())
+                                .unwrap_or_default();
+                            let joined = items
+                                .iter()
+                                .map(|(k, v)| format!("{}\t{}", k, v.to_string_value()))
+                                .collect::<Vec<_>>()
+                                .join(&sep);
+                            Ok(Value::Str(joined))
+                        }
                         _ => Ok(Value::Nil),
                     },
                     "WHY" => match base {
@@ -5902,7 +6243,7 @@ impl Interpreter {
                             };
                             Ok(make_rat(a, b))
                         }
-                        Value::Str(name) if name == "FatRat" => {
+                        Value::Str(name) | Value::Package(name) if name == "FatRat" => {
                             let a = args.first().and_then(|e| self.eval_expr(e).ok());
                             let b = args.get(1).and_then(|e| self.eval_expr(e).ok());
                             let a = match a {
@@ -5915,7 +6256,7 @@ impl Interpreter {
                             };
                             Ok(Value::FatRat(a, b))
                         }
-                        Value::Str(name) if name == "Set" => {
+                        Value::Str(name) | Value::Package(name) if name == "Set" => {
                             let mut elems = HashSet::new();
                             for arg in args {
                                 let val = self.eval_expr(arg)?;
@@ -5932,7 +6273,7 @@ impl Interpreter {
                             }
                             Ok(Value::Set(elems))
                         }
-                        Value::Str(name) if name == "Bag" => {
+                        Value::Str(name) | Value::Package(name) if name == "Bag" => {
                             let mut counts: HashMap<String, i64> = HashMap::new();
                             for arg in args {
                                 let val = self.eval_expr(arg)?;
@@ -5949,7 +6290,7 @@ impl Interpreter {
                             }
                             Ok(Value::Bag(counts))
                         }
-                        Value::Str(name) if name == "Mix" => {
+                        Value::Str(name) | Value::Package(name) if name == "Mix" => {
                             let mut weights: HashMap<String, f64> = HashMap::new();
                             for arg in args {
                                 let val = self.eval_expr(arg)?;
@@ -5969,7 +6310,7 @@ impl Interpreter {
                             }
                             Ok(Value::Mix(weights))
                         }
-                        Value::Str(name) if name == "Complex" => {
+                        Value::Str(name) | Value::Package(name) if name == "Complex" => {
                             let a = args.first().and_then(|e| self.eval_expr(e).ok());
                             let b = args.get(1).and_then(|e| self.eval_expr(e).ok());
                             let re = match a {
@@ -5984,7 +6325,9 @@ impl Interpreter {
                             };
                             Ok(Value::Complex(re, im))
                         }
-                        Value::Str(name) if name == "CompUnit::DependencySpecification" => {
+                        Value::Str(name) | Value::Package(name)
+                            if name == "CompUnit::DependencySpecification" =>
+                        {
                             let mut short_name = None;
                             if let Some(arg) = args.first() {
                                 if let Expr::AssignExpr { name, expr } = arg {
@@ -6408,6 +6751,22 @@ impl Interpreter {
                         Some(Value::Hash(items)) => Value::Int(items.len() as i64),
                         Some(Value::Str(s)) => Value::Int(s.chars().count() as i64),
                         _ => Value::Int(0),
+                    });
+                }
+                if name == "keys" {
+                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
+                    return Ok(match val {
+                        Some(Value::Hash(items)) => {
+                            Value::Array(items.keys().map(|k| Value::Str(k.clone())).collect())
+                        }
+                        _ => Value::Array(Vec::new()),
+                    });
+                }
+                if name == "values" {
+                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
+                    return Ok(match val {
+                        Some(Value::Hash(items)) => Value::Array(items.values().cloned().collect()),
+                        _ => Value::Array(Vec::new()),
                     });
                 }
                 if name == "abs" {
@@ -9195,6 +9554,10 @@ impl Interpreter {
     pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         match val {
             Value::Array(items) => items.clone(),
+            Value::Hash(items) => items
+                .iter()
+                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                .collect(),
             Value::Range(a, b) => (*a..=*b).map(Value::Int).collect(),
             Value::RangeExcl(a, b) => (*a..*b).map(Value::Int).collect(),
             Value::RangeExclStart(a, b) => (*a + 1..=*b).map(Value::Int).collect(),

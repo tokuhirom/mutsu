@@ -72,6 +72,33 @@ impl VM {
         }
     }
 
+    fn is_builtin_type(name: &str) -> bool {
+        matches!(
+            name,
+            "Hash"
+                | "Array"
+                | "Int"
+                | "Num"
+                | "Str"
+                | "Bool"
+                | "Pair"
+                | "Map"
+                | "Set"
+                | "Bag"
+                | "Mix"
+                | "List"
+                | "Seq"
+                | "Range"
+                | "Any"
+                | "Mu"
+                | "Cool"
+                | "Failure"
+                | "Exception"
+                | "Order"
+                | "Nil"
+        )
+    }
+
     /// Execute one opcode at *ip, advancing ip for the next instruction.
     fn exec_one(
         &mut self,
@@ -137,13 +164,16 @@ impl VM {
                 let val = if let Some(v) = self.interpreter.env().get(name) {
                     if matches!(v, Value::Enum { .. } | Value::Nil) {
                         v.clone()
-                    } else if self.interpreter.has_class(name) {
+                    } else if self.interpreter.has_class(name) || Self::is_builtin_type(name) {
                         Value::Package(name.to_string())
                     } else {
                         Value::Str(name.to_string())
                     }
-                } else if self.interpreter.has_class(name) {
+                } else if self.interpreter.has_class(name) || Self::is_builtin_type(name) {
                     Value::Package(name.to_string())
+                } else if self.interpreter.has_function(name) {
+                    // Bare function call with no args
+                    self.interpreter.call_function(name, Vec::new())?
                 } else {
                     Value::Str(name.to_string())
                 };
@@ -1338,6 +1368,25 @@ impl VM {
                         };
                         Value::Array(slice)
                     }
+                    (Value::Hash(items), Value::Num(f)) if f.is_infinite() && f > 0.0 => {
+                        // Whatever slice: %h{*} returns all values
+                        Value::Array(items.values().cloned().collect())
+                    }
+                    (Value::Hash(items), Value::Nil) => {
+                        // Zen slice: %h{} returns the hash itself
+                        Value::Hash(items)
+                    }
+                    (Value::Hash(items), Value::Array(keys)) => {
+                        // Hash slicing: %hash{"one", "three"} returns array of values
+                        Value::Array(
+                            keys.iter()
+                                .map(|k| {
+                                    let key = k.to_string_value();
+                                    items.get(&key).cloned().unwrap_or(Value::Nil)
+                                })
+                                .collect(),
+                        )
+                    }
                     (Value::Hash(items), Value::Str(key)) => {
                         items.get(&key).cloned().unwrap_or(Value::Nil)
                     }
@@ -2366,11 +2415,7 @@ impl VM {
             "sort" => match target {
                 Value::Array(items) => {
                     let mut sorted = items.clone();
-                    sorted.sort_by(|a, b| {
-                        let fa = Interpreter::to_float_value(a).unwrap_or(0.0);
-                        let fb = Interpreter::to_float_value(b).unwrap_or(0.0);
-                        fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
-                    });
+                    sorted.sort_by_key(|a| a.to_string_value());
                     Some(Ok(Value::Array(sorted)))
                 }
                 _ => None,

@@ -69,8 +69,8 @@
 - [ ] roast/S02-literals/version.t
 - [x] roast/S02-magicals/78258.t
   - 1/1 pass.
-- [x] roast/S02-magicals/args.t
-  - 6/6 pass.
+- [ ] roast/S02-magicals/args.t
+  - 4/6 pass. Tests 5-6 fail: `is_run` with `:args[...]` syntax for `@*ARGS` subscript and copy.
 - [x] roast/S02-magicals/block.t
   - 3/3 pass.
 - [ ] roast/S02-magicals/DISTRO.t
@@ -146,6 +146,15 @@
 - [ ] roast/S02-types/generics.t
 - [ ] roast/S02-types/hash_ref.t
 - [ ] roast/S02-types/hash.t
+  - 94/112 pass (111 reached). Remaining failures:
+  - Tests 13-15: `${}` anonymous hash ref syntax, map with .WHAT.gist
+  - Tests 63-64: Character ranges (`'a'..'d'`) not yet supported
+  - Test 65: `throws-like` with `EVAL` and `@%(...)` syntax
+  - Test 68: Class with custom postcircumfix:<{ }> method
+  - Tests 79-80: `$/` and `$0` regex match variables as hash keys
+  - Test 83: Auto-vivification through binding
+  - Tests 88-92: Positional indexing on Hash, `item()`, throws-like with message matching
+  - Tests 107-108: Mixins with `but` operator on hashes
 - [ ] roast/S02-types/hyperwhatever.t
 - [ ] roast/S02-types/infinity.t
 - [ ] roast/S02-types/instants-and-durations.t

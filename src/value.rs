@@ -355,7 +355,7 @@ impl Value {
             Value::CompUnitDepSpec { short_name } => {
                 format!("CompUnit::DependencySpecification({})", short_name)
             }
-            Value::Package(s) => s.clone(),
+            Value::Package(s) => format!("({})", s),
             Value::Routine { package, name } => format!("{}::{}", package, name),
             Value::Sub { name, .. } => name.clone(),
             Value::Instance {

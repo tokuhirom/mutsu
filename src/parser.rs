@@ -468,6 +468,7 @@ impl Parser {
         if self.match_ident("for") {
             let iterable = self.parse_expr()?;
             let mut param = None;
+            let mut params = Vec::new();
             if self.match_kind(TokenKind::Arrow) {
                 // Skip optional type annotation
                 if matches!(
@@ -480,13 +481,25 @@ impl Parser {
                     self.pos += 1;
                 }
                 if self.peek_is_var() {
-                    param = Some(self.consume_var()?);
+                    let first = self.consume_var()?;
+                    if self.match_kind(TokenKind::Comma) {
+                        params.push(first);
+                        while self.peek_is_var() {
+                            params.push(self.consume_var()?);
+                            if !self.match_kind(TokenKind::Comma) {
+                                break;
+                            }
+                        }
+                    } else {
+                        param = Some(first);
+                    }
                 }
             }
             let body = self.parse_block()?;
             return Ok(Stmt::For {
                 iterable,
                 param,
+                params,
                 body,
                 label: None,
             });
@@ -814,7 +827,83 @@ impl Parser {
                 return Ok(Stmt::Assign { name, expr, op });
             }
         }
+        // Handle %hash = (...) and %hash .= method()
+        if let Some(TokenKind::HashVar(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+            let name = name.clone();
+            if matches!(
+                self.peek_next_kind(),
+                Some(TokenKind::Eq | TokenKind::Bind | TokenKind::MatchAssign)
+            ) {
+                let name = format!("%{}", name);
+                self.pos += 1;
+                let op = if self.match_kind(TokenKind::Eq) {
+                    AssignOp::Assign
+                } else if self.match_kind(TokenKind::Bind) {
+                    AssignOp::Bind
+                } else {
+                    self.consume_kind(TokenKind::MatchAssign)?;
+                    AssignOp::MatchAssign
+                };
+                let expr = self.parse_comma_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::Assign { name, expr, op });
+            }
+            if matches!(self.peek_next_kind(), Some(TokenKind::DotEq)) {
+                let name = format!("%{}", name);
+                self.pos += 1;
+                self.match_kind(TokenKind::DotEq);
+                let method_name = self.consume_ident()?;
+                let mut method_args = Vec::new();
+                if self.match_kind(TokenKind::LParen) {
+                    if !self.check(&TokenKind::RParen) {
+                        method_args.push(self.parse_method_arg());
+                        while self.match_kind(TokenKind::Comma) {
+                            method_args.push(self.parse_method_arg());
+                        }
+                    }
+                    self.consume_kind(TokenKind::RParen)?;
+                }
+                self.match_kind(TokenKind::Semicolon);
+                let expr = Expr::MethodCall {
+                    target: Box::new(Expr::HashVar(name[1..].to_string())),
+                    name: method_name,
+                    args: method_args,
+                };
+                return Ok(Stmt::Assign {
+                    name,
+                    expr,
+                    op: AssignOp::Assign,
+                });
+            }
+        }
         let expr = self.parse_expr()?;
+        // Check for index assignment: %hash{"key"} = val, %hash<key> = val, @arr[0] = val
+        if matches!(expr, Expr::Index { .. })
+            && matches!(
+                self.tokens.get(self.pos).map(|t| &t.kind),
+                Some(TokenKind::Eq | TokenKind::Bind)
+            )
+        {
+            let is_bind = self.check(&TokenKind::Bind);
+            self.pos += 1; // consume = or :=
+            let value = self.parse_comma_expr()?;
+            self.match_kind(TokenKind::Semicolon);
+            if let Expr::Index { target, index } = expr {
+                if is_bind {
+                    // For now, treat := like = for hash elements
+                    return Ok(Stmt::Expr(Expr::IndexAssign {
+                        target,
+                        index,
+                        value: Box::new(value),
+                    }));
+                }
+                return Ok(Stmt::Expr(Expr::IndexAssign {
+                    target,
+                    index,
+                    value: Box::new(value),
+                }));
+            }
+        }
         let stmt = Stmt::Expr(expr);
         self.parse_statement_modifier(stmt)
     }
@@ -910,6 +999,7 @@ impl Parser {
             return Ok(Stmt::For {
                 iterable,
                 param: None,
+                params: Vec::new(),
                 body: vec![stmt],
                 label: None,
             });
@@ -1313,7 +1403,19 @@ impl Parser {
     }
 
     fn parse_method_arg(&mut self) -> Expr {
-        if self.match_kind(TokenKind::Colon) {
+        // Colonpair as named arg: :name, :name<val>, :name(expr)
+        // But :42name and :!name are colonpair expressions (Pair values), not named args
+        if self.check(&TokenKind::Colon)
+            && matches!(
+                self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                Some(TokenKind::Ident(_))
+            )
+            && !matches!(
+                self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                Some(TokenKind::Number(_))
+            )
+        {
+            self.match_kind(TokenKind::Colon);
             let name = self.consume_ident().unwrap_or_default();
             let value = if self.check(&TokenKind::Lt) {
                 self.parse_angle_literal()
@@ -2313,7 +2415,13 @@ impl Parser {
                 expr: Box::new(expr),
             });
         }
-        if self.match_ident("not") {
+        if matches!(self.tokens.get(self.pos).map(|t| &t.kind), Some(TokenKind::Ident(n)) if n == "not")
+            && !matches!(
+                self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                Some(TokenKind::FatArrow)
+            )
+        {
+            self.pos += 1;
             let expr = self.parse_unary()?;
             return Ok(Expr::Unary {
                 op: TokenKind::Bang,
@@ -2345,7 +2453,26 @@ impl Parser {
     }
 
     fn parse_primary(&mut self) -> Result<Expr, RuntimeError> {
-        let mut expr = if self.match_kind(TokenKind::RParen) {
+        let mut expr = if self.check(&TokenKind::Percent)
+            && matches!(
+                self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                Some(TokenKind::LParen)
+            ) {
+            // %(...) hash constructor: coerce list to hash
+            self.pos += 1; // consume %
+            self.pos += 1; // consume (
+            let inner = if self.check(&TokenKind::RParen) {
+                Expr::ArrayLiteral(Vec::new())
+            } else {
+                self.parse_comma_expr()?
+            };
+            self.consume_kind(TokenKind::RParen)?;
+            Expr::MethodCall {
+                target: Box::new(inner),
+                name: "hash".to_string(),
+                args: Vec::new(),
+            }
+        } else if self.match_kind(TokenKind::RParen) {
             Expr::Literal(Value::Nil)
         } else if self.match_kind(TokenKind::Dot) {
             let name = self.consume_ident()?;
@@ -2459,6 +2586,100 @@ impl Parser {
             Expr::Literal(Value::Bool(false))
         } else if self.match_kind(TokenKind::Nil) {
             Expr::Literal(Value::Nil)
+        } else if self.check(&TokenKind::Colon)
+            && matches!(
+                self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                Some(TokenKind::Ident(_) | TokenKind::Number(_))
+            )
+        {
+            // Colonpair: :name, :key<value>, :key(expr), :42name
+            self.pos += 1; // consume ':'
+            if let Some(TokenKind::Number(n)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+                // :42name => Pair("name", 42)
+                let num = *n;
+                self.pos += 1;
+                let name = self.consume_ident().unwrap_or_default();
+                Expr::Binary {
+                    left: Box::new(Expr::Literal(Value::Str(name))),
+                    op: TokenKind::FatArrow,
+                    right: Box::new(Expr::Literal(Value::Int(num))),
+                }
+            } else {
+                let name = self.consume_ident().unwrap_or_default();
+                if self.check(&TokenKind::Lt) {
+                    // :key<value>
+                    let val = self.parse_angle_literal();
+                    Expr::Binary {
+                        left: Box::new(Expr::Literal(Value::Str(name))),
+                        op: TokenKind::FatArrow,
+                        right: Box::new(val),
+                    }
+                } else if self.match_kind(TokenKind::LParen) {
+                    // :key(expr)
+                    let val = self.parse_expr()?;
+                    self.consume_kind(TokenKind::RParen)?;
+                    Expr::Binary {
+                        left: Box::new(Expr::Literal(Value::Str(name))),
+                        op: TokenKind::FatArrow,
+                        right: Box::new(val),
+                    }
+                } else if self.check(&TokenKind::LBracket) {
+                    // :key[...]
+                    let val = self.parse_expr()?;
+                    Expr::Binary {
+                        left: Box::new(Expr::Literal(Value::Str(name))),
+                        op: TokenKind::FatArrow,
+                        right: Box::new(val),
+                    }
+                } else if self.match_kind(TokenKind::Bang) {
+                    // :!name => Pair("name", False)
+                    let neg_name = self.consume_ident().unwrap_or(name);
+                    Expr::Binary {
+                        left: Box::new(Expr::Literal(Value::Str(neg_name))),
+                        op: TokenKind::FatArrow,
+                        right: Box::new(Expr::Literal(Value::Bool(false))),
+                    }
+                } else {
+                    // :name => Pair("name", True)
+                    Expr::Binary {
+                        left: Box::new(Expr::Literal(Value::Str(name))),
+                        op: TokenKind::FatArrow,
+                        right: Box::new(Expr::Literal(Value::Bool(true))),
+                    }
+                }
+            }
+        } else if self.check(&TokenKind::Colon)
+            && matches!(
+                self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                Some(TokenKind::Bang)
+            )
+            && matches!(
+                self.tokens.get(self.pos + 2).map(|t| &t.kind),
+                Some(TokenKind::Ident(_))
+            )
+        {
+            // :!name => Pair("name", False)
+            self.pos += 2; // consume ':' and '!'
+            let name = self.consume_ident().unwrap_or_default();
+            Expr::Binary {
+                left: Box::new(Expr::Literal(Value::Str(name))),
+                op: TokenKind::FatArrow,
+                right: Box::new(Expr::Literal(Value::Bool(false))),
+            }
+        } else if self.check(&TokenKind::Colon)
+            && matches!(
+                self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                Some(TokenKind::Var(_))
+            )
+        {
+            // :$name => Pair("name", $name)
+            self.pos += 1; // consume ':'
+            let var = self.consume_var()?;
+            Expr::Binary {
+                left: Box::new(Expr::Literal(Value::Str(var.clone()))),
+                op: TokenKind::FatArrow,
+                right: Box::new(Expr::Var(var)),
+            }
         } else if let Some(name) = self.peek_ident() {
             if matches!(self.peek_next_kind(), Some(TokenKind::LParen)) {
                 self.pos += 1;
@@ -2472,6 +2693,68 @@ impl Parser {
                 }
                 self.consume_kind(TokenKind::RParen)?;
                 Expr::Call { name, args }
+            } else if matches!(
+                name.as_str(),
+                "keys" | "values" | "pairs" | "kv" | "elems" | "flat" | "item"
+            ) && matches!(
+                self.peek_next_kind(),
+                Some(TokenKind::HashVar(_) | TokenKind::ArrayVar(_) | TokenKind::Var(_))
+            ) {
+                self.pos += 1; // consume function name
+                let arg = self.parse_expr()?;
+                Expr::Call {
+                    name,
+                    args: vec![arg],
+                }
+            } else if !matches!(
+                name.as_str(),
+                "if" | "unless"
+                    | "while"
+                    | "until"
+                    | "for"
+                    | "given"
+                    | "when"
+                    | "with"
+                    | "without"
+                    | "loop"
+                    | "my"
+                    | "our"
+                    | "has"
+                    | "sub"
+                    | "do"
+                    | "so"
+                    | "not"
+                    | "and"
+                    | "or"
+                    | "True"
+                    | "False"
+                    | "Nil"
+                    | "try"
+                    | "gather"
+                    | "quietly"
+                    | "eager"
+                    | "rand"
+                    | "self"
+                    | "return"
+                    | "EVAL"
+                    | "BEGIN"
+                    | "END"
+                    | "die"
+                    | "class"
+                    | "role"
+                    | "enum"
+                    | "use"
+            ) && matches!(
+                self.peek_next_kind(),
+                Some(TokenKind::HashVar(_) | TokenKind::ArrayVar(_))
+            ) {
+                // Bare function call with sigiled variable argument: test2 %h, foo @arr
+                self.pos += 1; // consume function name
+                let arg = self.parse_expr()?;
+                Expr::Call {
+                    name,
+                    args: vec![arg],
+                }
             } else if name == "my"
                 && matches!(
                     self.tokens.get(self.pos + 1).map(|t| &t.kind),
@@ -2604,8 +2887,14 @@ impl Parser {
         } else if self.check(&TokenKind::Lt) {
             self.parse_angle_literal()
         } else if self.match_kind(TokenKind::Star) {
-            // Whatever star (*)
-            Expr::Literal(Value::Num(f64::INFINITY))
+            // Whatever star (*) — check if it's a WhateverCode (*.method, * op expr)
+            if self.check(&TokenKind::Dot) {
+                // WhateverCode: *.method — parse as lambda { $_.method }
+                // Use $_ as placeholder, then wrap in lambda after postcircumfix
+                Expr::Var("__WHATEVER__".to_string())
+            } else {
+                Expr::Literal(Value::Num(f64::INFINITY))
+            }
         } else {
             return Err(RuntimeError::new(format!(
                 "Unexpected token in expression at {:?}",
@@ -2687,9 +2976,16 @@ impl Parser {
                 };
                 continue;
             }
-            if matches!(expr, Expr::HashVar(_)) && self.check(&TokenKind::LBrace) {
+            if matches!(expr, Expr::HashVar(_) | Expr::Index { .. })
+                && self.check(&TokenKind::LBrace)
+            {
                 self.match_kind(TokenKind::LBrace);
-                let index = self.parse_expr()?;
+                // Zen slice: %h{} returns the hash itself
+                let index = if self.check(&TokenKind::RBrace) {
+                    Expr::Literal(Value::Nil)
+                } else {
+                    self.parse_comma_expr()?
+                };
                 self.consume_kind(TokenKind::RBrace)?;
                 expr = Expr::Index {
                     target: Box::new(expr),
@@ -2709,36 +3005,67 @@ impl Parser {
                         self.tokens.get(self.pos + 2).map(|t| &t.kind),
                         Some(TokenKind::Gt)
                     )
+                } else if matches!(expr, Expr::Index { .. }) {
+                    // For chained subscripts like %h<foo><bar>
+                    matches!(
+                        self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                        Some(TokenKind::Ident(_) | TokenKind::Str(_) | TokenKind::Gt)
+                    )
                 } else {
                     false
                 };
                 if is_postcircumfix {
                     self.match_kind(TokenKind::Lt);
-                    let key = if let Some(token) =
-                        self.advance_if(|k| matches!(k, TokenKind::Ident(_) | TokenKind::Str(_)))
-                    {
-                        match token.kind {
+                    // Collect all words before >
+                    let mut keys = Vec::new();
+                    while let Some(token) = self.advance_if(|k| {
+                        matches!(
+                            k,
+                            TokenKind::Ident(_) | TokenKind::Str(_) | TokenKind::Number(_)
+                        )
+                    }) {
+                        let key = match token.kind {
                             TokenKind::Ident(s) => s,
                             TokenKind::Str(s) => s,
+                            TokenKind::Number(n) => n.to_string(),
                             _ => String::new(),
-                        }
-                    } else {
-                        String::new()
-                    };
+                        };
+                        keys.push(key);
+                    }
                     self.consume_kind(TokenKind::Gt)?;
-                    if let Expr::HashVar(name) = expr {
-                        if name == "*ENV" {
-                            expr = Expr::EnvIndex(key);
+                    if keys.is_empty() {
+                        // %hash<> — empty angle brackets, return all pairs
+                        expr = Expr::MethodCall {
+                            target: Box::new(expr),
+                            name: "pairs".to_string(),
+                            args: Vec::new(),
+                        };
+                    } else if keys.len() == 1 {
+                        let key = keys.remove(0);
+                        if let Expr::HashVar(name) = expr {
+                            if name == "*ENV" {
+                                expr = Expr::EnvIndex(key);
+                            } else {
+                                expr = Expr::Index {
+                                    target: Box::new(Expr::HashVar(name)),
+                                    index: Box::new(Expr::Literal(Value::Str(key))),
+                                };
+                            }
                         } else {
                             expr = Expr::Index {
-                                target: Box::new(Expr::HashVar(name)),
+                                target: Box::new(expr),
                                 index: Box::new(Expr::Literal(Value::Str(key))),
                             };
                         }
                     } else {
+                        // Multi-word: %hash<three one> => slice
+                        let key_exprs: Vec<Expr> = keys
+                            .into_iter()
+                            .map(|k| Expr::Literal(Value::Str(k)))
+                            .collect();
                         expr = Expr::Index {
                             target: Box::new(expr),
-                            index: Box::new(Expr::Literal(Value::Str(key))),
+                            index: Box::new(Expr::ArrayLiteral(key_exprs)),
                         };
                     }
                     continue;
@@ -2772,7 +3099,48 @@ impl Parser {
             }
             break;
         }
+        // Wrap WhateverCode expressions in a lambda
+        if Self::contains_whatever(&expr) {
+            let body_expr = Self::replace_whatever(&expr);
+            expr = Expr::Lambda {
+                param: "_".to_string(),
+                body: vec![Stmt::Expr(body_expr)],
+            };
+        }
         Ok(expr)
+    }
+
+    fn contains_whatever(expr: &Expr) -> bool {
+        match expr {
+            Expr::Var(name) if name == "__WHATEVER__" => true,
+            Expr::MethodCall { target, .. } => Self::contains_whatever(target),
+            Expr::Binary { left, right, .. } => {
+                Self::contains_whatever(left) || Self::contains_whatever(right)
+            }
+            Expr::Index { target, .. } => Self::contains_whatever(target),
+            _ => false,
+        }
+    }
+
+    fn replace_whatever(expr: &Expr) -> Expr {
+        match expr {
+            Expr::Var(name) if name == "__WHATEVER__" => Expr::Var("_".to_string()),
+            Expr::MethodCall { target, name, args } => Expr::MethodCall {
+                target: Box::new(Self::replace_whatever(target)),
+                name: name.clone(),
+                args: args.clone(),
+            },
+            Expr::Binary { left, op, right } => Expr::Binary {
+                left: Box::new(Self::replace_whatever(left)),
+                op: op.clone(),
+                right: Box::new(Self::replace_whatever(right)),
+            },
+            Expr::Index { target, index } => Expr::Index {
+                target: Box::new(Self::replace_whatever(target)),
+                index: index.clone(),
+            },
+            other => other.clone(),
+        }
     }
 
     fn parse_hash_pair(&mut self) -> Result<(String, Option<Expr>), RuntimeError> {
@@ -2792,6 +3160,11 @@ impl Parser {
             }
         }
         self.consume_kind(TokenKind::Colon)?;
+        // :$var => Pair(var_name_without_sigil, $var)
+        if let Some(TokenKind::Var(_)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+            let var = self.consume_var()?;
+            return Ok((var.clone(), Some(Expr::Var(var))));
+        }
         if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Number(_))) {
             let number = if let TokenKind::Number(value) = token.kind {
                 value
@@ -2802,6 +3175,11 @@ impl Parser {
             return Ok((name, Some(Expr::Literal(Value::Int(number)))));
         }
         let name = self.consume_ident()?;
+        if self.check(&TokenKind::Lt) {
+            // :key<value>
+            let val = self.parse_angle_literal();
+            return Ok((name, Some(val)));
+        }
         if self.match_kind(TokenKind::LParen) {
             let value = self.parse_expr()?;
             self.consume_kind(TokenKind::RParen)?;
@@ -2818,7 +3196,12 @@ impl Parser {
                 Ok(pair) => pairs.push(pair),
                 Err(_) => failed = true,
             }
-            while !failed && self.match_kind(TokenKind::Comma) {
+            while !failed && !self.check(&TokenKind::RBrace) {
+                // Allow comma or space-separated colonpairs
+                self.match_kind(TokenKind::Comma);
+                if self.check(&TokenKind::RBrace) {
+                    break;
+                }
                 match self.parse_hash_pair() {
                     Ok(pair) => pairs.push(pair),
                     Err(_) => {
@@ -2958,6 +3341,7 @@ impl Parser {
         if self.match_ident("for") {
             let iterable = self.parse_expr()?;
             let mut param = None;
+            let mut params = Vec::new();
             if self.match_kind(TokenKind::Arrow) {
                 if matches!(
                     self.tokens.get(self.pos).map(|t| &t.kind),
@@ -2969,13 +3353,25 @@ impl Parser {
                     self.pos += 1;
                 }
                 if self.peek_is_var() {
-                    param = Some(self.consume_var()?);
+                    let first = self.consume_var()?;
+                    if self.match_kind(TokenKind::Comma) {
+                        params.push(first);
+                        while self.peek_is_var() {
+                            params.push(self.consume_var()?);
+                            if !self.match_kind(TokenKind::Comma) {
+                                break;
+                            }
+                        }
+                    } else {
+                        param = Some(first);
+                    }
                 }
             }
             let body = self.parse_block()?;
             return Ok(Stmt::For {
                 iterable,
                 param,
+                params,
                 body,
                 label,
             });
@@ -3621,6 +4017,14 @@ impl Parser {
             self.match_kind(TokenKind::RParen);
             if self.match_kind(TokenKind::Colon) {
                 let _ = self.consume_ident();
+                let _ = self.consume_ident();
+            }
+        }
+        // Skip `is <trait>` annotations (e.g., `is test-assertion`, `is export`, `is rw`)
+        while self.match_ident("is") {
+            // Consume trait name (may contain hyphens)
+            let _ = self.consume_ident();
+            while self.match_kind(TokenKind::Minus) {
                 let _ = self.consume_ident();
             }
         }
