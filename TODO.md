@@ -231,9 +231,40 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
 
 **Phase 4 (done):** `@`/`%` variable access (`GetArrayVar`/`GetHashVar`), bareword resolution (`GetBareWord`), range ops (`MakeRange`/`MakeRangeExcl`/`MakeRangeExclStart`/`MakeRangeExclBoth`), string comparisons (`StrLt`/`StrGt`/`StrLe`/`StrGe`), method calls on variable targets with writeback (`CallMethodMut`), `die`.
 
-#### Remaining: Expressions (still InterpretExpr)
-- [ ] `CaptureVar` ($0, $1, …)
-- [ ] `CodeVar` (&foo)
+**Phase 5 (done):** Unary ops (`+`/`~`/`^`/`so`/prefix `++`/`--`), `CaptureVar`/`CodeVar`, `given`/`when`/`default`, `repeat while`/`repeat until`, `:=` bind assignment, prefix `+` Bool fix.
+
+**Phase 6 (done):** All remaining binary ops (`~~`/`!~~`/`<=>`/`cmp`/`leg`/`===`/`eqv`/`%%`/`div`/`mod`/`gcd`/`lcm`/`x`/`xx`/`=>`/bitwise/set ops/`...`), `proceed`/`succeed`, match-assign (`=~`).
+
+#### Compiled Binary Ops
+- [x] Arithmetic: `+`, `-`, `*`, `/`, `%`, `**`
+- [x] String: `~` (concat)
+- [x] Numeric comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`
+- [x] String comparison: `eq`, `ne`, `lt`, `gt`, `le`, `ge`
+- [x] Range: `..`, `..^`, `^..`, `^..^`
+- [x] Smart match: `~~`, `!~~`
+- [x] Three-way: `<=>`, `cmp`, `leg`
+- [x] Identity/value: `===`, `eqv`
+- [x] Divisibility: `%%`
+- [x] Keyword math: `div`, `mod`, `gcd`, `lcm`
+- [x] Repetition: `x`, `xx`
+- [x] Pair: `=>` (FatArrow)
+- [x] Bitwise: `+&`, `+|`, `+^`, `+<`, `+>`
+- [x] Set ops: `(elem)`, `(cont)`, `(|)`, `(&)`, `(-)`, `(^)`, `(<=)`, `(>=)`, `(<)`, `(>)`
+- [x] Sequence: `...`
+
+#### Compiled Unary Ops
+- [x] `-` (negate), `!` (not), `?` (bool), `+` (numeric), `~` (string), `^` (upto)
+- [x] `so` (bool coerce), prefix `++`/`--`
+
+#### Compiled Expressions
+- [x] `Literal`, `Var`, `ArrayVar`, `HashVar`, `BareWord`
+- [x] `Binary` (with compiled opcodes — others fall back)
+- [x] `Unary` (most ops — rest fall back)
+- [x] `Ternary`, `ArrayLiteral`, `Hash`
+- [x] `Call`, `MethodCall` (both variable and non-variable targets)
+- [x] `Index`, `StringInterpolation`
+- [x] `PostfixOp` (++/-- on Var), `AssignExpr`
+- [x] `CaptureVar`, `CodeVar`
 - [ ] `EnvIndex` (%*ENV<key>)
 - [ ] `Subst` (s///)
 - [ ] `Exists` (:exists)
@@ -247,13 +278,12 @@ Hybrid stack-based VM with fallback to tree-walker (`InterpretExpr`/`InterpretSt
 - [ ] `HyperOp` (>>op<<)
 - [ ] `MetaOp` (Rop, Xop, Zop)
 - [ ] `RoutineMagic` / `BlockMagic`
-- [ ] Unary ops beyond `-`, `!`, `?` (e.g. `+`, `~`, `so`, `not`)
 
-#### Remaining: Statements (still InterpretStmt)
-- [ ] `Assign` with compound ops (`+=`, `-=`, `~=`, etc.) and bind (`:=`)
-- [ ] `Unless`
-- [ ] `Given` / `When` / `Default`
-- [ ] `Loop` with `repeat` flag
+#### Compiled Statements
+- [x] `Expr`, `Block`, `Say`, `Print`, `VarDecl`
+- [x] `Assign` (=, :=, =~), `If`, `While`, `For`, `Loop` (C-style, repeat)
+- [x] `Call` (positional args only), `Last`, `Next`, `Redo`, `Return`, `Die`
+- [x] `Given`, `When`, `Default`, `Proceed`, `Succeed`
 - [ ] `Call` with named args / Block / AnonSub args
 - [ ] `SubDecl` / `MultiSubDecl` / `ProtoDecl`
 - [ ] `ClassDecl` / `RoleDecl` / `HasDecl` / `MethodDecl` / `DoesDecl`

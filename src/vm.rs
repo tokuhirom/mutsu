@@ -243,6 +243,119 @@ impl VM {
                 self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("ge".to_string()))?;
             }
 
+            // -- Smart match --
+            OpCode::SmartMatch => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::SmartMatch)?;
+            }
+            OpCode::NotMatch => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::BangTilde)?;
+            }
+
+            // -- Three-way comparison --
+            OpCode::Spaceship => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::LtEqGt)?;
+            }
+            OpCode::Cmp => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("cmp".to_string()))?;
+            }
+            OpCode::Leg => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("leg".to_string()))?;
+            }
+
+            // -- Identity/value equality --
+            OpCode::StrictEq => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::EqEqEq)?;
+            }
+            OpCode::Eqv => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("eqv".to_string()))?;
+            }
+
+            // -- Divisibility --
+            OpCode::DivisibleBy => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::PercentPercent)?;
+            }
+
+            // -- Keyword math --
+            OpCode::IntDiv => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("div".to_string()))?;
+            }
+            OpCode::IntMod => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("mod".to_string()))?;
+            }
+            OpCode::Gcd => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("gcd".to_string()))?;
+            }
+            OpCode::Lcm => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("lcm".to_string()))?;
+            }
+
+            // -- Repetition --
+            OpCode::StringRepeat => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("x".to_string()))?;
+            }
+            OpCode::ListRepeat => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::Ident("xx".to_string()))?;
+            }
+
+            // -- Pair --
+            OpCode::MakePair => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::FatArrow)?;
+            }
+
+            // -- Bitwise --
+            OpCode::BitAnd => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::BitAnd)?;
+            }
+            OpCode::BitOr => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::BitOr)?;
+            }
+            OpCode::BitXor => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::BitXor)?;
+            }
+            OpCode::BitShiftLeft => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::BitShiftLeft)?;
+            }
+            OpCode::BitShiftRight => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::BitShiftRight)?;
+            }
+
+            // -- Set operations --
+            OpCode::SetElem => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::SetElem)?;
+            }
+            OpCode::SetCont => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::SetCont)?;
+            }
+            OpCode::SetUnion => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::SetUnion)?;
+            }
+            OpCode::SetIntersect => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::SetIntersect)?;
+            }
+            OpCode::SetDiff => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::SetDiff)?;
+            }
+            OpCode::SetSymDiff => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::SetSymDiff)?;
+            }
+            OpCode::SetSubset => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::SetSubset)?;
+            }
+            OpCode::SetSuperset => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::SetSuperset)?;
+            }
+            OpCode::SetStrictSubset => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::SetStrictSubset)?;
+            }
+            OpCode::SetStrictSuperset => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::SetStrictSuperset)?;
+            }
+
+            // -- Sequence --
+            OpCode::Sequence => {
+                self.binary_op(code, ip, &crate::lexer::TokenKind::DotDotDot)?;
+            }
+
             // -- Nil check --
             OpCode::IsNil => {
                 let val = self.stack.pop().unwrap();
@@ -440,6 +553,14 @@ impl VM {
             }
             OpCode::Redo => {
                 return Err(RuntimeError::redo_signal());
+            }
+
+            // -- Given/When control --
+            OpCode::Proceed => {
+                return Err(RuntimeError::proceed_signal());
+            }
+            OpCode::Succeed => {
+                return Err(RuntimeError::succeed_signal());
             }
 
             // -- Postfix operators --

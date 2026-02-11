@@ -1,5 +1,5 @@
 use Test;
-plan 91;
+plan 113;
 
 # Literal compilation
 is 42, 42, 'integer literal';
@@ -304,3 +304,52 @@ is $rw_once, 1, 'repeat while runs body at least once';
 # := bind assignment (compiled same as =)
 my $bind_val := 42;
 is $bind_val, 42, ':= bind assignment works';
+
+# --- Phase 6: remaining binary ops, proceed/succeed, match-assign ---
+
+# Smart match (compiled SmartMatch/NotMatch)
+is (42 ~~ 42), True, 'smart match integer equality';
+is (42 !~~ 99), True, 'not-match integer inequality';
+
+# Three-way comparison (compiled Spaceship/Cmp/Leg)
+is (1 <=> 2), Less, 'spaceship less';
+is (2 <=> 2), Same, 'spaceship same';
+is (3 <=> 2), More, 'spaceship more';
+is (1 cmp 2), Less, 'cmp less';
+is ("a" leg "b"), Less, 'leg string less';
+
+# Identity/value equality (compiled StrictEq/Eqv)
+is (42 === 42), True, 'strict identity eq';
+is (42 eqv 42), True, 'eqv value eq';
+
+# Divisibility (compiled DivisibleBy)
+is (10 %% 5), True, '%% divisible';
+is (10 %% 3), False, '%% not divisible';
+
+# Keyword math (compiled IntDiv/IntMod/Gcd/Lcm)
+is (7 div 2), 3, 'div integer division';
+is (7 mod 3), 1, 'mod keyword';
+is (12 gcd 8), 4, 'gcd';
+is (4 lcm 6), 12, 'lcm';
+
+# Repetition (compiled StringRepeat/ListRepeat)
+is ("ab" x 3), "ababab", 'string repeat x';
+
+# Bitwise (compiled BitAnd/BitOr/BitXor/BitShiftLeft/BitShiftRight)
+is (0b1100 +& 0b1010), 8, 'bitwise and';
+is (0b1100 +| 0b1010), 14, 'bitwise or';
+is (1 +< 3), 8, 'bitwise shift left';
+is (16 +> 2), 4, 'bitwise shift right';
+
+# Proceed/Succeed (compiled opcodes)
+my $ps_result = "";
+given 42 {
+    when 42 { $ps_result = "first"; proceed }
+    when 42 { $ps_result = $ps_result ~ "+second" }
+}
+is $ps_result, "first+second", 'proceed continues to next when';
+
+# MatchAssign (=~ compiled with StrCoerce)
+my $ma_val = 42;
+$ma_val =~ "hello";
+is $ma_val, "hello", 'match-assign coerces to string';

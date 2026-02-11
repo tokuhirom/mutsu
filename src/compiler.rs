@@ -193,6 +193,23 @@ impl Compiler {
                 self.compile_expr(expr);
                 self.code.emit(OpCode::Die);
             }
+            Stmt::Proceed => {
+                self.code.emit(OpCode::Proceed);
+            }
+            Stmt::Succeed => {
+                self.code.emit(OpCode::Succeed);
+            }
+            // MatchAssign (~~=): coerce value to string
+            Stmt::Assign {
+                name,
+                expr,
+                op: AssignOp::MatchAssign,
+            } if name != "*PID" => {
+                self.compile_expr(expr);
+                self.code.emit(OpCode::StrCoerce);
+                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                self.code.emit(OpCode::SetGlobal(name_idx));
+            }
             // Given/When/Default
             Stmt::Given { topic, body } if !Self::has_phasers(body) => {
                 self.compile_expr(topic);
@@ -569,6 +586,47 @@ impl Compiler {
             TokenKind::DotDotCaret => Some(OpCode::MakeRangeExcl),
             TokenKind::CaretDotDot => Some(OpCode::MakeRangeExclStart),
             TokenKind::CaretDotDotCaret => Some(OpCode::MakeRangeExclBoth),
+            // Smart match
+            TokenKind::SmartMatch => Some(OpCode::SmartMatch),
+            TokenKind::BangTilde => Some(OpCode::NotMatch),
+            // Three-way comparison
+            TokenKind::LtEqGt => Some(OpCode::Spaceship),
+            TokenKind::Ident(name) if name == "cmp" => Some(OpCode::Cmp),
+            TokenKind::Ident(name) if name == "leg" => Some(OpCode::Leg),
+            // Identity/value equality
+            TokenKind::EqEqEq => Some(OpCode::StrictEq),
+            TokenKind::Ident(name) if name == "eqv" => Some(OpCode::Eqv),
+            // Divisibility
+            TokenKind::PercentPercent => Some(OpCode::DivisibleBy),
+            // Keyword math
+            TokenKind::Ident(name) if name == "div" => Some(OpCode::IntDiv),
+            TokenKind::Ident(name) if name == "mod" => Some(OpCode::IntMod),
+            TokenKind::Ident(name) if name == "gcd" => Some(OpCode::Gcd),
+            TokenKind::Ident(name) if name == "lcm" => Some(OpCode::Lcm),
+            // Repetition
+            TokenKind::Ident(name) if name == "x" => Some(OpCode::StringRepeat),
+            TokenKind::Ident(name) if name == "xx" => Some(OpCode::ListRepeat),
+            // Pair
+            TokenKind::FatArrow => Some(OpCode::MakePair),
+            // Bitwise
+            TokenKind::BitAnd => Some(OpCode::BitAnd),
+            TokenKind::BitOr => Some(OpCode::BitOr),
+            TokenKind::BitXor => Some(OpCode::BitXor),
+            TokenKind::BitShiftLeft => Some(OpCode::BitShiftLeft),
+            TokenKind::BitShiftRight => Some(OpCode::BitShiftRight),
+            // Set operations
+            TokenKind::SetElem => Some(OpCode::SetElem),
+            TokenKind::SetCont => Some(OpCode::SetCont),
+            TokenKind::SetUnion => Some(OpCode::SetUnion),
+            TokenKind::SetIntersect => Some(OpCode::SetIntersect),
+            TokenKind::SetDiff => Some(OpCode::SetDiff),
+            TokenKind::SetSymDiff => Some(OpCode::SetSymDiff),
+            TokenKind::SetSubset => Some(OpCode::SetSubset),
+            TokenKind::SetSuperset => Some(OpCode::SetSuperset),
+            TokenKind::SetStrictSubset => Some(OpCode::SetStrictSubset),
+            TokenKind::SetStrictSuperset => Some(OpCode::SetStrictSuperset),
+            // Sequence
+            TokenKind::DotDotDot => Some(OpCode::Sequence),
             _ => None,
         }
     }

@@ -51,6 +51,57 @@ pub(crate) enum OpCode {
     StrLe,
     StrGe,
 
+    // -- Smart match --
+    SmartMatch,
+    NotMatch,
+
+    // -- Three-way comparison --
+    Spaceship,
+    Cmp,
+    Leg,
+
+    // -- Identity/value equality --
+    StrictEq,
+    Eqv,
+
+    // -- Divisibility --
+    DivisibleBy,
+
+    // -- Keyword math --
+    IntDiv,
+    IntMod,
+    Gcd,
+    Lcm,
+
+    // -- Repetition --
+    StringRepeat,
+    ListRepeat,
+
+    // -- Pair --
+    MakePair,
+
+    // -- Bitwise --
+    BitAnd,
+    BitOr,
+    BitXor,
+    BitShiftLeft,
+    BitShiftRight,
+
+    // -- Set operations --
+    SetElem,
+    SetCont,
+    SetUnion,
+    SetIntersect,
+    SetDiff,
+    SetSymDiff,
+    SetSubset,
+    SetSuperset,
+    SetStrictSubset,
+    SetStrictSuperset,
+
+    // -- Sequence --
+    Sequence,
+
     // -- Nil check (for defined-or //) --
     IsNil,
 
@@ -101,6 +152,10 @@ pub(crate) enum OpCode {
     Last(Option<String>),
     Next(Option<String>),
     Redo,
+
+    // -- Given/When control --
+    Proceed,
+    Succeed,
 
     // -- Unary coercion --
     NumCoerce,
