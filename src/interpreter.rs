@@ -5855,6 +5855,12 @@ impl Interpreter {
                     }
                     return Ok(Value::Hash(map));
                 }
+                // Try builtins for 0-arg pure methods first
+                if args.is_empty()
+                    && let Some(result) = crate::builtins::native_method_0arg(&base, name.as_str())
+                {
+                    return result;
+                }
                 match name.as_str() {
                     "WHAT" => {
                         let type_name = match &base {
@@ -5926,7 +5932,7 @@ impl Interpreter {
                             Value::Slip(_) => "Slip".to_string(),
                         }))
                     }
-                    "defined" => Ok(Value::Bool(!matches!(base, Value::Nil | Value::Package(_)))),
+                    // "defined" handled by builtins::native_method_0arg
                     "of" => {
                         // Hash.of returns Mu (the default value type)
                         Ok(Value::Package("Mu".to_string()))
@@ -5990,46 +5996,8 @@ impl Interpreter {
                         }
                         _ => Ok(Value::Nil),
                     },
-                    "chars" => Ok(Value::Int(base.to_string_value().chars().count() as i64)),
-                    "uc" => Ok(Value::Str(base.to_string_value().to_uppercase())),
-                    "lc" => Ok(Value::Str(base.to_string_value().to_lowercase())),
-                    "tc" => {
-                        let s = base.to_string_value();
-                        let mut result = String::new();
-                        let mut capitalize = true;
-                        for ch in s.chars() {
-                            if capitalize {
-                                for c in ch.to_uppercase() {
-                                    result.push(c);
-                                }
-                                capitalize = false;
-                            } else {
-                                result.push(ch);
-                            }
-                        }
-                        Ok(Value::Str(result))
-                    }
-                    "tclc" => Ok(Value::Str(crate::value::tclc_str(&base.to_string_value()))),
-                    "wordcase" => Ok(Value::Str(crate::value::wordcase_str(
-                        &base.to_string_value(),
-                    ))),
-                    "chomp" => {
-                        let s = base.to_string_value();
-                        Ok(Value::Str(s.trim_end_matches('\n').to_string()))
-                    }
-                    "chop" => {
-                        let mut s = base.to_string_value();
-                        s.pop();
-                        Ok(Value::Str(s))
-                    }
-                    "trim" => Ok(Value::Str(base.to_string_value().trim().to_string())),
-                    "trim-leading" => {
-                        Ok(Value::Str(base.to_string_value().trim_start().to_string()))
-                    }
-                    "trim-trailing" => {
-                        Ok(Value::Str(base.to_string_value().trim_end().to_string()))
-                    }
-                    "flip" => Ok(Value::Str(base.to_string_value().chars().rev().collect())),
+                    // chars, uc, lc, tc, tclc, wordcase, chomp, chop, trim,
+                    // trim-leading, trim-trailing, flip: handled by builtins::native_method_0arg
                     "contains" => {
                         let needle_val = args.first().map(|a| self.eval_expr(a)).transpose()?;
                         if let Some(Value::Package(ref type_name)) = needle_val {
@@ -6260,14 +6228,7 @@ impl Interpreter {
                             s.split(&sep).map(|p| Value::Str(p.to_string())).collect();
                         Ok(Value::Array(parts))
                     }
-                    "words" => {
-                        let s = base.to_string_value();
-                        let parts: Vec<Value> = s
-                            .split_whitespace()
-                            .map(|p| Value::Str(p.to_string()))
-                            .collect();
-                        Ok(Value::Array(parts))
-                    }
+                    // words: handled by builtins::native_method_0arg
                     "Range" => match base {
                         Value::Array(items) => Ok(Value::RangeExcl(0, items.len() as i64)),
                         Value::Str(s) => Ok(Value::RangeExcl(0, s.chars().count() as i64)),
@@ -6277,18 +6238,7 @@ impl Interpreter {
                         | Value::RangeExclBoth(_, _) => Ok(base),
                         _ => Ok(Value::Nil),
                     },
-                    "comb" => {
-                        let s = base.to_string_value();
-                        let parts: Vec<Value> =
-                            s.chars().map(|c| Value::Str(c.to_string())).collect();
-                        Ok(Value::Array(parts))
-                    }
-                    "lines" => {
-                        let s = base.to_string_value();
-                        let parts: Vec<Value> =
-                            s.lines().map(|l| Value::Str(l.to_string())).collect();
-                        Ok(Value::Array(parts))
-                    }
+                    // comb, lines: handled by builtins::native_method_0arg
                     "Int" => match base {
                         Value::Int(i) => Ok(Value::Int(i)),
                         Value::Num(f) => Ok(Value::Int(f as i64)),
@@ -6333,18 +6283,7 @@ impl Interpreter {
                         Value::Bool(b) => Ok(Value::Int(if b { 1 } else { 0 })),
                         _ => Ok(Value::Int(0)),
                     },
-                    "Rat" => match base {
-                        Value::Rat(_, _) => Ok(base),
-                        Value::Int(i) => Ok(make_rat(i, 1)),
-                        Value::Num(f) => {
-                            // Simple conversion: approximate as rational
-                            let denom = 1_000_000i64;
-                            let numer = (f * denom as f64).round() as i64;
-                            Ok(make_rat(numer, denom))
-                        }
-                        Value::FatRat(n, d) => Ok(make_rat(n, d)),
-                        _ => Ok(make_rat(0, 1)),
-                    },
+                    // Rat: handled by builtins::native_method_0arg
                     "FatRat" => match base {
                         Value::FatRat(_, _) => Ok(base),
                         Value::Rat(n, d) => Ok(Value::FatRat(n, d)),
@@ -6484,62 +6423,16 @@ impl Interpreter {
                         }
                         Ok(Value::Mix(weights))
                     }
-                    "Bool" => Ok(Value::Bool(base.truthy())),
+                    // Bool: handled by builtins::native_method_0arg
                     "gist" | "raku" | "perl" => match base {
+                        // builtins handles most cases; interpreter handles Package/Instance/Enum
                         Value::Package(name) => Ok(Value::Str(format!("({})", name))),
-                        Value::Nil => Ok(Value::Str("(Any)".to_string())),
-                        Value::Rat(n, d) => {
-                            if d == 0 {
-                                if n == 0 {
-                                    Ok(Value::Str("NaN".to_string()))
-                                } else if n > 0 {
-                                    Ok(Value::Str("Inf".to_string()))
-                                } else {
-                                    Ok(Value::Str("-Inf".to_string()))
-                                }
-                            } else {
-                                // For .raku: exact decimal or <n/d> form
-                                let mut dd = d;
-                                while dd % 2 == 0 {
-                                    dd /= 2;
-                                }
-                                while dd % 5 == 0 {
-                                    dd /= 5;
-                                }
-                                if dd == 1 {
-                                    let val = n as f64 / d as f64;
-                                    let s = format!("{}", val);
-                                    if s.contains('.') {
-                                        Ok(Value::Str(s))
-                                    } else {
-                                        Ok(Value::Str(format!("{}.0", val)))
-                                    }
-                                } else {
-                                    Ok(Value::Str(format!("<{}/{}>", n, d)))
-                                }
-                            }
-                        }
-                        Value::Version {
-                            ref parts,
-                            plus,
-                            minus,
-                        } => {
-                            let s = Value::version_parts_to_string(parts);
-                            let suffix = if plus {
-                                "+"
-                            } else if minus {
-                                "-"
-                            } else {
-                                ""
-                            };
-                            Ok(Value::Str(format!("v{}{}", s, suffix)))
-                        }
                         _ => Ok(Value::Str(base.to_string_value())),
                     },
-                    "Str" => match base {
-                        Value::Str(name) if name == "IO::Special" => Ok(Value::Str(String::new())),
-                        _ => Ok(Value::Str(base.to_string_value())),
-                    },
+                    "Str" => {
+                        // builtins handles most cases; fallback for Instance/Package
+                        Ok(Value::Str(base.to_string_value()))
+                    }
                     "sink" => {
                         // .sink forces evaluation and discards result
                         Ok(Value::Nil)
@@ -6564,10 +6457,8 @@ impl Interpreter {
                         Value::Mix(m) => Ok(Value::Num(m.values().sum::<f64>())),
                         _ => Ok(Value::Int(1)),
                     },
-                    "end" => match base {
-                        Value::Array(items) => Ok(Value::Int(items.len() as i64 - 1)),
-                        _ => Ok(Value::Int(0)),
-                    },
+                    // end: builtins handles Array; fallback here
+                    "end" => Ok(Value::Int(0)),
                     "keys" => match base {
                         Value::Hash(items) => {
                             let keys: Vec<Value> =
@@ -6753,29 +6644,8 @@ impl Interpreter {
                         }
                         _ => Ok(base),
                     },
-                    "reverse" => match base {
-                        Value::Array(mut items) => {
-                            items.reverse();
-                            Ok(Value::Array(items))
-                        }
-                        Value::Str(s) => Ok(Value::Str(s.chars().rev().collect())),
-                        _ => Ok(base),
-                    },
-                    "unique" => match base {
-                        Value::Array(items) => {
-                            let mut seen = Vec::new();
-                            let mut result = Vec::new();
-                            for item in items {
-                                let s = item.to_string_value();
-                                if !seen.contains(&s) {
-                                    seen.push(s);
-                                    result.push(item);
-                                }
-                            }
-                            Ok(Value::Array(result))
-                        }
-                        _ => Ok(base),
-                    },
+                    // reverse, unique: builtins handles Array/Str; fallback here
+                    "reverse" | "unique" => Ok(base),
                     "squish" => match base {
                         Value::Array(items) => {
                             let mut result = Vec::new();
@@ -6807,20 +6677,8 @@ impl Interpreter {
                         }
                         _ => Ok(Value::Nil),
                     },
-                    "flat" => match base {
-                        Value::Array(items) => {
-                            let mut flat = Vec::new();
-                            for item in items {
-                                if let Value::Array(sub) = item {
-                                    flat.extend(sub);
-                                } else {
-                                    flat.push(item);
-                                }
-                            }
-                            Ok(Value::Array(flat))
-                        }
-                        _ => Ok(base),
-                    },
+                    // flat: builtins handles Array; fallback here
+                    "flat" => Ok(base),
                     "skip" => {
                         let n = if let Some(arg) = args.first() {
                             match self.eval_expr(arg)? {
@@ -6833,38 +6691,9 @@ impl Interpreter {
                         let items = Self::value_to_list(&base);
                         Ok(Value::Array(items.into_iter().skip(n).collect()))
                     }
-                    "head" => match base {
-                        Value::Array(items) => Ok(items.into_iter().next().unwrap_or(Value::Nil)),
-                        _ => Ok(base),
-                    },
-                    "tail" => match base {
-                        Value::Array(items) => Ok(items.into_iter().last().unwrap_or(Value::Nil)),
-                        _ => Ok(base),
-                    },
-                    "first" => match base {
-                        Value::Array(items) => Ok(items.into_iter().next().unwrap_or(Value::Nil)),
-                        _ => Ok(base),
-                    },
-                    "min" => match base {
-                        Value::Array(items) => Ok(items
-                            .into_iter()
-                            .min_by(|a, b| match (a, b) {
-                                (Value::Int(x), Value::Int(y)) => x.cmp(y),
-                                _ => a.to_string_value().cmp(&b.to_string_value()),
-                            })
-                            .unwrap_or(Value::Nil)),
-                        _ => Ok(base),
-                    },
-                    "max" => match base {
-                        Value::Array(items) => Ok(items
-                            .into_iter()
-                            .max_by(|a, b| match (a, b) {
-                                (Value::Int(x), Value::Int(y)) => x.cmp(y),
-                                _ => a.to_string_value().cmp(&b.to_string_value()),
-                            })
-                            .unwrap_or(Value::Nil)),
-                        _ => Ok(base),
-                    },
+                    // head, tail, first, min, max (0-arg): handled by builtins
+                    // Non-Array fallback for when builtins returns None:
+                    "head" | "tail" | "first" | "min" | "max" => Ok(base),
                     "sum" => match base {
                         Value::Array(items) => {
                             let mut total: i64 = 0;
@@ -7138,23 +6967,13 @@ impl Interpreter {
                         };
                         Ok(Value::Complex(0.0, imag))
                     }
+                    // abs: builtins handles Int/Num/Rat; Complex fallback here
                     "abs" => match base {
-                        Value::Int(i) => Ok(Value::Int(i.abs())),
-                        Value::Num(f) => Ok(Value::Num(f.abs())),
                         Value::Complex(r, i) => Ok(Value::Num((r * r + i * i).sqrt())),
                         _ => Ok(Value::Int(0)),
                     },
-                    "sign" => match base {
-                        Value::Int(i) => Ok(Value::Int(i.signum())),
-                        Value::Num(f) => Ok(Value::Int(if f > 0.0 {
-                            1
-                        } else if f < 0.0 {
-                            -1
-                        } else {
-                            0
-                        })),
-                        _ => Ok(Value::Int(0)),
-                    },
+                    // sign: builtins handles Int/Num; fallback here
+                    "sign" => Ok(Value::Int(0)),
                     "is-prime" => match base {
                         Value::Int(n) => {
                             let n = n.abs();
@@ -7208,28 +7027,7 @@ impl Interpreter {
                         Value::Array(items) => Ok(Value::Array(items)),
                         _ => Ok(Value::Array(vec![base])),
                     },
-                    "so" => Ok(Value::Bool(base.truthy())),
-                    "not" => Ok(Value::Bool(!base.truthy())),
-                    "succ" => match base {
-                        Value::Int(i) => Ok(Value::Int(i + 1)),
-                        Value::Str(s) => {
-                            // Increment last char
-                            if s.is_empty() {
-                                Ok(Value::Str(String::new()))
-                            } else {
-                                let mut chars: Vec<char> = s.chars().collect();
-                                if let Some(last) = chars.last_mut() {
-                                    *last = char::from_u32(*last as u32 + 1).unwrap_or(*last);
-                                }
-                                Ok(Value::Str(chars.into_iter().collect()))
-                            }
-                        }
-                        _ => Ok(base),
-                    },
-                    "pred" => match base {
-                        Value::Int(i) => Ok(Value::Int(i - 1)),
-                        _ => Ok(base),
-                    },
+                    // so, not, succ, pred: handled by builtins::native_method_0arg
                     "fmt" => {
                         let fmt = args
                             .first()
@@ -7277,45 +7075,14 @@ impl Interpreter {
                             ))),
                         }
                     }
-                    "sqrt" => match base {
-                        Value::Int(i) => Ok(Value::Num((i as f64).sqrt())),
-                        Value::Num(f) => Ok(Value::Num(f.sqrt())),
-                        _ => Ok(Value::Num(f64::NAN)),
-                    },
-                    "floor" => match base {
-                        Value::Num(f) if f.is_nan() || f.is_infinite() => Ok(Value::Num(f)),
-                        Value::Num(f) => Ok(Value::Int(f.floor() as i64)),
-                        Value::Int(i) => Ok(Value::Int(i)),
-                        _ => Ok(Value::Int(0)),
-                    },
-                    "ceiling" | "ceil" => match base {
-                        Value::Num(f) if f.is_nan() || f.is_infinite() => Ok(Value::Num(f)),
-                        Value::Num(f) => Ok(Value::Int(f.ceil() as i64)),
-                        Value::Int(i) => Ok(Value::Int(i)),
-                        _ => Ok(Value::Int(0)),
-                    },
-                    "round" => match base {
-                        Value::Num(f) if f.is_nan() || f.is_infinite() => Ok(Value::Num(f)),
-                        Value::Num(f) => Ok(Value::Int(f.round() as i64)),
-                        Value::Int(i) => Ok(Value::Int(i)),
-                        _ => Ok(Value::Int(0)),
-                    },
+                    // sqrt, floor, ceiling/ceil, round: handled by builtins::native_method_0arg
                     "narrow" => match base {
                         Value::Num(f) if f.fract() == 0.0 && f.is_finite() => {
                             Ok(Value::Int(f as i64))
                         }
                         _ => Ok(base),
                     },
-                    "log" => match base {
-                        Value::Int(i) => Ok(Value::Num((i as f64).ln())),
-                        Value::Num(f) => Ok(Value::Num(f.ln())),
-                        _ => Ok(Value::Num(f64::NAN)),
-                    },
-                    "exp" => match base {
-                        Value::Int(i) => Ok(Value::Num((i as f64).exp())),
-                        Value::Num(f) => Ok(Value::Num(f.exp())),
-                        _ => Ok(Value::Num(f64::NAN)),
-                    },
+                    // log, exp: handled by builtins::native_method_0arg
                     "push" => {
                         // .push on evaluated array - returns new array with item added
                         match base {
