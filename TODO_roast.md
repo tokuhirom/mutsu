@@ -1293,6 +1293,7 @@
 - [ ] roast/S32-array/elems.t
   - 6/12 pass (1-5, 7). Failures: `.elems` on initialized arrayitems (6), `elems()` sub form with args (8-9), `elems [1,2,3,4]` (10), `elems` on itemized list (11). Only 11 tests reached. Difficulty: Low-Medium
 - [ ] roast/S32-array/end.t
+  - 7/12 pass (1-6, 8). `.end` works well on arrays. Failures: initialized arrayitems (7), sub form `end(1,2,3,4)` (9-10), `end [1,2,3,4]` (11), `end` on itemized list (12). Difficulty: Low-Medium
 - [ ] roast/S32-array/exists-adverb.t
 - [ ] roast/S32-array/keys_values.t
 - [ ] roast/S32-array/kv.t
@@ -1414,6 +1415,7 @@
 - [ ] roast/S32-list/deepmap.t
 - [ ] roast/S32-list/duckmap.t
 - [ ] roast/S32-list/end.t
+  - 7/14 pass (1-6, 13). `.end` works for basic array operations (assign, pop, shift, unshift, push). Failures: sub form `end(@array)` (7-12), `end()` without args error (14). Difficulty: Low-Medium
 - [ ] roast/S32-list/first-end-k.t
 - [ ] roast/S32-list/first-end-kv.t
 - [ ] roast/S32-list/first-end-p.t
@@ -1529,6 +1531,7 @@
 - [ ] roast/S32-str/ends-with.t
   - 0/3 pass. `Cool.ends-with` with wrong args hangs (test 1). Other tests use complex test framework syntax. Difficulty: Medium
 - [ ] roast/S32-str/fc.t
+  - 0/12 pass. `.fc` (foldcase) method not implemented. All tests fail. Difficulty: Medium (need Unicode case folding implementation)
 - [ ] roast/S32-str/flip.t
   - 10/13 pass (1-5, 7-8, 11-13). Failures: test 6 unknown, grapheme precomposed (9), grapheme without precomposed (10). Difficulty: Low (grapheme cluster awareness needed)
 - [ ] roast/S32-str/format.t
@@ -1542,9 +1545,11 @@
 - [x] roast/S32-str/lc.t
   - 19/19 pass.
 - [ ] roast/S32-str/length.t
+  - 11/29 pass (2, 4, 6, 8, 14, 16, 18, 20, 22, 24, 26). `.chars` works well on all strings including Unicode. Failures: `.length` should be deprecated/error (1), `.codes` not implemented (3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27-29). Difficulty: Low-Medium (add `.codes` method)
 - [ ] roast/S32-str/lines.t
   - 4/27 pass (tests 1-4). LF `.lines` works without trailing and with Inf/*. Failures: `.lines` with numeric limit (5), CR line endings not handled (6-10), CRLF not handled (11-15), mixed line endings not handled (16-20). Remaining tests not reached due to runtime error "Expected IO::Handle". Difficulty: Medium (CR/CRLF line splitting + limit parameter)
 - [ ] roast/S32-str/numeric.t
+  - 0/? pass. Panics with `mul_overflow` in `i64::pow` (vm.rs) before any tests run. Same overflow issue as base.t and tail.t. Difficulty: Medium
 - [ ] roast/S32-str/ords.t
   - 3/9 pass (tests 1, 3, 5: function form `ords()` works). Failures: method form `.ords` returns wrong type or value (2, 4, 6), NFG synthetic handling (7-8). Only 8 tests reached (plan 9). Difficulty: Low-Medium (method `.ords` needs to return same as function form)
 - [ ] roast/S32-str/parse-base.t
