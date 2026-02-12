@@ -1442,7 +1442,9 @@
   - 12/12 pass.
 - [ ] roast/S32-str/capitalize.t
 - [ ] roast/S32-str/chomp.t
+  - 18/39 pass. Basic chomp works for `\n`. Failures: chomp with `\r\n` line endings (4, 11, 14-20, 23-24), various line-ending combinations (CR, CRLF). Difficulty: Low-Medium (need `\r\n` and `\r` line ending support in chomp)
 - [ ] roast/S32-str/chop.t
+  - 21/36 pass. Basic chop works. Failures: `chop($str, 2)` multi-char chop (5, 7, 9, 15, 17, 19), chop of a Rat (27-28), chop on Cool types (29+). Difficulty: Low (need multi-char chop parameter support)
 - [ ] roast/S32-str/Collation.t
 - [ ] roast/S32-str/CollationTest_NON_IGNORABLE-0.t
 - [ ] roast/S32-str/CollationTest_NON_IGNORABLE-1.t
@@ -1454,13 +1456,15 @@
 - [ ] roast/S32-str/ends-with.t
 - [ ] roast/S32-str/fc.t
 - [ ] roast/S32-str/flip.t
+  - 10/13 pass (1-5, 7-8, 11-13). Failures: test 6 unknown, grapheme precomposed (9), grapheme without precomposed (10). Difficulty: Low (grapheme cluster awareness needed)
 - [ ] roast/S32-str/format.t
 - [ ] roast/S32-str/gb18030-encode-decode.t
 - [ ] roast/S32-str/gb2312-encode-decode.t
 - [ ] roast/S32-str/indent.t
 - [ ] roast/S32-str/index.t
 - [ ] roast/S32-str/indices.t
-- [ ] roast/S32-str/lc.t
+- [x] roast/S32-str/lc.t
+  - 19/19 pass.
 - [ ] roast/S32-str/length.t
 - [ ] roast/S32-str/lines.t
 - [ ] roast/S32-str/numeric.t
@@ -1499,6 +1503,7 @@
 - [ ] roast/S32-str/text-samples/shiftjis_sample.txt
 - [ ] roast/S32-str/trim.t
 - [ ] roast/S32-str/uc.t
+  - 14/20 pass (1-14). Failures: `but` mixin on strings (15-17), precomposed upper character (18-19), prepend codepoints uppercasing (20). Difficulty: Low-Medium
 - [ ] roast/S32-str/uniparse.t
 - [ ] roast/S32-str/utf8-c8.t
 - [ ] roast/S32-str/val.t
