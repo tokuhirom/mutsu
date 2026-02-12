@@ -1377,6 +1377,7 @@
 - [ ] roast/S32-list/classify-list.t
 - [ ] roast/S32-list/classify.t
 - [ ] roast/S32-list/combinations.t
+  - 0/33 pass. `.combinations` method not implemented at all. All tests fail. Difficulty: Medium-High (need to implement combinations algorithm)
 - [ ] roast/S32-list/create.t
 - [ ] roast/S32-list/cross.t
 - [ ] roast/S32-list/deepmap.t
@@ -1394,6 +1395,7 @@
   - ~12/31 pass (1, 3, 5, 7, 10-11, 15, 17, 19, 22-23, 27, 29). Crashes with `is-deeply expects right`. Failures: `first()` return value (2, 4, 6, 8), undefined match (9), Range-based first (12-13), type/regex lookup (14, 16, 18), junction matcher (20). Difficulty: Medium
 - [ ] roast/S32-list/first-v.t
 - [ ] roast/S32-list/flat.t
+  - 1/21 pass (test 1 only: Nil.raku method form). Failures: sub form `flat()` (2), lazy list flattening (3-6), `.flat` on arrays (7-8). Only 8 tests reached. Difficulty: Medium (`.flat` needs proper implementation)
 - [ ] roast/S32-list/grep-k.t
 - [ ] roast/S32-list/grep-kv.t
 - [ ] roast/S32-list/grep-p.t
@@ -1401,6 +1403,7 @@
   - 3/50 pass (19, 32-33). Method form `.grep` works for simple cases. Sub form `grep(...)` fails entirely. Failures: sub-form grep (1-18), mutating `$_` in grep (21-22), last/next/redo in grep (23-27), non-Code matcher (28-29), junction (31), chained greps (35). Difficulty: Medium-High
 - [ ] roast/S32-list/grep-v.t
 - [ ] roast/S32-list/head.t
+  - 14/60 pass (1-3, 6, 9, 11, 29, 32, 37-38, 41-42, 48, 50). Method `.head` works for List/Array/Scalar. Failures: Range.head (4-5, 13), sub form `head(N, list)` (7-8, 10, 12, 14-15, 17-18), `.head(Nil)` (19-28), Range forms (34-36, 44-47), Rat coercion (49). Difficulty: Medium (sub form and Range support needed)
 - [ ] roast/S32-list/iterator.t
 - [ ] roast/S32-list/join.t
   - 18/38 pass. Good basic join. Failures: join with flat args `join("|", 1, 2, 3)` (6, 13, 17-18, 26), itemized `$[]` (7, 19-20, 27), join without parens (15-16), odd list join (29-30), `&join` reference (34-35). Difficulty: Medium
@@ -1424,8 +1427,10 @@
   - ~20/74 pass. Basic sort works for method form on strings/numbers/lists. Crashes with `is-deeply expects right`. Failures: sort with comparator sub (1-5, 7, 12, 14-18), Schwartzian transform (18, 20), stability tests (27-28, 35), many advanced features. Difficulty: Medium-High
 - [ ] roast/S32-list/squish.t
 - [ ] roast/S32-list/tail.t
+  - 0/? pass. Panics with `mul_overflow` in `i64::pow` at vm.rs:396. Likely a large negative exponent causing integer overflow before any tests run. Difficulty: Medium (need overflow-safe exponent handling)
 - [ ] roast/S32-list/toggle.t
 - [ ] roast/S32-list/unique.t
+  - 0/40 pass. `.unique` method not implemented. Only 2 tests reached, both fail. Difficulty: Medium (need to implement `.unique` method)
 - [ ] roast/S32-num/abs.t
   - 5/49 pass (1-4, 9). Only 9 tests reached; rest crash. Failures: NaN/Inf abs (5-7), string abs (8), tests 10-49 not reached. Difficulty: Medium (NaN/Inf handling, test framework issues)
 - [ ] roast/S32-num/base.t
