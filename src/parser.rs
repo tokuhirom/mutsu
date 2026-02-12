@@ -142,7 +142,7 @@ impl Parser {
             return Ok(Stmt::Return(expr));
         }
         if self.match_ident("subtest") {
-            let name = self.parse_expr()?;
+            let name = self.parse_or()?;
             if !self.match_kind(TokenKind::FatArrow) {
                 return Err(RuntimeError::new("Expected fat arrow after subtest name"));
             }
@@ -241,6 +241,13 @@ impl Parser {
                 } else {
                     (String::new(), false, false)
                 }
+            } else if let Some(TokenKind::Ident(n)) = self.tokens.get(self.pos).map(|t| t.kind.clone())
+                && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Eq | TokenKind::Bind | TokenKind::Semicolon))
+            {
+                // Sigilless variable: my \name = expr (\ is skipped by lexer)
+                self.pos += 1;
+                (n, false, false)
             } else {
                 (self.consume_var()?, false, false)
             };
@@ -536,14 +543,25 @@ impl Parser {
                     let first = self.consume_var()?;
                     if self.match_kind(TokenKind::Comma) {
                         params.push(first);
-                        while self.peek_is_var() {
-                            params.push(self.consume_var()?);
+                        while self.peek_is_var() || self.peek_ident().is_some() {
+                            if self.peek_is_var() {
+                                params.push(self.consume_var()?);
+                            } else {
+                                // Sigilless parameter (e.g., \t → t)
+                                params.push(self.consume_ident()?);
+                            }
                             if !self.match_kind(TokenKind::Comma) {
                                 break;
                             }
                         }
                     } else {
                         param = Some(first);
+                    }
+                } else if let Some(name) = self.peek_ident() {
+                    // Sigilless parameter (e.g., -> \t where \ is skipped by lexer)
+                    if !matches!(name.as_str(), "if" | "unless" | "while" | "until" | "for") {
+                        self.pos += 1;
+                        param = Some(name);
                     }
                 }
             }
@@ -1425,7 +1443,7 @@ impl Parser {
                 expr: Box::new(expr),
             });
         }
-        let expr = self.parse_or()?;
+        let mut expr = self.parse_or()?;
         // Handle => (fat arrow / pair constructor)
         if self.match_kind(TokenKind::FatArrow) {
             let value = self.parse_or()?;
@@ -1434,6 +1452,14 @@ impl Parser {
                 op: TokenKind::FatArrow,
                 right: Box::new(value),
             });
+        }
+        // Wrap WhateverCode expressions (e.g., * > 3, ?*, !*) in a lambda
+        if Self::contains_whatever(&expr) {
+            let body_expr = Self::replace_whatever(&expr);
+            expr = Expr::Lambda {
+                param: "_".to_string(),
+                body: vec![Stmt::Expr(body_expr)],
+            };
         }
         Ok(expr)
     }
@@ -2561,12 +2587,58 @@ impl Parser {
             });
         }
         if self.match_kind(TokenKind::Caret) {
-            let expr = self.parse_unary()?;
-            return Ok(Expr::Unary {
+            // ^N creates a range 0..^N. In Raku, ^ has looser precedence than
+            // method calls, so ^10.Seq means (^10).Seq, not ^(10.Seq).
+            // Parse only the immediate atom without method postfix.
+            let inner = self.parse_caret_operand()?;
+            let mut result = Expr::Unary {
                 op: TokenKind::Caret,
-                expr: Box::new(expr),
-            });
+                expr: Box::new(inner),
+            };
+            // Handle postfix method calls on the range result
+            while self.match_kind(TokenKind::Dot) {
+                let method_name = self.consume_ident().unwrap_or_default();
+                let mut args = Vec::new();
+                if self.match_kind(TokenKind::LParen) {
+                    if !self.check(&TokenKind::RParen) {
+                        args.push(self.parse_method_arg());
+                        while self.match_kind(TokenKind::Comma) {
+                            args.push(self.parse_method_arg());
+                        }
+                    }
+                    let _ = self.consume_kind(TokenKind::RParen);
+                }
+                result = Expr::MethodCall {
+                    target: Box::new(result),
+                    name: method_name,
+                    args,
+                    modifier: None,
+                };
+            }
+            return Ok(result);
         }
+        self.parse_primary()
+    }
+
+    /// Parse the operand for prefix ^ (range constructor).
+    /// Only parses simple atoms (numbers, variables, parens) without method postfix.
+    fn parse_caret_operand(&mut self) -> Result<Expr, RuntimeError> {
+        if let Some(TokenKind::Number(n)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+            let n = *n;
+            self.pos += 1;
+            return Ok(Expr::Literal(Value::Int(n)));
+        }
+        if let Some(TokenKind::Var(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+            let name = name.clone();
+            self.pos += 1;
+            return Ok(Expr::Var(name));
+        }
+        if self.match_kind(TokenKind::LParen) {
+            let expr = self.parse_expr()?;
+            self.consume_kind(TokenKind::RParen)?;
+            return Ok(expr);
+        }
+        // Fall back to parse_primary for complex operands
         self.parse_primary()
     }
 
@@ -2901,11 +2973,25 @@ impl Parser {
             } else if name == "my"
                 && matches!(
                     self.tokens.get(self.pos + 1).map(|t| &t.kind),
-                    Some(TokenKind::Var(_))
+                    Some(TokenKind::Var(_) | TokenKind::ArrayVar(_) | TokenKind::HashVar(_))
                 )
             {
                 self.pos += 1;
-                let var_name = self.consume_var()?;
+                let var_name = if let Some(TokenKind::ArrayVar(n)) =
+                    self.tokens.get(self.pos).map(|t| &t.kind)
+                {
+                    let n = format!("@{}", n);
+                    self.pos += 1;
+                    n
+                } else if let Some(TokenKind::HashVar(n)) =
+                    self.tokens.get(self.pos).map(|t| &t.kind)
+                {
+                    let n = format!("%{}", n);
+                    self.pos += 1;
+                    n
+                } else {
+                    self.consume_var()?
+                };
                 if self.match_kind(TokenKind::Eq) || self.match_kind(TokenKind::Bind) {
                     let expr = self.parse_comma_expr()?;
                     Expr::AssignExpr {
@@ -3288,12 +3374,29 @@ impl Parser {
         Ok(expr)
     }
 
+    fn is_whatever_star(expr: &Expr) -> bool {
+        matches!(expr, Expr::Literal(Value::Num(f)) if f.is_infinite() && f.is_sign_positive())
+    }
+
     fn contains_whatever(expr: &Expr) -> bool {
         match expr {
             Expr::Var(name) if name == "__WHATEVER__" => true,
+            Expr::Literal(Value::Num(f)) if f.is_infinite() && f.is_sign_positive() => false, // standalone * is not WhateverCode
             Expr::MethodCall { target, .. } => Self::contains_whatever(target),
-            Expr::Binary { left, right, .. } => {
-                Self::contains_whatever(left) || Self::contains_whatever(right)
+            Expr::Binary { left, right, op, .. } => {
+                // Range operators: * as endpoint means Infinity, not WhateverCode
+                match op {
+                    TokenKind::DotDot | TokenKind::DotDotCaret
+                    | TokenKind::CaretDotDot | TokenKind::CaretDotDotCaret
+                    | TokenKind::DotDotDot | TokenKind::DotDotDotCaret => false,
+                    _ => {
+                        (Self::contains_whatever(left) || Self::is_whatever_star(left))
+                            || (Self::contains_whatever(right) || Self::is_whatever_star(right))
+                    }
+                }
+            }
+            Expr::Unary { expr, .. } => {
+                Self::contains_whatever(expr) || Self::is_whatever_star(expr)
             }
             Expr::Index { target, .. } => Self::contains_whatever(target),
             _ => false,
@@ -3303,6 +3406,9 @@ impl Parser {
     fn replace_whatever(expr: &Expr) -> Expr {
         match expr {
             Expr::Var(name) if name == "__WHATEVER__" => Expr::Var("_".to_string()),
+            Expr::Literal(Value::Num(f)) if f.is_infinite() && f.is_sign_positive() => {
+                Expr::Var("_".to_string())
+            }
             Expr::MethodCall {
                 target,
                 name,
@@ -3318,6 +3424,10 @@ impl Parser {
                 left: Box::new(Self::replace_whatever(left)),
                 op: op.clone(),
                 right: Box::new(Self::replace_whatever(right)),
+            },
+            Expr::Unary { op, expr } => Expr::Unary {
+                op: op.clone(),
+                expr: Box::new(Self::replace_whatever(expr)),
             },
             Expr::Index { target, index } => Expr::Index {
                 target: Box::new(Self::replace_whatever(target)),

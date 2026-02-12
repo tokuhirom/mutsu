@@ -203,6 +203,22 @@ impl VM {
             OpCode::Add => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
+                // Range + Int: shift both bounds
+                let range_result = match (&left, &right) {
+                    (Value::Range(a, b), Value::Int(n)) => Some(Value::Range(a + n, b + n)),
+                    (Value::RangeExcl(a, b), Value::Int(n)) => Some(Value::RangeExcl(a + n, b + n)),
+                    (Value::RangeExclStart(a, b), Value::Int(n)) => Some(Value::RangeExclStart(a + n, b + n)),
+                    (Value::RangeExclBoth(a, b), Value::Int(n)) => Some(Value::RangeExclBoth(a + n, b + n)),
+                    (Value::Int(n), Value::Range(a, b)) => Some(Value::Range(a + n, b + n)),
+                    (Value::Int(n), Value::RangeExcl(a, b)) => Some(Value::RangeExcl(a + n, b + n)),
+                    (Value::Int(n), Value::RangeExclStart(a, b)) => Some(Value::RangeExclStart(a + n, b + n)),
+                    (Value::Int(n), Value::RangeExclBoth(a, b)) => Some(Value::RangeExclBoth(a + n, b + n)),
+                    _ => None,
+                };
+                if let Some(val) = range_result {
+                    self.stack.push(val);
+                    *ip += 1;
+                } else {
                 let (l, r) = Interpreter::coerce_numeric(left, right);
                 let result =
                     if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
@@ -234,6 +250,7 @@ impl VM {
                     };
                 self.stack.push(result);
                 *ip += 1;
+            } // end else (non-range Add)
             }
             OpCode::Sub => {
                 let right = self.stack.pop().unwrap();

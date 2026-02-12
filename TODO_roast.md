@@ -1442,7 +1442,7 @@
 - [ ] roast/S32-list/squish.t
 - [ ] roast/S32-list/tail.t
   - 0/? pass. Panics with `mul_overflow` in `i64::pow` at vm.rs:396. Likely a large negative exponent causing integer overflow before any tests run. Difficulty: Medium (need overflow-safe exponent handling)
-- [ ] roast/S32-list/toggle.t
+- [x] roast/S32-list/toggle.t
 - [ ] roast/S32-list/unique.t
   - 0/40 pass. `.unique` method not implemented. Only 2 tests reached, both fail. Difficulty: Medium (need to implement `.unique` method)
 - [ ] roast/S32-num/abs.t

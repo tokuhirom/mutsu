@@ -1409,14 +1409,45 @@ impl Interpreter {
                     self.load_module(module)?;
                 }
             }
-            Stmt::Subtest { name, body, is_sub } => {
+            Stmt::Subtest { name, body, is_sub: _ } => {
                 let name_value = self.eval_expr(name)?;
                 let label = name_value.to_string_value();
-                let mut child = Interpreter::new();
-                child.forbid_skip_all = !*is_sub;
-                child.run_block(body)?;
-                child.finish()?;
-                self.test_ok(true, &label, false)?;
+
+                // Save parent test state and output
+                let parent_test_state = self.test_state.take();
+                let parent_output = std::mem::take(&mut self.output);
+                let parent_halted = self.halted;
+
+                // Initialize fresh test state for subtest
+                self.test_state = Some(TestState::new());
+                self.halted = false;
+
+                // Run the subtest body
+                let run_result = self.run_block(body);
+
+                // Collect subtest output and state
+                let subtest_output = std::mem::take(&mut self.output);
+                let subtest_state = self.test_state.take();
+                let subtest_failed = subtest_state
+                    .as_ref()
+                    .map(|s| s.failed)
+                    .unwrap_or(0);
+
+                // Restore parent state
+                self.test_state = parent_test_state;
+                self.output = parent_output;
+                self.halted = parent_halted;
+
+                // Emit subtest TAP output (indented)
+                for line in subtest_output.lines() {
+                    self.output.push_str("    ");
+                    self.output.push_str(line);
+                    self.output.push('\n');
+                }
+
+                // Determine pass/fail
+                let ok = run_result.is_ok() && subtest_failed == 0;
+                self.test_ok(ok, &label, false)?;
             }
             Stmt::Block(body) => {
                 self.run_block(body)?;
@@ -3539,10 +3570,8 @@ impl Interpreter {
         match expr {
             Expr::Literal(v) => Ok(v.clone()),
             Expr::BareWord(name) => {
-                // Check if bare word matches an enum value or type in env
-                if let Some(val) = self.env.get(name.as_str())
-                    && matches!(val, Value::Enum { .. } | Value::Nil)
-                {
+                // Check if bare word matches a variable in env (sigilless variables, enums)
+                if let Some(val) = self.env.get(name.as_str()) {
                     return Ok(val.clone());
                 }
                 // Check if it's a class name (return as type object)
@@ -3741,6 +3770,23 @@ impl Interpreter {
                 let mut values = Vec::new();
                 for item in items {
                     values.push(self.eval_expr(item)?);
+                }
+                // Single-element array constructor expands iterables:
+                // [^10] => [0,1,2,...,9], [1..5] => [1,2,3,4,5]
+                if values.len() == 1 {
+                    let val = values.pop().unwrap();
+                    return match &val {
+                        Value::Range(..)
+                        | Value::RangeExcl(..)
+                        | Value::RangeExclStart(..)
+                        | Value::RangeExclBoth(..) => {
+                            Ok(Value::Array(Self::value_to_list(&val)))
+                        }
+                        Value::LazyList(list) => {
+                            Ok(Value::Array(self.force_lazy_list(list)?))
+                        }
+                        _ => Ok(Value::Array(vec![val])),
+                    };
                 }
                 Ok(Value::Array(values))
             }
@@ -5528,7 +5574,11 @@ impl Interpreter {
                         self.output.push_str(&base.to_string_value());
                         Ok(Value::Bool(true))
                     }
-                    "Seq" | "Supply" | "Channel" => {
+                    "Seq" => {
+                        let items = Self::value_to_list(&base);
+                        Ok(Value::Array(items))
+                    }
+                    "Supply" | "Channel" => {
                         // stub
                         Ok(base)
                     }
@@ -6143,6 +6193,18 @@ impl Interpreter {
                         }
                         _ => Ok(base),
                     },
+                    "skip" => {
+                        let n = if let Some(arg) = args.first() {
+                            match self.eval_expr(arg)? {
+                                Value::Int(i) => i as usize,
+                                _ => 1,
+                            }
+                        } else {
+                            1
+                        };
+                        let items = Self::value_to_list(&base);
+                        Ok(Value::Array(items.into_iter().skip(n).collect()))
+                    }
                     "head" => match base {
                         Value::Array(items) => Ok(items.into_iter().next().unwrap_or(Value::Nil)),
                         _ => Ok(base),
@@ -6314,6 +6376,81 @@ impl Interpreter {
                         }
                         _ => Ok(base),
                     },
+                    "toggle" => {
+                        // Parse named :off arg and collect callable conditions
+                        let mut off = false;
+                        let mut condition_exprs = Vec::new();
+                        for arg in args {
+                            if let Expr::AssignExpr { name, expr } = arg {
+                                if name == "off" {
+                                    off = match self.eval_expr(&expr)? {
+                                        Value::Bool(b) => b,
+                                        v => v.truthy(),
+                                    };
+                                }
+                            } else {
+                                // Check if arg evaluates to a Pair (named arg from colonpair)
+                                let val = self.eval_expr(arg)?;
+                                if let Value::Pair(ref k, ref v) = val {
+                                    if k == "off" {
+                                        off = v.truthy();
+                                        continue;
+                                    }
+                                }
+                                // Re-wrap as Literal for deferred callable evaluation
+                                condition_exprs.push(Expr::Literal(val));
+                            }
+                        }
+
+                        // Evaluate all conditions to Values (callables)
+                        let mut conditions = Vec::new();
+                        for ce in &condition_exprs {
+                            conditions.push(self.eval_expr(ce)?);
+                        }
+
+                        // Convert base to iterable elements
+                        let items = Self::value_to_list(&base);
+
+                        // Toggle state machine
+                        let mut state_on = !off;
+                        let mut cond_idx = 0;
+                        let mut result = Vec::new();
+
+                        for item in &items {
+                            if cond_idx < conditions.len() {
+                                if let Value::Sub { ref param, ref body, ref env, .. } = conditions[cond_idx] {
+                                    let placeholders = collect_placeholders(body);
+                                    let saved = self.env.clone();
+                                    for (k, v) in env {
+                                        self.env.insert(k.clone(), v.clone());
+                                    }
+                                    if let Some(p) = param {
+                                        self.env.insert(p.clone(), item.clone());
+                                    }
+                                    if let Some(ph) = placeholders.first() {
+                                        self.env.insert(ph.clone(), item.clone());
+                                    }
+                                    self.env.insert("_".to_string(), item.clone());
+                                    let cond_result = self.eval_block_value(body)?;
+                                    self.env = saved;
+
+                                    if state_on && !cond_result.truthy() {
+                                        state_on = false;
+                                        cond_idx += 1;
+                                    } else if !state_on && cond_result.truthy() {
+                                        state_on = true;
+                                        cond_idx += 1;
+                                    }
+                                }
+                            }
+
+                            if state_on {
+                                result.push(item.clone());
+                            }
+                        }
+
+                        Ok(Value::Array(result))
+                    }
                     "abs" => match base {
                         Value::Int(i) => Ok(Value::Int(i.abs())),
                         Value::Num(f) => Ok(Value::Num(f.abs())),
@@ -6594,6 +6731,21 @@ impl Interpreter {
                                 _ => 1,
                             };
                             Ok(Value::FatRat(a, b))
+                        }
+                        Value::Str(name) | Value::Package(name) if name == "Map" || name == "Hash" => {
+                            let mut map = HashMap::new();
+                            let mut i = 0;
+                            let mut eval_args = Vec::new();
+                            for arg in args {
+                                eval_args.push(self.eval_expr(arg)?);
+                            }
+                            while i + 1 < eval_args.len() {
+                                let k = eval_args[i].to_string_value();
+                                let v = eval_args[i + 1].clone();
+                                map.insert(k, v);
+                                i += 2;
+                            }
+                            Ok(Value::Hash(map))
                         }
                         Value::Str(name) | Value::Package(name) if name == "Set" => {
                             let mut elems = HashSet::new();
@@ -8495,6 +8647,18 @@ impl Interpreter {
             TokenKind::Ampersand => Ok(Self::merge_junction(JunctionKind::All, left, right)),
             TokenKind::Caret => Ok(Self::merge_junction(JunctionKind::One, left, right)),
             TokenKind::Plus => {
+                // Range + Int: shift both bounds
+                match (&left, &right) {
+                    (Value::Range(a, b), Value::Int(n)) => return Ok(Value::Range(a + n, b + n)),
+                    (Value::RangeExcl(a, b), Value::Int(n)) => return Ok(Value::RangeExcl(a + n, b + n)),
+                    (Value::RangeExclStart(a, b), Value::Int(n)) => return Ok(Value::RangeExclStart(a + n, b + n)),
+                    (Value::RangeExclBoth(a, b), Value::Int(n)) => return Ok(Value::RangeExclBoth(a + n, b + n)),
+                    (Value::Int(n), Value::Range(a, b)) => return Ok(Value::Range(a + n, b + n)),
+                    (Value::Int(n), Value::RangeExcl(a, b)) => return Ok(Value::RangeExcl(a + n, b + n)),
+                    (Value::Int(n), Value::RangeExclStart(a, b)) => return Ok(Value::RangeExclStart(a + n, b + n)),
+                    (Value::Int(n), Value::RangeExclBoth(a, b)) => return Ok(Value::RangeExclBoth(a + n, b + n)),
+                    _ => {}
+                }
                 let (l, r) = Self::coerce_numeric(left, right);
                 if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
                     let (ar, ai) = Self::to_complex_parts(&l).unwrap_or((0.0, 0.0));
@@ -10355,6 +10519,16 @@ impl Interpreter {
             Value::RangeExcl(a, b) => (*a..*b).map(Value::Int).collect(),
             Value::RangeExclStart(a, b) => (*a + 1..=*b).map(Value::Int).collect(),
             Value::RangeExclBoth(a, b) => (*a + 1..*b).map(Value::Int).collect(),
+            Value::Set(items) => items.iter().map(|s| Value::Str(s.clone())).collect(),
+            Value::Bag(items) => items
+                .iter()
+                .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Int(*v))))
+                .collect(),
+            Value::Mix(items) => items
+                .iter()
+                .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Num(*v))))
+                .collect(),
+            Value::Nil => vec![],
             other => vec![other.clone()],
         }
     }
