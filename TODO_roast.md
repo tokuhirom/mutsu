@@ -38,6 +38,7 @@
   - 0/14 pass. Fatal: `is expects right` — same `is()` argument parsing issue
 - [ ] roast/S02-literals/adverbs.t
 - [ ] roast/S02-literals/allomorphic.t
+  - ~43/119 pass. val() type detection works (IntStr, RatStr, NumStr, ComplexStr) but equality checks fail (`eqv` not comparing allomorph parts correctly). Nil in qw/qqww works. Failures: `eqv` on allomorphs (5-6, 10-11, etc.), Rat `~~` check (13, 18), `<...>` vs `qw:v[...]` equivalence (52-53), native parameter passing (54, 56, 58-59), `.raku` on allomorphs (71-72), pre/post decrement (78-80). Difficulty: Medium-High
 - [ ] roast/S02-literals/array-interpolation.t
 - [ ] roast/S02-literals/autoref.t
 - [ ] roast/S02-literals/char-by-name.t
@@ -51,6 +52,7 @@
 - [ ] roast/S02-literals/hex_chars.t
   - 0/4 pass. `\x..` hex character codes in strings not implemented. Same blocker as char-by-number.t. Difficulty: Medium
 - [ ] roast/S02-literals/listquote.t
+  - 9/24 pass (3-4, 6, 11-13, 16, 19, 22). Failures: list context `<list>` evaluation (1), `|<<` listop (2), parsefail detection (5, 7-9, 14-15), immutability of `<>` list (17), numeric allomorph stringify (18), Rat/Complex type in `<>` (21, 23), assignment to list (24). Difficulty: Medium
 - [ ] roast/S02-literals/listquote-whitespace.t
 - [ ] roast/S02-literals/misc-interpolation.t
 - [ ] roast/S02-literals/numeric.t
@@ -61,14 +63,17 @@
   - ~6/84 pass. Most failures: Pair type introspection (`.key`, `.value`, `:a(42)` colonpair syntax), `isa(Pair)` checks, nested pairs, Pair destructuring, variables as pair keys
 - [ ] roast/S02-literals/pod.t
 - [ ] roast/S02-literals/quoting.t
+  - 0/? pass. Crashes with panic: byte index not a char boundary in `try_meta_op` when parsing Chinese characters in test file. Parser bug with multi-byte UTF-8 in operator parsing. Difficulty: Medium (parser UTF-8 boundary fix needed)
 - [ ] roast/S02-literals/quoting-unicode.t
 - [ ] roast/S02-literals/radix.t
   - 1/158 pass. `:10<42>`, `:16<FF>` etc. radix notation not implemented. Only `0xffffffff` hex literal works
 - [ ] roast/S02-literals/string-interpolation.t
   - 12/42 pass (7-9, 12-13, 15-16, 19-21, 41-42). Failures: `\01` octal in closures (1-6), `.min`/`.max` method calls in qq[] interpolation (10), `.new` on string literal (11), `\a` alarm escape (14), double-sigil non-interpolation rules (17-18), `throws-like` with `X::Undeclared` (22-40). Difficulty: Medium-High
 - [ ] roast/S02-literals/sub-calls.t
+  - 10/20 pass (1-2, 5-6, 10-11, 13-14, 19-20). Failures: `.()` dot-call syntax (3-4, 7-8, 15-16), adverb after no space (9, 12), parens after space as grouping not call (17), `$_` method dispatch (18). Difficulty: Medium
 - [ ] roast/S02-literals/subscript.t
 - [ ] roast/S02-literals/types.t
+  - 2/7 pass (2, 6). Failures: class redeclaration error not thrown (1), non-existing class/role compile errors not detected (3-5), post-declaration required error (7). Difficulty: Medium (needs compile-time class/role checks)
 - [ ] roast/S02-literals/underscores.t
   - 5/19 pass (tests 1, 11-13, 16). Failures: multiple underscores, leading/trailing underscores, underscore before/after `.`/`e`/`E` should fail; `2._foo` / `2._123` should parse as method calls
 - [x] roast/S02-literals/version.t
