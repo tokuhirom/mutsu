@@ -210,7 +210,6 @@ pub(crate) enum Stmt {
     Subtest {
         name: Expr,
         body: Vec<Stmt>,
-        is_sub: bool,
     },
     Block(Vec<Stmt>),
     If {

@@ -1218,7 +1218,12 @@ impl Interpreter {
     pub(crate) fn exec_stmt(&mut self, stmt: &Stmt) -> Result<(), RuntimeError> {
         match stmt {
             Stmt::VarDecl { name, expr } => {
-                let value = self.eval_expr(expr)?;
+                let mut value = self.eval_expr(expr)?;
+                if name.starts_with('@') {
+                    if let Value::LazyList(ref list) = value {
+                        value = Value::Array(self.force_lazy_list(list)?);
+                    }
+                }
                 let value = if name.starts_with('%') {
                     Self::coerce_to_hash(value)
                 } else if name.starts_with('@') {
@@ -1409,7 +1414,7 @@ impl Interpreter {
                     self.load_module(module)?;
                 }
             }
-            Stmt::Subtest { name, body, is_sub: _ } => {
+            Stmt::Subtest { name, body } => {
                 let name_value = self.eval_expr(name)?;
                 let label = name_value.to_string_value();
 

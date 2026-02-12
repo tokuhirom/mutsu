@@ -152,7 +152,6 @@ impl Parser {
                 return Ok(Stmt::Subtest {
                     name,
                     body,
-                    is_sub: true,
                 });
             }
             if self.match_kind(TokenKind::LBrace) {
@@ -161,7 +160,6 @@ impl Parser {
                 return Ok(Stmt::Subtest {
                     name,
                     body,
-                    is_sub: false,
                 });
             }
             return Err(RuntimeError::new("Expected sub or block for subtest"));
@@ -1476,8 +1474,13 @@ impl Parser {
         // Handle => (fat arrow / pair constructor)
         if self.match_kind(TokenKind::FatArrow) {
             let value = self.parse_or()?;
+            // Auto-quote bareword on LHS of => to a string literal
+            let left = match expr {
+                Expr::BareWord(ref name) => Expr::Literal(Value::Str(name.clone())),
+                _ => expr,
+            };
             return Ok(Expr::Binary {
-                left: Box::new(expr),
+                left: Box::new(left),
                 op: TokenKind::FatArrow,
                 right: Box::new(value),
             });

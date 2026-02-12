@@ -2256,6 +2256,15 @@ impl VM {
                 let idx = *idx as usize;
                 // Dual-write to env for interpreter bridge compatibility
                 let name = &code.locals[idx];
+                let val = if name.starts_with('@') {
+                    if let Value::LazyList(ref list) = val {
+                        Value::Array(self.interpreter.force_lazy_list_bridge(list)?)
+                    } else {
+                        val
+                    }
+                } else {
+                    val
+                };
                 let val = if name.starts_with('%') {
                     Interpreter::coerce_to_hash(val)
                 } else if name.starts_with('@') {
@@ -3036,12 +3045,13 @@ impl VM {
             }
             // Query
             "defined" => Some(Ok(Value::Bool(!matches!(arg, Value::Nil)))),
-            "elems" => Some(Ok(match arg {
-                Value::Array(items) => Value::Int(items.len() as i64),
-                Value::Hash(items) => Value::Int(items.len() as i64),
-                Value::Str(s) => Value::Int(s.chars().count() as i64),
-                _ => Value::Int(0),
-            })),
+            "elems" => match arg {
+                Value::Array(items) => Some(Ok(Value::Int(items.len() as i64))),
+                Value::Hash(items) => Some(Ok(Value::Int(items.len() as i64))),
+                Value::Str(s) => Some(Ok(Value::Int(s.chars().count() as i64))),
+                Value::LazyList(_) => None, // fall back to interpreter which can force the list
+                _ => Some(Ok(Value::Int(0))),
+            },
             // Collection
             "reverse" => Some(Ok(match arg {
                 Value::Array(items) => {
