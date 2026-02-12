@@ -1452,23 +1452,29 @@
 - [ ] roast/S32-num/cool-num.t
 - [ ] roast/S32-num/expmod.t
 - [ ] roast/S32-num/exp.t
+  - 13/72 pass (all 72 reached). Basic `.exp` and `exp()` work for real numbers. Failures: Rat.exp (2), complex exp (5-6, 11-12, 21-23, 31-32), exp with base arg (7-9, 24, 26-27, 30), Euler identity tests (33-72). Difficulty: Medium-High (complex number exp needed)
 - [ ] roast/S32-num/fatrat.t
 - [ ] roast/S32-num/int.t
   - 77/165 pass (108 reached). Strong Int/Num conversion support. `.Int`, `int()`, `.Bool` on numbers all work well. Failures: hex string int (54), trailing char warnings (56-57), many `is-deeply` tests crash (from ~60 onward), bigint overflow (100+). Difficulty: Medium (is-deeply crash blocks many tests; hex parsing, bigint needed)
 - [ ] roast/S32-num/is-prime.t
 - [ ] roast/S32-num/log.t
+  - 7/34 pass (19 reached). `log()` and `log(x, base)` work. Failures: `log2`, `log10` not implemented (6-9, 14-19), `log(Inf)` (11), `log(-Inf)` complex (12). Difficulty: Low-Medium (add log2/log10 builtins)
 - [ ] roast/S32-num/narrow.t
 - [ ] roast/S32-num/negative-zero.t
 - [ ] roast/S32-num/pi.t
 - [ ] roast/S32-num/polar.t
 - [ ] roast/S32-num/polymod.t
 - [ ] roast/S32-num/power.t
+  - 19/89 pass (40 reached). Basic integer ** works well. Failures: `0 ** 0` edge case (7), `-1 ** 0` precedence (11), Rat exponents (13-14), Inf/NaN propagation (18, 20-25, 28-30), complex ** (34-40). Difficulty: Medium (NaN/Inf/complex propagation)
 - [ ] roast/S32-num/rand.t
 - [ ] roast/S32-num/rat.t
+  - 61/869 pass (77 reached). Strong Rat arithmetic (+, -, *, /). Failures: `.raku` EVAL round-trip (6-9, 14-16), stringification edge cases (20), `2 / 1/3` precedence (59), many tests not reached. Difficulty: Medium-High (huge test file, many features needed)
+
 - [ ] roast/S32-num/real-bridge.t
 - [x] roast/S32-num/roots.t
   - 55/55 pass.
 - [ ] roast/S32-num/rounders.t
+  - 28/143 pass (67 reached). `floor`, `ceiling`, `round` work for basic cases. Failures: NaN/Inf floor/round/ceiling/truncate (1-24), large number overflow (37-38), complex round (47-50), truncate issues (54, 58), Rat ceiling/round/truncate (56-58). Difficulty: Medium (NaN/Inf handling for rounding functions)
 - [ ] roast/S32-num/rshift_pos_amount.t
 - [ ] roast/S32-num/sign.t
   - ~21/35 pass (1-3, 6-14, 22-28, 31-32). Crashes with `is-deeply expects right`. Failures: Rat sign (4-5), `.sign` method form (15-21), Inf/NaN sign (29-30, 33-34). Difficulty: Medium

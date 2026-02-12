@@ -5744,10 +5744,10 @@ impl Interpreter {
                                 if name == "g" {
                                     global = true;
                                 }
-                            } else if let Ok(Value::Pair(ref k, _)) = self.eval_expr(a) {
-                                if k == "g" {
-                                    global = true;
-                                }
+                            } else if let Ok(Value::Pair(ref k, _)) = self.eval_expr(a)
+                                && k == "g"
+                            {
+                                global = true;
                             }
                         }
                         let result = if global {
@@ -7093,12 +7093,11 @@ impl Interpreter {
                                     {
                                         short_name = Some(s);
                                     }
-                                } else if let Ok(Value::Pair(ref k, ref v)) = self.eval_expr(arg) {
-                                    if k == "short-name" {
-                                        if let Value::Str(s) = v.as_ref() {
-                                            short_name = Some(s.clone());
-                                        }
-                                    }
+                                } else if let Ok(Value::Pair(ref k, ref v)) = self.eval_expr(arg)
+                                    && k == "short-name"
+                                    && let Value::Str(s) = v.as_ref()
+                                {
+                                    short_name = Some(s.clone());
                                 } else if let Ok(Value::Str(s)) = self.eval_expr(arg) {
                                     short_name = Some(s);
                                 }

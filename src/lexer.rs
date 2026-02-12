@@ -218,28 +218,28 @@ impl Lexer {
 
                         // Check for qq prefix
                         if self.peek() == Some('q') {
-                            if let Some(next) = self.peek_next() {
-                                if matches!(next, '/' | '(' | '[' | '{' | '<') {
-                                    // qq direct-delimiter form (qq/, qq(, etc.)
-                                    self.pos += 1; // skip second 'q'
-                                    self.pos += 1; // skip delimiter
-                                    let result = if matches!(next, '(' | '[' | '{' | '<') {
-                                        let close = match next {
-                                            '(' => ')',
-                                            '[' => ']',
-                                            '{' => '}',
-                                            '<' => '>',
-                                            _ => '/',
-                                        };
-                                        self.read_interpolated_string(close, Some(next))
-                                    } else {
-                                        self.read_interpolated_string(next, None)
+                            if let Some(next) = self.peek_next()
+                                && matches!(next, '/' | '(' | '[' | '{' | '<')
+                            {
+                                // qq direct-delimiter form (qq/, qq(, etc.)
+                                self.pos += 1; // skip second 'q'
+                                self.pos += 1; // skip delimiter
+                                let result = if matches!(next, '(' | '[' | '{' | '<') {
+                                    let close = match next {
+                                        '(' => ')',
+                                        '[' => ']',
+                                        '{' => '}',
+                                        '<' => '>',
+                                        _ => '/',
                                     };
-                                    return Token {
-                                        kind: result,
-                                        line: token_line,
-                                    };
-                                }
+                                    self.read_interpolated_string(close, Some(next))
+                                } else {
+                                    self.read_interpolated_string(next, None)
+                                };
+                                return Token {
+                                    kind: result,
+                                    line: token_line,
+                                };
                             }
                             is_qq = true;
                             self.pos += 1; // skip second 'q'

@@ -267,15 +267,15 @@ impl Parser {
         if self.match_ident("constant") {
             // constant NAME = expr;
             // The name can be a sigil-less identifier or a $var
-            let name = if let Some(token) =
-                self.advance_if(|k| matches!(k, TokenKind::Var(_)))
-            {
+            let name = if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Var(_))) {
                 if let TokenKind::Var(n) = token.kind {
                     format!("${}", n)
                 } else {
                     String::new()
                 }
-            } else if let Some(TokenKind::Ident(n)) = self.tokens.get(self.pos).map(|t| t.kind.clone()) {
+            } else if let Some(TokenKind::Ident(n)) =
+                self.tokens.get(self.pos).map(|t| t.kind.clone())
+            {
                 self.pos += 1;
                 n
             } else {
@@ -287,7 +287,10 @@ impl Parser {
                 return Ok(Stmt::VarDecl { name, expr });
             }
             self.match_kind(TokenKind::Semicolon);
-            return Ok(Stmt::VarDecl { name, expr: Expr::Literal(Value::Nil) });
+            return Ok(Stmt::VarDecl {
+                name,
+                expr: Expr::Literal(Value::Nil),
+            });
         }
         if self.match_ident("enum") {
             return self.parse_enum_decl();

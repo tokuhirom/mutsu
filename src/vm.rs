@@ -167,7 +167,10 @@ impl VM {
                         v.clone()
                     } else if self.interpreter.has_class(name) || Self::is_builtin_type(name) {
                         Value::Package(name.to_string())
-                    } else if !name.starts_with('$') && !name.starts_with('@') && !name.starts_with('%') {
+                    } else if !name.starts_with('$')
+                        && !name.starts_with('@')
+                        && !name.starts_with('%')
+                    {
                         // Sigil-less variable (e.g., from constant declaration)
                         v.clone()
                     } else {
@@ -1980,9 +1983,21 @@ impl VM {
                 } else {
                     let is_comparison = matches!(
                         op.as_str(),
-                        "eq" | "ne" | "lt" | "gt" | "le" | "ge"
-                            | "==" | "!=" | "<" | ">" | "<=" | ">="
-                            | "===" | "eqv" | "cmp" | "leg"
+                        "eq" | "ne"
+                            | "lt"
+                            | "gt"
+                            | "le"
+                            | "ge"
+                            | "=="
+                            | "!="
+                            | "<"
+                            | ">"
+                            | "<="
+                            | ">="
+                            | "==="
+                            | "eqv"
+                            | "cmp"
+                            | "leg"
                     );
                     if is_comparison {
                         // For comparison operators, check all adjacent pairs
@@ -2271,9 +2286,7 @@ impl VM {
                     val
                 };
                 self.locals[idx] = val.clone();
-                self.interpreter
-                    .env_mut()
-                    .insert(name.clone(), val);
+                self.interpreter.env_mut().insert(name.clone(), val);
                 *ip += 1;
             }
         }
