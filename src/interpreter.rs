@@ -96,6 +96,11 @@ enum RegexAtom {
     Digit,
     Word,
     Space,
+    Newline,
+    NotNewline,
+    Group(RegexPattern),
+    Alternation(Vec<RegexPattern>),
+    ZeroWidth,
 }
 
 #[derive(Clone)]
@@ -574,6 +579,11 @@ impl Interpreter {
         match value {
             Value::Array(_) => value,
             Value::Nil => Value::Array(Vec::new()),
+            Value::Range(a, b) => Value::Array((a..=b).map(Value::Int).collect()),
+            Value::RangeExcl(a, b) => Value::Array((a..b).map(Value::Int).collect()),
+            Value::RangeExclStart(a, b) => Value::Array((a + 1..=b).map(Value::Int).collect()),
+            Value::RangeExclBoth(a, b) => Value::Array((a + 1..b).map(Value::Int).collect()),
+            Value::Slip(items) => Value::Array(items),
             other => Value::Array(vec![other]),
         }
     }
@@ -663,10 +673,7 @@ impl Interpreter {
                 Value::Str(Self::mode_name(state.mode).to_string()),
             );
         }
-        Value::Instance {
-            class_name: "IO::Handle".to_string(),
-            attributes: attrs,
-        }
+        Value::make_instance("IO::Handle".to_string(), attrs)
     }
 
     fn mode_name(mode: IoHandleMode) -> &'static str {
@@ -680,10 +687,7 @@ impl Interpreter {
 
     fn make_io_spec_instance(&self) -> Value {
         let attrs = HashMap::new();
-        Value::Instance {
-            class_name: "IO::Spec".to_string(),
-            attributes: attrs,
-        }
+        Value::make_instance("IO::Spec".to_string(), attrs)
     }
 
     fn make_distro_instance() -> Value {
@@ -799,20 +803,14 @@ impl Interpreter {
         attrs.insert("version".to_string(), version);
         attrs.insert(
             "signature".to_string(),
-            Value::Instance {
-                class_name: "Blob".to_string(),
-                attributes: HashMap::new(),
-            },
+            Value::make_instance("Blob".to_string(), HashMap::new()),
         );
         attrs.insert("desc".to_string(), Value::Str(desc));
         attrs.insert("release".to_string(), Value::Str(release));
         attrs.insert("path-sep".to_string(), Value::Str(path_sep));
         attrs.insert("is-win".to_string(), Value::Bool(is_win));
 
-        Value::Instance {
-            class_name: "Distro".to_string(),
-            attributes: attrs,
-        }
+        Value::make_instance("Distro".to_string(), attrs)
     }
 
     fn parse_version_string(s: &str) -> Value {
@@ -851,16 +849,14 @@ impl Interpreter {
                 Value::Str("browser".to_string()),
             ]),
         );
-        Value::Instance {
-            class_name: "Perl".to_string(),
-            attributes: attrs,
-        }
+        Value::make_instance("Perl".to_string(), attrs)
     }
 
     fn handle_id_from_value(value: &Value) -> Option<usize> {
         if let Value::Instance {
             class_name,
             attributes,
+            ..
         } = value
             && class_name == "IO::Handle"
             && let Some(Value::Int(id)) = attributes.get("handle")
@@ -1155,10 +1151,7 @@ impl Interpreter {
     fn make_io_path_instance(&self, path: &str) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("path".to_string(), Value::Str(path.to_string()));
-        Value::Instance {
-            class_name: "IO::Path".to_string(),
-            attributes: attrs,
-        }
+        Value::make_instance("IO::Path".to_string(), attrs)
     }
 
     fn metadata_is_executable(metadata: &fs::Metadata) -> bool {
@@ -1809,6 +1802,7 @@ impl Interpreter {
                 if let Value::Instance {
                     class_name,
                     attributes,
+                    ..
                 } = supply_val
                     && class_name == "Supply"
                 {
@@ -1830,10 +1824,7 @@ impl Interpreter {
                             let _ = self.call_sub_value(tap_sub.clone(), vec![v.clone()], true);
                         }
                     }
-                    let updated = Value::Instance {
-                        class_name: class_name.clone(),
-                        attributes: attrs,
-                    };
+                    let updated = Value::make_instance(class_name.clone(), attrs);
                     self.update_instance_target(supply, updated);
                 }
             }
@@ -3147,20 +3138,14 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert("status".to_string(), Value::Str(status.to_string()));
         attrs.insert("result".to_string(), result);
-        Value::Instance {
-            class_name: "Promise".to_string(),
-            attributes: attrs,
-        }
+        Value::make_instance("Promise".to_string(), attrs)
     }
 
     fn make_supply_instance(&self) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("values".to_string(), Value::Array(Vec::new()));
         attrs.insert("taps".to_string(), Value::Array(Vec::new()));
-        Value::Instance {
-            class_name: "Supply".to_string(),
-            attributes: attrs,
-        }
+        Value::make_instance("Supply".to_string(), attrs)
     }
 
     fn call_sub_value(
@@ -3351,10 +3336,7 @@ impl Interpreter {
                     method_name
                 ))
             })?;
-        let base = Value::Instance {
-            class_name: class_name.to_string(),
-            attributes: attributes.clone(),
-        };
+        let base = Value::make_instance(class_name.to_string(), attributes.clone());
         let saved_env = self.env.clone();
         self.env.insert("self".to_string(), base.clone());
         for (attr_name, attr_val) in &attributes {
@@ -3591,6 +3573,7 @@ impl Interpreter {
             Value::Junction { .. } => "Junction",
             Value::Regex(_) => "Regex",
             Value::Version { .. } => "Version",
+            Value::Slip(_) => "Slip",
         }
     }
 
@@ -3629,6 +3612,15 @@ impl Interpreter {
             return true;
         }
         if constraint == "Stringy" && matches!(value_type, "Str") {
+            return true;
+        }
+        // Role-like type relationships
+        if constraint == "Positional" && matches!(value_type, "Array" | "List" | "Seq") {
+            return true;
+        }
+        if constraint == "Associative"
+            && matches!(value_type, "Hash" | "Map" | "Bag" | "Set" | "Mix")
+        {
             return true;
         }
         false
@@ -3852,6 +3844,9 @@ impl Interpreter {
                         | "Array"
                         | "Int"
                         | "Num"
+                        | "Rat"
+                        | "FatRat"
+                        | "Complex"
                         | "Str"
                         | "Bool"
                         | "Pair"
@@ -3865,11 +3860,24 @@ impl Interpreter {
                         | "Any"
                         | "Mu"
                         | "Cool"
+                        | "Real"
+                        | "Numeric"
+                        | "Stringy"
+                        | "Positional"
+                        | "Associative"
                         | "Failure"
                         | "Exception"
                         | "Order"
                         | "Version"
                         | "Nil"
+                        | "Regex"
+                        | "Block"
+                        | "Routine"
+                        | "Sub"
+                        | "Method"
+                        | "IO"
+                        | "Proc"
+                        | "Slip"
                 ) {
                     return Ok(Value::Package(name.clone()));
                 }
@@ -4262,10 +4270,7 @@ impl Interpreter {
                     };
                     let mut attributes = HashMap::new();
                     attributes.insert("name".to_string(), Value::Str(var_name));
-                    return Ok(Value::Instance {
-                        class_name: class_name.to_string(),
-                        attributes,
-                    });
+                    return Ok(Value::make_instance(class_name.to_string(), attributes));
                 }
                 // Handle method dispatch modifiers: .?method, .+method, .*method
                 if modifier.is_some() {
@@ -4331,10 +4336,7 @@ impl Interpreter {
                             let mut attrs = HashMap::new();
                             attrs.insert("queue".to_string(), Value::Array(Vec::new()));
                             attrs.insert("closed".to_string(), Value::Bool(false));
-                            return Ok(Value::Instance {
-                                class_name: class_name.clone(),
-                                attributes: attrs,
-                            });
+                            return Ok(Value::make_instance(class_name.clone(), attrs));
                         }
                         if class_name == "Supply" {
                             return Ok(self.make_supply_instance());
@@ -4350,10 +4352,7 @@ impl Interpreter {
                             attrs.insert("started".to_string(), Value::Bool(false));
                             attrs.insert("stdout".to_string(), self.make_supply_instance());
                             attrs.insert("stderr".to_string(), self.make_supply_instance());
-                            return Ok(Value::Instance {
-                                class_name: class_name.clone(),
-                                attributes: attrs,
-                            });
+                            return Ok(Value::make_instance(class_name.clone(), attrs));
                         }
                         if class_name == "IO::Path" {
                             let path = args
@@ -4363,10 +4362,7 @@ impl Interpreter {
                                 .unwrap_or_default();
                             let mut attrs = HashMap::new();
                             attrs.insert("path".to_string(), Value::Str(path));
-                            return Ok(Value::Instance {
-                                class_name: "IO::Path".to_string(),
-                                attributes: attrs,
-                            });
+                            return Ok(Value::make_instance("IO::Path".to_string(), attrs));
                         }
                         if class_name == "IO::Handle" {
                             match name.as_str() {
@@ -4729,10 +4725,7 @@ impl Interpreter {
                                 )?;
                                 attrs = updated;
                             }
-                            return Ok(Value::Instance {
-                                class_name: class_name.clone(),
-                                attributes: attrs,
-                            });
+                            return Ok(Value::make_instance(class_name.clone(), attrs));
                         }
                     }
                 }
@@ -4742,6 +4735,7 @@ impl Interpreter {
                     if let Value::Instance {
                         class_name,
                         attributes,
+                        ..
                     } = &base
                     {
                         if class_name == "Distro" {
@@ -4833,10 +4827,7 @@ impl Interpreter {
                                 let mut attrs = attributes.clone();
                                 attrs.insert("result".to_string(), value);
                                 attrs.insert("status".to_string(), Value::Str("Kept".to_string()));
-                                let updated = Value::Instance {
-                                    class_name: class_name.clone(),
-                                    attributes: attrs,
-                                };
+                                let updated = Value::make_instance(class_name.clone(), attrs);
                                 self.update_instance_target(target.as_ref(), updated);
                                 return Ok(Value::Nil);
                             }
@@ -4881,10 +4872,7 @@ impl Interpreter {
                                             .insert("queue".to_string(), Value::Array(vec![value]));
                                     }
                                 }
-                                let updated = Value::Instance {
-                                    class_name: class_name.clone(),
-                                    attributes: attrs,
-                                };
+                                let updated = Value::make_instance(class_name.clone(), attrs);
                                 self.update_instance_target(target.as_ref(), updated);
                                 return Ok(Value::Nil);
                             }
@@ -4896,20 +4884,14 @@ impl Interpreter {
                                 {
                                     value = items.remove(0);
                                 }
-                                let updated = Value::Instance {
-                                    class_name: class_name.clone(),
-                                    attributes: attrs,
-                                };
+                                let updated = Value::make_instance(class_name.clone(), attrs);
                                 self.update_instance_target(target.as_ref(), updated);
                                 return Ok(value);
                             }
                             if name == "close" && args.is_empty() {
                                 let mut attrs = attributes.clone();
                                 attrs.insert("closed".to_string(), Value::Bool(true));
-                                let updated = Value::Instance {
-                                    class_name: class_name.clone(),
-                                    attributes: attrs,
-                                };
+                                let updated = Value::make_instance(class_name.clone(), attrs);
                                 self.update_instance_target(target.as_ref(), updated);
                                 return Ok(Value::Nil);
                             }
@@ -4940,10 +4922,7 @@ impl Interpreter {
                                         let _ = self.call_sub_value(tap, vec![value.clone()], true);
                                     }
                                 }
-                                let updated = Value::Instance {
-                                    class_name: class_name.clone(),
-                                    attributes: attrs,
-                                };
+                                let updated = Value::make_instance(class_name.clone(), attrs);
                                 self.update_instance_target(target.as_ref(), updated);
                                 return Ok(Value::Nil);
                             }
@@ -4967,10 +4946,7 @@ impl Interpreter {
                                             self.call_sub_value(tap.clone(), vec![v.clone()], true);
                                     }
                                 }
-                                let updated = Value::Instance {
-                                    class_name: class_name.clone(),
-                                    attributes: attrs,
-                                };
+                                let updated = Value::make_instance(class_name.clone(), attrs);
                                 self.update_instance_target(target.as_ref(), updated);
                                 return Ok(Value::Nil);
                             }
@@ -4997,10 +4973,7 @@ impl Interpreter {
                             if name == "start" && args.is_empty() {
                                 let mut attrs = attributes.clone();
                                 attrs.insert("started".to_string(), Value::Bool(true));
-                                let updated = Value::Instance {
-                                    class_name: class_name.clone(),
-                                    attributes: attrs,
-                                };
+                                let updated = Value::make_instance(class_name.clone(), attrs);
                                 self.update_instance_target(target.as_ref(), updated);
                                 return Ok(self.make_promise_instance("Kept", Value::Int(0)));
                             }
@@ -5013,10 +4986,7 @@ impl Interpreter {
                                     attrs.insert(key, *boxed);
                                 }
                             }
-                            return Ok(Value::Instance {
-                                class_name: class_name.clone(),
-                                attributes: attrs,
-                            });
+                            return Ok(Value::make_instance(class_name.clone(), attrs));
                         }
                         if name == "isa" {
                             let target = args
@@ -5418,10 +5388,8 @@ impl Interpreter {
                                     updated_attrs.insert(attr_name, val.clone());
                                 }
                             }
-                            let updated_instance = Value::Instance {
-                                class_name: class_name_owned,
-                                attributes: updated_attrs,
-                            };
+                            let updated_instance =
+                                Value::make_instance(class_name_owned, updated_attrs);
                             if let Expr::Var(var_name) = target.as_ref() {
                                 saved_env.insert(var_name.clone(), updated_instance);
                             }
@@ -5612,6 +5580,7 @@ impl Interpreter {
                             Value::Junction { .. } => "Junction",
                             Value::Regex(_) => "Regex",
                             Value::Version { .. } => "Version",
+                            Value::Slip(_) => "Slip",
                         };
                         Ok(Value::Package(type_name.to_string()))
                     }
@@ -5648,6 +5617,7 @@ impl Interpreter {
                             Value::Junction { .. } => "Junction".to_string(),
                             Value::Regex(_) => "Regex".to_string(),
                             Value::Version { .. } => "Version".to_string(),
+                            Value::Slip(_) => "Slip".to_string(),
                         }))
                     }
                     "defined" => Ok(Value::Bool(!matches!(base, Value::Nil | Value::Package(_)))),
@@ -5906,10 +5876,7 @@ impl Interpreter {
                         let path = base.to_string_value();
                         let mut attrs = HashMap::new();
                         attrs.insert("path".to_string(), Value::Str(path));
-                        Ok(Value::Instance {
-                            class_name: "IO::Path".to_string(),
-                            attributes: attrs,
-                        })
+                        Ok(Value::make_instance("IO::Path".to_string(), attrs))
                     }
                     "say" => {
                         self.output.push_str(&base.to_string_value());
@@ -6266,6 +6233,15 @@ impl Interpreter {
                     "Str" => match base {
                         Value::Str(name) if name == "IO::Special" => Ok(Value::Str(String::new())),
                         _ => Ok(Value::Str(base.to_string_value())),
+                    },
+                    "sink" => {
+                        // .sink forces evaluation and discards result
+                        Ok(Value::Nil)
+                    }
+                    "Slip" => match base {
+                        Value::Array(items) => Ok(Value::Slip(items)),
+                        Value::Slip(_) => Ok(base),
+                        _ => Ok(Value::Slip(vec![base])),
                     },
                     "elems" => match base {
                         Value::Array(items) => Ok(Value::Int(items.len() as i64)),
@@ -6648,21 +6624,36 @@ impl Interpreter {
                         }
                         _ => Ok(base),
                     },
-                    "map" => match base {
-                        Value::Array(items) => {
-                            if let Some(func_expr) = args.first() {
-                                let func = self.eval_expr(func_expr)?;
-                                if let Value::Sub {
-                                    params, body, env, ..
-                                } = func
-                                {
-                                    let placeholders = collect_placeholders(&body);
-                                    let mut result = Vec::new();
-                                    for item in items {
-                                        let saved = self.env.clone();
-                                        for (k, v) in &env {
-                                            self.env.insert(k.clone(), v.clone());
-                                        }
+                    "map" => {
+                        let items = Self::value_to_list(&base);
+                        if let Some(func_expr) = args.first() {
+                            let func = self.eval_expr(func_expr)?;
+                            if let Value::Sub {
+                                params, body, env, ..
+                            } = func
+                            {
+                                let placeholders = collect_placeholders(&body);
+                                let arity = if !params.is_empty() {
+                                    params.len()
+                                } else if !placeholders.is_empty() {
+                                    placeholders.len()
+                                } else {
+                                    1
+                                };
+                                let mut result = Vec::new();
+                                let mut i = 0;
+                                while i < items.len() {
+                                    if arity > 1 && i + arity > items.len() {
+                                        return Err(RuntimeError::new(
+                                            "Not enough elements for map block arity",
+                                        ));
+                                    }
+                                    let saved = self.env.clone();
+                                    for (k, v) in &env {
+                                        self.env.insert(k.clone(), v.clone());
+                                    }
+                                    if arity == 1 {
+                                        let item = items[i].clone();
                                         if let Some(p) = params.first() {
                                             self.env.insert(p.clone(), item.clone());
                                         }
@@ -6670,20 +6661,51 @@ impl Interpreter {
                                             self.env.insert(ph.clone(), item.clone());
                                         }
                                         self.env.insert("_".to_string(), item);
-                                        let val = self.eval_block_value(&body)?;
-                                        self.env = saved;
-                                        result.push(val);
+                                    } else {
+                                        for (idx, p) in params.iter().enumerate() {
+                                            if i + idx < items.len() {
+                                                self.env.insert(p.clone(), items[i + idx].clone());
+                                            }
+                                        }
+                                        for (idx, ph) in placeholders.iter().enumerate() {
+                                            if i + idx < items.len() {
+                                                self.env.insert(ph.clone(), items[i + idx].clone());
+                                            }
+                                        }
+                                        self.env.insert("_".to_string(), items[i].clone());
                                     }
-                                    Ok(Value::Array(result))
-                                } else {
-                                    Ok(Value::Array(items))
+                                    match self.eval_block_value(&body) {
+                                        Ok(Value::Slip(elems)) => {
+                                            self.env = saved;
+                                            result.extend(elems);
+                                        }
+                                        Ok(val) => {
+                                            self.env = saved;
+                                            result.push(val);
+                                        }
+                                        Err(e) if e.is_next => {
+                                            self.env = saved;
+                                            // next: skip this element
+                                        }
+                                        Err(e) if e.is_last => {
+                                            self.env = saved;
+                                            break;
+                                        }
+                                        Err(e) => {
+                                            self.env = saved;
+                                            return Err(e);
+                                        }
+                                    }
+                                    i += arity;
                                 }
+                                Ok(Value::Array(result))
                             } else {
                                 Ok(Value::Array(items))
                             }
+                        } else {
+                            Ok(Value::Array(items))
                         }
-                        _ => Ok(base),
-                    },
+                    }
                     "grep" => match base {
                         Value::Array(items) => {
                             if let Some(func_expr) = args.first() {
@@ -8183,9 +8205,186 @@ impl Interpreter {
                         _ => Value::Nil,
                     });
                 }
+                if name == "slip" {
+                    let mut items = Vec::new();
+                    for arg_expr in args {
+                        let val = self.eval_expr(arg_expr)?;
+                        match val {
+                            Value::Array(elems) => items.extend(elems),
+                            Value::Slip(elems) => items.extend(elems),
+                            other => items.push(other),
+                        }
+                    }
+                    return Ok(Value::Slip(items));
+                }
+                if name == "map" {
+                    // map { BLOCK }, @list
+                    let mut arg_iter = args.iter();
+                    let func = arg_iter.next().map(|e| self.eval_expr(e)).transpose()?;
+                    // Collect remaining args into a list
+                    let mut list_items = Vec::new();
+                    for arg_expr in arg_iter {
+                        let val = self.eval_expr(arg_expr)?;
+                        match val {
+                            Value::Array(items) => list_items.extend(items),
+                            Value::Range(a, b) => {
+                                list_items.extend((a..=b).map(Value::Int));
+                            }
+                            Value::RangeExcl(a, b) => {
+                                list_items.extend((a..b).map(Value::Int));
+                            }
+                            Value::RangeExclStart(a, b) => {
+                                list_items.extend((a + 1..=b).map(Value::Int));
+                            }
+                            Value::RangeExclBoth(a, b) => {
+                                list_items.extend((a + 1..b).map(Value::Int));
+                            }
+                            other => list_items.push(other),
+                        }
+                    }
+                    if let Some(Value::Sub {
+                        params, body, env, ..
+                    }) = func
+                    {
+                        let placeholders = collect_placeholders(&body);
+                        let arity = if !params.is_empty() {
+                            params.len()
+                        } else if !placeholders.is_empty() {
+                            placeholders.len()
+                        } else {
+                            1
+                        };
+                        let mut result = Vec::new();
+                        let mut i = 0;
+                        while i < list_items.len() {
+                            if arity > 1 && i + arity > list_items.len() {
+                                return Err(RuntimeError::new(
+                                    "Not enough elements for map block arity",
+                                ));
+                            }
+                            let saved = self.env.clone();
+                            for (k, v) in &env {
+                                self.env.insert(k.clone(), v.clone());
+                            }
+                            if arity == 1 {
+                                let item = list_items[i].clone();
+                                if let Some(p) = params.first() {
+                                    self.env.insert(p.clone(), item.clone());
+                                }
+                                if let Some(ph) = placeholders.first() {
+                                    self.env.insert(ph.clone(), item.clone());
+                                }
+                                self.env.insert("_".to_string(), item);
+                            } else {
+                                // Multi-arity: bind positional params/placeholders
+                                for (idx, p) in params.iter().enumerate() {
+                                    if i + idx < list_items.len() {
+                                        self.env.insert(p.clone(), list_items[i + idx].clone());
+                                    }
+                                }
+                                for (idx, ph) in placeholders.iter().enumerate() {
+                                    if i + idx < list_items.len() {
+                                        self.env.insert(ph.clone(), list_items[i + idx].clone());
+                                    }
+                                }
+                                self.env.insert("_".to_string(), list_items[i].clone());
+                            }
+                            match self.eval_block_value(&body) {
+                                Ok(Value::Slip(elems)) => {
+                                    self.env = saved;
+                                    result.extend(elems);
+                                }
+                                Ok(val) => {
+                                    self.env = saved;
+                                    result.push(val);
+                                }
+                                Err(e) if e.is_next => {
+                                    self.env = saved;
+                                    // next: skip this element
+                                }
+                                Err(e) if e.is_last => {
+                                    self.env = saved;
+                                    break;
+                                }
+                                Err(e) => {
+                                    self.env = saved;
+                                    return Err(e);
+                                }
+                            }
+                            i += arity;
+                        }
+                        return Ok(Value::Array(result));
+                    }
+                    return Ok(Value::Array(list_items));
+                }
+                if name == "grep" {
+                    // grep { BLOCK }, @list
+                    let mut arg_iter = args.iter();
+                    let func = arg_iter.next().map(|e| self.eval_expr(e)).transpose()?;
+                    let mut list_items = Vec::new();
+                    for arg_expr in arg_iter {
+                        let val = self.eval_expr(arg_expr)?;
+                        match val {
+                            Value::Array(items) => list_items.extend(items),
+                            Value::Range(a, b) => {
+                                list_items.extend((a..=b).map(Value::Int));
+                            }
+                            Value::RangeExcl(a, b) => {
+                                list_items.extend((a..b).map(Value::Int));
+                            }
+                            other => list_items.push(other),
+                        }
+                    }
+                    if let Some(Value::Sub {
+                        params, body, env, ..
+                    }) = func
+                    {
+                        let placeholders = collect_placeholders(&body);
+                        let mut result = Vec::new();
+                        for item in list_items {
+                            let saved = self.env.clone();
+                            for (k, v) in &env {
+                                self.env.insert(k.clone(), v.clone());
+                            }
+                            if let Some(p) = params.first() {
+                                self.env.insert(p.clone(), item.clone());
+                            }
+                            if let Some(ph) = placeholders.first() {
+                                self.env.insert(ph.clone(), item.clone());
+                            }
+                            self.env.insert("_".to_string(), item.clone());
+                            let val = self.eval_block_value(&body)?;
+                            self.env = saved;
+                            if val.truthy() {
+                                result.push(item);
+                            }
+                        }
+                        return Ok(Value::Array(result));
+                    }
+                    return Ok(Value::Array(list_items));
+                }
                 if name == "defined" {
                     let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     return Ok(Value::Bool(!matches!(val, Some(Value::Nil) | None)));
+                }
+                if name == "VAR" {
+                    // VAR($x) returns a container object with the variable name
+                    if let Some(arg) = args.first() {
+                        let (var_name, class_name) = match arg {
+                            Expr::Var(n) => (format!("${}", n), "Scalar"),
+                            Expr::ArrayVar(n) => (format!("@{}", n), "Array"),
+                            Expr::HashVar(n) => (format!("%{}", n), "Hash"),
+                            Expr::CodeVar(n) => (format!("&{}", n), "Scalar"),
+                            _ => {
+                                let value = self.eval_expr(arg)?;
+                                return Ok(value);
+                            }
+                        };
+                        let mut attributes = HashMap::new();
+                        attributes.insert("name".to_string(), Value::Str(var_name));
+                        return Ok(Value::make_instance(class_name.to_string(), attributes));
+                    }
+                    return Ok(Value::Nil);
                 }
                 if name == "sqrt" {
                     let val = args.first().and_then(|e| self.eval_expr(e).ok());
@@ -9886,6 +10085,16 @@ impl Interpreter {
                 self.env.insert("/".to_string(), Value::Nil);
                 false
             }
+            // When RHS is a type/Package, check type membership
+            (_, Value::Package(type_name)) => {
+                // A Package on the LHS is a type object - only matches the same type
+                if let Value::Package(left_name) = left {
+                    return Self::type_matches(type_name, left_name);
+                }
+                self.type_matches_value(type_name, left)
+            }
+            // When LHS is a type object (Package), only match same type or type hierarchy
+            (Value::Package(_), _) => false,
             // When RHS is NaN, check if LHS is also NaN
             (_, Value::Num(b)) if b.is_nan() => Self::value_is_nan(left),
             (Value::Num(a), _) if a.is_nan() => Self::value_is_nan(right),
@@ -9897,6 +10106,10 @@ impl Interpreter {
             (Value::Int(a), Value::Str(b)) => a.to_string() == *b,
             (Value::Str(a), Value::Int(b)) => *a == b.to_string(),
             (Value::Nil, Value::Str(s)) => s.is_empty(),
+            // Instance identity: two instances match iff they have the same id
+            (Value::Instance { id: id_a, .. }, Value::Instance { id: id_b, .. }) => id_a == id_b,
+            // Default: non-matching types don't match
+            (Value::Instance { .. }, _) | (_, Value::Instance { .. }) => false,
             _ => true,
         }
     }
@@ -10192,10 +10405,49 @@ impl Interpreter {
     }
 
     fn regex_match_atom(&self, atom: &RegexAtom, chars: &[char], pos: usize) -> Option<usize> {
+        // Group, Alternation, and ZeroWidth can match zero-width, so check before pos >= chars.len()
+        match atom {
+            RegexAtom::Group(pattern) => {
+                return self.regex_match_end_from(pattern, chars, pos);
+            }
+            RegexAtom::Alternation(alternatives) => {
+                for alt in alternatives {
+                    if let Some(end) = self.regex_match_end_from(alt, chars, pos) {
+                        return Some(end);
+                    }
+                }
+                return None;
+            }
+            RegexAtom::ZeroWidth => {
+                return Some(pos); // Matches at any position without consuming
+            }
+            _ => {}
+        }
         if pos >= chars.len() {
             return None;
         }
         let c = chars[pos];
+        // Newline needs special handling: \r\n is a single logical newline (2 chars)
+        match atom {
+            RegexAtom::Newline => {
+                // Raku \n matches: \r\n (CR+LF), \n (LF), \r (CR), \x85 (NEL), \x2028 (LINE SEP)
+                if c == '\r' && pos + 1 < chars.len() && chars[pos + 1] == '\n' {
+                    return Some(pos + 2); // CR/LF
+                }
+                if c == '\n' || c == '\r' || c == '\u{85}' || c == '\u{2028}' {
+                    return Some(pos + 1);
+                }
+                return None;
+            }
+            RegexAtom::NotNewline => {
+                // Matches anything that is NOT a newline character
+                if c == '\n' || c == '\r' || c == '\u{85}' || c == '\u{2028}' {
+                    return None;
+                }
+                return Some(pos + 1);
+            }
+            _ => {}
+        }
         let matched = match atom {
             RegexAtom::Literal(ch) => *ch == c,
             RegexAtom::Named(name) => {
@@ -10211,6 +10463,11 @@ impl Interpreter {
             RegexAtom::Word => c.is_ascii_alphanumeric() || c == '_',
             RegexAtom::Space => c.is_whitespace(),
             RegexAtom::CharClass(class) => self.regex_match_class(class, c),
+            RegexAtom::Group(_)
+            | RegexAtom::Alternation(_)
+            | RegexAtom::Newline
+            | RegexAtom::NotNewline
+            | RegexAtom::ZeroWidth => unreachable!(),
         };
         if matched {
             match atom {
@@ -10228,6 +10485,15 @@ impl Interpreter {
         chars: &[char],
         pos: usize,
     ) -> Option<(usize, Option<(String, String)>)> {
+        // Handle zero-width and group atoms before the length check
+        match atom {
+            RegexAtom::Group(_) | RegexAtom::Alternation(_) | RegexAtom::ZeroWidth => {
+                return self
+                    .regex_match_atom(atom, chars, pos)
+                    .map(|next| (next, None));
+            }
+            _ => {}
+        }
         if pos >= chars.len() {
             return None;
         }
@@ -10310,13 +10576,40 @@ impl Interpreter {
                         'd' => RegexAtom::Digit,
                         'w' => RegexAtom::Word,
                         's' => RegexAtom::Space,
-                        'n' => RegexAtom::Literal('\n'),
+                        'n' => RegexAtom::Newline,
+                        'N' => RegexAtom::NotNewline,
                         't' => RegexAtom::Literal('\t'),
                         'r' => RegexAtom::Literal('\r'),
                         other => RegexAtom::Literal(other),
                     }
                 }
+                '\'' => {
+                    // Quoted literal string in Raku regex: 'foo-bar' matches literally
+                    let mut literal = String::new();
+                    for ch in chars.by_ref() {
+                        if ch == '\'' {
+                            break;
+                        }
+                        literal.push(ch);
+                    }
+                    // Expand to a sequence of literal atoms
+                    let lit_chars: Vec<char> = literal.chars().collect();
+                    if lit_chars.is_empty() {
+                        // Empty string literal matches zero-width
+                        continue;
+                    }
+                    // Push all but the last char as One-quantified literals
+                    for &lc in &lit_chars[..lit_chars.len() - 1] {
+                        tokens.push(RegexToken {
+                            atom: RegexAtom::Literal(lc),
+                            quant: RegexQuant::One,
+                        });
+                    }
+                    // The last char will get any quantifier attached below
+                    RegexAtom::Literal(*lit_chars.last().unwrap())
+                }
                 '<' => {
+                    // Peek to detect <[...]> or <-[...]> or <+[...]> character class syntax
                     let mut name = String::new();
                     for ch in chars.by_ref() {
                         if ch == '>' {
@@ -10324,11 +10617,115 @@ impl Interpreter {
                         }
                         name.push(ch);
                     }
-                    RegexAtom::Named(name)
+                    // Check for Raku character class: <[...]>, <-[...]>, <+[...]>
+                    let trimmed = name.trim();
+                    if (trimmed.starts_with('[')
+                        || trimmed.starts_with("-[")
+                        || trimmed.starts_with("+["))
+                        && trimmed.ends_with(']')
+                    {
+                        let negated;
+                        let inner;
+                        if trimmed.starts_with("-[") {
+                            negated = true;
+                            inner = &trimmed[2..trimmed.len() - 1];
+                        } else if trimmed.starts_with("+[") {
+                            negated = false;
+                            inner = &trimmed[2..trimmed.len() - 1];
+                        } else {
+                            negated = false;
+                            inner = &trimmed[1..trimmed.len() - 1];
+                        }
+                        // Parse Raku-style character class content
+                        if let Some(class) = self.parse_raku_char_class(inner, negated) {
+                            RegexAtom::CharClass(class)
+                        } else {
+                            continue;
+                        }
+                    } else if trimmed == "?" {
+                        // <?>  null assertion: matches zero-width at any position
+                        RegexAtom::ZeroWidth
+                    } else {
+                        // Check for named character classes
+                        match trimmed {
+                            "alpha" => RegexAtom::CharClass(CharClass {
+                                items: vec![
+                                    ClassItem::Range('a', 'z'),
+                                    ClassItem::Range('A', 'Z'),
+                                    ClassItem::Char('_'),
+                                ],
+                                negated: false,
+                            }),
+                            "upper" => RegexAtom::CharClass(CharClass {
+                                items: vec![ClassItem::Range('A', 'Z')],
+                                negated: false,
+                            }),
+                            "lower" => RegexAtom::CharClass(CharClass {
+                                items: vec![ClassItem::Range('a', 'z')],
+                                negated: false,
+                            }),
+                            "digit" => RegexAtom::CharClass(CharClass {
+                                items: vec![ClassItem::Digit],
+                                negated: false,
+                            }),
+                            "xdigit" => RegexAtom::CharClass(CharClass {
+                                items: vec![
+                                    ClassItem::Range('0', '9'),
+                                    ClassItem::Range('a', 'f'),
+                                    ClassItem::Range('A', 'F'),
+                                ],
+                                negated: false,
+                            }),
+                            "space" | "ws" => RegexAtom::CharClass(CharClass {
+                                items: vec![ClassItem::Space],
+                                negated: false,
+                            }),
+                            "alnum" => RegexAtom::CharClass(CharClass {
+                                items: vec![
+                                    ClassItem::Range('a', 'z'),
+                                    ClassItem::Range('A', 'Z'),
+                                    ClassItem::Range('0', '9'),
+                                ],
+                                negated: false,
+                            }),
+                            _ => RegexAtom::Named(name),
+                        }
+                    }
                 }
                 '[' => {
-                    let class = self.parse_char_class(&mut chars)?;
-                    RegexAtom::CharClass(class)
+                    // In Raku regex, [...] is a non-capturing group (alternation)
+                    // Parse as alternation: [a|b|c]
+                    let mut group_pattern = String::new();
+                    let mut depth = 1;
+                    for ch in chars.by_ref() {
+                        if ch == '[' {
+                            depth += 1;
+                            group_pattern.push(ch);
+                        } else if ch == ']' {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
+                            }
+                            group_pattern.push(ch);
+                        } else {
+                            group_pattern.push(ch);
+                        }
+                    }
+                    // Parse the group as alternation
+                    let alternatives: Vec<&str> = group_pattern.split('|').collect();
+                    if alternatives.len() > 1 {
+                        let mut alt_patterns = Vec::new();
+                        for alt in alternatives {
+                            if let Some(p) = self.parse_regex(alt) {
+                                alt_patterns.push(p);
+                            }
+                        }
+                        RegexAtom::Alternation(alt_patterns)
+                    } else if let Some(p) = self.parse_regex(&group_pattern) {
+                        RegexAtom::Group(p)
+                    } else {
+                        continue;
+                    }
                 }
                 other => RegexAtom::Literal(other),
             };
@@ -10359,53 +10756,45 @@ impl Interpreter {
         })
     }
 
-    fn parse_char_class<I>(&self, chars: &mut std::iter::Peekable<I>) -> Option<CharClass>
-    where
-        I: Iterator<Item = char>,
-    {
-        let mut negated = false;
-        if let Some('^') = chars.peek().copied() {
-            chars.next();
-            negated = true;
-        }
+    fn parse_raku_char_class(&self, inner: &str, negated: bool) -> Option<CharClass> {
+        // Parse Raku-style character class: a..z, \n, \t, individual chars
         let mut items = Vec::new();
+        let mut chars = inner.chars().peekable();
         while let Some(c) = chars.next() {
-            if c == ']' {
-                break;
+            if c == ' ' {
+                // Raku regex ignores spaces in char classes
+                continue;
             }
-            let item = if c == '\\' {
+            if c == '\\' {
                 let esc = chars.next()?;
                 match esc {
-                    'd' => ClassItem::Digit,
-                    'w' => ClassItem::Word,
-                    's' => ClassItem::Space,
-                    'n' => ClassItem::Char('\n'),
-                    't' => ClassItem::Char('\t'),
-                    'r' => ClassItem::Char('\r'),
-                    other => ClassItem::Char(other),
+                    'n' => items.push(ClassItem::Char('\n')),
+                    't' => items.push(ClassItem::Char('\t')),
+                    'r' => items.push(ClassItem::Char('\r')),
+                    'd' => items.push(ClassItem::Digit),
+                    'w' => items.push(ClassItem::Word),
+                    's' => items.push(ClassItem::Space),
+                    other => items.push(ClassItem::Char(other)),
                 }
-            } else if let Some('-') = chars.peek().copied() {
-                chars.next();
-                if let Some(end) = chars.peek().copied() {
-                    if end != ']' {
-                        let end = chars.next()?;
-                        ClassItem::Range(c, end)
-                    } else {
-                        items.push(ClassItem::Char(c));
-                        items.push(ClassItem::Char('-'));
-                        continue;
+            } else if chars.peek() == Some(&'.') {
+                // Check for '..' range syntax
+                let mut peek_chars = chars.clone();
+                peek_chars.next(); // consume first '.'
+                if peek_chars.peek() == Some(&'.') {
+                    // It's a range: a..z
+                    chars.next(); // consume first '.'
+                    chars.next(); // consume second '.'
+                    if let Some(end) = chars.next() {
+                        items.push(ClassItem::Range(c, end));
                     }
                 } else {
                     items.push(ClassItem::Char(c));
-                    items.push(ClassItem::Char('-'));
-                    continue;
                 }
             } else {
-                ClassItem::Char(c)
-            };
-            items.push(item);
+                items.push(ClassItem::Char(c));
+            }
         }
-        Some(CharClass { negated, items })
+        Some(CharClass { items, negated })
     }
 
     pub(crate) fn reduction_identity(op: &str) -> Value {
@@ -11115,6 +11504,7 @@ impl Interpreter {
                 .iter()
                 .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Num(*v))))
                 .collect(),
+            Value::Slip(items) => items.clone(),
             Value::Nil => vec![],
             other => vec![other.clone()],
         }

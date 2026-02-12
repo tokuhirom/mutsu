@@ -79,6 +79,9 @@ impl VM {
                 | "Array"
                 | "Int"
                 | "Num"
+                | "Rat"
+                | "FatRat"
+                | "Complex"
                 | "Str"
                 | "Bool"
                 | "Pair"
@@ -92,11 +95,24 @@ impl VM {
                 | "Any"
                 | "Mu"
                 | "Cool"
+                | "Real"
+                | "Numeric"
+                | "Stringy"
+                | "Positional"
+                | "Associative"
                 | "Failure"
                 | "Exception"
                 | "Order"
                 | "Version"
                 | "Nil"
+                | "Regex"
+                | "Block"
+                | "Routine"
+                | "Sub"
+                | "Method"
+                | "IO"
+                | "Proc"
+                | "Slip"
         )
     }
 
@@ -2396,7 +2412,10 @@ impl VM {
             return None;
         }
         match method {
-            "defined" => Some(Ok(Value::Bool(!matches!(target, Value::Nil)))),
+            "defined" => Some(Ok(Value::Bool(!matches!(
+                target,
+                Value::Nil | Value::Package(_)
+            )))),
             "Bool" => Some(Ok(Value::Bool(target.truthy()))),
             "Str" => {
                 // Exclude complex types with special interpreter handling

@@ -2600,6 +2600,18 @@ impl Parser {
             });
         }
         if self.match_kind(TokenKind::Question) {
+            // Check for ?^ (boolean NOT prefix operator)
+            if self.match_kind(TokenKind::Caret) {
+                let expr = self.parse_unary()?;
+                // ?^X means: convert X to Bool, then negate
+                return Ok(Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(Expr::Unary {
+                        op: TokenKind::Question,
+                        expr: Box::new(expr),
+                    }),
+                });
+            }
             let expr = self.parse_unary()?;
             return Ok(Expr::Unary {
                 op: TokenKind::Question,
@@ -2686,12 +2698,29 @@ impl Parser {
         } else if self.match_kind(TokenKind::RParen) {
             Expr::Literal(Value::Nil)
         } else if self.match_kind(TokenKind::Dot) {
-            let name = self.consume_ident()?;
-            Expr::MethodCall {
-                target: Box::new(Expr::Var("_".to_string())),
-                name,
-                args: Vec::new(),
-                modifier: None,
+            if self.check(&TokenKind::LParen) {
+                // .() - invocation on $_
+                self.consume_kind(TokenKind::LParen)?;
+                let mut call_args = Vec::new();
+                if !self.check(&TokenKind::RParen) {
+                    call_args.push(self.parse_method_arg());
+                    while self.match_kind(TokenKind::Comma) {
+                        call_args.push(self.parse_method_arg());
+                    }
+                }
+                self.consume_kind(TokenKind::RParen)?;
+                Expr::CallOn {
+                    target: Box::new(Expr::Var("_".to_string())),
+                    args: call_args,
+                }
+            } else {
+                let name = self.consume_ident()?;
+                Expr::MethodCall {
+                    target: Box::new(Expr::Var("_".to_string())),
+                    name,
+                    args: Vec::new(),
+                    modifier: None,
+                }
             }
         } else if self.match_kind(TokenKind::LParen) {
             if self.check(&TokenKind::RParen) {
@@ -2926,6 +2955,23 @@ impl Parser {
                     }
                 }
                 self.consume_kind(TokenKind::RParen)?;
+                Expr::Call { name, args }
+            } else if matches!(name.as_str(), "map" | "grep")
+                && matches!(
+                    self.peek_next_kind(),
+                    Some(TokenKind::LBrace | TokenKind::Arrow)
+                )
+            {
+                // map { BLOCK }, @list  or  map -> $a, $b { BLOCK }, @list
+                self.pos += 1; // consume function name
+                let block = self.parse_expr()?; // parse the block
+                let mut args = vec![block];
+                while self.match_kind(TokenKind::Comma) {
+                    if self.check(&TokenKind::Semicolon) || self.check(&TokenKind::Eof) {
+                        break;
+                    }
+                    args.push(self.parse_expr()?);
+                }
                 Expr::Call { name, args }
             } else if matches!(
                 name.as_str(),
@@ -3231,22 +3277,83 @@ impl Parser {
         } else if self.match_kind(TokenKind::BlockMagic) {
             Expr::BlockMagic
         } else if self.match_kind(TokenKind::Arrow) {
+            // Skip optional return type annotation (e.g., --> Int)
+            let skip_type_annotation = |s: &mut Self| {
+                if matches!(
+                    s.tokens.get(s.pos).map(|t| &t.kind),
+                    Some(TokenKind::Ident(_))
+                ) && matches!(
+                    s.tokens.get(s.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Var(_))
+                ) {
+                    s.pos += 1;
+                }
+            };
+            skip_type_annotation(self);
+            let mut params = Vec::new();
+            if self.peek_is_var() {
+                params.push(self.consume_var()?);
+                while self.match_kind(TokenKind::Comma) {
+                    // Skip optional type annotation before next param
+                    skip_type_annotation(self);
+                    if self.peek_is_var() {
+                        params.push(self.consume_var()?);
+                    } else if let Some(name) = self.peek_ident() {
+                        // Sigilless parameter (e.g., \x)
+                        if !matches!(name.as_str(), "if" | "unless" | "while" | "until" | "for") {
+                            self.pos += 1;
+                            params.push(name);
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            } else if let Some(name) = self.peek_ident() {
+                // Sigilless parameter (e.g., -> \t where \ is skipped by lexer)
+                if !matches!(name.as_str(), "if" | "unless" | "while" | "until" | "for") {
+                    self.pos += 1;
+                    params.push(name);
+                    while self.match_kind(TokenKind::Comma) {
+                        skip_type_annotation(self);
+                        if self.peek_is_var() {
+                            params.push(self.consume_var()?);
+                        } else if let Some(name2) = self.peek_ident() {
+                            if !matches!(
+                                name2.as_str(),
+                                "if" | "unless" | "while" | "until" | "for"
+                            ) {
+                                self.pos += 1;
+                                params.push(name2);
+                            } else {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+            // Skip --> ReturnType annotation before block
             if matches!(
                 self.tokens.get(self.pos).map(|t| &t.kind),
-                Some(TokenKind::Ident(_))
-            ) && matches!(
-                self.tokens.get(self.pos + 1).map(|t| &t.kind),
-                Some(TokenKind::Var(_))
+                Some(TokenKind::Ident(n)) if n == "-->"
             ) {
-                self.pos += 1;
+                self.pos += 1; // skip -->
+                if self.peek_ident().is_some() {
+                    self.pos += 1; // skip type name
+                }
             }
-            let param = if self.peek_is_var() {
-                self.consume_var()?
-            } else {
-                String::new()
-            };
             let body = self.parse_block()?;
-            Expr::Lambda { param, body }
+            if params.len() == 1 {
+                Expr::Lambda {
+                    param: params.into_iter().next().unwrap_or_default(),
+                    body,
+                }
+            } else {
+                Expr::AnonSubParams { params, body }
+            }
         } else if self.peek_is_var() {
             let var_line = self.tokens.get(self.pos).map(|t| t.line).unwrap_or(0);
             let name = self.consume_var()?;
@@ -3256,7 +3363,11 @@ impl Parser {
                 Expr::Var(name)
             }
         } else if self.match_kind(TokenKind::LBrace) {
-            if self.is_hash_literal_start() {
+            if self.check(&TokenKind::RBrace) {
+                // Empty {} is a Hash, not a Block
+                self.pos += 1; // consume '}'
+                Expr::Hash(Vec::new())
+            } else if self.is_hash_literal_start() {
                 let pairs = self.parse_hash_literal()?;
                 Expr::Hash(pairs)
             } else {
@@ -3342,6 +3453,23 @@ impl Parser {
                 } else {
                     None
                 };
+                // .() - invocation on the target as a callable
+                if self.check(&TokenKind::LParen) {
+                    self.consume_kind(TokenKind::LParen)?;
+                    let mut call_args = Vec::new();
+                    if !self.check(&TokenKind::RParen) {
+                        call_args.push(self.parse_method_arg());
+                        while self.match_kind(TokenKind::Comma) {
+                            call_args.push(self.parse_method_arg());
+                        }
+                    }
+                    self.consume_kind(TokenKind::RParen)?;
+                    expr = Expr::CallOn {
+                        target: Box::new(expr),
+                        args: call_args,
+                    };
+                    continue;
+                }
                 // Handle .^name (meta-method call) - treat ^ as prefix to method name
                 let is_meta = self.match_kind(TokenKind::Caret);
                 let name = self.consume_ident()?;

@@ -136,6 +136,70 @@ impl Lexer {
         }
     }
 
+    // Parse \x hex escape: \xNN or \x[NNNN]
+    fn parse_hex_escape(&mut self) -> Option<char> {
+        if self.peek() == Some('[') {
+            self.pos += 1; // skip '['
+            let mut hex = String::new();
+            while let Some(c) = self.peek() {
+                if c == ']' {
+                    self.pos += 1;
+                    break;
+                }
+                hex.push(c);
+                self.pos += 1;
+            }
+            u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+        } else {
+            let mut hex = String::new();
+            while let Some(c) = self.peek() {
+                if c.is_ascii_hexdigit() {
+                    hex.push(c);
+                    self.pos += 1;
+                } else {
+                    break;
+                }
+            }
+            if hex.is_empty() {
+                None
+            } else {
+                u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+            }
+        }
+    }
+
+    // Parse \o octal escape: \oNN or \o[NNN]
+    fn parse_octal_escape(&mut self) -> Option<char> {
+        if self.peek() == Some('[') {
+            self.pos += 1; // skip '['
+            let mut oct = String::new();
+            while let Some(c) = self.peek() {
+                if c == ']' {
+                    self.pos += 1;
+                    break;
+                }
+                oct.push(c);
+                self.pos += 1;
+            }
+            u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
+        } else {
+            let mut oct = String::new();
+            while let Some(c) = self.peek() {
+                if c.is_ascii_digit() && c != '8' && c != '9' {
+                    oct.push(c);
+                    self.pos += 1;
+                } else {
+                    break;
+                }
+            }
+            if oct.is_empty() {
+                None
+            } else {
+                u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
+            }
+        }
+    }
+
     pub(crate) fn next_token(&mut self) -> Token {
         loop {
             self.skip_ws_and_comments();
@@ -281,7 +345,7 @@ impl Lexer {
                         match ident.as_str() {
                             "True" => TokenKind::True,
                             "False" => TokenKind::False,
-                            "Nil" | "Mu" => TokenKind::Nil,
+                            "Nil" => TokenKind::Nil,
                             "Any" => TokenKind::Ident("Any".to_string()),
                             "or" => TokenKind::OrWord,
                             "orelse" => TokenKind::OrElse,
@@ -296,12 +360,16 @@ impl Lexer {
                         self.pos += 1;
                         let regex = self.read_regex_literal();
                         TokenKind::Regex(regex)
+                    } else if self.peek() == Some('{') {
+                        self.pos += 1;
+                        let regex = self.read_brace_regex_literal();
+                        TokenKind::Regex(regex)
                     } else {
                         let ident = self.read_ident_start(ch);
                         match ident.as_str() {
                             "True" => TokenKind::True,
                             "False" => TokenKind::False,
-                            "Nil" | "Mu" => TokenKind::Nil,
+                            "Nil" => TokenKind::Nil,
                             "Any" => TokenKind::Ident("Any".to_string()),
                             _ => TokenKind::Ident(ident),
                         }
@@ -322,7 +390,7 @@ impl Lexer {
                         match ident.as_str() {
                             "True" => TokenKind::True,
                             "False" => TokenKind::False,
-                            "Nil" | "Mu" => TokenKind::Nil,
+                            "Nil" => TokenKind::Nil,
                             "Any" => TokenKind::Ident("Any".to_string()),
                             _ => TokenKind::Ident(ident),
                         }
@@ -342,7 +410,7 @@ impl Lexer {
                         match ident.as_str() {
                             "True" => TokenKind::True,
                             "False" => TokenKind::False,
-                            "Nil" | "Mu" => TokenKind::Nil,
+                            "Nil" => TokenKind::Nil,
                             "Any" => TokenKind::Ident("Any".to_string()),
                             _ => TokenKind::Ident(ident),
                         }
@@ -514,6 +582,19 @@ impl Lexer {
                                     '\\' => current.push('\\'),
                                     '$' => current.push('$'),
                                     '{' => current.push('{'),
+                                    'x' => {
+                                        if let Some(ch) = self.parse_hex_escape() {
+                                            current.push(ch);
+                                        }
+                                    }
+                                    'o' => {
+                                        if let Some(ch) = self.parse_octal_escape() {
+                                            current.push(ch);
+                                        }
+                                    }
+                                    '0' => current.push('\0'),
+                                    'a' => current.push('\x07'),
+                                    'e' => current.push('\x1B'),
                                     _ => current.push(n),
                                 }
                             }
@@ -972,7 +1053,7 @@ impl Lexer {
                         match ident.as_str() {
                             "True" => TokenKind::True,
                             "False" => TokenKind::False,
-                            "Nil" | "Mu" => TokenKind::Nil,
+                            "Nil" => TokenKind::Nil,
                             "Any" => TokenKind::Ident("Any".to_string()),
                             "or" => TokenKind::OrWord,
                             "orelse" => TokenKind::OrElse,
@@ -1325,6 +1406,38 @@ impl Lexer {
         Some(s)
     }
 
+    fn read_brace_regex_literal(&mut self) -> String {
+        let mut s = String::new();
+        let mut depth = 1usize;
+        let mut escaped = false;
+        while let Some(c) = self.peek() {
+            self.pos += 1;
+            if escaped {
+                escaped = false;
+                s.push(c);
+                continue;
+            }
+            if c == '\\' {
+                escaped = true;
+                s.push(c);
+                continue;
+            }
+            if c == '{' {
+                depth += 1;
+                s.push(c);
+            } else if c == '}' {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+                s.push(c);
+            } else {
+                s.push(c);
+            }
+        }
+        s
+    }
+
     fn read_regex_literal(&mut self) -> String {
         let mut s = String::new();
         let mut escaped = false;
@@ -1447,6 +1560,19 @@ impl Lexer {
                         '\\' => current.push('\\'),
                         '$' => current.push('$'),
                         '{' => current.push('{'),
+                        'x' => {
+                            if let Some(ch) = self.parse_hex_escape() {
+                                current.push(ch);
+                            }
+                        }
+                        'o' => {
+                            if let Some(ch) = self.parse_octal_escape() {
+                                current.push(ch);
+                            }
+                        }
+                        '0' => current.push('\0'),
+                        'a' => current.push('\x07'),
+                        'e' => current.push('\x1B'),
                         _ => {
                             if n == close {
                                 current.push(n);
@@ -1714,6 +1840,60 @@ impl Lexer {
         }
     }
 
+    fn parse_hex_from_chars(chars: &[char], i: &mut usize) -> Option<char> {
+        if *i < chars.len() && chars[*i] == '[' {
+            *i += 1;
+            let mut hex = String::new();
+            while *i < chars.len() && chars[*i] != ']' {
+                hex.push(chars[*i]);
+                *i += 1;
+            }
+            if *i < chars.len() {
+                *i += 1;
+            } // skip ']'
+            u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+        } else {
+            let mut hex = String::new();
+            while *i < chars.len() && chars[*i].is_ascii_hexdigit() {
+                hex.push(chars[*i]);
+                *i += 1;
+            }
+            if hex.is_empty() {
+                return None;
+            }
+            u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+        }
+    }
+
+    fn parse_octal_from_chars(chars: &[char], i: &mut usize) -> Option<char> {
+        if *i < chars.len() && chars[*i] == '[' {
+            *i += 1;
+            let mut oct = String::new();
+            while *i < chars.len() && chars[*i] != ']' {
+                oct.push(chars[*i]);
+                *i += 1;
+            }
+            if *i < chars.len() {
+                *i += 1;
+            } // skip ']'
+            u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
+        } else {
+            let mut oct = String::new();
+            while *i < chars.len()
+                && chars[*i].is_ascii_digit()
+                && chars[*i] != '8'
+                && chars[*i] != '9'
+            {
+                oct.push(chars[*i]);
+                *i += 1;
+            }
+            if oct.is_empty() {
+                return None;
+            }
+            u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
+        }
+    }
+
     /// Parse a heredoc body string as an interpolated (qq) string.
     /// Handles $var, @var, {block}, and escape sequences.
     fn parse_heredoc_qq_body(&self, body: &str) -> TokenKind {
@@ -1736,6 +1916,19 @@ impl Lexer {
                         '\\' => current.push('\\'),
                         '$' => current.push('$'),
                         '{' => current.push('{'),
+                        'x' => {
+                            if let Some(ch) = Self::parse_hex_from_chars(&chars, &mut i) {
+                                current.push(ch);
+                            }
+                        }
+                        'o' => {
+                            if let Some(ch) = Self::parse_octal_from_chars(&chars, &mut i) {
+                                current.push(ch);
+                            }
+                        }
+                        '0' => current.push('\0'),
+                        'a' => current.push('\x07'),
+                        'e' => current.push('\x1B'),
                         _ => current.push(n),
                     }
                 }

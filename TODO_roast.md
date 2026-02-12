@@ -583,8 +583,8 @@
   - 15/15 pass.
 - [ ] roast/S05-metachars/tilde.t
 - [ ] roast/S05-metasyntax/angle-brackets.t
-- [x] roast/S05-metasyntax/assertions.t
-  - 4/4 pass.
+- [ ] roast/S05-metasyntax/assertions.t
+  - 3/4 pass. Test 1 fails: code assertions `<?{$0 < 5}>` require capture groups `()` and code execution inside regex. Difficulty: High
 - [ ] roast/S05-metasyntax/changed.t
 - [ ] roast/S05-metasyntax/charset.t
 - [ ] roast/S05-metasyntax/delimiters.t
@@ -861,8 +861,8 @@
 - [ ] roast/S12-construction/roles-6e.t
 - [ ] roast/S12-construction/TWEAK.t
 - [ ] roast/S12-enums/anonymous.t
-- [x] roast/S12-enums/as-role.t
-  - 9/9 pass.
+- [ ] roast/S12-enums/as-role.t
+  - 6/9 pass. Tests 1, 5, 9 fail: enum member accessor methods (`.No`, `.Yes`, `.Dunno`) on objects with applied enum role. Requires `does`/`but` operators with enum parameters and enum-as-role composition. Difficulty: High
 - [ ] roast/S12-enums/basic.t
   - 25/54 pass. Good basic enum support. Failures: Pair arithmetic (6), `.does()` for enum type (7-8), given/when with enum (11), parens/starting-point syntax (17), Pair of one element (20), type enforcement (25), short name without parens (26), `.pick`/`.pick(2)` (30-31), double-colon namespace (32), redeclared values (36-37), iteration (39-41). Difficulty: Medium
 - [ ] roast/S12-enums/misc.t
@@ -1453,7 +1453,7 @@
   - 18/38 pass. Good basic join. Failures: join with flat args `join("|", 1, 2, 3)` (6, 13, 17-18, 26), itemized `$[]` (7, 19-20, 27), join without parens (15-16), odd list join (29-30), `&join` reference (34-35). Difficulty: Medium
 - [ ] roast/S32-list/map_function_return_values.t
 - [ ] roast/S32-list/map.t
-  - 0/? pass. Hangs on startup (infinite loop or timeout). Difficulty: Medium-High
+  - 48/62 pass (was 0). Implemented: map function form (`map { }, @list`), Range-to-Array flattening for @-variables, `slip()` function and `Value::Slip`, `.Slip` method, multi-arity map (both `$^a`/`$^b` and `-> $a, $b` pointed blocks), `.()` invocation syntax, `next`/`last` in map, `.sink` method. Cannot whitelist: last section (lines 278-287) hangs due to `.iterator`/`.pull-one`/`IterationEnd`/`=:=` not implemented. Remaining failures: `#?rakudo skip` tests (4, 7-8), `is-deeply` tuple comparison (17-19), `$_` mutation aliasing (28), map on pair comma-list return (53), `&sprintf.assuming` (55), hash-context map (57), `s///` in map (58), `Any.map({ Slip })` type object (59), `.sink` side-effect propagation (61).
 - [ ] roast/S32-list/minmax.t
 - [ ] roast/S32-list/permutations.t
 - [ ] roast/S32-list/pick.t

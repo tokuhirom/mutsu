@@ -15,5 +15,5 @@ ok "a b" ~~ /\s/, 'space class';
 ok "abc".match(/b/), '.match uses regex';
 ok "abc" ~~ rx/ab/, 'rx// literal match';
 ok "b" ~~ /a?b/, 'question quantifier';
-ok "b" ~~ /[a-c]/, 'char class range';
-nok "b" ~~ /[^a-c]/, 'negated class fails on range';
+ok "b" ~~ /<[a..c]>/, 'char class range';
+nok "b" ~~ /<-[a..c]>/, 'negated class fails on range';

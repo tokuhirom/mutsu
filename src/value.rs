@@ -1,8 +1,15 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::ast::Stmt;
 use std::cell::RefCell;
 use std::rc::Rc;
+
+static INSTANCE_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+pub(crate) fn next_instance_id() -> u64 {
+    INSTANCE_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum JunctionKind {
@@ -165,11 +172,13 @@ pub enum Value {
     Instance {
         class_name: String,
         attributes: HashMap<String, Value>,
+        id: u64,
     },
     Junction {
         kind: JunctionKind,
         values: Vec<Value>,
     },
+    Slip(Vec<Value>),
     LazyList(Rc<LazyList>),
     Version {
         parts: Vec<VersionPart>,
@@ -269,10 +278,12 @@ impl PartialEq for Value {
                 Value::Instance {
                     class_name: a,
                     attributes: aa,
+                    ..
                 },
                 Value::Instance {
                     class_name: b,
                     attributes: ba,
+                    ..
                 },
             ) => a == b && aa == ba,
             (
@@ -313,6 +324,14 @@ impl PartialEq for Value {
 }
 
 impl Value {
+    pub(crate) fn make_instance(class_name: String, attributes: HashMap<String, Value>) -> Self {
+        Value::Instance {
+            class_name,
+            attributes,
+            id: next_instance_id(),
+        }
+    }
+
     pub(crate) fn version_strip_trailing_zeros(parts: &[VersionPart]) -> Vec<VersionPart> {
         let mut v: Vec<VersionPart> = parts.to_vec();
         while v.last() == Some(&VersionPart::Num(0)) {
@@ -346,7 +365,7 @@ impl Value {
             Value::Pair(_, _) => true,
             Value::Enum { .. } => true,
             Value::CompUnitDepSpec { .. } => true,
-            Value::Package(_) => true,
+            Value::Package(_) => false,
             Value::Routine { .. } => true,
             Value::Sub { .. } => true,
             Value::Instance { .. } => true,
@@ -356,6 +375,7 @@ impl Value {
                 JunctionKind::One => values.iter().filter(|v| v.truthy()).count() == 1,
                 JunctionKind::None => values.iter().all(|v| !v.truthy()),
             },
+            Value::Slip(items) => !items.is_empty(),
             Value::LazyList(_) => true,
             Value::Regex(_) => true,
             Value::Version { .. } => true,
@@ -477,6 +497,7 @@ impl Value {
             Value::Instance {
                 class_name,
                 attributes,
+                ..
             } if class_name == "IO::Path" => attributes
                 .get("path")
                 .map(|v: &Value| v.to_string_value())
@@ -507,6 +528,11 @@ impl Value {
                     s
                 }
             }
+            Value::Slip(items) => items
+                .iter()
+                .map(|v| v.to_string_value())
+                .collect::<Vec<_>>()
+                .join(" "),
             Value::Nil => "Nil".to_string(),
         }
     }

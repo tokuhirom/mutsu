@@ -46,6 +46,7 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - When the expected behavior of a roast test is unclear, consult `./old-design-docs/` for the original Raku language specification before implementing.
 - When investigating a roast test and deciding to defer it, always record the reason for failure in `TODO_roast.md` under the corresponding entry. Even if a test is not fixed now, the diagnosis is valuable for future work.
 - Roast is the authoritative spec. If passing a roast test requires changing a local test under `t/`, update the local test to match roast's expected behavior.
+- When `make roast` shows failures in whitelisted tests, do NOT dismiss them as "pre-existing". Investigate each failure, fix what can be fixed, and remove from the whitelist only tests that truly cannot pass yet (with documented reasons in TODO_roast.md).
 
 ## Conventions
 - Add small, focused tests for each new syntax feature.
