@@ -394,8 +394,7 @@
 - [ ] roast/S03-sequence/misc.t
 - [ ] roast/S03-sequence/nonnumeric.t
 - [ ] roast/S03-smartmatch/00-sanity.t
-- [ ] roast/S03-smartmatch/any-any.t
-  - 6/8 pass. `~~` and `!~~` work for basic Any-Any matching. Failures: `~~` should set `$_` to LHS inside block (5), `!~~` same issue (7). Difficulty: Low (need `$_` binding in smartmatch context)
+- [x] roast/S03-smartmatch/any-any.t
 - [ ] roast/S03-smartmatch/any-bool.t
 - [ ] roast/S03-smartmatch/any-callable.t
 - [ ] roast/S03-smartmatch/any-complex.t

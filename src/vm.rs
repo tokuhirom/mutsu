@@ -592,25 +592,7 @@ impl VM {
                 *ip += 1;
             }
 
-            // -- Smart match (interpreter bridge - needs regex state) --
-            OpCode::SmartMatch => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                let result = self.eval_binary_with_junctions(left, right, |s, l, r| {
-                    Ok(Value::Bool(s.interpreter.smart_match_values(&l, &r)))
-                })?;
-                self.stack.push(result);
-                *ip += 1;
-            }
-            OpCode::NotMatch => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                let result = self.eval_binary_with_junctions(left, right, |s, l, r| {
-                    Ok(Value::Bool(!s.interpreter.smart_match_values(&l, &r)))
-                })?;
-                self.stack.push(result);
-                *ip += 1;
-            }
+            // Smart match (~~, !~~) handled via interpreter fallback (needs $_ binding)
 
             // -- Three-way comparison (native) --
             OpCode::Spaceship => {

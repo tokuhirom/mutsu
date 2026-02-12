@@ -51,10 +51,6 @@ pub(crate) enum OpCode {
     StrLe,
     StrGe,
 
-    // -- Smart match --
-    SmartMatch,
-    NotMatch,
-
     // -- Three-way comparison --
     Spaceship,
     Cmp,

@@ -20,6 +20,7 @@ roast/S03-operators/lcm.t
 roast/S03-operators/list-quote-junction.t
 roast/S03-operators/not.t
 roast/S03-operators/spaceship-and-containers.t
+roast/S03-smartmatch/any-any.t
 roast/S03-smartmatch/any-str.t
 roast/S04-statement-modifiers/values_in_bool_context.t
 roast/S04-statement-modifiers/while.t

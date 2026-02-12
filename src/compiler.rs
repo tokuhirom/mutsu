@@ -868,9 +868,7 @@ impl Compiler {
             TokenKind::DotDotCaret => Some(OpCode::MakeRangeExcl),
             TokenKind::CaretDotDot => Some(OpCode::MakeRangeExclStart),
             TokenKind::CaretDotDotCaret => Some(OpCode::MakeRangeExclBoth),
-            // Smart match
-            TokenKind::SmartMatch => Some(OpCode::SmartMatch),
-            TokenKind::BangTilde => Some(OpCode::NotMatch),
+            // Smart match (~~, !~~): handled via interpreter fallback (needs $_ binding)
             // Three-way comparison
             TokenKind::LtEqGt => Some(OpCode::Spaceship),
             TokenKind::Ident(name) if name == "cmp" => Some(OpCode::Cmp),

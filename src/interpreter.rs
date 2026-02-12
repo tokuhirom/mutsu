@@ -7339,6 +7339,19 @@ impl Interpreter {
                         }
                         return Ok(Value::Nil);
                     }
+                    // Smartmatch: set $_ to LHS before evaluating RHS
+                    TokenKind::SmartMatch | TokenKind::BangTilde => {
+                        let l = self.eval_expr(left)?;
+                        let saved_topic = self.env.get("_").cloned();
+                        self.env.insert("_".to_string(), l.clone());
+                        let r = self.eval_expr(right)?;
+                        if let Some(v) = saved_topic {
+                            self.env.insert("_".to_string(), v);
+                        } else {
+                            self.env.remove("_");
+                        }
+                        return self.eval_binary(l, op, r);
+                    }
                     _ => {}
                 }
                 let l = self.eval_expr(left)?;
