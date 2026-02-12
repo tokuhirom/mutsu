@@ -1261,6 +1261,7 @@
 - [ ] roast/S32-array/perl.t
 - [ ] roast/S32-array/pop.t
 - [ ] roast/S32-array/push.t
+  - ~6/56 pass (1, 10-14). Push works but `.elems` returns wrong counts after push, causing most verification tests to fail. Basic `push @array, $value` and `~@p` work. Difficulty: Medium (array elems tracking after push)
 - [ ] roast/S32-array/rotate.t
 - [ ] roast/S32-array/shift.t
 - [ ] roast/S32-array/splice.t
@@ -1376,12 +1377,14 @@
 - [ ] roast/S32-list/first-kv.t
 - [ ] roast/S32-list/first-p.t
 - [ ] roast/S32-list/first.t
+  - ~12/31 pass (1, 3, 5, 7, 10-11, 15, 17, 19, 22-23, 27, 29). Crashes with `is-deeply expects right`. Failures: `first()` return value (2, 4, 6, 8), undefined match (9), Range-based first (12-13), type/regex lookup (14, 16, 18), junction matcher (20). Difficulty: Medium
 - [ ] roast/S32-list/first-v.t
 - [ ] roast/S32-list/flat.t
 - [ ] roast/S32-list/grep-k.t
 - [ ] roast/S32-list/grep-kv.t
 - [ ] roast/S32-list/grep-p.t
 - [ ] roast/S32-list/grep.t
+  - 3/50 pass (19, 32-33). Method form `.grep` works for simple cases. Sub form `grep(...)` fails entirely. Failures: sub-form grep (1-18), mutating `$_` in grep (21-22), last/next/redo in grep (23-27), non-Code matcher (28-29), junction (31), chained greps (35). Difficulty: Medium-High
 - [ ] roast/S32-list/grep-v.t
 - [ ] roast/S32-list/head.t
 - [ ] roast/S32-list/iterator.t
@@ -1389,6 +1392,7 @@
   - 18/38 pass. Good basic join. Failures: join with flat args `join("|", 1, 2, 3)` (6, 13, 17-18, 26), itemized `$[]` (7, 19-20, 27), join without parens (15-16), odd list join (29-30), `&join` reference (34-35). Difficulty: Medium
 - [ ] roast/S32-list/map_function_return_values.t
 - [ ] roast/S32-list/map.t
+  - 0/? pass. Hangs on startup (infinite loop or timeout). Difficulty: Medium-High
 - [ ] roast/S32-list/minmax.t
 - [ ] roast/S32-list/permutations.t
 - [ ] roast/S32-list/pick.t
@@ -1396,6 +1400,7 @@
 - [ ] roast/S32-list/reduce.t
 - [ ] roast/S32-list/repeated.t
 - [ ] roast/S32-list/reverse.t
+  - 8/23 pass (6-7, 12-16, 19, 22). Method `.reverse` on arrays works. Failures: `reverse(@list)` sub form (1-5, 8), scalar context (9), in-place `.=reverse` (10-11, 17-18), holes (20-21), infinite range (23). Difficulty: Medium
 - [ ] roast/S32-list/roll.t
 - [ ] roast/S32-list/rotor.t
 - [ ] roast/S32-list/seq.t
