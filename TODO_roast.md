@@ -41,18 +41,22 @@
 - [ ] roast/S02-literals/array-interpolation.t
 - [ ] roast/S02-literals/autoref.t
 - [ ] roast/S02-literals/char-by-name.t
+  - 1/11 pass (test 9). `\c[NAME]` unicode character-by-name syntax not implemented. Difficulty: Medium (needs unicode name lookup in string escape parser)
 - [ ] roast/S02-literals/char-by-number.t
+  - 0/38 pass. `\x`, `\o`, `\c` numeric escape sequences in strings not implemented. Difficulty: Medium (need to add escape sequences in string parser)
 - [ ] roast/S02-literals/fmt-interpolation.t
 - [ ] roast/S02-literals/format.t
 - [ ] roast/S02-literals/hash-interpolation.t
 - [ ] roast/S02-literals/heredocs.t
 - [ ] roast/S02-literals/hex_chars.t
+  - 0/4 pass. `\x..` hex character codes in strings not implemented. Same blocker as char-by-number.t. Difficulty: Medium
 - [ ] roast/S02-literals/listquote.t
 - [ ] roast/S02-literals/listquote-whitespace.t
 - [ ] roast/S02-literals/misc-interpolation.t
 - [ ] roast/S02-literals/numeric.t
   - 6/71 pass. Fatal: `is-approx expects expected` — `is-approx` function does not handle all argument forms. Tests cover Int/Num/Real type checks
-- [ ] roast/S02-literals/pair-boolean.t
+- [x] roast/S02-literals/pair-boolean.t
+  - 6/6 pass.
 - [ ] roast/S02-literals/pairs.t
   - ~6/84 pass. Most failures: Pair type introspection (`.key`, `.value`, `:a(42)` colonpair syntax), `isa(Pair)` checks, nested pairs, Pair destructuring, variables as pair keys
 - [ ] roast/S02-literals/pod.t
@@ -61,6 +65,7 @@
 - [ ] roast/S02-literals/radix.t
   - 1/158 pass. `:10<42>`, `:16<FF>` etc. radix notation not implemented. Only `0xffffffff` hex literal works
 - [ ] roast/S02-literals/string-interpolation.t
+  - 12/42 pass (7-9, 12-13, 15-16, 19-21, 41-42). Failures: `\01` octal in closures (1-6), `.min`/`.max` method calls in qq[] interpolation (10), `.new` on string literal (11), `\a` alarm escape (14), double-sigil non-interpolation rules (17-18), `throws-like` with `X::Undeclared` (22-40). Difficulty: Medium-High
 - [ ] roast/S02-literals/sub-calls.t
 - [ ] roast/S02-literals/subscript.t
 - [ ] roast/S02-literals/types.t
