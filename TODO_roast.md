@@ -419,6 +419,7 @@
 - [ ] roast/S04-blocks-and-statements/temp.t
 - [ ] roast/S04-declarations/constant-6.d.t
 - [ ] roast/S04-declarations/constant.t
+  - 0/? pass. Crashes with panic: byte index not a char boundary in `try_meta_op` when parsing `λ` (lambda). Same parser UTF-8 bug as quoting.t. Difficulty: Medium (parser UTF-8 boundary fix in try_meta_op)
 - [ ] roast/S04-declarations/implicit-parameter.t
 - [ ] roast/S04-declarations/multiple.t
 - [ ] roast/S04-declarations/my-6e.t
@@ -502,6 +503,7 @@
   - 4/4 pass.
 - [ ] roast/S04-statements/when.t
 - [ ] roast/S04-statements/while.t
+  - 13/31 pass (1-6, 10, 12, 16-17, 19, 22, 24). Failures: `while -> $x` pointy block binding (7-8), keyword whitespace detection (9), return values from while/until/loop (11, 15, 21, 23, 29-31), UNDO phaser in failed blocks (14, 18, 20), while modifier for values (25-28). Difficulty: Medium
 - [ ] roast/S04-statements/with.t
 - [ ] roast/S05-capture/alias.t
 - [ ] roast/S05-capture/array-alias.t
@@ -615,7 +617,9 @@
 - [ ] roast/S06-advanced/callsame.t
 - [ ] roast/S06-advanced/dispatching.t
 - [ ] roast/S06-advanced/lexical-subs.t
+  - 0/13 pass (6 reached). Indirect lexical sub calls fail, `&foo` reference syntax, lexical scope visibility for subs, `&foo` as parameter. Difficulty: Medium-High (needs `&name` sub reference support)
 - [ ] roast/S06-advanced/recurse.t
+  - 0/? pass. Stack overflow crash. Recursive sub calls cause unbounded stack growth. Difficulty: Medium (need stack depth limit or tail-call optimization)
 - [ ] roast/S06-advanced/return_function.t
 - [ ] roast/S06-advanced/return-prioritization.t
 - [ ] roast/S06-advanced/return.t
@@ -785,6 +789,7 @@
 - [ ] roast/S12-class/attributes.t
 - [ ] roast/S12-class/augment-supersede.t
 - [ ] roast/S12-class/basic.t
+  - ~32/43 pass (3-23, 25-28, 30, 32, 34, 37-39, 44). Plan says 43 but 44 tests produced. Strong class support: `.isa`, smartmatch, inheritance, nested classes. Failures: `.raku` on class (1-2), method WHAT comparison (24), non-existing class error (29, 35), class redeclaration error (31), EVAL to add method (33), self writability check (36), no-semicolon-after-class (40), method call on class def (41), Foo:D/:U syntax (42-43). Difficulty: Low (many are edge cases)
 - [ ] roast/S12-class/declaration-order.t
 - [ ] roast/S12-class/extending-arrays.t
 - [ ] roast/S12-class/inheritance-class-methods.t
