@@ -708,11 +708,7 @@ impl Interpreter {
                     .ok()
                     .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
                     .unwrap_or_default();
-                let major = product_version
-                    .split('.')
-                    .next()
-                    .unwrap_or("")
-                    .to_string();
+                let major = product_version.split('.').next().unwrap_or("").to_string();
                 let desc_str = if product_name.is_empty() {
                     format!("macOS {}", major)
                 } else {
@@ -1400,10 +1396,10 @@ impl Interpreter {
         match stmt {
             Stmt::VarDecl { name, expr } => {
                 let mut value = self.eval_expr(expr)?;
-                if name.starts_with('@') {
-                    if let Value::LazyList(ref list) = value {
-                        value = Value::Array(self.force_lazy_list(list)?);
-                    }
+                if name.starts_with('@')
+                    && let Value::LazyList(ref list) = value
+                {
+                    value = Value::Array(self.force_lazy_list(list)?);
                 }
                 let value = if name.starts_with('%') {
                     Self::coerce_to_hash(value)
@@ -1615,10 +1611,7 @@ impl Interpreter {
                 // Collect subtest output and state
                 let subtest_output = std::mem::take(&mut self.output);
                 let subtest_state = self.test_state.take();
-                let subtest_failed = subtest_state
-                    .as_ref()
-                    .map(|s| s.failed)
-                    .unwrap_or(0);
+                let subtest_failed = subtest_state.as_ref().map(|s| s.failed).unwrap_or(0);
 
                 // Restore parent state
                 self.test_state = parent_test_state;
@@ -2567,7 +2560,9 @@ impl Interpreter {
                 let desc = self.positional_arg_value(args, 1)?;
                 let todo = self.named_arg_bool(args, "todo")?;
                 let ok = match block {
-                    Expr::Block(body) | Expr::AnonSub(body) | Expr::AnonSubParams { body, .. }
+                    Expr::Block(body)
+                    | Expr::AnonSub(body)
+                    | Expr::AnonSubParams { body, .. }
                     | Expr::Lambda { body, .. } => self.eval_block_value(body).is_ok(),
                     Expr::Literal(Value::Sub { body, .. }) => self.eval_block_value(body).is_ok(),
                     _ => self.eval_expr(block).is_ok(),
@@ -2579,7 +2574,9 @@ impl Interpreter {
                 let desc = self.positional_arg_value(args, 1)?;
                 let todo = self.named_arg_bool(args, "todo")?;
                 let ok = match block {
-                    Expr::Block(body) | Expr::AnonSub(body) | Expr::AnonSubParams { body, .. }
+                    Expr::Block(body)
+                    | Expr::AnonSub(body)
+                    | Expr::AnonSubParams { body, .. }
                     | Expr::Lambda { body, .. } => self.eval_block_value(body).is_err(),
                     Expr::Literal(Value::Sub { body, .. }) => self.eval_block_value(body).is_err(),
                     _ => self.eval_expr(block).is_err(),
@@ -2646,7 +2643,9 @@ impl Interpreter {
                     _ => String::new(),
                 };
                 let result = match code_expr {
-                    Expr::Block(body) | Expr::AnonSub(body) | Expr::AnonSubParams { body, .. } => self.eval_block_value(body),
+                    Expr::Block(body) | Expr::AnonSub(body) | Expr::AnonSubParams { body, .. } => {
+                        self.eval_block_value(body)
+                    }
                     _ => {
                         let code = match self.eval_expr(code_expr)? {
                             Value::Str(s) => s,
@@ -2793,9 +2792,7 @@ impl Interpreter {
             "todo" => {
                 let _reason = self.positional_arg_value(args, 0).unwrap_or_default();
                 let count_str = self.positional_arg_value(args, 1).ok();
-                let count = count_str
-                    .and_then(|s| s.parse::<usize>().ok())
-                    .unwrap_or(1);
+                let count = count_str.and_then(|s| s.parse::<usize>().ok()).unwrap_or(1);
                 let state = self.test_state.get_or_insert_with(TestState::new);
                 let start = state.ran + 1;
                 let end = start + count - 1;
@@ -4009,12 +4006,8 @@ impl Interpreter {
                         Value::Range(..)
                         | Value::RangeExcl(..)
                         | Value::RangeExclStart(..)
-                        | Value::RangeExclBoth(..) => {
-                            Ok(Value::Array(Self::value_to_list(&val)))
-                        }
-                        Value::LazyList(list) => {
-                            Ok(Value::Array(self.force_lazy_list(list)?))
-                        }
+                        | Value::RangeExclBoth(..) => Ok(Value::Array(Self::value_to_list(&val))),
+                        Value::LazyList(list) => Ok(Value::Array(self.force_lazy_list(list)?)),
                         _ => Ok(Value::Array(vec![val])),
                     };
                 }
@@ -4772,10 +4765,10 @@ impl Interpreter {
                                 _ => {}
                             }
                         }
-                        if class_name == "Perl" {
-                            if let Some(val) = attributes.get(name.as_str()) {
-                                return Ok(val.clone());
-                            }
+                        if class_name == "Perl"
+                            && let Some(val) = attributes.get(name.as_str())
+                        {
+                            return Ok(val.clone());
                         }
                         if class_name == "Promise" {
                             if name == "keep" {
@@ -6693,7 +6686,7 @@ impl Interpreter {
                         for arg in args {
                             if let Expr::AssignExpr { name, expr } = arg {
                                 if name == "off" {
-                                    off = match self.eval_expr(&expr)? {
+                                    off = match self.eval_expr(expr)? {
                                         Value::Bool(b) => b,
                                         v => v.truthy(),
                                     };
@@ -6701,11 +6694,11 @@ impl Interpreter {
                             } else {
                                 // Check if arg evaluates to a Pair (named arg from colonpair)
                                 let val = self.eval_expr(arg)?;
-                                if let Value::Pair(ref k, ref v) = val {
-                                    if k == "off" {
-                                        off = v.truthy();
-                                        continue;
-                                    }
+                                if let Value::Pair(ref k, ref v) = val
+                                    && k == "off"
+                                {
+                                    off = v.truthy();
+                                    continue;
                                 }
                                 // Re-wrap as Literal for deferred callable evaluation
                                 condition_exprs.push(Expr::Literal(val));
@@ -6727,30 +6720,35 @@ impl Interpreter {
                         let mut result = Vec::new();
 
                         for item in &items {
-                            if cond_idx < conditions.len() {
-                                if let Value::Sub { ref params, ref body, ref env, .. } = conditions[cond_idx] {
-                                    let placeholders = collect_placeholders(body);
-                                    let saved = self.env.clone();
-                                    for (k, v) in env {
-                                        self.env.insert(k.clone(), v.clone());
-                                    }
-                                    if let Some(p) = params.first() {
-                                        self.env.insert(p.clone(), item.clone());
-                                    }
-                                    if let Some(ph) = placeholders.first() {
-                                        self.env.insert(ph.clone(), item.clone());
-                                    }
-                                    self.env.insert("_".to_string(), item.clone());
-                                    let cond_result = self.eval_block_value(body)?;
-                                    self.env = saved;
+                            if cond_idx < conditions.len()
+                                && let Value::Sub {
+                                    ref params,
+                                    ref body,
+                                    ref env,
+                                    ..
+                                } = conditions[cond_idx]
+                            {
+                                let placeholders = collect_placeholders(body);
+                                let saved = self.env.clone();
+                                for (k, v) in env {
+                                    self.env.insert(k.clone(), v.clone());
+                                }
+                                if let Some(p) = params.first() {
+                                    self.env.insert(p.clone(), item.clone());
+                                }
+                                if let Some(ph) = placeholders.first() {
+                                    self.env.insert(ph.clone(), item.clone());
+                                }
+                                self.env.insert("_".to_string(), item.clone());
+                                let cond_result = self.eval_block_value(body)?;
+                                self.env = saved;
 
-                                    if state_on && !cond_result.truthy() {
-                                        state_on = false;
-                                        cond_idx += 1;
-                                    } else if !state_on && cond_result.truthy() {
-                                        state_on = true;
-                                        cond_idx += 1;
-                                    }
+                                if state_on && !cond_result.truthy() {
+                                    state_on = false;
+                                    cond_idx += 1;
+                                } else if !state_on && cond_result.truthy() {
+                                    state_on = true;
+                                    cond_idx += 1;
                                 }
                             }
 
@@ -7042,7 +7040,9 @@ impl Interpreter {
                             };
                             Ok(Value::FatRat(a, b))
                         }
-                        Value::Str(name) | Value::Package(name) if name == "Map" || name == "Hash" => {
+                        Value::Str(name) | Value::Package(name)
+                            if name == "Map" || name == "Hash" =>
+                        {
                             let mut map = HashMap::new();
                             let mut i = 0;
                             let mut eval_args = Vec::new();
@@ -7691,17 +7691,17 @@ impl Interpreter {
                             Expr::Var(v) => Some(v.clone()),
                             _ => None,
                         };
-                        if let Some(key) = var_key {
-                            if let Some(Value::Array(items)) = self.env.get_mut(&key) {
-                                if items.is_empty() {
-                                    return Ok(Value::Nil);
-                                }
-                                return Ok(if name == "shift" {
-                                    items.remove(0)
-                                } else {
-                                    items.pop().unwrap_or(Value::Nil)
-                                });
+                        if let Some(key) = var_key
+                            && let Some(Value::Array(items)) = self.env.get_mut(&key)
+                        {
+                            if items.is_empty() {
+                                return Ok(Value::Nil);
                             }
+                            return Ok(if name == "shift" {
+                                items.remove(0)
+                            } else {
+                                items.pop().unwrap_or(Value::Nil)
+                            });
                         }
                     }
                     return Ok(Value::Nil);
@@ -8767,9 +8767,11 @@ impl Interpreter {
                     );
                     let result = if let Some(body) = args.get(1) {
                         match body {
-                            Expr::Block(body_stmts) | Expr::AnonSub(body_stmts) | Expr::AnonSubParams { body: body_stmts, .. } => {
-                                self.eval_block_value(body_stmts)
-                            }
+                            Expr::Block(body_stmts)
+                            | Expr::AnonSub(body_stmts)
+                            | Expr::AnonSubParams {
+                                body: body_stmts, ..
+                            } => self.eval_block_value(body_stmts),
                             other => self.eval_expr(other),
                         }
                     } else {
@@ -9118,13 +9120,25 @@ impl Interpreter {
                 // Range + Int: shift both bounds
                 match (&left, &right) {
                     (Value::Range(a, b), Value::Int(n)) => return Ok(Value::Range(a + n, b + n)),
-                    (Value::RangeExcl(a, b), Value::Int(n)) => return Ok(Value::RangeExcl(a + n, b + n)),
-                    (Value::RangeExclStart(a, b), Value::Int(n)) => return Ok(Value::RangeExclStart(a + n, b + n)),
-                    (Value::RangeExclBoth(a, b), Value::Int(n)) => return Ok(Value::RangeExclBoth(a + n, b + n)),
+                    (Value::RangeExcl(a, b), Value::Int(n)) => {
+                        return Ok(Value::RangeExcl(a + n, b + n));
+                    }
+                    (Value::RangeExclStart(a, b), Value::Int(n)) => {
+                        return Ok(Value::RangeExclStart(a + n, b + n));
+                    }
+                    (Value::RangeExclBoth(a, b), Value::Int(n)) => {
+                        return Ok(Value::RangeExclBoth(a + n, b + n));
+                    }
                     (Value::Int(n), Value::Range(a, b)) => return Ok(Value::Range(a + n, b + n)),
-                    (Value::Int(n), Value::RangeExcl(a, b)) => return Ok(Value::RangeExcl(a + n, b + n)),
-                    (Value::Int(n), Value::RangeExclStart(a, b)) => return Ok(Value::RangeExclStart(a + n, b + n)),
-                    (Value::Int(n), Value::RangeExclBoth(a, b)) => return Ok(Value::RangeExclBoth(a + n, b + n)),
+                    (Value::Int(n), Value::RangeExcl(a, b)) => {
+                        return Ok(Value::RangeExcl(a + n, b + n));
+                    }
+                    (Value::Int(n), Value::RangeExclStart(a, b)) => {
+                        return Ok(Value::RangeExclStart(a + n, b + n));
+                    }
+                    (Value::Int(n), Value::RangeExclBoth(a, b)) => {
+                        return Ok(Value::RangeExclBoth(a + n, b + n));
+                    }
                     _ => {}
                 }
                 let (l, r) = Self::coerce_numeric(left, right);
@@ -12072,7 +12086,10 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
                 collect_ph_expr(e, out);
             }
         }
-        Expr::Block(stmts) | Expr::AnonSub(stmts) | Expr::AnonSubParams { body: stmts, .. } | Expr::Gather(stmts) => {
+        Expr::Block(stmts)
+        | Expr::AnonSub(stmts)
+        | Expr::AnonSubParams { body: stmts, .. }
+        | Expr::Gather(stmts) => {
             for s in stmts {
                 collect_ph_stmt(s, out);
             }

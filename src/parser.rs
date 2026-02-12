@@ -149,18 +149,12 @@ impl Parser {
             if self.match_ident("sub") {
                 let body = self.parse_block()?;
                 self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::Subtest {
-                    name,
-                    body,
-                });
+                return Ok(Stmt::Subtest { name, body });
             }
             if self.match_kind(TokenKind::LBrace) {
                 let body = self.parse_block_body()?;
                 self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::Subtest {
-                    name,
-                    body,
-                });
+                return Ok(Stmt::Subtest { name, body });
             }
             return Err(RuntimeError::new("Expected sub or block for subtest"));
         }
@@ -239,9 +233,12 @@ impl Parser {
                 } else {
                     (String::new(), false, false)
                 }
-            } else if let Some(TokenKind::Ident(n)) = self.tokens.get(self.pos).map(|t| t.kind.clone())
-                && matches!(self.tokens.get(self.pos + 1).map(|t| &t.kind),
-                    Some(TokenKind::Eq | TokenKind::Bind | TokenKind::Semicolon))
+            } else if let Some(TokenKind::Ident(n)) =
+                self.tokens.get(self.pos).map(|t| t.kind.clone())
+                && matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Eq | TokenKind::Bind | TokenKind::Semicolon)
+                )
             {
                 // Sigilless variable: my \name = expr (\ is skipped by lexer)
                 self.pos += 1;
@@ -1409,7 +1406,9 @@ impl Parser {
         if let Some(TokenKind::Var(name)) = self.tokens.get(self.pos).map(|t| &t.kind)
             && matches!(
                 self.tokens.get(self.pos + 1).map(|t| &t.kind),
-                Some(TokenKind::PlusEq | TokenKind::MinusEq | TokenKind::TildeEq | TokenKind::StarEq)
+                Some(
+                    TokenKind::PlusEq | TokenKind::MinusEq | TokenKind::TildeEq | TokenKind::StarEq
+                )
             )
         {
             let name = name.clone();
@@ -3039,10 +3038,14 @@ impl Parser {
                             self.match_kind(TokenKind::Question);
                             self.match_kind(TokenKind::Bang);
                             params.push(var);
-                        } else if self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_))).is_some()
+                        } else if self
+                            .advance_if(|k| matches!(k, TokenKind::ArrayVar(_)))
+                            .is_some()
                         {
                             // skip array params for now
-                        } else if self.advance_if(|k| matches!(k, TokenKind::HashVar(_))).is_some()
+                        } else if self
+                            .advance_if(|k| matches!(k, TokenKind::HashVar(_)))
+                            .is_some()
                         {
                             // skip hash params for now
                         } else {
@@ -3448,12 +3451,17 @@ impl Parser {
             Expr::Var(name) if name == "__WHATEVER__" => true,
             Expr::Literal(Value::Num(f)) if f.is_infinite() && f.is_sign_positive() => false, // standalone * is not WhateverCode
             Expr::MethodCall { target, .. } => Self::contains_whatever(target),
-            Expr::Binary { left, right, op, .. } => {
+            Expr::Binary {
+                left, right, op, ..
+            } => {
                 // Range operators: * as endpoint means Infinity, not WhateverCode
                 match op {
-                    TokenKind::DotDot | TokenKind::DotDotCaret
-                    | TokenKind::CaretDotDot | TokenKind::CaretDotDotCaret
-                    | TokenKind::DotDotDot | TokenKind::DotDotDotCaret => false,
+                    TokenKind::DotDot
+                    | TokenKind::DotDotCaret
+                    | TokenKind::CaretDotDot
+                    | TokenKind::CaretDotDotCaret
+                    | TokenKind::DotDotDot
+                    | TokenKind::DotDotDotCaret => false,
                     _ => {
                         (Self::contains_whatever(left) || Self::is_whatever_star(left))
                             || (Self::contains_whatever(right) || Self::is_whatever_star(right))

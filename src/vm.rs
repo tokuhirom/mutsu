@@ -210,29 +210,46 @@ impl VM {
                 let range_result = match (&left, &right) {
                     (Value::Range(a, b), Value::Int(n)) => Some(Value::Range(a + n, b + n)),
                     (Value::RangeExcl(a, b), Value::Int(n)) => Some(Value::RangeExcl(a + n, b + n)),
-                    (Value::RangeExclStart(a, b), Value::Int(n)) => Some(Value::RangeExclStart(a + n, b + n)),
-                    (Value::RangeExclBoth(a, b), Value::Int(n)) => Some(Value::RangeExclBoth(a + n, b + n)),
+                    (Value::RangeExclStart(a, b), Value::Int(n)) => {
+                        Some(Value::RangeExclStart(a + n, b + n))
+                    }
+                    (Value::RangeExclBoth(a, b), Value::Int(n)) => {
+                        Some(Value::RangeExclBoth(a + n, b + n))
+                    }
                     (Value::Int(n), Value::Range(a, b)) => Some(Value::Range(a + n, b + n)),
                     (Value::Int(n), Value::RangeExcl(a, b)) => Some(Value::RangeExcl(a + n, b + n)),
-                    (Value::Int(n), Value::RangeExclStart(a, b)) => Some(Value::RangeExclStart(a + n, b + n)),
-                    (Value::Int(n), Value::RangeExclBoth(a, b)) => Some(Value::RangeExclBoth(a + n, b + n)),
+                    (Value::Int(n), Value::RangeExclStart(a, b)) => {
+                        Some(Value::RangeExclStart(a + n, b + n))
+                    }
+                    (Value::Int(n), Value::RangeExclBoth(a, b)) => {
+                        Some(Value::RangeExclBoth(a + n, b + n))
+                    }
                     _ => None,
                 };
                 if let Some(val) = range_result {
                     self.stack.push(val);
                     *ip += 1;
                 } else {
-                let (l, r) = Interpreter::coerce_numeric(left, right);
-                let result =
-                    if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
-                        let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
-                        let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
-                        Value::Complex(ar + br, ai + bi)
-                    } else if let (Some((an, ad)), Some((bn, bd))) =
-                        (Interpreter::to_rat_parts(&l), Interpreter::to_rat_parts(&r))
-                    {
-                        if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
-                            make_rat(an * bd + bn * ad, ad * bd)
+                    let (l, r) = Interpreter::coerce_numeric(left, right);
+                    let result =
+                        if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
+                            let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                            let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                            Value::Complex(ar + br, ai + bi)
+                        } else if let (Some((an, ad)), Some((bn, bd))) =
+                            (Interpreter::to_rat_parts(&l), Interpreter::to_rat_parts(&r))
+                        {
+                            if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
+                                make_rat(an * bd + bn * ad, ad * bd)
+                            } else {
+                                match (l, r) {
+                                    (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_add(b)),
+                                    (Value::Num(a), Value::Num(b)) => Value::Num(a + b),
+                                    (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 + b),
+                                    (Value::Num(a), Value::Int(b)) => Value::Num(a + b as f64),
+                                    _ => Value::Int(0),
+                                }
+                            }
                         } else {
                             match (l, r) {
                                 (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_add(b)),
@@ -241,19 +258,10 @@ impl VM {
                                 (Value::Num(a), Value::Int(b)) => Value::Num(a + b as f64),
                                 _ => Value::Int(0),
                             }
-                        }
-                    } else {
-                        match (l, r) {
-                            (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_add(b)),
-                            (Value::Num(a), Value::Num(b)) => Value::Num(a + b),
-                            (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 + b),
-                            (Value::Num(a), Value::Int(b)) => Value::Num(a + b as f64),
-                            _ => Value::Int(0),
-                        }
-                    };
-                self.stack.push(result);
-                *ip += 1;
-            } // end else (non-range Add)
+                        };
+                    self.stack.push(result);
+                    *ip += 1;
+                } // end else (non-range Add)
             }
             OpCode::Sub => {
                 let right = self.stack.pop().unwrap();

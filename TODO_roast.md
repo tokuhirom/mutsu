@@ -202,7 +202,7 @@
 - [ ] roast/S02-types/num.t
   - 0/? pass. Parser panic (stack overflow) before any tests run. Likely complex parsing constructs in test file. Difficulty: High
 - [ ] roast/S02-types/pair.t
-  - ~5/182 pass. Fatal: `Type check failed for pair: expected Pair, got Any`. Most Pair introspection (`.key`, `.value`, colonpair `:a(42)`, nested pairs, `isa(Pair)`) fails. Pair type system not fully implemented
+  - 67/182 pass (103 reached). Pair creation, colonpairs, nested pairs, boolean pairs (:foo, :!foo), and pair usage in for/sub contexts work well. Failures: `.key`/`.value` method calls (2-7), list context element count (8-11, 14-19), nested key/value (31-32), hash stringification (34), sub arg passing (46-47). Many tests not reached. Difficulty: Medium
 - [x] roast/S02-types/parsing-bool.t
   - 4/4 pass.
 - [ ] roast/S02-types/range-iterator.t
@@ -396,6 +396,7 @@
 - [ ] roast/S03-sequence/misc.t
 - [ ] roast/S03-sequence/nonnumeric.t
 - [ ] roast/S03-smartmatch/00-sanity.t
+  - 1/2 pass. Direct smartmatch works, indirect (via variable) fails. Difficulty: Low
 - [x] roast/S03-smartmatch/any-any.t
 - [ ] roast/S03-smartmatch/any-bool.t
 - [ ] roast/S03-smartmatch/any-callable.t
@@ -515,6 +516,7 @@
 - [ ] roast/S04-statements/return.t
   - 12/26 pass (1, 3, 7-14, 16, 20). Failures: bare return with parens (2), bare return in statement modifiers (4-6), test 15 unknown, proxied return (17-18), `.return` method (19), INIT/CHECK return (21-22), tests 23-26 not reached. Difficulty: Medium
 - [ ] roast/S04-statements/sink.t
+  - 6/10 pass (11 reached, plan 10). Tests 2-3, 6-8, 10 pass. Failures: .unshift in sink context (1), map in sunk for (4-5), sub in sunk for (9), loop sink (11). Difficulty: Medium
 - [ ] roast/S04-statements/terminator.t
   - 9/20 pass (1-7, 10, 15). Good semicolon and statement terminator support. Failures: open closure detection (8), incomplete expression error (9), newline-separated statements (11), auto-curly in array (12), `is()` after postfix modifier (13), space-after-parens (14). Only 15 tests reached. Difficulty: Medium
 - [ ] roast/S04-statements/try.t
@@ -814,6 +816,7 @@
 - [ ] roast/S12-class/anonymous.t
 - [ ] roast/S12-class/attributes-required.t
 - [ ] roast/S12-class/attributes.t
+  - 4/44 pass (18 reached). Tests 2-3, 10, 14 pass. Failures: private attribute accessor rejection (1), twigil alias (4), list attribute declarations (5-9), hash/array attribute access methods (11-13, 15-18). Difficulty: Medium-High (attribute accessor generation)
 - [ ] roast/S12-class/augment-supersede.t
 - [ ] roast/S12-class/basic.t
   - ~32/43 pass (3-23, 25-28, 30, 32, 34, 37-39, 44). Plan says 43 but 44 tests produced. Strong class support: `.isa`, smartmatch, inheritance, nested classes. Failures: `.raku` on class (1-2), method WHAT comparison (24), non-existing class error (29, 35), class redeclaration error (31), EVAL to add method (33), self writability check (36), no-semicolon-after-class (40), method call on class def (41), Foo:D/:U syntax (42-43). Difficulty: Low (many are edge cases)
@@ -1207,7 +1210,8 @@
 - [ ] roast/S24-testing/2-force_todo.t
 - [x] roast/S24-testing/3-output.t
   - 6/6 pass.
-- [ ] roast/S24-testing/6-done_testing.t
+- [x] roast/S24-testing/6-done_testing.t
+  - 3/3 pass.
 - [x] roast/S24-testing/7-bail_out.t
   - 4/4 pass.
 - [ ] roast/S24-testing/8-die_on_fail.t
