@@ -2,3 +2,7 @@
 name = "mutsu"
 version = "0.1.0"
 edition = "2024"
+
+[dependencies]
+regex = "1.12.3"
+unicode_names2 = "2.0.0"
