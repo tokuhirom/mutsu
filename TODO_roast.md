@@ -1525,7 +1525,7 @@
 - [x] roast/S32-str/bool.t
   - 12/12 pass.
 - [ ] roast/S32-str/capitalize.t
-  - 3/17 pass (8, 10, 17). `.wordcase` method not implemented (uses old name `capitalize`). Most tests fail because `wordcase()` function not found. Difficulty: Medium (need `wordcase` method/function)
+  - 14/17 pass. `wordcase()` function and `.wordcase` method implemented. Remaining failures: tests 14-15 (`\c[COMBINING DIAERESIS]` and combining character escape sequences not yet supported in string parser), test 17 (`but` role mixin on strings not yet supported).
 - [ ] roast/S32-str/chomp.t
   - 18/39 pass. Basic chomp works for `\n`. Failures: chomp with `\r\n` line endings (4, 11, 14-20, 23-24), various line-ending combinations (CR, CRLF). Difficulty: Low-Medium (need `\r\n` and `\r` line ending support in chomp)
 - [ ] roast/S32-str/chop.t

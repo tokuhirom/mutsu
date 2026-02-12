@@ -5733,24 +5733,10 @@ impl Interpreter {
                         }
                         Ok(Value::Str(result))
                     }
-                    "tclc" => {
-                        let s = base.to_string_value();
-                        let mut result = String::new();
-                        let mut first = true;
-                        for ch in s.chars() {
-                            if first {
-                                for c in ch.to_uppercase() {
-                                    result.push(c);
-                                }
-                                first = false;
-                            } else {
-                                for c in ch.to_lowercase() {
-                                    result.push(c);
-                                }
-                            }
-                        }
-                        Ok(Value::Str(result))
-                    }
+                    "tclc" => Ok(Value::Str(crate::value::tclc_str(&base.to_string_value()))),
+                    "wordcase" => Ok(Value::Str(crate::value::wordcase_str(
+                        &base.to_string_value(),
+                    ))),
                     "chomp" => {
                         let s = base.to_string_value();
                         Ok(Value::Str(s.trim_end_matches('\n').to_string()))
@@ -8427,6 +8413,14 @@ impl Interpreter {
                         }
                     }
                     return Ok(Value::Str(result));
+                }
+                if name == "wordcase" {
+                    let val = args
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    return Ok(Value::Str(crate::value::wordcase_str(&val)));
                 }
                 if name == "chomp" {
                     let val = args

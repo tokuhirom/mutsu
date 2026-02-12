@@ -2717,24 +2717,12 @@ impl VM {
                     .unwrap_or(Value::Nil))),
                 _ => Some(Ok(target.clone())),
             },
-            "tclc" => {
-                let s = target.to_string_value();
-                let mut result = String::new();
-                let mut first = true;
-                for ch in s.chars() {
-                    if first {
-                        for c in ch.to_uppercase() {
-                            result.push(c);
-                        }
-                        first = false;
-                    } else {
-                        for c in ch.to_lowercase() {
-                            result.push(c);
-                        }
-                    }
-                }
-                Some(Ok(Value::Str(result)))
-            }
+            "tclc" => Some(Ok(Value::Str(crate::value::tclc_str(
+                &target.to_string_value(),
+            )))),
+            "wordcase" => Some(Ok(Value::Str(crate::value::wordcase_str(
+                &target.to_string_value(),
+            )))),
             "succ" => match target {
                 Value::Enum { .. } | Value::Instance { .. } => None,
                 Value::Int(i) => Some(Ok(Value::Int(i + 1))),
@@ -2981,6 +2969,9 @@ impl VM {
                 }
                 Some(Ok(Value::Str(result)))
             }
+            "wordcase" => Some(Ok(Value::Str(crate::value::wordcase_str(
+                &arg.to_string_value(),
+            )))),
             "chomp" => Some(Ok(Value::Str(
                 arg.to_string_value().trim_end_matches('\n').to_string(),
             ))),

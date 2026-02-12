@@ -23,6 +23,67 @@ fn gcd(mut a: i64, mut b: i64) -> i64 {
     a
 }
 
+/// Apply tclc (titlecase first char, lowercase rest) to a string.
+pub fn tclc_str(s: &str) -> String {
+    let mut result = String::new();
+    let mut first = true;
+    for ch in s.chars() {
+        if first {
+            for c in ch.to_uppercase() {
+                result.push(c);
+            }
+            first = false;
+        } else {
+            for c in ch.to_lowercase() {
+                result.push(c);
+            }
+        }
+    }
+    result
+}
+
+/// Apply wordcase to a string: find words matching <ident>+ % <[ - ' ]>
+/// and apply tclc to each word. Non-word characters pass through unchanged.
+pub fn wordcase_str(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let len = chars.len();
+    let mut result = String::new();
+    let mut i = 0;
+
+    while i < len {
+        if chars[i].is_alphabetic() || chars[i] == '_' {
+            let word_start = i;
+            // Consume first ident: [alpha|_] \w*
+            i += 1;
+            while i < len && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                i += 1;
+            }
+            // Try to consume more idents separated by - or '
+            loop {
+                if i < len
+                    && (chars[i] == '-' || chars[i] == '\'')
+                    && i + 1 < len
+                    && (chars[i + 1].is_alphabetic() || chars[i + 1] == '_')
+                {
+                    i += 1; // consume separator
+                    i += 1; // consume first char of next ident
+                    while i < len && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                        i += 1;
+                    }
+                } else {
+                    break;
+                }
+            }
+            let word: String = chars[word_start..i].iter().collect();
+            result.push_str(&tclc_str(&word));
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+    result
+}
+
 pub fn format_complex(r: f64, i: f64) -> String {
     fn fmt_num(v: f64) -> String {
         if v.fract() == 0.0 && v.is_finite() {
