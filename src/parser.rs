@@ -771,8 +771,8 @@ impl Parser {
             } else {
                 self.parse_call_args()?
             };
-            self.match_kind(TokenKind::Semicolon);
-            return Ok(Stmt::Call { name, args });
+            let stmt = Stmt::Call { name, args };
+            return self.parse_statement_modifier(stmt);
         }
         if self.peek_is_var()
             && let Some(next) = self.peek_next_kind()
@@ -3101,6 +3101,23 @@ impl Parser {
                     Expr::Literal(Value::Bool(true))
                 } else if name == "self" {
                     Expr::Var("self".to_string())
+                } else if matches!(
+                    name.as_str(),
+                    "ok" | "nok" | "is" | "isnt" | "isa-ok" | "diag" | "pass" | "flunk"
+                ) && !self.check(&TokenKind::Semicolon)
+                    && !self.check(&TokenKind::Eof)
+                    && !self.check(&TokenKind::RBrace)
+                    && !self.check(&TokenKind::RParen)
+                {
+                    let call_args = self.parse_call_args()?;
+                    let args = call_args
+                        .into_iter()
+                        .filter_map(|a| match a {
+                            CallArg::Positional(e) => Some(e),
+                            _ => None,
+                        })
+                        .collect();
+                    Expr::Call { name, args }
                 } else {
                     Expr::BareWord(name)
                 }

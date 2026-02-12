@@ -85,8 +85,8 @@
   - 4/6 pass. Tests 5-6 fail: `is_run` with `:args[...]` syntax for `@*ARGS` subscript and copy.
 - [x] roast/S02-magicals/block.t
   - 3/3 pass.
-- [ ] roast/S02-magicals/DISTRO.t
-  - 12/28 pass (8-13, 21-23, 25-27). `.raku`, `.gist`, `.Str` methods work. Failures: `.name`, `.auth`, `.version`, `.signature`, `.desc`, `.release`, `.path-sep` return wrong values (properties not populated with real system info). Difficulty: Low-Medium (need to populate DISTRO properties with actual OS data)
+- [x] roast/S02-magicals/DISTRO.t
+  - 28/28 pass. All DISTRO properties populated with real system info.
 - [ ] roast/S02-magicals/dollar_bang.t
   - 9/15 pass. Failures: `$!` not set correctly by try blocks (test 1), nonexisting method calls (test 3), wrong-signature calls (test 4), divide-by-zero (test 6), constant modification (test 7), die (test 8), EVAL error value (test 14)
 - [ ] roast/S02-magicals/dollar-underscore.t

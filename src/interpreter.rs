@@ -623,6 +623,12 @@ impl Interpreter {
                 Value::Str(cwd.to_string_lossy().to_string()),
             );
         }
+        let distro = Self::make_distro_instance();
+        self.env.insert("*DISTRO".to_string(), distro.clone());
+        self.env.insert("?DISTRO".to_string(), distro);
+        let perl = Self::make_perl_instance();
+        self.env.insert("*PERL".to_string(), perl.clone());
+        self.env.insert("?PERL".to_string(), perl);
     }
 
     fn create_handle(
@@ -676,6 +682,181 @@ impl Interpreter {
         let attrs = HashMap::new();
         Value::Instance {
             class_name: "IO::Spec".to_string(),
+            attributes: attrs,
+        }
+    }
+
+    fn make_distro_instance() -> Value {
+        let os = std::env::consts::OS;
+        let (name, auth, version_str, desc, release) = match os {
+            "macos" => {
+                let product_version = Command::new("sw_vers")
+                    .arg("-productVersion")
+                    .output()
+                    .ok()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_default();
+                let build_version = Command::new("sw_vers")
+                    .arg("-buildVersion")
+                    .output()
+                    .ok()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_default();
+                let product_name = Command::new("sw_vers")
+                    .arg("-productName")
+                    .output()
+                    .ok()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_default();
+                let major = product_version
+                    .split('.')
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
+                let desc_str = if product_name.is_empty() {
+                    format!("macOS {}", major)
+                } else {
+                    // sw_vers returns "macOS" as the product name
+                    format!("{} {}", product_name, major)
+                };
+                (
+                    "macos".to_string(),
+                    "Apple Inc.".to_string(),
+                    product_version,
+                    desc_str,
+                    build_version,
+                )
+            }
+            "linux" => {
+                let kernel_release = Command::new("uname")
+                    .arg("-r")
+                    .output()
+                    .ok()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_default();
+                let mut distro_desc = String::new();
+                if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
+                    for line in content.lines() {
+                        if let Some(val) = line.strip_prefix("PRETTY_NAME=") {
+                            distro_desc = val.trim_matches('"').to_string();
+                            break;
+                        }
+                    }
+                }
+                if distro_desc.is_empty() {
+                    distro_desc = "Linux".to_string();
+                }
+                (
+                    "linux".to_string(),
+                    "unknown".to_string(),
+                    kernel_release.clone(),
+                    distro_desc,
+                    kernel_release,
+                )
+            }
+            "windows" => {
+                let ver = Command::new("cmd")
+                    .args(["/C", "ver"])
+                    .output()
+                    .ok()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_default();
+                (
+                    "mswin32".to_string(),
+                    "Microsoft".to_string(),
+                    String::new(),
+                    ver.clone(),
+                    ver,
+                )
+            }
+            _ => {
+                let kernel_release = Command::new("uname")
+                    .arg("-r")
+                    .output()
+                    .ok()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_default();
+                (
+                    os.to_string(),
+                    "unknown".to_string(),
+                    kernel_release.clone(),
+                    os.to_string(),
+                    kernel_release,
+                )
+            }
+        };
+
+        // Parse version string into Value::Version
+        let version = Self::parse_version_string(&version_str);
+
+        let path_sep = if cfg!(windows) {
+            ";".to_string()
+        } else {
+            ":".to_string()
+        };
+
+        let is_win = cfg!(windows);
+
+        let mut attrs = HashMap::new();
+        attrs.insert("name".to_string(), Value::Str(name));
+        attrs.insert("auth".to_string(), Value::Str(auth));
+        attrs.insert("version".to_string(), version);
+        attrs.insert(
+            "signature".to_string(),
+            Value::Instance {
+                class_name: "Blob".to_string(),
+                attributes: HashMap::new(),
+            },
+        );
+        attrs.insert("desc".to_string(), Value::Str(desc));
+        attrs.insert("release".to_string(), Value::Str(release));
+        attrs.insert("path-sep".to_string(), Value::Str(path_sep));
+        attrs.insert("is-win".to_string(), Value::Bool(is_win));
+
+        Value::Instance {
+            class_name: "Distro".to_string(),
+            attributes: attrs,
+        }
+    }
+
+    fn parse_version_string(s: &str) -> Value {
+        use crate::value::VersionPart;
+        let parts: Vec<VersionPart> = s
+            .split('.')
+            .filter_map(|p| p.parse::<i64>().ok().map(VersionPart::Num))
+            .collect();
+        if parts.is_empty() {
+            Value::Version {
+                parts: vec![VersionPart::Num(0)],
+                plus: false,
+                minus: false,
+            }
+        } else {
+            Value::Version {
+                parts,
+                plus: false,
+                minus: false,
+            }
+        }
+    }
+
+    fn make_perl_instance() -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "DISTROnames".to_string(),
+            Value::Array(vec![
+                Value::Str("macos".to_string()),
+                Value::Str("linux".to_string()),
+                Value::Str("freebsd".to_string()),
+                Value::Str("mswin32".to_string()),
+                Value::Str("openbsd".to_string()),
+                Value::Str("dragonfly".to_string()),
+                Value::Str("netbsd".to_string()),
+                Value::Str("browser".to_string()),
+            ]),
+        );
+        Value::Instance {
+            class_name: "Perl".to_string(),
             attributes: attrs,
         }
     }
@@ -4472,6 +4653,86 @@ impl Interpreter {
                         attributes,
                     } = &base
                     {
+                        if class_name == "Distro" {
+                            match name.as_str() {
+                                "name" | "auth" | "desc" | "release" | "path-sep" | "is-win"
+                                | "version" | "signature" => {
+                                    return Ok(attributes
+                                        .get(name.as_str())
+                                        .cloned()
+                                        .unwrap_or(Value::Nil));
+                                }
+                                "gist" => {
+                                    let n = attributes
+                                        .get("name")
+                                        .map(|v| v.to_string_value())
+                                        .unwrap_or_default();
+                                    let v = attributes
+                                        .get("version")
+                                        .map(|v| {
+                                            if let Value::Version { parts, .. } = v {
+                                                Value::version_parts_to_string(parts)
+                                            } else {
+                                                v.to_string_value()
+                                            }
+                                        })
+                                        .unwrap_or_default();
+                                    return Ok(Value::Str(format!("{} ({})", n, v)));
+                                }
+                                "Str" => {
+                                    let n = attributes
+                                        .get("name")
+                                        .map(|v| v.to_string_value())
+                                        .unwrap_or_default();
+                                    return Ok(Value::Str(n));
+                                }
+                                "raku" | "perl" => {
+                                    let release = attributes
+                                        .get("release")
+                                        .map(|v| v.to_string_value())
+                                        .unwrap_or_default();
+                                    let path_sep = attributes
+                                        .get("path-sep")
+                                        .map(|v| v.to_string_value())
+                                        .unwrap_or_default();
+                                    let n = attributes
+                                        .get("name")
+                                        .map(|v| v.to_string_value())
+                                        .unwrap_or_default();
+                                    let auth = attributes
+                                        .get("auth")
+                                        .map(|v| v.to_string_value())
+                                        .unwrap_or_default();
+                                    let ver = attributes
+                                        .get("version")
+                                        .map(|v| {
+                                            if let Value::Version { parts, .. } = v {
+                                                format!(
+                                                    "v{}",
+                                                    Value::version_parts_to_string(parts)
+                                                )
+                                            } else {
+                                                v.to_string_value()
+                                            }
+                                        })
+                                        .unwrap_or_default();
+                                    let desc = attributes
+                                        .get("desc")
+                                        .map(|v| v.to_string_value())
+                                        .unwrap_or_default();
+                                    return Ok(Value::Str(format!(
+                                        "Distro.new(release => \"{}\", path-sep => \"{}\", name => \"{}\", auth => \"{}\", version => {}, signature => Blob, desc => \"{}\")",
+                                        release, path_sep, n, auth, ver, desc
+                                    )));
+                                }
+                                _ => {}
+                            }
+                        }
+                        if class_name == "Perl" {
+                            if let Some(val) = attributes.get(name.as_str()) {
+                                return Ok(val.clone());
+                            }
+                        }
                         if class_name == "Promise" {
                             if name == "keep" {
                                 let value = args
@@ -7097,6 +7358,128 @@ impl Interpreter {
                 Ok(Value::Hash(map))
             }
             Expr::Call { name, args } => {
+                // Handle test functions in expression context (e.g., `diag "x" if ! ok ...`)
+                if name == "ok" {
+                    let desc = args
+                        .get(1)
+                        .map(|e| self.eval_expr(e))
+                        .transpose()?
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    let value = args
+                        .first()
+                        .map(|e| self.eval_expr(e))
+                        .transpose()?
+                        .unwrap_or(Value::Nil);
+                    let ok = value.truthy();
+                    self.test_ok(ok, &desc, false)?;
+                    return Ok(Value::Bool(ok));
+                }
+                if name == "nok" {
+                    let desc = args
+                        .get(1)
+                        .map(|e| self.eval_expr(e))
+                        .transpose()?
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    let value = args
+                        .first()
+                        .map(|e| self.eval_expr(e))
+                        .transpose()?
+                        .unwrap_or(Value::Nil);
+                    let ok = !value.truthy();
+                    self.test_ok(ok, &desc, false)?;
+                    return Ok(Value::Bool(ok));
+                }
+                if name == "isa-ok" {
+                    let value = args
+                        .first()
+                        .map(|e| self.eval_expr(e))
+                        .transpose()?
+                        .unwrap_or(Value::Nil);
+                    let type_name = args
+                        .get(1)
+                        .map(|e| self.eval_expr(e))
+                        .transpose()?
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    let desc = args
+                        .get(2)
+                        .map(|e| self.eval_expr(e))
+                        .transpose()?
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    let ok = match type_name.as_str() {
+                        "Array" => matches!(value, Value::Array(_)),
+                        "Rat" => matches!(value, Value::Rat(_, _)),
+                        "FatRat" => matches!(value, Value::FatRat(_, _)),
+                        "Complex" => matches!(value, Value::Complex(_, _)),
+                        "Set" => matches!(value, Value::Set(_)),
+                        "Bag" => matches!(value, Value::Bag(_)),
+                        "Mix" => matches!(value, Value::Mix(_)),
+                        _ => {
+                            if let Value::Instance { class_name, .. } = &value {
+                                class_name == type_name.as_str()
+                            } else {
+                                true
+                            }
+                        }
+                    };
+                    self.test_ok(ok, &desc, false)?;
+                    return Ok(Value::Bool(ok));
+                }
+                if name == "diag" {
+                    let msg = args
+                        .first()
+                        .map(|e| self.eval_expr(e))
+                        .transpose()?
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    self.output.push_str(&format!("# {}\n", msg));
+                    return Ok(Value::Nil);
+                }
+                if name == "pass" {
+                    let desc = args
+                        .first()
+                        .map(|e| self.eval_expr(e))
+                        .transpose()?
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    self.test_ok(true, &desc, false)?;
+                    return Ok(Value::Bool(true));
+                }
+                if name == "flunk" {
+                    let desc = args
+                        .first()
+                        .map(|e| self.eval_expr(e))
+                        .transpose()?
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    self.test_ok(false, &desc, false)?;
+                    return Ok(Value::Bool(false));
+                }
+                if name == "is" || name == "isnt" {
+                    let desc = args
+                        .get(2)
+                        .map(|e| self.eval_expr(e))
+                        .transpose()?
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    let left = args
+                        .first()
+                        .map(|e| self.eval_expr(e))
+                        .transpose()?
+                        .unwrap_or(Value::Nil);
+                    let right = args
+                        .get(1)
+                        .map(|e| self.eval_expr(e))
+                        .transpose()?
+                        .unwrap_or(Value::Nil);
+                    let eq = left.to_string_value() == right.to_string_value();
+                    let ok = if name == "isnt" { !eq } else { eq };
+                    self.test_ok(ok, &desc, false)?;
+                    return Ok(Value::Bool(ok));
+                }
                 if name == "make" {
                     let value = if let Some(arg) = args.first() {
                         self.eval_expr(arg)?
