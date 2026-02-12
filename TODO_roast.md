@@ -243,6 +243,7 @@
 - [ ] roast/S03-junctions/autothreading.t
 - [ ] roast/S03-junctions/boolean-context.t
 - [ ] roast/S03-junctions/misc.t
+  - 42/155 pass (88 reached). Good basic junction support (boolean context, if modifier, for loops, WHAT). Failures: junction.WHAT (2-3), Mu junction (18), substr/index on junctions (21-22, 24-25, 27-28, 30-31, 33-34), for over Junction gets Junction (37), array/hash indexing (42-44), regex in junction (48-50), .gist (51), flattening (55-57, 59). Difficulty: Medium-High
 - [ ] roast/S03-metaops/cross.t
 - [ ] roast/S03-metaops/eager-hyper.t
 - [ ] roast/S03-metaops/hyper.t
@@ -665,6 +666,7 @@
 - [ ] roast/S06-multi/syntax.t
   - 15/45 pass (38 reached). Good multi sub dispatch basics. Failures: multi with param list as expression (2), dispatch tie errors (10), anonymous sub errors (11-19), named/slurpy interaction (24-29, 31), optional param sorting (32), multi as callable (34), anonymous method in multi (35), candidate introspection (37-38). Difficulty: Medium
 - [ ] roast/S06-multi/type-based.t
+  - 8/68 pass (15 reached). Type-based multi dispatch works for Int/Str/Bool/Sub/Associative. Failures: constant dispatch (1), Num (4), Rule (6), Positional (8), Numeric (10), Inf/NaN (11-12). Only 15 tests reached. Difficulty: Medium
 - [ ] roast/S06-multi/unpackability.t
 - [ ] roast/S06-multi/value-based.t
 - [ ] roast/S06-operator-overloading/circumfix.t
@@ -1316,6 +1318,7 @@
   - 8/76 pass (1, 19, 22-23, and a few others). `@arr.unshift(val)` method works but doesn't return correct count. Sub form `unshift(@arr, val)` broken. Most element verification fails. Difficulty: Medium-High (unshift return value and sub form)
 - [ ] roast/S32-basics/pairup.t
 - [ ] roast/S32-basics/warn.t
+  - 8/9 pass (11 reached, plan 9). Tests 1-2, 4-9 pass. Failures: CONTROL catching (3), smartmatch in warning context (10-11, outside plan). Very close! Difficulty: Low
 - [ ] roast/S32-basics/xxKEY.t
 - [ ] roast/S32-basics/xxPOS-native.t
 - [ ] roast/S32-basics/xxPOS.t
@@ -1519,6 +1522,7 @@
 - [x] roast/S32-str/bool.t
   - 12/12 pass.
 - [ ] roast/S32-str/capitalize.t
+  - 3/17 pass (8, 10, 17). `.wordcase` method not implemented (uses old name `capitalize`). Most tests fail because `wordcase()` function not found. Difficulty: Medium (need `wordcase` method/function)
 - [ ] roast/S32-str/chomp.t
   - 18/39 pass. Basic chomp works for `\n`. Failures: chomp with `\r\n` line endings (4, 11, 14-20, 23-24), various line-ending combinations (CR, CRLF). Difficulty: Low-Medium (need `\r\n` and `\r` line ending support in chomp)
 - [ ] roast/S32-str/chop.t
@@ -1543,6 +1547,7 @@
 - [ ] roast/S32-str/gb18030-encode-decode.t
 - [ ] roast/S32-str/gb2312-encode-decode.t
 - [ ] roast/S32-str/indent.t
+  - 4/63 pass (5-8). `.indent` works for adding indent to already-indented strings. Failures: simple indent (1-4), same-space indent (9-17), mixed-space indent (18-39). Only 39 tests reached. Difficulty: Medium (`.indent` logic for various whitespace scenarios)
 - [ ] roast/S32-str/index.t
   - 31/41 pass. Strong index support. Failures: pos at/after match (9-10), empty substr with pos beyond string (20-22), Cool.index wrong args (37), Buf.index (38-41). Difficulty: Low-Medium
 - [ ] roast/S32-str/indices.t
