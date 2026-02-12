@@ -1497,6 +1497,7 @@
 - [x] roast/S32-str/space-chars.t
   - 30/30 pass.
 - [ ] roast/S32-str/split-simple.t
+  - 3/30 pass (plan has subtests). Basic split works for simple delimiters. Failures: captured delimiter in split (3-5), `:v` adverb (6-7), `split('')` (9), type check exceptions (10-12). Difficulty: Medium
 - [ ] roast/S32-str/split.t
 - [ ] roast/S32-str/sprintf-b.t
 - [ ] roast/S32-str/sprintf-c.t
@@ -1515,7 +1516,9 @@
 - [ ] roast/S32-str/substr.t
   - 32/57 pass. Good basic substr support. Failures: `*-1` last-char syntax (4-5), negative length (11-14), `.wordcase` method (21, 32, 40), Deseret chars (24-26), Range-based substr (43-52), WhateverCode arg (54). Difficulty: Medium
 - [ ] roast/S32-str/tclc.t
+  - 2/6 pass (2, 5). Failures: tclc sub form (1), German sharp s (3), lj ligature (4), high codepoints (6). Difficulty: Medium (Unicode case mapping edge cases)
 - [ ] roast/S32-str/tc.t
+  - 6/9 pass (1-4, 7-8). Failures: German sharp s (5), lj ligature (6), high codepoints (9). Difficulty: Medium (same Unicode case mapping issues)
 - [ ] roast/S32-str/text-samples/gb18030_sample_in_gb18030.txt
 - [ ] roast/S32-str/text-samples/gb18030_sample_in_utf8.txt
 - [ ] roast/S32-str/text-samples/gb2312_sample_in_gb2312.txt
@@ -1523,6 +1526,7 @@
 - [ ] roast/S32-str/text-samples/shiftjis_sample_in_utf8.txt
 - [ ] roast/S32-str/text-samples/shiftjis_sample.txt
 - [ ] roast/S32-str/trim.t
+  - 35/37 pass. Crashes with "Division by zero" before last 2 tests. Very close to full pass. All trim/trim-leading/trim-trailing work. Difficulty: Low (fix division-by-zero in test 36-37 context)
 - [ ] roast/S32-str/uc.t
   - 14/20 pass (1-14). Failures: `but` mixin on strings (15-17), precomposed upper character (18-19), prepend codepoints uppercasing (20). Difficulty: Low-Medium
 - [ ] roast/S32-str/uniparse.t
@@ -1530,6 +1534,7 @@
 - [ ] roast/S32-str/val.t
 - [ ] roast/S32-str/windows-1251-windows-1252-encode-decode.t
 - [ ] roast/S32-str/words.t
+  - 9/17 pass. Basic `.words` works. Failures: NO-BREAK SPACE handling (8), grapheme precomposed/non-precomposed (10-11), and other edge cases. Difficulty: Low-Medium
 - [ ] roast/S32-temporal/baum-gregorian-data.t
 - [ ] roast/S32-temporal/calendar.t
 - [ ] roast/S32-temporal/Date.t
