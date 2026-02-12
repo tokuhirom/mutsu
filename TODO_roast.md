@@ -394,6 +394,7 @@
 - [ ] roast/S03-sequence/nonnumeric.t
 - [ ] roast/S03-smartmatch/00-sanity.t
 - [ ] roast/S03-smartmatch/any-any.t
+  - 6/8 pass. `~~` and `!~~` work for basic Any-Any matching. Failures: `~~` should set `$_` to LHS inside block (5), `!~~` same issue (7). Difficulty: Low (need `$_` binding in smartmatch context)
 - [ ] roast/S03-smartmatch/any-bool.t
 - [ ] roast/S03-smartmatch/any-callable.t
 - [ ] roast/S03-smartmatch/any-complex.t
@@ -683,6 +684,7 @@
 - [ ] roast/S06-signature/closure-parameters.t
 - [ ] roast/S06-signature/code.t
 - [ ] roast/S06-signature/defaults.t
+  - 1/17 pass (test 1). Crashes with "Type check failed for func: expected Code, got Sub" after test 1. Sub is not recognized as Code type. Difficulty: Medium (type hierarchy: Sub should be a subtype of Code)
 - [ ] roast/S06-signature/definite-return.t
 - [ ] roast/S06-signature/errors.t
 - [ ] roast/S06-signature/introspection.t
@@ -1311,7 +1313,9 @@
 - [ ] roast/S32-hash/invert.t
 - [ ] roast/S32-hash/iterator.t
 - [ ] roast/S32-hash/keys_values.t
+  - 6/23 pass (1-2, 4-5, 13-14). `.keys` and `.values` work on hashes, `Any.keys`/`Any.values` work. Failures: element count comparison (3, 6), `Pair.keys`/`Pair.values` (7-12), `.kv` on pair with Mu (15-23). Difficulty: Medium (Pair.keys/values, Mu handling)
 - [ ] roast/S32-hash/kv.t
+  - 13/27 pass (1-2, 12-20, 22, 24). Good `.kv` support on hashes. Failures: sub form `kv(%hash)` (3-4), `Pair.kv` (5-7), constant hash refs (8-11), rw aliases in kv (21, 23, 25). Only 25 tests reached. Difficulty: Medium
 - [ ] roast/S32-hash/map.t
 - [ ] roast/S32-hash/multislice-6e.t
 - [ ] roast/S32-hash/pairs.t
@@ -1446,6 +1450,7 @@
 - [ ] roast/S32-num/exp.t
 - [ ] roast/S32-num/fatrat.t
 - [ ] roast/S32-num/int.t
+  - 77/165 pass (108 reached). Strong Int/Num conversion support. `.Int`, `int()`, `.Bool` on numbers all work well. Failures: hex string int (54), trailing char warnings (56-57), many `is-deeply` tests crash (from ~60 onward), bigint overflow (100+). Difficulty: Medium (is-deeply crash blocks many tests; hex parsing, bigint needed)
 - [ ] roast/S32-num/is-prime.t
 - [ ] roast/S32-num/log.t
 - [ ] roast/S32-num/narrow.t
