@@ -429,6 +429,7 @@
 - [ ] roast/S04-declarations/state.t
 - [ ] roast/S04-declarations/will.t
 - [ ] roast/S04-exception-handlers/catch.t
+  - 2/33 pass (1, 5). Only 5 reached; crashes with unhandled "blah" exception. CATCH in sub works, but CATCH in try/closure/do-block doesn't properly suppress exceptions. Difficulty: Medium-High
 - [ ] roast/S04-exception-handlers/control.t
 - [ ] roast/S04-exception-handlers/top-level.t
 - [ ] roast/S04-exceptions/control_across_runloop.t
@@ -503,6 +504,7 @@
 - [ ] roast/S04-statements/sink.t
 - [ ] roast/S04-statements/terminator.t
 - [ ] roast/S04-statements/try.t
+  - 10/40 pass (1-3, 5, 7, 11, 13-15, 17). Only 21 reached; crashes with custom exception class. Basic try/CATCH works. Failures: array/hash assignment from try (4, 6, 8-10, 12), return in try (16), CATCH edge cases (18-21). Difficulty: Medium
 - [ ] roast/S04-statements/unless.t
   - 7/10 pass (1-7). Crashes at test 8 (`die` in unless block). Tests 8-10 not fully reached. Difficulty: Low (die/exception handling in unless)
 - [x] roast/S04-statements/until.t
@@ -1242,8 +1244,10 @@
 - [ ] roast/S29-context/exit-in-if.t
 - [ ] roast/S29-context/exit.t
 - [ ] roast/S29-context/sleep.t
+  - 18/23 pass (4-9, 11, 13, 15-21). Good sleep/sleep-timer/sleep-until support. Failures: test 1 unknown, sleep returns Nil (2-3, 10, 12, 14). Duration comparison edge cases. Difficulty: Low
 - [ ] roast/S29-conversions/hash.t
 - [ ] roast/S29-conversions/ord_and_chr.t
+  - 206/260 pass (33 not reached). Excellent ord/chr coverage. Failures: surrogate pair ord/chr (199-204), `ord(chr(3))` (205), `.ord`/`.chr`/`.ords`/`.chrs` methods (210-215), surrogate/out-of-range chr (217, 220-221), high character names (223-224), NFC codepoint (225-226), chrs with string list (227). Difficulty: Medium
 - [ ] roast/S29-os/system.t
 - [ ] roast/S32-array/adverbs.t
 - [ ] roast/S32-array/bool.t
@@ -1445,6 +1449,7 @@
 - [ ] roast/S32-num/stringify.t
 - [ ] roast/S32-num/unpolar.t
 - [ ] roast/S32-scalar/defined.t
+  - 54/55 pass. Only test 55 fails: `&defined` function reference syntax not supported. Difficulty: Low (needs `&name` function reference)
 - [ ] roast/S32-scalar/perl.t
 - [ ] roast/S32-scalar/undef.t
 - [x] roast/S32-str/append.t
