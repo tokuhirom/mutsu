@@ -192,6 +192,7 @@
 - [ ] roast/S02-types/multi_dimensional_array.t
 - [ ] roast/S02-types/mu.t
 - [ ] roast/S02-types/nan.t
+  - 25/28 pass (27 reached). Excellent NaN support! Failures: `truncate(NaN)` (18), assigning NaN to Int error msg (22), test 28 not reached. Difficulty: Low (very close to passing!)
 - [ ] roast/S02-types/native.t
 - [ ] roast/S02-types/nested_arrays.t
 - [ ] roast/S02-types/nested_pairs.t
@@ -199,6 +200,7 @@
   - ~14/67 pass. Failures: `return_nil() === Nil` identity (test 15), `.raku` on Nil (test 16), variable holding nil defined check (test 18), subset type assignment (test 26), mandatory param with Nil (test 28), optional param Nil handling (tests 29-30)
 - [ ] roast/S02-types/nominalizables.t
 - [ ] roast/S02-types/num.t
+  - 0/? pass. Parser panic (stack overflow) before any tests run. Likely complex parsing constructs in test file. Difficulty: High
 - [ ] roast/S02-types/pair.t
   - ~5/182 pass. Fatal: `Type check failed for pair: expected Pair, got Any`. Most Pair introspection (`.key`, `.value`, colonpair `:a(42)`, nested pairs, `isa(Pair)`) fails. Pair type system not fully implemented
 - [x] roast/S02-types/parsing-bool.t
@@ -658,6 +660,7 @@
 - [ ] roast/S06-multi/redispatch.t
 - [ ] roast/S06-multi/subsignature.t
 - [ ] roast/S06-multi/syntax.t
+  - 15/45 pass (38 reached). Good multi sub dispatch basics. Failures: multi with param list as expression (2), dispatch tie errors (10), anonymous sub errors (11-19), named/slurpy interaction (24-29, 31), optional param sorting (32), multi as callable (34), anonymous method in multi (35), candidate introspection (37-38). Difficulty: Medium
 - [ ] roast/S06-multi/type-based.t
 - [ ] roast/S06-multi/unpackability.t
 - [ ] roast/S06-multi/value-based.t
@@ -891,8 +894,11 @@
 - [ ] roast/S12-methods/lvalue.t
 - [ ] roast/S12-methods/method-vs-sub.t
 - [ ] roast/S12-methods/multi.t
+  - 11/32 pass (1-4, 6-7, 24-26, 29, 32). Multi-method dispatch works for basic cases. Failures: wrong-args error (5, 8), call counting (9-11), role dispatch (12-14), .^methods introspection (15-20), tied method error (21), subclass override (22-23), accessor conflict (27-28), submethod multi (30-31). Difficulty: Medium
 - [ ] roast/S12-methods/parallel-dispatch.t
 - [ ] roast/S12-methods/private.t
+  - 0/14 pass. Private methods (`self!method`) not implemented. All tests fail. Difficulty: High (need `!` method call syntax and private method resolution)
+
 - [ ] roast/S12-methods/qualified.t
 - [ ] roast/S12-methods/submethods.t
 - [ ] roast/S12-methods/syntax.t
