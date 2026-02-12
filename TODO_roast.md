@@ -223,6 +223,7 @@
 - [ ] roast/S02-types/unicode.t
 - [ ] roast/S02-types/version-stress.t
 - [ ] roast/S02-types/version.t
+  - 10/45 pass (only 10 reached). Version literals and comparisons work. Tests 1-10 pass (literal parsing, cmp, eqv, Version.new). Stopped early, likely syntax issue after test 10. Difficulty: Low-Medium
 - [ ] roast/S02-types/whatever.t
   - ~9/131 pass. Failures: Whatever type constraint (test 2), `*-1` as Code (test 5), WhateverCode execution (test 7), `*.meth` closure (test 13), `*.uc eq $str` Callable creation (tests 15-16), `@a[1..*]` slicing (test 18)
 - [ ] roast/S02-types/WHICH.t
@@ -463,6 +464,7 @@
 - [ ] roast/S04-phasers/in-eval.t
 - [ ] roast/S04-phasers/init.t
 - [ ] roast/S04-phasers/in-loop.t
+  - 1/21 pass (test 3: LAST does not fire for empty loop). Failures: FIRST/NEXT/LAST trait blocks in for loop (1-2), only 3 tests reached. Difficulty: Medium-High (FIRST/NEXT/LAST phasers in loops)
 - [ ] roast/S04-phasers/interpolate.t
 - [ ] roast/S04-phasers/keep-undo.t
 - [ ] roast/S04-phasers/multiple.t
@@ -871,6 +873,7 @@
 - [ ] roast/S12-enums/thorough.t
 - [ ] roast/S12-introspection/attributes.t
 - [ ] roast/S12-introspection/can.t
+  - 8/29 pass (1, 4, 8-9, 11, 13, 28-29). `.can` returns truthy for existing methods and falsy for missing. Failures: `.can` return type (2-3, 5-7, 10, 12), invokable result (14-15), method count (16-23), .can stringification (24-25), submethod resolution (26-27). Difficulty: Medium (`.can` needs to return list of Method objects)
 - [ ] roast/S12-introspection/definite.t
 - [ ] roast/S12-introspection/meta-class.t
 - [ ] roast/S12-introspection/methods.t
@@ -878,6 +881,7 @@
 - [ ] roast/S12-introspection/roles.t
 - [ ] roast/S12-introspection/walk.t
 - [ ] roast/S12-introspection/WHAT.t
+  - 6/37 pass (2, 4, 8, 24, 26, 36). `.WHAT` works for basic types (Array, Hash). Failures: default type detection for uninitialized variables (1, 3, 5, 9-23), typed variables (14-23), parameterized types (28-37). Difficulty: Medium-High (type object system)
 - [ ] roast/S12-meta/classhow.t
 - [ ] roast/S12-meta/exporthow.t
 - [ ] roast/S12-meta/grammarhow.t
@@ -1537,6 +1541,7 @@
 - [ ] roast/S32-str/contains.t
   - 0/1 pass. `Cool.contains` with wrong args hangs instead of erroring. Difficulty: Low (error handling for wrong args)
 - [ ] roast/S32-str/encode.t
+  - 3/41 pass (2, 4, 7). Basic `.encode` works for ASCII/UTF-8. Failures: return type is not Blob (1), Buf length (3, 5-6), indexing encoded bytes (8-9), cp1252 encoding (10-11). Only 12 tests reached. Difficulty: Medium-High (Buf/Blob types needed)
 - [ ] roast/S32-str/ends-with.t
   - 0/3 pass. `Cool.ends-with` with wrong args hangs (test 1). Other tests use complex test framework syntax. Difficulty: Medium
 - [ ] roast/S32-str/fc.t
