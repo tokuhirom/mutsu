@@ -64,7 +64,7 @@
   - ~6/84 pass. Most failures: Pair type introspection (`.key`, `.value`, `:a(42)` colonpair syntax), `isa(Pair)` checks, nested pairs, Pair destructuring, variables as pair keys
 - [ ] roast/S02-literals/pod.t
 - [ ] roast/S02-literals/quoting.t
-  - 0/? pass. Crashes with panic: byte index not a char boundary in `try_meta_op` when parsing Chinese characters in test file. Parser bug with multi-byte UTF-8 in operator parsing. Difficulty: Medium (parser UTF-8 boundary fix needed)
+  - 17/212 pass (1-2, 7-9, 11, 13, 15-19, 31-35). Panic fixed (UTF-8 boundary in try_meta_op). Crashes at test ~61 with division by zero when parsing `qq:w/.../` (slash delimiter misinterpreted as division). Many quoting adverbs (q:w, qq:ww, Q:q, etc.) not fully supported. Difficulty: High
 - [ ] roast/S02-literals/quoting-unicode.t
 - [ ] roast/S02-literals/radix.t
   - 1/158 pass. `:10<42>`, `:16<FF>` etc. radix notation not implemented. Only `0xffffffff` hex literal works
@@ -426,7 +426,7 @@
 - [ ] roast/S04-blocks-and-statements/temp.t
 - [ ] roast/S04-declarations/constant-6.d.t
 - [ ] roast/S04-declarations/constant.t
-  - 0/? pass. Crashes with panic: byte index not a char boundary in `try_meta_op` when parsing `λ` (lambda). Same parser UTF-8 bug as quoting.t. Difficulty: Medium (parser UTF-8 boundary fix in try_meta_op)
+  - 18/72 pass. Panic fixed (UTF-8 boundary in try_meta_op). Failures: sigiled constants (5-6), constant reassignment checks, our/my scoping, hash/array constants, type constraint enforcement. Difficulty: Medium
 - [ ] roast/S04-declarations/implicit-parameter.t
 - [ ] roast/S04-declarations/multiple.t
   - 3/8 pass (tests 1-3). Failures: `my ($a, $b) = (1, 2)` destructuring works but `my ($a, @b)` with slurpy not supported; `my ($a, *@b)` splat syntax not implemented; `state` declarations not supported. Difficulty: Medium

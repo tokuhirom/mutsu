@@ -1973,7 +1973,7 @@ impl Parser {
                 };
                 return Some((meta, op.to_string(), 2));
             }
-            if name.len() > 1 {
+            if name.len() > 1 && name.is_char_boundary(1) {
                 let (meta, op) = name.split_at(1);
                 if meta == "R"
                     && matches!(
@@ -2077,7 +2077,7 @@ impl Parser {
                 };
                 return Some((meta, op.to_string(), 2));
             }
-            if name.len() > 1 {
+            if name.len() > 1 && name.is_char_boundary(1) {
                 let (meta, op) = name.split_at(1);
                 if matches!(meta, "X" | "Z")
                     && matches!(
@@ -2165,7 +2165,7 @@ impl Parser {
                     return Some((meta, op, 4));
                 }
             }
-            if name.len() > 1 {
+            if name.len() > 1 && name.is_char_boundary(1) {
                 let (meta, op) = name.split_at(1);
                 if matches!(meta, "R" | "X" | "Z")
                     && matches!(
