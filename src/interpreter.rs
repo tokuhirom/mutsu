@@ -569,6 +569,15 @@ impl Interpreter {
         }
     }
 
+    /// Convert a value to Value::Array for array variable assignment.
+    pub(crate) fn coerce_to_array(value: Value) -> Value {
+        match value {
+            Value::Array(_) => value,
+            Value::Nil => Value::Array(Vec::new()),
+            other => Value::Array(vec![other]),
+        }
+    }
+
     fn init_io_environment(&mut self) {
         let stdout = self.create_handle(
             IoHandleTarget::Stdout,
@@ -1212,6 +1221,8 @@ impl Interpreter {
                 let value = self.eval_expr(expr)?;
                 let value = if name.starts_with('%') {
                     Self::coerce_to_hash(value)
+                } else if name.starts_with('@') {
+                    Self::coerce_to_array(value)
                 } else {
                     value
                 };
@@ -1228,6 +1239,8 @@ impl Interpreter {
                 };
                 let value = if name.starts_with('%') {
                     Self::coerce_to_hash(value)
+                } else if name.starts_with('@') {
+                    Self::coerce_to_array(value)
                 } else {
                     value
                 };
@@ -1360,6 +1373,7 @@ impl Interpreter {
                             | "lives-ok"
                             | "dies-ok"
                             | "eval-lives-ok"
+                            | "eval-dies-ok"
                             | "throws-like"
                             | "can-ok"
                             | "pass"
@@ -2368,9 +2382,34 @@ impl Interpreter {
                 state.force_todo.extend(ranges);
             }
             "eval-lives-ok" => {
-                let _ = self.positional_arg(args, 0, "eval-lives-ok expects code")?;
+                let code_expr = self.positional_arg(args, 0, "eval-lives-ok expects code")?;
                 let desc = self.positional_arg_value(args, 1)?;
-                self.test_ok(true, &desc, false)?;
+                let code = match self.eval_expr(code_expr)? {
+                    Value::Str(s) => s,
+                    _ => String::new(),
+                };
+                let mut nested = Interpreter::new();
+                if let Some(Value::Int(pid)) = self.env.get("*PID") {
+                    nested.set_pid(pid.saturating_add(1));
+                }
+                nested.lib_paths = self.lib_paths.clone();
+                let ok = nested.run(&code).is_ok();
+                self.test_ok(ok, &desc, false)?;
+            }
+            "eval-dies-ok" => {
+                let code_expr = self.positional_arg(args, 0, "eval-dies-ok expects code")?;
+                let desc = self.positional_arg_value(args, 1)?;
+                let code = match self.eval_expr(code_expr)? {
+                    Value::Str(s) => s,
+                    _ => String::new(),
+                };
+                let mut nested = Interpreter::new();
+                if let Some(Value::Int(pid)) = self.env.get("*PID") {
+                    nested.set_pid(pid.saturating_add(1));
+                }
+                nested.lib_paths = self.lib_paths.clone();
+                let ok = nested.run(&code).is_err();
+                self.test_ok(ok, &desc, false)?;
             }
             "throws-like" => {
                 let code_expr = self.positional_arg(args, 0, "throws-like expects code")?;
@@ -5374,6 +5413,38 @@ impl Interpreter {
                             Ok(Value::Str(chars[start..].iter().collect()))
                         }
                     }
+                    "subst" => {
+                        let s = base.to_string_value();
+                        let pattern = args
+                            .first()
+                            .and_then(|a| self.eval_expr(a).ok())
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let replacement = args
+                            .get(1)
+                            .and_then(|a| self.eval_expr(a).ok())
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        // Check for :g adverb
+                        let mut global = false;
+                        for a in args.iter().skip(2) {
+                            if let Expr::AssignExpr { name, .. } = a {
+                                if name == "g" {
+                                    global = true;
+                                }
+                            } else if let Ok(Value::Pair(ref k, _)) = self.eval_expr(a) {
+                                if k == "g" {
+                                    global = true;
+                                }
+                            }
+                        }
+                        let result = if global {
+                            s.replace(&pattern, &replacement)
+                        } else {
+                            s.replacen(&pattern, &replacement, 1)
+                        };
+                        Ok(Value::Str(result))
+                    }
                     "index" => {
                         let s = base.to_string_value();
                         let needle = args
@@ -6603,6 +6674,12 @@ impl Interpreter {
                                         && let Ok(Value::Str(s)) = self.eval_expr(expr)
                                     {
                                         short_name = Some(s);
+                                    }
+                                } else if let Ok(Value::Pair(ref k, ref v)) = self.eval_expr(arg) {
+                                    if k == "short-name" {
+                                        if let Value::Str(s) = v.as_ref() {
+                                            short_name = Some(s.clone());
+                                        }
                                     }
                                 } else if let Ok(Value::Str(s)) = self.eval_expr(arg) {
                                     short_name = Some(s);

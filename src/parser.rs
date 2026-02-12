@@ -259,6 +259,31 @@ impl Parser {
             };
             return Ok(Stmt::VarDecl { name, expr });
         }
+        if self.match_ident("constant") {
+            // constant NAME = expr;
+            // The name can be a sigil-less identifier or a $var
+            let name = if let Some(token) =
+                self.advance_if(|k| matches!(k, TokenKind::Var(_)))
+            {
+                if let TokenKind::Var(n) = token.kind {
+                    format!("${}", n)
+                } else {
+                    String::new()
+                }
+            } else if let Some(TokenKind::Ident(n)) = self.tokens.get(self.pos).map(|t| t.kind.clone()) {
+                self.pos += 1;
+                n
+            } else {
+                return Err(RuntimeError::new("Expected identifier after 'constant'"));
+            };
+            if self.match_kind(TokenKind::Eq) || self.match_kind(TokenKind::Bind) {
+                let expr = self.parse_comma_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::VarDecl { name, expr });
+            }
+            self.match_kind(TokenKind::Semicolon);
+            return Ok(Stmt::VarDecl { name, expr: Expr::Literal(Value::Nil) });
+        }
         if self.match_ident("enum") {
             return self.parse_enum_decl();
         }
@@ -699,6 +724,7 @@ impl Parser {
                     | "lives-ok"
                     | "dies-ok"
                     | "eval-lives-ok"
+                    | "eval-dies-ok"
                     | "is_run"
                     | "throws-like"
                     | "force_todo"
@@ -1509,6 +1535,12 @@ impl Parser {
                 let expr = self.parse_expr_or_true();
                 self.match_kind(TokenKind::RParen);
                 expr
+            } else if self.check(&TokenKind::RParen)
+                || self.check(&TokenKind::Comma)
+                || self.check(&TokenKind::Semicolon)
+            {
+                // Bare colonpair :name without value → True
+                Expr::Literal(Value::Bool(true))
             } else {
                 self.parse_expr_or_true()
             };
@@ -2641,7 +2673,21 @@ impl Parser {
                             }
                         }
                         DStrPart::Block(code) => {
-                            exprs.push(Expr::Literal(Value::Str(code)));
+                            // Parse block code as an expression
+                            let mut lexer = crate::lexer::Lexer::new(&code);
+                            let mut tokens = Vec::new();
+                            loop {
+                                let tok = lexer.next_token();
+                                let is_eof = matches!(tok.kind, TokenKind::Eof);
+                                tokens.push(tok);
+                                if is_eof {
+                                    break;
+                                }
+                            }
+                            let mut sub_parser = Parser::new(tokens);
+                            if let Ok(expr) = sub_parser.parse_expr() {
+                                exprs.push(expr);
+                            }
                         }
                     }
                 }

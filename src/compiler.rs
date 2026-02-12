@@ -440,8 +440,13 @@ impl Compiler {
                 self.code.emit(OpCode::GetHashVar(name_idx));
             }
             Expr::BareWord(name) => {
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                self.code.emit(OpCode::GetBareWord(name_idx));
+                // Check if this bare word is a local variable (e.g., from constant declaration)
+                if let Some(&slot) = self.local_map.get(name.as_str()) {
+                    self.code.emit(OpCode::GetLocal(slot));
+                } else {
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::GetBareWord(name_idx));
+                }
             }
             Expr::Unary { op, expr } => match op {
                 TokenKind::Minus => {
@@ -601,7 +606,7 @@ impl Compiler {
                 self.compile_expr(target);
                 let arity = args.len() as u32;
                 for arg in args {
-                    self.compile_expr(arg);
+                    self.compile_method_arg(arg);
                 }
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
                 let target_name_idx = self.code.add_constant(Value::Str(target_name));
@@ -618,7 +623,7 @@ impl Compiler {
                 self.compile_expr(target);
                 let arity = args.len() as u32;
                 for arg in args {
-                    self.compile_expr(arg);
+                    self.compile_method_arg(arg);
                 }
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
                 self.code.emit(OpCode::CallMethod { name_idx, arity });
@@ -917,6 +922,18 @@ impl Compiler {
             }
         }
         false
+    }
+
+    /// Compile a method call argument. Named args (AssignExpr) are
+    /// compiled as Pair values so they survive VM execution.
+    fn compile_method_arg(&mut self, arg: &Expr) {
+        if let Expr::AssignExpr { name, expr } = arg {
+            self.compile_expr(&Expr::Literal(Value::Str(name.clone())));
+            self.compile_expr(expr);
+            self.code.emit(OpCode::MakePair);
+        } else {
+            self.compile_expr(arg);
+        }
     }
 
     fn stmt_has_placeholder(stmt: &Stmt) -> bool {

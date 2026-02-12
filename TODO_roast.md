@@ -49,6 +49,7 @@
 - [ ] roast/S02-literals/format.t
 - [ ] roast/S02-literals/hash-interpolation.t
 - [ ] roast/S02-literals/heredocs.t
+  - 40/42 pass. Tests 39, 42 fail: eval-dies-ok tests for heredoc scoping — heredoc body after closing `}` should not access block-scoped variables, but our lexer inlines the body before scoping is evaluated.
 - [ ] roast/S02-literals/hex_chars.t
   - 0/4 pass. `\x..` hex character codes in strings not implemented. Same blocker as char-by-number.t. Difficulty: Medium
 - [ ] roast/S02-literals/listquote.t

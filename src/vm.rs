@@ -167,6 +167,9 @@ impl VM {
                         v.clone()
                     } else if self.interpreter.has_class(name) || Self::is_builtin_type(name) {
                         Value::Package(name.to_string())
+                    } else if !name.starts_with('$') && !name.starts_with('@') && !name.starts_with('%') {
+                        // Sigil-less variable (e.g., from constant declaration)
+                        v.clone()
                     } else {
                         Value::Str(name.to_string())
                     }
@@ -1976,11 +1979,30 @@ impl VM {
                 if list.is_empty() {
                     self.stack.push(Interpreter::reduction_identity(&op));
                 } else {
-                    let mut acc = list[0].clone();
-                    for item in &list[1..] {
-                        acc = Interpreter::apply_reduction_op(&op, &acc, item)?;
+                    let is_comparison = matches!(
+                        op.as_str(),
+                        "eq" | "ne" | "lt" | "gt" | "le" | "ge"
+                            | "==" | "!=" | "<" | ">" | "<=" | ">="
+                            | "===" | "eqv" | "cmp" | "leg"
+                    );
+                    if is_comparison {
+                        // For comparison operators, check all adjacent pairs
+                        let mut result = true;
+                        for i in 0..list.len() - 1 {
+                            let v = Interpreter::apply_reduction_op(&op, &list[i], &list[i + 1])?;
+                            if !v.truthy() {
+                                result = false;
+                                break;
+                            }
+                        }
+                        self.stack.push(Value::Bool(result));
+                    } else {
+                        let mut acc = list[0].clone();
+                        for item in &list[1..] {
+                            acc = Interpreter::apply_reduction_op(&op, &acc, item)?;
+                        }
+                        self.stack.push(acc);
                     }
-                    self.stack.push(acc);
                 }
                 *ip += 1;
             }
@@ -2215,14 +2237,16 @@ impl VM {
             OpCode::SetLocal(idx) => {
                 let val = self.stack.pop().unwrap();
                 let idx = *idx as usize;
-                self.locals[idx] = val.clone();
                 // Dual-write to env for interpreter bridge compatibility
                 let name = &code.locals[idx];
                 let val = if name.starts_with('%') {
                     Interpreter::coerce_to_hash(val)
+                } else if name.starts_with('@') {
+                    Interpreter::coerce_to_array(val)
                 } else {
                     val
                 };
+                self.locals[idx] = val.clone();
                 self.interpreter.env_mut().insert(name.clone(), val);
                 *ip += 1;
             }
@@ -2230,10 +2254,18 @@ impl VM {
             OpCode::AssignExprLocal(idx) => {
                 let val = self.stack.last().unwrap().clone();
                 let idx = *idx as usize;
+                let name = &code.locals[idx];
+                let val = if name.starts_with('%') {
+                    Interpreter::coerce_to_hash(val)
+                } else if name.starts_with('@') {
+                    Interpreter::coerce_to_array(val)
+                } else {
+                    val
+                };
                 self.locals[idx] = val.clone();
                 self.interpreter
                     .env_mut()
-                    .insert(code.locals[idx].clone(), val);
+                    .insert(name.clone(), val);
                 *ip += 1;
             }
         }
