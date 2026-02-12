@@ -452,13 +452,18 @@
 - [ ] roast/S04-phasers/pre-post.t
 - [ ] roast/S04-phasers/rvalue.t
 - [ ] roast/S04-statement-modifiers/for.t
+  - 4/31 pass (11, 15, 17, 23). Most postfix-for constructs fail: `$_` not correctly set by for modifier (1-10, 12-14), double statement-modifier for detection (16), anon sub in modifier (19), `$_` assignment (20-21), decontainerization (28). Difficulty: Medium-High
 - [ ] roast/S04-statement-modifiers/given.t
+  - 2/12 pass (5, 8). `$_` not properly set by given-modifier in most cases (1-4, 6-7, 9-10). Terminator detection (12), thunk interaction (11). Difficulty: Medium
 - [ ] roast/S04-statement-modifiers/if.t
+  - 5/16 pass (1, 3, 7, 8, 10). Then crashes with `is-deeply expects right`. Failures: post-if as expression return value (2, 4, 6, 9), `is-deeply` not handling all argument forms (11+). Difficulty: Medium
 - [ ] roast/S04-statement-modifiers/unless.t
+  - 3/10 pass (2, 5, 7). Failures: post-unless return value (1, 3-4, 6), placeholder blocks (8), terminator detection (9), `$_` in blocks (10). Difficulty: Medium
 - [ ] roast/S04-statement-modifiers/until.t
 - [x] roast/S04-statement-modifiers/values_in_bool_context.t
   - 24/24 pass.
 - [ ] roast/S04-statement-modifiers/while.t
+  - 0/? pass. Hangs (infinite loop or timeout). Statement-modifier while likely causes infinite loop. Difficulty: Medium-High
 - [ ] roast/S04-statement-modifiers/without.t
 - [ ] roast/S04-statement-modifiers/with.t
 - [ ] roast/S04-statement-parsing/hash.t
