@@ -85,6 +85,7 @@
 - [x] roast/S02-magicals/block.t
   - 3/3 pass.
 - [ ] roast/S02-magicals/DISTRO.t
+  - 12/28 pass (8-13, 21-23, 25-27). `.raku`, `.gist`, `.Str` methods work. Failures: `.name`, `.auth`, `.version`, `.signature`, `.desc`, `.release`, `.path-sep` return wrong values (properties not populated with real system info). Difficulty: Low-Medium (need to populate DISTRO properties with actual OS data)
 - [ ] roast/S02-magicals/dollar_bang.t
   - 9/15 pass. Failures: `$!` not set correctly by try blocks (test 1), nonexisting method calls (test 3), wrong-signature calls (test 4), divide-by-zero (test 6), constant modification (test 7), die (test 8), EVAL error value (test 14)
 - [ ] roast/S02-magicals/dollar-underscore.t
@@ -95,17 +96,21 @@
 - [x] roast/S02-magicals/GROUP.t
   - 1/1 pass.
 - [ ] roast/S02-magicals/KERNEL.t
+  - 19/42 pass (10-15, 26-31, 33-34, 36-40). `.raku`, `.gist`, `.Str`, signal lookup methods work. Failures: `.name`, `.auth`, `.version`, `.signature`, `.desc`, `.release`, `.hardware`, `.arch`, `.bits`, `.hostname` return wrong values (32: `.signals` list, 35: signal Int defined). Difficulty: Low-Medium (need to populate KERNEL properties)
 - [ ] roast/S02-magicals/PERL.t
 - [x] roast/S02-magicals/pid.t
 - [x] roast/S02-magicals/progname.t
   - 4/4 pass.
 - [ ] roast/S02-magicals/RAKU.t
+  - ~8/46 pass (7-10, 17-19, 27). Tests 28-46 not reached. `.raku`, `.gist`, `.compiler.gist`, `.compiler.raku` methods work. Failures: `.name`, `.auth`, `.version`, `.signature`, `.desc`, `.codename`, `.release` return wrong values. Compiler properties not populated. Difficulty: Low-Medium (need to populate RAKU/compiler properties)
 - [x] roast/S02-magicals/subname.t
   - 4/4 pass.
 - [ ] roast/S02-magicals/sub.t
+  - 3/11 pass (4-6). `&?ROUTINE` works inside regex/token/rule. Failures: `&?ROUTINE` in named subs (1), anon subs (2), operator overloads (3), recursive closures (7-10), transparent inner blocks (11). Difficulty: Medium (need `&?ROUTINE` to bind to enclosing sub/method, not just regex)
 - [x] roast/S02-magicals/USER.t
   - 1/1 pass.
 - [ ] roast/S02-magicals/VM.t
+  - 10/32 pass (12-16, 26-30). `.raku`, `.gist`, `.Str` methods work. Failures: `.name`, `.auth`, `.version`, `.signature`, `.desc`, `.config`, `.precomp-ext`, `.precomp-target`, `.prefix`, `.properties` return wrong values. Difficulty: Low-Medium (need to populate VM properties)
 - [ ] roast/S02-names/bare-sigil.t
 - [ ] roast/S02-names/caller.t
 - [ ] roast/S02-names/dynamic-scope.t
