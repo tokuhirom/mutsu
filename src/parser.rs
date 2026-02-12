@@ -822,17 +822,17 @@ impl Parser {
                     TokenKind::Star
                 };
                 let rhs = self.parse_comma_expr()?;
-                self.match_kind(TokenKind::Semicolon);
                 let expr = Expr::Binary {
                     left: Box::new(Expr::Var(name.clone())),
                     op: compound_op,
                     right: Box::new(rhs),
                 };
-                return Ok(Stmt::Assign {
+                let stmt = Stmt::Assign {
                     name,
                     expr,
                     op: AssignOp::Assign,
-                });
+                };
+                return self.parse_statement_modifier(stmt);
             }
             if matches!(next, TokenKind::LBracket) {
                 let name = self.consume_var()?;
@@ -870,8 +870,8 @@ impl Parser {
                     AssignOp::MatchAssign
                 };
                 let expr = self.parse_comma_expr()?;
-                self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::Assign { name, expr, op });
+                let stmt = Stmt::Assign { name, expr, op };
+                return self.parse_statement_modifier(stmt);
             }
         }
         if let Some(TokenKind::ArrayVar(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
@@ -914,8 +914,8 @@ impl Parser {
                     AssignOp::MatchAssign
                 };
                 let expr = self.parse_comma_expr()?;
-                self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::Assign { name, expr, op });
+                let stmt = Stmt::Assign { name, expr, op };
+                return self.parse_statement_modifier(stmt);
             }
         }
         // Handle %hash = (...) and %hash .= method()
@@ -936,8 +936,8 @@ impl Parser {
                     AssignOp::MatchAssign
                 };
                 let expr = self.parse_comma_expr()?;
-                self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::Assign { name, expr, op });
+                let stmt = Stmt::Assign { name, expr, op };
+                return self.parse_statement_modifier(stmt);
             }
             if matches!(self.peek_next_kind(), Some(TokenKind::DotEq)) {
                 let name = format!("%{}", name);
@@ -1441,6 +1441,35 @@ impl Parser {
             return Ok(Expr::AssignExpr {
                 name,
                 expr: Box::new(expr),
+            });
+        }
+        // Handle $var += expr, $var -= expr, etc. as compound assignment expression
+        if let Some(TokenKind::Var(name)) = self.tokens.get(self.pos).map(|t| &t.kind)
+            && matches!(
+                self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                Some(TokenKind::PlusEq | TokenKind::MinusEq | TokenKind::TildeEq | TokenKind::StarEq)
+            )
+        {
+            let name = name.clone();
+            self.pos += 1;
+            let compound_op = if self.match_kind(TokenKind::PlusEq) {
+                TokenKind::Plus
+            } else if self.match_kind(TokenKind::MinusEq) {
+                TokenKind::Minus
+            } else if self.match_kind(TokenKind::TildeEq) {
+                TokenKind::Tilde
+            } else {
+                self.match_kind(TokenKind::StarEq);
+                TokenKind::Star
+            };
+            let rhs = self.parse_expr()?;
+            return Ok(Expr::AssignExpr {
+                name: name.clone(),
+                expr: Box::new(Expr::Binary {
+                    left: Box::new(Expr::Var(name)),
+                    op: compound_op,
+                    right: Box::new(rhs),
+                }),
             });
         }
         let mut expr = self.parse_or()?;

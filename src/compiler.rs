@@ -581,12 +581,26 @@ impl Compiler {
             }
             // Expression-level function call
             Expr::Call { name, args } => {
-                let arity = args.len() as u32;
-                for arg in args {
-                    self.compile_expr(arg);
+                // Rewrite shift(@arr)/pop(@arr) → @arr.shift()/@arr.pop() for mutability
+                if matches!(name.as_str(), "shift" | "pop")
+                    && args.len() == 1
+                    && matches!(args[0], Expr::ArrayVar(_) | Expr::Var(_))
+                {
+                    let method_call = Expr::MethodCall {
+                        target: Box::new(args[0].clone()),
+                        name: name.clone(),
+                        args: Vec::new(),
+                        modifier: None,
+                    };
+                    self.compile_expr(&method_call);
+                } else {
+                    let arity = args.len() as u32;
+                    for arg in args {
+                        self.compile_expr(arg);
+                    }
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::CallFunc { name_idx, arity });
                 }
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                self.code.emit(OpCode::CallFunc { name_idx, arity });
             }
             // Method call on mutable variable target (needs writeback)
             Expr::MethodCall {

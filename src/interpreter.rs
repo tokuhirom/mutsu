@@ -7238,6 +7238,29 @@ impl Interpreter {
                     }
                     return self.eval_eval_string(&code);
                 }
+                if name == "shift" || name == "pop" {
+                    if let Some(arg) = args.first() {
+                        // Get the variable name to mutate in-place
+                        let var_key = match arg {
+                            Expr::ArrayVar(v) => Some(format!("@{}", v)),
+                            Expr::Var(v) => Some(v.clone()),
+                            _ => None,
+                        };
+                        if let Some(key) = var_key {
+                            if let Some(Value::Array(items)) = self.env.get_mut(&key) {
+                                if items.is_empty() {
+                                    return Ok(Value::Nil);
+                                }
+                                return Ok(if name == "shift" {
+                                    items.remove(0)
+                                } else {
+                                    items.pop().unwrap_or(Value::Nil)
+                                });
+                            }
+                        }
+                    }
+                    return Ok(Value::Nil);
+                }
                 if name == "elems" {
                     let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     return Ok(match val {

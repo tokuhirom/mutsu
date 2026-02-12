@@ -472,8 +472,8 @@
 - [ ] roast/S04-statement-modifiers/until.t
 - [x] roast/S04-statement-modifiers/values_in_bool_context.t
   - 24/24 pass.
-- [ ] roast/S04-statement-modifiers/while.t
-  - 0/? pass. Hangs (infinite loop or timeout). Statement-modifier while likely causes infinite loop. Difficulty: Medium-High
+- [x] roast/S04-statement-modifiers/while.t
+  - 6/6 pass.
 - [ ] roast/S04-statement-modifiers/without.t
 - [ ] roast/S04-statement-modifiers/with.t
 - [ ] roast/S04-statement-parsing/hash.t

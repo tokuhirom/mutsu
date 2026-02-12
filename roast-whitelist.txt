@@ -21,6 +21,7 @@ roast/S03-operators/not.t
 roast/S03-operators/spaceship-and-containers.t
 roast/S03-smartmatch/any-str.t
 roast/S04-statement-modifiers/values_in_bool_context.t
+roast/S04-statement-modifiers/while.t
 roast/S04-statements/until.t
 roast/S05-mass/named-chars.t
 roast/S05-mass/properties-block.t
