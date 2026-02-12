@@ -427,6 +427,7 @@
   - 0/? pass. Crashes with panic: byte index not a char boundary in `try_meta_op` when parsing `λ` (lambda). Same parser UTF-8 bug as quoting.t. Difficulty: Medium (parser UTF-8 boundary fix in try_meta_op)
 - [ ] roast/S04-declarations/implicit-parameter.t
 - [ ] roast/S04-declarations/multiple.t
+  - 3/8 pass (tests 1-3). Failures: `my ($a, $b) = (1, 2)` destructuring works but `my ($a, @b)` with slurpy not supported; `my ($a, *@b)` splat syntax not implemented; `state` declarations not supported. Difficulty: Medium
 - [ ] roast/S04-declarations/my-6e.t
 - [ ] roast/S04-declarations/our.t
 - [ ] roast/S04-declarations/smiley.t
@@ -1039,12 +1040,15 @@
 - [ ] roast/S16-io/lines.t
 - [ ] roast/S16-io/newline.t
 - [ ] roast/S16-io/note.t
+  - 1/6 pass (test 1 only). Failures: `note()` without args should output empty line to stderr; `$*ERR` variable not supported; `note` with multiple args and separator not implemented; `IO::Path.note` method missing. Difficulty: Medium
 - [ ] roast/S16-io/print.t
+  - 13/14 pass. Only test 14 fails: `print` with `IO::Path` object (`.IO.print` method). Very close to passing! Difficulty: Low
 - [ ] roast/S16-io/prompt.t
 - [ ] roast/S16-io/put.t
 - [ ] roast/S16-io/readchars.t
 - [ ] roast/S16-io/say-and-ref.t
 - [ ] roast/S16-io/say.t
+  - 1/6 pass (test 1 only). Failures: `$*OUT` variable not supported; `say` with filehandle arg; `IO::Path.say` method; multi-arg `say` with separator. Difficulty: Medium
 - [ ] roast/S16-io/split.t
 - [ ] roast/S16-io/supply.t
 - [ ] roast/S16-io/tmpdir.t
@@ -1179,6 +1183,7 @@
 - [ ] roast/S24-testing/14-like-unlike.t
 - [ ] roast/S24-testing/15-done-testing.t
 - [ ] roast/S24-testing/1-basic.t
+  - 20/39 pass. Failures: `cmp-ok expects right` crash (tests 21+); `cmp-ok` function doesn't parse comparison operator argument correctly; `is-deeply` also crashes. Tests 1-20 pass (basic `ok`, `nok`, `is`, `isnt`, `like`, `unlike`). Difficulty: Medium (need to fix `cmp-ok` and `is-deeply` argument parsing)
 - [ ] roast/S24-testing/2-force_todo.t
 - [x] roast/S24-testing/3-output.t
   - 6/6 pass.
