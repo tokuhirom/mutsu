@@ -7396,7 +7396,7 @@ impl Interpreter {
                         _ => Ok(Value::Nil),
                     },
                     "new" => match base {
-                        Value::Str(name) if name == "Rat" => {
+                        Value::Str(name) | Value::Package(name) if name == "Rat" => {
                             let a = args.first().and_then(|e| self.eval_expr(e).ok());
                             let b = args.get(1).and_then(|e| self.eval_expr(e).ok());
                             let a = match a {
@@ -7566,6 +7566,19 @@ impl Interpreter {
                 }
             }
             Expr::CallOn { target, args } => {
+                // For CodeVar targets, check if it's a variable first, otherwise
+                // use proper multi-dispatch via call_function
+                if let Expr::CodeVar(fname) = target.as_ref() {
+                    let var_key = format!("&{}", fname);
+                    if !self.env.contains_key(&var_key) {
+                        // Not a variable — call by name with multi-dispatch
+                        let mut eval_args = Vec::new();
+                        for arg in args {
+                            eval_args.push(self.eval_expr(arg)?);
+                        }
+                        return self.call_function(fname, eval_args);
+                    }
+                }
                 let target_val = self.eval_expr(target)?;
                 if let Value::Sub {
                     package,
