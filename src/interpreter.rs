@@ -320,7 +320,7 @@ impl Interpreter {
             Value::Sub {
                 package: def.package,
                 name: def.name,
-                param: def.params.first().cloned(),
+                params: def.params,
                 body: def.body,
                 env: self.env.clone(),
             }
@@ -1562,6 +1562,7 @@ impl Interpreter {
                             | "eval-dies-ok"
                             | "throws-like"
                             | "can-ok"
+                            | "use-ok"
                             | "pass"
                             | "flunk"
                     ) && !e.is_last
@@ -1810,7 +1811,7 @@ impl Interpreter {
                     let tap_sub = Value::Sub {
                         package: self.current_package.clone(),
                         name: String::new(),
-                        param: param.clone(),
+                        params: param.iter().cloned().collect(),
                         body: body.clone(),
                         env: self.env.clone(),
                     };
@@ -2479,12 +2480,16 @@ impl Interpreter {
                 self.test_ok(false, &desc, todo)?;
             }
             "cmp-ok" => {
-                let _ = self.positional_arg(args, 0, "cmp-ok expects left")?;
-                let _ = self.positional_arg(args, 1, "cmp-ok expects op")?;
-                let _ = self.positional_arg(args, 2, "cmp-ok expects right")?;
+                let left =
+                    self.eval_expr(self.positional_arg(args, 0, "cmp-ok expects left")?)?;
+                let op_val =
+                    self.eval_expr(self.positional_arg(args, 1, "cmp-ok expects op")?)?;
+                let right =
+                    self.eval_expr(self.positional_arg(args, 2, "cmp-ok expects right")?)?;
                 let desc = self.positional_arg_value(args, 3)?;
                 let todo = self.named_arg_bool(args, "todo")?;
-                self.test_ok(true, &desc, todo)?;
+                let result = self.call_sub_value(op_val, vec![left, right], false)?;
+                self.test_ok(result.truthy(), &desc, todo)?;
             }
             "like" => {
                 let _ = self.positional_arg(args, 0, "like expects value")?;
@@ -2562,7 +2567,9 @@ impl Interpreter {
                 let desc = self.positional_arg_value(args, 1)?;
                 let todo = self.named_arg_bool(args, "todo")?;
                 let ok = match block {
-                    Expr::Block(body) | Expr::AnonSub(body) => self.eval_block_value(body).is_ok(),
+                    Expr::Block(body) | Expr::AnonSub(body) | Expr::AnonSubParams { body, .. }
+                    | Expr::Lambda { body, .. } => self.eval_block_value(body).is_ok(),
+                    Expr::Literal(Value::Sub { body, .. }) => self.eval_block_value(body).is_ok(),
                     _ => self.eval_expr(block).is_ok(),
                 };
                 self.test_ok(ok, &desc, todo)?;
@@ -2572,7 +2579,9 @@ impl Interpreter {
                 let desc = self.positional_arg_value(args, 1)?;
                 let todo = self.named_arg_bool(args, "todo")?;
                 let ok = match block {
-                    Expr::Block(body) | Expr::AnonSub(body) => self.eval_block_value(body).is_err(),
+                    Expr::Block(body) | Expr::AnonSub(body) | Expr::AnonSubParams { body, .. }
+                    | Expr::Lambda { body, .. } => self.eval_block_value(body).is_err(),
+                    Expr::Literal(Value::Sub { body, .. }) => self.eval_block_value(body).is_err(),
                     _ => self.eval_expr(block).is_err(),
                 };
                 self.test_ok(ok, &desc, todo)?;
@@ -2637,7 +2646,7 @@ impl Interpreter {
                     _ => String::new(),
                 };
                 let result = match code_expr {
-                    Expr::Block(body) | Expr::AnonSub(body) => self.eval_block_value(body),
+                    Expr::Block(body) | Expr::AnonSub(body) | Expr::AnonSubParams { body, .. } => self.eval_block_value(body),
                     _ => {
                         let code = match self.eval_expr(code_expr)? {
                             Value::Str(s) => s,
@@ -2782,8 +2791,36 @@ impl Interpreter {
                 self.output.push_str(&format!("# {}\n", msg));
             }
             "todo" => {
-                // todo just sets a note that following tests are TODO
-                // For simplicity, we just consume and ignore it
+                let _reason = self.positional_arg_value(args, 0).unwrap_or_default();
+                let count_str = self.positional_arg_value(args, 1).ok();
+                let count = count_str
+                    .and_then(|s| s.parse::<usize>().ok())
+                    .unwrap_or(1);
+                let state = self.test_state.get_or_insert_with(TestState::new);
+                let start = state.ran + 1;
+                let end = start + count - 1;
+                state.force_todo.push((start, end));
+            }
+            "use-ok" => {
+                let module = self.positional_arg_value(args, 0)?;
+                let todo = self.named_arg_bool(args, "todo")?;
+                let desc = format!("{} module can be use-d ok", module);
+                // Try to find the module file in lib_paths
+                let mut found = false;
+                let module_file = module.replace("::", "/");
+                for lib_path in &self.lib_paths.clone() {
+                    for ext in &[".rakumod", ".pm6", ".pm"] {
+                        let full = format!("{}/{}{}", lib_path, module_file, ext);
+                        if std::path::Path::new(&full).exists() {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if found {
+                        break;
+                    }
+                }
+                self.test_ok(found, &desc, todo)?;
             }
             "does-ok" => {
                 let _ = self.positional_arg(args, 0, "does-ok expects value")?;
@@ -3127,7 +3164,7 @@ impl Interpreter {
         if let Value::Sub {
             package,
             name,
-            param,
+            params,
             body,
             env,
         } = func
@@ -3145,10 +3182,10 @@ impl Interpreter {
                 }
                 new_env.insert(k, v);
             }
-            if let Some(param_name) = param
-                && let Some(value) = args.first()
-            {
-                new_env.insert(param_name, value.clone());
+            for (i, param_name) in params.iter().enumerate() {
+                if let Some(value) = args.get(i) {
+                    new_env.insert(param_name.clone(), value.clone());
+                }
             }
             let placeholders = collect_placeholders(&body);
             if !placeholders.is_empty() {
@@ -3161,7 +3198,7 @@ impl Interpreter {
             let block_sub = Value::Sub {
                 package: package.clone(),
                 name: name.clone(),
-                param: None,
+                params: vec![],
                 body: body.clone(),
                 env: new_env.clone(),
             };
@@ -3846,7 +3883,7 @@ impl Interpreter {
                     Ok(Value::Sub {
                         package: def.package,
                         name: def.name,
-                        param: def.params.first().cloned(),
+                        params: def.params,
                         body: def.body,
                         env: self.env.clone(),
                     })
@@ -3877,7 +3914,7 @@ impl Interpreter {
                     Ok(Value::Sub {
                         package: self.current_package.clone(),
                         name: String::new(),
-                        param: None,
+                        params: vec![],
                         body: body.clone(),
                         env: self.env.clone(),
                     })
@@ -3937,17 +3974,24 @@ impl Interpreter {
             Expr::AnonSub(body) => Ok(Value::Sub {
                 package: self.current_package.clone(),
                 name: String::new(),
-                param: None,
+                params: vec![],
+                body: body.clone(),
+                env: self.env.clone(),
+            }),
+            Expr::AnonSubParams { params, body } => Ok(Value::Sub {
+                package: self.current_package.clone(),
+                name: String::new(),
+                params: params.clone(),
                 body: body.clone(),
                 env: self.env.clone(),
             }),
             Expr::Lambda { param, body } => Ok(Value::Sub {
                 package: self.current_package.clone(),
                 name: String::new(),
-                param: if param.is_empty() {
-                    None
+                params: if param.is_empty() {
+                    vec![]
                 } else {
-                    Some(param.clone())
+                    vec![param.clone()]
                 },
                 body: body.clone(),
                 env: self.env.clone(),
@@ -6316,12 +6360,12 @@ impl Interpreter {
                             if let Some(func_expr) = args.first() {
                                 let func = self.eval_expr(func_expr)?;
                                 if let Value::Sub {
-                                    param, body, env, ..
+                                    params, body, env, ..
                                 } = func
                                 {
                                     let placeholders = collect_placeholders(&body);
                                     let is_key_extractor = placeholders.len() < 2
-                                        && param.is_some()
+                                        && params.len() <= 1
                                         || placeholders.len() == 1;
                                     if is_key_extractor {
                                         // 1-arg function: use as key extractor
@@ -6330,7 +6374,7 @@ impl Interpreter {
                                             for (k, v) in &env {
                                                 self.env.insert(k.clone(), v.clone());
                                             }
-                                            if let Some(p) = &param {
+                                            if let Some(p) = params.first() {
                                                 self.env.insert(p.clone(), a.clone());
                                             }
                                             self.env.insert("_".to_string(), a.clone());
@@ -6340,7 +6384,7 @@ impl Interpreter {
                                             for (k, v) in &env {
                                                 self.env.insert(k.clone(), v.clone());
                                             }
-                                            if let Some(p) = &param {
+                                            if let Some(p) = params.first() {
                                                 self.env.insert(p.clone(), b.clone());
                                             }
                                             self.env.insert("_".to_string(), b.clone());
@@ -6356,7 +6400,7 @@ impl Interpreter {
                                             for (k, v) in &env {
                                                 self.env.insert(k.clone(), v.clone());
                                             }
-                                            if let Some(p) = &param {
+                                            if let Some(p) = params.first() {
                                                 self.env.insert(p.clone(), a.clone());
                                             }
                                             if placeholders.len() >= 2 {
@@ -6573,7 +6617,7 @@ impl Interpreter {
                             if let Some(func_expr) = args.first() {
                                 let func = self.eval_expr(func_expr)?;
                                 if let Value::Sub {
-                                    param, body, env, ..
+                                    params, body, env, ..
                                 } = func
                                 {
                                     let placeholders = collect_placeholders(&body);
@@ -6583,7 +6627,7 @@ impl Interpreter {
                                         for (k, v) in &env {
                                             self.env.insert(k.clone(), v.clone());
                                         }
-                                        if let Some(p) = &param {
+                                        if let Some(p) = params.first() {
                                             self.env.insert(p.clone(), item.clone());
                                         }
                                         if let Some(ph) = placeholders.first() {
@@ -6609,7 +6653,7 @@ impl Interpreter {
                             if let Some(func_expr) = args.first() {
                                 let func = self.eval_expr(func_expr)?;
                                 if let Value::Sub {
-                                    param, body, env, ..
+                                    params, body, env, ..
                                 } = func
                                 {
                                     let placeholders = collect_placeholders(&body);
@@ -6619,7 +6663,7 @@ impl Interpreter {
                                         for (k, v) in &env {
                                             self.env.insert(k.clone(), v.clone());
                                         }
-                                        if let Some(p) = &param {
+                                        if let Some(p) = params.first() {
                                             self.env.insert(p.clone(), item.clone());
                                         }
                                         if let Some(ph) = placeholders.first() {
@@ -6684,13 +6728,13 @@ impl Interpreter {
 
                         for item in &items {
                             if cond_idx < conditions.len() {
-                                if let Value::Sub { ref param, ref body, ref env, .. } = conditions[cond_idx] {
+                                if let Value::Sub { ref params, ref body, ref env, .. } = conditions[cond_idx] {
                                     let placeholders = collect_placeholders(body);
                                     let saved = self.env.clone();
                                     for (k, v) in env {
                                         self.env.insert(k.clone(), v.clone());
                                     }
-                                    if let Some(p) = param {
+                                    if let Some(p) = params.first() {
                                         self.env.insert(p.clone(), item.clone());
                                     }
                                     if let Some(ph) = placeholders.first() {
@@ -7144,7 +7188,7 @@ impl Interpreter {
                 if let Value::Sub {
                     package,
                     name,
-                    param,
+                    params,
                     body,
                     env,
                 } = target_val
@@ -7159,12 +7203,13 @@ impl Interpreter {
                         }
                         new_env.insert(k, v);
                     }
-                    let param_name = param.clone();
-                    if let Some(param_name) = param_name
-                        && let Some(arg) = args.first()
-                        && let Ok(value) = self.eval_expr(arg)
-                    {
-                        new_env.insert(param_name, value);
+                    // Bind named params
+                    for (i, pname) in params.iter().enumerate() {
+                        if let Some(arg) = args.get(i)
+                            && let Ok(value) = self.eval_expr(arg)
+                        {
+                            new_env.insert(pname.clone(), value);
+                        }
                     }
                     // Bind placeholder variables ($^a, $^b, ...)
                     let placeholders = collect_placeholders(&body);
@@ -7182,7 +7227,7 @@ impl Interpreter {
                     let block_sub = Value::Sub {
                         package: package.clone(),
                         name: name.clone(),
-                        param: param.clone(),
+                        params: params.clone(),
                         body: body.clone(),
                         env: new_env.clone(),
                     };
@@ -8722,7 +8767,7 @@ impl Interpreter {
                     );
                     let result = if let Some(body) = args.get(1) {
                         match body {
-                            Expr::Block(body_stmts) | Expr::AnonSub(body_stmts) => {
+                            Expr::Block(body_stmts) | Expr::AnonSub(body_stmts) | Expr::AnonSubParams { body: body_stmts, .. } => {
                                 self.eval_block_value(body_stmts)
                             }
                             other => self.eval_expr(other),
@@ -10775,14 +10820,14 @@ impl Interpreter {
                         result.last().unwrap().clone()
                     };
                     if let Value::Sub {
-                        param, body, env, ..
+                        params, body, env, ..
                     } = genfn
                     {
                         let saved = self.env.clone();
                         for (k, v) in env {
                             self.env.insert(k.clone(), v.clone());
                         }
-                        if let Some(p) = param {
+                        if let Some(p) = params.first() {
                             self.env.insert(p.clone(), arg.clone());
                         }
                         let placeholders = collect_placeholders(body);
@@ -11598,14 +11643,14 @@ impl Interpreter {
 
     fn call_lambda_with_arg(&mut self, func: &Value, item: Value) -> Result<Value, RuntimeError> {
         if let Value::Sub {
-            param, body, env, ..
+            params, body, env, ..
         } = func
         {
             let saved_env = self.env.clone();
             for (k, v) in env {
                 self.env.insert(k.clone(), v.clone());
             }
-            if let Some(p) = param {
+            if let Some(p) = params.first() {
                 self.env.insert(p.clone(), item.clone());
             }
             let placeholders = collect_placeholders(body);
@@ -12027,7 +12072,7 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
                 collect_ph_expr(e, out);
             }
         }
-        Expr::Block(stmts) | Expr::AnonSub(stmts) | Expr::Gather(stmts) => {
+        Expr::Block(stmts) | Expr::AnonSub(stmts) | Expr::AnonSubParams { body: stmts, .. } | Expr::Gather(stmts) => {
             for s in stmts {
                 collect_ph_stmt(s, out);
             }

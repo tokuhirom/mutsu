@@ -97,7 +97,7 @@ pub enum Value {
     Sub {
         package: String,
         name: String,
-        param: Option<String>,
+        params: Vec<String>,
         body: Vec<Stmt>,
         env: HashMap<String, Value>,
     },

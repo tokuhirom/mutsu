@@ -58,6 +58,10 @@ pub(crate) enum Expr {
     BlockMagic,
     Block(Vec<Stmt>),
     AnonSub(Vec<Stmt>),
+    AnonSubParams {
+        params: Vec<String>,
+        body: Vec<Stmt>,
+    },
     CallOn {
         target: Box<Expr>,
         args: Vec<Expr>,

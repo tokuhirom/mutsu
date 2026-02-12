@@ -825,6 +825,7 @@ impl Compiler {
             // These capture env or have complex state interactions.
             // Delegate entirely to interpreter.
             Expr::AnonSub(_)
+            | Expr::AnonSubParams { .. }
             | Expr::Lambda { .. }
             | Expr::Gather(_)
             | Expr::CallOn { .. }
@@ -916,7 +917,7 @@ impl Compiler {
     fn needs_raw_expr(expr: &Expr) -> bool {
         matches!(
             expr,
-            Expr::Block(_) | Expr::AnonSub(_) | Expr::DoBlock { .. }
+            Expr::Block(_) | Expr::AnonSub(_) | Expr::AnonSubParams { .. } | Expr::DoBlock { .. }
         )
     }
 

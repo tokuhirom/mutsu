@@ -1202,8 +1202,8 @@
 - [ ] roast/S24-testing/13-cmp-ok.t
 - [ ] roast/S24-testing/14-like-unlike.t
 - [ ] roast/S24-testing/15-done-testing.t
-- [ ] roast/S24-testing/1-basic.t
-  - 20/39 pass. Failures: `cmp-ok expects right` crash (tests 21+); `cmp-ok` function doesn't parse comparison operator argument correctly; `is-deeply` also crashes. Tests 1-20 pass (basic `ok`, `nok`, `is`, `isnt`, `like`, `unlike`). Difficulty: Medium (need to fix `cmp-ok` and `is-deeply` argument parsing)
+- [x] roast/S24-testing/1-basic.t
+  - 39/39 pass.
 - [ ] roast/S24-testing/2-force_todo.t
 - [x] roast/S24-testing/3-output.t
   - 6/6 pass.

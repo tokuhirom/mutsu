@@ -757,6 +757,7 @@ impl Parser {
                     | "todo"
                     | "does-ok"
                     | "can-ok"
+                    | "use-ok"
             )
         {
             self.pos += 1;
@@ -764,13 +765,6 @@ impl Parser {
                 && (!self.check(&TokenKind::LParen) || self.is_is_grouping_paren())
             {
                 self.parse_is_call_args()
-            } else if name == "ok"
-                && matches!(
-                    self.tokens.get(self.pos).map(|t| &t.kind),
-                    Some(TokenKind::LParen | TokenKind::Bang)
-                )
-            {
-                self.parse_call_args_loose(&name)
             } else {
                 self.parse_call_args()?
             };
@@ -1238,39 +1232,6 @@ impl Parser {
             args.push(self.parse_call_arg()?);
         }
         Ok(args)
-    }
-
-    fn parse_call_args_loose(&mut self, name: &str) -> Vec<CallArg> {
-        let mut depth = 0usize;
-        let mut last_str = None;
-        while let Some(token) = self.tokens.get(self.pos) {
-            match token.kind {
-                TokenKind::Eof => break,
-                TokenKind::LParen | TokenKind::LBrace => depth += 1,
-                TokenKind::RParen | TokenKind::RBrace => {
-                    depth = depth.saturating_sub(1);
-                }
-                TokenKind::Semicolon => {
-                    if depth == 0 {
-                        break;
-                    }
-                }
-                TokenKind::Str(ref s) => last_str = Some(s.clone()),
-                _ => {}
-            }
-            self.pos += 1;
-        }
-        let mut args = Vec::new();
-        if matches!(name, "is" | "isnt") {
-            args.push(CallArg::Positional(Expr::Literal(Value::Bool(true))));
-            args.push(CallArg::Positional(Expr::Literal(Value::Bool(true))));
-        } else {
-            args.push(CallArg::Positional(Expr::Literal(Value::Bool(true))));
-        }
-        if let Some(desc) = last_str {
-            args.push(CallArg::Positional(Expr::Literal(Value::Str(desc))));
-        }
-        args
     }
 
     fn parse_is_call_args(&mut self) -> Vec<CallArg> {
@@ -2930,7 +2891,7 @@ impl Parser {
                 right: Box::new(Expr::Var(var)),
             }
         } else if let Some(name) = self.peek_ident() {
-            if matches!(self.peek_next_kind(), Some(TokenKind::LParen)) {
+            if name != "sub" && matches!(self.peek_next_kind(), Some(TokenKind::LParen)) {
                 self.pos += 1;
                 self.consume_kind(TokenKind::LParen)?;
                 let mut args = Vec::new();
@@ -3043,10 +3004,62 @@ impl Parser {
                     name,
                     args: vec![arg],
                 }
-            } else if name == "sub" && matches!(self.peek_next_kind(), Some(TokenKind::LBrace)) {
-                self.pos += 1;
+            } else if name == "sub"
+                && matches!(
+                    self.peek_next_kind(),
+                    Some(TokenKind::LBrace | TokenKind::LParen)
+                )
+            {
+                self.pos += 1; // consume "sub"
+                let mut params = Vec::new();
+                if self.match_kind(TokenKind::LParen) {
+                    while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
+                        if self.match_kind(TokenKind::Star) {
+                            // skip slurpy marker
+                        }
+                        if self.match_kind(TokenKind::Colon) {
+                            // skip named marker
+                        }
+                        // Skip type constraint
+                        if matches!(
+                            self.tokens.get(self.pos).map(|t| &t.kind),
+                            Some(TokenKind::Ident(_))
+                        ) && matches!(
+                            self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                            Some(TokenKind::Var(_))
+                        ) {
+                            self.pos += 1;
+                        }
+                        if self.peek_is_var() {
+                            let var = self.consume_var()?;
+                            // Skip default values
+                            if self.match_kind(TokenKind::Eq) {
+                                let _ = self.parse_expr()?;
+                            }
+                            self.match_kind(TokenKind::Question);
+                            self.match_kind(TokenKind::Bang);
+                            params.push(var);
+                        } else if self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_))).is_some()
+                        {
+                            // skip array params for now
+                        } else if self.advance_if(|k| matches!(k, TokenKind::HashVar(_))).is_some()
+                        {
+                            // skip hash params for now
+                        } else {
+                            break;
+                        }
+                        if !self.match_kind(TokenKind::Comma) {
+                            break;
+                        }
+                    }
+                    self.match_kind(TokenKind::RParen);
+                }
                 let body = self.parse_block()?;
-                Expr::AnonSub(body)
+                if params.is_empty() {
+                    Expr::AnonSub(body)
+                } else {
+                    Expr::AnonSubParams { params, body }
+                }
             } else {
                 let name = self.consume_ident()?;
                 if name == "do" {
@@ -3538,9 +3551,13 @@ impl Parser {
         let mut pairs = Vec::new();
         let mut failed = false;
         if !self.check(&TokenKind::RBrace) {
-            match self.parse_hash_pair() {
-                Ok(pair) => pairs.push(pair),
-                Err(_) => failed = true,
+            if self.check(&TokenKind::Lt) {
+                self.parse_angle_into_hash_pairs(&mut pairs);
+            } else {
+                match self.parse_hash_pair() {
+                    Ok(pair) => pairs.push(pair),
+                    Err(_) => failed = true,
+                }
             }
             while !failed && !self.check(&TokenKind::RBrace) {
                 // Allow comma or space-separated colonpairs
@@ -3548,11 +3565,15 @@ impl Parser {
                 if self.check(&TokenKind::RBrace) {
                     break;
                 }
-                match self.parse_hash_pair() {
-                    Ok(pair) => pairs.push(pair),
-                    Err(_) => {
-                        failed = true;
-                        break;
+                if self.check(&TokenKind::Lt) {
+                    self.parse_angle_into_hash_pairs(&mut pairs);
+                } else {
+                    match self.parse_hash_pair() {
+                        Ok(pair) => pairs.push(pair),
+                        Err(_) => {
+                            failed = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -3564,6 +3585,30 @@ impl Parser {
         }
         self.consume_kind(TokenKind::RBrace)?;
         Ok(pairs)
+    }
+
+    /// Parse `<a b c d>` and expand into hash pairs: a => "b", c => "d"
+    fn parse_angle_into_hash_pairs(&mut self, pairs: &mut Vec<(String, Option<Expr>)>) {
+        let expr = self.parse_angle_literal();
+        let words: Vec<String> = match &expr {
+            Expr::Literal(Value::Str(s)) => vec![s.clone()],
+            Expr::ArrayLiteral(items) => items
+                .iter()
+                .filter_map(|e| {
+                    if let Expr::Literal(Value::Str(s)) = e {
+                        Some(s.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        let mut iter = words.into_iter();
+        while let Some(key) = iter.next() {
+            let value = iter.next().map(|v| Expr::Literal(Value::Str(v)));
+            pairs.push((key, value));
+        }
     }
 
     fn is_hash_literal_start(&self) -> bool {

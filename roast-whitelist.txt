@@ -106,6 +106,7 @@ roast/S17-procasync/no-runaway-file-limit.t
 roast/S17-procasync/windows-arg-quoting.t
 roast/S19-command-line-options/03-dash-p.t
 roast/S24-testing/0-compile.t
+roast/S24-testing/1-basic.t
 roast/S24-testing/11-plan-skip-all.t
 roast/S24-testing/12-subtest-todo.t
 roast/S24-testing/3-output.t
