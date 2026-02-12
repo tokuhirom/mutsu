@@ -10967,7 +10967,7 @@ impl Interpreter {
                             }
                         }
                         'c' => {
-                            // \c[NAME] named character escape in regex
+                            // \c[NAME] or \c[NAME1, NAME2] named character escape in regex
                             if chars.peek() == Some(&'[') {
                                 chars.next(); // skip '['
                                 let mut name = String::new();
@@ -10979,13 +10979,80 @@ impl Interpreter {
                                     name.push(ch);
                                     chars.next();
                                 }
+                                // Handle comma-separated names
+                                let parts: Vec<&str> = name.split(',').map(|s| s.trim()).collect();
+                                let mut resolved: Vec<char> = Vec::new();
+                                for part in &parts {
+                                    if let Some(c) = crate::lexer::lookup_unicode_char_by_name(part)
+                                    {
+                                        resolved.push(c);
+                                    }
+                                }
+                                if resolved.is_empty() {
+                                    continue;
+                                }
+                                // Push all but last as separate literal tokens
+                                for &c in &resolved[..resolved.len() - 1] {
+                                    tokens.push(RegexToken {
+                                        atom: RegexAtom::Literal(c),
+                                        quant: RegexQuant::One,
+                                    });
+                                }
+                                RegexAtom::Literal(*resolved.last().unwrap())
+                            } else {
+                                RegexAtom::Literal('c')
+                            }
+                        }
+                        'C' => {
+                            // \C[NAME] matches any char that is NOT the named char
+                            if chars.peek() == Some(&'[') {
+                                chars.next();
+                                let mut name = String::new();
+                                while let Some(&ch) = chars.peek() {
+                                    if ch == ']' {
+                                        chars.next();
+                                        break;
+                                    }
+                                    name.push(ch);
+                                    chars.next();
+                                }
                                 if let Some(c) = crate::lexer::lookup_unicode_char_by_name(&name) {
-                                    RegexAtom::Literal(c)
+                                    RegexAtom::CharClass(CharClass {
+                                        negated: true,
+                                        items: vec![ClassItem::Char(c)],
+                                    })
                                 } else {
                                     continue;
                                 }
                             } else {
-                                RegexAtom::Literal('c')
+                                RegexAtom::Literal('C')
+                            }
+                        }
+                        'X' => {
+                            // \X[HEX] matches any char that is NOT the given hex char
+                            if chars.peek() == Some(&'[') {
+                                chars.next();
+                                let mut hex = String::new();
+                                while let Some(&ch) = chars.peek() {
+                                    if ch == ']' {
+                                        chars.next();
+                                        break;
+                                    }
+                                    hex.push(ch);
+                                    chars.next();
+                                }
+                                if let Some(c) =
+                                    u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+                                {
+                                    RegexAtom::CharClass(CharClass {
+                                        negated: true,
+                                        items: vec![ClassItem::Char(c)],
+                                    })
+                                } else {
+                                    continue;
+                                }
+                            } else {
+                                RegexAtom::Literal('X')
                             }
                         }
                         other => RegexAtom::Literal(other),
@@ -11193,9 +11260,12 @@ impl Interpreter {
     }
 
     fn parse_raku_char_class(&self, inner: &str, negated: bool) -> Option<CharClass> {
-        // Parse Raku-style character class: a..z, \n, \t, individual chars
+        // Parse Raku-style character class: a..z, \n, \t, \c[NAME], \x[HEX], etc.
         let mut items = Vec::new();
         let mut chars = inner.chars().peekable();
+        // Track whether all items are from negated escapes (\C, \X)
+        let mut all_negated_escapes = true;
+        let mut has_items = false;
         while let Some(c) = chars.next() {
             if c == ' ' {
                 // Raku regex ignores spaces in char classes
@@ -11204,13 +11274,136 @@ impl Interpreter {
             if c == '\\' {
                 let esc = chars.next()?;
                 match esc {
-                    'n' => items.push(ClassItem::Char('\n')),
-                    't' => items.push(ClassItem::Char('\t')),
-                    'r' => items.push(ClassItem::Char('\r')),
-                    'd' => items.push(ClassItem::Digit),
-                    'w' => items.push(ClassItem::Word),
-                    's' => items.push(ClassItem::Space),
-                    other => items.push(ClassItem::Char(other)),
+                    'n' => {
+                        items.push(ClassItem::Char('\n'));
+                        all_negated_escapes = false;
+                        has_items = true;
+                    }
+                    't' => {
+                        items.push(ClassItem::Char('\t'));
+                        all_negated_escapes = false;
+                        has_items = true;
+                    }
+                    'r' => {
+                        items.push(ClassItem::Char('\r'));
+                        all_negated_escapes = false;
+                        has_items = true;
+                    }
+                    'd' => {
+                        items.push(ClassItem::Digit);
+                        all_negated_escapes = false;
+                        has_items = true;
+                    }
+                    'w' => {
+                        items.push(ClassItem::Word);
+                        all_negated_escapes = false;
+                        has_items = true;
+                    }
+                    's' => {
+                        items.push(ClassItem::Space);
+                        all_negated_escapes = false;
+                        has_items = true;
+                    }
+                    'c' | 'C' => {
+                        // \c[NAME] or \C[NAME] (negated char) inside character class
+                        let is_neg = esc == 'C';
+                        if chars.peek() == Some(&'[') {
+                            chars.next(); // skip '['
+                            let mut name = String::new();
+                            let mut bracket_depth = 1;
+                            while let Some(&ch) = chars.peek() {
+                                if ch == '[' {
+                                    bracket_depth += 1;
+                                    name.push(ch);
+                                    chars.next();
+                                } else if ch == ']' {
+                                    bracket_depth -= 1;
+                                    if bracket_depth == 0 {
+                                        chars.next();
+                                        break;
+                                    }
+                                    name.push(ch);
+                                    chars.next();
+                                } else {
+                                    name.push(ch);
+                                    chars.next();
+                                }
+                            }
+                            // Handle comma-separated names: \c[NAME1, NAME2]
+                            for part in name.split(',') {
+                                let part = part.trim();
+                                if let Some(ch) = crate::lexer::lookup_unicode_char_by_name(part) {
+                                    items.push(ClassItem::Char(ch));
+                                    has_items = true;
+                                }
+                            }
+                            if !is_neg {
+                                all_negated_escapes = false;
+                            }
+                        } else {
+                            items.push(ClassItem::Char(esc));
+                            all_negated_escapes = false;
+                            has_items = true;
+                        }
+                    }
+                    'x' | 'X' => {
+                        // \x[HEX] or \X[HEX] inside character class
+                        let is_neg = esc == 'X';
+                        if chars.peek() == Some(&'[') {
+                            chars.next(); // skip '['
+                            let mut hex = String::new();
+                            while let Some(&ch) = chars.peek() {
+                                if ch == ']' {
+                                    chars.next();
+                                    break;
+                                }
+                                hex.push(ch);
+                                chars.next();
+                            }
+                            if let Some(ch) =
+                                u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+                            {
+                                items.push(ClassItem::Char(ch));
+                                has_items = true;
+                            }
+                            if !is_neg {
+                                all_negated_escapes = false;
+                            }
+                        } else {
+                            items.push(ClassItem::Char(esc));
+                            all_negated_escapes = false;
+                            has_items = true;
+                        }
+                    }
+                    'o' => {
+                        // \o[OCT] inside character class
+                        if chars.peek() == Some(&'[') {
+                            chars.next(); // skip '['
+                            let mut oct = String::new();
+                            while let Some(&ch) = chars.peek() {
+                                if ch == ']' {
+                                    chars.next();
+                                    break;
+                                }
+                                oct.push(ch);
+                                chars.next();
+                            }
+                            if let Some(ch) =
+                                u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
+                            {
+                                items.push(ClassItem::Char(ch));
+                            }
+                        } else {
+                            items.push(ClassItem::Char('o'));
+                        }
+                        all_negated_escapes = false;
+                        has_items = true;
+                    }
+                    other => {
+                        items.push(ClassItem::Char(other));
+                        all_negated_escapes = false;
+                        has_items = true;
+                    }
                 }
             } else if chars.peek() == Some(&'.') {
                 // Check for '..' range syntax
@@ -11226,11 +11419,25 @@ impl Interpreter {
                 } else {
                     items.push(ClassItem::Char(c));
                 }
+                all_negated_escapes = false;
+                has_items = true;
             } else {
                 items.push(ClassItem::Char(c));
+                all_negated_escapes = false;
+                has_items = true;
             }
         }
-        Some(CharClass { items, negated })
+        // If all items came from negated escapes (\C, \X), flip the negation
+        // e.g., <[\C[FF]]> means "everything except FF" = negated class of {FF}
+        let final_negated = if has_items && all_negated_escapes {
+            !negated
+        } else {
+            negated
+        };
+        Some(CharClass {
+            items,
+            negated: final_negated,
+        })
     }
 
     pub(crate) fn reduction_identity(op: &str) -> Value {
