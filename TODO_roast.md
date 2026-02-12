@@ -681,6 +681,7 @@
 - [ ] roast/S06-signature/multi-invocant.t
 - [ ] roast/S06-signature/multiple-signatures.t
 - [ ] roast/S06-signature/named-parameters.t
+  - 7/104 pass (1, 10, 14, 25, 27-28, 40). Named parameter passing mostly broken: colonpair `:$x` syntax (4-8), `=> value` fat-arrow (3, 9, 12-13, 17-24), named array params (29-31), mixed named/positional (32-39, 41-44), mandatory named (45+). Difficulty: High (fundamental named-param dispatch needs work)
 - [ ] roast/S06-signature/named-placeholders.t
 - [ ] roast/S06-signature/named-renaming.t
 - [ ] roast/S06-signature/optional.t
@@ -689,6 +690,7 @@
 - [ ] roast/S06-signature/passing-hashes.t
 - [ ] roast/S06-signature/positional-placeholders.t
 - [ ] roast/S06-signature/positional.t
+  - 4/13 pass (1-3, 6). Failures: `@_` inner-most block (4), recursion/param binding (5), `$/` as param name (7), duplicate param name detection (8-13). Difficulty: Medium
 - [ ] roast/S06-signature/scalar-type.t
 - [ ] roast/S06-signature/shape.t
 - [ ] roast/S06-signature/sigilless.t
@@ -778,6 +780,7 @@
 - [ ] roast/S11-repository/curli-install.t
 - [ ] roast/S12-attributes/augment-and-initialization.t
 - [ ] roast/S12-attributes/class.t
+  - 12/28 pass (1, 3, 5, 7-8, 13-17, 22-23). Failures: class attribute sharing between instances (2, 4, 6, 10-12), accessor hiding by subclass (9, 18), BEGIN/EVAL attribute declaration (19-21), private attribute defaults/init (24-27). Difficulty: Medium
 - [ ] roast/S12-attributes/clone.t
 - [ ] roast/S12-attributes/defaults.t
 - [ ] roast/S12-attributes/delegation.t
@@ -799,6 +802,7 @@
 - [ ] roast/S12-class/extending-arrays.t
 - [ ] roast/S12-class/inheritance-class-methods.t
 - [ ] roast/S12-class/inheritance.t
+  - 18/41 pass (1-4, 6, 11, 13-14, 23-24, 27-30, 32, 38-39, 41). Good basic inheritance. Failures: rw attribute override (5, 7), method override/super (8-9), `Class::method` syntax (16-17, 33), `.isa` on subclasses (18-21), `$obj.$meth` variable method call (22), initializer inheritance (25-26), Mu inheritance (31), Array inheritance (34-36), nextsame (37), unknown parent error (40). Difficulty: Medium
 - [ ] roast/S12-class/instantiate.t
 - [ ] roast/S12-class/interface-consistency.t
 - [ ] roast/S12-class/lexical.t
@@ -861,6 +865,7 @@
 - [ ] roast/S12-methods/how.t
 - [ ] roast/S12-methods/indirect_notation.t
 - [ ] roast/S12-methods/instance.t
+  - 14/39 pass (1-2, 4-13, 15-16). Only 16 tests reached; crashes with "No matching candidates for method: m". Good basic method dispatch. Failures: indirect method return value (3), lexical data structure method call (14), tests 17-39 not reached. Difficulty: Medium
 - [ ] roast/S12-methods/lastcall.t
 - [ ] roast/S12-methods/lvalue.t
 - [ ] roast/S12-methods/method-vs-sub.t
