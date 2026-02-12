@@ -438,6 +438,7 @@
 - [ ] roast/S04-declarations/our.t
 - [ ] roast/S04-declarations/smiley.t
 - [ ] roast/S04-declarations/state.t
+  - 0/? pass. No test output at all - `state` declarations not implemented. Silently fails/exits. Difficulty: Medium-High (need `state` variable scoping)
 - [ ] roast/S04-declarations/will.t
 - [ ] roast/S04-exception-handlers/catch.t
   - 2/33 pass (1, 5). Only 5 reached; crashes with unhandled "blah" exception. CATCH in sub works, but CATCH in try/closure/do-block doesn't properly suppress exceptions. Difficulty: Medium-High
@@ -706,6 +707,7 @@
 - [ ] roast/S06-signature/named-placeholders.t
 - [ ] roast/S06-signature/named-renaming.t
 - [ ] roast/S06-signature/optional.t
+  - 12/35 pass (23 reached). Good optional parameter support. Failures: optional before required rejection (11-13), too-many-params error (14), two-commas parse error (15), required-after-optional (16), optional array/hash (17-20), test 23 not reached. Difficulty: Medium
 - [ ] roast/S06-signature/outside-subroutine.t
 - [ ] roast/S06-signature/passing-arrays.t
 - [ ] roast/S06-signature/passing-hashes.t
@@ -826,6 +828,7 @@
 - [ ] roast/S12-class/inheritance.t
   - 18/41 pass (1-4, 6, 11, 13-14, 23-24, 27-30, 32, 38-39, 41). Good basic inheritance. Failures: rw attribute override (5, 7), method override/super (8-9), `Class::method` syntax (16-17, 33), `.isa` on subclasses (18-21), `$obj.$meth` variable method call (22), initializer inheritance (25-26), Mu inheritance (31), Array inheritance (34-36), nextsame (37), unknown parent error (40). Difficulty: Medium
 - [ ] roast/S12-class/instantiate.t
+  - 6/7 pass (1-6). Very close! Only test 7 fails: instantiating from class name string (dynamic class creation). Difficulty: Low (very close to passing!)
 - [ ] roast/S12-class/interface-consistency.t
 - [ ] roast/S12-class/lexical.t
 - [ ] roast/S12-class/literal.t
@@ -1271,6 +1274,7 @@
   - 6/6 pass.
 - [ ] roast/S29-any/deg-trans.t
 - [ ] roast/S29-any/isa.t
+  - 6/11 pass (2-3, 8-11). `.isa` works for negative checks and named classes. Failures: `@arr.isa("Array")` (1), no sub `isa()` error (4), single-arg/extra-args error (5-6), array literal `.isa` (7). Difficulty: Low-Medium
 - [ ] roast/S29-any/minpairs-maxpairs.t
 - [ ] roast/S29-context/die.t
   - 0/? pass. Stack overflow before any tests run. Likely infinite recursion in parsing or evaluating the test file. Difficulty: High
@@ -1342,6 +1346,7 @@
 - [ ] roast/S32-hash/map.t
 - [ ] roast/S32-hash/multislice-6e.t
 - [ ] roast/S32-hash/pairs.t
+  - 17/26 pass (1-2, 4-10, 12-18, 20). Good `.pairs` support on hashes. Failures: element count (3, 11), rw aliases (19, 21), `:p` adverb form (22-26). Difficulty: Medium
 - [ ] roast/S32-hash/perl.t
 - [ ] roast/S32-hash/push.t
 - [ ] roast/S32-hash/slice.t
