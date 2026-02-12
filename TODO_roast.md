@@ -177,6 +177,7 @@
   - Tests 107-108: Mixins with `but` operator on hashes
 - [ ] roast/S02-types/hyperwhatever.t
 - [ ] roast/S02-types/infinity.t
+  - 11/21 pass (1-8, 10, 12-13). Good Inf support. Failures: `truncate(Inf)` (9), assigning Inf to Int error msg (11), only 13 tests reached (runtime error after test 13). Difficulty: Low-Medium
 - [ ] roast/S02-types/instants-and-durations.t
 - [ ] roast/S02-types/int-uint.t
 - [ ] roast/S02-types/isDEPRECATED.t
@@ -1273,6 +1274,7 @@
 - [ ] roast/S32-array/delete-adverb.t
 - [ ] roast/S32-array/delete.t
 - [ ] roast/S32-array/elems.t
+  - 6/12 pass (1-5, 7). Failures: `.elems` on initialized arrayitems (6), `elems()` sub form with args (8-9), `elems [1,2,3,4]` (10), `elems` on itemized list (11). Only 11 tests reached. Difficulty: Low-Medium
 - [ ] roast/S32-array/end.t
 - [ ] roast/S32-array/exists-adverb.t
 - [ ] roast/S32-array/keys_values.t
@@ -1281,12 +1283,15 @@
 - [ ] roast/S32-array/pairs.t
 - [ ] roast/S32-array/perl.t
 - [ ] roast/S32-array/pop.t
+  - 11/38 pass (1, 12-13, 23-29). `.pop` mostly broken for sub form `pop(@arr)`. Method form `@arr.pop` has issues too (returns wrong value). Post-exhaustion behavior (returning undefined/Failure) works. Only 37 tests reached. Difficulty: Medium (pop sub form, return value issues)
 - [ ] roast/S32-array/push.t
   - ~6/56 pass (1, 10-14). Push works but `.elems` returns wrong counts after push, causing most verification tests to fail. Basic `push @array, $value` and `~@p` work. Difficulty: Medium (array elems tracking after push)
 - [ ] roast/S32-array/rotate.t
 - [ ] roast/S32-array/shift.t
+  - 11/33 pass (1, 11-12, 21-27, 33). Similar to pop: sub form `shift(@arr)` broken, method form has issues. Post-exhaustion returns undefined/Failure correctly. Difficulty: Medium
 - [ ] roast/S32-array/splice.t
 - [ ] roast/S32-array/unshift.t
+  - 8/76 pass (1, 19, 22-23, and a few others). `@arr.unshift(val)` method works but doesn't return correct count. Sub form `unshift(@arr, val)` broken. Most element verification fails. Difficulty: Medium-High (unshift return value and sub form)
 - [ ] roast/S32-basics/pairup.t
 - [ ] roast/S32-basics/warn.t
 - [ ] roast/S32-basics/xxKEY.t
