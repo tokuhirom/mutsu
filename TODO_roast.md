@@ -478,6 +478,7 @@
 - [ ] roast/S04-statements/do.t
   - 29/32 pass. Failures: empty Slip in list context when no if-branch executes (tests 11-12), top-level comma expression in EVAL for last return value (test 25)
 - [ ] roast/S04-statements/for-scope.t
+  - 3/16 pass (tests 1, 3, 5). Failures: lexical array reset per iteration (2, 4), itemized array in for loop (6-7), `for @a -> $x` argument list (8). Only 8 tests reached. Difficulty: Medium
 - [ ] roast/S04-statements/for.t
   - Fatal: `Module not found: MONKEY-TYPING`. Requires `use MONKEY-TYPING` pragma
 - [ ] roast/S04-statements/for_with_only_one_item.t
@@ -508,6 +509,7 @@
   - 12/26 pass (1, 3, 7-14, 16, 20). Failures: bare return with parens (2), bare return in statement modifiers (4-6), test 15 unknown, proxied return (17-18), `.return` method (19), INIT/CHECK return (21-22), tests 23-26 not reached. Difficulty: Medium
 - [ ] roast/S04-statements/sink.t
 - [ ] roast/S04-statements/terminator.t
+  - 9/20 pass (1-7, 10, 15). Good semicolon and statement terminator support. Failures: open closure detection (8), incomplete expression error (9), newline-separated statements (11), auto-curly in array (12), `is()` after postfix modifier (13), space-after-parens (14). Only 15 tests reached. Difficulty: Medium
 - [ ] roast/S04-statements/try.t
   - 10/40 pass (1-3, 5, 7, 11, 13-15, 17). Only 21 reached; crashes with custom exception class. Basic try/CATCH works. Failures: array/hash assignment from try (4, 6, 8-10, 12), return in try (16), CATCH edge cases (18-21). Difficulty: Medium
 - [ ] roast/S04-statements/unless.t
@@ -825,6 +827,7 @@
 - [ ] roast/S12-class/self-inheritance.t
 - [ ] roast/S12-class/stubs.t
 - [ ] roast/S12-class/type-object.t
+  - 2/6 pass (tests 3, 6). Failures: `Any.Str` should return empty string (1-2), `.raku` output format (4), `.^name` meta-method (5). Difficulty: Low-Medium (type object stringification)
 - [ ] roast/S12-coercion/coercion-methods.t
 - [ ] roast/S12-coercion/coercion-return.t
 - [ ] roast/S12-coercion/coercion-types.t
@@ -865,6 +868,7 @@
 - [ ] roast/S12-methods/calling_sets.t
 - [ ] roast/S12-methods/calling_syntax.t
 - [ ] roast/S12-methods/chaining.t
+  - 0/17 pass. Runtime error with empty message before any tests run. Plan declared (1..17) but no tests executed. Likely issue parsing test file (method chaining syntax). Difficulty: Medium-High
 - [ ] roast/S12-methods/class-and-instance.t
 - [ ] roast/S12-methods/default-trait.t
 - [ ] roast/S12-methods/defer-call.t
@@ -884,6 +888,7 @@
 - [ ] roast/S12-methods/qualified.t
 - [ ] roast/S12-methods/submethods.t
 - [ ] roast/S12-methods/syntax.t
+  - 2/15 pass (tests 1, 15). Failures: method call with empty parens `obj.doit()` (2), `.doit ()` with space (3), unspace `obj.doit\ ()` (4), colon form `obj.doit: args` (5-9), block as arg (10-12), `$.a(args)` (13-14). Difficulty: Medium-High (method call syntax variants)
 - [ ] roast/S12-methods/topic.t
 - [ ] roast/S12-methods/trusts.t
 - [ ] roast/S12-methods/typed-attributes.t
