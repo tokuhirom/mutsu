@@ -1452,8 +1452,10 @@
 - [ ] roast/S32-str/CollationTest_NON_IGNORABLE-3.t
 - [ ] roast/S32-str/comb.t
 - [ ] roast/S32-str/contains.t
+  - 0/1 pass. `Cool.contains` with wrong args hangs instead of erroring. Difficulty: Low (error handling for wrong args)
 - [ ] roast/S32-str/encode.t
 - [ ] roast/S32-str/ends-with.t
+  - 0/3 pass. `Cool.ends-with` with wrong args hangs (test 1). Other tests use complex test framework syntax. Difficulty: Medium
 - [ ] roast/S32-str/fc.t
 - [ ] roast/S32-str/flip.t
   - 10/13 pass (1-5, 7-8, 11-13). Failures: test 6 unknown, grapheme precomposed (9), grapheme without precomposed (10). Difficulty: Low (grapheme cluster awareness needed)
@@ -1462,6 +1464,7 @@
 - [ ] roast/S32-str/gb2312-encode-decode.t
 - [ ] roast/S32-str/indent.t
 - [ ] roast/S32-str/index.t
+  - 31/41 pass. Strong index support. Failures: pos at/after match (9-10), empty substr with pos beyond string (20-22), Cool.index wrong args (37), Buf.index (38-41). Difficulty: Low-Medium
 - [ ] roast/S32-str/indices.t
 - [x] roast/S32-str/lc.t
   - 19/19 pass.
@@ -1490,9 +1493,11 @@
 - [ ] roast/S32-str/sprintf-u.t
 - [ ] roast/S32-str/sprintf-x.t
 - [ ] roast/S32-str/starts-with.t
+  - 0/3 pass. `Cool.starts-with` with wrong args hangs (test 1). Other tests use complex test framework syntax. Difficulty: Medium
 - [ ] roast/S32-str/substr-eq.t
 - [ ] roast/S32-str/substr-rw.t
 - [ ] roast/S32-str/substr.t
+  - 32/57 pass. Good basic substr support. Failures: `*-1` last-char syntax (4-5), negative length (11-14), `.wordcase` method (21, 32, 40), Deseret chars (24-26), Range-based substr (43-52), WhateverCode arg (54). Difficulty: Medium
 - [ ] roast/S32-str/tclc.t
 - [ ] roast/S32-str/tc.t
 - [ ] roast/S32-str/text-samples/gb18030_sample_in_gb18030.txt
