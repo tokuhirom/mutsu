@@ -2987,6 +2987,10 @@ impl VM {
                 Some(Ok(Value::Str(s)))
             }
             "trim" => Some(Ok(Value::Str(arg.to_string_value().trim().to_string()))),
+            "trim-leading" => Some(Ok(Value::Str(
+                arg.to_string_value().trim_start().to_string(),
+            ))),
+            "trim-trailing" => Some(Ok(Value::Str(arg.to_string_value().trim_end().to_string()))),
             "flip" => Some(Ok(Value::Str(
                 arg.to_string_value().chars().rev().collect(),
             ))),

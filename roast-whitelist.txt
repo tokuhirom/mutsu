@@ -126,5 +126,6 @@ roast/S32-str/bool.t
 roast/S32-str/contains.t
 roast/S32-str/lc.t
 roast/S32-str/space-chars.t
+roast/S32-str/trim.t
 roast/S32-list/toggle.t
 roast/S32-trig/simple.t

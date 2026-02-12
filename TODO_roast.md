@@ -1604,8 +1604,8 @@
 - [ ] roast/S32-str/text-samples/gb2312_sample_in_utf8.txt
 - [ ] roast/S32-str/text-samples/shiftjis_sample_in_utf8.txt
 - [ ] roast/S32-str/text-samples/shiftjis_sample.txt
-- [ ] roast/S32-str/trim.t
-  - 35/37 pass. Crashes with "Division by zero" before last 2 tests. Very close to full pass. All trim/trim-leading/trim-trailing work. Difficulty: Low (fix division-by-zero in test 36-37 context)
+- [x] roast/S32-str/trim.t
+  - 37/37 pass. Fixed: `$/` variable lexing, `$/` set on regex smartmatch, greedy regex quantifiers, `trim-leading`/`trim-trailing` function forms.
 - [ ] roast/S32-str/uc.t
   - 14/20 pass (1-14). Failures: `but` mixin on strings (15-17), precomposed upper character (18-19), prepend codepoints uppercasing (20). Difficulty: Low-Medium
 - [ ] roast/S32-str/uniparse.t

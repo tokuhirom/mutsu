@@ -8450,6 +8450,22 @@ impl Interpreter {
                         .unwrap_or_default();
                     return Ok(Value::Str(val.trim().to_string()));
                 }
+                if name == "trim-leading" {
+                    let val = args
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    return Ok(Value::Str(val.trim_start().to_string()));
+                }
+                if name == "trim-trailing" {
+                    let val = args
+                        .first()
+                        .and_then(|e| self.eval_expr(e).ok())
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    return Ok(Value::Str(val.trim_end().to_string()));
+                }
                 if name == "words" {
                     let val = args
                         .first()
@@ -9854,13 +9870,20 @@ impl Interpreter {
                 Self::version_smart_match(left, parts, *plus, *minus)
             }
             (_, Value::Regex(pat)) => {
-                if let Some(captures) = self.regex_match_with_captures(pat, &left.to_string_value())
-                {
+                let text = left.to_string_value();
+                if let Some(captures) = self.regex_match_with_captures(pat, &text) {
+                    // Set $/ to the matched substring
+                    if let Some((start, end)) = self.regex_find_first(pat, &text) {
+                        let chars: Vec<char> = text.chars().collect();
+                        let matched: String = chars[start..end].iter().collect();
+                        self.env.insert("/".to_string(), Value::Str(matched));
+                    }
                     for (k, v) in captures {
                         self.env.insert(format!("<{}>", k), Value::Str(v));
                     }
                     return true;
                 }
+                self.env.insert("/".to_string(), Value::Nil);
                 false
             }
             // When RHS is NaN, check if LHS is also NaN
@@ -9978,7 +10001,7 @@ impl Interpreter {
                         positions.push(next);
                         current = next;
                     }
-                    for p in positions.into_iter().rev() {
+                    for p in positions {
                         stack.push((idx + 1, p));
                     }
                 }
@@ -9993,7 +10016,7 @@ impl Interpreter {
                         positions.push(next);
                         current = next;
                     }
-                    for p in positions.into_iter().rev() {
+                    for p in positions {
                         stack.push((idx + 1, p));
                     }
                 }
@@ -10060,7 +10083,7 @@ impl Interpreter {
                         positions.push((next, current_caps.clone()));
                         current = next;
                     }
-                    for (p, c) in positions.into_iter().rev() {
+                    for (p, c) in positions {
                         stack.push((idx + 1, p, c));
                     }
                 }
@@ -10087,7 +10110,7 @@ impl Interpreter {
                         positions.push((next, current_caps.clone()));
                         current = next;
                     }
-                    for (p, c) in positions.into_iter().rev() {
+                    for (p, c) in positions {
                         stack.push((idx + 1, p, c));
                     }
                 }
@@ -10144,7 +10167,7 @@ impl Interpreter {
                         positions.push(next);
                         current = next;
                     }
-                    for p in positions.into_iter().rev() {
+                    for p in positions {
                         stack.push((idx + 1, p));
                     }
                 }
@@ -10159,7 +10182,7 @@ impl Interpreter {
                         positions.push(next);
                         current = next;
                     }
-                    for p in positions.into_iter().rev() {
+                    for p in positions {
                         stack.push((idx + 1, p));
                     }
                 }

@@ -680,6 +680,10 @@ impl Lexer {
                             self.pos += 1;
                             TokenKind::Var("!".to_string())
                         }
+                    } else if self.peek() == Some('/') {
+                        // $/ - match variable
+                        self.pos += 1;
+                        TokenKind::Var("/".to_string())
                     } else if self.peek() == Some('.') {
                         // Check if $.attr (public attribute accessor)
                         if self.src.get(self.pos + 1).is_some_and(|c| {
