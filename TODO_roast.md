@@ -445,9 +445,11 @@
 - [ ] roast/S04-exceptions/pending.t
 - [ ] roast/S04-phasers/ascending-order.t
 - [ ] roast/S04-phasers/begin.t
+  - 7/13 pass (3-4, 7-8, 11-13). BEGIN blocks work for basic cases. Failures: BEGIN as expression (1-2), calling outer subs from BEGIN (5-6), parse error after BEGIN (9), try in BEGIN (10). Difficulty: Medium
 - [ ] roast/S04-phasers/check.t
 - [ ] roast/S04-phasers/descending-order.t
 - [ ] roast/S04-phasers/end.t
+  - 6/8 pass (1-6). END blocks work well! Failures: lexical lookup from END to surrounding BEGIN (7), lexical lookup from END block (8). Difficulty: Low (close to passing!)
 - [ ] roast/S04-phasers/enter-leave.t
 - [ ] roast/S04-phasers/exit-in-check.t
 - [ ] roast/S04-phasers/first.t
@@ -849,6 +851,7 @@
 - [ ] roast/S12-enums/basic.t
   - 25/54 pass. Good basic enum support. Failures: Pair arithmetic (6), `.does()` for enum type (7-8), given/when with enum (11), parens/starting-point syntax (17), Pair of one element (20), type enforcement (25), short name without parens (26), `.pick`/`.pick(2)` (30-31), double-colon namespace (32), redeclared values (36-37), iteration (39-41). Difficulty: Medium
 - [ ] roast/S12-enums/misc.t
+  - 12/28 pass (1, 6-14, 16, 28). Good enum support for basic features. Failures: enum in module/package/grammar (2-4), enum as method error (5), export (15), constant list enum values (17), ACCEPTS (18), .pairs/.kv/.keys/.values/.antipairs/.invert on enum with Array values (19-24), .new error (25), matching (26-27). Difficulty: Medium
 - [ ] roast/S12-enums/non-int.t
 - [ ] roast/S12-enums/pseudo-functional.t
 - [ ] roast/S12-enums/thorough.t
@@ -1256,6 +1259,7 @@
 - [ ] roast/S29-any/isa.t
 - [ ] roast/S29-any/minpairs-maxpairs.t
 - [ ] roast/S29-context/die.t
+  - 0/? pass. Stack overflow before any tests run. Likely infinite recursion in parsing or evaluating the test file. Difficulty: High
 - [ ] roast/S29-context/evalfile.t
 - [ ] roast/S29-context/eval.t
 - [ ] roast/S29-context/exit-in-if.t
@@ -1447,6 +1451,7 @@
 - [ ] roast/S32-num/abs.t
   - 5/49 pass (1-4, 9). Only 9 tests reached; rest crash. Failures: NaN/Inf abs (5-7), string abs (8), tests 10-49 not reached. Difficulty: Medium (NaN/Inf handling, test framework issues)
 - [ ] roast/S32-num/base.t
+  - 0/? pass. Panics with `mul_overflow` in `i64::pow` (vm.rs:402). The test uses large exponents that cause integer overflow. No tests reached. Difficulty: Medium (need overflow-safe exponent in VM)
 - [ ] roast/S32-num/complex-logarithms.t
 - [ ] roast/S32-num/complex.t
 - [ ] roast/S32-num/cool-num.t
