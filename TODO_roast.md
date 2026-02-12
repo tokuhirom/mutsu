@@ -397,6 +397,7 @@
 - [x] roast/S03-smartmatch/any-any.t
 - [ ] roast/S03-smartmatch/any-bool.t
 - [ ] roast/S03-smartmatch/any-callable.t
+  - 5/7 pass (1, 3-6). Smartmatch with callable works. Failures: negated smartmatch with callable (2), only 6 tests reached. Difficulty: Low
 - [ ] roast/S03-smartmatch/any-complex.t
 - [ ] roast/S03-smartmatch/any-hash-pair.t
 - [ ] roast/S03-smartmatch/any-method.t
@@ -422,6 +423,7 @@
 - [ ] roast/S04-blocks-and-statements/let.t
 - [ ] roast/S04-blocks-and-statements/pointy-rw.t
 - [ ] roast/S04-blocks-and-statements/pointy.t
+  - 7/21 pass (4-7, 13-15). Pointy blocks work in list context. Failures: `-> $x { }` without parens (1), immediately invoked pointy (2-3), block control exceptions (8-9), return from pointy (10-11), `$^a` in pointy (12), .signature (16), YOU_ARE_HERE (17-19). Only 19 reached. Difficulty: Medium
 - [ ] roast/S04-blocks-and-statements/temp.t
 - [ ] roast/S04-declarations/constant-6.d.t
 - [ ] roast/S04-declarations/constant.t
@@ -843,6 +845,7 @@
 - [ ] roast/S12-construction/destruction.t
 - [ ] roast/S12-construction/named-params-in-BUILD.t
 - [ ] roast/S12-construction/new.t
+  - 9/28 pass (1, 4, 7, 10, 13, 15, 17, 25-26). Basic `.new` works. Failures: parent attribute access (2-3, 5-6, 8-9, 11-12, 18-19), missing class error (14, 16), Mu.new multi (20), alternate constructors (21-22), nextwith (23-24), MI attribute init (27-28). Difficulty: Medium-High
 - [ ] roast/S12-construction/roles-6e.t
 - [ ] roast/S12-construction/TWEAK.t
 - [ ] roast/S12-enums/anonymous.t
@@ -914,6 +917,7 @@
 - [ ] roast/S14-roles/anonymous.t
 - [ ] roast/S14-roles/attributes-6e.t
 - [ ] roast/S14-roles/basic.t
+  - 22/53 pass (55 reached). Good role basics. Failures: role type object .defined (5), .^does after composition (9-10), mixin method access (13-14, 16-17), but operator (15, 22), type constraint enforcement (24-25, 28, 31-32), non-existent role errors (33-38), gist (41), qualified method call (47-48), private methods (48), .^ver/.^auth (52-53). Difficulty: Medium-High
 - [x] roast/S14-roles/bool.t
   - 3/3 pass.
 - [ ] roast/S14-roles/composition.t
@@ -1491,6 +1495,7 @@
 - [ ] roast/S32-scalar/defined.t
   - 54/55 pass. Only test 55 fails: `&defined` function reference syntax not supported. Difficulty: Low (needs `&name` function reference)
 - [ ] roast/S32-scalar/perl.t
+  - 5/7 pass (1-3, 5-6). `.raku`/`.perl` serialization works for simple scalars. Failures: constrained scalar serialization (4), only 6 tests reached. Difficulty: Low
 - [ ] roast/S32-scalar/undef.t
 - [x] roast/S32-str/append.t
   - 7/7 pass.
