@@ -483,22 +483,27 @@
   - ~16/44 pass. Failures: function call without parens in if cond (test 17), `if` without block should error (test 19), `-> $a` binding in if/elsif/else (tests 20-23), condition evaluation order (tests 24-27), if/elsif/else return value as expression (tests 28-34)
 - [ ] roast/S04-statements/label.t
 - [ ] roast/S04-statements/last.t
+  - 6/9 pass (1-3, 7-9). Failures: `<cond> && last` short-circuit (4), `<cond> and last` (5), test 6 unknown failure. Difficulty: Low (short-circuit operators with control flow)
 - [ ] roast/S04-statements/lazy.t
 - [ ] roast/S04-statements/leave.t
 - [ ] roast/S04-statements/loop.t
   - 11/18 pass. Failures: loop with two variables in init (test 12), `loop {} while` syntax error detection (test 14), gather+take+loop interaction (test 15)
 - [ ] roast/S04-statements/map-and-sort-in-for.t
 - [ ] roast/S04-statements/next.t
+  - 7/12 pass (1, 5-9, 12). Failures: `next unless <cond>` (2), `<cond> && next` (3), `<cond> and next` (4), post-next statement execution detection (10-11). Difficulty: Low-Medium
 - [ ] roast/S04-statements/no-implicit-block.t
 - [ ] roast/S04-statements/once.t
 - [ ] roast/S04-statements/quietly.t
 - [ ] roast/S04-statements/redo.t
 - [ ] roast/S04-statements/repeat.t
+  - 8/21 pass (1-8). Only 10 tests reached; crashes at test 10 with `X::ControlFlow`. Basic `repeat {} while/until` works including redo. Failures: unknown issue at test 9-10, rest not reached. Difficulty: Medium
 - [ ] roast/S04-statements/return.t
+  - 12/26 pass (1, 3, 7-14, 16, 20). Failures: bare return with parens (2), bare return in statement modifiers (4-6), test 15 unknown, proxied return (17-18), `.return` method (19), INIT/CHECK return (21-22), tests 23-26 not reached. Difficulty: Medium
 - [ ] roast/S04-statements/sink.t
 - [ ] roast/S04-statements/terminator.t
 - [ ] roast/S04-statements/try.t
 - [ ] roast/S04-statements/unless.t
+  - 7/10 pass (1-7). Crashes at test 8 (`die` in unless block). Tests 8-10 not fully reached. Difficulty: Low (die/exception handling in unless)
 - [x] roast/S04-statements/until.t
   - 4/4 pass.
 - [ ] roast/S04-statements/when.t
