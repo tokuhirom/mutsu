@@ -183,6 +183,7 @@ impl Parser {
                     let mut stmts = vec![Stmt::VarDecl {
                         name: tmp_name,
                         expr: rhs,
+                        type_constraint: None,
                     }];
                     for (i, var_name) in names.iter().enumerate() {
                         stmts.push(Stmt::VarDecl {
@@ -191,6 +192,7 @@ impl Parser {
                                 target: Box::new(Expr::ArrayVar(array_bare.clone())),
                                 index: Box::new(Expr::Literal(Value::Int(i as i64))),
                             },
+                            type_constraint: None,
                         });
                     }
                     return Ok(Stmt::Block(stmts));
@@ -201,18 +203,28 @@ impl Parser {
                     stmts.push(Stmt::VarDecl {
                         name: var_name.clone(),
                         expr: Expr::Literal(Value::Nil),
+                        type_constraint: None,
                     });
                 }
                 self.match_kind(TokenKind::Semicolon);
                 return Ok(Stmt::Block(stmts));
             }
-            // Skip optional type annotation (e.g., my Str $a, my Int $b)
-            if let Some(TokenKind::Ident(_)) = self.tokens.get(self.pos).map(|t| &t.kind)
-                && let Some(TokenKind::Var(_) | TokenKind::ArrayVar(_) | TokenKind::HashVar(_)) =
-                    self.tokens.get(self.pos + 1).map(|t| &t.kind)
+            // Capture optional type annotation (e.g., my Str $a, my Int $b)
+            let type_constraint = if let Some(TokenKind::Ident(tc)) =
+                self.tokens.get(self.pos).map(|t| &t.kind)
             {
-                self.pos += 1; // skip the type name
-            }
+                if let Some(TokenKind::Var(_) | TokenKind::ArrayVar(_) | TokenKind::HashVar(_)) =
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind)
+                {
+                    let tc = tc.clone();
+                    self.pos += 1; // skip the type name
+                    Some(tc)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
             let (name, is_array, is_hash) = if let Some(token) =
                 self.advance_if(|k| matches!(k, TokenKind::ArrayVar(_)))
             {
@@ -249,7 +261,11 @@ impl Parser {
             if self.match_kind(TokenKind::Eq) || self.match_kind(TokenKind::Bind) {
                 let expr = self.parse_comma_expr()?;
                 self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::VarDecl { name, expr });
+                return Ok(Stmt::VarDecl {
+                    name,
+                    expr,
+                    type_constraint: type_constraint.clone(),
+                });
             }
             self.match_kind(TokenKind::Semicolon);
             let expr = if is_array {
@@ -259,7 +275,11 @@ impl Parser {
             } else {
                 Expr::Literal(Value::Nil)
             };
-            return Ok(Stmt::VarDecl { name, expr });
+            return Ok(Stmt::VarDecl {
+                name,
+                expr,
+                type_constraint,
+            });
         }
         if self.match_ident("constant") {
             // constant NAME = expr;
@@ -281,12 +301,17 @@ impl Parser {
             if self.match_kind(TokenKind::Eq) || self.match_kind(TokenKind::Bind) {
                 let expr = self.parse_comma_expr()?;
                 self.match_kind(TokenKind::Semicolon);
-                return Ok(Stmt::VarDecl { name, expr });
+                return Ok(Stmt::VarDecl {
+                    name,
+                    expr,
+                    type_constraint: None,
+                });
             }
             self.match_kind(TokenKind::Semicolon);
             return Ok(Stmt::VarDecl {
                 name,
                 expr: Expr::Literal(Value::Nil),
+                type_constraint: None,
             });
         }
         if self.match_ident("enum") {
@@ -2968,6 +2993,42 @@ impl Parser {
             } else if name == "my"
                 && matches!(
                     self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Ident(_))
+                )
+                && matches!(
+                    self.tokens.get(self.pos + 2).map(|t| &t.kind),
+                    Some(TokenKind::Var(_) | TokenKind::ArrayVar(_) | TokenKind::HashVar(_))
+                )
+            {
+                // Expression-level: my TYPE $var = expr
+                self.pos += 2; // skip 'my' and type name
+                let var_name = if let Some(TokenKind::ArrayVar(n)) =
+                    self.tokens.get(self.pos).map(|t| &t.kind)
+                {
+                    let n = format!("@{}", n);
+                    self.pos += 1;
+                    n
+                } else if let Some(TokenKind::HashVar(n)) =
+                    self.tokens.get(self.pos).map(|t| &t.kind)
+                {
+                    let n = format!("%{}", n);
+                    self.pos += 1;
+                    n
+                } else {
+                    self.consume_var()?
+                };
+                if self.match_kind(TokenKind::Eq) || self.match_kind(TokenKind::Bind) {
+                    let expr = self.parse_comma_expr()?;
+                    Expr::AssignExpr {
+                        name: var_name,
+                        expr: Box::new(expr),
+                    }
+                } else {
+                    Expr::Literal(Value::Nil)
+                }
+            } else if name == "my"
+                && matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
                     Some(TokenKind::Var(_) | TokenKind::ArrayVar(_) | TokenKind::HashVar(_))
                 )
             {
@@ -3223,6 +3284,23 @@ impl Parser {
         };
 
         loop {
+            // Postfix `i` for imaginary numbers: (expr)i, $x.i => Complex(0, value)
+            if let Some(TokenKind::Ident(name)) = self.tokens.get(self.pos).map(|t| &t.kind)
+                && name == "i"
+                && !matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Eq | TokenKind::LParen | TokenKind::Dot)
+                )
+            {
+                self.pos += 1;
+                expr = Expr::MethodCall {
+                    target: Box::new(expr),
+                    name: "Complex-i".to_string(),
+                    args: Vec::new(),
+                    modifier: None,
+                };
+                continue;
+            }
             if self.match_kind(TokenKind::PlusPlus) {
                 expr = Expr::PostfixOp {
                     op: TokenKind::PlusPlus,

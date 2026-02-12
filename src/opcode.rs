@@ -299,6 +299,11 @@ pub(crate) enum OpCode {
     // -- Functions --
     Return,
 
+    // -- Type checking --
+    /// Check that the value on top of stack matches the given type constraint.
+    /// The u32 is a constant index for the type name string.
+    TypeCheck(u32),
+
     // -- Fallback to tree-walker --
     InterpretExpr(u32),
     InterpretStmt(u32),

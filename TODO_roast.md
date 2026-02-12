@@ -191,8 +191,7 @@
 - [ ] roast/S02-types/mix.t
 - [ ] roast/S02-types/multi_dimensional_array.t
 - [ ] roast/S02-types/mu.t
-- [ ] roast/S02-types/nan.t
-  - 25/28 pass (27 reached). Excellent NaN support! Failures: `truncate(NaN)` (18), assigning NaN to Int error msg (22), test 28 not reached. Difficulty: Low (very close to passing!)
+- [x] roast/S02-types/nan.t
 - [ ] roast/S02-types/native.t
 - [ ] roast/S02-types/nested_arrays.t
 - [ ] roast/S02-types/nested_pairs.t

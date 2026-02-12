@@ -181,6 +181,10 @@ impl VM {
                 } else if self.interpreter.has_function(name) {
                     // Bare function call with no args
                     self.interpreter.call_function(name, Vec::new())?
+                } else if name == "NaN" {
+                    Value::Num(f64::NAN)
+                } else if name == "Inf" {
+                    Value::Num(f64::INFINITY)
                 } else {
                     Value::Str(name.to_string())
                 };
@@ -2236,6 +2240,19 @@ impl VM {
                 *ip += 1;
             }
 
+            // -- Type checking --
+            OpCode::TypeCheck(tc_idx) => {
+                let constraint = Self::const_str(code, *tc_idx);
+                let value = self.stack.last().expect("TypeCheck: empty stack");
+                if !matches!(value, Value::Nil)
+                    && Interpreter::is_known_type_constraint(constraint)
+                    && !self.interpreter.type_matches_value(constraint, value)
+                {
+                    return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
+                }
+                *ip += 1;
+            }
+
             // -- Fallback to tree-walker --
             OpCode::InterpretStmt(idx) => {
                 let stmt = &code.stmt_pool[*idx as usize];
@@ -2441,6 +2458,14 @@ impl VM {
                 };
                 Some(Ok(result))
             }
+            "Complex-i" => {
+                let imag = match target {
+                    Value::Int(i) => *i as f64,
+                    Value::Num(f) => *f,
+                    _ => 0.0,
+                };
+                Some(Ok(Value::Complex(0.0, imag)))
+            }
             "abs" => {
                 let result = match target {
                     Value::Int(i) => Value::Int(i.abs()),
@@ -2536,6 +2561,7 @@ impl VM {
                 _ => None,
             },
             "floor" => match target {
+                Value::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::Num(*f))),
                 Value::Num(f) => Some(Ok(Value::Int(f.floor() as i64))),
                 Value::Int(i) => Some(Ok(Value::Int(*i))),
                 Value::Rat(n, d) if *d != 0 => {
@@ -2550,6 +2576,7 @@ impl VM {
                 _ => None,
             },
             "ceiling" => match target {
+                Value::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::Num(*f))),
                 Value::Num(f) => Some(Ok(Value::Int(f.ceil() as i64))),
                 Value::Int(i) => Some(Ok(Value::Int(*i))),
                 Value::Rat(n, d) if *d != 0 => {
@@ -2564,6 +2591,7 @@ impl VM {
                 _ => None,
             },
             "round" => match target {
+                Value::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::Num(*f))),
                 Value::Num(f) => Some(Ok(Value::Int(f.round() as i64))),
                 Value::Int(i) => Some(Ok(Value::Int(*i))),
                 _ => None,
@@ -3003,16 +3031,19 @@ impl VM {
                 _ => Value::Num(f64::NAN),
             })),
             "floor" => Some(Ok(match arg {
+                Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
                 Value::Num(f) => Value::Int(f.floor() as i64),
                 Value::Int(i) => Value::Int(*i),
                 _ => Value::Int(0),
             })),
             "ceiling" | "ceil" => Some(Ok(match arg {
+                Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
                 Value::Num(f) => Value::Int(f.ceil() as i64),
                 Value::Int(i) => Value::Int(*i),
                 _ => Value::Int(0),
             })),
             "round" => Some(Ok(match arg {
+                Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
                 Value::Num(f) => Value::Int(f.round() as i64),
                 Value::Int(i) => Value::Int(*i),
                 _ => Value::Int(0),
@@ -3041,7 +3072,11 @@ impl VM {
             }
             "truncate" => {
                 if let Some(num) = Interpreter::to_float_value(arg) {
-                    Some(Ok(Value::Int(num.trunc() as i64)))
+                    if num.is_nan() || num.is_infinite() {
+                        Some(Ok(Value::Num(num)))
+                    } else {
+                        Some(Ok(Value::Int(num.trunc() as i64)))
+                    }
                 } else {
                     Some(Ok(Value::Int(Interpreter::to_int(arg))))
                 }

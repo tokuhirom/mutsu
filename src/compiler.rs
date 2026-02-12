@@ -71,8 +71,16 @@ impl Compiler {
                 }
                 self.code.emit(OpCode::Print(exprs.len() as u32));
             }
-            Stmt::VarDecl { name, expr } => {
+            Stmt::VarDecl {
+                name,
+                expr,
+                type_constraint,
+            } => {
                 self.compile_expr(expr);
+                if let Some(tc) = type_constraint {
+                    let tc_idx = self.code.add_constant(Value::Str(tc.clone()));
+                    self.code.emit(OpCode::TypeCheck(tc_idx));
+                }
                 let slot = self.alloc_local(name);
                 self.code.emit(OpCode::SetLocal(slot));
             }

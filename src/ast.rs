@@ -159,6 +159,7 @@ pub(crate) enum Stmt {
     VarDecl {
         name: String,
         expr: Expr,
+        type_constraint: Option<String>,
     },
     Assign {
         name: String,

@@ -135,7 +135,7 @@ impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Value::Int(a), Value::Int(b)) => a == b,
-            (Value::Num(a), Value::Num(b)) => a == b,
+            (Value::Num(a), Value::Num(b)) => (a.is_nan() && b.is_nan()) || a == b,
             (Value::Int(a), Value::Num(b)) => (*a as f64) == *b,
             (Value::Num(a), Value::Int(b)) => *a == (*b as f64),
             (Value::Str(a), Value::Str(b)) => a == b,
@@ -161,7 +161,10 @@ impl PartialEq for Value {
                 }
                 (*n as f64 / *d as f64) == *f
             }
-            (Value::Complex(r1, i1), Value::Complex(r2, i2)) => r1 == r2 && i1 == i2,
+            (Value::Complex(r1, i1), Value::Complex(r2, i2)) => {
+                let f_eq = |a: &f64, b: &f64| (a.is_nan() && b.is_nan()) || a == b;
+                f_eq(r1, r2) && f_eq(i1, i2)
+            }
             (Value::Complex(r, i), Value::Int(n)) | (Value::Int(n), Value::Complex(r, i)) => {
                 *i == 0.0 && *r == *n as f64
             }
@@ -303,7 +306,15 @@ impl Value {
         match self {
             Value::Int(i) => i.to_string(),
             Value::Num(f) => {
-                if f.fract() == 0.0 && f.is_finite() {
+                if f.is_nan() {
+                    "NaN".to_string()
+                } else if f.is_infinite() {
+                    if *f > 0.0 {
+                        "Inf".to_string()
+                    } else {
+                        "-Inf".to_string()
+                    }
+                } else if f.fract() == 0.0 && f.is_finite() {
                     format!("{}", *f as i64)
                 } else {
                     format!("{}", f)

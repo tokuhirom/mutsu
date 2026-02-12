@@ -1394,7 +1394,11 @@ impl Interpreter {
 
     pub(crate) fn exec_stmt(&mut self, stmt: &Stmt) -> Result<(), RuntimeError> {
         match stmt {
-            Stmt::VarDecl { name, expr } => {
+            Stmt::VarDecl {
+                name,
+                expr,
+                type_constraint,
+            } => {
                 let mut value = self.eval_expr(expr)?;
                 if name.starts_with('@')
                     && let Value::LazyList(ref list) = value
@@ -1408,6 +1412,13 @@ impl Interpreter {
                 } else {
                     value
                 };
+                if let Some(constraint) = type_constraint
+                    && !matches!(value, Value::Nil)
+                    && Self::is_known_type_constraint(constraint)
+                    && !self.type_matches_value(constraint, &value)
+                {
+                    return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
+                }
                 self.env.insert(name.clone(), value);
             }
             Stmt::Assign { name, expr, op } => {
@@ -3524,6 +3535,32 @@ impl Interpreter {
         self.proto_subs.contains(&format!("GLOBAL::{}", name))
     }
 
+    pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
+        matches!(
+            constraint,
+            "Int"
+                | "Num"
+                | "Str"
+                | "Bool"
+                | "Array"
+                | "Hash"
+                | "Rat"
+                | "FatRat"
+                | "Complex"
+                | "int"
+                | "num"
+                | "str"
+        )
+    }
+
+    fn value_is_nan(value: &Value) -> bool {
+        match value {
+            Value::Num(f) => f.is_nan(),
+            Value::Complex(r, i) => r.is_nan() || i.is_nan(),
+            _ => false,
+        }
+    }
+
     pub(crate) fn value_type_name(value: &Value) -> &'static str {
         match value {
             Value::Int(_) => "Int",
@@ -3564,6 +3601,16 @@ impl Interpreter {
         if constraint == value_type {
             return true;
         }
+        // Native type aliases: num → Num, int → Int, str → Str
+        if constraint == "num" && value_type == "Num" {
+            return true;
+        }
+        if constraint == "int" && value_type == "Int" {
+            return true;
+        }
+        if constraint == "str" && value_type == "Str" {
+            return true;
+        }
         // Numeric hierarchy: Int is a Numeric, Num is a Numeric
         if constraint == "Numeric"
             && matches!(value_type, "Int" | "Num" | "Rat" | "FatRat" | "Complex")
@@ -3587,7 +3634,7 @@ impl Interpreter {
         false
     }
 
-    fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
+    pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
         if let Some(subset) = self.subsets.get(constraint).cloned() {
             if !self.type_matches_value(&subset.base, value) {
                 return false;
@@ -3832,6 +3879,13 @@ impl Interpreter {
                         name: name.clone(),
                         args: Vec::new(),
                     });
+                }
+                // NaN and Inf are Num literals
+                if name == "NaN" {
+                    return Ok(Value::Num(f64::NAN));
+                }
+                if name == "Inf" {
+                    return Ok(Value::Num(f64::INFINITY));
                 }
                 Ok(Value::Str(name.clone()))
             }
@@ -6759,6 +6813,14 @@ impl Interpreter {
 
                         Ok(Value::Array(result))
                     }
+                    "Complex-i" => {
+                        let imag = match base {
+                            Value::Int(i) => i as f64,
+                            Value::Num(f) => f,
+                            _ => 0.0,
+                        };
+                        Ok(Value::Complex(0.0, imag))
+                    }
                     "abs" => match base {
                         Value::Int(i) => Ok(Value::Int(i.abs())),
                         Value::Num(f) => Ok(Value::Num(f.abs())),
@@ -6904,16 +6966,19 @@ impl Interpreter {
                         _ => Ok(Value::Num(f64::NAN)),
                     },
                     "floor" => match base {
+                        Value::Num(f) if f.is_nan() || f.is_infinite() => Ok(Value::Num(f)),
                         Value::Num(f) => Ok(Value::Int(f.floor() as i64)),
                         Value::Int(i) => Ok(Value::Int(i)),
                         _ => Ok(Value::Int(0)),
                     },
                     "ceiling" | "ceil" => match base {
+                        Value::Num(f) if f.is_nan() || f.is_infinite() => Ok(Value::Num(f)),
                         Value::Num(f) => Ok(Value::Int(f.ceil() as i64)),
                         Value::Int(i) => Ok(Value::Int(i)),
                         _ => Ok(Value::Int(0)),
                     },
                     "round" => match base {
+                        Value::Num(f) if f.is_nan() || f.is_infinite() => Ok(Value::Num(f)),
                         Value::Num(f) => Ok(Value::Int(f.round() as i64)),
                         Value::Int(i) => Ok(Value::Int(i)),
                         _ => Ok(Value::Int(0)),
@@ -8144,6 +8209,7 @@ impl Interpreter {
                 if name == "floor" {
                     let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     return Ok(match val {
+                        Some(Value::Num(f)) if f.is_nan() || f.is_infinite() => Value::Num(f),
                         Some(Value::Num(f)) => Value::Int(f.floor() as i64),
                         Some(Value::Int(i)) => Value::Int(i),
                         _ => Value::Int(0),
@@ -8152,6 +8218,7 @@ impl Interpreter {
                 if name == "ceiling" || name == "ceil" {
                     let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     return Ok(match val {
+                        Some(Value::Num(f)) if f.is_nan() || f.is_infinite() => Value::Num(f),
                         Some(Value::Num(f)) => Value::Int(f.ceil() as i64),
                         Some(Value::Int(i)) => Value::Int(i),
                         _ => Value::Int(0),
@@ -8160,6 +8227,7 @@ impl Interpreter {
                 if name == "round" {
                     let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     return Ok(match val {
+                        Some(Value::Num(f)) if f.is_nan() || f.is_infinite() => Value::Num(f),
                         Some(Value::Num(f)) => Value::Int(f.round() as i64),
                         Some(Value::Int(i)) => Value::Int(i),
                         _ => Value::Int(0),
@@ -8220,6 +8288,9 @@ impl Interpreter {
                 if name == "truncate" {
                     let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     if let Some(num) = val.as_ref().and_then(Self::to_float_value) {
+                        if num.is_nan() || num.is_infinite() {
+                            return Ok(Value::Num(num));
+                        }
                         return Ok(Value::Int(num.trunc() as i64));
                     }
                     if let Some(v) = val {
@@ -9345,7 +9416,15 @@ impl Interpreter {
                 left.to_string_value(),
                 right.to_string_value()
             ))),
-            TokenKind::EqEq => Ok(Value::Bool(left == right)),
+            TokenKind::EqEq => {
+                // Raku == uses IEEE 754 semantics: NaN == NaN is False
+                let is_nan = |v: &Value| matches!(v, Value::Num(f) if f.is_nan());
+                if is_nan(&left) || is_nan(&right) {
+                    Ok(Value::Bool(false))
+                } else {
+                    Ok(Value::Bool(left == right))
+                }
+            }
             TokenKind::EqEqEq => Ok(Value::Bool(left == right)),
             TokenKind::BangEq => Ok(Value::Bool(left != right)),
             TokenKind::Lt => Self::compare(left, right, |o| o < 0),
@@ -9787,7 +9866,13 @@ impl Interpreter {
                 }
                 false
             }
+            // When RHS is NaN, check if LHS is also NaN
+            (_, Value::Num(b)) if b.is_nan() => Self::value_is_nan(left),
+            (Value::Num(a), _) if a.is_nan() => Self::value_is_nan(right),
             (Value::Int(a), Value::Int(b)) => a == b,
+            (Value::Num(a), Value::Num(b)) => a == b,
+            (Value::Int(a), Value::Num(b)) => (*a as f64) == *b,
+            (Value::Num(a), Value::Int(b)) => *a == (*b as f64),
             (Value::Str(a), Value::Str(b)) => a == b,
             (Value::Int(a), Value::Str(b)) => a.to_string() == *b,
             (Value::Str(a), Value::Int(b)) => *a == b.to_string(),
