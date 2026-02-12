@@ -400,15 +400,19 @@
 - [ ] roast/S03-smartmatch/any-hash-pair.t
 - [ ] roast/S03-smartmatch/any-method.t
 - [ ] roast/S03-smartmatch/any-num.t
+  - 13/21 pass. Complex ~~ Int/Rat/Num smartmatch fails (12-13, 15-16, 18-19), rest of numeric smartmatching works. Difficulty: Low-Medium (Complex type smartmatching)
 - [ ] roast/S03-smartmatch/any-pair.t
-- [ ] roast/S03-smartmatch/any-str.t
+- [x] roast/S03-smartmatch/any-str.t
+  - 5/5 pass.
 - [ ] roast/S03-smartmatch/any-sub.t
 - [ ] roast/S03-smartmatch/any-type.t
+  - 4/4 pass but produces 5 test lines (plan mismatch). All subtests pass but prove fails due to plan. Difficulty: Low (plan mismatch fix)
 - [ ] roast/S03-smartmatch/array-array.t
 - [ ] roast/S03-smartmatch/array-hash.t
 - [ ] roast/S03-smartmatch/array-map.t
 - [ ] roast/S03-smartmatch/capture-signature.t
 - [ ] roast/S03-smartmatch/disorganized.t
+  - 33/42 pass. Good smartmatch coverage. Failures: `Mu.defined` (3), Range smartmatch `5 ~~ 1..10` (4), junction `all(@x) ~~ {...}` (10-12), test 34 unknown, role matching (38-39), `* ~~ "foo"` WhateverCode (42). Difficulty: Medium
 - [ ] roast/S03-smartmatch/hash-hash.t
 - [ ] roast/S03-smartmatch/range-range.t
 - [ ] roast/S03-smartmatch/regex-hash.t
@@ -837,6 +841,7 @@
 - [x] roast/S12-enums/as-role.t
   - 9/9 pass.
 - [ ] roast/S12-enums/basic.t
+  - 25/54 pass. Good basic enum support. Failures: Pair arithmetic (6), `.does()` for enum type (7-8), given/when with enum (11), parens/starting-point syntax (17), Pair of one element (20), type enforcement (25), short name without parens (26), `.pick`/`.pick(2)` (30-31), double-colon namespace (32), redeclared values (36-37), iteration (39-41). Difficulty: Medium
 - [ ] roast/S12-enums/misc.t
 - [ ] roast/S12-enums/non-int.t
 - [ ] roast/S12-enums/pseudo-functional.t
