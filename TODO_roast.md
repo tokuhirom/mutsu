@@ -1,3 +1,4 @@
+- [x] roast/MISC/bug-coverage-stress.t
 - [ ] roast/S01-perl-5-integration/array.t
 - [ ] roast/S01-perl-5-integration/basic.t
 - [ ] roast/S01-perl-5-integration/class.t
@@ -6,7 +7,7 @@
 - [ ] roast/S01-perl-5-integration/exception_handling.t
 - [ ] roast/S01-perl-5-integration/hash.t
 - [ ] roast/S01-perl-5-integration/import.t
-- [ ] roast/S01-perl-5-integration/isms.t
+- [x] roast/S01-perl-5-integration/isms.t
 - [ ] roast/S01-perl-5-integration/method.t
 - [ ] roast/S01-perl-5-integration/return.t
 - [ ] roast/S01-perl-5-integration/roundtrip.t
@@ -50,8 +51,7 @@
 - [ ] roast/S02-literals/hash-interpolation.t
 - [ ] roast/S02-literals/heredocs.t
   - 40/42 pass. Tests 39, 42 fail: eval-dies-ok tests for heredoc scoping — heredoc body after closing `}` should not access block-scoped variables, but our lexer inlines the body before scoping is evaluated.
-- [ ] roast/S02-literals/hex_chars.t
-  - 0/4 pass. `\x..` hex character codes in strings not implemented. Same blocker as char-by-number.t. Difficulty: Medium
+- [x] roast/S02-literals/hex_chars.t
 - [ ] roast/S02-literals/listquote.t
   - 9/24 pass (3-4, 6, 11-13, 16, 19, 22). Failures: list context `<list>` evaluation (1), `|<<` listop (2), parsefail detection (5, 7-9, 14-15), immutability of `<>` list (17), numeric allomorph stringify (18), Rat/Complex type in `<>` (21, 23), assignment to list (24). Difficulty: Medium
 - [ ] roast/S02-literals/listquote-whitespace.t
@@ -137,8 +137,8 @@
 - [ ] roast/S02-names-vars/signature.t
 - [ ] roast/S02-names-vars/variables-and-packages.t
 - [ ] roast/S02-names-vars/varnames.t
-- [ ] roast/S02-one-pass-parsing/less-than.t
-- [ ] roast/S02-one-pass-parsing/misc.t
+- [x] roast/S02-one-pass-parsing/less-than.t
+- [x] roast/S02-one-pass-parsing/misc.t
 - [ ] roast/S02-packages/package-lookup.t
 - [ ] roast/S02-types/anon_block.t
 - [ ] roast/S02-types/array_extending.t
@@ -261,8 +261,7 @@
   - 4/14 pass. Tests 5-6: type objects not properly undefined. Tests 7-8: andthen thunking (closure as rhs). Tests 9-14: need try/die, `is-deeply`, `infix:<andthen>()`.
 - [ ] roast/S03-operators/arith.t
   - 0/? pass. Panic: `attempt to multiply with overflow` in `i64::pow`. Needs BigInt or checked arithmetic.
-- [ ] roast/S03-operators/assign-is-not-binding.t
-  - 8/9 pass. Test 9: `my @list = ($a)` — assigning a scalar to an array variable doesn't auto-wrap in a single-element array.
+- [x] roast/S03-operators/assign-is-not-binding.t
 - [ ] roast/S03-operators/assign.t
   - 36/302 pass.
 - [ ] roast/S03-operators/autoincrement-range.t
@@ -372,8 +371,7 @@
   - 0/? pass. Crashes mid-run.
 - [ ] roast/S03-operators/short-circuit.t
   - 34/84 pass.
-- [ ] roast/S03-operators/so.t
-  - 13/15 pass. Test 11: `Bool.so` returns True instead of False (type objects like `Bool` are Value::Str, not undefined). Test 15: `my` declaration inside `ok(...)` arguments does not propagate to outer scope (env cloned during built-in call evaluation).
+- [x] roast/S03-operators/so.t
 - [x] roast/S03-operators/spaceship-and-containers.t
   - 6/6 pass.
 - [ ] roast/S03-operators/spaceship.t
@@ -445,7 +443,7 @@
   - 2/33 pass (1, 5). Only 5 reached; crashes with unhandled "blah" exception. CATCH in sub works, but CATCH in try/closure/do-block doesn't properly suppress exceptions. Difficulty: Medium-High
 - [ ] roast/S04-exception-handlers/control.t
 - [ ] roast/S04-exception-handlers/top-level.t
-- [ ] roast/S04-exceptions/control_across_runloop.t
+- [x] roast/S04-exceptions/control_across_runloop.t
 - [ ] roast/S04-exceptions/exceptions-alternatives.t
 - [ ] roast/S04-exceptions/fail-6e.t
 - [ ] roast/S04-exceptions/fail.t
@@ -478,14 +476,14 @@
   - 5/16 pass (1, 3, 7, 8, 10). Then crashes with `is-deeply expects right`. Failures: post-if as expression return value (2, 4, 6, 9), `is-deeply` not handling all argument forms (11+). Difficulty: Medium
 - [ ] roast/S04-statement-modifiers/unless.t
   - 3/10 pass (2, 5, 7). Failures: post-unless return value (1, 3-4, 6), placeholder blocks (8), terminator detection (9), `$_` in blocks (10). Difficulty: Medium
-- [ ] roast/S04-statement-modifiers/until.t
+- [x] roast/S04-statement-modifiers/until.t
 - [x] roast/S04-statement-modifiers/values_in_bool_context.t
   - 24/24 pass.
 - [x] roast/S04-statement-modifiers/while.t
   - 6/6 pass.
 - [ ] roast/S04-statement-modifiers/without.t
 - [ ] roast/S04-statement-modifiers/with.t
-- [ ] roast/S04-statement-parsing/hash.t
+- [x] roast/S04-statement-parsing/hash.t
 - [ ] roast/S04-statements/do.t
   - 29/32 pass. Failures: empty Slip in list context when no if-branch executes (tests 11-12), top-level comma expression in EVAL for last return value (test 25)
 - [ ] roast/S04-statements/for-scope.t
@@ -507,7 +505,7 @@
 - [ ] roast/S04-statements/leave.t
 - [ ] roast/S04-statements/loop.t
   - 11/18 pass. Failures: loop with two variables in init (test 12), `loop {} while` syntax error detection (test 14), gather+take+loop interaction (test 15)
-- [ ] roast/S04-statements/map-and-sort-in-for.t
+- [x] roast/S04-statements/map-and-sort-in-for.t
 - [ ] roast/S04-statements/next.t
   - 7/12 pass (1, 5-9, 12). Failures: `next unless <cond>` (2), `<cond> && next` (3), `<cond> and next` (4), post-next statement execution detection (10-11). Difficulty: Low-Medium
 - [ ] roast/S04-statements/no-implicit-block.t
@@ -713,7 +711,7 @@
   - 12/35 pass (23 reached). Good optional parameter support. Failures: optional before required rejection (11-13), too-many-params error (14), two-commas parse error (15), required-after-optional (16), optional array/hash (17-20), test 23 not reached. Difficulty: Medium
 - [ ] roast/S06-signature/outside-subroutine.t
 - [ ] roast/S06-signature/passing-arrays.t
-- [ ] roast/S06-signature/passing-hashes.t
+- [x] roast/S06-signature/passing-hashes.t
 - [ ] roast/S06-signature/positional-placeholders.t
 - [ ] roast/S06-signature/positional.t
   - 4/13 pass (1-3, 6). Failures: `@_` inner-most block (4), recursion/param binding (5), `$/` as param name (7), duplicate param name detection (8-13). Difficulty: Medium
@@ -883,7 +881,7 @@
   - 6/37 pass (2, 4, 8, 24, 26, 36). `.WHAT` works for basic types (Array, Hash). Failures: default type detection for uninitialized variables (1, 3, 5, 9-23), typed variables (14-23), parameterized types (28-37). Difficulty: Medium-High (type object system)
 - [ ] roast/S12-meta/classhow.t
 - [ ] roast/S12-meta/exporthow.t
-- [ ] roast/S12-meta/grammarhow.t
+- [x] roast/S12-meta/grammarhow.t
 - [ ] roast/S12-meta/primitives.t
 - [ ] roast/S12-methods/accessors.t
 - [ ] roast/S12-methods/attribute-params.t
@@ -923,7 +921,7 @@
 - [ ] roast/S12-subset/type-subset.t
 - [ ] roast/S12-traits/basic.t
 - [ ] roast/S12-traits/parameterized.t
-- [ ] roast/S12-traits/precomp.t
+- [x] roast/S12-traits/precomp.t
 - [ ] roast/S13-overloading/fallbacks-deep.t
 - [ ] roast/S13-overloading/metaoperators.t
 - [ ] roast/S13-overloading/multiple-signatures.t
@@ -1077,7 +1075,7 @@
 - [ ] roast/S16-io/prompt.t
 - [ ] roast/S16-io/put.t
 - [ ] roast/S16-io/readchars.t
-- [ ] roast/S16-io/say-and-ref.t
+- [x] roast/S16-io/say-and-ref.t
 - [ ] roast/S16-io/say.t
   - 1/6 pass (test 1 only). Failures: `$*OUT` variable not supported; `say` with filehandle arg; `IO::Path.say` method; multi-arg `say` with separator. Difficulty: Medium
 - [ ] roast/S16-io/split.t
@@ -1188,7 +1186,7 @@
 - [ ] roast/S17-supply/throttle.t
 - [ ] roast/S17-supply/unique.t
 - [ ] roast/S17-supply/wait.t
-- [ ] roast/S17-supply/watch-path.t
+- [x] roast/S17-supply/watch-path.t
 - [ ] roast/S17-supply/words.t
 - [ ] roast/S17-supply/zip-latest.t
 - [ ] roast/S17-supply/zip.t
@@ -1205,7 +1203,7 @@
 - [x] roast/S24-testing/0-compile.t
   - 1/1 pass.
 - [ ] roast/S24-testing/10-is-approx.t
-- [ ] roast/S24-testing/11-plan-skip-all-subtests.t
+- [x] roast/S24-testing/11-plan-skip-all-subtests.t
 - [x] roast/S24-testing/11-plan-skip-all.t
   - 0/0 pass (skipped).
 - [x] roast/S24-testing/12-subtest-todo.t
@@ -1222,7 +1220,7 @@
   - 3/3 pass.
 - [x] roast/S24-testing/7-bail_out.t
   - 4/4 pass.
-- [ ] roast/S24-testing/8-die_on_fail.t
+- [x] roast/S24-testing/8-die_on_fail.t
 - [ ] roast/S24-testing/9-is_deeply.t
 - [ ] roast/S24-testing/fails-like.t
 - [ ] roast/S24-testing/line-numbers.t
@@ -1258,7 +1256,7 @@
 - [ ] roast/S26-documentation/10-doc-cli.t
 - [ ] roast/S26-documentation/12-non-breaking-space.t
 - [ ] roast/S26-documentation/14-defn.t
-- [ ] roast/S26-documentation/15-numbered-alias.t
+- [x] roast/S26-documentation/15-numbered-alias.t
 - [ ] roast/S26-documentation/block-leading.t
 - [ ] roast/S26-documentation/block-leading-user-format.t
 - [ ] roast/S26-documentation/block-trailing.t
@@ -1272,8 +1270,8 @@
 - [ ] roast/S26-documentation/why-trailing.t
 - [ ] roast/S28-named-variables/cwd.t
 - [ ] roast/S28-named-variables/init-instant.t
-- [x] roast/S28-named-variables/slangs.t
-  - 4/4 pass.
+- [ ] roast/S28-named-variables/slangs.t
+  - 0/4 pass. Regression: previously passed but now all 4 tests fail.
 - [ ] roast/S29-any/are.t
 - [x] roast/S29-any/cmp.t
   - 6/6 pass.
@@ -1286,7 +1284,7 @@
 - [ ] roast/S29-context/evalfile.t
 - [ ] roast/S29-context/eval.t
 - [ ] roast/S29-context/exit-in-if.t
-- [ ] roast/S29-context/exit.t
+- [x] roast/S29-context/exit.t
 - [ ] roast/S29-context/sleep.t
   - 18/23 pass (4-9, 11, 13, 15-21). Good sleep/sleep-timer/sleep-until support. Failures: test 1 unknown, sleep returns Nil (2-3, 10, 12, 14). Duration comparison edge cases. Difficulty: Low
 - [ ] roast/S29-conversions/hash.t
@@ -1294,7 +1292,7 @@
   - 206/260 pass (33 not reached). Excellent ord/chr coverage. Failures: surrogate pair ord/chr (199-204), `ord(chr(3))` (205), `.ord`/`.chr`/`.ords`/`.chrs` methods (210-215), surrogate/out-of-range chr (217, 220-221), high character names (223-224), NFC codepoint (225-226), chrs with string list (227). Difficulty: Medium
 - [ ] roast/S29-os/system.t
 - [ ] roast/S32-array/adverbs.t
-- [ ] roast/S32-array/bool.t
+- [x] roast/S32-array/bool.t
 - [ ] roast/S32-array/create.t
 - [ ] roast/S32-array/delete-adverb-native.t
 - [ ] roast/S32-array/delete-adverb.t
@@ -1326,8 +1324,8 @@
 - [ ] roast/S32-basics/xxPOS-native.t
 - [ ] roast/S32-basics/xxPOS.t
 - [ ] roast/S32-container/buf.t
-- [x] roast/S32-container/cat.t
-  - 6/6 pass.
+- [ ] roast/S32-container/cat.t
+  - 1/6 pass. Regression: previously passed but now 5/6 tests fail.
 - [ ] roast/S32-container/roundrobin.t
 - [ ] roast/S32-container/stringify.t
 - [ ] roast/S32-container/zip.t
@@ -1386,10 +1384,10 @@
 - [ ] roast/S32-io/mkdir_rmdir.t
 - [ ] roast/S32-io/move.t
 - [ ] roast/S32-io/native-descriptor.t
-- [ ] roast/S32-io/note.t
-- [ ] roast/S32-io/null-char.t
+- [x] roast/S32-io/note.t
+- [x] roast/S32-io/null-char.t
 - [ ] roast/S32-io/open.t
-- [ ] roast/S32-io/other-stress.t
+- [x] roast/S32-io/other-stress.t
 - [x] roast/S32-io/other.t
   - 1/1 pass.
 - [ ] roast/S32-io/out-buffering.t
@@ -1503,8 +1501,8 @@
   - 61/869 pass (77 reached). Strong Rat arithmetic (+, -, *, /). Failures: `.raku` EVAL round-trip (6-9, 14-16), stringification edge cases (20), `2 / 1/3` precedence (59), many tests not reached. Difficulty: Medium-High (huge test file, many features needed)
 
 - [ ] roast/S32-num/real-bridge.t
-- [x] roast/S32-num/roots.t
-  - 55/55 pass.
+- [ ] roast/S32-num/roots.t
+  - 1/55 pass. Regression: previously passed but now 51/52 tests fail (3 tests not even run).
 - [ ] roast/S32-num/rounders.t
   - 28/143 pass (67 reached). `floor`, `ceiling`, `round` work for basic cases. Failures: NaN/Inf floor/round/ceiling/truncate (1-24), large number overflow (37-38), complex round (47-50), truncate issues (54, 58), Rat ceiling/round/truncate (56-58). Difficulty: Medium (NaN/Inf handling for rounding functions)
 - [ ] roast/S32-num/rshift_pos_amount.t
@@ -1573,8 +1571,8 @@
 - [ ] roast/S32-str/samecase.t
 - [ ] roast/S32-str/samemark.t
 - [ ] roast/S32-str/shiftjis-encode-decode.t
-- [x] roast/S32-str/space-chars.t
-  - 30/30 pass.
+- [ ] roast/S32-str/space-chars.t
+  - 0/30 pass. Regression: previously passed but now 0 tests run.
 - [ ] roast/S32-str/split-simple.t
   - 3/30 pass (plan has subtests). Basic split works for simple delimiters. Failures: captured delimiter in split (3-5), `:v` adverb (6-7), `split('')` (9), type check exceptions (10-12). Difficulty: Medium
 - [ ] roast/S32-str/split.t
@@ -1611,7 +1609,7 @@
 - [ ] roast/S32-str/uniparse.t
 - [ ] roast/S32-str/utf8-c8.t
 - [ ] roast/S32-str/val.t
-- [ ] roast/S32-str/windows-1251-windows-1252-encode-decode.t
+- [x] roast/S32-str/windows-1251-windows-1252-encode-decode.t
 - [ ] roast/S32-str/words.t
   - 9/17 pass. Basic `.words` works. Failures: NO-BREAK SPACE handling (8), grapheme precomposed/non-precomposed (10-11), and other edge cases. Difficulty: Low-Medium
 - [ ] roast/S32-temporal/baum-gregorian-data.t
@@ -1640,3 +1638,13 @@
 - [ ] roast/S32-trig/sin.t
 - [ ] roast/S32-trig/tanh.t
 - [ ] roast/S32-trig/tan.t
+- [x] roast/integration/advent2009-day03.t
+- [x] roast/integration/advent2010-day22.t
+- [x] roast/integration/advent2012-day16.t
+- [x] roast/integration/eval-and-threads.t
+- [x] roast/integration/failure-and-callsame.t
+- [x] roast/integration/method-calls-and-instantiation.t
+- [x] roast/integration/packages.t
+- [x] roast/integration/passing-pair-class-to-sub.t
+- [x] roast/integration/substr-after-match-in-gather-in-for.t
+- [x] roast/integration/topic_in_double_loop.t
