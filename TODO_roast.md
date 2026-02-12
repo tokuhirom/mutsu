@@ -1537,8 +1537,8 @@
 - [ ] roast/S32-str/CollationTest_NON_IGNORABLE-3.t
 - [ ] roast/S32-str/comb.t
   - 8/88 pass (tests 1-6, 20-21). Crashes with "Division by zero" after test 22. Failures: grapheme precomposed/non-precomposed (7-8), comb with regex limit (9-14), regex word matching (15-19), comb list (22). Most failures need `.comb(Regex, limit)` with proper limit handling. Difficulty: Medium
-- [ ] roast/S32-str/contains.t
-  - 0/1 pass. `Cool.contains` with wrong args hangs instead of erroring. Difficulty: Low (error handling for wrong args)
+- [x] roast/S32-str/contains.t
+  - 1/1 pass. Fixed: `.contains` now throws error when given a type object (undefined) argument. Also fixed colon method-call syntax to accept bare identifiers as arguments.
 - [ ] roast/S32-str/encode.t
   - 3/41 pass (2, 4, 7). Basic `.encode` works for ASCII/UTF-8. Failures: return type is not Blob (1), Buf length (3, 5-6), indexing encoded bytes (8-9), cp1252 encoding (10-11). Only 12 tests reached. Difficulty: Medium-High (Buf/Blob types needed)
 - [ ] roast/S32-str/ends-with.t

@@ -3358,7 +3358,7 @@ impl Parser {
                 } else if self.check(&TokenKind::Colon)
                     && !matches!(
                         self.tokens.get(self.pos + 1).map(|t| &t.kind),
-                        Some(TokenKind::Ident(_))
+                        Some(TokenKind::Semicolon | TokenKind::Eof)
                     )
                 {
                     // Colon method call syntax: .method: arg1, arg2

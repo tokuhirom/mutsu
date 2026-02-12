@@ -5755,11 +5755,14 @@ impl Interpreter {
                     }
                     "flip" => Ok(Value::Str(base.to_string_value().chars().rev().collect())),
                     "contains" => {
-                        let needle = args
-                            .first()
-                            .and_then(|a| self.eval_expr(a).ok())
-                            .map(|v| v.to_string_value())
-                            .unwrap_or_default();
+                        let needle_val = args.first().map(|a| self.eval_expr(a)).transpose()?;
+                        if let Some(Value::Package(ref type_name)) = needle_val {
+                            return Err(RuntimeError::new(format!(
+                                "Cannot resolve caller contains({}:U)",
+                                type_name,
+                            )));
+                        }
+                        let needle = needle_val.map(|v| v.to_string_value()).unwrap_or_default();
                         Ok(Value::Bool(base.to_string_value().contains(&needle)))
                     }
                     "starts-with" => {

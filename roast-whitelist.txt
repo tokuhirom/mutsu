@@ -123,6 +123,7 @@ roast/S32-io/signals.t
 roast/S32-num/roots.t
 roast/S32-str/append.t
 roast/S32-str/bool.t
+roast/S32-str/contains.t
 roast/S32-str/lc.t
 roast/S32-str/space-chars.t
 roast/S32-list/toggle.t

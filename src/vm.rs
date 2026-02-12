@@ -2778,6 +2778,12 @@ impl VM {
         match method {
             // String methods
             "contains" => {
+                if let Value::Package(type_name) = arg {
+                    return Some(Err(RuntimeError::new(format!(
+                        "Cannot resolve caller contains({}:U)",
+                        type_name,
+                    ))));
+                }
                 let s = target.to_string_value();
                 let needle = arg.to_string_value();
                 Some(Ok(Value::Bool(s.contains(&needle))))
