@@ -6,3 +6,6 @@ edition = "2024"
 [dependencies]
 regex = "1.12.3"
 unicode_names2 = "2.0.0"
+
+[profile.release]
+debug = true
