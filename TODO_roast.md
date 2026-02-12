@@ -1477,6 +1477,7 @@
 - [ ] roast/S32-str/CollationTest_NON_IGNORABLE-2.t
 - [ ] roast/S32-str/CollationTest_NON_IGNORABLE-3.t
 - [ ] roast/S32-str/comb.t
+  - 8/88 pass (tests 1-6, 20-21). Crashes with "Division by zero" after test 22. Failures: grapheme precomposed/non-precomposed (7-8), comb with regex limit (9-14), regex word matching (15-19), comb list (22). Most failures need `.comb(Regex, limit)` with proper limit handling. Difficulty: Medium
 - [ ] roast/S32-str/contains.t
   - 0/1 pass. `Cool.contains` with wrong args hangs instead of erroring. Difficulty: Low (error handling for wrong args)
 - [ ] roast/S32-str/encode.t
@@ -1492,15 +1493,19 @@
 - [ ] roast/S32-str/index.t
   - 31/41 pass. Strong index support. Failures: pos at/after match (9-10), empty substr with pos beyond string (20-22), Cool.index wrong args (37), Buf.index (38-41). Difficulty: Low-Medium
 - [ ] roast/S32-str/indices.t
+  - 4/35 pass (tests 1-2, 4-5). `.indices` method mostly not working — returns wrong types or values. Failures: method/sub returning empty list for no match (3, 6), overlap parameter not supported (7-18), coercion (19-20), accented chars (21-24), type combinations (25-30), wrong-args detection (31), complex test patterns (32-35). Difficulty: High (`.indices` method needs significant implementation)
 - [x] roast/S32-str/lc.t
   - 19/19 pass.
 - [ ] roast/S32-str/length.t
 - [ ] roast/S32-str/lines.t
+  - 4/27 pass (tests 1-4). LF `.lines` works without trailing and with Inf/*. Failures: `.lines` with numeric limit (5), CR line endings not handled (6-10), CRLF not handled (11-15), mixed line endings not handled (16-20). Remaining tests not reached due to runtime error "Expected IO::Handle". Difficulty: Medium (CR/CRLF line splitting + limit parameter)
 - [ ] roast/S32-str/numeric.t
 - [ ] roast/S32-str/ords.t
+  - 3/9 pass (tests 1, 3, 5: function form `ords()` works). Failures: method form `.ords` returns wrong type or value (2, 4, 6), NFG synthetic handling (7-8). Only 8 tests reached (plan 9). Difficulty: Low-Medium (method `.ords` needs to return same as function form)
 - [ ] roast/S32-str/parse-base.t
 - [ ] roast/S32-str/pos.t
 - [ ] roast/S32-str/rindex.t
+  - 14/40 pass. Good basic support for `rindex`. Failures: pos parameter handling (3-5, 7-10, 12-14, 16-18, 20-21, 23), accented/unicode chars (24-26), rindex on variable (29), non-latin-1 strings (35), negative pos error handling (37), wrong args (38), list-of-needles (39-40). Difficulty: Medium (pos parameter and unicode handling)
 - [ ] roast/S32-str/samecase.t
 - [ ] roast/S32-str/samemark.t
 - [ ] roast/S32-str/shiftjis-encode-decode.t
