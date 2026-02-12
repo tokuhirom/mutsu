@@ -1385,6 +1385,7 @@
 - [ ] roast/S32-list/head.t
 - [ ] roast/S32-list/iterator.t
 - [ ] roast/S32-list/join.t
+  - 18/38 pass. Good basic join. Failures: join with flat args `join("|", 1, 2, 3)` (6, 13, 17-18, 26), itemized `$[]` (7, 19-20, 27), join without parens (15-16), odd list join (29-30), `&join` reference (34-35). Difficulty: Medium
 - [ ] roast/S32-list/map_function_return_values.t
 - [ ] roast/S32-list/map.t
 - [ ] roast/S32-list/minmax.t
@@ -1400,11 +1401,13 @@
 - [ ] roast/S32-list/skip.t
 - [ ] roast/S32-list/snip.t
 - [ ] roast/S32-list/sort.t
+  - ~20/74 pass. Basic sort works for method form on strings/numbers/lists. Crashes with `is-deeply expects right`. Failures: sort with comparator sub (1-5, 7, 12, 14-18), Schwartzian transform (18, 20), stability tests (27-28, 35), many advanced features. Difficulty: Medium-High
 - [ ] roast/S32-list/squish.t
 - [ ] roast/S32-list/tail.t
 - [ ] roast/S32-list/toggle.t
 - [ ] roast/S32-list/unique.t
 - [ ] roast/S32-num/abs.t
+  - 5/49 pass (1-4, 9). Only 9 tests reached; rest crash. Failures: NaN/Inf abs (5-7), string abs (8), tests 10-49 not reached. Difficulty: Medium (NaN/Inf handling, test framework issues)
 - [ ] roast/S32-num/base.t
 - [ ] roast/S32-num/complex-logarithms.t
 - [ ] roast/S32-num/complex.t
@@ -1429,7 +1432,9 @@
 - [ ] roast/S32-num/rounders.t
 - [ ] roast/S32-num/rshift_pos_amount.t
 - [ ] roast/S32-num/sign.t
+  - ~21/35 pass (1-3, 6-14, 22-28, 31-32). Crashes with `is-deeply expects right`. Failures: Rat sign (4-5), `.sign` method form (15-21), Inf/NaN sign (29-30, 33-34). Difficulty: Medium
 - [ ] roast/S32-num/sqrt.t
+  - 8/18 pass (1-3, 5-8, 10, 12, 15). Failures: Rat sqrt (4, 9), Complex sqrt (11, 16-18), Inf sqrt (13), test 14. Difficulty: Medium (needs Complex number support)
 - [ ] roast/S32-num/stress.t
 - [ ] roast/S32-num/stringify.t
 - [ ] roast/S32-num/unpolar.t
