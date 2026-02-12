@@ -1,6 +1,7 @@
 roast/MISC/bug-coverage-stress.t
 roast/S01-perl-5-integration/isms.t
 roast/S02-lexical-conventions/bom.t
+roast/S02-lexical-conventions/finish-pod.t
 roast/S02-lexical-conventions/pod-in-multi-line-exprs.t
 roast/S02-literals/hex_chars.t
 roast/S02-literals/pair-boolean.t
@@ -31,6 +32,7 @@ roast/S03-operators/spaceship-and-containers.t
 roast/S03-smartmatch/any-any.t
 roast/S03-smartmatch/any-str.t
 roast/S04-exceptions/control_across_runloop.t
+roast/S04-phasers/end.t
 roast/S04-statement-modifiers/until.t
 roast/S04-statement-modifiers/values_in_bool_context.t
 roast/S04-statement-modifiers/while.t

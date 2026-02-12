@@ -1131,7 +1131,7 @@ impl Parser {
             });
         }
         if self.match_ident("for") {
-            let iterable = self.parse_expr()?;
+            let iterable = self.parse_comma_expr()?;
             self.match_kind(TokenKind::Semicolon);
             return Ok(Stmt::For {
                 iterable,

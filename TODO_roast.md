@@ -18,8 +18,7 @@
   - Tests 8-10 fail: `'a'..'c'` Range assigned to Array not properly reified on indexing
   - Tests 23-26 fail: `throws-like` does not detect expected compilation errors for invalid embedded comments
   - Tests 29+ fail: multi-character bracket delimiters (`#`<<...>>`, `#`{{...}}`) not supported in embedded comments
-- [ ] roast/S02-lexical-conventions/finish-pod.t
-  - 1/2 pass. Test 2 fails: content after `=finish` marker is not handled (should stop execution like `__END__` in Perl 5)
+- [x] roast/S02-lexical-conventions/finish-pod.t
 - [ ] roast/S02-lexical-conventions/minimal-whitespace.t
   - 4/18 pass (tests 4-7, 12). Failures: space before `[`/`{` in array/hash constructors not rejected; postfix whitespace rules (`i`, `++`) not enforced; `[+]` without whitespace should die; colonpair after dot-digit not rejected
 - [ ] roast/S02-lexical-conventions/one-pass-parsing.t
@@ -453,8 +452,7 @@
   - 7/13 pass (3-4, 7-8, 11-13). BEGIN blocks work for basic cases. Failures: BEGIN as expression (1-2), calling outer subs from BEGIN (5-6), parse error after BEGIN (9), try in BEGIN (10). Difficulty: Medium
 - [ ] roast/S04-phasers/check.t
 - [ ] roast/S04-phasers/descending-order.t
-- [ ] roast/S04-phasers/end.t
-  - 6/8 pass (1-6). END blocks work well! Failures: lexical lookup from END to surrounding BEGIN (7), lexical lookup from END block (8). Difficulty: Low (close to passing!)
+- [x] roast/S04-phasers/end.t
 - [ ] roast/S04-phasers/enter-leave.t
 - [ ] roast/S04-phasers/exit-in-check.t
 - [ ] roast/S04-phasers/first.t

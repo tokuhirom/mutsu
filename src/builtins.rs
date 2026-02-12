@@ -261,6 +261,13 @@ pub(crate) fn native_method_0arg(
             target.to_string_value().trim_end_matches('\n').to_string(),
         ))),
         "chop" => {
+            // Type objects (Package) should throw
+            if let Value::Package(type_name) = target {
+                return Some(Err(RuntimeError::new(format!(
+                    "Cannot resolve caller chop({}:U)",
+                    type_name,
+                ))));
+            }
             let mut s = target.to_string_value();
             s.pop();
             Some(Ok(Value::Str(s)))
@@ -413,6 +420,25 @@ pub(crate) fn native_method_1arg(
     arg: &Value,
 ) -> Option<Result<Value, RuntimeError>> {
     match method {
+        "chop" => {
+            // Type objects (Package) should throw
+            if let Value::Package(type_name) = target {
+                return Some(Err(RuntimeError::new(format!(
+                    "Cannot resolve caller chop({}:U)",
+                    type_name,
+                ))));
+            }
+            let s = target.to_string_value();
+            let n = match arg {
+                Value::Int(i) => (*i).max(0) as usize,
+                Value::Num(f) => (*f as i64).max(0) as usize,
+                _ => arg.to_string_value().parse::<usize>().unwrap_or(1),
+            };
+            let char_count = s.chars().count();
+            let keep = char_count.saturating_sub(n);
+            let result: String = s.chars().take(keep).collect();
+            Some(Ok(Value::Str(result)))
+        }
         "contains" => {
             if let Value::Package(type_name) = arg {
                 return Some(Err(RuntimeError::new(format!(
@@ -643,6 +669,13 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             arg.to_string_value().trim_end_matches('\n').to_string(),
         ))),
         "chop" => {
+            // Type objects (Package) should throw
+            if let Value::Package(type_name) = arg {
+                return Some(Err(RuntimeError::new(format!(
+                    "Cannot resolve caller chop({}:U)",
+                    type_name,
+                ))));
+            }
             let mut s = arg.to_string_value();
             s.pop();
             Some(Ok(Value::Str(s)))
@@ -741,7 +774,10 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 Some(Ok(Value::Int(Interpreter::to_int(arg))))
             }
         }
-        "defined" => Some(Ok(Value::Bool(!matches!(arg, Value::Nil)))),
+        "defined" => Some(Ok(Value::Bool(!matches!(
+            arg,
+            Value::Nil | Value::Package(_)
+        )))),
         "elems" => match arg {
             Value::Array(items) => Some(Ok(Value::Int(items.len() as i64))),
             Value::Hash(items) => Some(Ok(Value::Int(items.len() as i64))),
@@ -822,6 +858,25 @@ fn native_function_2arg(
     arg2: &Value,
 ) -> Option<Result<Value, RuntimeError>> {
     match name {
+        "chop" => {
+            // Type objects (Package) should throw
+            if let Value::Package(type_name) = arg1 {
+                return Some(Err(RuntimeError::new(format!(
+                    "Cannot resolve caller chop({}:U)",
+                    type_name,
+                ))));
+            }
+            let s = arg1.to_string_value();
+            let n = match arg2 {
+                Value::Int(i) => (*i).max(0) as usize,
+                Value::Num(f) => (*f as i64).max(0) as usize,
+                _ => arg2.to_string_value().parse::<usize>().unwrap_or(1),
+            };
+            let char_count = s.chars().count();
+            let keep = char_count.saturating_sub(n);
+            let result: String = s.chars().take(keep).collect();
+            Some(Ok(Value::Str(result)))
+        }
         "join" => {
             let sep = arg1.to_string_value();
             match arg2 {

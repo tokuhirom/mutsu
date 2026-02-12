@@ -176,6 +176,7 @@ pub(crate) struct Lexer {
     src: Vec<char>,
     pos: usize,
     line: usize,
+    finish_content: Option<String>,
 }
 
 impl Lexer {
@@ -184,7 +185,13 @@ impl Lexer {
             src: input.chars().collect(),
             pos: 0,
             line: 1,
+            finish_content: None,
         }
+    }
+
+    /// Returns the content captured after `=finish`, if any.
+    pub(crate) fn finish_content(&self) -> Option<&str> {
+        self.finish_content.as_deref()
     }
 
     // Parse \x hex escape: \xNN or \x[NNNN]
@@ -852,6 +859,11 @@ impl Lexer {
                             let ident = self.read_ident();
                             TokenKind::Var(ident)
                         }
+                    } else if self.peek() == Some('=') {
+                        // $=finish and other pod variables
+                        self.pos += 1; // skip '='
+                        let name = self.read_ident();
+                        TokenKind::Var(format!("={}", name))
                     } else {
                         let ident = self.read_ident();
                         TokenKind::Var(ident)
@@ -1291,6 +1303,21 @@ impl Lexer {
                         self.pos += 1;
                     }
                     continue;
+                }
+                if word == "=finish" {
+                    // Skip to end of the =finish line
+                    while i < self.src.len() && self.src[i] != '\n' {
+                        i += 1;
+                    }
+                    if i < self.src.len() {
+                        i += 1; // skip the newline after =finish
+                    }
+                    // Capture everything after =finish as the finish content
+                    let content: String = self.src[i..].iter().collect();
+                    self.finish_content = Some(content);
+                    // Move position to end so lexer emits EOF
+                    self.pos = self.src.len();
+                    break;
                 }
             }
             if self.peek() == Some('#') {

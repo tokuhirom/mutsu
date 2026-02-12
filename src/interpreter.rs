@@ -459,7 +459,7 @@ pub struct Interpreter {
     subsets: HashMap<String, SubsetDef>,
     proto_subs: HashSet<String>,
     proto_tokens: HashSet<String>,
-    end_phasers: Vec<Vec<Stmt>>,
+    end_phasers: Vec<(Vec<Stmt>, HashMap<String, Value>)>,
     chroot_root: Option<PathBuf>,
 }
 
@@ -635,9 +635,81 @@ impl Interpreter {
                 body: def.body,
                 env: self.env.clone(),
             }
+        } else if Self::is_builtin_function(name) {
+            Value::Routine {
+                package: "GLOBAL".to_string(),
+                name: name.to_string(),
+            }
         } else {
             Value::Nil
         }
+    }
+
+    /// Check if a name refers to a built-in function
+    fn is_builtin_function(name: &str) -> bool {
+        matches!(
+            name,
+            "defined"
+                | "undefine"
+                | "say"
+                | "print"
+                | "put"
+                | "note"
+                | "die"
+                | "warn"
+                | "exit"
+                | "abs"
+                | "sqrt"
+                | "floor"
+                | "ceiling"
+                | "ceil"
+                | "round"
+                | "exp"
+                | "log"
+                | "sin"
+                | "cos"
+                | "tan"
+                | "asin"
+                | "acos"
+                | "atan"
+                | "chr"
+                | "ord"
+                | "chars"
+                | "chomp"
+                | "chop"
+                | "flip"
+                | "lc"
+                | "uc"
+                | "tc"
+                | "trim"
+                | "elems"
+                | "keys"
+                | "values"
+                | "pairs"
+                | "sort"
+                | "reverse"
+                | "join"
+                | "map"
+                | "grep"
+                | "push"
+                | "pop"
+                | "shift"
+                | "unshift"
+                | "splice"
+                | "flat"
+                | "unique"
+                | "squish"
+                | "min"
+                | "max"
+                | "sum"
+                | "any"
+                | "all"
+                | "none"
+                | "one"
+                | "so"
+                | "not"
+                | "truncate"
+        )
     }
 
     pub(crate) fn routine_stack_top(&self) -> Option<&(String, String)> {
@@ -679,7 +751,8 @@ impl Interpreter {
     }
 
     pub(crate) fn push_end_phaser(&mut self, body: Vec<Stmt>) {
-        self.end_phasers.push(body);
+        let captured_env = self.env.clone();
+        self.end_phasers.push((body, captured_env));
     }
 
     fn init_order_enum(&mut self) {
@@ -1628,6 +1701,11 @@ impl Interpreter {
                 break;
             }
         }
+        // Store $=finish content if the source contains =finish
+        if let Some(content) = lexer.finish_content() {
+            self.env
+                .insert("=finish".to_string(), Value::Str(content.to_string()));
+        }
         let file_name = self
             .program_path
             .clone()
@@ -2398,7 +2476,8 @@ impl Interpreter {
                     self.run_block(body)?;
                 }
                 PhaserKind::End => {
-                    self.end_phasers.push(body.clone());
+                    let captured_env = self.env.clone();
+                    self.end_phasers.push((body.clone(), captured_env));
                 }
                 _ => {}
             },
@@ -2616,8 +2695,15 @@ impl Interpreter {
     fn finish(&mut self) -> Result<(), RuntimeError> {
         if !self.end_phasers.is_empty() {
             let phasers = self.end_phasers.clone();
-            for body in phasers.iter().rev() {
+            for (body, captured_env) in phasers.iter().rev() {
+                let saved_env = self.env.clone();
+                // Overlay captured lexical env on top of current env
+                // so both globals and captured lexicals are visible
+                for (k, v) in captured_env {
+                    self.env.insert(k.clone(), v.clone());
+                }
                 self.run_block(body)?;
+                self.env = saved_env;
             }
         }
         if self.bailed_out {
@@ -4251,6 +4337,11 @@ impl Interpreter {
                         params: def.params,
                         body: def.body,
                         env: self.env.clone(),
+                    })
+                } else if Self::is_builtin_function(name) {
+                    Ok(Value::Routine {
+                        package: "GLOBAL".to_string(),
+                        name: name.to_string(),
                     })
                 } else {
                     Ok(Value::Nil)
@@ -5998,6 +6089,30 @@ impl Interpreter {
                     },
                     // chars, uc, lc, tc, tclc, wordcase, chomp, chop, trim,
                     // trim-leading, trim-trailing, flip: handled by builtins::native_method_0arg
+                    "chop" => {
+                        // Type objects (Package) should throw
+                        if let Value::Package(ref type_name) = base {
+                            return Err(RuntimeError::new(format!(
+                                "Cannot resolve caller chop({}:U)",
+                                type_name,
+                            )));
+                        }
+                        let s = base.to_string_value();
+                        let n = if let Some(arg_expr) = args.first() {
+                            let n_val = self.eval_expr(arg_expr)?;
+                            match n_val {
+                                Value::Int(i) => i.max(0) as usize,
+                                Value::Num(f) => (f as i64).max(0) as usize,
+                                _ => n_val.to_string_value().parse::<usize>().unwrap_or(1),
+                            }
+                        } else {
+                            1
+                        };
+                        let char_count = s.chars().count();
+                        let keep = char_count.saturating_sub(n);
+                        let result: String = s.chars().take(keep).collect();
+                        Ok(Value::Str(result))
+                    }
                     "contains" => {
                         let needle_val = args.first().map(|a| self.eval_expr(a)).transpose()?;
                         if let Some(Value::Package(ref type_name)) = needle_val {
@@ -8451,7 +8566,28 @@ impl Interpreter {
                 }
                 if name == "defined" {
                     let val = args.first().and_then(|e| self.eval_expr(e).ok());
-                    return Ok(Value::Bool(!matches!(val, Some(Value::Nil) | None)));
+                    return Ok(Value::Bool(!matches!(
+                        val,
+                        Some(Value::Nil) | Some(Value::Package(_)) | None
+                    )));
+                }
+                if name == "undefine" {
+                    // undefine($var) sets the variable to Nil (undefined)
+                    if let Some(arg) = args.first() {
+                        match arg {
+                            Expr::Var(n) => {
+                                self.env.insert(n.clone(), Value::Nil);
+                            }
+                            Expr::ArrayVar(n) => {
+                                self.env.insert(n.clone(), Value::Array(vec![]));
+                            }
+                            Expr::HashVar(n) => {
+                                self.env.insert(n.clone(), Value::Hash(HashMap::new()));
+                            }
+                            _ => {}
+                        }
+                    }
+                    return Ok(Value::Nil);
                 }
                 if name == "VAR" {
                     // VAR($x) returns a container object with the variable name
@@ -8719,13 +8855,29 @@ impl Interpreter {
                     return Ok(Value::Str(val.trim_end_matches('\n').to_string()));
                 }
                 if name == "chop" {
-                    let mut val = args
-                        .first()
-                        .and_then(|e| self.eval_expr(e).ok())
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default();
-                    val.pop();
-                    return Ok(Value::Str(val));
+                    let first_val = args.first().map(|e| self.eval_expr(e)).transpose()?;
+                    // Type objects (Package) should throw
+                    if let Some(Value::Package(ref type_name)) = first_val {
+                        return Err(RuntimeError::new(format!(
+                            "Cannot resolve caller chop({}:U)",
+                            type_name,
+                        )));
+                    }
+                    let val = first_val.map(|v| v.to_string_value()).unwrap_or_default();
+                    let n = if args.len() > 1 {
+                        let n_val = self.eval_expr(&args[1])?;
+                        match n_val {
+                            Value::Int(i) => i.max(0) as usize,
+                            Value::Num(f) => (f as i64).max(0) as usize,
+                            _ => n_val.to_string_value().parse::<usize>().unwrap_or(1),
+                        }
+                    } else {
+                        1
+                    };
+                    let char_count = val.chars().count();
+                    let keep = char_count.saturating_sub(n);
+                    let result: String = val.chars().take(keep).collect();
+                    return Ok(Value::Str(result));
                 }
                 if name == "trim" {
                     let val = args
