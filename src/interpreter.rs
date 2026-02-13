@@ -7704,6 +7704,15 @@ impl Interpreter {
                 Ok(Value::Hash(map))
             }
             Expr::Call { name, args } => {
+                // die/fail in expression context should throw immediately
+                if name == "die" || name == "fail" {
+                    let msg = if let Some(arg) = args.first() {
+                        self.eval_expr(arg)?.to_string_value()
+                    } else {
+                        "Died".to_string()
+                    };
+                    return Err(RuntimeError::new(&msg));
+                }
                 // Handle test functions in expression context (e.g., `diag "x" if ! ok ...`)
                 if name == "ok" {
                     let desc = args

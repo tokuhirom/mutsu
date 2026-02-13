@@ -521,8 +521,8 @@
   - 9/20 pass (1-7, 10, 15). Good semicolon and statement terminator support. Failures: open closure detection (8), incomplete expression error (9), newline-separated statements (11), auto-curly in array (12), `is()` after postfix modifier (13), space-after-parens (14). Only 15 tests reached. Difficulty: Medium
 - [ ] roast/S04-statements/try.t
   - 10/40 pass (1-3, 5, 7, 11, 13-15, 17). Only 21 reached; crashes with custom exception class. Basic try/CATCH works. Failures: array/hash assignment from try (4, 6, 8-10, 12), return in try (16), CATCH edge cases (18-21). Difficulty: Medium
-- [ ] roast/S04-statements/unless.t
-  - 7/10 pass (1-7). Crashes at test 8 (`die` in unless block). Tests 8-10 not fully reached. Difficulty: Low (die/exception handling in unless)
+- [x] roast/S04-statements/unless.t
+  - 10/10 pass. All tests pass.
 - [x] roast/S04-statements/until.t
   - 4/4 pass.
 - [ ] roast/S04-statements/when.t

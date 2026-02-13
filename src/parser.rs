@@ -19,7 +19,11 @@ impl Parser {
             let start = self.pos;
             match self.parse_stmt() {
                 Ok(stmt) => stmts.push(stmt),
-                Err(e) if e.message.contains("X::Obsolete") || e.message.contains("X::Comp") => {
+                Err(e)
+                    if e.message.contains("X::Obsolete")
+                        || e.message.contains("X::Comp")
+                        || e.message.contains("X::Syntax") =>
+                {
                     return Err(e);
                 }
                 Err(_) => {
@@ -349,6 +353,15 @@ impl Parser {
         if self.match_ident("unless") {
             let cond = self.parse_expr()?;
             let body = self.parse_block()?;
+            // unless does not allow else, elsif, or orwith
+            if let Some(kw) = self.peek_ident()
+                && matches!(kw.as_str(), "else" | "elsif" | "orwith")
+            {
+                return Err(RuntimeError::new(format!(
+                    "X::Syntax::UnlessElse: \"unless\" does not take \"{}\", please rewrite using \"if\"",
+                    kw
+                )));
+            }
             // unless is if with negated condition
             return Ok(Stmt::If {
                 cond: Expr::Unary {
@@ -3306,6 +3319,21 @@ impl Parser {
                         })
                         .collect();
                     Expr::Call { name, args }
+                } else if name == "die" || name == "fail" {
+                    // die/fail in expression context: parse the argument and emit as a Call
+                    if self.check(&TokenKind::Semicolon)
+                        || self.check(&TokenKind::Eof)
+                        || self.check(&TokenKind::RBrace)
+                        || self.check(&TokenKind::RParen)
+                    {
+                        Expr::Call { name, args: vec![] }
+                    } else {
+                        let arg = self.parse_expr()?;
+                        Expr::Call {
+                            name,
+                            args: vec![arg],
+                        }
+                    }
                 } else {
                     Expr::BareWord(name)
                 }
