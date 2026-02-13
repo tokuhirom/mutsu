@@ -675,7 +675,45 @@ impl Parser {
             return Ok(Stmt::DoesDecl { name });
         }
         if self.match_ident("die") || self.match_ident("fail") {
+            // Handle postfix `die if COND` / `die unless COND` (bare die)
+            if self.match_ident("if") {
+                let cond = self.parse_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::If {
+                    cond,
+                    then_branch: vec![Stmt::Die(Expr::Literal(Value::Str("Died".to_string())))],
+                    else_branch: Vec::new(),
+                });
+            }
+            if self.match_ident("unless") {
+                let cond = self.parse_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::If {
+                    cond,
+                    then_branch: Vec::new(),
+                    else_branch: vec![Stmt::Die(Expr::Literal(Value::Str("Died".to_string())))],
+                });
+            }
             let expr = self.parse_expr()?;
+            // Check for postfix if/unless after the die expression
+            if self.match_ident("if") {
+                let cond = self.parse_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::If {
+                    cond,
+                    then_branch: vec![Stmt::Die(expr)],
+                    else_branch: Vec::new(),
+                });
+            }
+            if self.match_ident("unless") {
+                let cond = self.parse_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::If {
+                    cond,
+                    then_branch: Vec::new(),
+                    else_branch: vec![Stmt::Die(expr)],
+                });
+            }
             self.match_kind(TokenKind::Semicolon);
             return Ok(Stmt::Die(expr));
         }
@@ -2022,6 +2060,10 @@ impl Parser {
 
     fn parse_comparison(&mut self) -> Result<Expr, RuntimeError> {
         let mut expr = self.parse_meta_op()?;
+        // Track the previous right operand and operator for chained comparisons.
+        // e.g., `a eqv b eqv c` should become `(a eqv b) && (b eqv c)`.
+        let mut prev_right: Option<Expr> = None;
+        let mut prev_op: Option<TokenKind> = None;
         loop {
             let op = if self.match_kind(TokenKind::Lt) {
                 Some(TokenKind::Lt)
@@ -2084,16 +2126,57 @@ impl Parser {
             };
             if let Some(op) = op {
                 let right = self.parse_meta_op()?;
-                expr = Expr::Binary {
-                    left: Box::new(expr),
-                    op,
-                    right: Box::new(right),
-                };
+                // Check if this is a chainable comparison operator
+                let is_chainable = Self::is_chainable_comparison(&op);
+                if is_chainable && prev_op.is_some() {
+                    // Chained comparison: `prev_right op right`
+                    let new_cmp = Expr::Binary {
+                        left: Box::new(prev_right.unwrap()),
+                        op: op.clone(),
+                        right: Box::new(right.clone()),
+                    };
+                    expr = Expr::Binary {
+                        left: Box::new(expr),
+                        op: TokenKind::AndAnd,
+                        right: Box::new(new_cmp),
+                    };
+                } else {
+                    expr = Expr::Binary {
+                        left: Box::new(expr),
+                        op: op.clone(),
+                        right: Box::new(right.clone()),
+                    };
+                }
+                if is_chainable {
+                    prev_right = Some(right);
+                    prev_op = Some(op);
+                } else {
+                    prev_right = None;
+                    prev_op = None;
+                }
             } else {
                 break;
             }
         }
         Ok(expr)
+    }
+
+    /// Check if a comparison operator is chainable (e.g., `a eqv b eqv c`).
+    fn is_chainable_comparison(op: &TokenKind) -> bool {
+        match op {
+            TokenKind::EqEq
+            | TokenKind::BangEq
+            | TokenKind::Lt
+            | TokenKind::Lte
+            | TokenKind::Gt
+            | TokenKind::Gte
+            | TokenKind::EqEqEq => true,
+            TokenKind::Ident(name) => matches!(
+                name.as_str(),
+                "eqv" | "eq" | "ne" | "lt" | "le" | "gt" | "ge"
+            ),
+            _ => false,
+        }
     }
 
     /// Detect R (reverse) meta-operator only. Z/X are handled at list infix level.
@@ -3336,6 +3419,12 @@ impl Parser {
                     };
                     let label = self.try_consume_loop_label();
                     Expr::ControlFlow { kind, label }
+                } else if name == "start" && self.check(&TokenKind::LBrace) {
+                    let body = self.parse_block()?;
+                    Expr::Call {
+                        name: "start".to_string(),
+                        args: vec![Expr::AnonSub(body)],
+                    }
                 } else if name == "do" {
                     if self.check(&TokenKind::LBrace) {
                         let body = self.parse_block()?;

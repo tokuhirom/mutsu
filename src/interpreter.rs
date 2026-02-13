@@ -24,7 +24,7 @@ use crate::ast::{
 };
 use crate::lexer::{Lexer, TokenKind};
 use crate::parser::Parser;
-use crate::value::{JunctionKind, LazyList, RuntimeError, Value, make_rat};
+use crate::value::{JunctionKind, LazyList, RuntimeError, Value, make_rat, next_instance_id};
 use num_traits::{Signed, Zero};
 
 /// Check if a character matches a Unicode property by name.
@@ -635,6 +635,7 @@ impl Interpreter {
                 params: def.params,
                 body: def.body,
                 env: self.env.clone(),
+                id: next_instance_id(),
             }
         } else if Self::is_builtin_function(name) {
             Value::Routine {
@@ -2199,6 +2200,7 @@ impl Interpreter {
                         params: param.iter().cloned().collect(),
                         body: body.clone(),
                         env: self.env.clone(),
+                        id: next_instance_id(),
                     };
                     let mut attrs = attributes.clone();
                     if let Some(Value::Array(items)) = attrs.get_mut("taps") {
@@ -3577,6 +3579,20 @@ impl Interpreter {
         Value::make_instance("Supply".to_string(), attrs)
     }
 
+    /// Peek at the target expression and return the package name if it's a known type.
+    fn peek_target_package(&self, target: &Expr) -> Option<String> {
+        match target {
+            Expr::Var(name) | Expr::BareWord(name) => {
+                if self.env.contains_key(name) {
+                    None
+                } else {
+                    Some(name.clone())
+                }
+            }
+            _ => None,
+        }
+    }
+
     fn call_sub_value(
         &mut self,
         func: Value,
@@ -3589,6 +3605,7 @@ impl Interpreter {
             params,
             body,
             env,
+            ..
         } = func
         {
             let saved_env = self.env.clone();
@@ -3623,6 +3640,7 @@ impl Interpreter {
                 params: vec![],
                 body: body.clone(),
                 env: new_env.clone(),
+                id: next_instance_id(),
             };
             self.env = new_env;
             self.routine_stack.push((package.clone(), name.clone()));
@@ -4389,6 +4407,7 @@ impl Interpreter {
                         params: def.params,
                         body: def.body,
                         env: self.env.clone(),
+                        id: next_instance_id(),
                     })
                 } else if Self::is_builtin_function(name) {
                     Ok(Value::Routine {
@@ -4425,6 +4444,7 @@ impl Interpreter {
                         params: vec![],
                         body: body.clone(),
                         env: self.env.clone(),
+                        id: next_instance_id(),
                     })
                 } else {
                     self.eval_block_value(body)
@@ -4487,6 +4507,7 @@ impl Interpreter {
                 params: vec![],
                 body: body.clone(),
                 env: self.env.clone(),
+                id: next_instance_id(),
             }),
             Expr::AnonSubParams { params, body } => Ok(Value::Sub {
                 package: self.current_package.clone(),
@@ -4494,6 +4515,7 @@ impl Interpreter {
                 params: params.clone(),
                 body: body.clone(),
                 env: self.env.clone(),
+                id: next_instance_id(),
             }),
             Expr::Lambda { param, body } => Ok(Value::Sub {
                 package: self.current_package.clone(),
@@ -4505,6 +4527,7 @@ impl Interpreter {
                 },
                 body: body.clone(),
                 env: self.env.clone(),
+                id: next_instance_id(),
             }),
             Expr::ArrayLiteral(items) => {
                 let mut values = Vec::new();
@@ -4749,6 +4772,16 @@ impl Interpreter {
                     self.output.push_str(&value.to_string_value());
                     self.output.push('\n');
                     return Ok(Value::Nil);
+                }
+                // Handle Promise class methods: Promise.in, Promise.anyof, Promise.allof
+                if (name == "in" || name == "anyof" || name == "allof")
+                    && matches!(self.peek_target_package(target), Some(ref p) if p == "Promise")
+                {
+                    // Evaluate args (but ignore them for our synchronous stub)
+                    for arg in args {
+                        let _ = self.eval_expr(arg);
+                    }
+                    return Ok(self.make_promise_instance("Kept", Value::Nil));
                 }
                 // Handle .new() constructor on class type
                 if name == "new" {
@@ -6910,6 +6943,8 @@ impl Interpreter {
                     },
                     // flat: builtins handles Array; fallback here
                     "flat" => Ok(base),
+                    // hyper/race: pass through (simplified; no parallelism)
+                    "hyper" | "race" => Ok(base),
                     "skip" => {
                         let n = if let Some(arg) = args.first() {
                             match self.eval_expr(arg)? {
@@ -7580,6 +7615,7 @@ impl Interpreter {
                     params,
                     body,
                     env,
+                    ..
                 } = target_val
                 {
                     let saved_env = self.env.clone();
@@ -7619,6 +7655,7 @@ impl Interpreter {
                         params: params.clone(),
                         body: body.clone(),
                         env: new_env.clone(),
+                        id: next_instance_id(),
                     };
                     self.env = new_env;
                     self.routine_stack.push((package.clone(), name.clone()));
@@ -8438,6 +8475,42 @@ impl Interpreter {
                         kind,
                         values: elems,
                     });
+                }
+                // start: synchronously evaluate the block, return a Promise
+                if name == "start" {
+                    if let Some(block_expr) = args.first() {
+                        let block_val = self.eval_expr(block_expr)?;
+                        match self.call_sub_value(block_val, vec![], false) {
+                            Ok(result) => {
+                                return Ok(self.make_promise_instance("Kept", result));
+                            }
+                            Err(e) => {
+                                return Ok(self.make_promise_instance(
+                                    "Broken",
+                                    Value::Str(e.message.clone()),
+                                ));
+                            }
+                        }
+                    }
+                    return Ok(self.make_promise_instance("Kept", Value::Nil));
+                }
+                // await: extract result from a Promise (synchronous)
+                if name == "await" {
+                    let val = if let Some(arg) = args.first() {
+                        self.eval_expr(arg)?
+                    } else {
+                        Value::Nil
+                    };
+                    if let Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = &val
+                        && class_name == "Promise"
+                    {
+                        return Ok(attributes.get("result").cloned().unwrap_or(Value::Nil));
+                    }
+                    return Ok(val);
                 }
                 if name == "item" {
                     let val = args.first().and_then(|e| self.eval_expr(e).ok());
@@ -10180,7 +10253,7 @@ impl Interpreter {
                 };
                 Ok(Self::make_order(ord))
             }
-            TokenKind::Ident(name) if name == "eqv" => Ok(Value::Bool(left == right)),
+            TokenKind::Ident(name) if name == "eqv" => Ok(Value::Bool(left.eqv(&right))),
             TokenKind::Ident(name) if name == "x" => {
                 let s = left.to_string_value();
                 let n = match right {
@@ -13141,10 +13214,17 @@ impl Interpreter {
             | TokenKind::Lte
             | TokenKind::Gt
             | TokenKind::Gte
+            | TokenKind::EqEqEq
             | TokenKind::SmartMatch
             | TokenKind::BangTilde => true,
             TokenKind::Ident(s)
-                if s == "eq" || s == "ne" || s == "lt" || s == "le" || s == "gt" || s == "ge" =>
+                if s == "eq"
+                    || s == "ne"
+                    || s == "lt"
+                    || s == "le"
+                    || s == "gt"
+                    || s == "ge"
+                    || s == "eqv" =>
             {
                 true
             }

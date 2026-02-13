@@ -171,6 +171,7 @@ pub enum Value {
         params: Vec<String>,
         body: Vec<Stmt>,
         env: HashMap<String, Value>,
+        id: u64,
     },
     Instance {
         class_name: String,
@@ -303,6 +304,7 @@ impl PartialEq for Value {
                     values: bv,
                 },
             ) => ak == bk && av == bv,
+            (Value::Sub { id: a, .. }, Value::Sub { id: b, .. }) => a == b,
             (Value::LazyList(a), Value::LazyList(b)) => Rc::ptr_eq(a, b),
             (
                 Value::Version {
@@ -331,6 +333,56 @@ impl PartialEq for Value {
 }
 
 impl Value {
+    /// Type-strict value equivalence (Raku `eqv` operator).
+    /// Unlike PartialEq (used for `==`), this does NOT allow cross-type comparisons.
+    /// Two values are eqv only if they are the same type AND have the same value.
+    pub(crate) fn eqv(&self, other: &Self) -> bool {
+        match (self, other) {
+            // Arrays: recursively use eqv for elements
+            (Value::Array(a), Value::Array(b)) => {
+                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
+            }
+            // Hashes: recursively use eqv for values
+            (Value::Hash(a), Value::Hash(b)) => {
+                a.len() == b.len() && a.iter().all(|(k, v)| b.get(k).is_some_and(|bv| v.eqv(bv)))
+            }
+            // Pairs: recursively use eqv for values
+            (Value::Pair(ak, av), Value::Pair(bk, bv)) => ak == bk && av.eqv(bv),
+            // Slips: recursively use eqv for elements
+            (Value::Slip(a), Value::Slip(b)) => {
+                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
+            }
+            // Same-type scalar comparisons delegate to PartialEq
+            (Value::Int(_), Value::Int(_))
+            | (Value::Num(_), Value::Num(_))
+            | (Value::Str(_), Value::Str(_))
+            | (Value::Bool(_), Value::Bool(_))
+            | (Value::Rat(_, _), Value::Rat(_, _))
+            | (Value::FatRat(_, _), Value::FatRat(_, _))
+            | (Value::Complex(_, _), Value::Complex(_, _))
+            | (Value::Set(_), Value::Set(_))
+            | (Value::Bag(_), Value::Bag(_))
+            | (Value::Mix(_), Value::Mix(_))
+            | (Value::Enum { .. }, Value::Enum { .. })
+            | (Value::Regex(_), Value::Regex(_))
+            | (Value::Routine { .. }, Value::Routine { .. })
+            | (Value::Sub { .. }, Value::Sub { .. })
+            | (Value::Instance { .. }, Value::Instance { .. })
+            | (Value::Range(_, _), Value::Range(_, _))
+            | (Value::RangeExcl(_, _), Value::RangeExcl(_, _))
+            | (Value::RangeExclStart(_, _), Value::RangeExclStart(_, _))
+            | (Value::RangeExclBoth(_, _), Value::RangeExclBoth(_, _))
+            | (Value::LazyList(_), Value::LazyList(_))
+            | (Value::Version { .. }, Value::Version { .. })
+            | (Value::Nil, Value::Nil)
+            | (Value::Package(_), Value::Package(_))
+            | (Value::CompUnitDepSpec { .. }, Value::CompUnitDepSpec { .. })
+            | (Value::Junction { .. }, Value::Junction { .. }) => self == other,
+            // Cross-type comparisons always return false for eqv
+            _ => false,
+        }
+    }
+
     pub(crate) fn make_instance(class_name: String, attributes: HashMap<String, Value>) -> Self {
         Value::Instance {
             class_name,

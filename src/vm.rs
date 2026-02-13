@@ -505,7 +505,10 @@ impl VM {
             OpCode::Eqv => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                self.stack.push(Value::Bool(left == right));
+                let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+                    Ok(Value::Bool(l.eqv(&r)))
+                })?;
+                self.stack.push(result);
                 *ip += 1;
             }
 
