@@ -49,6 +49,20 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - When `make roast` shows failures in whitelisted tests, do NOT dismiss them as "pre-existing". Investigate each failure, fix what can be fixed, and remove from the whitelist only tests that truly cannot pass yet (with documented reasons in TODO_roast.md).
 - When a roast test requires solving multiple unrelated prerequisite problems that go beyond the test's main topic, fix what you can, update `TODO_roast.md` with the diagnosis, and move on to the next test. Do not get stuck on a single test.
 
+## Parallel agents with git worktrees
+- When running multiple sub-agents in parallel that modify source code, each agent MUST work in its own git worktree to avoid file conflicts.
+- The parent agent creates worktrees before launching sub-agents:
+  ```
+  git worktree add /tmp/mutsu-worktree-<name> -b worktree/<name> HEAD
+  ```
+- Each sub-agent works, builds, and tests entirely within its own worktree directory. It does NOT commit or push.
+- When all sub-agents finish, the parent agent reviews the diffs from each worktree, applies the changes to the main working directory, resolves any conflicts, runs the full test suite, and creates a single commit (or one commit per logical change).
+- After integration, clean up worktrees:
+  ```
+  git worktree remove /tmp/mutsu-worktree-<name>
+  git branch -d worktree/<name>
+  ```
+
 ## Conventions
 - Add small, focused tests for each new syntax feature.
 - Keep the parser and evaluator readable; comment only non-obvious logic.
