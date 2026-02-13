@@ -497,8 +497,7 @@
 - [ ] roast/S04-statements/if.t
   - ~16/44 pass. Failures: function call without parens in if cond (test 17), `if` without block should error (test 19), `-> $a` binding in if/elsif/else (tests 20-23), condition evaluation order (tests 24-27), if/elsif/else return value as expression (tests 28-34)
 - [ ] roast/S04-statements/label.t
-- [ ] roast/S04-statements/last.t
-  - 6/9 pass (1-3, 7-9). Failures: `<cond> && last` short-circuit (4), `<cond> and last` (5), test 6 unknown failure. Difficulty: Low (short-circuit operators with control flow)
+- [x] roast/S04-statements/last.t
 - [ ] roast/S04-statements/lazy.t
 - [ ] roast/S04-statements/leave.t
 - [ ] roast/S04-statements/loop.t
@@ -564,8 +563,8 @@
 - [ ] roast/S05-mass/recursive.t
 - [ ] roast/S05-mass/rx.t
 - [ ] roast/S05-mass/stdrules.t
-- [x] roast/S05-match/arrayhash.t
-  - 9/9 pass.
+- [ ] roast/S05-match/arrayhash.t
+  - 5/9 pass. Previously passed with wrong parsing (/ treated as division). Now regex is correctly parsed but anchored regex (^ $) doesn't match correctly against array elements in smartmatch.
 - [ ] roast/S05-match/basics.t
 - [ ] roast/S05-match/blocks.t
 - [ ] roast/S05-match/capturing-contexts.t

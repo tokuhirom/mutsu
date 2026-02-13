@@ -179,6 +179,11 @@ pub(crate) struct Lexer {
     pos: usize,
     line: usize,
     finish_content: Option<String>,
+    /// True when the last emitted token was a "term" (value/closing delimiter),
+    /// meaning the next `/` should be treated as a division operator.
+    /// False when the last token was an operator or opening delimiter,
+    /// meaning the next `/` should be treated as a regex delimiter.
+    last_was_term: bool,
 }
 
 impl Lexer {
@@ -188,6 +193,7 @@ impl Lexer {
             pos: 0,
             line: 1,
             finish_content: None,
+            last_was_term: false,
         }
     }
 
@@ -379,6 +385,7 @@ impl Lexer {
                                 } else {
                                     self.read_interpolated_string(next, None)
                                 };
+                                self.last_was_term = true;
                                 return Token {
                                     kind: result,
                                     line: token_line,
@@ -410,6 +417,7 @@ impl Lexer {
                                 while self.peek() == Some(' ') {
                                     self.pos += 1;
                                 }
+                                self.last_was_term = true;
                                 return Token {
                                     kind: self.read_heredoc(is_qq, false),
                                     line: token_line,
@@ -512,6 +520,7 @@ impl Lexer {
                                 }
                             }
                             let value = i64::from_str_radix(&hex, 16).unwrap_or(0);
+                            self.last_was_term = true;
                             return Token {
                                 kind: TokenKind::Number(value),
                                 line: token_line,
@@ -531,6 +540,7 @@ impl Lexer {
                                 }
                             }
                             let value = i64::from_str_radix(&oct, 8).unwrap_or(0);
+                            self.last_was_term = true;
                             return Token {
                                 kind: TokenKind::Number(value),
                                 line: token_line,
@@ -550,6 +560,7 @@ impl Lexer {
                                 }
                             }
                             let value = i64::from_str_radix(&bin, 2).unwrap_or(0);
+                            self.last_was_term = true;
                             return Token {
                                 kind: TokenKind::Number(value),
                                 line: token_line,
@@ -934,6 +945,10 @@ impl Lexer {
                 '/' => {
                     if self.match_char('/') {
                         TokenKind::SlashSlash
+                    } else if !self.last_was_term {
+                        // In term position (after operator/delimiter), `/` starts a regex
+                        let regex = self.read_regex_literal();
+                        TokenKind::Regex(regex)
                     } else if let Some(regex) = self.try_read_regex_literal() {
                         TokenKind::Regex(regex)
                     } else {
@@ -1135,6 +1150,7 @@ impl Lexer {
                                 while self.peek() == Some(' ') {
                                     self.pos += 1;
                                 }
+                                self.last_was_term = true;
                                 return Token {
                                     kind: self.read_heredoc(false, true),
                                     line: token_line,
@@ -1158,6 +1174,29 @@ impl Lexer {
                     }
                 }
             };
+            self.last_was_term = matches!(
+                kind,
+                TokenKind::Number(_)
+                    | TokenKind::BigNumber(_)
+                    | TokenKind::Float(_)
+                    | TokenKind::Imaginary(_)
+                    | TokenKind::Str(_)
+                    | TokenKind::DStr(_)
+                    | TokenKind::Regex(_)
+                    | TokenKind::Ident(_)
+                    | TokenKind::Var(_)
+                    | TokenKind::ArrayVar(_)
+                    | TokenKind::HashVar(_)
+                    | TokenKind::CaptureVar(_)
+                    | TokenKind::CodeVar(_)
+                    | TokenKind::True
+                    | TokenKind::False
+                    | TokenKind::Nil
+                    | TokenKind::RParen
+                    | TokenKind::RBracket
+                    | TokenKind::RBrace
+                    | TokenKind::HyperRight
+            );
             return Token {
                 kind,
                 line: token_line,
@@ -1549,6 +1588,7 @@ impl Lexer {
         let mut s = String::new();
         let mut escaped = false;
         let mut in_bracket = 0usize;
+        let mut in_brace = 0usize;
         let mut in_quote: Option<char> = None;
         while let Some(c) = self.peek() {
             self.pos += 1;
@@ -1563,9 +1603,13 @@ impl Lexer {
                     in_bracket += 1;
                 } else if c == ']' && in_bracket > 0 {
                     in_bracket -= 1;
+                } else if c == '{' {
+                    in_brace += 1;
+                } else if c == '}' && in_brace > 0 {
+                    in_brace -= 1;
                 }
             }
-            if !escaped && in_bracket == 0 && in_quote.is_none() && c == '/' {
+            if !escaped && in_bracket == 0 && in_brace == 0 && in_quote.is_none() && c == '/' {
                 break;
             }
             if !escaped && c == '\\' {

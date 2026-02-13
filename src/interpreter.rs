@@ -10979,7 +10979,7 @@ impl Interpreter {
                 anchor_start = true;
                 continue;
             }
-            if c == '$' && chars.peek().is_none() {
+            if c == '$' && chars.clone().all(|ch| ch.is_whitespace()) {
                 anchor_end = true;
                 break;
             }
