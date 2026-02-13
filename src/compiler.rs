@@ -589,8 +589,25 @@ impl Compiler {
             }
             // Expression-level function call
             Expr::Call { name, args } => {
+                // Rewrite undefine($var) → $var = Nil (assign Nil to the variable)
+                if name == "undefine" && args.len() == 1 {
+                    let var_name = match &args[0] {
+                        Expr::Var(n) => Some(n.clone()),
+                        Expr::ArrayVar(n) => Some(format!("@{}", n)),
+                        Expr::HashVar(n) => Some(format!("%{}", n)),
+                        _ => None,
+                    };
+                    if let Some(vname) = var_name {
+                        // Push Nil and assign to the variable
+                        self.code.emit(OpCode::LoadNil);
+                        let name_idx = self.code.add_constant(Value::Str(vname));
+                        self.code.emit(OpCode::AssignExpr(name_idx));
+                    } else {
+                        self.code.emit(OpCode::LoadNil);
+                    }
+                }
                 // Rewrite shift(@arr)/pop(@arr) → @arr.shift()/@arr.pop() for mutability
-                if matches!(name.as_str(), "shift" | "pop")
+                else if matches!(name.as_str(), "shift" | "pop")
                     && args.len() == 1
                     && matches!(args[0], Expr::ArrayVar(_) | Expr::Var(_))
                 {

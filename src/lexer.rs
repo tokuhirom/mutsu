@@ -628,7 +628,7 @@ impl Lexer {
                                 TokenKind::Float(value)
                             }
                         } else {
-                            let value = num.parse::<i64>().unwrap_or(0);
+                            let value = num.parse::<i64>().unwrap_or(i64::MAX);
                             if self.peek() == Some('i') {
                                 self.pos += 1;
                                 TokenKind::Imaginary(value as f64)

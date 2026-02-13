@@ -24,7 +24,6 @@ roast/S03-operators/assign-is-not-binding.t
 roast/S03-operators/basic-types.t
 roast/S03-operators/boolean-bitwise.t
 roast/S03-operators/comparison-simple.t
-roast/S03-operators/lcm.t
 roast/S03-operators/list-quote-junction.t
 roast/S03-operators/not.t
 roast/S03-operators/so.t
@@ -144,11 +143,13 @@ roast/S32-io/other-stress.t
 roast/S32-io/signals.t
 roast/S32-str/append.t
 roast/S32-str/bool.t
+roast/S32-str/chop.t
 roast/S32-str/contains.t
 roast/S32-str/lc.t
 roast/S32-str/trim.t
 roast/S32-str/windows-1251-windows-1252-encode-decode.t
 roast/S32-list/toggle.t
+roast/S32-scalar/defined.t
 roast/S32-trig/simple.t
 roast/integration/advent2009-day03.t
 roast/integration/advent2010-day22.t

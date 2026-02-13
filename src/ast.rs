@@ -140,6 +140,17 @@ pub(crate) enum Expr {
         label: Option<String>,
     },
     DoStmt(Box<Stmt>),
+    ControlFlow {
+        kind: ControlFlowKind,
+        label: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum ControlFlowKind {
+    Last,
+    Next,
+    Redo,
 }
 
 #[derive(Debug, Clone)]

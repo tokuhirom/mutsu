@@ -415,7 +415,7 @@ impl VM {
                             Interpreter::to_rat_parts(&left),
                             Interpreter::to_rat_parts(&right),
                         ) {
-                            (an * bd).cmp(&(bn * ad))
+                            (an.wrapping_mul(bd)).cmp(&(bn.wrapping_mul(ad)))
                         } else {
                             left.to_string_value().cmp(&right.to_string_value())
                         }
@@ -450,7 +450,7 @@ impl VM {
                             Interpreter::to_rat_parts(&left),
                             Interpreter::to_rat_parts(&right),
                         ) {
-                            (an * bd).cmp(&(bn * ad))
+                            (an.wrapping_mul(bd)).cmp(&(bn.wrapping_mul(ad)))
                         } else {
                             left.to_string_value().cmp(&right.to_string_value())
                         }
@@ -569,7 +569,7 @@ impl VM {
                         gb = ga % gb;
                         ga = t;
                     }
-                    Value::Int(a / ga * b)
+                    Value::Int((a / ga).wrapping_mul(b))
                 };
                 self.stack.push(result);
                 *ip += 1;

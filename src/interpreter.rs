@@ -4427,6 +4427,16 @@ impl Interpreter {
                     Ok(Value::Nil)
                 }
             },
+            Expr::ControlFlow { kind, label } => {
+                use crate::ast::ControlFlowKind;
+                let mut sig = match kind {
+                    ControlFlowKind::Last => RuntimeError::last_signal(),
+                    ControlFlowKind::Next => RuntimeError::next_signal(),
+                    ControlFlowKind::Redo => RuntimeError::redo_signal(),
+                };
+                sig.label = label.clone();
+                Err(sig)
+            }
             Expr::AnonSub(body) => Ok(Value::Sub {
                 package: self.current_package.clone(),
                 name: String::new(),
@@ -9999,7 +10009,7 @@ impl Interpreter {
                         gb = ga % gb;
                         ga = t;
                     }
-                    Ok(Value::Int(a / ga * b))
+                    Ok(Value::Int((a / ga).wrapping_mul(b)))
                 }
             }
             TokenKind::Ident(name) if name == "eq" => Ok(Value::Bool(
@@ -11584,7 +11594,7 @@ impl Interpreter {
                         gb = ga % gb;
                         ga = t;
                     }
-                    Ok(Value::Int(a / ga * b))
+                    Ok(Value::Int((a / ga).wrapping_mul(b)))
                 }
             }
             _ => Err(RuntimeError::new(format!(

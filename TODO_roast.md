@@ -312,7 +312,8 @@
   - 14/38 pass.
 - [ ] roast/S03-operators/is-divisible-by.t
   - 7/16 pass.
-- [x] roast/S03-operators/lcm.t
+- [ ] roast/S03-operators/lcm.t
+  - 12/15 pass. Tests 11-13 fail: require BigInt support for large integer LCM computations (e.g., `123123123123123123123123123 lcm 3`). Previously passed accidentally because overflow-to-0 made both operands and expected values equal.
 - [x] roast/S03-operators/list-quote-junction.t
   - 16/16 pass.
 - [ ] roast/S03-operators/minmax.t
@@ -1511,8 +1512,8 @@
 - [ ] roast/S32-num/stress.t
 - [ ] roast/S32-num/stringify.t
 - [ ] roast/S32-num/unpolar.t
-- [ ] roast/S32-scalar/defined.t
-  - 54/55 pass. Only test 55 fails: `&defined` function reference syntax not supported. Difficulty: Low (needs `&name` function reference)
+- [x] roast/S32-scalar/defined.t
+  - 55/55 pass. All subtests pass: defined() for type objects, undefine(), &defined reference.
 - [ ] roast/S32-scalar/perl.t
   - 5/7 pass (1-3, 5-6). `.raku`/`.perl` serialization works for simple scalars. Failures: constrained scalar serialization (4), only 6 tests reached. Difficulty: Low
 - [ ] roast/S32-scalar/undef.t
@@ -1524,8 +1525,8 @@
   - 14/17 pass. `wordcase()` function and `.wordcase` method implemented. Remaining failures: tests 14-15 (`\c[COMBINING DIAERESIS]` and combining character escape sequences not yet supported in string parser), test 17 (`but` role mixin on strings not yet supported).
 - [ ] roast/S32-str/chomp.t
   - 18/39 pass. Basic chomp works for `\n`. Failures: chomp with `\r\n` line endings (4, 11, 14-20, 23-24), various line-ending combinations (CR, CRLF). Difficulty: Low-Medium (need `\r\n` and `\r` line ending support in chomp)
-- [ ] roast/S32-str/chop.t
-  - 21/36 pass. Basic chop works. Failures: `chop($str, 2)` multi-char chop (5, 7, 9, 15, 17, 19), chop of a Rat (27-28), chop on Cool types (29+). Difficulty: Low (need multi-char chop parameter support)
+- [x] roast/S32-str/chop.t
+  - 36/36 pass.
 - [ ] roast/S32-str/Collation.t
 - [ ] roast/S32-str/CollationTest_NON_IGNORABLE-0.t
 - [ ] roast/S32-str/CollationTest_NON_IGNORABLE-1.t

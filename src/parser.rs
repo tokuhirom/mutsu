@@ -439,6 +439,40 @@ impl Parser {
             });
         }
         if self.match_ident("repeat") {
+            // Handle both forms:
+            //   repeat { BLOCK } while/until COND
+            //   repeat while/until COND { BLOCK }
+            let next_is_while_or_until =
+                if let Some(TokenKind::Ident(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+                    name == "while" || name == "until"
+                } else {
+                    false
+                };
+            if next_is_while_or_until {
+                let is_until = self.match_ident("until");
+                if !is_until {
+                    self.match_ident("while");
+                }
+                let cond = self.parse_expr()?;
+                let body = self.parse_block()?;
+                self.match_kind(TokenKind::Semicolon);
+                let cond_expr = if is_until {
+                    Expr::Unary {
+                        op: TokenKind::Bang,
+                        expr: Box::new(cond),
+                    }
+                } else {
+                    cond
+                };
+                return Ok(Stmt::Loop {
+                    init: None,
+                    cond: Some(cond_expr),
+                    step: None,
+                    body,
+                    repeat: true,
+                    label: None,
+                });
+            }
             let body = self.parse_block()?;
             if self.match_ident("while") {
                 let cond = self.parse_expr()?;
@@ -1289,6 +1323,13 @@ impl Parser {
                     }
                 }
                 TokenKind::Comma | TokenKind::Semicolon if depth == 0 => break,
+                // Stop at statement modifier keywords at depth 0
+                TokenKind::Ident(ref kw)
+                    if depth == 0
+                        && matches!(kw.as_str(), "for" | "if" | "unless" | "while" | "until") =>
+                {
+                    break;
+                }
                 _ => {}
             }
             self.pos += 1;
@@ -1324,6 +1365,7 @@ impl Parser {
                                     | TokenKind::Semicolon
                                     | TokenKind::Eof
                                     | TokenKind::RParen
+                                    | TokenKind::RBrace
                             )
                         );
                     }
@@ -3172,7 +3214,16 @@ impl Parser {
                 }
             } else {
                 let name = self.consume_ident()?;
-                if name == "do" {
+                if name == "last" || name == "next" || name == "redo" {
+                    let kind = match name.as_str() {
+                        "last" => crate::ast::ControlFlowKind::Last,
+                        "next" => crate::ast::ControlFlowKind::Next,
+                        "redo" => crate::ast::ControlFlowKind::Redo,
+                        _ => unreachable!(),
+                    };
+                    let label = self.try_consume_loop_label();
+                    Expr::ControlFlow { kind, label }
+                } else if name == "do" {
                     if self.check(&TokenKind::LBrace) {
                         let body = self.parse_block()?;
                         Expr::DoBlock { body, label: None }
