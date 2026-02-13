@@ -74,6 +74,11 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
   git branch -d worktree/<name>
   ```
 
+## Process optimization
+- After integrating a sub-agent's work, review its processing log for optimization opportunities (e.g., repeated failures, unnecessary steps, patterns that could be avoided). Apply improvements to CLAUDE.md or agent prompts.
+- Always ensure cwd is the main repo (`/home/tokuhirom/work/mutsu`) before running `make roast`, `git commit`, or `git push`. Worktree cwd can leak between commands.
+- When applying patches from worktrees, prefer manual edits over `git apply` since the worktree base commit differs from main HEAD after incremental integration.
+
 ## Conventions
 - Add small, focused tests for each new syntax feature.
 - Keep the parser and evaluator readable; comment only non-obvious logic.
