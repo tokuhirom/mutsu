@@ -166,3 +166,5 @@ roast/S32-str/trim.t
 roast/S32-str/uc.t
 roast/S32-str/windows-1251-windows-1252-encode-decode.t
 roast/S32-trig/simple.t
+roast/6.d/S02-literals/version.t
+roast/6.d/S32-num/sqrt.t
