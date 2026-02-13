@@ -14,6 +14,7 @@ impl Parser {
     }
 
     pub(crate) fn parse_program(&mut self) -> Result<Vec<Stmt>, RuntimeError> {
+        crate::trace::trace_log!("parse", "parse_program: {} tokens", self.tokens.len());
         let mut stmts = Vec::new();
         while !self.check(&TokenKind::Eof) {
             let start = self.pos;

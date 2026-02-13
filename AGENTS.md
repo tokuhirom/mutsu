@@ -93,6 +93,16 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - Always ensure cwd is the main repo (`/home/tokuhirom/work/mutsu`) before running `make roast`, `git commit`, or `git push`. Worktree cwd can leak between commands.
 - When applying patches from worktrees, prefer manual edits over `git apply` since the worktree base commit differs from main HEAD after incremental integration.
 
+## Debugging guidelines
+- Do NOT use printf debugging (adding eprintln! → build → check → repeat). Rust builds are slow and this wastes time.
+- Instead, use these approaches in order of preference:
+  1. **Trace logs**: Run with `MUTSU_TRACE=1 ./target/debug/mutsu <file>` to see execution flow. Use `MUTSU_TRACE=eval` or `MUTSU_TRACE=parse,vm` to filter by phase.
+  2. **Focused unit tests**: Write a small `#[test]` in the relevant module to isolate the problem. `cargo test <name>` is fast with incremental compilation.
+  3. **Read the code**: Trace the logic by reading, not by running. Many bugs are visible from careful code review.
+  4. **Debugger**: Use `rust-gdb ./target/debug/mutsu` with breakpoints for complex state inspection.
+- If you must add temporary debug prints, add ALL of them in one pass before building — never do build-run cycles for individual print statements.
+- Always remove debug prints before committing.
+
 ## Conventions
 - Add small, focused tests for each new syntax feature.
 - Keep the parser and evaluator readable; comment only non-obvious logic.

@@ -124,6 +124,12 @@ impl VM {
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
+        crate::trace::trace_log!(
+            "vm",
+            "exec_one[{}]: {:?}",
+            ip,
+            std::mem::discriminant(&code.ops[*ip])
+        );
         match &code.ops[*ip] {
             // -- Constants --
             OpCode::LoadConst(idx) => {

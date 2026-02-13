@@ -5,6 +5,7 @@ mod interpreter;
 mod lexer;
 mod opcode;
 mod parser;
+mod trace;
 mod value;
 mod vm;
 

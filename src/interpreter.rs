@@ -590,6 +590,7 @@ impl Interpreter {
         name: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        crate::trace::trace_log!("call", "call_function: {} ({} args)", name, args.len());
         let arg_exprs: Vec<Expr> = args.into_iter().map(Expr::Literal).collect();
         self.eval_expr(&Expr::Call {
             name: name.to_string(),
@@ -1772,6 +1773,7 @@ impl Interpreter {
     }
 
     pub(crate) fn exec_stmt(&mut self, stmt: &Stmt) -> Result<(), RuntimeError> {
+        crate::trace::trace_log!("eval", "exec_stmt: {:?}", std::mem::discriminant(stmt));
         match stmt {
             Stmt::VarDecl {
                 name,
@@ -4312,6 +4314,7 @@ impl Interpreter {
     }
 
     pub(crate) fn eval_expr(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
+        crate::trace::trace_log!("eval", "eval_expr: {:?}", std::mem::discriminant(expr));
         match expr {
             Expr::Literal(v) => Ok(v.clone()),
             Expr::BareWord(name) => {
