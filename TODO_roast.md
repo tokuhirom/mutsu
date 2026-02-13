@@ -1070,7 +1070,7 @@
 - [ ] roast/S16-io/note.t
   - 1/6 pass (test 1 only). Failures: `note()` without args should output empty line to stderr; `$*ERR` variable not supported; `note` with multiple args and separator not implemented; `IO::Path.note` method missing. Difficulty: Medium
 - [ ] roast/S16-io/print.t
-  - 13/14 pass. Only test 14 fails: `print` with `IO::Path` object (`.IO.print` method). Very close to passing! Difficulty: Low
+  - 13/14 pass. Test 14 fails: requires anonymous classes, atomicint, Junction .any/.all, printf/sprintf, note stderr capture. Difficulty: High
 - [ ] roast/S16-io/prompt.t
 - [ ] roast/S16-io/put.t
 - [ ] roast/S16-io/readchars.t

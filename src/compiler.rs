@@ -940,10 +940,17 @@ impl Compiler {
     /// Returns true if the expression must be kept as a raw Expr for
     /// exec_call handlers (e.g. throws-like needs Expr::Block to run code).
     fn needs_raw_expr(expr: &Expr) -> bool {
-        matches!(
-            expr,
-            Expr::Block(_) | Expr::AnonSub(_) | Expr::AnonSubParams { .. } | Expr::DoBlock { .. }
-        )
+        match expr {
+            Expr::Block(_)
+            | Expr::AnonSub(_)
+            | Expr::AnonSubParams { .. }
+            | Expr::DoBlock { .. } => true,
+            // Hash literals containing block values need raw expr for is_run lambda matchers
+            Expr::Hash(pairs) => pairs
+                .iter()
+                .any(|(_, v)| v.as_ref().is_some_and(Self::needs_raw_expr)),
+            _ => false,
+        }
     }
 
     fn has_phasers(stmts: &[Stmt]) -> bool {

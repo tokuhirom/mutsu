@@ -2877,8 +2877,37 @@ impl Interpreter {
                     self.eval_expr(self.positional_arg(args, 2, "cmp-ok expects right")?)?;
                 let desc = self.positional_arg_value(args, 3)?;
                 let todo = self.named_arg_bool(args, "todo")?;
-                let result = self.call_sub_value(op_val, vec![left, right], false)?;
-                self.test_ok(result.truthy(), &desc, todo)?;
+                let ok = match &op_val {
+                    Value::Str(op) => match op.as_str() {
+                        "~~" => self.smart_match(&left, &right),
+                        "!~~" => !self.smart_match(&left, &right),
+                        "eq" => left.to_string_value() == right.to_string_value(),
+                        "ne" => left.to_string_value() != right.to_string_value(),
+                        "lt" => left.to_string_value() < right.to_string_value(),
+                        "le" => left.to_string_value() <= right.to_string_value(),
+                        "gt" => left.to_string_value() > right.to_string_value(),
+                        "ge" => left.to_string_value() >= right.to_string_value(),
+                        "==" => Self::to_float_value(&left) == Self::to_float_value(&right),
+                        "!=" => Self::to_float_value(&left) != Self::to_float_value(&right),
+                        "<" => Self::to_float_value(&left) < Self::to_float_value(&right),
+                        "<=" => Self::to_float_value(&left) <= Self::to_float_value(&right),
+                        ">" => Self::to_float_value(&left) > Self::to_float_value(&right),
+                        ">=" => Self::to_float_value(&left) >= Self::to_float_value(&right),
+                        "===" => left == right,
+                        "=:=" => left == right,
+                        _ => {
+                            return Err(RuntimeError::new(format!(
+                                "cmp-ok: unsupported string operator '{}'",
+                                op
+                            )));
+                        }
+                    },
+                    _ => {
+                        let result = self.call_sub_value(op_val, vec![left, right], false)?;
+                        result.truthy()
+                    }
+                };
+                self.test_ok(ok, &desc, todo)?;
             }
             "like" => {
                 let _ = self.positional_arg(args, 0, "like expects value")?;
@@ -3084,6 +3113,10 @@ impl Interpreter {
                         let matcher = value.as_ref().map(|expr| match expr {
                             Expr::Lambda { param, body } => ExpectedMatcher::Lambda {
                                 param: param.clone(),
+                                body: body.clone(),
+                            },
+                            Expr::AnonSub(body) => ExpectedMatcher::Lambda {
+                                param: "_".to_string(),
                                 body: body.clone(),
                             },
                             _ => ExpectedMatcher::Exact(self.eval_expr(expr).unwrap_or(Value::Nil)),

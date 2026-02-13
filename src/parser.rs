@@ -3359,6 +3359,70 @@ impl Parser {
                             args: vec![arg],
                         }
                     }
+                } else if name == "class" && self.check(&TokenKind::LBrace) {
+                    // Anonymous class expression: class { ... }
+                    static ANON_CTR: std::sync::atomic::AtomicUsize =
+                        std::sync::atomic::AtomicUsize::new(0);
+                    let anon_name = format!(
+                        "__ANON_CLASS_{}__",
+                        ANON_CTR.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    );
+                    self.consume_kind(TokenKind::LBrace)?;
+                    let mut body = Vec::new();
+                    while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
+                        body.push(self.parse_stmt()?);
+                    }
+                    self.consume_kind(TokenKind::RBrace)?;
+                    Expr::DoBlock {
+                        body: vec![
+                            Stmt::ClassDecl {
+                                name: anon_name.clone(),
+                                parents: Vec::new(),
+                                body,
+                            },
+                            Stmt::Expr(Expr::Literal(Value::Package(anon_name))),
+                        ],
+                        label: None,
+                    }
+                } else if name == "class"
+                    && matches!(
+                        self.tokens.get(self.pos).map(|t| &t.kind),
+                        Some(TokenKind::Colon)
+                    )
+                    && matches!(
+                        self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                        Some(TokenKind::Colon)
+                    )
+                {
+                    // Anonymous class with parent: class :: is Cool { ... }
+                    self.pos += 2; // skip ::
+                    static ANON_CTR2: std::sync::atomic::AtomicUsize =
+                        std::sync::atomic::AtomicUsize::new(0);
+                    let anon_name = format!(
+                        "__ANON_CLASS_{}__",
+                        ANON_CTR2.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    );
+                    let mut parents = Vec::new();
+                    while self.match_ident("is") {
+                        parents.push(self.consume_ident()?);
+                    }
+                    self.consume_kind(TokenKind::LBrace)?;
+                    let mut body = Vec::new();
+                    while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
+                        body.push(self.parse_stmt()?);
+                    }
+                    self.consume_kind(TokenKind::RBrace)?;
+                    Expr::DoBlock {
+                        body: vec![
+                            Stmt::ClassDecl {
+                                name: anon_name.clone(),
+                                parents,
+                                body,
+                            },
+                            Stmt::Expr(Expr::Literal(Value::Package(anon_name))),
+                        ],
+                        label: None,
+                    }
                 } else {
                     Expr::BareWord(name)
                 }
@@ -3881,6 +3945,11 @@ impl Parser {
         if self.match_kind(TokenKind::LParen) {
             let value = self.parse_expr()?;
             self.consume_kind(TokenKind::RParen)?;
+            return Ok((name, Some(value)));
+        }
+        // :key{block} → Pair with Block/Lambda value
+        if self.check(&TokenKind::LBrace) {
+            let value = self.parse_expr()?;
             return Ok((name, Some(value)));
         }
         Ok((name, None))
