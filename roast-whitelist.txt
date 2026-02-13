@@ -35,6 +35,7 @@ roast/S03-operators/basic-types.t
 roast/S03-operators/boolean-bitwise.t
 roast/S03-operators/comparison-simple.t
 roast/S03-operators/gcd.t
+roast/S03-operators/lcm.t
 roast/S03-operators/list-quote-junction.t
 roast/S03-operators/not.t
 roast/S03-operators/so.t

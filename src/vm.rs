@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::interpreter::Interpreter;
 use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::value::{RuntimeError, Value, make_rat};
-use num_traits::Signed;
+use num_traits::{Signed, Zero};
 
 pub(crate) struct VM {
     interpreter: Interpreter,
@@ -551,21 +551,13 @@ impl VM {
             OpCode::Lcm => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let (a, b) = (
-                    Interpreter::to_int(&left).abs(),
-                    Interpreter::to_int(&right).abs(),
-                );
-                let result = if a == 0 && b == 0 {
+                let a = left.to_bigint().abs();
+                let b = right.to_bigint().abs();
+                let result = if a.is_zero() && b.is_zero() {
                     Value::Int(0)
                 } else {
-                    let mut ga = a;
-                    let mut gb = b;
-                    while gb != 0 {
-                        let t = gb;
-                        gb = ga % gb;
-                        ga = t;
-                    }
-                    Value::Int((a / ga).wrapping_mul(b))
+                    let g = num_integer::Integer::gcd(&a, &b);
+                    Value::from_bigint(&a / &g * &b)
                 };
                 self.stack.push(result);
                 *ip += 1;

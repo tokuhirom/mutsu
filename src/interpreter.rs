@@ -25,7 +25,7 @@ use crate::ast::{
 use crate::lexer::{Lexer, TokenKind};
 use crate::parser::Parser;
 use crate::value::{JunctionKind, LazyList, RuntimeError, Value, make_rat};
-use num_traits::Signed;
+use num_traits::{Signed, Zero};
 
 /// Check if a character matches a Unicode property by name.
 /// Uses the `regex` crate's Unicode support with a thread-local cache.
@@ -10110,18 +10110,13 @@ impl Interpreter {
                 Ok(Value::from_bigint(g))
             }
             TokenKind::Ident(name) if name == "lcm" => {
-                let (a, b) = (Self::to_int(&left).abs(), Self::to_int(&right).abs());
-                if a == 0 && b == 0 {
+                let a = left.to_bigint().abs();
+                let b = right.to_bigint().abs();
+                if a.is_zero() && b.is_zero() {
                     Ok(Value::Int(0))
                 } else {
-                    let mut ga = a;
-                    let mut gb = b;
-                    while gb != 0 {
-                        let t = gb;
-                        gb = ga % gb;
-                        ga = t;
-                    }
-                    Ok(Value::Int((a / ga).wrapping_mul(b)))
+                    let g = num_integer::Integer::gcd(&a, &b);
+                    Ok(Value::from_bigint(&a / &g * &b))
                 }
             }
             TokenKind::Ident(name) if name == "eq" => Ok(Value::Bool(

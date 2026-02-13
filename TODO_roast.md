@@ -311,8 +311,7 @@
   - 14/38 pass.
 - [ ] roast/S03-operators/is-divisible-by.t
   - 7/16 pass.
-- [ ] roast/S03-operators/lcm.t
-  - 12/15 pass. Tests 11-13 fail: require BigInt support for large integer LCM computations (e.g., `123123123123123123123123123 lcm 3`). Previously passed accidentally because overflow-to-0 made both operands and expected values equal.
+- [x] roast/S03-operators/lcm.t
 - [x] roast/S03-operators/list-quote-junction.t
   - 16/16 pass.
 - [ ] roast/S03-operators/minmax.t
