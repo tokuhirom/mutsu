@@ -12466,19 +12466,52 @@ impl Interpreter {
                     ..
                 } = closure_val
             {
-                for (i, seed) in seeds.iter().enumerate() {
+                // Determine arity from params or placeholders
+                let placeholders = collect_placeholders(body);
+                let arity = if !params.is_empty() {
+                    params.len()
+                } else if !placeholders.is_empty() {
+                    placeholders.len()
+                } else {
+                    1
+                };
+
+                for (i, _) in seeds.iter().enumerate() {
                     let saved = self.env.clone();
                     for (k, v) in cenv {
                         self.env.insert(k.clone(), v.clone());
                     }
-                    if let Some(p) = params.first() {
-                        self.env.insert(p.clone(), seed.clone());
+
+                    // Collect the appropriate number of previous values up to position i+1
+                    let args: Vec<Value> = if i + 1 < arity {
+                        // Not enough values yet - pad with Nil
+                        let mut args = vec![Value::Nil; arity - (i + 1)];
+                        args.extend(seeds[..=i].iter().cloned());
+                        args
+                    } else {
+                        // Take the last 'arity' values up to position i
+                        seeds[i + 1 - arity..=i].to_vec()
+                    };
+
+                    // Bind parameters
+                    for (j, param) in params.iter().enumerate() {
+                        if j < args.len() {
+                            self.env.insert(param.clone(), args[j].clone());
+                        }
                     }
-                    let placeholders = collect_placeholders(body);
-                    if let Some(ph) = placeholders.first() {
-                        self.env.insert(ph.clone(), seed.clone());
+
+                    // Bind placeholders
+                    for (j, ph) in placeholders.iter().enumerate() {
+                        if j < args.len() {
+                            self.env.insert(ph.clone(), args[j].clone());
+                        }
                     }
-                    self.env.insert("_".to_string(), seed.clone());
+
+                    // Bind $_ to last arg
+                    if let Some(last_arg) = args.last() {
+                        self.env.insert("_".to_string(), last_arg.clone());
+                    }
+
                     let predicate_result = self.eval_block_value(body)?;
                     self.env = saved;
                     if predicate_result.truthy() {
@@ -12552,11 +12585,6 @@ impl Interpreter {
             let next = match &mode {
                 SeqMode::Closure => {
                     let genfn = generator.as_ref().unwrap();
-                    let arg = if result.is_empty() {
-                        Value::Nil
-                    } else {
-                        result.last().unwrap().clone()
-                    };
                     if let Value::Sub {
                         params, body, env, ..
                     } = genfn
@@ -12565,14 +12593,50 @@ impl Interpreter {
                         for (k, v) in env {
                             self.env.insert(k.clone(), v.clone());
                         }
-                        if let Some(p) = params.first() {
-                            self.env.insert(p.clone(), arg.clone());
-                        }
+
+                        // Determine arity from params or placeholders
                         let placeholders = collect_placeholders(body);
-                        if let Some(ph) = placeholders.first() {
-                            self.env.insert(ph.clone(), arg.clone());
+                        let arity = if !params.is_empty() {
+                            params.len()
+                        } else if !placeholders.is_empty() {
+                            placeholders.len()
+                        } else {
+                            1
+                        };
+
+                        // Collect the appropriate number of previous values
+                        let result_len = result.len();
+                        let args: Vec<Value> = if result_len == 0 {
+                            vec![Value::Nil; arity]
+                        } else if result_len < arity {
+                            // Not enough values yet - pad with Nil
+                            let mut args = vec![Value::Nil; arity - result_len];
+                            args.extend(result.iter().cloned());
+                            args
+                        } else {
+                            // Take the last 'arity' values
+                            result[result_len - arity..].to_vec()
+                        };
+
+                        // Bind parameters
+                        for (i, param) in params.iter().enumerate() {
+                            if i < args.len() {
+                                self.env.insert(param.clone(), args[i].clone());
+                            }
                         }
-                        self.env.insert("_".to_string(), arg);
+
+                        // Bind placeholders
+                        for (i, ph) in placeholders.iter().enumerate() {
+                            if i < args.len() {
+                                self.env.insert(ph.clone(), args[i].clone());
+                            }
+                        }
+
+                        // Bind $_ to last arg
+                        if let Some(last_arg) = args.last() {
+                            self.env.insert("_".to_string(), last_arg.clone());
+                        }
+
                         let val = self.eval_block_value(body)?;
                         self.env = saved;
                         val
@@ -12609,7 +12673,7 @@ impl Interpreter {
             if let Some(ref epk) = endpoint_kind {
                 match epk {
                     EndpointKind::Closure(closure_val) => {
-                        // Call the closure with the generated value as predicate
+                        // Call the closure with the generated value(s) as predicate
                         if let Value::Sub {
                             params,
                             body,
@@ -12621,14 +12685,53 @@ impl Interpreter {
                             for (k, v) in cenv {
                                 self.env.insert(k.clone(), v.clone());
                             }
-                            if let Some(p) = params.first() {
-                                self.env.insert(p.clone(), next.clone());
-                            }
+
+                            // Determine arity from params or placeholders
                             let placeholders = collect_placeholders(body);
-                            if let Some(ph) = placeholders.first() {
-                                self.env.insert(ph.clone(), next.clone());
+                            let arity = if !params.is_empty() {
+                                params.len()
+                            } else if !placeholders.is_empty() {
+                                placeholders.len()
+                            } else {
+                                1
+                            };
+
+                            // Collect the appropriate number of values including the new one
+                            let result_len = result.len();
+                            let args: Vec<Value> = if result_len == 0 {
+                                vec![next.clone(); arity]
+                            } else if result_len < arity - 1 {
+                                // Not enough values yet - pad with Nil
+                                let mut args = vec![Value::Nil; arity - result_len - 1];
+                                args.extend(result.iter().cloned());
+                                args.push(next.clone());
+                                args
+                            } else {
+                                // Take the last 'arity-1' values plus the new one
+                                let mut args = result[result_len - (arity - 1)..].to_vec();
+                                args.push(next.clone());
+                                args
+                            };
+
+                            // Bind parameters
+                            for (i, param) in params.iter().enumerate() {
+                                if i < args.len() {
+                                    self.env.insert(param.clone(), args[i].clone());
+                                }
                             }
-                            self.env.insert("_".to_string(), next.clone());
+
+                            // Bind placeholders
+                            for (i, ph) in placeholders.iter().enumerate() {
+                                if i < args.len() {
+                                    self.env.insert(ph.clone(), args[i].clone());
+                                }
+                            }
+
+                            // Bind $_ to last arg
+                            if let Some(last_arg) = args.last() {
+                                self.env.insert("_".to_string(), last_arg.clone());
+                            }
+
                             let predicate_result = self.eval_block_value(body)?;
                             self.env = saved;
                             if predicate_result.truthy() {

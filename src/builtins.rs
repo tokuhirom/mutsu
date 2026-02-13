@@ -849,6 +849,18 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 Some(Ok(Value::Nil))
             }
         }
+        "uniname" => {
+            let s = arg.to_string_value();
+            if s.is_empty() {
+                return Some(Ok(Value::Nil));
+            }
+            if let Some(ch) = s.chars().next() {
+                let name = unicode_char_name(ch);
+                Some(Ok(Value::Str(name)))
+            } else {
+                Some(Ok(Value::Nil))
+            }
+        }
         "abs" => Some(Ok(match arg {
             Value::Int(i) => Value::Int(i.abs()),
             Value::Num(f) => Value::Num(f.abs()),
@@ -1469,5 +1481,114 @@ pub(crate) fn arith_negate(val: Value) -> Result<Value, RuntimeError> {
             }
         }
         _ => Err(RuntimeError::new("Unary - expects numeric")),
+    }
+}
+
+/// Return Unicode character name for a given character
+/// Basic implementation covering ASCII and common Latin-1 characters
+fn unicode_char_name(ch: char) -> String {
+    match ch {
+        '0' => "DIGIT ZERO".to_string(),
+        '1' => "DIGIT ONE".to_string(),
+        '2' => "DIGIT TWO".to_string(),
+        '3' => "DIGIT THREE".to_string(),
+        '4' => "DIGIT FOUR".to_string(),
+        '5' => "DIGIT FIVE".to_string(),
+        '6' => "DIGIT SIX".to_string(),
+        '7' => "DIGIT SEVEN".to_string(),
+        '8' => "DIGIT EIGHT".to_string(),
+        '9' => "DIGIT NINE".to_string(),
+        'A' => "LATIN CAPITAL LETTER A".to_string(),
+        'B' => "LATIN CAPITAL LETTER B".to_string(),
+        'C' => "LATIN CAPITAL LETTER C".to_string(),
+        'D' => "LATIN CAPITAL LETTER D".to_string(),
+        'E' => "LATIN CAPITAL LETTER E".to_string(),
+        'F' => "LATIN CAPITAL LETTER F".to_string(),
+        'G' => "LATIN CAPITAL LETTER G".to_string(),
+        'H' => "LATIN CAPITAL LETTER H".to_string(),
+        'I' => "LATIN CAPITAL LETTER I".to_string(),
+        'J' => "LATIN CAPITAL LETTER J".to_string(),
+        'K' => "LATIN CAPITAL LETTER K".to_string(),
+        'L' => "LATIN CAPITAL LETTER L".to_string(),
+        'M' => "LATIN CAPITAL LETTER M".to_string(),
+        'N' => "LATIN CAPITAL LETTER N".to_string(),
+        'O' => "LATIN CAPITAL LETTER O".to_string(),
+        'P' => "LATIN CAPITAL LETTER P".to_string(),
+        'Q' => "LATIN CAPITAL LETTER Q".to_string(),
+        'R' => "LATIN CAPITAL LETTER R".to_string(),
+        'S' => "LATIN CAPITAL LETTER S".to_string(),
+        'T' => "LATIN CAPITAL LETTER T".to_string(),
+        'U' => "LATIN CAPITAL LETTER U".to_string(),
+        'V' => "LATIN CAPITAL LETTER V".to_string(),
+        'W' => "LATIN CAPITAL LETTER W".to_string(),
+        'X' => "LATIN CAPITAL LETTER X".to_string(),
+        'Y' => "LATIN CAPITAL LETTER Y".to_string(),
+        'Z' => "LATIN CAPITAL LETTER Z".to_string(),
+        'a' => "LATIN SMALL LETTER A".to_string(),
+        'b' => "LATIN SMALL LETTER B".to_string(),
+        'c' => "LATIN SMALL LETTER C".to_string(),
+        'd' => "LATIN SMALL LETTER D".to_string(),
+        'e' => "LATIN SMALL LETTER E".to_string(),
+        'f' => "LATIN SMALL LETTER F".to_string(),
+        'g' => "LATIN SMALL LETTER G".to_string(),
+        'h' => "LATIN SMALL LETTER H".to_string(),
+        'i' => "LATIN SMALL LETTER I".to_string(),
+        'j' => "LATIN SMALL LETTER J".to_string(),
+        'k' => "LATIN SMALL LETTER K".to_string(),
+        'l' => "LATIN SMALL LETTER L".to_string(),
+        'm' => "LATIN SMALL LETTER M".to_string(),
+        'n' => "LATIN SMALL LETTER N".to_string(),
+        'o' => "LATIN SMALL LETTER O".to_string(),
+        'p' => "LATIN SMALL LETTER P".to_string(),
+        'q' => "LATIN SMALL LETTER Q".to_string(),
+        'r' => "LATIN SMALL LETTER R".to_string(),
+        's' => "LATIN SMALL LETTER S".to_string(),
+        't' => "LATIN SMALL LETTER T".to_string(),
+        'u' => "LATIN SMALL LETTER U".to_string(),
+        'v' => "LATIN SMALL LETTER V".to_string(),
+        'w' => "LATIN SMALL LETTER W".to_string(),
+        'x' => "LATIN SMALL LETTER X".to_string(),
+        'y' => "LATIN SMALL LETTER Y".to_string(),
+        'z' => "LATIN SMALL LETTER Z".to_string(),
+        ' ' => "SPACE".to_string(),
+        '!' => "EXCLAMATION MARK".to_string(),
+        '"' => "QUOTATION MARK".to_string(),
+        '#' => "NUMBER SIGN".to_string(),
+        '$' => "DOLLAR SIGN".to_string(),
+        '%' => "PERCENT SIGN".to_string(),
+        '&' => "AMPERSAND".to_string(),
+        '\'' => "APOSTROPHE".to_string(),
+        '(' => "LEFT PARENTHESIS".to_string(),
+        ')' => "RIGHT PARENTHESIS".to_string(),
+        '*' => "ASTERISK".to_string(),
+        '+' => "PLUS SIGN".to_string(),
+        ',' => "COMMA".to_string(),
+        '-' => "HYPHEN-MINUS".to_string(),
+        '.' => "FULL STOP".to_string(),
+        '/' => "SOLIDUS".to_string(),
+        ':' => "COLON".to_string(),
+        ';' => "SEMICOLON".to_string(),
+        '<' => "LESS-THAN SIGN".to_string(),
+        '=' => "EQUALS SIGN".to_string(),
+        '>' => "GREATER-THAN SIGN".to_string(),
+        '?' => "QUESTION MARK".to_string(),
+        '@' => "COMMERCIAL AT".to_string(),
+        '[' => "LEFT SQUARE BRACKET".to_string(),
+        '\\' => "REVERSE SOLIDUS".to_string(),
+        ']' => "RIGHT SQUARE BRACKET".to_string(),
+        '^' => "CIRCUMFLEX ACCENT".to_string(),
+        '_' => "LOW LINE".to_string(),
+        '`' => "GRAVE ACCENT".to_string(),
+        '{' => "LEFT CURLY BRACKET".to_string(),
+        '|' => "VERTICAL LINE".to_string(),
+        '}' => "RIGHT CURLY BRACKET".to_string(),
+        '~' => "TILDE".to_string(),
+        '\n' => "LINE FEED (LF)".to_string(),
+        '\r' => "CARRIAGE RETURN (CR)".to_string(),
+        '\t' => "CHARACTER TABULATION".to_string(),
+        _ => {
+            // For other characters, return a generic name with codepoint
+            format!("U+{:04X}", ch as u32)
+        }
     }
 }
