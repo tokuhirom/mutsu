@@ -625,6 +625,19 @@ impl Compiler {
                         modifier: None,
                     };
                     self.compile_expr(&method_call);
+                }
+                // Rewrite push(@arr, val...)/unshift(@arr, val...)/append/prepend → @arr.push(val...)
+                else if matches!(name.as_str(), "push" | "unshift" | "append" | "prepend")
+                    && args.len() >= 2
+                    && matches!(args[0], Expr::ArrayVar(_) | Expr::Var(_))
+                {
+                    let method_call = Expr::MethodCall {
+                        target: Box::new(args[0].clone()),
+                        name: name.clone(),
+                        args: args[1..].to_vec(),
+                        modifier: None,
+                    };
+                    self.compile_expr(&method_call);
                 } else {
                     let arity = args.len() as u32;
                     for arg in args {

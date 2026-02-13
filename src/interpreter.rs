@@ -8292,6 +8292,34 @@ impl Interpreter {
                     }
                     return Ok(Value::Nil);
                 }
+                if name == "push" || name == "unshift" || name == "append" || name == "prepend" {
+                    if let Some(arr_arg) = args.first() {
+                        let var_key = match arr_arg {
+                            Expr::ArrayVar(v) => Some(format!("@{}", v)),
+                            Expr::Var(v) => Some(v.clone()),
+                            _ => None,
+                        };
+                        if let Some(key) = var_key {
+                            let values: Vec<Value> = args[1..]
+                                .iter()
+                                .map(|e| self.eval_expr(e).unwrap_or(Value::Nil))
+                                .collect();
+                            if let Some(Value::Array(items)) = self.env.get_mut(&key) {
+                                if name == "push" || name == "append" {
+                                    items.extend(values);
+                                } else {
+                                    for v in values.into_iter().rev() {
+                                        items.insert(0, v);
+                                    }
+                                }
+                            } else {
+                                self.env.insert(key, Value::Array(values));
+                            }
+                            return Ok(Value::Nil);
+                        }
+                    }
+                    return Ok(Value::Nil);
+                }
                 if name == "elems" {
                     let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     return Ok(match val {

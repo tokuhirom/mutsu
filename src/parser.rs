@@ -356,6 +356,34 @@ impl Parser {
             let stmt = Stmt::Note(exprs);
             return self.parse_statement_modifier(stmt);
         }
+        // push/unshift/append/prepend @arr, val... → @arr.method(val...)
+        if let Some(fname) = self.peek_ident()
+            && matches!(fname.as_str(), "push" | "unshift" | "append" | "prepend")
+        {
+            let saved = self.pos;
+            self.pos += 1;
+            // Check if next token is an array variable (paren form handled in expr parser)
+            let is_arr = matches!(
+                self.tokens.get(self.pos).map(|t| &t.kind),
+                Some(TokenKind::ArrayVar(_) | TokenKind::Var(_))
+            );
+            if !self.check(&TokenKind::LParen) && is_arr {
+                let arr_expr = self.parse_primary()?;
+                let mut val_args = Vec::new();
+                if self.match_kind(TokenKind::Comma) {
+                    val_args = self.parse_expr_list()?;
+                }
+                let method_call = Expr::MethodCall {
+                    target: Box::new(arr_expr),
+                    name: fname,
+                    args: val_args,
+                    modifier: None,
+                };
+                let stmt = Stmt::Expr(method_call);
+                return self.parse_statement_modifier(stmt);
+            }
+            self.pos = saved;
+        }
         if self.match_ident("if") {
             return self.parse_if_chain();
         }
@@ -586,7 +614,7 @@ impl Parser {
             }
         }
         if self.match_ident("last") {
-            // Check for label: last LABEL [if cond]
+            // Check for label: last LABEL [if/unless cond]
             let label = self.try_consume_loop_label();
             if self.match_ident("if") {
                 let cond = self.parse_expr()?;
@@ -595,6 +623,15 @@ impl Parser {
                     cond,
                     then_branch: vec![Stmt::Last(label)],
                     else_branch: Vec::new(),
+                });
+            }
+            if self.match_ident("unless") {
+                let cond = self.parse_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::If {
+                    cond,
+                    then_branch: Vec::new(),
+                    else_branch: vec![Stmt::Last(label)],
                 });
             }
             self.match_kind(TokenKind::Semicolon);
@@ -611,11 +648,20 @@ impl Parser {
                     else_branch: Vec::new(),
                 });
             }
+            if self.match_ident("unless") {
+                let cond = self.parse_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::If {
+                    cond,
+                    then_branch: Vec::new(),
+                    else_branch: vec![Stmt::Next(label)],
+                });
+            }
             self.match_kind(TokenKind::Semicolon);
             return Ok(Stmt::Next(label));
         }
         if self.match_ident("for") {
-            let iterable = self.parse_expr()?;
+            let iterable = self.parse_comma_expr()?;
             let mut param = None;
             let mut params = Vec::new();
             if self.match_kind(TokenKind::Arrow) {
