@@ -73,6 +73,9 @@ pub(crate) enum OpCode {
     StringRepeat,
     ListRepeat,
 
+    // -- Mixin --
+    ButMixin,
+
     // -- Pair --
     MakePair,
 

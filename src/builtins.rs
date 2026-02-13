@@ -3,6 +3,7 @@
 use crate::interpreter::Interpreter;
 use crate::value::{RuntimeError, Value, make_rat};
 use num_traits::Signed;
+use unicode_segmentation::UnicodeSegmentation;
 
 // ── 0-arg method dispatch ────────────────────────────────────────────
 /// Try to dispatch a 0-argument method call on a Value.
@@ -64,7 +65,7 @@ pub(crate) fn native_method_0arg(
             Some(Ok(result))
         }
         "chars" => Some(Ok(Value::Int(
-            target.to_string_value().chars().count() as i64
+            target.to_string_value().graphemes(true).count() as i64,
         ))),
         "elems" => {
             let result = match target {
@@ -705,7 +706,9 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 .collect();
             Some(Ok(Value::Array(parts)))
         }
-        "chars" => Some(Ok(Value::Int(arg.to_string_value().chars().count() as i64))),
+        "chars" => Some(Ok(Value::Int(
+            arg.to_string_value().graphemes(true).count() as i64,
+        ))),
         "chr" => {
             if let Value::Int(i) = arg
                 && *i >= 0

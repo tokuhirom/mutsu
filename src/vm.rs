@@ -604,6 +604,15 @@ impl VM {
                 *ip += 1;
             }
 
+            // -- Mixin (native) --
+            OpCode::ButMixin => {
+                let _right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                // Simplified: return left value unchanged
+                self.stack.push(left);
+                *ip += 1;
+            }
+
             // -- Pair (native) --
             OpCode::MakePair => {
                 let right = self.stack.pop().unwrap();

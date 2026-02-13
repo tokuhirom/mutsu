@@ -2126,6 +2126,8 @@ impl Parser {
                 Some(TokenKind::SetDiff)
             } else if self.match_kind(TokenKind::SetSymDiff) {
                 Some(TokenKind::SetSymDiff)
+            } else if self.match_ident("but") {
+                Some(TokenKind::Ident("but".to_string()))
             } else {
                 None
             };

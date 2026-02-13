@@ -918,6 +918,7 @@ impl Compiler {
             TokenKind::Ident(name) if name == "lcm" => Some(OpCode::Lcm),
             // Repetition
             TokenKind::Ident(name) if name == "x" => Some(OpCode::StringRepeat),
+            TokenKind::Ident(name) if name == "but" => Some(OpCode::ButMixin),
             TokenKind::Ident(name) if name == "xx" => Some(OpCode::ListRepeat),
             // Pair
             TokenKind::FatArrow => Some(OpCode::MakePair),

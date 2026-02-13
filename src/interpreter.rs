@@ -8233,10 +8233,11 @@ impl Interpreter {
                     });
                 }
                 if name == "chars" {
+                    use unicode_segmentation::UnicodeSegmentation;
                     let val = args.first().and_then(|e| self.eval_expr(e).ok());
                     return Ok(match val {
-                        Some(Value::Str(s)) => Value::Int(s.chars().count() as i64),
-                        Some(v) => Value::Int(v.to_string_value().chars().count() as i64),
+                        Some(Value::Str(s)) => Value::Int(s.graphemes(true).count() as i64),
+                        Some(v) => Value::Int(v.to_string_value().graphemes(true).count() as i64),
                         _ => Value::Int(0),
                     });
                 }
@@ -10302,6 +10303,11 @@ impl Interpreter {
                 Ok(Self::make_order(ord))
             }
             TokenKind::Ident(name) if name == "eqv" => Ok(Value::Bool(left.eqv(&right))),
+            TokenKind::Ident(name) if name == "but" => {
+                // 'but' mixin operator: returns the left value with role/value mixed in.
+                // For now, a simplified implementation that preserves the base value.
+                Ok(left)
+            }
             TokenKind::Ident(name) if name == "x" => {
                 let s = left.to_string_value();
                 let n = match right {
