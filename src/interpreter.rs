@@ -4414,15 +4414,7 @@ impl Interpreter {
                     cond,
                     then_branch,
                     else_branch,
-                } => {
-                    if self.eval_expr(cond)?.truthy() {
-                        self.eval_block_value(then_branch)
-                    } else if else_branch.is_empty() {
-                        Ok(Value::Nil)
-                    } else {
-                        self.eval_block_value(else_branch)
-                    }
-                }
+                } => self.eval_do_if(cond, then_branch, else_branch),
                 Stmt::Given { topic, body } => self.eval_given_value(topic, body),
                 _ => {
                     self.exec_stmt(stmt)?;
@@ -4467,11 +4459,16 @@ impl Interpreter {
             Expr::ArrayLiteral(items) => {
                 let mut values = Vec::new();
                 for item in items {
-                    values.push(self.eval_expr(item)?);
+                    let val = self.eval_expr(item)?;
+                    // Flatten Slips (including Empty) in list context
+                    match val {
+                        Value::Slip(elems) => values.extend(elems),
+                        other => values.push(other),
+                    }
                 }
                 // Single-element array constructor expands iterables:
                 // [^10] => [0,1,2,...,9], [1..5] => [1,2,3,4,5]
-                if values.len() == 1 {
+                if items.len() == 1 && values.len() == 1 {
                     let val = values.pop().unwrap();
                     return match &val {
                         Value::Range(..)
@@ -8587,10 +8584,11 @@ impl Interpreter {
                 }
                 if name == "defined" {
                     let val = args.first().and_then(|e| self.eval_expr(e).ok());
-                    return Ok(Value::Bool(!matches!(
-                        val,
-                        Some(Value::Nil) | Some(Value::Package(_)) | None
-                    )));
+                    return Ok(Value::Bool(match &val {
+                        Some(Value::Nil) | Some(Value::Package(_)) | None => false,
+                        Some(Value::Slip(items)) if items.is_empty() => false,
+                        _ => true,
+                    }));
                 }
                 if name == "undefine" {
                     // undefine($var) sets the variable to Nil (undefined)
@@ -12428,6 +12426,35 @@ impl Interpreter {
             Ok(()) => Ok(last),
             Err(e) => Err(e),
         }
+    }
+
+    /// Evaluate a `do if/elsif/else` chain, returning Empty (empty Slip)
+    /// when no branch executes, per S04 specification.
+    fn eval_do_if(
+        &mut self,
+        cond: &Expr,
+        then_branch: &[Stmt],
+        else_branch: &[Stmt],
+    ) -> Result<Value, RuntimeError> {
+        if self.eval_expr(cond)?.truthy() {
+            return self.eval_block_value(then_branch);
+        }
+        if else_branch.is_empty() {
+            // No branch executed; return Empty (empty Slip)
+            return Ok(Value::Slip(vec![]));
+        }
+        // elsif chain: else_branch is [Stmt::If { ... }]
+        if else_branch.len() == 1
+            && let Stmt::If {
+                cond: inner_cond,
+                then_branch: inner_then,
+                else_branch: inner_else,
+            } = &else_branch[0]
+        {
+            return self.eval_do_if(inner_cond, inner_then, inner_else);
+        }
+        // Plain else branch
+        self.eval_block_value(else_branch)
     }
 
     fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {

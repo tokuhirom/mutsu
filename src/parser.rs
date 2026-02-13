@@ -1071,6 +1071,31 @@ impl Parser {
                 }));
             }
         }
+        // Collect trailing comma-separated expressions into a list
+        // (e.g. `(do { ... }), $i;` at statement level)
+        let expr = if self.match_kind(TokenKind::Comma) {
+            let mut items = vec![expr];
+            if !self.check(&TokenKind::Semicolon)
+                && !self.check(&TokenKind::Eof)
+                && !self.check(&TokenKind::RBrace)
+                && !self.check(&TokenKind::RParen)
+            {
+                items.push(self.parse_expr()?);
+                while self.match_kind(TokenKind::Comma) {
+                    if self.check(&TokenKind::Semicolon)
+                        || self.check(&TokenKind::Eof)
+                        || self.check(&TokenKind::RBrace)
+                        || self.check(&TokenKind::RParen)
+                    {
+                        break;
+                    }
+                    items.push(self.parse_expr()?);
+                }
+            }
+            Expr::ArrayLiteral(items)
+        } else {
+            expr
+        };
         let stmt = Stmt::Expr(expr);
         self.parse_statement_modifier(stmt)
     }
@@ -3447,7 +3472,17 @@ impl Parser {
         } else if self.peek_is_var() {
             let var_line = self.tokens.get(self.pos).map(|t| t.line).unwrap_or(0);
             let name = self.consume_var()?;
-            if name == "?LINE" {
+            if name.is_empty() && self.match_kind(TokenKind::LParen) {
+                // $(...) item context operator: parse contents and return as-is
+                if self.check(&TokenKind::RParen) {
+                    self.consume_kind(TokenKind::RParen)?;
+                    Expr::ArrayLiteral(Vec::new())
+                } else {
+                    let expr = self.parse_comma_expr()?;
+                    self.consume_kind(TokenKind::RParen)?;
+                    expr
+                }
+            } else if name == "?LINE" {
                 Expr::Literal(Value::Int(var_line as i64))
             } else {
                 Expr::Var(name)

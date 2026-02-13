@@ -11,10 +11,11 @@ pub(crate) fn native_method_0arg(
     method: &str,
 ) -> Option<Result<Value, RuntimeError>> {
     match method {
-        "defined" => Some(Ok(Value::Bool(!matches!(
-            target,
-            Value::Nil | Value::Package(_)
-        )))),
+        "defined" => Some(Ok(Value::Bool(match target {
+            Value::Nil | Value::Package(_) => false,
+            Value::Slip(items) if items.is_empty() => false,
+            _ => true,
+        }))),
         "Bool" => Some(Ok(Value::Bool(target.truthy()))),
         "Str" => match target {
             Value::Package(_) | Value::Instance { .. } => None,
@@ -774,10 +775,11 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 Some(Ok(Value::Int(Interpreter::to_int(arg))))
             }
         }
-        "defined" => Some(Ok(Value::Bool(!matches!(
-            arg,
-            Value::Nil | Value::Package(_)
-        )))),
+        "defined" => Some(Ok(Value::Bool(match arg {
+            Value::Nil | Value::Package(_) => false,
+            Value::Slip(items) if items.is_empty() => false,
+            _ => true,
+        }))),
         "elems" => match arg {
             Value::Array(items) => Some(Ok(Value::Int(items.len() as i64))),
             Value::Hash(items) => Some(Ok(Value::Int(items.len() as i64))),

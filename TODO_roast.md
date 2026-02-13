@@ -483,8 +483,8 @@
 - [ ] roast/S04-statement-modifiers/without.t
 - [ ] roast/S04-statement-modifiers/with.t
 - [x] roast/S04-statement-parsing/hash.t
-- [ ] roast/S04-statements/do.t
-  - 29/32 pass. Failures: empty Slip in list context when no if-branch executes (tests 11-12), top-level comma expression in EVAL for last return value (test 25)
+- [x] roast/S04-statements/do.t
+  - 32/32 pass.
 - [ ] roast/S04-statements/for-scope.t
   - 3/16 pass (tests 1, 3, 5). Failures: lexical array reset per iteration (2, 4), itemized array in for loop (6-7), `for @a -> $x` argument list (8). Only 8 tests reached. Difficulty: Medium
 - [ ] roast/S04-statements/for.t

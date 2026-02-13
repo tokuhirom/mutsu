@@ -1024,7 +1024,15 @@ impl VM {
             OpCode::MakeArray(n) => {
                 let n = *n as usize;
                 let start = self.stack.len() - n;
-                let elems: Vec<Value> = self.stack.drain(start..).collect();
+                let raw: Vec<Value> = self.stack.drain(start..).collect();
+                // Flatten Slips (including Empty) in list context
+                let mut elems = Vec::with_capacity(raw.len());
+                for val in raw {
+                    match val {
+                        Value::Slip(items) => elems.extend(items),
+                        other => elems.push(other),
+                    }
+                }
                 self.stack.push(Value::Array(elems));
                 *ip += 1;
             }
