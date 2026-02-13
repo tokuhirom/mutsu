@@ -3,7 +3,128 @@
 use crate::interpreter::Interpreter;
 use crate::value::{RuntimeError, Value, make_rat};
 use num_traits::Signed;
+use std::cell::RefCell;
 use unicode_segmentation::UnicodeSegmentation;
+
+// ── Thread-local RNG (xoshiro256**) ────────────────────────────────────
+thread_local! {
+    static RNG: RefCell<Xoshiro256StarStar> = RefCell::new(Xoshiro256StarStar::from_time());
+}
+
+struct Xoshiro256StarStar {
+    s: [u64; 4],
+}
+
+impl Xoshiro256StarStar {
+    fn from_time() -> Self {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut s = [0u64; 4];
+        for (i, slot) in s.iter_mut().enumerate() {
+            let mut h = DefaultHasher::new();
+            std::time::SystemTime::now().hash(&mut h);
+            (i as u64).hash(&mut h);
+            std::thread::current().id().hash(&mut h);
+            *slot = h.finish();
+            if *slot == 0 {
+                *slot = 0xdeadbeef;
+            }
+        }
+        Self { s }
+    }
+
+    fn from_seed(seed: u64) -> Self {
+        // Use splitmix64 to initialize state from a single seed
+        let mut state = seed;
+        let mut s = [0u64; 4];
+        for slot in &mut s {
+            state = state.wrapping_add(0x9e3779b97f4a7c15);
+            let mut z = state;
+            z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94d049bb133111eb);
+            *slot = z ^ (z >> 31);
+            if *slot == 0 {
+                *slot = 1;
+            }
+        }
+        Self { s }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        let result = (self.s[1].wrapping_mul(5)).rotate_left(7).wrapping_mul(9);
+        let t = self.s[1] << 17;
+        self.s[2] ^= self.s[0];
+        self.s[3] ^= self.s[1];
+        self.s[1] ^= self.s[2];
+        self.s[0] ^= self.s[3];
+        self.s[2] ^= t;
+        self.s[3] = self.s[3].rotate_left(45);
+        result
+    }
+
+    fn next_f64(&mut self) -> f64 {
+        // Generate a float in [0, 1)
+        (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
+    }
+}
+
+/// Return a random float in [0, 1)
+pub(crate) fn builtin_rand() -> f64 {
+    RNG.with(|rng| rng.borrow_mut().next_f64())
+}
+
+/// Seed the RNG
+pub(crate) fn builtin_srand(seed: u64) {
+    RNG.with(|rng| {
+        *rng.borrow_mut() = Xoshiro256StarStar::from_seed(seed);
+    });
+}
+
+/// Seed the RNG with a time-based seed
+pub(crate) fn builtin_srand_auto() {
+    RNG.with(|rng| {
+        *rng.borrow_mut() = Xoshiro256StarStar::from_time();
+    });
+}
+
+/// Return a random integer in [0, n)
+pub(crate) fn builtin_rand_int(n: usize) -> usize {
+    RNG.with(|rng| {
+        let r = rng.borrow_mut().next_u64();
+        (r as usize) % n
+    })
+}
+
+/// Unicode titlecase for the first character of a string.
+/// Titlecase differs from uppercase for certain characters:
+/// - 'ß' → "Ss" (not "SS")
+/// - digraph ligatures: 'ǉ'→"ǈ", 'ǌ'→"ǋ", 'ǳ'→"ǲ"
+pub(crate) fn unicode_titlecase_first(ch: char) -> String {
+    match ch {
+        // Latin digraph titlecase pairs
+        '\u{01C9}' | '\u{01C7}' => "\u{01C8}".to_string(), // ǉ/Ǉ → ǈ (Lj)
+        '\u{01CC}' | '\u{01CA}' => "\u{01CB}".to_string(), // ǌ/Ǌ → ǋ (Nj)
+        '\u{01F3}' | '\u{01F1}' => "\u{01F2}".to_string(), // ǳ/Ǳ → ǲ (Dz)
+        // Sharp S: titlecase is "Ss", not "SS"
+        '\u{00DF}' => "Ss".to_string(),
+        // Default: use uppercase
+        _ => ch.to_uppercase().to_string(),
+    }
+}
+
+fn titlecase_string(s: &str) -> String {
+    let mut result = String::new();
+    let mut first = true;
+    for ch in s.chars() {
+        if first {
+            result.push_str(&unicode_titlecase_first(ch));
+            first = false;
+        } else {
+            result.push(ch);
+        }
+    }
+    result
+}
 
 // ── 0-arg method dispatch ────────────────────────────────────────────
 /// Try to dispatch a 0-argument method call on a Value.
@@ -96,24 +217,18 @@ pub(crate) fn native_method_0arg(
             };
             Some(Ok(result))
         }
+        "rand" => {
+            let max = match target {
+                Value::Int(n) => *n as f64,
+                Value::Num(n) => *n,
+                Value::Rat(n, d) => *n as f64 / *d as f64,
+                _ => return None,
+            };
+            Some(Ok(Value::Num(builtin_rand() * max)))
+        }
         "uc" => Some(Ok(Value::Str(target.to_string_value().to_uppercase()))),
         "lc" => Some(Ok(Value::Str(target.to_string_value().to_lowercase()))),
-        "tc" => {
-            let s = target.to_string_value();
-            let mut result = String::new();
-            let mut capitalize = true;
-            for ch in s.chars() {
-                if capitalize {
-                    for c in ch.to_uppercase() {
-                        result.push(c);
-                    }
-                    capitalize = false;
-                } else {
-                    result.push(ch);
-                }
-            }
-            Some(Ok(Value::Str(result)))
-        }
+        "tc" => Some(Ok(Value::Str(titlecase_string(&target.to_string_value())))),
         "sign" => {
             let result = match target {
                 Value::Int(i) => Value::Int(i.signum()),
@@ -645,6 +760,7 @@ pub(crate) fn native_method_2arg(
 /// Try to dispatch a built-in function call.
 pub(crate) fn native_function(name: &str, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     match args.len() {
+        0 => native_function_0arg(name),
         1 => native_function_1arg(name, &args[0]),
         2 => native_function_2arg(name, &args[0], &args[1]),
         3 => native_function_3arg(name, &args[0], &args[1], &args[2]),
@@ -652,26 +768,34 @@ pub(crate) fn native_function(name: &str, args: &[Value]) -> Option<Result<Value
     }
 }
 
+fn native_function_0arg(name: &str) -> Option<Result<Value, RuntimeError>> {
+    match name {
+        "rand" => Some(Ok(Value::Num(builtin_rand()))),
+        "srand" => {
+            builtin_srand_auto();
+            Some(Ok(Value::Nil))
+        }
+        _ => None,
+    }
+}
+
 fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, RuntimeError>> {
     match name {
+        "srand" => {
+            let seed = match arg {
+                Value::Int(n) => *n as u64,
+                Value::Num(n) => *n as u64,
+                _ => arg.to_string_value().parse::<u64>().unwrap_or(0),
+            };
+            builtin_srand(seed);
+            Some(Ok(Value::Nil))
+        }
         "uc" => Some(Ok(Value::Str(arg.to_string_value().to_uppercase()))),
         "lc" => Some(Ok(Value::Str(arg.to_string_value().to_lowercase()))),
-        "tc" => {
-            let s = arg.to_string_value();
-            let mut result = String::new();
-            let mut capitalize = true;
-            for ch in s.chars() {
-                if capitalize {
-                    for c in ch.to_uppercase() {
-                        result.push(c);
-                    }
-                    capitalize = false;
-                } else {
-                    result.push(ch);
-                }
-            }
-            Some(Ok(Value::Str(result)))
-        }
+        "tc" => Some(Ok(Value::Str(titlecase_string(&arg.to_string_value())))),
+        "tclc" => Some(Ok(Value::Str(crate::value::tclc_str(
+            &arg.to_string_value(),
+        )))),
         "wordcase" => Some(Ok(Value::Str(crate::value::wordcase_str(
             &arg.to_string_value(),
         )))),
@@ -1287,19 +1411,39 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
         Value::Complex(mag * wi.cos(), mag * wi.sin())
     } else {
         match (l, r) {
-            (Value::Int(a), Value::Int(b)) if b >= 0 => Value::Int(a.pow(b as u32)),
+            (Value::Int(a), Value::Int(b)) if b >= 0 => {
+                if let Some(result) = a.checked_pow(b as u32) {
+                    Value::Int(result)
+                } else {
+                    // Overflow: use BigInt
+                    use num_bigint::BigInt;
+                    let base = BigInt::from(a);
+                    Value::BigInt(base.pow(b as u32))
+                }
+            }
             (Value::Int(a), Value::Int(b)) => {
                 let pos = (-b) as u32;
-                let base = a.pow(pos);
-                make_rat(1, base)
+                if let Some(base) = a.checked_pow(pos) {
+                    make_rat(1, base)
+                } else {
+                    Value::Num(1.0 / (a as f64).powi(pos as i32))
+                }
             }
             (Value::Rat(n, d), Value::Int(b)) if b >= 0 => {
                 let p = b as u32;
-                make_rat(n.pow(p), d.pow(p))
+                if let (Some(np), Some(dp)) = (n.checked_pow(p), d.checked_pow(p)) {
+                    make_rat(np, dp)
+                } else {
+                    Value::Num((n as f64 / d as f64).powi(b as i32))
+                }
             }
             (Value::Rat(n, d), Value::Int(b)) => {
                 let p = (-b) as u32;
-                make_rat(d.pow(p), n.pow(p))
+                if let (Some(dp), Some(np)) = (d.checked_pow(p), n.checked_pow(p)) {
+                    make_rat(dp, np)
+                } else {
+                    Value::Num((d as f64 / n as f64).powi(p as i32))
+                }
             }
             (Value::Num(a), Value::Int(b)) => Value::Num(a.powi(b as i32)),
             (Value::Int(a), Value::Num(b)) => Value::Num((a as f64).powf(b)),

@@ -178,6 +178,10 @@ impl Parser {
             if self.match_ident("enum") {
                 return self.parse_enum_decl();
             }
+            // my sub foo(...) { ... } — lexically scoped sub (same as plain sub)
+            if matches!(self.peek_ident().as_deref(), Some("sub") | Some("method")) {
+                return self.parse_stmt();
+            }
             // Destructuring: my ($a, $b, $c) = expr
             if self.check(&TokenKind::LParen) {
                 self.pos += 1; // consume (
@@ -3480,7 +3484,10 @@ impl Parser {
                     let body = self.parse_block()?;
                     Expr::Try { body, catch: None }
                 } else if name == "rand" {
-                    Expr::Literal(Value::Int(0))
+                    Expr::Call {
+                        name: "rand".to_string(),
+                        args: vec![],
+                    }
                 } else if name == "Bool::False" {
                     Expr::Literal(Value::Bool(false))
                 } else if name == "Bool::True" {

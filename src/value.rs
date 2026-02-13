@@ -38,9 +38,7 @@ pub fn tclc_str(s: &str) -> String {
     let mut first = true;
     for ch in s.chars() {
         if first {
-            for c in ch.to_uppercase() {
-                result.push(c);
-            }
+            result.push_str(&crate::builtins::unicode_titlecase_first(ch));
             first = false;
         } else {
             for c in ch.to_lowercase() {

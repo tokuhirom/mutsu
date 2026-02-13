@@ -7038,36 +7038,64 @@ impl Interpreter {
                         }
                         _ => Ok(Value::Int(0)),
                     },
-                    "pick" => match base {
-                        Value::Array(mut items) => {
-                            if items.is_empty() {
-                                Ok(Value::Nil)
+                    "pick" => {
+                        let items = Self::value_to_list(&base);
+                        if items.is_empty() {
+                            Ok(Value::Nil)
+                        } else {
+                            let count = if let Some(arg) = args.first() {
+                                match self.eval_expr(arg)? {
+                                    Value::Int(n) => n as usize,
+                                    Value::Num(n) => n as usize,
+                                    _ => 1,
+                                }
                             } else {
-                                use std::collections::hash_map::DefaultHasher;
-                                use std::hash::{Hash, Hasher};
-                                let mut hasher = DefaultHasher::new();
-                                std::time::SystemTime::now().hash(&mut hasher);
-                                let idx = (hasher.finish() as usize) % items.len();
-                                Ok(items.remove(idx))
-                            }
-                        }
-                        _ => Ok(base),
-                    },
-                    "roll" => match base {
-                        Value::Array(items) => {
-                            if items.is_empty() {
-                                Ok(Value::Nil)
-                            } else {
-                                use std::collections::hash_map::DefaultHasher;
-                                use std::hash::{Hash, Hasher};
-                                let mut hasher = DefaultHasher::new();
-                                std::time::SystemTime::now().hash(&mut hasher);
-                                let idx = (hasher.finish() as usize) % items.len();
+                                0 // 0 means "return single element"
+                            };
+                            if count == 0 {
+                                let idx = crate::builtins::builtin_rand_int(items.len());
                                 Ok(items[idx].clone())
+                            } else {
+                                // pick(N) — N elements without replacement
+                                let mut pool = items;
+                                let n = count.min(pool.len());
+                                let mut result = Vec::with_capacity(n);
+                                for _ in 0..n {
+                                    let idx = crate::builtins::builtin_rand_int(pool.len());
+                                    result.push(pool.remove(idx));
+                                }
+                                Ok(Value::Array(result))
                             }
                         }
-                        _ => Ok(base),
-                    },
+                    }
+                    "roll" => {
+                        let items = Self::value_to_list(&base);
+                        if items.is_empty() {
+                            Ok(Value::Nil)
+                        } else {
+                            let count = if let Some(arg) = args.first() {
+                                match self.eval_expr(arg)? {
+                                    Value::Int(n) => n as usize,
+                                    Value::Num(n) => n as usize,
+                                    _ => 1,
+                                }
+                            } else {
+                                0 // 0 means "return single element"
+                            };
+                            if count == 0 {
+                                let idx = crate::builtins::builtin_rand_int(items.len());
+                                Ok(items[idx].clone())
+                            } else {
+                                // roll(N) — N elements with replacement
+                                let mut result = Vec::with_capacity(count);
+                                for _ in 0..count {
+                                    let idx = crate::builtins::builtin_rand_int(items.len());
+                                    result.push(items[idx].clone());
+                                }
+                                Ok(Value::Array(result))
+                            }
+                        }
+                    }
                     "map" => {
                         let items = Self::value_to_list(&base);
                         if let Some(func_expr) = args.first() {
@@ -7790,14 +7818,9 @@ impl Interpreter {
                 }
             },
             Expr::PostfixOp { op, expr } => {
-                if let Expr::Var(name) = expr.as_ref() {
-                    let val = self.env.get(name).cloned().unwrap_or(Value::Int(0));
-                    // Nil auto-vivifies to 0 for numeric operations
-                    let effective_val = match &val {
-                        Value::Nil => Value::Int(0),
-                        other => other.clone(),
-                    };
-                    let new_val = match (op, &effective_val) {
+                // Helper closure to compute increment/decrement
+                let compute_new = |op: &TokenKind, effective_val: &Value| -> Value {
+                    match (op, effective_val) {
                         (TokenKind::PlusPlus, Value::Int(i)) => Value::Int(i + 1),
                         (TokenKind::MinusMinus, Value::Int(i)) => Value::Int(i - 1),
                         (TokenKind::PlusPlus, Value::Rat(n, d)) => make_rat(n + d, *d),
@@ -7805,9 +7828,82 @@ impl Interpreter {
                         (TokenKind::PlusPlus, _) => Value::Int(1),
                         (TokenKind::MinusMinus, _) => Value::Int(-1),
                         _ => effective_val.clone(),
+                    }
+                };
+
+                if let Expr::Var(name) = expr.as_ref() {
+                    let val = self.env.get(name).cloned().unwrap_or(Value::Int(0));
+                    let effective_val = match &val {
+                        Value::Nil => Value::Int(0),
+                        other => other.clone(),
                     };
+                    let new_val = compute_new(op, &effective_val);
                     self.env.insert(name.clone(), new_val);
-                    Ok(effective_val) // postfix returns old value
+                    Ok(effective_val)
+                } else if let Expr::Index { target, index } = expr.as_ref() {
+                    // Handle %hash{key}++ and @array[idx]++
+                    let var_name = match target.as_ref() {
+                        Expr::HashVar(name) => format!("%{}", name),
+                        Expr::ArrayVar(name) => format!("@{}", name),
+                        Expr::Var(name) => name.clone(),
+                        _ => return Ok(Value::Nil),
+                    };
+                    let idx = self.eval_expr(index)?;
+                    let key = idx.to_string_value();
+
+                    // Get current value
+                    let current = if let Some(container) = self.env.get(&var_name) {
+                        match container {
+                            Value::Hash(h) => h.get(&key).cloned().unwrap_or(Value::Nil),
+                            Value::Array(arr) => {
+                                if let Ok(i) = key.parse::<usize>() {
+                                    arr.get(i).cloned().unwrap_or(Value::Nil)
+                                } else {
+                                    Value::Nil
+                                }
+                            }
+                            _ => Value::Nil,
+                        }
+                    } else {
+                        Value::Nil
+                    };
+
+                    let effective_val = match &current {
+                        Value::Nil => Value::Int(0),
+                        other => other.clone(),
+                    };
+                    let new_val = compute_new(op, &effective_val);
+
+                    // Auto-vivify container if needed
+                    if !self.env.contains_key(&var_name) {
+                        if var_name.starts_with('%') {
+                            self.env.insert(
+                                var_name.clone(),
+                                Value::Hash(std::collections::HashMap::new()),
+                            );
+                        } else {
+                            self.env.insert(var_name.clone(), Value::Array(Vec::new()));
+                        }
+                    }
+
+                    // Store new value back
+                    if let Some(container) = self.env.get_mut(&var_name) {
+                        match container {
+                            Value::Hash(h) => {
+                                h.insert(key, new_val);
+                            }
+                            Value::Array(arr) => {
+                                if let Ok(i) = idx.to_string_value().parse::<usize>() {
+                                    while arr.len() <= i {
+                                        arr.push(Value::Nil);
+                                    }
+                                    arr[i] = new_val;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    Ok(effective_val)
                 } else {
                     Ok(Value::Nil)
                 }
