@@ -6057,6 +6057,44 @@ impl Interpreter {
                             }
                             return Ok(Value::Nil);
                         }
+                        "splice" => {
+                            // Evaluate args before borrowing env mutably
+                            let start_val = args.first().map(|a| self.eval_expr(a)).transpose()?;
+                            let count_val = args.get(1).map(|a| self.eval_expr(a)).transpose()?;
+                            let new_val = args.get(2).map(|a| self.eval_expr(a)).transpose()?;
+
+                            if let Some(Value::Array(items)) = self.env.get_mut(&key) {
+                                let start = start_val
+                                    .and_then(|v| match v {
+                                        Value::Int(i) => Some(i.max(0) as usize),
+                                        _ => None,
+                                    })
+                                    .unwrap_or(0);
+                                let count = count_val
+                                    .and_then(|v| match v {
+                                        Value::Int(i) => Some(i.max(0) as usize),
+                                        _ => None,
+                                    })
+                                    .unwrap_or(items.len().saturating_sub(start));
+                                let end = (start + count).min(items.len());
+                                let removed: Vec<Value> = items.drain(start..end).collect();
+                                // Insert new elements if provided
+                                if let Some(new_v) = new_val {
+                                    match new_v {
+                                        Value::Array(new_items) => {
+                                            for (i, item) in new_items.into_iter().enumerate() {
+                                                items.insert(start + i, item);
+                                            }
+                                        }
+                                        other => {
+                                            items.insert(start, other);
+                                        }
+                                    }
+                                }
+                                return Ok(Value::Array(removed));
+                            }
+                            return Ok(Value::Array(vec![]));
+                        }
                         "append" => {
                             let mut new_items = Vec::new();
                             for arg in args {
@@ -12145,9 +12183,15 @@ impl Interpreter {
             // treat as if seeds = [] and generator produces values from scratch
         }
 
-        // Parse endpoint: could be scalar, Inf/Whatever (None), or array (first is limit, rest are extra)
-        let (endpoint, extra_rhs) = match &right {
-            Value::Num(f) if f.is_infinite() => (None, vec![]),
+        // Parse endpoint: could be scalar, Inf/Whatever (None), closure (predicate),
+        // regex, or array (first is limit, rest are extra)
+        enum EndpointKind {
+            Value(Value),
+            Closure(Value),
+            Regex(String),
+        }
+        let (endpoint, endpoint_kind, extra_rhs) = match &right {
+            Value::Num(f) if f.is_infinite() => (None, None, vec![]),
             Value::Array(items) => {
                 if items.is_empty() {
                     return Err(RuntimeError::new(
@@ -12157,11 +12201,39 @@ impl Interpreter {
                 let first = &items[0];
                 let rest: Vec<Value> = items[1..].to_vec();
                 match first {
-                    Value::Num(f) if f.is_infinite() => (None, rest),
-                    _ => (Some(first.clone()), rest),
+                    Value::Num(f) if f.is_infinite() => (None, None, rest),
+                    Value::Sub { .. } => (
+                        Some(first.clone()),
+                        Some(EndpointKind::Closure(first.clone())),
+                        rest,
+                    ),
+                    Value::Regex(pat) => (
+                        Some(first.clone()),
+                        Some(EndpointKind::Regex(pat.clone())),
+                        rest,
+                    ),
+                    _ => (
+                        Some(first.clone()),
+                        Some(EndpointKind::Value(first.clone())),
+                        rest,
+                    ),
                 }
             }
-            other => (Some(other.clone()), vec![]),
+            Value::Sub { .. } => (
+                Some(right.clone()),
+                Some(EndpointKind::Closure(right.clone())),
+                vec![],
+            ),
+            Value::Regex(pat) => (
+                Some(right.clone()),
+                Some(EndpointKind::Regex(pat.clone())),
+                vec![],
+            ),
+            other => (
+                Some(other.clone()),
+                Some(EndpointKind::Value(other.clone())),
+                vec![],
+            ),
         };
 
         // Determine generation mode
@@ -12340,10 +12412,57 @@ impl Interpreter {
             }
         }
 
+        // For closure/regex endpoints, check if any seed already satisfies the predicate
+        if !seeds.is_empty() {
+            if let Some(EndpointKind::Closure(ref closure_val)) = endpoint_kind
+                && let Value::Sub {
+                    params,
+                    body,
+                    env: cenv,
+                    ..
+                } = closure_val
+            {
+                for (i, seed) in seeds.iter().enumerate() {
+                    let saved = self.env.clone();
+                    for (k, v) in cenv {
+                        self.env.insert(k.clone(), v.clone());
+                    }
+                    if let Some(p) = params.first() {
+                        self.env.insert(p.clone(), seed.clone());
+                    }
+                    let placeholders = collect_placeholders(body);
+                    if let Some(ph) = placeholders.first() {
+                        self.env.insert(ph.clone(), seed.clone());
+                    }
+                    self.env.insert("_".to_string(), seed.clone());
+                    let predicate_result = self.eval_block_value(body)?;
+                    self.env = saved;
+                    if predicate_result.truthy() {
+                        let end = if exclusive { i } else { i + 1 };
+                        let mut result: Vec<Value> = seeds[..end].to_vec();
+                        result.extend(extra_rhs);
+                        return Ok(Value::Array(result));
+                    }
+                }
+            }
+            if let Some(EndpointKind::Regex(ref pat)) = endpoint_kind {
+                for (i, seed) in seeds.iter().enumerate() {
+                    let s = seed.to_string_value();
+                    if self.regex_find_first(pat, &s).is_some() {
+                        let end = if exclusive { i } else { i + 1 };
+                        let mut result: Vec<Value> = seeds[..end].to_vec();
+                        result.extend(extra_rhs);
+                        return Ok(Value::Array(result));
+                    }
+                }
+            }
+        }
+
         // Check if any seed matches the endpoint — for geometric/alternating sequences,
         // the endpoint may match an earlier seed, not just the last one
         if !seeds.is_empty()
             && let Some(ref ep) = endpoint
+            && matches!(endpoint_kind, Some(EndpointKind::Value(_)))
         {
             // Check last seed first (most common case)
             let last_seed = seeds.last().unwrap();
@@ -12419,11 +12538,17 @@ impl Interpreter {
                 }
                 SeqMode::Arithmetic(step) => {
                     if is_string_seq {
-                        // String constant sequence
                         if *step == 0.0 {
+                            // String constant sequence
                             result.last().unwrap().clone()
                         } else {
-                            break; // can't do arithmetic on strings
+                            // String succession sequence: use .succ
+                            let last = result.last().unwrap();
+                            if let Value::Str(s) = last {
+                                Value::Str(Self::string_succ(s))
+                            } else {
+                                break;
+                            }
                         }
                     } else {
                         let last = result.last().unwrap();
@@ -12437,63 +12562,110 @@ impl Interpreter {
             };
 
             // Check endpoint
-            if let Some(ref ep) = endpoint {
-                if Self::seq_values_equal(&next, ep) {
-                    if !exclusive {
-                        result.push(next);
+            if let Some(ref epk) = endpoint_kind {
+                match epk {
+                    EndpointKind::Closure(closure_val) => {
+                        // Call the closure with the generated value as predicate
+                        if let Value::Sub {
+                            params,
+                            body,
+                            env: cenv,
+                            ..
+                        } = closure_val
+                        {
+                            let saved = self.env.clone();
+                            for (k, v) in cenv {
+                                self.env.insert(k.clone(), v.clone());
+                            }
+                            if let Some(p) = params.first() {
+                                self.env.insert(p.clone(), next.clone());
+                            }
+                            let placeholders = collect_placeholders(body);
+                            if let Some(ph) = placeholders.first() {
+                                self.env.insert(ph.clone(), next.clone());
+                            }
+                            self.env.insert("_".to_string(), next.clone());
+                            let predicate_result = self.eval_block_value(body)?;
+                            self.env = saved;
+                            if predicate_result.truthy() {
+                                if !exclusive {
+                                    result.push(next);
+                                }
+                                break;
+                            }
+                        }
                     }
-                    break;
-                }
-                // Check if we went past the endpoint
-                if let (Some(nf), Some(ef)) =
-                    (Self::seq_value_to_f64(&next), Self::seq_value_to_f64(ep))
-                {
-                    match &mode {
-                        SeqMode::Arithmetic(step) => {
-                            if *step > 0.0 && nf > ef {
-                                break;
+                    EndpointKind::Regex(pat) => {
+                        // Match regex against the string value of next
+                        let s = next.to_string_value();
+                        if self.regex_find_first(pat, &s).is_some() {
+                            if !exclusive {
+                                result.push(next);
                             }
-                            if *step < 0.0 && nf < ef {
-                                break;
-                            }
+                            break;
                         }
-                        SeqMode::Geometric(ratio) => {
-                            if *ratio > 0.0 {
-                                // Non-alternating geometric
-                                if *ratio > 1.0 && nf > ef {
-                                    break;
-                                }
-                                if *ratio > 0.0 && *ratio < 1.0 && nf < ef {
-                                    break;
-                                }
-                            } else {
-                                // Alternating geometric: check if endpoint is reachable
-                                let first_f = if !seeds.is_empty() {
-                                    Self::seq_value_to_f64(&seeds[0]).unwrap_or(1.0).abs()
-                                } else {
-                                    1.0
-                                };
-                                let reachable = if first_f > 1e-15 && ef.abs() > 1e-15 {
-                                    let log_val = (ef.abs() / first_f).ln() / ratio.abs().ln();
-                                    (log_val - log_val.round()).abs() < 1e-9 && log_val >= -1e-9
-                                } else {
-                                    ef.abs() < 1e-15 // endpoint 0 is never reachable
-                                };
-                                if !reachable {
-                                    // Endpoint not reachable: stop if |next| > |endpoint|
-                                    if ratio.abs() > 1.0 && nf.abs() > ef.abs() {
+                    }
+                    EndpointKind::Value(ep) => {
+                        if Self::seq_values_equal(&next, ep) {
+                            if !exclusive {
+                                result.push(next);
+                            }
+                            break;
+                        }
+                        // Check if we went past the endpoint
+                        if let (Some(nf), Some(ef)) =
+                            (Self::seq_value_to_f64(&next), Self::seq_value_to_f64(ep))
+                        {
+                            match &mode {
+                                SeqMode::Arithmetic(step) => {
+                                    if *step > 0.0 && nf > ef {
                                         break;
                                     }
-                                    if ratio.abs() < 1.0 && ratio.abs() > 0.0 && nf.abs() < ef.abs()
-                                    {
+                                    if *step < 0.0 && nf < ef {
                                         break;
                                     }
                                 }
-                                // If reachable, only exact match stops (handled above)
+                                SeqMode::Geometric(ratio) => {
+                                    if *ratio > 0.0 {
+                                        // Non-alternating geometric
+                                        if *ratio > 1.0 && nf > ef {
+                                            break;
+                                        }
+                                        if *ratio > 0.0 && *ratio < 1.0 && nf < ef {
+                                            break;
+                                        }
+                                    } else {
+                                        // Alternating geometric: check if endpoint is reachable
+                                        let first_f = if !seeds.is_empty() {
+                                            Self::seq_value_to_f64(&seeds[0]).unwrap_or(1.0).abs()
+                                        } else {
+                                            1.0
+                                        };
+                                        let reachable = if first_f > 1e-15 && ef.abs() > 1e-15 {
+                                            let log_val =
+                                                (ef.abs() / first_f).ln() / ratio.abs().ln();
+                                            (log_val - log_val.round()).abs() < 1e-9
+                                                && log_val >= -1e-9
+                                        } else {
+                                            ef.abs() < 1e-15
+                                        };
+                                        if !reachable {
+                                            if ratio.abs() > 1.0 && nf.abs() > ef.abs() {
+                                                break;
+                                            }
+                                            if ratio.abs() < 1.0
+                                                && ratio.abs() > 0.0
+                                                && nf.abs() < ef.abs()
+                                            {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                SeqMode::Closure => {
+                                    // For closures, don't auto-stop based on direction
+                                }
                             }
-                        }
-                        SeqMode::Closure => {
-                            // For closures, don't auto-stop based on direction
                         }
                     }
                 }
@@ -12507,6 +12679,61 @@ impl Interpreter {
     }
 
     // Add step to a sequence value, preserving type where possible
+    // Compute the successor of a string (increment the last character, carrying over)
+    fn string_succ(s: &str) -> String {
+        if s.is_empty() {
+            return String::new();
+        }
+        let mut chars: Vec<char> = s.chars().collect();
+        // Carry-over increment from the last character
+        let mut carry = true;
+        for ch in chars.iter_mut().rev() {
+            if !carry {
+                break;
+            }
+            if ch.is_ascii_lowercase() {
+                if *ch == 'z' {
+                    *ch = 'a';
+                } else {
+                    *ch = (*ch as u8 + 1) as char;
+                    carry = false;
+                }
+            } else if ch.is_ascii_uppercase() {
+                if *ch == 'Z' {
+                    *ch = 'A';
+                } else {
+                    *ch = (*ch as u8 + 1) as char;
+                    carry = false;
+                }
+            } else if ch.is_ascii_digit() {
+                if *ch == '9' {
+                    *ch = '0';
+                } else {
+                    *ch = (*ch as u8 + 1) as char;
+                    carry = false;
+                }
+            } else {
+                *ch = char::from_u32(*ch as u32 + 1).unwrap_or(*ch);
+                carry = false;
+            }
+        }
+        if carry {
+            // All characters carried over, prepend appropriate char
+            let first = chars[0];
+            let prefix = if first.is_ascii_lowercase() {
+                'a'
+            } else if first.is_ascii_uppercase() {
+                'A'
+            } else if first.is_ascii_digit() {
+                '1'
+            } else {
+                first
+            };
+            chars.insert(0, prefix);
+        }
+        chars.into_iter().collect()
+    }
+
     fn seq_add(val: &Value, step: f64) -> Value {
         match val {
             Value::Int(i) => {
