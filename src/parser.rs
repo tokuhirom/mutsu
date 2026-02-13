@@ -849,6 +849,15 @@ impl Parser {
                     else_branch: Vec::new(),
                 });
             }
+            if self.match_ident("unless") {
+                let cond = self.parse_expr()?;
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::If {
+                    cond,
+                    then_branch: Vec::new(),
+                    else_branch: vec![Stmt::Redo(label)],
+                });
+            }
             if self.match_ident("until") {
                 let cond = self.parse_expr()?;
                 self.match_kind(TokenKind::Semicolon);

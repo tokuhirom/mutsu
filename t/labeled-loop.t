@@ -1,5 +1,5 @@
 use Test;
-plan 3;
+plan 5;
 
 # Labeled loop with next LABEL
 my $result = '';
@@ -30,3 +30,27 @@ for @items -> $n {
     $sum = $sum + $n;
 }
 is $sum, 7, 'plain last/next still works';
+
+# Labeled redo from inner loop targets outer loop
+{
+    my $x;
+    my $out = '';
+    FOO: for "foo" {
+        $out ~= $_;
+        BAR: for "bar" {
+            $out ~= $_;
+            redo FOO unless $x++
+        }
+    }
+    is $out, 'foobarfoobar', 'redo LABEL from inner loop redoes outer loop';
+}
+
+# redo LABEL with unless modifier
+{
+    my $count = 0;
+    FOO: for "a" {
+        $count++;
+        redo FOO unless $count >= 3;
+    }
+    is $count, 3, 'redo LABEL unless works correctly';
+}

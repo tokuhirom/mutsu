@@ -225,8 +225,8 @@ impl Compiler {
             Stmt::Next(label) => {
                 self.code.emit(OpCode::Next(label.clone()));
             }
-            Stmt::Redo(_) => {
-                self.code.emit(OpCode::Redo);
+            Stmt::Redo(label) => {
+                self.code.emit(OpCode::Redo(label.clone()));
             }
             Stmt::Return(expr) => {
                 self.compile_expr(expr);

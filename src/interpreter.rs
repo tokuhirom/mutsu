@@ -2066,7 +2066,11 @@ impl Interpreter {
                         }
                         for stmt in &body_main {
                             match self.exec_stmt(stmt) {
-                                Err(e) if e.is_redo => {
+                                Err(e)
+                                    if e.is_redo
+                                        && (e.label.is_none()
+                                            || e.label.as_deref() == label.as_deref()) =>
+                                {
                                     should_redo = true;
                                     break;
                                 }
@@ -2096,6 +2100,13 @@ impl Interpreter {
                             if e.is_next {
                                 if e.label.is_none() || e.label.as_deref() == label.as_deref() {
                                     break;
+                                }
+                                return Err(e);
+                            }
+                            if e.is_redo {
+                                // labeled redo targeting this loop
+                                if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                    continue;
                                 }
                                 return Err(e);
                             }
@@ -2143,7 +2154,11 @@ impl Interpreter {
                         }
                         for stmt in &body_main {
                             match self.exec_stmt(stmt) {
-                                Err(e) if e.is_redo => {
+                                Err(e)
+                                    if e.is_redo
+                                        && (e.label.is_none()
+                                            || e.label.as_deref() == label.as_deref()) =>
+                                {
                                     should_redo = true;
                                     break;
                                 }
@@ -2173,6 +2188,12 @@ impl Interpreter {
                             if e.is_next {
                                 if e.label.is_none() || e.label.as_deref() == label.as_deref() {
                                     break;
+                                }
+                                return Err(e);
+                            }
+                            if e.is_redo {
+                                if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                    continue;
                                 }
                                 return Err(e);
                             }
@@ -2367,7 +2388,11 @@ impl Interpreter {
                             }
                             for stmt in &body_main {
                                 match self.exec_stmt(stmt) {
-                                    Err(e) if e.is_redo => {
+                                    Err(e)
+                                        if e.is_redo
+                                            && (e.label.is_none()
+                                                || e.label.as_deref() == label.as_deref()) =>
+                                    {
                                         should_redo = true;
                                         break;
                                     }
@@ -2400,6 +2425,12 @@ impl Interpreter {
                                     }
                                     return Err(e);
                                 }
+                                if e.is_redo {
+                                    if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                        continue;
+                                    }
+                                    return Err(e);
+                                }
                                 return Err(e);
                             }
                             break;
@@ -2427,7 +2458,11 @@ impl Interpreter {
                             }
                             for stmt in &body_main {
                                 match self.exec_stmt(stmt) {
-                                    Err(e) if e.is_redo => {
+                                    Err(e)
+                                        if e.is_redo
+                                            && (e.label.is_none()
+                                                || e.label.as_deref() == label.as_deref()) =>
+                                    {
                                         should_redo = true;
                                         break;
                                     }
@@ -2457,6 +2492,12 @@ impl Interpreter {
                                 if e.is_next {
                                     if e.label.is_none() || e.label.as_deref() == label.as_deref() {
                                         break;
+                                    }
+                                    return Err(e);
+                                }
+                                if e.is_redo {
+                                    if e.label.is_none() || e.label.as_deref() == label.as_deref() {
+                                        continue;
                                     }
                                     return Err(e);
                                 }

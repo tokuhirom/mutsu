@@ -165,7 +165,7 @@ pub(crate) enum OpCode {
     // -- Loop control --
     Last(Option<String>),
     Next(Option<String>),
-    Redo,
+    Redo(Option<String>),
 
     // -- Given/When control --
     Proceed,

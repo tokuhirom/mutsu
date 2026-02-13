@@ -1286,8 +1286,10 @@ impl VM {
                 sig.label = label.clone();
                 return Err(sig);
             }
-            OpCode::Redo => {
-                return Err(RuntimeError::redo_signal());
+            OpCode::Redo(label) => {
+                let mut sig = RuntimeError::redo_signal();
+                sig.label = label.clone();
+                return Err(sig);
             }
 
             // -- Given/When control --
@@ -1515,12 +1517,24 @@ impl VM {
                             .insert(name.clone(), item.clone());
                     }
                     if let Some(slot) = param_local {
-                        self.locals[slot as usize] = item;
+                        self.locals[slot as usize] = item.clone();
                     }
                     'body_redo: loop {
                         match self.run_range(code, body_start, loop_end, compiled_fns) {
                             Ok(()) => break 'body_redo,
                             Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => {
+                                // Restore loop variable before re-executing body
+                                self.interpreter
+                                    .env_mut()
+                                    .insert("_".to_string(), item.clone());
+                                if let Some(ref name) = param_name {
+                                    self.interpreter
+                                        .env_mut()
+                                        .insert(name.clone(), item.clone());
+                                }
+                                if let Some(slot) = param_local {
+                                    self.locals[slot as usize] = item.clone();
+                                }
                                 continue 'body_redo;
                             }
                             Err(e) if e.is_last && Self::label_matches(&e.label, &label) => {
