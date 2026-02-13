@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use crate::interpreter::Interpreter;
 use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::value::{RuntimeError, Value, make_rat};
+use num_traits::Signed;
 
 pub(crate) struct VM {
     interpreter: Interpreter,
@@ -540,16 +541,11 @@ impl VM {
             OpCode::Gcd => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let (mut a, mut b) = (
-                    Interpreter::to_int(&left).abs(),
-                    Interpreter::to_int(&right).abs(),
-                );
-                while b != 0 {
-                    let t = b;
-                    b = a % b;
-                    a = t;
-                }
-                self.stack.push(Value::Int(a));
+                // Use BigInt arithmetic to handle arbitrary-precision integers
+                let a = left.to_bigint().abs();
+                let b = right.to_bigint().abs();
+                let g = num_integer::Integer::gcd(&a, &b);
+                self.stack.push(Value::from_bigint(g));
                 *ip += 1;
             }
             OpCode::Lcm => {

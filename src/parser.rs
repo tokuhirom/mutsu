@@ -1315,6 +1315,7 @@ impl Parser {
                     match token.kind {
                         TokenKind::Ident(s) => content.push_str(&s),
                         TokenKind::Number(n) => content.push_str(&n.to_string()),
+                        TokenKind::BigNumber(n) => content.push_str(&n.to_string()),
                         TokenKind::Str(s) => content.push_str(&s),
                         _ => {}
                     }
@@ -1661,7 +1662,7 @@ impl Parser {
             )
             && !matches!(
                 self.tokens.get(self.pos + 1).map(|t| &t.kind),
-                Some(TokenKind::Number(_))
+                Some(TokenKind::Number(_) | TokenKind::BigNumber(_))
             )
         {
             self.match_kind(TokenKind::Colon);
@@ -1713,6 +1714,7 @@ impl Parser {
                 TokenKind::Ident(_)
                     | TokenKind::Str(_)
                     | TokenKind::Number(_)
+                    | TokenKind::BigNumber(_)
                     | TokenKind::Float(_)
                     | TokenKind::Minus
             )
@@ -1721,13 +1723,18 @@ impl Parser {
                 TokenKind::Ident(s) => s,
                 TokenKind::Str(s) => s,
                 TokenKind::Number(n) => n.to_string(),
+                TokenKind::BigNumber(n) => n.to_string(),
                 TokenKind::Float(f) => f.to_string(),
                 TokenKind::Minus => {
-                    if let Some(next) =
-                        self.advance_if(|k| matches!(k, TokenKind::Number(_) | TokenKind::Float(_)))
-                    {
+                    if let Some(next) = self.advance_if(|k| {
+                        matches!(
+                            k,
+                            TokenKind::Number(_) | TokenKind::BigNumber(_) | TokenKind::Float(_)
+                        )
+                    }) {
                         match next.kind {
                             TokenKind::Number(n) => format!("-{}", n),
+                            TokenKind::BigNumber(n) => format!("-{}", n),
                             TokenKind::Float(f) => format!("-{}", f),
                             _ => "-".to_string(),
                         }
@@ -2137,6 +2144,7 @@ impl Parser {
                             match &self.tokens[j].kind {
                                 TokenKind::Ident(_)
                                 | TokenKind::Number(_)
+                                | TokenKind::BigNumber(_)
                                 | TokenKind::Str(_)
                                 | TokenKind::Float(_)
                                 | TokenKind::Minus => j += 1,
@@ -2751,6 +2759,11 @@ impl Parser {
             self.pos += 1;
             return Ok(Expr::Literal(Value::Int(n)));
         }
+        if let Some(TokenKind::BigNumber(n)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+            let n = n.clone();
+            self.pos += 1;
+            return Ok(Expr::Literal(Value::BigInt(n)));
+        }
         if let Some(TokenKind::Var(name)) = self.tokens.get(self.pos).map(|t| &t.kind) {
             let name = name.clone();
             self.pos += 1;
@@ -2846,11 +2859,13 @@ impl Parser {
             } else {
                 Expr::Literal(Value::Nil)
             }
-        } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Number(_))) {
-            if let TokenKind::Number(value) = token.kind {
-                Expr::Literal(Value::Int(value))
-            } else {
-                Expr::Literal(Value::Nil)
+        } else if let Some(token) =
+            self.advance_if(|k| matches!(k, TokenKind::Number(_) | TokenKind::BigNumber(_)))
+        {
+            match token.kind {
+                TokenKind::Number(value) => Expr::Literal(Value::Int(value)),
+                TokenKind::BigNumber(value) => Expr::Literal(Value::BigInt(value)),
+                _ => Expr::Literal(Value::Nil),
             }
         } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Float(_))) {
             if let TokenKind::Float(value) = token.kind {
@@ -2943,7 +2958,7 @@ impl Parser {
         } else if self.check(&TokenKind::Colon)
             && matches!(
                 self.tokens.get(self.pos + 1).map(|t| &t.kind),
-                Some(TokenKind::Ident(_) | TokenKind::Number(_))
+                Some(TokenKind::Ident(_) | TokenKind::Number(_) | TokenKind::BigNumber(_))
             )
         {
             // Colonpair: :name, :key<value>, :key(expr), :42name
@@ -3747,13 +3762,17 @@ impl Parser {
                     while let Some(token) = self.advance_if(|k| {
                         matches!(
                             k,
-                            TokenKind::Ident(_) | TokenKind::Str(_) | TokenKind::Number(_)
+                            TokenKind::Ident(_)
+                                | TokenKind::Str(_)
+                                | TokenKind::Number(_)
+                                | TokenKind::BigNumber(_)
                         )
                     }) {
                         let key = match token.kind {
                             TokenKind::Ident(s) => s,
                             TokenKind::Str(s) => s,
                             TokenKind::Number(n) => n.to_string(),
+                            TokenKind::BigNumber(n) => n.to_string(),
                             _ => String::new(),
                         };
                         keys.push(key);
@@ -3927,14 +3946,16 @@ impl Parser {
             let var = self.consume_var()?;
             return Ok((var.clone(), Some(Expr::Var(var))));
         }
-        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Number(_))) {
-            let number = if let TokenKind::Number(value) = token.kind {
-                value
-            } else {
-                0
+        if let Some(token) =
+            self.advance_if(|k| matches!(k, TokenKind::Number(_) | TokenKind::BigNumber(_)))
+        {
+            let literal = match token.kind {
+                TokenKind::Number(value) => Value::Int(value),
+                TokenKind::BigNumber(value) => Value::BigInt(value),
+                _ => Value::Int(0),
             };
             let name = self.consume_ident()?;
-            return Ok((name, Some(Expr::Literal(Value::Int(number)))));
+            return Ok((name, Some(Expr::Literal(literal))));
         }
         let name = self.consume_ident()?;
         if self.check(&TokenKind::Lt) {
@@ -4849,10 +4870,14 @@ impl Parser {
     }
 
     fn parse_literal_param_value(&mut self) -> Option<Value> {
-        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Number(_)))
-            && let TokenKind::Number(value) = token.kind
+        if let Some(token) =
+            self.advance_if(|k| matches!(k, TokenKind::Number(_) | TokenKind::BigNumber(_)))
         {
-            return Some(Value::Int(value));
+            match token.kind {
+                TokenKind::Number(value) => return Some(Value::Int(value)),
+                TokenKind::BigNumber(value) => return Some(Value::BigInt(value)),
+                _ => {}
+            }
         }
         if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Float(_)))
             && let TokenKind::Float(value) = token.kind

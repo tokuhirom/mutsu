@@ -2,6 +2,7 @@
 
 use crate::interpreter::Interpreter;
 use crate::value::{RuntimeError, Value, make_rat};
+use num_traits::Signed;
 
 // ── 0-arg method dispatch ────────────────────────────────────────────
 /// Try to dispatch a 0-argument method call on a Value.
@@ -25,6 +26,7 @@ pub(crate) fn native_method_0arg(
         "Int" => {
             let result = match target {
                 Value::Int(i) => Value::Int(*i),
+                Value::BigInt(_) => target.clone(),
                 Value::Num(f) => Value::Int(*f as i64),
                 Value::Rat(n, d) if *d != 0 => Value::Int(*n / *d),
                 Value::Str(s) => {
@@ -44,6 +46,7 @@ pub(crate) fn native_method_0arg(
         "Numeric" | "Num" => {
             let result = match target {
                 Value::Int(i) => Value::Int(*i),
+                Value::BigInt(_) => target.clone(),
                 Value::Num(f) => Value::Num(*f),
                 Value::Rat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
                 Value::Str(s) => {
@@ -85,6 +88,7 @@ pub(crate) fn native_method_0arg(
         "abs" => {
             let result = match target {
                 Value::Int(i) => Value::Int(i.abs()),
+                Value::BigInt(n) => Value::BigInt(n.abs()),
                 Value::Num(f) => Value::Num(f.abs()),
                 Value::Rat(n, d) => Value::Rat(n.abs(), *d),
                 _ => return None,
@@ -432,6 +436,10 @@ pub(crate) fn native_method_1arg(
             let s = target.to_string_value();
             let n = match arg {
                 Value::Int(i) => (*i).max(0) as usize,
+                Value::BigInt(bi) => {
+                    use num_traits::ToPrimitive;
+                    bi.to_usize().unwrap_or(usize::MAX)
+                }
                 Value::Num(f) => (*f as i64).max(0) as usize,
                 _ => arg.to_string_value().parse::<usize>().unwrap_or(1),
             };
@@ -871,6 +879,10 @@ fn native_function_2arg(
             let s = arg1.to_string_value();
             let n = match arg2 {
                 Value::Int(i) => (*i).max(0) as usize,
+                Value::BigInt(bi) => {
+                    use num_traits::ToPrimitive;
+                    bi.to_usize().unwrap_or(usize::MAX)
+                }
                 Value::Num(f) => (*f as i64).max(0) as usize,
                 _ => arg2.to_string_value().parse::<usize>().unwrap_or(1),
             };

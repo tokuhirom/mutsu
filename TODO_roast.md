@@ -300,8 +300,7 @@
   - 46/64 pass.
 - [ ] roast/S03-operators/flip-flop.t
   - 2/40 pass.
-- [ ] roast/S03-operators/gcd.t
-  - 12/15 pass. Tests 12, 14, 15 fail due to i64 overflow with big integers.
+- [x] roast/S03-operators/gcd.t
 - [ ] roast/S03-operators/identity.t
   - 20/46 pass.
 - [ ] roast/S03-operators/increment.t

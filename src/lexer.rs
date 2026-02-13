@@ -1,4 +1,5 @@
 use crate::value::VersionPart;
+use num_bigint::BigInt as NumBigInt;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum DStrPart {
@@ -10,6 +11,7 @@ pub(crate) enum DStrPart {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum TokenKind {
     Number(i64),
+    BigNumber(NumBigInt),
     Float(f64),
     Imaginary(f64),
     Str(String),
@@ -627,14 +629,17 @@ impl Lexer {
                             } else {
                                 TokenKind::Float(value)
                             }
-                        } else {
-                            let value = num.parse::<i64>().unwrap_or(i64::MAX);
+                        } else if let Ok(value) = num.parse::<i64>() {
                             if self.peek() == Some('i') {
                                 self.pos += 1;
                                 TokenKind::Imaginary(value as f64)
                             } else {
                                 TokenKind::Number(value)
                             }
+                        } else if let Ok(value) = num.parse::<NumBigInt>() {
+                            TokenKind::BigNumber(value)
+                        } else {
+                            TokenKind::Number(i64::MAX)
                         }
                     }
                 }

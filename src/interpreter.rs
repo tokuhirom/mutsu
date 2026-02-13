@@ -25,6 +25,7 @@ use crate::ast::{
 use crate::lexer::{Lexer, TokenKind};
 use crate::parser::Parser;
 use crate::value::{JunctionKind, LazyList, RuntimeError, Value, make_rat};
+use num_traits::Signed;
 
 /// Check if a character matches a Unicode property by name.
 /// Uses the `regex` crate's Unicode support with a thread-local cache.
@@ -3973,6 +3974,7 @@ impl Interpreter {
     pub(crate) fn value_type_name(value: &Value) -> &'static str {
         match value {
             Value::Int(_) => "Int",
+            Value::BigInt(_) => "Int",
             Value::Num(_) => "Num",
             Value::Str(_) => "Str",
             Value::Bool(_) => "Bool",
@@ -6067,6 +6069,7 @@ impl Interpreter {
                     "WHAT" => {
                         let type_name = match &base {
                             Value::Int(_) => "Int",
+                            Value::BigInt(_) => "Int",
                             Value::Num(_) => "Num",
                             Value::Str(_) => "Str",
                             Value::Bool(_) => "Bool",
@@ -6102,6 +6105,7 @@ impl Interpreter {
                         // Meta-method: type name
                         Ok(Value::Str(match &base {
                             Value::Int(_) => "Int".to_string(),
+                            Value::BigInt(_) => "Int".to_string(),
                             Value::Num(_) => "Num".to_string(),
                             Value::Str(_) => "Str".to_string(),
                             Value::Bool(_) => "Bool".to_string(),
@@ -10099,13 +10103,11 @@ impl Interpreter {
                 _ => Err(RuntimeError::new("mod expects Int")),
             },
             TokenKind::Ident(name) if name == "gcd" => {
-                let (mut a, mut b) = (Self::to_int(&left).abs(), Self::to_int(&right).abs());
-                while b != 0 {
-                    let t = b;
-                    b = a % b;
-                    a = t;
-                }
-                Ok(Value::Int(a))
+                // Use BigInt arithmetic to handle arbitrary-precision integers
+                let a = left.to_bigint().abs();
+                let b = right.to_bigint().abs();
+                let g = num_integer::Integer::gcd(&a, &b);
+                Ok(Value::from_bigint(g))
             }
             TokenKind::Ident(name) if name == "lcm" => {
                 let (a, b) = (Self::to_int(&left).abs(), Self::to_int(&right).abs());
@@ -13055,6 +13057,15 @@ impl Interpreter {
     pub(crate) fn to_int(v: &Value) -> i64 {
         match v {
             Value::Int(i) => *i,
+            Value::BigInt(n) => {
+                use num_traits::ToPrimitive;
+                n.to_i64()
+                    .unwrap_or(if *n > num_bigint::BigInt::from(0i64) {
+                        i64::MAX
+                    } else {
+                        i64::MIN
+                    })
+            }
             Value::Num(f) => *f as i64,
             Value::Rat(n, d) => {
                 if *d != 0 {

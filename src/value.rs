@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::ast::Stmt;
+use num_bigint::BigInt as NumBigInt;
+use num_traits::{ToPrimitive, Zero};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -131,6 +133,7 @@ pub fn make_rat(num: i64, den: i64) -> Value {
 #[derive(Debug, Clone)]
 pub enum Value {
     Int(i64),
+    BigInt(NumBigInt),
     Num(f64),
     Str(String),
     Bool(bool),
@@ -205,6 +208,10 @@ impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Value::Int(a), Value::Int(b)) => a == b,
+            (Value::BigInt(a), Value::BigInt(b)) => a == b,
+            (Value::BigInt(a), Value::Int(b)) | (Value::Int(b), Value::BigInt(a)) => {
+                *a == NumBigInt::from(*b)
+            }
             (Value::Num(a), Value::Num(b)) => (a.is_nan() && b.is_nan()) || a == b,
             (Value::Int(a), Value::Num(b)) => (*a as f64) == *b,
             (Value::Num(a), Value::Int(b)) => *a == (*b as f64),
@@ -348,6 +355,7 @@ impl Value {
         match self {
             Value::Bool(b) => *b,
             Value::Int(i) => *i != 0,
+            Value::BigInt(n) => !n.is_zero(),
             Value::Num(f) => *f != 0.0 && !f.is_nan(),
             Value::Str(s) => !s.is_empty(),
             Value::Range(_, _) => true,
@@ -386,6 +394,7 @@ impl Value {
     pub(crate) fn to_string_value(&self) -> String {
         match self {
             Value::Int(i) => i.to_string(),
+            Value::BigInt(n) => n.to_string(),
             Value::Num(f) => {
                 if f.is_nan() {
                     "NaN".to_string()
@@ -554,6 +563,35 @@ impl Value {
             })
             .collect::<Vec<_>>()
             .join(".")
+    }
+
+    /// Convert a Value to a num_bigint::BigInt for arbitrary-precision arithmetic.
+    pub(crate) fn to_bigint(&self) -> NumBigInt {
+        match self {
+            Value::Int(i) => NumBigInt::from(*i),
+            Value::BigInt(n) => n.clone(),
+            Value::Num(f) => NumBigInt::from(*f as i64),
+            Value::Rat(n, d) => {
+                if *d != 0 {
+                    NumBigInt::from(n / d)
+                } else {
+                    NumBigInt::from(0)
+                }
+            }
+            Value::Str(s) => s
+                .parse::<NumBigInt>()
+                .unwrap_or_else(|_| NumBigInt::from(0)),
+            _ => NumBigInt::from(0),
+        }
+    }
+
+    /// Create a Value from a BigInt, normalizing to Int(i64) when possible.
+    pub(crate) fn from_bigint(n: NumBigInt) -> Value {
+        if let Some(i) = n.to_i64() {
+            Value::Int(i)
+        } else {
+            Value::BigInt(n)
+        }
     }
 }
 
