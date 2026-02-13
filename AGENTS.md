@@ -49,17 +49,28 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - When `make roast` shows failures in whitelisted tests, do NOT dismiss them as "pre-existing". Investigate each failure, fix what can be fixed, and remove from the whitelist only tests that truly cannot pass yet (with documented reasons in TODO_roast.md).
 - When a roast test requires solving multiple unrelated prerequisite problems that go beyond the test's main topic, fix what you can, update `TODO_roast.md` with the diagnosis, and move on to the next test. Do not get stuck on a single test.
 
+## Checking `make roast` results
+- To find failing tests in `make roast` output:
+  ```
+  make roast 2>&1 | grep -E "(FAILED|Failed)" | head -20
+  ```
+- To see detailed failure info:
+  ```
+  make roast 2>&1 | grep -E "(not ok|FAILED|Failed|Wstat)" | head -20
+  ```
+
 ## Parallel agents with git worktrees
 - When running multiple sub-agents in parallel that modify source code, each agent MUST work in its own git worktree to avoid file conflicts.
-- The parent agent creates worktrees before launching sub-agents:
+- Create worktrees under `.git/worktrees-work/` (not `/tmp`):
   ```
-  git worktree add /tmp/mutsu-worktree-<name> -b worktree/<name> HEAD
+  git worktree add .git/worktrees-work/<name> -b worktree/<name> HEAD
   ```
 - Each sub-agent works, builds, and tests entirely within its own worktree directory. It does NOT commit or push.
-- When all sub-agents finish, the parent agent reviews the diffs from each worktree, applies the changes to the main working directory, resolves any conflicts, runs the full test suite, and creates a single commit (or one commit per logical change).
-- After integration, clean up worktrees:
+- When a sub-agent finishes, the parent agent integrates its changes immediately (don't wait for all agents). After integrating, launch a new agent for the next task to keep the pipeline full.
+- To integrate: export diff from worktree, apply to main repo, fix clippy/fmt, run `make roast`, commit and push.
+- After integration, clean up the finished worktree:
   ```
-  git worktree remove /tmp/mutsu-worktree-<name>
+  git worktree remove .git/worktrees-work/<name>
   git branch -d worktree/<name>
   ```
 
