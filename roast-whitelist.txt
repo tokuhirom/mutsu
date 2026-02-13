@@ -30,7 +30,6 @@ roast/S03-operators/so.t
 roast/S03-operators/spaceship-and-containers.t
 roast/S03-smartmatch/any-any.t
 roast/S03-smartmatch/any-str.t
-roast/S04-exceptions/control_across_runloop.t
 roast/S04-phasers/end.t
 roast/S04-statement-modifiers/until.t
 roast/S04-statement-modifiers/values_in_bool_context.t
@@ -126,7 +125,6 @@ roast/S24-testing/1-basic.t
 roast/S24-testing/11-plan-skip-all.t
 roast/S24-testing/11-plan-skip-all-subtests.t
 roast/S24-testing/12-subtest-todo.t
-roast/S24-testing/3-output.t
 roast/S24-testing/6-done_testing.t
 roast/S24-testing/7-bail_out.t
 roast/S24-testing/8-die_on_fail.t

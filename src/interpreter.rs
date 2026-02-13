@@ -1970,6 +1970,8 @@ impl Interpreter {
                             self.lib_paths.push(path);
                         }
                     }
+                } else if module == "v6" {
+                    // `use v6;` pragma - silently accepted
                 } else if module == "Test"
                     || module.starts_with("Test::")
                     || module == "customtrait"

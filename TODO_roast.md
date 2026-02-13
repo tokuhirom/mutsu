@@ -443,7 +443,8 @@
   - 2/33 pass (1, 5). Only 5 reached; crashes with unhandled "blah" exception. CATCH in sub works, but CATCH in try/closure/do-block doesn't properly suppress exceptions. Difficulty: Medium-High
 - [ ] roast/S04-exception-handlers/control.t
 - [ ] roast/S04-exception-handlers/top-level.t
-- [x] roast/S04-exceptions/control_across_runloop.t
+- [ ] roast/S04-exceptions/control_across_runloop.t
+  - 0/1 pass. Test uses `sub foo($x = last) { $x }` where `last` is used as a default parameter value that should propagate as a control exception to the enclosing `for` loop. Requires X::ControlFlow exception propagation across call boundaries. Difficulty: Medium-High
 - [ ] roast/S04-exceptions/exceptions-alternatives.t
 - [ ] roast/S04-exceptions/fail-6e.t
 - [ ] roast/S04-exceptions/fail.t
@@ -1213,8 +1214,8 @@
 - [x] roast/S24-testing/1-basic.t
   - 39/39 pass.
 - [ ] roast/S24-testing/2-force_todo.t
-- [x] roast/S24-testing/3-output.t
-  - 6/6 pass.
+- [ ] roast/S24-testing/3-output.t
+  - 5/6 pass. Test 4 fails: requires `qqx` (shell command capture) and `todo()` with reason text output. Was previously passing accidentally due to incorrect argument parsing.
 - [x] roast/S24-testing/6-done_testing.t
   - 3/3 pass.
 - [x] roast/S24-testing/7-bail_out.t

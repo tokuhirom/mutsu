@@ -39,6 +39,17 @@ impl Parser {
             return Ok(Stmt::Block(body));
         }
         if self.match_ident("use") {
+            // Handle `use v6;` and similar version pragmas - just skip them
+            if self
+                .advance_if(|k| matches!(k, TokenKind::VersionLiteral { .. }))
+                .is_some()
+            {
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::Use {
+                    module: "v6".to_string(),
+                    arg: None,
+                });
+            }
             let module = self
                 .consume_ident()
                 .unwrap_or_else(|_| "unknown".to_string());
