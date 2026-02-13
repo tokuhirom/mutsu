@@ -294,16 +294,30 @@ impl VM {
             OpCode::NumEq => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let result = self
-                    .eval_binary_with_junctions(left, right, |_, l, r| Ok(Value::Bool(l == r)))?;
+                let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+                    if matches!(l, Value::Nil) || matches!(r, Value::Nil) {
+                        Ok(Value::Bool(
+                            Interpreter::to_float_value(&l) == Interpreter::to_float_value(&r),
+                        ))
+                    } else {
+                        Ok(Value::Bool(l == r))
+                    }
+                })?;
                 self.stack.push(result);
                 *ip += 1;
             }
             OpCode::NumNe => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let result = self
-                    .eval_binary_with_junctions(left, right, |_, l, r| Ok(Value::Bool(l != r)))?;
+                let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+                    if matches!(l, Value::Nil) || matches!(r, Value::Nil) {
+                        Ok(Value::Bool(
+                            Interpreter::to_float_value(&l) != Interpreter::to_float_value(&r),
+                        ))
+                    } else {
+                        Ok(Value::Bool(l != r))
+                    }
+                })?;
                 self.stack.push(result);
                 *ip += 1;
             }

@@ -550,7 +550,7 @@ impl Value {
                 .map(|v| v.to_string_value())
                 .collect::<Vec<_>>()
                 .join(" "),
-            Value::Nil => "Nil".to_string(),
+            Value::Nil => String::new(),
         }
     }
 

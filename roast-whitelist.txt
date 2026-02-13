@@ -34,6 +34,7 @@ roast/S03-operators/assign-is-not-binding.t
 roast/S03-operators/basic-types.t
 roast/S03-operators/boolean-bitwise.t
 roast/S03-operators/comparison-simple.t
+roast/S03-operators/equality.t
 roast/S03-operators/gcd.t
 roast/S03-operators/lcm.t
 roast/S03-operators/list-quote-junction.t

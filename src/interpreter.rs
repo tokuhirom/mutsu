@@ -3411,6 +3411,7 @@ impl Interpreter {
                 .join("\n"),
             Value::Pair(k, v) => format!("{}\t{}", k, Self::gist_value(v)),
             Value::Version { .. } => format!("v{}", value.to_string_value()),
+            Value::Nil => "Nil".to_string(),
             _ => value.to_string_value(),
         }
     }
@@ -7803,6 +7804,13 @@ impl Interpreter {
                 Ok(Value::Hash(map))
             }
             Expr::Call { name, args } => {
+                // Handle infix:<op>(args) operator-as-function calls
+                if let Some(op_name) = name
+                    .strip_prefix("infix:<")
+                    .and_then(|s| s.strip_suffix('>'))
+                {
+                    return self.eval_infix_as_func(op_name, args);
+                }
                 // die/fail in expression context should throw immediately
                 if name == "die" || name == "fail" {
                     let msg = if let Some(arg) = args.first() {
@@ -10363,6 +10371,55 @@ impl Interpreter {
         })
     }
 
+    /// Evaluate an infix operator called as a function: `infix:<op>(args)`.
+    /// With 0 or 1 args, returns True (identity for chaining operators).
+    /// With 2 args, evaluates `left op right`.
+    fn eval_infix_as_func(&mut self, op_name: &str, args: &[Expr]) -> Result<Value, RuntimeError> {
+        match args.len() {
+            0 | 1 => Ok(Value::Bool(true)),
+            2 => {
+                let left = self.eval_expr(&args[0])?;
+                let right = self.eval_expr(&args[1])?;
+                let tok = match op_name {
+                    "==" => TokenKind::EqEq,
+                    "!=" => TokenKind::BangEq,
+                    "===" => TokenKind::EqEqEq,
+                    "<" => TokenKind::Lt,
+                    "<=" => TokenKind::Lte,
+                    ">" => TokenKind::Gt,
+                    ">=" => TokenKind::Gte,
+                    "eq" => TokenKind::Ident("eq".to_string()),
+                    "ne" => TokenKind::Ident("ne".to_string()),
+                    "lt" => TokenKind::Ident("lt".to_string()),
+                    "le" => TokenKind::Ident("le".to_string()),
+                    "gt" => TokenKind::Ident("gt".to_string()),
+                    "ge" => TokenKind::Ident("ge".to_string()),
+                    "~~" => TokenKind::SmartMatch,
+                    "+" => TokenKind::Plus,
+                    "-" => TokenKind::Minus,
+                    "*" => TokenKind::Star,
+                    "/" => TokenKind::Slash,
+                    "~" => TokenKind::Tilde,
+                    "!==" => {
+                        let eq_result = self.eval_binary(left, &TokenKind::EqEq, right)?;
+                        return Ok(Value::Bool(!eq_result.truthy()));
+                    }
+                    _ => {
+                        return Err(RuntimeError::new(format!(
+                            "Unknown infix operator: {}",
+                            op_name
+                        )));
+                    }
+                };
+                self.eval_binary(left, &tok, right)
+            }
+            _ => Err(RuntimeError::new(format!(
+                "Too many arguments to infix:<{}>",
+                op_name
+            ))),
+        }
+    }
+
     /// Bridge: call a method on a pre-evaluated target with pre-evaluated args (for VM).
     pub(crate) fn eval_method_call_with_values(
         &mut self,
@@ -12860,6 +12917,7 @@ impl Interpreter {
             }
             Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
             Value::Str(s) => s.parse::<f64>().ok(),
+            Value::Nil => Some(0.0),
             _ => None,
         }
     }

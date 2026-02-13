@@ -294,8 +294,7 @@
   - 0/1 pass.
 - [ ] roast/S03-operators/div.t
   - 0/8 pass.
-- [ ] roast/S03-operators/equality.t
-  - 40/46 pass. Tests 19-24: `&infix:<==>(...)` operator reference syntax not implemented.
+- [x] roast/S03-operators/equality.t
 - [ ] roast/S03-operators/eqv.t
   - 46/64 pass.
 - [ ] roast/S03-operators/flip-flop.t

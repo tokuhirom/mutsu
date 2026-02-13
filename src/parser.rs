@@ -1926,7 +1926,56 @@ impl Parser {
     fn parse_equality(&mut self) -> Result<Expr, RuntimeError> {
         let mut expr = self.parse_junction()?;
         loop {
-            if self.match_kind(TokenKind::EqEq) {
+            // Negated relational operators: !eq, !==, !===
+            if self.check(&TokenKind::Bang)
+                && matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Ident(n)) if n == "eq"
+                )
+            {
+                self.pos += 2;
+                let right = self.parse_junction()?;
+                expr = Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(Expr::Binary {
+                        left: Box::new(expr),
+                        op: TokenKind::Ident("eq".to_string()),
+                        right: Box::new(right),
+                    }),
+                };
+            } else if self.check(&TokenKind::BangEq)
+                && matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::EqEq)
+                )
+            {
+                self.pos += 2;
+                let right = self.parse_junction()?;
+                expr = Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(Expr::Binary {
+                        left: Box::new(expr),
+                        op: TokenKind::EqEqEq,
+                        right: Box::new(right),
+                    }),
+                };
+            } else if self.check(&TokenKind::BangEq)
+                && matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Eq)
+                )
+            {
+                self.pos += 2;
+                let right = self.parse_junction()?;
+                expr = Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(Expr::Binary {
+                        left: Box::new(expr),
+                        op: TokenKind::EqEq,
+                        right: Box::new(right),
+                    }),
+                };
+            } else if self.match_kind(TokenKind::EqEq) {
                 let op = TokenKind::EqEq;
                 let right = self.parse_junction()?;
                 expr = Expr::Binary {
@@ -3438,6 +3487,31 @@ impl Parser {
                         ],
                         label: None,
                     }
+                } else if name == "infix" && self.check(&TokenKind::Colon) {
+                    if let Some(op_name) = self.try_parse_angled_op_name() {
+                        let full_name = format!("infix:<{}>", op_name);
+                        if self.match_kind(TokenKind::LParen) {
+                            let mut args = Vec::new();
+                            if !self.check(&TokenKind::RParen) {
+                                args.push(self.parse_expr()?);
+                                while self.match_kind(TokenKind::Comma) {
+                                    if self.check(&TokenKind::RParen) {
+                                        break;
+                                    }
+                                    args.push(self.parse_expr()?);
+                                }
+                            }
+                            self.consume_kind(TokenKind::RParen)?;
+                            Expr::Call {
+                                name: full_name,
+                                args,
+                            }
+                        } else {
+                            Expr::BareWord(full_name)
+                        }
+                    } else {
+                        Expr::BareWord(name)
+                    }
                 } else {
                     Expr::BareWord(name)
                 }
@@ -3462,7 +3536,34 @@ impl Parser {
             }
         } else if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::CodeVar(_))) {
             if let TokenKind::CodeVar(name) = token.kind {
-                Expr::CodeVar(name)
+                if name == "infix" && self.check(&TokenKind::Colon) {
+                    if let Some(op_name) = self.try_parse_angled_op_name() {
+                        let full_name = format!("infix:<{}>", op_name);
+                        if self.match_kind(TokenKind::LParen) {
+                            let mut args = Vec::new();
+                            if !self.check(&TokenKind::RParen) {
+                                args.push(self.parse_expr()?);
+                                while self.match_kind(TokenKind::Comma) {
+                                    if self.check(&TokenKind::RParen) {
+                                        break;
+                                    }
+                                    args.push(self.parse_expr()?);
+                                }
+                            }
+                            self.consume_kind(TokenKind::RParen)?;
+                            Expr::Call {
+                                name: full_name,
+                                args,
+                            }
+                        } else {
+                            Expr::CodeVar(full_name)
+                        }
+                    } else {
+                        Expr::CodeVar(name)
+                    }
+                } else {
+                    Expr::CodeVar(name)
+                }
             } else {
                 Expr::Literal(Value::Nil)
             }
@@ -4397,6 +4498,142 @@ impl Parser {
             op: op_name,
             expr: Box::new(expr),
         })
+    }
+
+    /// Try to parse `:<op>` (angle-bracketed operator name) at the current position.
+    fn try_parse_angled_op_name(&mut self) -> Option<String> {
+        let start = self.pos;
+        if !self.match_kind(TokenKind::Colon) {
+            self.pos = start;
+            return None;
+        }
+        // Case 1: Lte (<=) starts the sequence
+        if self.check(&TokenKind::Lte) {
+            self.pos += 1;
+            let mut op_str = String::from("=");
+            loop {
+                match self.tokens.get(self.pos).map(|t| &t.kind) {
+                    Some(TokenKind::Gt) => {
+                        self.pos += 1;
+                        break;
+                    }
+                    Some(TokenKind::FatArrow) => {
+                        op_str.push('=');
+                        self.pos += 1;
+                        break;
+                    }
+                    Some(tok) => {
+                        if let Some(s) = Self::token_to_op_str(tok) {
+                            op_str.push_str(s);
+                            self.pos += 1;
+                        } else {
+                            self.pos = start;
+                            return None;
+                        }
+                    }
+                    None => {
+                        self.pos = start;
+                        return None;
+                    }
+                }
+            }
+            return Some(op_str);
+        }
+        // Case 2: LtEqGt (<=>)
+        if self.check(&TokenKind::LtEqGt) {
+            self.pos += 1;
+            return Some("=".to_string());
+        }
+        // Case 3: Lt (<) starts the sequence
+        if !self.match_kind(TokenKind::Lt) {
+            self.pos = start;
+            return None;
+        }
+        let mut op_str = String::new();
+        loop {
+            match self.tokens.get(self.pos).map(|t| &t.kind) {
+                Some(TokenKind::Gt) => {
+                    self.pos += 1;
+                    break;
+                }
+                Some(TokenKind::FatArrow) => {
+                    op_str.push('=');
+                    self.pos += 1;
+                    break;
+                }
+                Some(TokenKind::Gte) => {
+                    op_str.push('=');
+                    self.pos += 1;
+                    break;
+                }
+                Some(tok) => {
+                    if let Some(s) = Self::token_to_op_str(tok) {
+                        op_str.push_str(s);
+                        self.pos += 1;
+                    } else {
+                        self.pos = start;
+                        return None;
+                    }
+                }
+                None => {
+                    self.pos = start;
+                    return None;
+                }
+            }
+        }
+        if op_str.is_empty() {
+            self.pos = start;
+            return None;
+        }
+        Some(op_str)
+    }
+
+    fn token_to_op_str(tok: &TokenKind) -> Option<&'static str> {
+        match tok {
+            TokenKind::Plus => Some("+"),
+            TokenKind::Minus => Some("-"),
+            TokenKind::Star => Some("*"),
+            TokenKind::Slash => Some("/"),
+            TokenKind::StarStar => Some("**"),
+            TokenKind::Tilde => Some("~"),
+            TokenKind::AndAnd => Some("&&"),
+            TokenKind::OrOr => Some("||"),
+            TokenKind::SlashSlash => Some("//"),
+            TokenKind::Comma => Some(","),
+            TokenKind::LtEqGt => Some("<=>"),
+            TokenKind::EqEq => Some("=="),
+            TokenKind::EqEqEq => Some("==="),
+            TokenKind::BangEq => Some("!="),
+            TokenKind::Lt => Some("<"),
+            TokenKind::Gt => Some(">"),
+            TokenKind::Lte => Some("<="),
+            TokenKind::Gte => Some(">="),
+            TokenKind::SmartMatch => Some("~~"),
+            TokenKind::BangTilde => Some("!~~"),
+            TokenKind::Eq => Some("="),
+            TokenKind::BitAnd => Some("+&"),
+            TokenKind::BitOr => Some("+|"),
+            TokenKind::BitXor => Some("+^"),
+            TokenKind::Ident(name) => match name.as_str() {
+                "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "leg" | "cmp" | "eqv" => {
+                    // SAFETY: these string literals have static lifetime
+                    match name.as_str() {
+                        "eq" => Some("eq"),
+                        "ne" => Some("ne"),
+                        "lt" => Some("lt"),
+                        "le" => Some("le"),
+                        "gt" => Some("gt"),
+                        "ge" => Some("ge"),
+                        "leg" => Some("leg"),
+                        "cmp" => Some("cmp"),
+                        "eqv" => Some("eqv"),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            },
+            _ => None,
+        }
     }
 
     fn parse_class_decl(&mut self) -> Result<Stmt, RuntimeError> {
