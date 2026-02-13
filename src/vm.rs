@@ -1706,8 +1706,10 @@ impl VM {
                     Err(e) => {
                         // Error caught
                         self.stack.truncate(saved_depth);
-                        let err_val = Value::Str(e.message.clone());
-                        let saved_err = self.interpreter.env().get("!").cloned();
+                        // Set $! to an Exception instance so that $! ~~ Exception works
+                        let mut exc_attrs = std::collections::HashMap::new();
+                        exc_attrs.insert("message".to_string(), Value::Str(e.message.clone()));
+                        let err_val = Value::make_instance("Exception".to_string(), exc_attrs);
                         let saved_topic = self.interpreter.env().get("_").cloned();
                         self.interpreter
                             .env_mut()
@@ -1718,12 +1720,7 @@ impl VM {
                         self.interpreter.set_when_matched(false);
                         self.run_range(code, catch_begin, end, compiled_fns)?;
                         self.interpreter.set_when_matched(saved_when);
-                        // Restore $! and $_
-                        if let Some(v) = saved_err {
-                            self.interpreter.env_mut().insert("!".to_string(), v);
-                        } else {
-                            self.interpreter.env_mut().remove("!");
-                        }
+                        // Restore $_ but leave $! set (try semantics: $! persists after try)
                         if let Some(v) = saved_topic {
                             self.interpreter.env_mut().insert("_".to_string(), v);
                         } else {

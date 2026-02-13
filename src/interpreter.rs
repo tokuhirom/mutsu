@@ -4038,6 +4038,20 @@ impl Interpreter {
             }
             return ok;
         }
+        // Check Instance class name against constraint (including parent classes)
+        if let Value::Instance { class_name, .. } = value {
+            if Self::type_matches(constraint, class_name) {
+                return true;
+            }
+            // Check parent classes of the instance
+            if let Some(class_def) = self.classes.get(class_name.as_str()) {
+                for parent in class_def.parents.clone() {
+                    if Self::type_matches(constraint, &parent) {
+                        return true;
+                    }
+                }
+            }
+        }
         let value_type = Self::value_type_name(value);
         Self::type_matches(constraint, value_type)
     }
@@ -5133,6 +5147,61 @@ impl Interpreter {
                             }
                             return Ok(Value::make_instance(class_name.clone(), attrs));
                         }
+                    }
+                    // .new called on a non-Package value
+                    match &base {
+                        Value::Str(s) if matches!(target.as_ref(), Expr::BareWord(_)) => {
+                            // BareWord.new: the name was unknown to the parser.
+                            // If it's also not a known class/type, error.
+                            if !self.classes.contains_key(s.as_str())
+                                && !matches!(
+                                    s.as_str(),
+                                    "Str"
+                                        | "Int"
+                                        | "Num"
+                                        | "Bool"
+                                        | "Array"
+                                        | "Hash"
+                                        | "Rat"
+                                        | "FatRat"
+                                        | "Complex"
+                                        | "Set"
+                                        | "Bag"
+                                        | "Mix"
+                                        | "Uni"
+                                        | "Pair"
+                                        | "Range"
+                                        | "Map"
+                                        | "Seq"
+                                        | "Junction"
+                                        | "Version"
+                                        | "Exception"
+                                        | "Failure"
+                                        | "IO::Path"
+                                        | "Regex"
+                                        | "Code"
+                                        | "Sub"
+                                        | "Method"
+                                        | "Block"
+                                        | "Routine"
+                                        | "CompUnit::DependencySpecification"
+                                )
+                            {
+                                return Err(RuntimeError::new(format!(
+                                    "Undeclared name:\n    {} used",
+                                    s
+                                )));
+                            }
+                            // Known type as BareWord: fall through to class dispatch
+                        }
+                        Value::Str(_) => {
+                            // $x.new where $x is a Str: always creates a new Str
+                            return Ok(Value::Str(String::new()));
+                        }
+                        Value::Int(_) => return Ok(Value::Int(0)),
+                        Value::Num(_) => return Ok(Value::Num(0.0)),
+                        Value::Bool(_) => return Ok(Value::Bool(false)),
+                        _ => {}
                     }
                 }
                 // Handle method calls on instances
@@ -7300,7 +7369,7 @@ impl Interpreter {
                             };
                             Ok(make_rat(a, b))
                         }
-                        Value::Str(name) | Value::Package(name) if name == "FatRat" => {
+                        Value::Package(name) if name == "FatRat" => {
                             let a = args.first().and_then(|e| self.eval_expr(e).ok());
                             let b = args.get(1).and_then(|e| self.eval_expr(e).ok());
                             let a = match a {
@@ -7313,9 +7382,7 @@ impl Interpreter {
                             };
                             Ok(Value::FatRat(a, b))
                         }
-                        Value::Str(name) | Value::Package(name)
-                            if name == "Map" || name == "Hash" =>
-                        {
+                        Value::Package(name) if name == "Map" || name == "Hash" => {
                             let mut map = HashMap::new();
                             let mut i = 0;
                             let mut eval_args = Vec::new();
@@ -7330,7 +7397,7 @@ impl Interpreter {
                             }
                             Ok(Value::Hash(map))
                         }
-                        Value::Str(name) | Value::Package(name) if name == "Set" => {
+                        Value::Package(name) if name == "Set" => {
                             let mut elems = HashSet::new();
                             for arg in args {
                                 let val = self.eval_expr(arg)?;
@@ -7347,7 +7414,7 @@ impl Interpreter {
                             }
                             Ok(Value::Set(elems))
                         }
-                        Value::Str(name) | Value::Package(name) if name == "Bag" => {
+                        Value::Package(name) if name == "Bag" => {
                             let mut counts: HashMap<String, i64> = HashMap::new();
                             for arg in args {
                                 let val = self.eval_expr(arg)?;
@@ -7364,7 +7431,7 @@ impl Interpreter {
                             }
                             Ok(Value::Bag(counts))
                         }
-                        Value::Str(name) | Value::Package(name) if name == "Mix" => {
+                        Value::Package(name) if name == "Mix" => {
                             let mut weights: HashMap<String, f64> = HashMap::new();
                             for arg in args {
                                 let val = self.eval_expr(arg)?;
@@ -7384,7 +7451,7 @@ impl Interpreter {
                             }
                             Ok(Value::Mix(weights))
                         }
-                        Value::Str(name) | Value::Package(name) if name == "Complex" => {
+                        Value::Package(name) if name == "Complex" => {
                             let a = args.first().and_then(|e| self.eval_expr(e).ok());
                             let b = args.get(1).and_then(|e| self.eval_expr(e).ok());
                             let re = match a {
@@ -7399,9 +7466,7 @@ impl Interpreter {
                             };
                             Ok(Value::Complex(re, im))
                         }
-                        Value::Str(name) | Value::Package(name)
-                            if name == "CompUnit::DependencySpecification" =>
-                        {
+                        Value::Package(name) if name == "CompUnit::DependencySpecification" => {
                             let mut short_name = None;
                             if let Some(arg) = args.first() {
                                 if let Expr::AssignExpr { name, expr } = arg {
@@ -9448,8 +9513,10 @@ impl Interpreter {
                             return Ok(Value::Nil);
                         }
                         if let Some(catch_body) = catch_stmts {
-                            let err_val = Value::Str(e.message);
-                            let saved_err = self.env.get("!").cloned();
+                            // Set $! to an Exception instance
+                            let mut exc_attrs = HashMap::new();
+                            exc_attrs.insert("message".to_string(), Value::Str(e.message));
+                            let err_val = Value::make_instance("Exception".to_string(), exc_attrs);
                             let saved_topic = self.env.get("_").cloned();
                             self.env.insert("!".to_string(), err_val.clone());
                             self.env.insert("_".to_string(), err_val);
@@ -9462,11 +9529,7 @@ impl Interpreter {
                                 }
                             }
                             self.when_matched = saved_when;
-                            if let Some(v) = saved_err {
-                                self.env.insert("!".to_string(), v);
-                            } else {
-                                self.env.remove("!");
-                            }
+                            // Restore $_ but leave $! set (try semantics: $! persists after try)
                             if let Some(v) = saved_topic {
                                 self.env.insert("_".to_string(), v);
                             } else {
@@ -9474,6 +9537,11 @@ impl Interpreter {
                             }
                             Ok(Value::Nil)
                         } else {
+                            // try without CATCH: set $! to an Exception instance
+                            let mut exc_attrs = HashMap::new();
+                            exc_attrs.insert("message".to_string(), Value::Str(e.message));
+                            let err_val = Value::make_instance("Exception".to_string(), exc_attrs);
+                            self.env.insert("!".to_string(), err_val);
                             Ok(Value::Nil)
                         }
                     }

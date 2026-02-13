@@ -827,8 +827,8 @@
 - [ ] roast/S12-class/inheritance-class-methods.t
 - [ ] roast/S12-class/inheritance.t
   - 18/41 pass (1-4, 6, 11, 13-14, 23-24, 27-30, 32, 38-39, 41). Good basic inheritance. Failures: rw attribute override (5, 7), method override/super (8-9), `Class::method` syntax (16-17, 33), `.isa` on subclasses (18-21), `$obj.$meth` variable method call (22), initializer inheritance (25-26), Mu inheritance (31), Array inheritance (34-36), nextsame (37), unknown parent error (40). Difficulty: Medium
-- [ ] roast/S12-class/instantiate.t
-  - 6/7 pass (1-6). Very close! Only test 7 fails: instantiating from class name string (dynamic class creation). Difficulty: Low (very close to passing!)
+- [x] roast/S12-class/instantiate.t
+  - 7/7 pass.
 - [ ] roast/S12-class/interface-consistency.t
 - [ ] roast/S12-class/lexical.t
 - [ ] roast/S12-class/literal.t

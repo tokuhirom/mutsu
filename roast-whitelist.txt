@@ -52,6 +52,7 @@ roast/S06-signature/passing-hashes.t
 roast/S06-traits/is-readonly.t
 roast/S11-modules/rakulib.t
 roast/S11-modules/runtime.t
+roast/S12-class/instantiate.t
 roast/S12-construction/autopairs.t
 roast/S12-meta/grammarhow.t
 roast/S12-traits/precomp.t

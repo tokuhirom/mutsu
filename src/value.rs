@@ -502,6 +502,14 @@ impl Value {
                 .get("path")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_else(|| format!("{}()", class_name)),
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Exception" => attributes
+                .get("message")
+                .map(|v: &Value| v.to_string_value())
+                .unwrap_or_else(|| format!("{}()", class_name)),
             Value::Instance { class_name, .. } => format!("{}()", class_name),
             Value::Junction { kind, values } => {
                 let kind_str = match kind {
