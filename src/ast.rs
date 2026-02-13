@@ -215,6 +215,7 @@ pub(crate) enum Stmt {
     },
     Say(Vec<Expr>),
     Print(Vec<Expr>),
+    Note(Vec<Expr>),
     Call {
         name: String,
         args: Vec<CallArg>,

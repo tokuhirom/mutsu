@@ -71,6 +71,13 @@ impl Compiler {
                 }
                 self.code.emit(OpCode::Print(exprs.len() as u32));
             }
+            Stmt::Note(exprs) => {
+                for expr in exprs {
+                    self.compile_expr(expr);
+                }
+                // Note goes to stderr; for now compile as Say (the interpreter handles it)
+                self.code.emit(OpCode::Say(exprs.len() as u32));
+            }
             Stmt::VarDecl {
                 name,
                 expr,
@@ -989,7 +996,9 @@ impl Compiler {
             Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
                 Self::expr_has_placeholder(expr)
             }
-            Stmt::Say(es) | Stmt::Print(es) => es.iter().any(Self::expr_has_placeholder),
+            Stmt::Say(es) | Stmt::Print(es) | Stmt::Note(es) => {
+                es.iter().any(Self::expr_has_placeholder)
+            }
             Stmt::If {
                 cond,
                 then_branch,

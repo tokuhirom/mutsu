@@ -1927,6 +1927,15 @@ impl Interpreter {
                 }
                 self.write_to_named_handle("$*OUT", &content, false)?;
             }
+            Stmt::Note(exprs) => {
+                let mut parts = Vec::new();
+                for expr in exprs {
+                    let value = self.eval_expr(expr)?;
+                    parts.push(Self::gist_value(&value));
+                }
+                let line = parts.join(" ");
+                self.write_to_named_handle("$*ERR", &line, true)?;
+            }
             Stmt::Call { name, args } => {
                 if let Err(e) = self.exec_call(name, args) {
                     // If this is a test function call and it errors, emit "not ok" and continue
@@ -3158,12 +3167,27 @@ impl Interpreter {
                 }
                 nested.set_program_path("<is_run>");
                 let result = nested.run(&program);
+                let stderr_content = nested.stderr_output.clone();
                 let (out, err, status) = match result {
                     Ok(output) => {
                         let s = if nested.bailed_out { 255i64 } else { 0i64 };
-                        (output, String::new(), s)
+                        // Separate stdout from combined output by removing stderr content
+                        let stdout_only = if stderr_content.is_empty() {
+                            output
+                        } else {
+                            output.replace(&stderr_content, "")
+                        };
+                        (stdout_only, stderr_content, s)
                     }
-                    Err(_) => (nested.output.clone(), String::new(), 1i64),
+                    Err(_) => {
+                        let combined = nested.output.clone();
+                        let stdout_only = if stderr_content.is_empty() {
+                            combined
+                        } else {
+                            combined.replace(&stderr_content, "")
+                        };
+                        (stdout_only, stderr_content, 1i64)
+                    }
                 };
                 let mut ok = true;
                 if let Some(matcher) = expected_out {
@@ -6417,12 +6441,17 @@ impl Interpreter {
                         Ok(Value::make_instance("IO::Path".to_string(), attrs))
                     }
                     "say" => {
-                        self.output.push_str(&base.to_string_value());
-                        self.output.push('\n');
+                        let content = Self::gist_value(&base);
+                        self.write_to_named_handle("$*OUT", &content, true)?;
                         Ok(Value::Bool(true))
                     }
                     "print" => {
                         self.output.push_str(&base.to_string_value());
+                        Ok(Value::Bool(true))
+                    }
+                    "note" => {
+                        let content = Self::gist_value(&base);
+                        self.write_to_named_handle("$*ERR", &content, true)?;
                         Ok(Value::Bool(true))
                     }
                     "Seq" => {
@@ -6715,6 +6744,20 @@ impl Interpreter {
                         Value::Junction { values, .. } => Ok(Value::Int(values.len() as i64)),
                         _ => Ok(Value::Int(1)),
                     },
+                    "any" | "all" | "one" | "none" => {
+                        use crate::value::JunctionKind;
+                        let kind = match name.as_str() {
+                            "any" => JunctionKind::Any,
+                            "all" => JunctionKind::All,
+                            "one" => JunctionKind::One,
+                            _ => JunctionKind::None,
+                        };
+                        let elems = Self::value_to_list(&base);
+                        Ok(Value::Junction {
+                            kind,
+                            values: elems,
+                        })
+                    }
                     "total" => match base {
                         Value::Set(s) => Ok(Value::Int(s.len() as i64)),
                         Value::Bag(b) => Ok(Value::Int(b.values().sum::<i64>())),
@@ -7749,17 +7792,22 @@ impl Interpreter {
             Expr::PostfixOp { op, expr } => {
                 if let Expr::Var(name) = expr.as_ref() {
                     let val = self.env.get(name).cloned().unwrap_or(Value::Int(0));
-                    let new_val = match (op, &val) {
+                    // Nil auto-vivifies to 0 for numeric operations
+                    let effective_val = match &val {
+                        Value::Nil => Value::Int(0),
+                        other => other.clone(),
+                    };
+                    let new_val = match (op, &effective_val) {
                         (TokenKind::PlusPlus, Value::Int(i)) => Value::Int(i + 1),
                         (TokenKind::MinusMinus, Value::Int(i)) => Value::Int(i - 1),
                         (TokenKind::PlusPlus, Value::Rat(n, d)) => make_rat(n + d, *d),
                         (TokenKind::MinusMinus, Value::Rat(n, d)) => make_rat(n - d, *d),
                         (TokenKind::PlusPlus, _) => Value::Int(1),
                         (TokenKind::MinusMinus, _) => Value::Int(-1),
-                        _ => val.clone(),
+                        _ => effective_val.clone(),
                     };
                     self.env.insert(name.clone(), new_val);
-                    Ok(val) // postfix returns old value
+                    Ok(effective_val) // postfix returns old value
                 } else {
                     Ok(Value::Nil)
                 }
@@ -13343,7 +13391,7 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
     match stmt {
         Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Take(e) => collect_ph_expr(e, out),
         Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => collect_ph_expr(expr, out),
-        Stmt::Say(es) | Stmt::Print(es) => {
+        Stmt::Say(es) | Stmt::Print(es) | Stmt::Note(es) => {
             for e in es {
                 collect_ph_expr(e, out);
             }

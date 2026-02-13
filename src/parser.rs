@@ -347,6 +347,11 @@ impl Parser {
             let stmt = Stmt::Print(exprs);
             return self.parse_statement_modifier(stmt);
         }
+        if self.match_ident("note") {
+            let exprs = self.parse_expr_list()?;
+            let stmt = Stmt::Note(exprs);
+            return self.parse_statement_modifier(stmt);
+        }
         if self.match_ident("if") {
             return self.parse_if_chain();
         }
