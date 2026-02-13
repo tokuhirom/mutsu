@@ -96,10 +96,11 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 ## Debugging guidelines
 - Do NOT use printf debugging (adding eprintln! → build → check → repeat). Rust builds are slow and this wastes time.
 - Instead, use these approaches in order of preference:
-  1. **Trace logs**: Run with `MUTSU_TRACE=1 ./target/debug/mutsu <file>` to see execution flow. Use `MUTSU_TRACE=eval` or `MUTSU_TRACE=parse,vm` to filter by phase.
-  2. **Focused unit tests**: Write a small `#[test]` in the relevant module to isolate the problem. `cargo test <name>` is fast with incremental compilation.
-  3. **Read the code**: Trace the logic by reading, not by running. Many bugs are visible from careful code review.
-  4. **Debugger**: Use `rust-gdb ./target/debug/mutsu` with breakpoints for complex state inspection.
+  1. **AST dump**: Run with `./target/debug/mutsu --dump-ast <file>` (or `--dump-ast -e '<code>'`) to see the parsed AST without executing. Useful for verifying that the parser produces the expected tree structure.
+  2. **Trace logs**: Run with `MUTSU_TRACE=1 ./target/debug/mutsu <file>` to see execution flow. Use `MUTSU_TRACE=eval` or `MUTSU_TRACE=parse,vm` to filter by phase.
+  3. **Focused unit tests**: Write a small `#[test]` in the relevant module to isolate the problem. `cargo test <name>` is fast with incremental compilation.
+  4. **Read the code**: Trace the logic by reading, not by running. Many bugs are visible from careful code review.
+  5. **Debugger**: Use `rust-gdb ./target/debug/mutsu` with breakpoints for complex state inspection.
 - If you must add temporary debug prints, add ALL of them in one pass before building — never do build-run cycles for individual print statements.
 - Always remove debug prints before committing.
 

@@ -7,18 +7,28 @@ use mutsu::Interpreter;
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    let (input, program_name) = if args.len() > 1 && args[1] == "-e" {
-        if args.len() < 3 {
+    let mut dump_ast = false;
+    let mut filtered_args: Vec<String> = Vec::new();
+    for arg in &args[1..] {
+        if arg == "--dump-ast" {
+            dump_ast = true;
+        } else {
+            filtered_args.push(arg.clone());
+        }
+    }
+
+    let (input, program_name) = if !filtered_args.is_empty() && filtered_args[0] == "-e" {
+        if filtered_args.len() < 2 {
             eprintln!("Usage: {} -e <code>", args[0]);
             std::process::exit(1);
         }
-        (args[2].clone(), "-e".to_string())
-    } else if args.len() > 1 {
-        let content = fs::read_to_string(&args[1]).unwrap_or_else(|err| {
-            eprintln!("Failed to read {}: {}", args[1], err);
+        (filtered_args[1].clone(), "-e".to_string())
+    } else if !filtered_args.is_empty() {
+        let content = fs::read_to_string(&filtered_args[0]).unwrap_or_else(|err| {
+            eprintln!("Failed to read {}: {}", filtered_args[0], err);
             std::process::exit(1);
         });
-        (content, args[1].clone())
+        (content, filtered_args[0].clone())
     } else {
         let mut buf = String::new();
         io::stdin().read_to_string(&mut buf).unwrap_or_else(|err| {
@@ -27,6 +37,17 @@ fn main() {
         });
         (buf, "<stdin>".to_string())
     };
+
+    if dump_ast {
+        match mutsu::dump_ast(&input) {
+            Ok(ast) => println!("{}", ast),
+            Err(err) => {
+                eprintln!("Parse error: {}", err.message);
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
 
     let mut interpreter = Interpreter::new();
     interpreter.set_program_path(&program_name);
