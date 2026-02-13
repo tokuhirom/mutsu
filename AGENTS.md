@@ -35,6 +35,7 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - The official Raku test suite (roast) is available at `./roast/` as a git submodule.
 
 ## Roast (official Raku test suite)
+- The ultimate goal is to pass ALL roast tests. The order in which tests are fixed does not matter — pick any failing test and work on it.
 - `roast/` contains the upstream Raku spec tests. It is read-only; never modify files under `roast/`.
 - `TODO_roast.md` tracks per-file pass/fail status. Mark a test `[x]` only when **all** of its subtests pass.
 - When a test file has known partial failures, add indented notes under its entry describing the blockers.
@@ -48,6 +49,19 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - Roast is the authoritative spec. If passing a roast test requires changing a local test under `t/`, update the local test to match roast's expected behavior.
 - When `make roast` shows failures in whitelisted tests, do NOT dismiss them as "pre-existing". Investigate each failure, fix what can be fixed, and remove from the whitelist only tests that truly cannot pass yet (with documented reasons in TODO_roast.md).
 - When a roast test requires solving multiple unrelated prerequisite problems that go beyond the test's main topic, fix what you can, update `TODO_roast.md` with the diagnosis, and move on to the next test. Do not get stuck on a single test.
+
+## Roast test prioritization
+- Run `./scripts/roast-history.sh` to generate per-file category lists under `tmp/`:
+  - `tmp/roast-panic.txt` — tests that cause a Rust panic (interpreter crash)
+  - `tmp/roast-timeout.txt` — tests that exceed the timeout limit
+  - `tmp/roast-error.txt` — tests that produce no valid TAP plan (parse/runtime error before TAP output)
+  - `tmp/roast-fail.txt` — tests with some subtests failing
+  - `tmp/roast-pass.txt` — tests that pass completely
+- When choosing which roast tests to work on, follow this priority order:
+  1. **Panic** (highest priority): These indicate interpreter bugs that crash the process. Fix these first.
+  2. **Timeout**: These may indicate infinite loops or severe performance issues. Fix these second.
+  3. **Error / Fail** (remaining): Pick from these in any order. Prefer tests that seem close to passing (few failing subtests) or that exercise widely-used features.
+- The category files are regenerated each time the script runs, so always use the latest output.
 
 ## Checking `make roast` results
 - To find failing tests in `make roast` output:
