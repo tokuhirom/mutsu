@@ -4926,6 +4926,10 @@ impl Interpreter {
                                 "close" => return Ok(Value::Bool(self.close_handle_value(&base)?)),
                                 "get" => {
                                     let line = self.read_line_from_handle_value(&base)?;
+                                    // Return Nil (type object) at EOF, Str otherwise
+                                    if line.is_empty() {
+                                        return Ok(Value::Nil);
+                                    }
                                     return Ok(Value::Str(line));
                                 }
                                 "getc" => {
