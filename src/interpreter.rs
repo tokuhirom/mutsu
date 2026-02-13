@@ -5951,6 +5951,46 @@ impl Interpreter {
                                 _ => {}
                             }
                         }
+                        // Handle IO::Handle instance methods
+                        if class_name == "IO::Handle" {
+                            match name.as_str() {
+                                "close" => return Ok(Value::Bool(self.close_handle_value(&base)?)),
+                                "get" => {
+                                    let line = self.read_line_from_handle_value(&base)?;
+                                    // Return Nil (type object) at EOF, Str otherwise
+                                    if line.is_empty() {
+                                        return Ok(Value::Nil);
+                                    }
+                                    return Ok(Value::Str(line));
+                                }
+                                "getc" => {
+                                    let bytes = self.read_bytes_from_handle_value(&base, 1)?;
+                                    return Ok(Value::Str(
+                                        String::from_utf8_lossy(&bytes).to_string(),
+                                    ));
+                                }
+                                "lines" => {
+                                    let mut lines = Vec::new();
+                                    loop {
+                                        let line = self.read_line_from_handle_value(&base)?;
+                                        if line.is_empty() {
+                                            break;
+                                        }
+                                        lines.push(Value::Str(line));
+                                    }
+                                    return Ok(Value::Array(lines));
+                                }
+                                "eof" => {
+                                    let at_end = self.handle_eof_value(&base)?;
+                                    return Ok(Value::Bool(at_end));
+                                }
+                                "opened" => {
+                                    let state = self.handle_state_mut(&base)?;
+                                    return Ok(Value::Bool(!state.closed));
+                                }
+                                _ => {}
+                            }
+                        }
                         // Check for accessor methods (public attributes)
                         if args.is_empty() {
                             for (attr_name, is_public, _) in
