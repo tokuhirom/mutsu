@@ -398,8 +398,7 @@
   - 1/2 pass. Direct smartmatch works, indirect (via variable) fails. Difficulty: Low
 - [x] roast/S03-smartmatch/any-any.t
 - [ ] roast/S03-smartmatch/any-bool.t
-- [ ] roast/S03-smartmatch/any-callable.t
-  - 5/7 pass (1, 3-6). Smartmatch with callable works. Failures: negated smartmatch with callable (2), only 6 tests reached. Difficulty: Low
+- [x] roast/S03-smartmatch/any-callable.t
 - [ ] roast/S03-smartmatch/any-complex.t
 - [ ] roast/S03-smartmatch/any-hash-pair.t
 - [ ] roast/S03-smartmatch/any-method.t
@@ -777,8 +776,8 @@
 - [ ] roast/S10-packages/require-and-use.t
 - [ ] roast/S10-packages/scope.t
 - [ ] roast/S10-packages/use-with-class.t
-- [x] roast/S11-compunit/compunit-dependencyspecification.t
-  - 6/6 pass.
+- [ ] roast/S11-compunit/compunit-dependencyspecification.t
+  - 2/6 pass (1-2). Tests 3-6 regressed: CompUnit::DependencySpecification.new(:short-name<Foo>) now fails (returns Nil instead of instance). Removed from whitelist.
 - [ ] roast/S11-compunit/compunit-repository.t
 - [ ] roast/S11-compunit/rt126904.t
 - [ ] roast/S11-modules/export.t

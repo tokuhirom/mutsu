@@ -29,6 +29,7 @@ roast/S03-operators/not.t
 roast/S03-operators/so.t
 roast/S03-operators/spaceship-and-containers.t
 roast/S03-smartmatch/any-any.t
+roast/S03-smartmatch/any-callable.t
 roast/S03-smartmatch/any-str.t
 roast/S04-phasers/end.t
 roast/S04-statement-modifiers/until.t
@@ -47,7 +48,6 @@ roast/S05-metachars/newline.t
 roast/S05-metasyntax/null.t
 roast/S06-signature/passing-hashes.t
 roast/S06-traits/is-readonly.t
-roast/S11-compunit/compunit-dependencyspecification.t
 roast/S11-modules/rakulib.t
 roast/S11-modules/runtime.t
 roast/S12-construction/autopairs.t

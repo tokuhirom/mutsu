@@ -10318,6 +10318,29 @@ impl Interpreter {
             (Value::Version { .. }, Value::Version { parts, plus, minus }) => {
                 Self::version_smart_match(left, parts, *plus, *minus)
             }
+            // When RHS is a callable (Sub), invoke it with LHS as argument and
+            // return truthiness of the result.  If the sub accepts no parameters,
+            // call it with no arguments (simple closure truth).
+            (_, Value::Sub { params, .. }) => {
+                let func = right.clone();
+                let args = if params.is_empty() {
+                    vec![]
+                } else {
+                    vec![left.clone()]
+                };
+                match self.call_sub_value(func, args, false) {
+                    Ok(result) => result.truthy(),
+                    Err(_) => false,
+                }
+            }
+            // Built-in routines used as callables in smartmatch
+            (_, Value::Routine { .. }) => {
+                let func = right.clone();
+                match self.call_sub_value(func, vec![left.clone()], false) {
+                    Ok(result) => result.truthy(),
+                    Err(_) => false,
+                }
+            }
             (_, Value::Regex(pat)) => {
                 let text = left.to_string_value();
                 if let Some(captures) = self.regex_match_with_captures(pat, &text) {
