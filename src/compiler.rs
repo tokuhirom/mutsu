@@ -390,6 +390,7 @@ impl Compiler {
                 let idx = self.code.add_stmt(end_stmt);
                 self.code.emit(OpCode::PhaserEnd(idx));
             }
+            Stmt::Phaser { .. } => {}
 
             // --- SubDecl: delegate to interpreter AND compile body ---
             Stmt::SubDecl {
@@ -416,19 +417,20 @@ impl Compiler {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterProtoToken(idx));
             }
-            Stmt::Use { module, arg } if module == "lib" => {
+            Stmt::Use { module, arg } if module == "lib" && arg.is_some() => {
                 if let Some(expr) = arg {
                     self.compile_expr(expr);
                     self.code.emit(OpCode::UseLibPath);
                 }
             }
+            Stmt::Use { module, arg } if module == "lib" && arg.is_none() => {}
             Stmt::Use { module, .. }
                 if module == "v6"
                     || module == "Test"
                     || module.starts_with("Test::")
                     || module == "customtrait"
                     || module == "isms" => {}
-            Stmt::Use { module, arg } if arg.is_none() => {
+            Stmt::Use { module, .. } => {
                 let name_idx = self.code.add_constant(Value::Str(module.clone()));
                 self.code.emit(OpCode::UseModule(name_idx));
             }
@@ -471,9 +473,7 @@ impl Compiler {
             | Stmt::When { .. }
             | Stmt::Default(_)
             | Stmt::React { .. }
-            | Stmt::Package { .. }
-            | Stmt::Use { .. }
-            | Stmt::Phaser { .. } => {
+            | Stmt::Package { .. } => {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::InterpretStmt(idx));
             }
