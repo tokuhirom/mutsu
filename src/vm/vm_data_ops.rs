@@ -34,7 +34,7 @@ impl VM {
         let values: Vec<Value> = self.stack.drain(start..).collect();
         let mut parts = Vec::new();
         for v in &values {
-            parts.push(Interpreter::gist_value(v));
+            parts.push(runtime::gist_value(v));
         }
         let line = parts.join(" ");
         self.interpreter

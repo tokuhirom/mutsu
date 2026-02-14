@@ -262,9 +262,9 @@ impl VM {
             val
         };
         let val = if name.starts_with('%') {
-            Interpreter::coerce_to_hash(val)
+            runtime::coerce_to_hash(val)
         } else if name.starts_with('@') {
-            Interpreter::coerce_to_array(val)
+            runtime::coerce_to_array(val)
         } else {
             val
         };
@@ -278,9 +278,9 @@ impl VM {
         let idx = idx as usize;
         let name = &code.locals[idx];
         let val = if name.starts_with('%') {
-            Interpreter::coerce_to_hash(val)
+            runtime::coerce_to_hash(val)
         } else if name.starts_with('@') {
-            Interpreter::coerce_to_array(val)
+            runtime::coerce_to_array(val)
         } else {
             val
         };

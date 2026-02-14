@@ -68,7 +68,7 @@ impl VM {
         let items = if let Value::LazyList(ref ll) = iterable {
             self.interpreter.force_lazy_list_bridge(ll)?
         } else {
-            Interpreter::value_to_list(&iterable)
+            runtime::value_to_list(&iterable)
         };
         self.sync_locals_from_env(code);
         let body_start = *ip + 1;

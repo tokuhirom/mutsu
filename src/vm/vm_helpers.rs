@@ -176,7 +176,7 @@ impl VM {
         let arity = args.len();
         let type_sig: Vec<String> = args
             .iter()
-            .map(|v| Interpreter::value_type_name(v).to_string())
+            .map(|v| runtime::value_type_name(v).to_string())
             .collect();
         let key_typed = format!("{}::{}/{}:{}", pkg, name, arity, type_sig.join(","));
         if let Some(cf) = compiled_fns.get(&key_typed) {

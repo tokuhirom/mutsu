@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use crate::ast::{CallArg, Expr, Stmt};
 use crate::interpreter::Interpreter;
 use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
+use crate::runtime;
 use crate::value::{JunctionKind, LazyList, RuntimeError, Value, make_rat, next_instance_id};
 use num_traits::{Signed, Zero};
 
@@ -193,7 +194,7 @@ impl VM {
                 };
                 let val = self.stack.pop().unwrap();
                 let val = if name.starts_with('%') {
-                    Interpreter::coerce_to_hash(val)
+                    runtime::coerce_to_hash(val)
                 } else {
                     val
                 };
@@ -280,7 +281,7 @@ impl VM {
                 let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
                     if matches!(l, Value::Nil) || matches!(r, Value::Nil) {
                         Ok(Value::Bool(
-                            Interpreter::to_float_value(&l) == Interpreter::to_float_value(&r),
+                            runtime::to_float_value(&l) == runtime::to_float_value(&r),
                         ))
                     } else {
                         Ok(Value::Bool(l == r))
@@ -295,7 +296,7 @@ impl VM {
                 let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
                     if matches!(l, Value::Nil) || matches!(r, Value::Nil) {
                         Ok(Value::Bool(
-                            Interpreter::to_float_value(&l) != Interpreter::to_float_value(&r),
+                            runtime::to_float_value(&l) != runtime::to_float_value(&r),
                         ))
                     } else {
                         Ok(Value::Bool(l != r))
@@ -409,10 +410,9 @@ impl VM {
                     | (_, Value::Rat(_, _))
                     | (Value::FatRat(_, _), _)
                     | (_, Value::FatRat(_, _)) => {
-                        if let (Some((an, ad)), Some((bn, bd))) = (
-                            Interpreter::to_rat_parts(&left),
-                            Interpreter::to_rat_parts(&right),
-                        ) {
+                        if let (Some((an, ad)), Some((bn, bd))) =
+                            (runtime::to_rat_parts(&left), runtime::to_rat_parts(&right))
+                        {
                             (an.wrapping_mul(bd)).cmp(&(bn.wrapping_mul(ad)))
                         } else {
                             left.to_string_value().cmp(&right.to_string_value())
@@ -428,11 +428,11 @@ impl VM {
                         .partial_cmp(&(*b as f64))
                         .unwrap_or(std::cmp::Ordering::Equal),
                     (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
-                        Interpreter::version_cmp_parts(ap, bp)
+                        runtime::version_cmp_parts(ap, bp)
                     }
                     _ => left.to_string_value().cmp(&right.to_string_value()),
                 };
-                self.stack.push(Interpreter::make_order(ord));
+                self.stack.push(runtime::make_order(ord));
                 *ip += 1;
             }
             OpCode::Cmp => {
@@ -444,10 +444,9 @@ impl VM {
                     | (_, Value::Rat(_, _))
                     | (Value::FatRat(_, _), _)
                     | (_, Value::FatRat(_, _)) => {
-                        if let (Some((an, ad)), Some((bn, bd))) = (
-                            Interpreter::to_rat_parts(&left),
-                            Interpreter::to_rat_parts(&right),
-                        ) {
+                        if let (Some((an, ad)), Some((bn, bd))) =
+                            (runtime::to_rat_parts(&left), runtime::to_rat_parts(&right))
+                        {
                             (an.wrapping_mul(bd)).cmp(&(bn.wrapping_mul(ad)))
                         } else {
                             left.to_string_value().cmp(&right.to_string_value())
@@ -463,18 +462,18 @@ impl VM {
                         .partial_cmp(&(*b as f64))
                         .unwrap_or(std::cmp::Ordering::Equal),
                     (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
-                        Interpreter::version_cmp_parts(ap, bp)
+                        runtime::version_cmp_parts(ap, bp)
                     }
                     _ => left.to_string_value().cmp(&right.to_string_value()),
                 };
-                self.stack.push(Interpreter::make_order(ord));
+                self.stack.push(runtime::make_order(ord));
                 *ip += 1;
             }
             OpCode::Leg => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
                 let ord = left.to_string_value().cmp(&right.to_string_value());
-                self.stack.push(Interpreter::make_order(ord));
+                self.stack.push(runtime::make_order(ord));
                 *ip += 1;
             }
 
@@ -523,7 +522,7 @@ impl VM {
             OpCode::DivisibleBy => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let (l, r) = Interpreter::coerce_numeric(left, right);
+                let (l, r) = runtime::coerce_numeric(left, right);
                 let result = match (l, r) {
                     (Value::Int(_), Value::Int(0)) => {
                         return Err(RuntimeError::new("Divisibility by zero"));
@@ -633,7 +632,7 @@ impl VM {
             OpCode::BitAnd => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let (l, r) = Interpreter::coerce_numeric(left, right);
+                let (l, r) = runtime::coerce_numeric(left, right);
                 let result = match (l, r) {
                     (Value::Int(a), Value::Int(b)) => Value::Int(a & b),
                     _ => Value::Int(0),
@@ -644,7 +643,7 @@ impl VM {
             OpCode::BitOr => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let (l, r) = Interpreter::coerce_numeric(left, right);
+                let (l, r) = runtime::coerce_numeric(left, right);
                 let result = match (l, r) {
                     (Value::Int(a), Value::Int(b)) => Value::Int(a | b),
                     _ => Value::Int(0),
@@ -655,7 +654,7 @@ impl VM {
             OpCode::BitXor => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let (l, r) = Interpreter::coerce_numeric(left, right);
+                let (l, r) = runtime::coerce_numeric(left, right);
                 let result = match (l, r) {
                     (Value::Int(a), Value::Int(b)) => Value::Int(a ^ b),
                     _ => Value::Int(0),
@@ -666,7 +665,7 @@ impl VM {
             OpCode::BitShiftLeft => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let (l, r) = Interpreter::coerce_numeric(left, right);
+                let (l, r) = runtime::coerce_numeric(left, right);
                 let result = match (l, r) {
                     (Value::Int(a), Value::Int(b)) => Value::Int(a << b),
                     _ => Value::Int(0),
@@ -677,7 +676,7 @@ impl VM {
             OpCode::BitShiftRight => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let (l, r) = Interpreter::coerce_numeric(left, right);
+                let (l, r) = runtime::coerce_numeric(left, right);
                 let result = match (l, r) {
                     (Value::Int(a), Value::Int(b)) => Value::Int(a >> b),
                     _ => Value::Int(0),
@@ -750,8 +749,8 @@ impl VM {
                         Value::Bag(a)
                     }
                     (l, r) => {
-                        let a = Interpreter::coerce_to_set(&l);
-                        let b = Interpreter::coerce_to_set(&r);
+                        let a = runtime::coerce_to_set(&l);
+                        let b = runtime::coerce_to_set(&r);
                         let mut result = a;
                         for elem in b {
                             result.insert(elem);
@@ -788,8 +787,8 @@ impl VM {
                         Value::Mix(result)
                     }
                     (l, r) => {
-                        let a = Interpreter::coerce_to_set(&l);
-                        let b = Interpreter::coerce_to_set(&r);
+                        let a = runtime::coerce_to_set(&l);
+                        let b = runtime::coerce_to_set(&r);
                         Value::Set(a.intersection(&b).cloned().collect())
                     }
                 };
@@ -824,8 +823,8 @@ impl VM {
                         Value::Mix(result)
                     }
                     (l, r) => {
-                        let a = Interpreter::coerce_to_set(&l);
-                        let b = Interpreter::coerce_to_set(&r);
+                        let a = runtime::coerce_to_set(&l);
+                        let b = runtime::coerce_to_set(&r);
                         Value::Set(a.difference(&b).cloned().collect())
                     }
                 };
@@ -840,8 +839,8 @@ impl VM {
                         Value::Set(a.symmetric_difference(&b).cloned().collect())
                     }
                     (l, r) => {
-                        let a = Interpreter::coerce_to_set(&l);
-                        let b = Interpreter::coerce_to_set(&r);
+                        let a = runtime::coerce_to_set(&l);
+                        let b = runtime::coerce_to_set(&r);
                         Value::Set(a.symmetric_difference(&b).cloned().collect())
                     }
                 };
@@ -851,24 +850,24 @@ impl VM {
             OpCode::SetSubset => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let a = Interpreter::coerce_to_set(&left);
-                let b = Interpreter::coerce_to_set(&right);
+                let a = runtime::coerce_to_set(&left);
+                let b = runtime::coerce_to_set(&right);
                 self.stack.push(Value::Bool(a.is_subset(&b)));
                 *ip += 1;
             }
             OpCode::SetSuperset => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let a = Interpreter::coerce_to_set(&left);
-                let b = Interpreter::coerce_to_set(&right);
+                let a = runtime::coerce_to_set(&left);
+                let b = runtime::coerce_to_set(&right);
                 self.stack.push(Value::Bool(a.is_superset(&b)));
                 *ip += 1;
             }
             OpCode::SetStrictSubset => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let a = Interpreter::coerce_to_set(&left);
-                let b = Interpreter::coerce_to_set(&right);
+                let a = runtime::coerce_to_set(&left);
+                let b = runtime::coerce_to_set(&right);
                 self.stack
                     .push(Value::Bool(a.is_subset(&b) && a.len() < b.len()));
                 *ip += 1;
@@ -876,8 +875,8 @@ impl VM {
             OpCode::SetStrictSuperset => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let a = Interpreter::coerce_to_set(&left);
-                let b = Interpreter::coerce_to_set(&right);
+                let a = runtime::coerce_to_set(&left);
+                let b = runtime::coerce_to_set(&right);
                 self.stack
                     .push(Value::Bool(a.is_superset(&b) && a.len() > b.len()));
                 *ip += 1;
@@ -886,21 +885,21 @@ impl VM {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
                 self.stack
-                    .push(Interpreter::merge_junction(JunctionKind::Any, left, right));
+                    .push(runtime::merge_junction(JunctionKind::Any, left, right));
                 *ip += 1;
             }
             OpCode::JunctionAll => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
                 self.stack
-                    .push(Interpreter::merge_junction(JunctionKind::All, left, right));
+                    .push(runtime::merge_junction(JunctionKind::All, left, right));
                 *ip += 1;
             }
             OpCode::JunctionOne => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
                 self.stack
-                    .push(Interpreter::merge_junction(JunctionKind::One, left, right));
+                    .push(runtime::merge_junction(JunctionKind::One, left, right));
                 *ip += 1;
             }
 
@@ -1378,10 +1377,10 @@ impl VM {
                 let list = if let Value::LazyList(ref ll) = list_value {
                     self.interpreter.force_lazy_list_bridge(ll)?
                 } else {
-                    Interpreter::value_to_list(&list_value)
+                    runtime::value_to_list(&list_value)
                 };
                 if list.is_empty() {
-                    self.stack.push(Interpreter::reduction_identity(&op));
+                    self.stack.push(runtime::reduction_identity(&op));
                 } else {
                     let is_comparison = matches!(
                         op.as_str(),
@@ -1465,8 +1464,8 @@ impl VM {
                 if let Some((start, end)) =
                     self.interpreter.regex_find_first_bridge(&pattern, &text)
                 {
-                    let start_b = Interpreter::char_idx_to_byte(&text, start);
-                    let end_b = Interpreter::char_idx_to_byte(&text, end);
+                    let start_b = runtime::char_idx_to_byte(&text, start);
+                    let end_b = runtime::char_idx_to_byte(&text, end);
                     let mut out = String::new();
                     out.push_str(&text[..start_b]);
                     out.push_str(&replacement);
@@ -1533,8 +1532,8 @@ impl VM {
                 let result = match meta.as_str() {
                     "R" => Interpreter::apply_reduction_op(&op, &right, &left)?,
                     "X" => {
-                        let left_list = Interpreter::value_to_list(&left);
-                        let right_list = Interpreter::value_to_list(&right);
+                        let left_list = runtime::value_to_list(&left);
+                        let right_list = runtime::value_to_list(&right);
                         let mut results = Vec::new();
                         for l in &left_list {
                             for r in &right_list {
@@ -1544,8 +1543,8 @@ impl VM {
                         Value::Array(results)
                     }
                     "Z" => {
-                        let left_list = Interpreter::value_to_list(&left);
-                        let right_list = Interpreter::value_to_list(&right);
+                        let left_list = runtime::value_to_list(&left);
+                        let right_list = runtime::value_to_list(&right);
                         let len = left_list.len().min(right_list.len());
                         let mut results = Vec::new();
                         if op.is_empty() || op == "," {
@@ -1600,9 +1599,9 @@ impl VM {
                 let result = if name == "atan2" {
                     let mut x = right_vals
                         .first()
-                        .and_then(Interpreter::to_float_value)
+                        .and_then(runtime::to_float_value)
                         .unwrap_or(0.0);
-                    let mut y = Interpreter::to_float_value(&left_val).unwrap_or(0.0);
+                    let mut y = runtime::to_float_value(&left_val).unwrap_or(0.0);
                     if modifier.as_deref() == Some("R") {
                         std::mem::swap(&mut x, &mut y);
                     }
@@ -1615,12 +1614,12 @@ impl VM {
                     if modifier.as_deref() == Some("X") {
                         let mut parts = Vec::new();
                         for val in &right_vals {
-                            parts.push(Interpreter::format_sprintf(&fmt, Some(val)));
+                            parts.push(runtime::format_sprintf(&fmt, Some(val)));
                         }
                         Value::Str(parts.join(" "))
                     } else {
                         let arg = right_vals.first();
-                        let rendered = Interpreter::format_sprintf(&fmt, arg);
+                        let rendered = runtime::format_sprintf(&fmt, arg);
                         Value::Str(rendered)
                     }
                 } else {
@@ -1635,7 +1634,7 @@ impl VM {
                 let constraint = Self::const_str(code, *tc_idx);
                 let value = self.stack.last().expect("TypeCheck: empty stack");
                 if !matches!(value, Value::Nil)
-                    && Interpreter::is_known_type_constraint(constraint)
+                    && runtime::is_known_type_constraint(constraint)
                     && !self.interpreter.type_matches_value(constraint, value)
                 {
                     return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));

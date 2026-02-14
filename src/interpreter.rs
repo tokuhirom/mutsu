@@ -3138,60 +3138,6 @@ impl Interpreter {
         }
     }
 
-    /// Convert a value to Value::Hash for hash variable assignment.
-    /// Handles arrays of Pairs, flat key-value lists, and existing hashes.
-    pub(crate) fn coerce_to_hash(value: Value) -> Value {
-        match value {
-            Value::Hash(_) => value,
-            Value::Array(items) => {
-                let mut map = std::collections::HashMap::new();
-                let mut i = 0;
-                while i < items.len() {
-                    if let Value::Pair(k, v) = &items[i] {
-                        map.insert(k.clone(), *v.clone());
-                        i += 1;
-                    } else {
-                        // Flat list: key, value, key, value, ...
-                        let key = items[i].to_string_value();
-                        let val = if i + 1 < items.len() {
-                            items[i + 1].clone()
-                        } else {
-                            Value::Nil
-                        };
-                        map.insert(key, val);
-                        i += 2;
-                    }
-                }
-                Value::Hash(map)
-            }
-            Value::Pair(k, v) => {
-                let mut map = std::collections::HashMap::new();
-                map.insert(k, *v);
-                Value::Hash(map)
-            }
-            Value::Nil => Value::Hash(std::collections::HashMap::new()),
-            _ => {
-                let mut map = std::collections::HashMap::new();
-                map.insert(value.to_string_value(), Value::Nil);
-                Value::Hash(map)
-            }
-        }
-    }
-
-    /// Convert a value to Value::Array for array variable assignment.
-    pub(crate) fn coerce_to_array(value: Value) -> Value {
-        match value {
-            Value::Array(_) => value,
-            Value::Nil => Value::Array(Vec::new()),
-            Value::Range(a, b) => Value::Array((a..=b).map(Value::Int).collect()),
-            Value::RangeExcl(a, b) => Value::Array((a..b).map(Value::Int).collect()),
-            Value::RangeExclStart(a, b) => Value::Array((a + 1..=b).map(Value::Int).collect()),
-            Value::RangeExclBoth(a, b) => Value::Array((a + 1..b).map(Value::Int).collect()),
-            Value::Slip(items) => Value::Array(items),
-            other => Value::Array(vec![other]),
-        }
-    }
-
     fn init_io_environment(&mut self) {
         let stdout = self.create_handle(
             IoHandleTarget::Stdout,
@@ -4113,55 +4059,6 @@ impl Interpreter {
         self.proto_tokens.contains(&format!("GLOBAL::{}", name))
     }
 
-    pub(crate) fn gist_value(value: &Value) -> String {
-        match value {
-            Value::Rat(n, d) => {
-                if *d == 0 {
-                    if *n == 0 {
-                        "NaN".to_string()
-                    } else if *n > 0 {
-                        "Inf".to_string()
-                    } else {
-                        "-Inf".to_string()
-                    }
-                } else {
-                    let mut dd = *d;
-                    while dd % 2 == 0 {
-                        dd /= 2;
-                    }
-                    while dd % 5 == 0 {
-                        dd /= 5;
-                    }
-                    if dd == 1 {
-                        let val = *n as f64 / *d as f64;
-                        let s = format!("{}", val);
-                        if s.contains('.') {
-                            s
-                        } else {
-                            format!("{}.0", val)
-                        }
-                    } else {
-                        format!("<{}/{}>", n, d)
-                    }
-                }
-            }
-            Value::Array(items) => items
-                .iter()
-                .map(Self::gist_value)
-                .collect::<Vec<_>>()
-                .join(" "),
-            Value::Hash(items) => items
-                .iter()
-                .map(|(k, v)| format!("{}\t{}", k, Self::gist_value(v)))
-                .collect::<Vec<_>>()
-                .join("\n"),
-            Value::Pair(k, v) => format!("{}\t{}", k, Self::gist_value(v)),
-            Value::Version { .. } => format!("v{}", value.to_string_value()),
-            Value::Nil => "Nil".to_string(),
-            _ => value.to_string_value(),
-        }
-    }
-
     fn resolve_method(
         &mut self,
         class_name: &str,
@@ -4806,24 +4703,6 @@ impl Interpreter {
             return true;
         }
         self.proto_subs.contains(&format!("GLOBAL::{}", name))
-    }
-
-    pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
-        matches!(
-            constraint,
-            "Int"
-                | "Num"
-                | "Str"
-                | "Bool"
-                | "Array"
-                | "Hash"
-                | "Rat"
-                | "FatRat"
-                | "Complex"
-                | "int"
-                | "num"
-                | "str"
-        )
     }
 
     fn value_is_nan(value: &Value) -> bool {
