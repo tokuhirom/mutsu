@@ -5697,220 +5697,26 @@ impl Interpreter {
                         _ => {}
                     }
                 }
-                // Handle method calls on instances
+                // Method calls on instances are handled by value-dispatch now.
                 {
                     let base = self.eval_expr(target)?;
-                    if let Value::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } = &base
-                    {
-                        if class_name == "Distro" {
-                            match name.as_str() {
-                                "name" | "auth" | "desc" | "release" | "path-sep" | "is-win"
-                                | "version" | "signature" => {
-                                    return Ok(attributes
-                                        .get(name.as_str())
-                                        .cloned()
-                                        .unwrap_or(Value::Nil));
-                                }
-                                "gist" => {
-                                    let n = attributes
-                                        .get("name")
-                                        .map(|v| v.to_string_value())
-                                        .unwrap_or_default();
-                                    let v = attributes
-                                        .get("version")
-                                        .map(|v| {
-                                            if let Value::Version { parts, .. } = v {
-                                                Value::version_parts_to_string(parts)
-                                            } else {
-                                                v.to_string_value()
-                                            }
-                                        })
-                                        .unwrap_or_default();
-                                    return Ok(Value::Str(format!("{} ({})", n, v)));
-                                }
-                                "Str" => {
-                                    let n = attributes
-                                        .get("name")
-                                        .map(|v| v.to_string_value())
-                                        .unwrap_or_default();
-                                    return Ok(Value::Str(n));
-                                }
-                                "raku" | "perl" => {
-                                    let release = attributes
-                                        .get("release")
-                                        .map(|v| v.to_string_value())
-                                        .unwrap_or_default();
-                                    let path_sep = attributes
-                                        .get("path-sep")
-                                        .map(|v| v.to_string_value())
-                                        .unwrap_or_default();
-                                    let n = attributes
-                                        .get("name")
-                                        .map(|v| v.to_string_value())
-                                        .unwrap_or_default();
-                                    let auth = attributes
-                                        .get("auth")
-                                        .map(|v| v.to_string_value())
-                                        .unwrap_or_default();
-                                    let ver = attributes
-                                        .get("version")
-                                        .map(|v| {
-                                            if let Value::Version { parts, .. } = v {
-                                                format!(
-                                                    "v{}",
-                                                    Value::version_parts_to_string(parts)
-                                                )
-                                            } else {
-                                                v.to_string_value()
-                                            }
-                                        })
-                                        .unwrap_or_default();
-                                    let desc = attributes
-                                        .get("desc")
-                                        .map(|v| v.to_string_value())
-                                        .unwrap_or_default();
-                                    return Ok(Value::Str(format!(
-                                        "Distro.new(release => \"{}\", path-sep => \"{}\", name => \"{}\", auth => \"{}\", version => {}, signature => Blob, desc => \"{}\")",
-                                        release, path_sep, n, auth, ver, desc
-                                    )));
-                                }
-                                _ => {}
-                            }
-                        }
-                        if class_name == "Perl"
-                            && let Some(val) = attributes.get(name.as_str())
-                        {
-                            return Ok(val.clone());
-                        }
-                        let mut attrs = attributes.clone();
-                        if name == "clone" {
-                            for arg in args {
-                                let val = self.eval_expr(arg)?;
-                                if let Value::Pair(key, boxed) = val {
-                                    attrs.insert(key, *boxed);
-                                }
-                            }
-                            return Ok(Value::make_instance(class_name.clone(), attrs));
-                        }
-                        if name == "isa" {
-                            let target = args
-                                .first()
-                                .and_then(|arg| self.eval_expr(arg).ok())
-                                .unwrap_or(Value::Nil);
-                            let target_name = match target {
-                                Value::Package(name) => name,
-                                Value::Str(name) => name,
-                                Value::Instance { class_name, .. } => class_name,
-                                other => other.to_string_value(),
-                            };
-                            let ok = self.class_mro(class_name).contains(&target_name);
-                            return Ok(Value::Bool(ok));
-                        }
-                        if name == "raku" || name == "perl" {
-                            return Ok(Value::Str(format!("{}.new()", class_name)));
-                        }
-                        if matches!(
-                            class_name.as_str(),
-                            "IO::Path"
-                                | "IO::Handle"
-                                | "Promise"
-                                | "Channel"
-                                | "Supply"
-                                | "Proc::Async"
-                        ) {
-                            let mut arg_values = Vec::with_capacity(args.len());
-                            for arg in args {
-                                arg_values.push(self.eval_expr(arg)?);
-                            }
-                            let dispatch_result =
-                                if let Some(target_var) = Self::method_target_var_name(target) {
-                                    self.call_method_mut_with_values(
-                                        &target_var,
-                                        base.clone(),
-                                        name,
-                                        arg_values,
-                                    )
-                                } else {
-                                    self.call_method_with_values(base.clone(), name, arg_values)
-                                };
-                            match dispatch_result {
-                                Ok(value) => return Ok(value),
-                                Err(e) if Self::is_unknown_method_dispatch_error(&e) => {}
-                                Err(e) => return Err(e),
-                            }
-                        }
-                        // Check for accessor methods (public attributes)
-                        if args.is_empty() {
-                            for (attr_name, is_public, _) in
-                                self.collect_class_attributes(class_name)
-                            {
-                                if is_public && attr_name == *name {
-                                    return Ok(attributes.get(name).cloned().unwrap_or(Value::Nil));
-                                }
-                            }
-                        }
-                        // Look up method in class hierarchy
-                        let mut eval_args = Vec::new();
+                    if matches!(base, Value::Instance { .. }) {
+                        let mut arg_values = Vec::with_capacity(args.len());
                         for arg in args {
-                            eval_args.push(self.eval_expr(arg)?);
+                            arg_values.push(self.eval_expr(arg)?);
                         }
-                        if let Some(method_def) = self.resolve_method(class_name, name, &eval_args)
+                        let dispatch_result = if let Some(target_var) =
+                            Self::method_target_var_name(target)
                         {
-                            let class_name_owned = class_name.clone();
-                            let original_attrs = attributes.clone();
-                            let mut saved_env = self.env.clone();
-                            // Bind self
-                            self.env.insert("self".to_string(), base.clone());
-                            // Bind attributes as $!name and $.name
-                            for (attr_name, attr_val) in attributes {
-                                self.env.insert(format!("!{}", attr_name), attr_val.clone());
-                                self.env.insert(format!(".{}", attr_name), attr_val.clone());
-                            }
-                            // Bind method parameters
-                            for (i, param) in method_def.params.iter().enumerate() {
-                                if let Some(val) = eval_args.get(i) {
-                                    self.env.insert(param.clone(), val.clone());
-                                } else if let Some(pd) = method_def.param_defs.get(i)
-                                    && let Some(default_expr) = &pd.default
-                                {
-                                    let val = self.eval_expr(default_expr)?;
-                                    self.env.insert(param.clone(), val);
-                                }
-                            }
-                            let block_result = self.run_block(&method_def.body);
-                            let implicit_return = self.env.get("_").cloned();
-                            let result = match block_result {
-                                Ok(()) => Ok(implicit_return.unwrap_or(Value::Nil)),
-                                Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
-                                Err(e) => Err(e),
-                            };
-                            // Propagate $!attr mutations back to the instance
-                            let mut updated_attrs = original_attrs;
-                            for attr_name in updated_attrs.keys().cloned().collect::<Vec<_>>() {
-                                let env_key = format!("!{}", attr_name);
-                                if let Some(val) = self.env.get(&env_key) {
-                                    updated_attrs.insert(attr_name, val.clone());
-                                }
-                            }
-                            let updated_instance =
-                                Value::make_instance(class_name_owned, updated_attrs);
-                            if let Expr::Var(var_name) = target.as_ref() {
-                                saved_env.insert(var_name.clone(), updated_instance);
-                            }
-                            self.env = saved_env;
-                            return result;
+                            self.call_method_mut_with_values(&target_var, base, name, arg_values)
+                        } else {
+                            self.call_method_with_values(base, name, arg_values)
+                        };
+                        match dispatch_result {
+                            Ok(value) => return Ok(value),
+                            Err(e) if Self::is_unknown_method_dispatch_error(&e) => {}
+                            Err(e) => return Err(e),
                         }
-                        if self.class_has_method(class_name, name) {
-                            return Err(RuntimeError::new(format!(
-                                "No matching candidates for method: {}",
-                                name
-                            )));
-                        }
-                        // Fall through to generic method handling (WHAT, defined, etc.)
                     }
                 }
                 if let Expr::ArrayVar(var_name) = target.as_ref() {
@@ -11335,6 +11141,80 @@ impl Interpreter {
                     _ => {}
                 }
             }
+            if class_name == "Distro" {
+                match method {
+                    "name" | "auth" | "desc" | "release" | "path-sep" | "is-win" | "version"
+                    | "signature" => {
+                        return Ok(attributes.get(method).cloned().unwrap_or(Value::Nil));
+                    }
+                    "gist" => {
+                        let n = attributes
+                            .get("name")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let v = attributes
+                            .get("version")
+                            .map(|v| {
+                                if let Value::Version { parts, .. } = v {
+                                    Value::version_parts_to_string(parts)
+                                } else {
+                                    v.to_string_value()
+                                }
+                            })
+                            .unwrap_or_default();
+                        return Ok(Value::Str(format!("{} ({})", n, v)));
+                    }
+                    "Str" => {
+                        let n = attributes
+                            .get("name")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        return Ok(Value::Str(n));
+                    }
+                    "raku" | "perl" => {
+                        let release = attributes
+                            .get("release")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let path_sep = attributes
+                            .get("path-sep")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let n = attributes
+                            .get("name")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let auth = attributes
+                            .get("auth")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let ver = attributes
+                            .get("version")
+                            .map(|v| {
+                                if let Value::Version { parts, .. } = v {
+                                    format!("v{}", Value::version_parts_to_string(parts))
+                                } else {
+                                    v.to_string_value()
+                                }
+                            })
+                            .unwrap_or_default();
+                        let desc = attributes
+                            .get("desc")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        return Ok(Value::Str(format!(
+                            "Distro.new(release => \"{}\", path-sep => \"{}\", name => \"{}\", auth => \"{}\", version => {}, signature => Blob, desc => \"{}\")",
+                            release, path_sep, n, auth, ver, desc
+                        )));
+                    }
+                    _ => {}
+                }
+            }
+            if class_name == "Perl"
+                && let Some(val) = attributes.get(method)
+            {
+                return Ok(val.clone());
+            }
             if class_name == "Promise" {
                 if method == "result" && args.is_empty() {
                     return Ok(attributes.get("result").cloned().unwrap_or(Value::Nil));
@@ -11515,7 +11395,7 @@ impl Interpreter {
         if target_var.starts_with('@') {
             let key = target_var.to_string();
             match method {
-                "push" | "append" => {
+                "push" => {
                     let mut items = match self.env.get(&key) {
                         Some(Value::Array(existing)) => existing.clone(),
                         _ => match target {
@@ -11524,6 +11404,23 @@ impl Interpreter {
                         },
                     };
                     items.extend(args);
+                    self.env.insert(key, Value::Array(items));
+                    return Ok(Value::Nil);
+                }
+                "append" => {
+                    let mut items = match self.env.get(&key) {
+                        Some(Value::Array(existing)) => existing.clone(),
+                        _ => match target {
+                            Value::Array(v) => v,
+                            _ => Vec::new(),
+                        },
+                    };
+                    for arg in args {
+                        match arg {
+                            Value::Array(vals) => items.extend(vals),
+                            other => items.push(other),
+                        }
+                    }
                     self.env.insert(key, Value::Array(items));
                     return Ok(Value::Nil);
                 }
