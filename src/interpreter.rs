@@ -2025,20 +2025,6 @@ impl Interpreter {
         self.smart_match(left, right)
     }
 
-    pub(crate) fn eval_smart_match_values(
-        &mut self,
-        left: Value,
-        right: Value,
-        negate: bool,
-    ) -> Result<Value, RuntimeError> {
-        let op = if negate {
-            TokenKind::BangTilde
-        } else {
-            TokenKind::SmartMatch
-        };
-        self.eval_binary(left, &op, right)
-    }
-
     pub(crate) fn eval_sequence_values(
         &mut self,
         left: Value,

@@ -560,9 +560,11 @@ impl VM {
                 } else {
                     self.interpreter.env_mut().remove("_");
                 }
-                let out = self
-                    .interpreter
-                    .eval_smart_match_values(left, right, *negate)?;
+                let out = if *negate {
+                    self.eval_binary_with_junctions(left, right, Self::not_smart_match_op)?
+                } else {
+                    self.eval_binary_with_junctions(left, right, Self::smart_match_op)?
+                };
                 self.stack.push(out);
                 self.sync_locals_from_env(code);
                 *ip = rhs_end;
@@ -2797,6 +2799,18 @@ impl VM {
             });
         }
         f(self, left, right)
+    }
+
+    fn smart_match_op(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
+        Ok(Value::Bool(
+            self.interpreter.smart_match_values(&left, &right),
+        ))
+    }
+
+    fn not_smart_match_op(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
+        Ok(Value::Bool(
+            !self.interpreter.smart_match_values(&left, &right),
+        ))
     }
 
     /// Sync local variable slots from the interpreter environment.
