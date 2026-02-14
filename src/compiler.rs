@@ -373,7 +373,7 @@ impl Compiler {
             }
 
             // --- Package scope ---
-            Stmt::Package { name, body } if !Self::has_phasers(body) => {
+            Stmt::Package { name, body } => {
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
                 let pkg_idx = self.code.emit(OpCode::PackageScope {
                     name_idx,
@@ -386,10 +386,6 @@ impl Compiler {
                 }
                 self.current_package = saved_package;
                 self.code.patch_body_end(pkg_idx);
-            }
-            Stmt::Package { .. } => {
-                let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::RunPackageStmt(idx));
             }
 
             // --- Phaser (BEGIN/END) ---
