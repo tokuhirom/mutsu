@@ -1166,7 +1166,7 @@ impl VM {
                 } else {
                     let result = self
                         .interpreter
-                        .eval_method_call_with_values(target, &method, args)?;
+                        .call_method_with_values(target, &method, args)?;
                     self.stack.push(result);
                     self.sync_locals_from_env(code);
                 }
@@ -1188,8 +1188,9 @@ impl VM {
                     self.stack.push(native_result?);
                 } else {
                     // Fall back to interpreter bridge (may mutate target)
-                    let result = self.interpreter.eval_method_call_mut_with_values(
+                    let result = self.interpreter.call_method_mut_with_values(
                         &target_name,
+                        target,
                         &method,
                         args,
                     )?;

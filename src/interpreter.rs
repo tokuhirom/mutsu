@@ -11117,6 +11117,31 @@ impl Interpreter {
         })
     }
 
+    pub(crate) fn call_method_with_values(
+        &mut self,
+        target: Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if method == "say" && args.is_empty() {
+            self.output.push_str(&target.to_string_value());
+            self.output.push('\n');
+            return Ok(Value::Nil);
+        }
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &target
+            && self.class_has_method(class_name, method)
+        {
+            let (result, _updated) =
+                self.run_instance_method(class_name, attributes.clone(), method, args)?;
+            return Ok(result);
+        }
+        self.eval_method_call_with_values(target, method, args)
+    }
+
     /// Bridge: method call on a mutable variable target (for VM CallMethodMut).
     /// Constructs the correct Expr variant so the interpreter can write back mutations.
     pub(crate) fn eval_method_call_mut_with_values(
@@ -11141,6 +11166,92 @@ impl Interpreter {
             args: arg_exprs,
             modifier: None,
         })
+    }
+
+    pub(crate) fn call_method_mut_with_values(
+        &mut self,
+        target_var: &str,
+        target: Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if target_var.starts_with('@') {
+            let key = target_var.to_string();
+            match method {
+                "push" | "append" => {
+                    let mut items = match self.env.get(&key) {
+                        Some(Value::Array(existing)) => existing.clone(),
+                        _ => match target {
+                            Value::Array(v) => v,
+                            _ => Vec::new(),
+                        },
+                    };
+                    items.extend(args);
+                    self.env.insert(key, Value::Array(items));
+                    return Ok(Value::Nil);
+                }
+                "unshift" | "prepend" => {
+                    let items = match self.env.get(&key) {
+                        Some(Value::Array(existing)) => existing.clone(),
+                        _ => match target {
+                            Value::Array(v) => v,
+                            _ => Vec::new(),
+                        },
+                    };
+                    let mut pref = args;
+                    pref.extend(items);
+                    self.env.insert(key, Value::Array(pref));
+                    return Ok(Value::Nil);
+                }
+                "pop" => {
+                    let mut items = match self.env.get(&key) {
+                        Some(Value::Array(existing)) => existing.clone(),
+                        _ => match target {
+                            Value::Array(v) => v,
+                            _ => Vec::new(),
+                        },
+                    };
+                    let out = items.pop().unwrap_or(Value::Nil);
+                    self.env.insert(key, Value::Array(items));
+                    return Ok(out);
+                }
+                "shift" => {
+                    let mut items = match self.env.get(&key) {
+                        Some(Value::Array(existing)) => existing.clone(),
+                        _ => match target {
+                            Value::Array(v) => v,
+                            _ => Vec::new(),
+                        },
+                    };
+                    let out = if items.is_empty() {
+                        Value::Nil
+                    } else {
+                        items.remove(0)
+                    };
+                    self.env.insert(key, Value::Array(items));
+                    return Ok(out);
+                }
+                _ => {}
+            }
+        }
+
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.clone()
+            && self.class_has_method(&class_name, method)
+        {
+            let (result, updated) =
+                self.run_instance_method(&class_name, attributes, method, args)?;
+            self.env.insert(
+                target_var.to_string(),
+                Value::make_instance(class_name, updated),
+            );
+            return Ok(result);
+        }
+
+        self.eval_method_call_mut_with_values(target_var, method, args)
     }
 
     /// Bridge: execute a statement-level call with pre-evaluated positional values (for VM).
