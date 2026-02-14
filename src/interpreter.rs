@@ -11302,6 +11302,10 @@ impl Interpreter {
         name: &str,
         args: Vec<Value>,
     ) -> Result<(), RuntimeError> {
+        if self.resolve_function_with_types(name, &args).is_some() || self.has_proto(name) {
+            let _ = self.call_function(name, args)?;
+            return Ok(());
+        }
         let call_args: Vec<CallArg> = args
             .into_iter()
             .map(|v| CallArg::Positional(Expr::Literal(v)))
