@@ -23,6 +23,7 @@ use crate::ast::{CallArg, ExpectedMatcher, Expr, FunctionDef, ParamDef, PhaserKi
 use crate::lexer::{Lexer, TokenKind};
 use crate::opcode::{CompiledCode, OpCode};
 use crate::parser::Parser;
+use crate::runtime;
 use crate::value::{JunctionKind, LazyList, RuntimeError, Value, make_rat, next_instance_id};
 use num_traits::{Signed, Zero};
 
@@ -3001,29 +3002,6 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn make_order(ord: std::cmp::Ordering) -> Value {
-        match ord {
-            std::cmp::Ordering::Less => Value::Enum {
-                enum_type: "Order".to_string(),
-                key: "Less".to_string(),
-                value: -1,
-                index: 0,
-            },
-            std::cmp::Ordering::Equal => Value::Enum {
-                enum_type: "Order".to_string(),
-                key: "Same".to_string(),
-                value: 0,
-                index: 1,
-            },
-            std::cmp::Ordering::Greater => Value::Enum {
-                enum_type: "Order".to_string(),
-                key: "More".to_string(),
-                value: 1,
-                index: 2,
-            },
-        }
-    }
-
     fn version_from_value(arg: Value) -> Value {
         use crate::value::VersionPart;
         match arg {
@@ -3070,26 +3048,6 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn version_cmp_parts(
-        a_parts: &[crate::value::VersionPart],
-        b_parts: &[crate::value::VersionPart],
-    ) -> std::cmp::Ordering {
-        use crate::value::VersionPart;
-        let max_len = a_parts.len().max(b_parts.len());
-        for i in 0..max_len {
-            let a = a_parts.get(i).unwrap_or(&VersionPart::Num(0));
-            let b = b_parts.get(i).unwrap_or(&VersionPart::Num(0));
-            match (a, b) {
-                (VersionPart::Num(an), VersionPart::Num(bn)) => match an.cmp(bn) {
-                    std::cmp::Ordering::Equal => continue,
-                    other => return other,
-                },
-                _ => continue, // Whatever matches anything
-            }
-        }
-        std::cmp::Ordering::Equal
-    }
-
     fn version_smart_match(
         left: &Value,
         right_parts: &[crate::value::VersionPart],
@@ -3103,10 +3061,10 @@ impl Interpreter {
         {
             if right_plus {
                 // LHS >= RHS (base version without +)
-                Self::version_cmp_parts(left_parts, right_parts) != std::cmp::Ordering::Less
+                runtime::version_cmp_parts(left_parts, right_parts) != std::cmp::Ordering::Less
             } else if right_minus {
                 // LHS <= RHS (base version without -)
-                Self::version_cmp_parts(left_parts, right_parts) != std::cmp::Ordering::Greater
+                runtime::version_cmp_parts(left_parts, right_parts) != std::cmp::Ordering::Greater
             } else {
                 // Compare up to the length of the RHS; extra LHS parts are ignored
                 let rhs_len = right_parts.len();
@@ -5798,7 +5756,7 @@ impl Interpreter {
                         .unwrap_or(std::cmp::Ordering::Equal),
                     _ => left.to_string_value().cmp(&right.to_string_value()),
                 };
-                Ok(Self::make_order(ord))
+                Ok(runtime::make_order(ord))
             }
             TokenKind::SmartMatch => Ok(Value::Bool(self.smart_match(&left, &right))),
             TokenKind::BangTilde => Ok(Value::Bool(!self.smart_match(&left, &right))),
@@ -5849,7 +5807,7 @@ impl Interpreter {
             )),
             TokenKind::Ident(name) if name == "leg" => {
                 let ord = left.to_string_value().cmp(&right.to_string_value());
-                Ok(Self::make_order(ord))
+                Ok(runtime::make_order(ord))
             }
             TokenKind::Ident(name) if name == "cmp" => {
                 let ord = match (&left, &right) {
@@ -5876,11 +5834,11 @@ impl Interpreter {
                         .partial_cmp(&(*b as f64))
                         .unwrap_or(std::cmp::Ordering::Equal),
                     (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
-                        Self::version_cmp_parts(ap, bp)
+                        runtime::version_cmp_parts(ap, bp)
                     }
                     _ => left.to_string_value().cmp(&right.to_string_value()),
                 };
-                Ok(Self::make_order(ord))
+                Ok(runtime::make_order(ord))
             }
             TokenKind::Ident(name) if name == "eqv" => Ok(Value::Bool(left.eqv(&right))),
             TokenKind::Ident(name) if name == "but" => {
@@ -9031,7 +8989,7 @@ impl Interpreter {
             )),
             "leg" => {
                 let ord = left.to_string_value().cmp(&right.to_string_value());
-                Ok(Self::make_order(ord))
+                Ok(runtime::make_order(ord))
             }
             "cmp" => {
                 let ord = match (left, right) {
@@ -9058,11 +9016,11 @@ impl Interpreter {
                         .partial_cmp(&(*b as f64))
                         .unwrap_or(std::cmp::Ordering::Equal),
                     (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
-                        Self::version_cmp_parts(ap, bp)
+                        runtime::version_cmp_parts(ap, bp)
                     }
                     _ => left.to_string_value().cmp(&right.to_string_value()),
                 };
-                Ok(Self::make_order(ord))
+                Ok(runtime::make_order(ord))
             }
             "gcd" => {
                 let (mut a, mut b) = (to_int(left).abs(), to_int(right).abs());
