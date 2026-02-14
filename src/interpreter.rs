@@ -11139,6 +11139,48 @@ impl Interpreter {
                 self.run_instance_method(class_name, attributes.clone(), method, args)?;
             return Ok(result);
         }
+        if method == "new"
+            && let Value::Package(class_name) = &target
+            && self.classes.contains_key(class_name)
+            && !matches!(
+                class_name.as_str(),
+                "Hash"
+                    | "Version"
+                    | "Promise"
+                    | "Channel"
+                    | "Supply"
+                    | "Proc::Async"
+                    | "IO::Path"
+                    | "IO::Handle"
+                    | "IO::Spec"
+            )
+        {
+            let mut attrs = HashMap::new();
+            for (attr_name, _is_public, default) in self.collect_class_attributes(class_name) {
+                let val = if let Some(expr) = default {
+                    self.eval_expr(&expr)?
+                } else {
+                    Value::Nil
+                };
+                attrs.insert(attr_name, val);
+            }
+            for val in &args {
+                if let Value::Pair(k, v) = val {
+                    attrs.insert(k.clone(), *v.clone());
+                }
+            }
+            if self.class_has_method(class_name, "BUILD") {
+                let (_v, updated) =
+                    self.run_instance_method(class_name, attrs, "BUILD", Vec::new())?;
+                attrs = updated;
+            }
+            if self.class_has_method(class_name, "TWEAK") {
+                let (_v, updated) =
+                    self.run_instance_method(class_name, attrs, "TWEAK", Vec::new())?;
+                attrs = updated;
+            }
+            return Ok(Value::make_instance(class_name.clone(), attrs));
+        }
         self.eval_method_call_with_values(target, method, args)
     }
 
