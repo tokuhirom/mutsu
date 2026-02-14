@@ -2577,8 +2577,7 @@ impl Interpreter {
             })?;
             return Ok(Value::Bool(true));
         }
-        let token_args: Vec<Expr> = args.iter().cloned().map(Expr::Literal).collect();
-        if let Some(pattern) = self.eval_token_call(name, &token_args)? {
+        if let Some(pattern) = self.eval_token_call_values(name, &args)? {
             return Ok(Value::Regex(pattern));
         }
         if let Some(native_result) = crate::builtins::native_function(name, &args) {
@@ -5482,12 +5481,20 @@ impl Interpreter {
         name: &str,
         args: &[Expr],
     ) -> Result<Option<String>, RuntimeError> {
+        let arg_values: Vec<Value> = args.iter().filter_map(|a| self.eval_expr(a).ok()).collect();
+        self.eval_token_call_values(name, &arg_values)
+    }
+
+    fn eval_token_call_values(
+        &mut self,
+        name: &str,
+        arg_values: &[Value],
+    ) -> Result<Option<String>, RuntimeError> {
         let defs = match self.resolve_token_defs(name) {
             Some(defs) => defs,
             None => return Ok(None),
         };
-        let arg_values: Vec<Value> = args.iter().filter_map(|a| self.eval_expr(a).ok()).collect();
-        let literal_args: Vec<Expr> = arg_values.into_iter().map(Expr::Literal).collect();
+        let literal_args: Vec<Expr> = arg_values.iter().cloned().map(Expr::Literal).collect();
         let subject = match self.env.get("_") {
             Some(Value::Str(s)) => Some(s.clone()),
             _ => None,
