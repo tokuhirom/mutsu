@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::ast::{CallArg, Expr, Stmt};
 use crate::interpreter::Interpreter;
 use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
-use crate::value::{RuntimeError, Value, make_rat};
+use crate::value::{JunctionKind, RuntimeError, Value, make_rat};
 use num_traits::{Signed, Zero};
 
 pub(crate) struct VM {
@@ -930,6 +930,27 @@ impl VM {
                 let b = Interpreter::coerce_to_set(&right);
                 self.stack
                     .push(Value::Bool(a.is_superset(&b) && a.len() > b.len()));
+                *ip += 1;
+            }
+            OpCode::JunctionAny => {
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                self.stack
+                    .push(Interpreter::merge_junction(JunctionKind::Any, left, right));
+                *ip += 1;
+            }
+            OpCode::JunctionAll => {
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                self.stack
+                    .push(Interpreter::merge_junction(JunctionKind::All, left, right));
+                *ip += 1;
+            }
+            OpCode::JunctionOne => {
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                self.stack
+                    .push(Interpreter::merge_junction(JunctionKind::One, left, right));
                 *ip += 1;
             }
 

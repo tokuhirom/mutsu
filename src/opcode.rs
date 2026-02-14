@@ -102,6 +102,9 @@ pub(crate) enum OpCode {
     SetSuperset,
     SetStrictSubset,
     SetStrictSuperset,
+    JunctionAny,
+    JunctionAll,
+    JunctionOne,
 
     // -- Sequence --
     Sequence {
