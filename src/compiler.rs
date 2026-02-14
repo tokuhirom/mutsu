@@ -944,8 +944,9 @@ impl Compiler {
                 self.compile_try(body, catch);
             }
             Expr::DoBlock { .. } => {
-                let idx = self.code.add_expr(expr.clone());
-                self.code.emit(OpCode::RunDoBlockExpr(idx));
+                if let Expr::DoBlock { body, label } = expr {
+                    self.compile_do_block_expr(body, label);
+                }
             }
             Expr::DoStmt(stmt) => match stmt.as_ref() {
                 Stmt::If {
@@ -1355,6 +1356,15 @@ impl Compiler {
         if let Some(j) = jump_after_catch {
             self.code.patch_jump(j);
         }
+    }
+
+    fn compile_do_block_expr(&mut self, body: &[Stmt], label: &Option<String>) {
+        let idx = self.code.emit(OpCode::DoBlockExpr {
+            body_end: 0,
+            label: label.clone(),
+        });
+        self.compile_block_inline(body);
+        self.code.patch_body_end(idx);
     }
 
     fn compile_do_if_expr(&mut self, cond: &Expr, then_branch: &[Stmt], else_branch: &[Stmt]) {

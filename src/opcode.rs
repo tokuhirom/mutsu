@@ -168,7 +168,10 @@ pub(crate) enum OpCode {
     /// Statement-level call with mixed positional/named args shape from stmt pool.
     ExecCallMixed(u32),
     RunBlockStmt(u32),
-    RunDoBlockExpr(u32),
+    DoBlockExpr {
+        body_end: u32,
+        label: Option<String>,
+    },
     RunDoStmtExpr(u32),
     MakeGather(u32),
     CallOnValue {
@@ -438,6 +441,7 @@ impl CompiledCode {
             OpCode::When { body_end, .. } => *body_end = target,
             OpCode::Default { body_end, .. } => *body_end = target,
             OpCode::PackageScope { body_end, .. } => *body_end = target,
+            OpCode::DoBlockExpr { body_end, .. } => *body_end = target,
             _ => panic!("patch_body_end on non-Given/When/Default/PackageScope opcode"),
         }
     }
