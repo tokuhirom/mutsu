@@ -560,12 +560,9 @@ impl VM {
                 } else {
                     self.interpreter.env_mut().remove("_");
                 }
-                let op = if *negate {
-                    crate::lexer::TokenKind::BangTilde
-                } else {
-                    crate::lexer::TokenKind::SmartMatch
-                };
-                let out = self.interpreter.eval_binary(left, &op, right)?;
+                let out = self
+                    .interpreter
+                    .eval_smart_match_values(left, right, *negate)?;
                 self.stack.push(out);
                 self.sync_locals_from_env(code);
                 *ip = rhs_end;
@@ -960,12 +957,9 @@ impl VM {
             OpCode::Sequence { exclude_end } => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let op = if *exclude_end {
-                    crate::lexer::TokenKind::DotDotDotCaret
-                } else {
-                    crate::lexer::TokenKind::DotDotDot
-                };
-                let out = self.interpreter.eval_binary(left, &op, right)?;
+                let out = self
+                    .interpreter
+                    .eval_sequence_values(left, right, *exclude_end)?;
                 self.stack.push(out);
                 self.sync_locals_from_env(code);
                 *ip += 1;

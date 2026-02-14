@@ -2048,6 +2048,29 @@ impl Interpreter {
         self.smart_match(left, right)
     }
 
+    pub(crate) fn eval_smart_match_values(
+        &mut self,
+        left: Value,
+        right: Value,
+        negate: bool,
+    ) -> Result<Value, RuntimeError> {
+        let op = if negate {
+            TokenKind::BangTilde
+        } else {
+            TokenKind::SmartMatch
+        };
+        self.eval_binary(left, &op, right)
+    }
+
+    pub(crate) fn eval_sequence_values(
+        &mut self,
+        left: Value,
+        right: Value,
+        exclude_end: bool,
+    ) -> Result<Value, RuntimeError> {
+        self.eval_sequence(left, right, exclude_end)
+    }
+
     pub(crate) fn resolve_code_var(&self, name: &str) -> Value {
         // Check if stored as a variable first (my &f = ...)
         let var_key = format!("&{}", name);
