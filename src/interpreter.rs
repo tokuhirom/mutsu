@@ -3128,6 +3128,27 @@ impl Interpreter {
         Ok((read, write, append))
     }
 
+    fn parse_io_flags_values(args: &[Value]) -> (bool, bool, bool) {
+        let mut read = false;
+        let mut write = false;
+        let mut append = false;
+        for arg in args {
+            if let Value::Pair(name, value) = arg {
+                let truthy = value.truthy();
+                match name.as_str() {
+                    "r" => read = truthy,
+                    "w" => write = truthy,
+                    "a" => append = truthy,
+                    _ => {}
+                }
+            }
+        }
+        if !read && !write && !append {
+            read = true;
+        }
+        (read, write, append)
+    }
+
     fn named_arg_string(
         &mut self,
         args: &[Expr],
@@ -11932,6 +11953,103 @@ impl Interpreter {
                             RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
                         })?;
                         return Ok(Value::Str(content));
+                    }
+                    "open" => {
+                        let (read, write, append) = Self::parse_io_flags_values(&args);
+                        return self.open_file_handle(&path_buf, read, write, append);
+                    }
+                    "copy" => {
+                        let dest = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .ok_or_else(|| RuntimeError::new("copy requires destination"))?;
+                        let dest_buf = self.resolve_path(&dest);
+                        fs::copy(&path_buf, &dest_buf).map_err(|err| {
+                            RuntimeError::new(format!("Failed to copy '{}': {}", p, err))
+                        })?;
+                        return Ok(Value::Bool(true));
+                    }
+                    "rename" | "move" => {
+                        let dest = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .ok_or_else(|| RuntimeError::new("rename/move requires destination"))?;
+                        let dest_buf = self.resolve_path(&dest);
+                        fs::rename(&path_buf, &dest_buf).map_err(|err| {
+                            RuntimeError::new(format!("Failed to rename '{}': {}", p, err))
+                        })?;
+                        return Ok(Value::Bool(true));
+                    }
+                    "chmod" => {
+                        let mode_value = args
+                            .first()
+                            .cloned()
+                            .ok_or_else(|| RuntimeError::new("chmod requires mode"))?;
+                        let mode_int = match mode_value {
+                            Value::Int(i) => i as u32,
+                            Value::Str(s) => u32::from_str_radix(&s, 8).unwrap_or(0),
+                            other => {
+                                return Err(RuntimeError::new(format!(
+                                    "Invalid mode: {}",
+                                    other.to_string_value()
+                                )));
+                            }
+                        };
+                        #[cfg(unix)]
+                        {
+                            let perms = PermissionsExt::from_mode(mode_int);
+                            fs::set_permissions(&path_buf, perms).map_err(|err| {
+                                RuntimeError::new(format!("Failed to chmod '{}': {}", p, err))
+                            })?;
+                        }
+                        #[cfg(not(unix))]
+                        {
+                            return Err(RuntimeError::new("chmod not supported on this platform"));
+                        }
+                        return Ok(Value::Bool(true));
+                    }
+                    "mkdir" => {
+                        fs::create_dir_all(&path_buf).map_err(|err| {
+                            RuntimeError::new(format!("Failed to mkdir '{}': {}", p, err))
+                        })?;
+                        return Ok(Value::Bool(true));
+                    }
+                    "rmdir" => {
+                        fs::remove_dir(&path_buf).map_err(|err| {
+                            RuntimeError::new(format!("Failed to rmdir '{}': {}", p, err))
+                        })?;
+                        return Ok(Value::Bool(true));
+                    }
+                    "dir" => {
+                        let mut entries = Vec::new();
+                        for entry in fs::read_dir(&path_buf).map_err(|err| {
+                            RuntimeError::new(format!("Failed to read dir '{}': {}", p, err))
+                        })? {
+                            let entry = entry.map_err(|err| {
+                                RuntimeError::new(format!(
+                                    "Failed to read dir entry '{}': {}",
+                                    p, err
+                                ))
+                            })?;
+                            entries.push(Value::Str(entry.path().to_string_lossy().to_string()));
+                        }
+                        return Ok(Value::Array(entries));
+                    }
+                    "spurt" => {
+                        let content = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        fs::write(&path_buf, &content).map_err(|err| {
+                            RuntimeError::new(format!("Failed to spurt '{}': {}", p, err))
+                        })?;
+                        return Ok(Value::Bool(true));
+                    }
+                    "unlink" => {
+                        fs::remove_file(&path_buf).map_err(|err| {
+                            RuntimeError::new(format!("Failed to unlink '{}': {}", p, err))
+                        })?;
+                        return Ok(Value::Bool(true));
                     }
                     _ => {}
                 }
