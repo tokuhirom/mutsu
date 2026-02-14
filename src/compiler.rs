@@ -383,9 +383,8 @@ impl Compiler {
                 body,
                 multi,
             } => {
-                // Still emit InterpretStmt so interpreter registers the FunctionDef
                 let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::InterpretStmt(idx));
+                self.code.emit(OpCode::RegisterSub(idx));
                 // Also compile the body to bytecode for VM-native dispatch
                 self.compile_sub_body(name, params, param_defs, body, *multi);
             }

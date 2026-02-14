@@ -1,6 +1,7 @@
 #![allow(clippy::result_large_err)]
 use std::collections::HashMap;
 
+use crate::ast::Stmt;
 use crate::interpreter::Interpreter;
 use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::value::{RuntimeError, Value, make_rat};
@@ -2114,6 +2115,24 @@ impl VM {
                 self.stack.push(val);
                 self.sync_locals_from_env(code);
                 *ip += 1;
+            }
+            OpCode::RegisterSub(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                if let Stmt::SubDecl {
+                    name,
+                    params,
+                    param_defs,
+                    body,
+                    multi,
+                } = stmt
+                {
+                    self.interpreter
+                        .register_sub_decl(name, params, param_defs, body, *multi);
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RegisterSub expects SubDecl"));
+                }
             }
 
             // -- Local variables (indexed slots) --

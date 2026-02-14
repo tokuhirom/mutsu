@@ -301,6 +301,7 @@ pub(crate) enum OpCode {
 
     // -- Functions --
     Return,
+    RegisterSub(u32),
 
     // -- Type checking --
     /// Check that the value on top of stack matches the given type constraint.

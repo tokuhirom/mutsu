@@ -586,6 +586,51 @@ impl Interpreter {
         self.functions.contains_key(&fq) || self.functions.contains_key(name)
     }
 
+    pub(crate) fn register_sub_decl(
+        &mut self,
+        name: &str,
+        params: &[String],
+        param_defs: &[ParamDef],
+        body: &[Stmt],
+        multi: bool,
+    ) {
+        let def = FunctionDef {
+            package: self.current_package.clone(),
+            name: name.to_string(),
+            params: params.to_vec(),
+            param_defs: param_defs.to_vec(),
+            body: body.to_vec(),
+        };
+        if multi {
+            let arity = param_defs.iter().filter(|p| !p.slurpy && !p.named).count();
+            let type_sig: Vec<&str> = param_defs
+                .iter()
+                .filter(|p| !p.slurpy && !p.named)
+                .map(|p| p.type_constraint.as_deref().unwrap_or("Any"))
+                .collect();
+            let has_types = type_sig.iter().any(|t| *t != "Any");
+            if has_types {
+                let typed_fq = format!(
+                    "{}::{}/{}:{}",
+                    self.current_package,
+                    name,
+                    arity,
+                    type_sig.join(",")
+                );
+                self.functions.insert(typed_fq, def.clone());
+            }
+            let fq = format!("{}::{}/{}", self.current_package, name, arity);
+            if !has_types {
+                self.functions.insert(fq, def);
+            } else {
+                self.functions.entry(fq).or_insert(def);
+            }
+        } else {
+            let fq = format!("{}::{}", self.current_package, name);
+            self.functions.insert(fq, def);
+        }
+    }
+
     pub(crate) fn call_function(
         &mut self,
         name: &str,
@@ -1837,43 +1882,7 @@ impl Interpreter {
                 body,
                 multi,
             } => {
-                let def = FunctionDef {
-                    package: self.current_package.clone(),
-                    name: name.clone(),
-                    params: params.clone(),
-                    param_defs: param_defs.clone(),
-                    body: body.clone(),
-                };
-                if *multi {
-                    let arity = param_defs.iter().filter(|p| !p.slurpy && !p.named).count();
-                    let type_sig: Vec<&str> = param_defs
-                        .iter()
-                        .filter(|p| !p.slurpy && !p.named)
-                        .map(|p| p.type_constraint.as_deref().unwrap_or("Any"))
-                        .collect();
-                    let has_types = type_sig.iter().any(|t| *t != "Any");
-                    if has_types {
-                        let typed_fq = format!(
-                            "{}::{}/{}:{}",
-                            self.current_package,
-                            name,
-                            arity,
-                            type_sig.join(",")
-                        );
-                        self.functions.insert(typed_fq, def.clone());
-                    }
-                    let fq = format!("{}::{}/{}", self.current_package, name, arity);
-                    // Only insert arity-only key if no type constraints (fallback)
-                    if !has_types {
-                        self.functions.insert(fq, def);
-                    } else {
-                        // Don't overwrite if there's already an untyped variant
-                        self.functions.entry(fq).or_insert(def);
-                    }
-                } else {
-                    let fq = format!("{}::{}", self.current_package, name);
-                    self.functions.insert(fq, def);
-                }
+                self.register_sub_decl(name, params, param_defs, body, *multi);
             }
             Stmt::TokenDecl {
                 name,
