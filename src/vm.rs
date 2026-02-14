@@ -545,6 +545,29 @@ impl VM {
                 self.stack.push(result);
                 *ip += 1;
             }
+            OpCode::SmartMatchExpr { rhs_idx, negate } => {
+                let left = self.stack.pop().unwrap();
+                let rhs = &code.expr_pool[*rhs_idx as usize];
+                let saved_topic = self.interpreter.env().get("_").cloned();
+                self.interpreter
+                    .env_mut()
+                    .insert("_".to_string(), left.clone());
+                let right = self.interpreter.eval_expr(rhs)?;
+                if let Some(v) = saved_topic {
+                    self.interpreter.env_mut().insert("_".to_string(), v);
+                } else {
+                    self.interpreter.env_mut().remove("_");
+                }
+                let op = if *negate {
+                    crate::lexer::TokenKind::BangTilde
+                } else {
+                    crate::lexer::TokenKind::SmartMatch
+                };
+                let out = self.interpreter.eval_binary(left, &op, right)?;
+                self.stack.push(out);
+                self.sync_locals_from_env(code);
+                *ip += 1;
+            }
 
             // -- Divisibility (native) --
             OpCode::DivisibleBy => {

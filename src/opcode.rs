@@ -59,6 +59,11 @@ pub(crate) enum OpCode {
     // -- Identity/value equality --
     StrictEq,
     Eqv,
+    /// Smart match with raw RHS expr index (evaluated after binding $_ to LHS).
+    SmartMatchExpr {
+        rhs_idx: u32,
+        negate: bool,
+    },
 
     // -- Divisibility --
     DivisibleBy,

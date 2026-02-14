@@ -639,6 +639,15 @@ impl Compiler {
                         self.code.patch_jump(jump_nil);
                         return;
                     }
+                    TokenKind::SmartMatch | TokenKind::BangTilde => {
+                        self.compile_expr(left);
+                        let rhs_idx = self.code.add_expr((**right).clone());
+                        self.code.emit(OpCode::SmartMatchExpr {
+                            rhs_idx,
+                            negate: matches!(op, TokenKind::BangTilde),
+                        });
+                        return;
+                    }
                     _ => {}
                 }
 
