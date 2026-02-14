@@ -7199,18 +7199,39 @@ impl Interpreter {
                         if items.is_empty() {
                             Ok(Value::Nil)
                         } else {
-                            let count = if let Some(arg) = args.first() {
-                                match self.eval_expr(arg)? {
-                                    Value::Int(n) => n as usize,
-                                    Value::Num(n) => n as usize,
-                                    _ => 1,
-                                }
+                            let count_arg = if let Some(arg) = args.first() {
+                                Some(self.eval_expr(arg)?)
                             } else {
-                                0 // 0 means "return single element"
+                                None
                             };
+
+                            // Handle Inf early - generate large lazy array
+                            if let Some(Value::Num(n)) = count_arg
+                                && n.is_infinite()
+                                && n > 0.0
+                            {
+                                let max_lazy = 100000;
+                                let mut result = Vec::with_capacity(max_lazy);
+                                for _ in 0..max_lazy {
+                                    let idx = crate::builtins::builtin_rand_int(items.len());
+                                    result.push(items[idx].clone());
+                                }
+                                return Ok(Value::Array(result));
+                            }
+
+                            let count = match count_arg {
+                                Some(Value::Int(n)) if n >= 0 => n as usize,
+                                Some(Value::Num(n)) if n >= 0.0 && n.is_finite() => n as usize,
+                                Some(_) => 1,
+                                None => 0, // 0 means "return single element"
+                            };
+
                             if count == 0 {
                                 let idx = crate::builtins::builtin_rand_int(items.len());
                                 Ok(items[idx].clone())
+                            } else if count > 10_000_000 {
+                                // Safety check: cap at 10 million elements
+                                Err(RuntimeError::new("roll count too large (max 10 million)"))
                             } else {
                                 // roll(N) — N elements with replacement
                                 let mut result = Vec::with_capacity(count);
