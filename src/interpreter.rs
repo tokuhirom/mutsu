@@ -631,6 +631,34 @@ impl Interpreter {
         }
     }
 
+    pub(crate) fn register_token_decl(
+        &mut self,
+        name: &str,
+        params: &[String],
+        param_defs: &[ParamDef],
+        body: &[Stmt],
+        multi: bool,
+    ) {
+        let def = FunctionDef {
+            package: self.current_package.clone(),
+            name: name.to_string(),
+            params: params.to_vec(),
+            param_defs: param_defs.to_vec(),
+            body: body.to_vec(),
+        };
+        self.insert_token_def(name, def, multi);
+    }
+
+    pub(crate) fn register_proto_decl(&mut self, name: &str) {
+        let key = format!("{}::{}", self.current_package, name);
+        self.proto_subs.insert(key);
+    }
+
+    pub(crate) fn register_proto_token_decl(&mut self, name: &str) {
+        let key = format!("{}::{}", self.current_package, name);
+        self.proto_tokens.insert(key);
+    }
+
     pub(crate) fn call_function(
         &mut self,
         name: &str,
@@ -1898,28 +1926,19 @@ impl Interpreter {
                 body,
                 multi,
             } => {
-                let def = FunctionDef {
-                    package: self.current_package.clone(),
-                    name: name.clone(),
-                    params: params.clone(),
-                    param_defs: param_defs.clone(),
-                    body: body.clone(),
-                };
-                self.insert_token_def(name, def, *multi);
+                self.register_token_decl(name, params, param_defs, body, *multi);
             }
             Stmt::ProtoDecl {
                 name,
                 params,
                 param_defs,
             } => {
-                let key = format!("{}::{}", self.current_package, name);
-                self.proto_subs.insert(key);
+                self.register_proto_decl(name);
                 let _ = params.len();
                 let _ = param_defs.len();
             }
             Stmt::ProtoToken { name } => {
-                let key = format!("{}::{}", self.current_package, name);
-                self.proto_tokens.insert(key);
+                self.register_proto_token_decl(name);
             }
             Stmt::Package { name, body } => {
                 let saved = self.current_package.clone();

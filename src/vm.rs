@@ -2134,6 +2134,55 @@ impl VM {
                     return Err(RuntimeError::new("RegisterSub expects SubDecl"));
                 }
             }
+            OpCode::RegisterToken(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                match stmt {
+                    Stmt::TokenDecl {
+                        name,
+                        params,
+                        param_defs,
+                        body,
+                        multi,
+                    }
+                    | Stmt::RuleDecl {
+                        name,
+                        params,
+                        param_defs,
+                        body,
+                        multi,
+                    } => {
+                        self.interpreter
+                            .register_token_decl(name, params, param_defs, body, *multi);
+                        self.sync_locals_from_env(code);
+                        *ip += 1;
+                    }
+                    _ => {
+                        return Err(RuntimeError::new(
+                            "RegisterToken expects TokenDecl/RuleDecl",
+                        ));
+                    }
+                }
+            }
+            OpCode::RegisterProtoSub(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                if let Stmt::ProtoDecl { name, .. } = stmt {
+                    self.interpreter.register_proto_decl(name);
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RegisterProtoSub expects ProtoDecl"));
+                }
+            }
+            OpCode::RegisterProtoToken(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                if let Stmt::ProtoToken { name } = stmt {
+                    self.interpreter.register_proto_token_decl(name);
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RegisterProtoToken expects ProtoToken"));
+                }
+            }
 
             // -- Local variables (indexed slots) --
             OpCode::GetLocal(idx) => {

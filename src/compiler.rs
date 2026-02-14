@@ -388,16 +388,24 @@ impl Compiler {
                 // Also compile the body to bytecode for VM-native dispatch
                 self.compile_sub_body(name, params, param_defs, body, *multi);
             }
+            Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::RegisterToken(idx));
+            }
+            Stmt::ProtoDecl { .. } => {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::RegisterProtoSub(idx));
+            }
+            Stmt::ProtoToken { .. } => {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::RegisterProtoToken(idx));
+            }
 
             // --- Declarations: delegate to interpreter (run once, complex state) ---
-            Stmt::ProtoDecl { .. }
-            | Stmt::ClassDecl { .. }
+            Stmt::ClassDecl { .. }
             | Stmt::RoleDecl { .. }
             | Stmt::EnumDecl { .. }
             | Stmt::SubsetDecl { .. }
-            | Stmt::TokenDecl { .. }
-            | Stmt::RuleDecl { .. }
-            | Stmt::ProtoToken { .. }
             | Stmt::Use { .. }
             | Stmt::Subtest { .. }
             | Stmt::Whenever { .. } => {
