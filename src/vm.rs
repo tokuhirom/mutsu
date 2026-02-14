@@ -1922,6 +1922,15 @@ impl VM {
                     }
                     if !did_proceed {
                         self.interpreter.set_when_matched(true);
+                        let last = self
+                            .interpreter
+                            .env()
+                            .get("_")
+                            .cloned()
+                            .unwrap_or(Value::Nil);
+                        let mut sig = RuntimeError::succeed_signal();
+                        sig.return_value = Some(last);
+                        return Err(sig);
                     }
                 }
                 *ip = end;

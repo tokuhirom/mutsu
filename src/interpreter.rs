@@ -1557,29 +1557,7 @@ impl Interpreter {
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
         let topic_val = self.eval_expr(topic)?;
-        let saved_topic = self.env.get("_").cloned();
-        self.env.insert("_".to_string(), topic_val);
-        let saved_when = self.when_matched;
-        self.when_matched = false;
-        for stmt in body {
-            match self.exec_stmt(stmt) {
-                Ok(()) => {}
-                Err(e) if e.is_succeed => {
-                    self.when_matched = true;
-                    break;
-                }
-                Err(e) => return Err(e),
-            }
-            if self.when_matched || self.halted {
-                break;
-            }
-        }
-        self.when_matched = saved_when;
-        if let Some(v) = saved_topic {
-            self.env.insert("_".to_string(), v);
-        } else {
-            self.env.remove("_");
-        }
+        let _ = self.eval_given_body_with_topic(topic_val, body)?;
         Ok(())
     }
 
@@ -14279,28 +14257,23 @@ impl Interpreter {
         let saved_when = self.when_matched;
         self.when_matched = false;
         let mut last = Value::Nil;
-        for stmt in body {
-            match self.exec_stmt(stmt) {
-                Ok(()) => {}
-                Err(e) if e.is_succeed => {
-                    if let Some(v) = e.return_value {
-                        last = v;
-                    }
-                    self.when_matched = true;
-                    break;
+        let result = self.run_block_raw(body);
+        match result {
+            Ok(()) => {}
+            Err(e) if e.is_succeed => {
+                if let Some(v) = e.return_value {
+                    last = v;
                 }
-                Err(e) => {
-                    self.when_matched = saved_when;
-                    if let Some(v) = saved_topic {
-                        self.env.insert("_".to_string(), v);
-                    } else {
-                        self.env.remove("_");
-                    }
-                    return Err(e);
-                }
+                self.when_matched = true;
             }
-            if self.when_matched || self.halted {
-                break;
+            Err(e) => {
+                self.when_matched = saved_when;
+                if let Some(v) = saved_topic {
+                    self.env.insert("_".to_string(), v);
+                } else {
+                    self.env.remove("_");
+                }
+                return Err(e);
             }
         }
         self.when_matched = saved_when;
