@@ -573,11 +573,7 @@ impl Compiler {
                         let name_idx = self.code.add_constant(Value::Str(name.clone()));
                         self.code.emit(OpCode::PreIncrement(name_idx));
                     } else {
-                        let idx = self.code.add_expr(Expr::Unary {
-                            op: op.clone(),
-                            expr: expr.clone(),
-                        });
-                        self.code.emit(OpCode::RunUnaryExpr(idx));
+                        self.code.emit(OpCode::LoadNil);
                     }
                 }
                 TokenKind::MinusMinus => {
@@ -585,19 +581,13 @@ impl Compiler {
                         let name_idx = self.code.add_constant(Value::Str(name.clone()));
                         self.code.emit(OpCode::PreDecrement(name_idx));
                     } else {
-                        let idx = self.code.add_expr(Expr::Unary {
-                            op: op.clone(),
-                            expr: expr.clone(),
-                        });
-                        self.code.emit(OpCode::RunUnaryExpr(idx));
+                        self.code.emit(OpCode::LoadNil);
                     }
                 }
                 _ => {
-                    let idx = self.code.add_expr(Expr::Unary {
-                        op: op.clone(),
-                        expr: expr.clone(),
-                    });
-                    self.code.emit(OpCode::RunUnaryExpr(idx));
+                    self.compile_expr(expr);
+                    let token_idx = self.code.add_token(op.clone());
+                    self.code.emit(OpCode::UnaryToken(token_idx));
                 }
             },
             Expr::Binary { left, op, right } => {

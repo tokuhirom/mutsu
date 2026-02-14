@@ -2421,16 +2421,15 @@ impl VM {
                     return Err(RuntimeError::new("RunBlockExpr expects Block"));
                 }
             }
-            OpCode::RunUnaryExpr(idx) => {
-                let expr = &code.expr_pool[*idx as usize];
-                if let Expr::Unary { op, expr } = expr {
-                    let val = self.interpreter.eval_unary_expr(op, expr)?;
-                    self.stack.push(val);
-                    self.sync_locals_from_env(code);
-                    *ip += 1;
-                } else {
-                    return Err(RuntimeError::new("RunUnaryExpr expects Unary"));
-                }
+            OpCode::UnaryToken(token_idx) => {
+                let value = self.stack.pop().unwrap_or(Value::Nil);
+                let op = &code.token_pool[*token_idx as usize];
+                let val = self
+                    .interpreter
+                    .eval_unary_expr(op, &Expr::Literal(value))?;
+                self.stack.push(val);
+                self.sync_locals_from_env(code);
+                *ip += 1;
             }
             OpCode::RunBinaryToken(token_idx) => {
                 let right = self.stack.pop().unwrap();

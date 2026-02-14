@@ -178,7 +178,7 @@ pub(crate) enum OpCode {
     RunIndexAssignExpr(u32),
     RunPostfixExpr(u32),
     RunBlockExpr(u32),
-    RunUnaryExpr(u32),
+    UnaryToken(u32),
     RunBinaryToken(u32),
     RunReactStmt(u32),
     RunPackageStmt(u32),
