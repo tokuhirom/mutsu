@@ -2544,7 +2544,21 @@ impl VM {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
                 let op = &code.token_pool[*token_idx as usize];
-                let val = self.interpreter.eval_binary(left, op, right)?;
+                let val = match op {
+                    crate::lexer::TokenKind::DotDotDot => {
+                        self.interpreter.eval_sequence_values(left, right, false)?
+                    }
+                    crate::lexer::TokenKind::DotDotDotCaret => {
+                        self.interpreter.eval_sequence_values(left, right, true)?
+                    }
+                    crate::lexer::TokenKind::SmartMatch => {
+                        self.eval_binary_with_junctions(left, right, Self::smart_match_op)?
+                    }
+                    crate::lexer::TokenKind::BangTilde => {
+                        self.eval_binary_with_junctions(left, right, Self::not_smart_match_op)?
+                    }
+                    _ => self.interpreter.eval_binary(left, op, right)?,
+                };
                 self.stack.push(val);
                 self.sync_locals_from_env(code);
                 *ip += 1;
