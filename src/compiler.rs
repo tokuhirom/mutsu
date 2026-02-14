@@ -362,14 +362,10 @@ impl Compiler {
             }
 
             // --- React: just run the body block ---
-            Stmt::React { body } if !Self::has_phasers(body) => {
+            Stmt::React { body } => {
                 for s in body {
                     self.compile_stmt(s);
                 }
-            }
-            Stmt::React { .. } => {
-                let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::RunReactStmt(idx));
             }
 
             // --- Package scope ---

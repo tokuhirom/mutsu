@@ -2437,16 +2437,6 @@ impl VM {
                     return Err(RuntimeError::new("RunLoopStmt expects Loop"));
                 }
             }
-            OpCode::RunReactStmt(idx) => {
-                let stmt = &code.stmt_pool[*idx as usize];
-                if let Stmt::React { body } = stmt {
-                    self.interpreter.run_react_stmt(body)?;
-                    self.sync_locals_from_env(code);
-                    *ip += 1;
-                } else {
-                    return Err(RuntimeError::new("RunReactStmt expects React"));
-                }
-            }
             OpCode::RunBlockStmt(idx) => {
                 let stmt = &code.stmt_pool[*idx as usize];
                 if let Stmt::Block(body) = stmt {

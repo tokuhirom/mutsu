@@ -185,7 +185,6 @@ pub(crate) enum OpCode {
     IndexAssignInvalid,
     UnaryToken(u32),
     RunBinaryToken(u32),
-    RunReactStmt(u32),
     RunWhileStmt(u32),
     RunForStmt(u32),
     RunLoopStmt(u32),
