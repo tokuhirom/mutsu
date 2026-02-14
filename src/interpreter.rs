@@ -4312,15 +4312,44 @@ impl Interpreter {
     }
 
     fn method_dispatch_expr_is_pure(expr: &Expr) -> bool {
-        matches!(
-            expr,
+        match expr {
             Expr::Var(_)
-                | Expr::ArrayVar(_)
-                | Expr::HashVar(_)
-                | Expr::CodeVar(_)
-                | Expr::BareWord(_)
-                | Expr::Literal(_)
-        )
+            | Expr::ArrayVar(_)
+            | Expr::HashVar(_)
+            | Expr::CodeVar(_)
+            | Expr::BareWord(_)
+            | Expr::Literal(_)
+            | Expr::EnvIndex(_) => true,
+            Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => {
+                Self::method_dispatch_expr_is_pure(expr)
+            }
+            Expr::Binary { left, right, .. } => {
+                Self::method_dispatch_expr_is_pure(left)
+                    && Self::method_dispatch_expr_is_pure(right)
+            }
+            Expr::Index { target, index } => {
+                Self::method_dispatch_expr_is_pure(target)
+                    && Self::method_dispatch_expr_is_pure(index)
+            }
+            Expr::Ternary {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                Self::method_dispatch_expr_is_pure(cond)
+                    && Self::method_dispatch_expr_is_pure(then_expr)
+                    && Self::method_dispatch_expr_is_pure(else_expr)
+            }
+            Expr::AssignExpr { .. } => false,
+            Expr::ArrayLiteral(items) | Expr::StringInterpolation(items) => {
+                items.iter().all(Self::method_dispatch_expr_is_pure)
+            }
+            Expr::Hash(pairs) => pairs
+                .iter()
+                .all(|(_, v)| v.as_ref().is_none_or(Self::method_dispatch_expr_is_pure)),
+            Expr::Exists(expr) => Self::method_dispatch_expr_is_pure(expr),
+            _ => false,
+        }
     }
 
     fn is_unknown_method_dispatch_error(err: &RuntimeError) -> bool {
