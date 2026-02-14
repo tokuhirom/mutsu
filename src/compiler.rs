@@ -420,13 +420,21 @@ impl Compiler {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterEnum(idx));
             }
+            Stmt::ClassDecl { .. } => {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::RegisterClass(idx));
+            }
+            Stmt::RoleDecl { .. } => {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::RegisterRole(idx));
+            }
+            Stmt::SubsetDecl { .. } => {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::RegisterSubset(idx));
+            }
 
             // --- Declarations: delegate to interpreter (run once, complex state) ---
-            Stmt::ClassDecl { .. }
-            | Stmt::RoleDecl { .. }
-            | Stmt::SubsetDecl { .. }
-            | Stmt::Subtest { .. }
-            | Stmt::Whenever { .. } => {
+            Stmt::Subtest { .. } | Stmt::Whenever { .. } => {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::InterpretStmt(idx));
             }

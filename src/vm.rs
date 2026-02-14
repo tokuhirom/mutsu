@@ -2205,6 +2205,46 @@ impl VM {
                     return Err(RuntimeError::new("RegisterEnum expects EnumDecl"));
                 }
             }
+            OpCode::RegisterClass(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                if let Stmt::ClassDecl {
+                    name,
+                    parents,
+                    body,
+                } = stmt
+                {
+                    self.interpreter.register_class_decl(name, parents, body)?;
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RegisterClass expects ClassDecl"));
+                }
+            }
+            OpCode::RegisterRole(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                if let Stmt::RoleDecl { name, body } = stmt {
+                    self.interpreter.register_role_decl(name, body)?;
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RegisterRole expects RoleDecl"));
+                }
+            }
+            OpCode::RegisterSubset(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                if let Stmt::SubsetDecl {
+                    name,
+                    base,
+                    predicate,
+                } = stmt
+                {
+                    self.interpreter.register_subset_decl(name, base, predicate);
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RegisterSubset expects SubsetDecl"));
+                }
+            }
 
             // -- Local variables (indexed slots) --
             OpCode::GetLocal(idx) => {

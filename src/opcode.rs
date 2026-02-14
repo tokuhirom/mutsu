@@ -306,6 +306,9 @@ pub(crate) enum OpCode {
     RegisterProtoSub(u32),
     RegisterProtoToken(u32),
     RegisterEnum(u32),
+    RegisterClass(u32),
+    RegisterRole(u32),
+    RegisterSubset(u32),
     UseModule(u32),
     UseLibPath,
 

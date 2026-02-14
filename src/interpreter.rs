@@ -707,6 +707,141 @@ impl Interpreter {
         Ok(())
     }
 
+    pub(crate) fn register_class_decl(
+        &mut self,
+        name: &str,
+        parents: &[String],
+        body: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        let mut class_def = ClassDef {
+            parents: parents.to_vec(),
+            attributes: Vec::new(),
+            methods: HashMap::new(),
+            mro: Vec::new(),
+        };
+        for stmt in body {
+            match stmt {
+                Stmt::HasDecl {
+                    name: attr_name,
+                    is_public,
+                    default,
+                } => {
+                    class_def
+                        .attributes
+                        .push((attr_name.clone(), *is_public, default.clone()));
+                }
+                Stmt::MethodDecl {
+                    name: method_name,
+                    params,
+                    param_defs,
+                    body: method_body,
+                    multi,
+                } => {
+                    let def = MethodDef {
+                        params: params.clone(),
+                        param_defs: param_defs.clone(),
+                        body: method_body.clone(),
+                    };
+                    if *multi {
+                        class_def
+                            .methods
+                            .entry(method_name.clone())
+                            .or_default()
+                            .push(def);
+                    } else {
+                        class_def.methods.insert(method_name.clone(), vec![def]);
+                    }
+                }
+                Stmt::DoesDecl { name: role_name } => {
+                    let role =
+                        self.roles.get(role_name).cloned().ok_or_else(|| {
+                            RuntimeError::new(format!("Unknown role: {}", role_name))
+                        })?;
+                    for attr in &role.attributes {
+                        if !class_def.attributes.iter().any(|(n, _, _)| n == &attr.0) {
+                            class_def.attributes.push(attr.clone());
+                        }
+                    }
+                    for (mname, overloads) in role.methods {
+                        class_def
+                            .methods
+                            .entry(mname)
+                            .or_default()
+                            .extend(overloads);
+                    }
+                }
+                _ => {
+                    self.exec_stmt(stmt)?;
+                }
+            }
+        }
+        self.classes.insert(name.to_string(), class_def);
+        let mut stack = Vec::new();
+        let _ = self.compute_class_mro(name, &mut stack)?;
+        Ok(())
+    }
+
+    pub(crate) fn register_role_decl(
+        &mut self,
+        name: &str,
+        body: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        let mut role_def = RoleDef {
+            attributes: Vec::new(),
+            methods: HashMap::new(),
+        };
+        for stmt in body {
+            match stmt {
+                Stmt::HasDecl {
+                    name: attr_name,
+                    is_public,
+                    default,
+                } => {
+                    role_def
+                        .attributes
+                        .push((attr_name.clone(), *is_public, default.clone()));
+                }
+                Stmt::MethodDecl {
+                    name: method_name,
+                    params,
+                    param_defs,
+                    body: method_body,
+                    multi,
+                } => {
+                    let def = MethodDef {
+                        params: params.clone(),
+                        param_defs: param_defs.clone(),
+                        body: method_body.clone(),
+                    };
+                    if *multi {
+                        role_def
+                            .methods
+                            .entry(method_name.clone())
+                            .or_default()
+                            .push(def);
+                    } else {
+                        role_def.methods.insert(method_name.clone(), vec![def]);
+                    }
+                }
+                _ => {
+                    self.exec_stmt(stmt)?;
+                }
+            }
+        }
+        self.roles.insert(name.to_string(), role_def);
+        Ok(())
+    }
+
+    pub(crate) fn register_subset_decl(&mut self, name: &str, base: &str, predicate: &Expr) {
+        self.subsets.insert(
+            name.to_string(),
+            SubsetDef {
+                base: base.to_string(),
+                predicate: predicate.clone(),
+            },
+        );
+    }
+
     pub(crate) fn call_function(
         &mut self,
         name: &str,
@@ -2630,134 +2765,17 @@ impl Interpreter {
                 parents,
                 body,
             } => {
-                let mut class_def = ClassDef {
-                    parents: parents.clone(),
-                    attributes: Vec::new(),
-                    methods: HashMap::new(),
-                    mro: Vec::new(),
-                };
-                // Process class body to collect attributes and methods
-                for stmt in body {
-                    match stmt {
-                        Stmt::HasDecl {
-                            name: attr_name,
-                            is_public,
-                            default,
-                        } => {
-                            class_def.attributes.push((
-                                attr_name.clone(),
-                                *is_public,
-                                default.clone(),
-                            ));
-                        }
-                        Stmt::MethodDecl {
-                            name: method_name,
-                            params,
-                            param_defs,
-                            body: method_body,
-                            multi,
-                        } => {
-                            let def = MethodDef {
-                                params: params.clone(),
-                                param_defs: param_defs.clone(),
-                                body: method_body.clone(),
-                            };
-                            if *multi {
-                                class_def
-                                    .methods
-                                    .entry(method_name.clone())
-                                    .or_default()
-                                    .push(def);
-                            } else {
-                                class_def.methods.insert(method_name.clone(), vec![def]);
-                            }
-                        }
-                        Stmt::DoesDecl { name: role_name } => {
-                            let role = self.roles.get(role_name).cloned().ok_or_else(|| {
-                                RuntimeError::new(format!("Unknown role: {}", role_name))
-                            })?;
-                            for attr in &role.attributes {
-                                if !class_def.attributes.iter().any(|(n, _, _)| n == &attr.0) {
-                                    class_def.attributes.push(attr.clone());
-                                }
-                            }
-                            for (mname, overloads) in role.methods {
-                                class_def
-                                    .methods
-                                    .entry(mname)
-                                    .or_default()
-                                    .extend(overloads);
-                            }
-                        }
-                        _ => {
-                            // Execute other statements in class scope
-                            self.exec_stmt(stmt)?;
-                        }
-                    }
-                }
-                self.classes.insert(name.clone(), class_def);
-                let mut stack = Vec::new();
-                let _ = self.compute_class_mro(name, &mut stack)?;
+                self.register_class_decl(name, parents, body)?;
             }
             Stmt::RoleDecl { name, body } => {
-                let mut role_def = RoleDef {
-                    attributes: Vec::new(),
-                    methods: HashMap::new(),
-                };
-                for stmt in body {
-                    match stmt {
-                        Stmt::HasDecl {
-                            name: attr_name,
-                            is_public,
-                            default,
-                        } => {
-                            role_def.attributes.push((
-                                attr_name.clone(),
-                                *is_public,
-                                default.clone(),
-                            ));
-                        }
-                        Stmt::MethodDecl {
-                            name: method_name,
-                            params,
-                            param_defs,
-                            body: method_body,
-                            multi,
-                        } => {
-                            let def = MethodDef {
-                                params: params.clone(),
-                                param_defs: param_defs.clone(),
-                                body: method_body.clone(),
-                            };
-                            if *multi {
-                                role_def
-                                    .methods
-                                    .entry(method_name.clone())
-                                    .or_default()
-                                    .push(def);
-                            } else {
-                                role_def.methods.insert(method_name.clone(), vec![def]);
-                            }
-                        }
-                        _ => {
-                            self.exec_stmt(stmt)?;
-                        }
-                    }
-                }
-                self.roles.insert(name.clone(), role_def);
+                self.register_role_decl(name, body)?;
             }
             Stmt::SubsetDecl {
                 name,
                 base,
                 predicate,
             } => {
-                self.subsets.insert(
-                    name.clone(),
-                    SubsetDef {
-                        base: base.clone(),
-                        predicate: predicate.clone(),
-                    },
-                );
+                self.register_subset_decl(name, base, predicate);
             }
             Stmt::HasDecl { .. } => {
                 // HasDecl outside a class is a no-op (handled during ClassDecl)
