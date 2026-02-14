@@ -76,7 +76,7 @@ impl VM {
 
     fn call_arg_needs_raw_expr(expr: &Expr) -> bool {
         match expr {
-            Expr::Block(_) | Expr::DoBlock { .. } => true,
+            Expr::Block(_) => true,
             Expr::Hash(pairs) => pairs
                 .iter()
                 .any(|(_, v)| v.as_ref().is_some_and(Self::call_arg_needs_raw_expr)),
