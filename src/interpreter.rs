@@ -5719,117 +5719,27 @@ impl Interpreter {
                         }
                     }
                 }
-                if let Expr::ArrayVar(var_name) = target.as_ref() {
+                if let Expr::ArrayVar(var_name) = target.as_ref()
+                    && matches!(
+                        name.as_str(),
+                        "push"
+                            | "append"
+                            | "pop"
+                            | "shift"
+                            | "unshift"
+                            | "prepend"
+                            | "splice"
+                            | "join"
+                            | "squish"
+                    )
+                {
                     let key = format!("@{}", var_name);
-                    match name.as_str() {
-                        "push" => {
-                            let value = args
-                                .first()
-                                .and_then(|arg| self.eval_expr(arg).ok())
-                                .unwrap_or(Value::Nil);
-                            if let Some(Value::Array(items)) = self.env.get_mut(&key) {
-                                items.push(value);
-                            } else {
-                                self.env.insert(key, Value::Array(vec![value]));
-                            }
-                            return Ok(Value::Nil);
-                        }
-                        "pop" => {
-                            if let Some(Value::Array(items)) = self.env.get_mut(&key) {
-                                return Ok(items.pop().unwrap_or(Value::Nil));
-                            }
-                            return Ok(Value::Nil);
-                        }
-                        "shift" => {
-                            if let Some(Value::Array(items)) = self.env.get_mut(&key) {
-                                if items.is_empty() {
-                                    return Ok(Value::Nil);
-                                }
-                                return Ok(items.remove(0));
-                            }
-                            return Ok(Value::Nil);
-                        }
-                        "unshift" => {
-                            let value = args
-                                .first()
-                                .and_then(|arg| self.eval_expr(arg).ok())
-                                .unwrap_or(Value::Nil);
-                            if let Some(Value::Array(items)) = self.env.get_mut(&key) {
-                                items.insert(0, value);
-                            }
-                            return Ok(Value::Nil);
-                        }
-                        "splice" => {
-                            // Evaluate args before borrowing env mutably
-                            let start_val = args.first().map(|a| self.eval_expr(a)).transpose()?;
-                            let count_val = args.get(1).map(|a| self.eval_expr(a)).transpose()?;
-                            let new_val = args.get(2).map(|a| self.eval_expr(a)).transpose()?;
-
-                            if let Some(Value::Array(items)) = self.env.get_mut(&key) {
-                                let start = start_val
-                                    .and_then(|v| match v {
-                                        Value::Int(i) => Some(i.max(0) as usize),
-                                        _ => None,
-                                    })
-                                    .unwrap_or(0)
-                                    .min(items.len());
-                                let count = count_val
-                                    .and_then(|v| match v {
-                                        Value::Int(i) => Some(i.max(0) as usize),
-                                        _ => None,
-                                    })
-                                    .unwrap_or(items.len().saturating_sub(start));
-                                let end = (start + count).min(items.len());
-                                let removed: Vec<Value> = items.drain(start..end).collect();
-                                // Insert new elements if provided
-                                if let Some(new_v) = new_val {
-                                    match new_v {
-                                        Value::Array(new_items) => {
-                                            for (i, item) in new_items.into_iter().enumerate() {
-                                                items.insert(start + i, item);
-                                            }
-                                        }
-                                        other => {
-                                            items.insert(start, other);
-                                        }
-                                    }
-                                }
-                                return Ok(Value::Array(removed));
-                            }
-                            return Ok(Value::Array(vec![]));
-                        }
-                        "append" => {
-                            let mut new_items = Vec::new();
-                            for arg in args {
-                                let val = self.eval_expr(arg)?;
-                                match val {
-                                    Value::Array(items) => new_items.extend(items),
-                                    other => new_items.push(other),
-                                }
-                            }
-                            if let Some(Value::Array(items)) = self.env.get_mut(&key) {
-                                items.extend(new_items);
-                            }
-                            return Ok(Value::Nil);
-                        }
-                        "join" => {
-                            let sep = args
-                                .first()
-                                .and_then(|arg| self.eval_expr(arg).ok())
-                                .map(|v| v.to_string_value())
-                                .unwrap_or_default();
-                            if let Some(Value::Array(items)) = self.env.get(&key) {
-                                let joined = items
-                                    .iter()
-                                    .map(|v| v.to_string_value())
-                                    .collect::<Vec<_>>()
-                                    .join(&sep);
-                                return Ok(Value::Str(joined));
-                            }
-                            return Ok(Value::Str(String::new()));
-                        }
-                        _ => {}
+                    let target_val = self.eval_expr(target)?;
+                    let mut arg_values = Vec::with_capacity(args.len());
+                    for arg in args {
+                        arg_values.push(self.eval_expr(arg)?);
                     }
+                    return self.call_method_mut_with_values(&key, target_val, name, arg_values);
                 }
                 let mut base = self.eval_expr(target)?;
                 if let Value::LazyList(list) = &base {
