@@ -4798,6 +4798,18 @@ impl Interpreter {
         Ok(())
     }
 
+    pub(crate) fn exec_call_values(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+    ) -> Result<(), RuntimeError> {
+        let call_args: Vec<CallArg> = args
+            .into_iter()
+            .map(|v| CallArg::Positional(Expr::Literal(v)))
+            .collect();
+        self.exec_call(name, &call_args)
+    }
+
     fn resolve_function(&self, name: &str) -> Option<FunctionDef> {
         if name.contains("::") {
             return self.functions.get(name).cloned();
