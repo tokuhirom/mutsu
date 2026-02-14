@@ -1194,6 +1194,173 @@ impl Interpreter {
         }
     }
 
+    pub(crate) fn eval_postfix_expr(
+        &mut self,
+        op: &TokenKind,
+        expr: &Expr,
+    ) -> Result<Value, RuntimeError> {
+        // Helper closure to compute increment/decrement
+        let compute_new = |op: &TokenKind, effective_val: &Value| -> Value {
+            match (op, effective_val) {
+                (TokenKind::PlusPlus, Value::Int(i)) => Value::Int(i + 1),
+                (TokenKind::MinusMinus, Value::Int(i)) => Value::Int(i - 1),
+                (TokenKind::PlusPlus, Value::Rat(n, d)) => make_rat(n + d, *d),
+                (TokenKind::MinusMinus, Value::Rat(n, d)) => make_rat(n - d, *d),
+                (TokenKind::PlusPlus, _) => Value::Int(1),
+                (TokenKind::MinusMinus, _) => Value::Int(-1),
+                _ => effective_val.clone(),
+            }
+        };
+
+        if let Expr::Var(name) = expr {
+            let val = self.env.get(name).cloned().unwrap_or(Value::Int(0));
+            let effective_val = match &val {
+                Value::Nil => Value::Int(0),
+                other => other.clone(),
+            };
+            let new_val = compute_new(op, &effective_val);
+            self.env.insert(name.clone(), new_val);
+            Ok(effective_val)
+        } else if let Expr::Index { target, index } = expr {
+            // Handle %hash{key}++ and @array[idx]++
+            let var_name = match target.as_ref() {
+                Expr::HashVar(name) => format!("%{}", name),
+                Expr::ArrayVar(name) => format!("@{}", name),
+                Expr::Var(name) => name.clone(),
+                _ => return Ok(Value::Nil),
+            };
+            let idx = self.eval_expr(index)?;
+            let key = idx.to_string_value();
+
+            // Get current value
+            let current = if let Some(container) = self.env.get(&var_name) {
+                match container {
+                    Value::Hash(h) => h.get(&key).cloned().unwrap_or(Value::Nil),
+                    Value::Array(arr) => {
+                        if let Ok(i) = key.parse::<usize>() {
+                            arr.get(i).cloned().unwrap_or(Value::Nil)
+                        } else {
+                            Value::Nil
+                        }
+                    }
+                    _ => Value::Nil,
+                }
+            } else {
+                Value::Nil
+            };
+
+            let effective_val = match &current {
+                Value::Nil => Value::Int(0),
+                other => other.clone(),
+            };
+            let new_val = compute_new(op, &effective_val);
+
+            // Auto-vivify container if needed
+            if !self.env.contains_key(&var_name) {
+                if var_name.starts_with('%') {
+                    self.env.insert(
+                        var_name.clone(),
+                        Value::Hash(std::collections::HashMap::new()),
+                    );
+                } else {
+                    self.env.insert(var_name.clone(), Value::Array(Vec::new()));
+                }
+            }
+
+            // Store new value back
+            if let Some(container) = self.env.get_mut(&var_name) {
+                match container {
+                    Value::Hash(h) => {
+                        h.insert(key, new_val);
+                    }
+                    Value::Array(arr) => {
+                        if let Ok(i) = idx.to_string_value().parse::<usize>() {
+                            while arr.len() <= i {
+                                arr.push(Value::Nil);
+                            }
+                            arr[i] = new_val;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Ok(effective_val)
+        } else {
+            Ok(Value::Nil)
+        }
+    }
+
+    pub(crate) fn eval_try_expr(
+        &mut self,
+        body: &[Stmt],
+        catch: &Option<Vec<Stmt>>,
+    ) -> Result<Value, RuntimeError> {
+        // Extract CATCH/CONTROL blocks from body
+        let mut main_stmts = Vec::new();
+        let mut catch_stmts = catch.clone();
+        let mut control_stmts: Option<Vec<Stmt>> = None;
+        for stmt in body {
+            if let Stmt::Catch(catch_body) = stmt {
+                catch_stmts = Some(catch_body.clone());
+            } else if let Stmt::Control(control_body) = stmt {
+                control_stmts = Some(control_body.clone());
+            } else {
+                main_stmts.push(stmt.clone());
+            }
+        }
+        match self.eval_block_value(&main_stmts) {
+            Ok(v) => Ok(v),
+            Err(e) => {
+                if (e.is_last || e.is_next || e.is_redo || e.is_proceed || e.is_succeed)
+                    && let Some(control_body) = control_stmts
+                {
+                    let saved_when = self.when_matched;
+                    self.when_matched = false;
+                    for stmt in &control_body {
+                        self.exec_stmt(stmt)?;
+                        if self.when_matched || self.halted {
+                            break;
+                        }
+                    }
+                    self.when_matched = saved_when;
+                    return Ok(Value::Nil);
+                }
+                if let Some(catch_body) = catch_stmts {
+                    // Set $! to an Exception instance
+                    let mut exc_attrs = HashMap::new();
+                    exc_attrs.insert("message".to_string(), Value::Str(e.message));
+                    let err_val = Value::make_instance("Exception".to_string(), exc_attrs);
+                    let saved_topic = self.env.get("_").cloned();
+                    self.env.insert("!".to_string(), err_val.clone());
+                    self.env.insert("_".to_string(), err_val);
+                    let saved_when = self.when_matched;
+                    self.when_matched = false;
+                    for stmt in &catch_body {
+                        self.exec_stmt(stmt)?;
+                        if self.when_matched || self.halted {
+                            break;
+                        }
+                    }
+                    self.when_matched = saved_when;
+                    // Restore $_ but leave $! set (try semantics: $! persists after try)
+                    if let Some(v) = saved_topic {
+                        self.env.insert("_".to_string(), v);
+                    } else {
+                        self.env.remove("_");
+                    }
+                    Ok(Value::Nil)
+                } else {
+                    // try without CATCH: set $! to an Exception instance
+                    let mut exc_attrs = HashMap::new();
+                    exc_attrs.insert("message".to_string(), Value::Str(e.message));
+                    let err_val = Value::make_instance("Exception".to_string(), exc_attrs);
+                    self.env.insert("!".to_string(), err_val);
+                    Ok(Value::Nil)
+                }
+            }
+        }
+    }
+
     pub(crate) fn run_given_stmt(
         &mut self,
         topic: &Expr,
@@ -8137,97 +8304,7 @@ impl Interpreter {
                     }
                 }
             },
-            Expr::PostfixOp { op, expr } => {
-                // Helper closure to compute increment/decrement
-                let compute_new = |op: &TokenKind, effective_val: &Value| -> Value {
-                    match (op, effective_val) {
-                        (TokenKind::PlusPlus, Value::Int(i)) => Value::Int(i + 1),
-                        (TokenKind::MinusMinus, Value::Int(i)) => Value::Int(i - 1),
-                        (TokenKind::PlusPlus, Value::Rat(n, d)) => make_rat(n + d, *d),
-                        (TokenKind::MinusMinus, Value::Rat(n, d)) => make_rat(n - d, *d),
-                        (TokenKind::PlusPlus, _) => Value::Int(1),
-                        (TokenKind::MinusMinus, _) => Value::Int(-1),
-                        _ => effective_val.clone(),
-                    }
-                };
-
-                if let Expr::Var(name) = expr.as_ref() {
-                    let val = self.env.get(name).cloned().unwrap_or(Value::Int(0));
-                    let effective_val = match &val {
-                        Value::Nil => Value::Int(0),
-                        other => other.clone(),
-                    };
-                    let new_val = compute_new(op, &effective_val);
-                    self.env.insert(name.clone(), new_val);
-                    Ok(effective_val)
-                } else if let Expr::Index { target, index } = expr.as_ref() {
-                    // Handle %hash{key}++ and @array[idx]++
-                    let var_name = match target.as_ref() {
-                        Expr::HashVar(name) => format!("%{}", name),
-                        Expr::ArrayVar(name) => format!("@{}", name),
-                        Expr::Var(name) => name.clone(),
-                        _ => return Ok(Value::Nil),
-                    };
-                    let idx = self.eval_expr(index)?;
-                    let key = idx.to_string_value();
-
-                    // Get current value
-                    let current = if let Some(container) = self.env.get(&var_name) {
-                        match container {
-                            Value::Hash(h) => h.get(&key).cloned().unwrap_or(Value::Nil),
-                            Value::Array(arr) => {
-                                if let Ok(i) = key.parse::<usize>() {
-                                    arr.get(i).cloned().unwrap_or(Value::Nil)
-                                } else {
-                                    Value::Nil
-                                }
-                            }
-                            _ => Value::Nil,
-                        }
-                    } else {
-                        Value::Nil
-                    };
-
-                    let effective_val = match &current {
-                        Value::Nil => Value::Int(0),
-                        other => other.clone(),
-                    };
-                    let new_val = compute_new(op, &effective_val);
-
-                    // Auto-vivify container if needed
-                    if !self.env.contains_key(&var_name) {
-                        if var_name.starts_with('%') {
-                            self.env.insert(
-                                var_name.clone(),
-                                Value::Hash(std::collections::HashMap::new()),
-                            );
-                        } else {
-                            self.env.insert(var_name.clone(), Value::Array(Vec::new()));
-                        }
-                    }
-
-                    // Store new value back
-                    if let Some(container) = self.env.get_mut(&var_name) {
-                        match container {
-                            Value::Hash(h) => {
-                                h.insert(key, new_val);
-                            }
-                            Value::Array(arr) => {
-                                if let Ok(i) = idx.to_string_value().parse::<usize>() {
-                                    while arr.len() <= i {
-                                        arr.push(Value::Nil);
-                                    }
-                                    arr[i] = new_val;
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    Ok(effective_val)
-                } else {
-                    Ok(Value::Nil)
-                }
-            }
+            Expr::PostfixOp { op, expr } => self.eval_postfix_expr(op, expr),
             Expr::Binary { left, op, right } => {
                 // Short-circuit operators
                 match op {
@@ -10092,72 +10169,7 @@ impl Interpreter {
                 }
                 Ok(Value::Nil)
             }
-            Expr::Try { body, catch } => {
-                // Extract CATCH/CONTROL blocks from body
-                let mut main_stmts = Vec::new();
-                let mut catch_stmts = catch.clone();
-                let mut control_stmts: Option<Vec<Stmt>> = None;
-                for stmt in body {
-                    if let Stmt::Catch(catch_body) = stmt {
-                        catch_stmts = Some(catch_body.clone());
-                    } else if let Stmt::Control(control_body) = stmt {
-                        control_stmts = Some(control_body.clone());
-                    } else {
-                        main_stmts.push(stmt.clone());
-                    }
-                }
-                match self.eval_block_value(&main_stmts) {
-                    Ok(v) => Ok(v),
-                    Err(e) => {
-                        if (e.is_last || e.is_next || e.is_redo || e.is_proceed || e.is_succeed)
-                            && let Some(control_body) = control_stmts
-                        {
-                            let saved_when = self.when_matched;
-                            self.when_matched = false;
-                            for stmt in &control_body {
-                                self.exec_stmt(stmt)?;
-                                if self.when_matched || self.halted {
-                                    break;
-                                }
-                            }
-                            self.when_matched = saved_when;
-                            return Ok(Value::Nil);
-                        }
-                        if let Some(catch_body) = catch_stmts {
-                            // Set $! to an Exception instance
-                            let mut exc_attrs = HashMap::new();
-                            exc_attrs.insert("message".to_string(), Value::Str(e.message));
-                            let err_val = Value::make_instance("Exception".to_string(), exc_attrs);
-                            let saved_topic = self.env.get("_").cloned();
-                            self.env.insert("!".to_string(), err_val.clone());
-                            self.env.insert("_".to_string(), err_val);
-                            let saved_when = self.when_matched;
-                            self.when_matched = false;
-                            for stmt in &catch_body {
-                                self.exec_stmt(stmt)?;
-                                if self.when_matched || self.halted {
-                                    break;
-                                }
-                            }
-                            self.when_matched = saved_when;
-                            // Restore $_ but leave $! set (try semantics: $! persists after try)
-                            if let Some(v) = saved_topic {
-                                self.env.insert("_".to_string(), v);
-                            } else {
-                                self.env.remove("_");
-                            }
-                            Ok(Value::Nil)
-                        } else {
-                            // try without CATCH: set $! to an Exception instance
-                            let mut exc_attrs = HashMap::new();
-                            exc_attrs.insert("message".to_string(), Value::Str(e.message));
-                            let err_val = Value::make_instance("Exception".to_string(), exc_attrs);
-                            self.env.insert("!".to_string(), err_val);
-                            Ok(Value::Nil)
-                        }
-                    }
-                }
-            }
+            Expr::Try { body, catch } => self.eval_try_expr(body, catch),
             Expr::Gather(body) => Ok(self.eval_gather_expr(body)),
             Expr::Reduction { op, expr } => {
                 let list_value = self.eval_expr(expr)?;

@@ -2358,6 +2358,28 @@ impl VM {
                     return Err(RuntimeError::new("RunIndexAssignExpr expects IndexAssign"));
                 }
             }
+            OpCode::RunPostfixExpr(idx) => {
+                let expr = &code.expr_pool[*idx as usize];
+                if let Expr::PostfixOp { op, expr } = expr {
+                    let val = self.interpreter.eval_postfix_expr(op, expr)?;
+                    self.stack.push(val);
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RunPostfixExpr expects PostfixOp"));
+                }
+            }
+            OpCode::RunTryExpr(idx) => {
+                let expr = &code.expr_pool[*idx as usize];
+                if let Expr::Try { body, catch } = expr {
+                    let val = self.interpreter.eval_try_expr(body, catch)?;
+                    self.stack.push(val);
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RunTryExpr expects Try"));
+                }
+            }
             OpCode::RunExprFallback(idx) => {
                 let expr = &code.expr_pool[*idx as usize];
                 let val = self.interpreter.eval_expr(expr)?;

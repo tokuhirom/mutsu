@@ -786,10 +786,11 @@ impl Compiler {
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
                     self.code.emit(OpCode::PostIncrement(name_idx));
                 } else {
-                    self.fallback_expr(&Expr::PostfixOp {
+                    let idx = self.code.add_expr(Expr::PostfixOp {
                         op: op.clone(),
                         expr: expr.clone(),
                     });
+                    self.code.emit(OpCode::RunPostfixExpr(idx));
                 }
             }
             // Postfix -- on variable
@@ -798,10 +799,11 @@ impl Compiler {
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
                     self.code.emit(OpCode::PostDecrement(name_idx));
                 } else {
-                    self.fallback_expr(&Expr::PostfixOp {
+                    let idx = self.code.add_expr(Expr::PostfixOp {
                         op: op.clone(),
                         expr: expr.clone(),
                     });
+                    self.code.emit(OpCode::RunPostfixExpr(idx));
                 }
             }
             // Assignment as expression
@@ -937,6 +939,10 @@ impl Compiler {
             Expr::Try { body, catch } if !body.iter().any(|s| matches!(s, Stmt::Control(_))) => {
                 self.compile_try(body, catch);
             }
+            Expr::Try { .. } => {
+                let idx = self.code.add_expr(expr.clone());
+                self.code.emit(OpCode::RunTryExpr(idx));
+            }
             Expr::DoBlock { .. } => {
                 let idx = self.code.add_expr(expr.clone());
                 self.code.emit(OpCode::RunDoBlockExpr(idx));
@@ -989,8 +995,9 @@ impl Compiler {
                 }
             }
             // Remaining expression forms not yet bytecode-native.
-            Expr::Try { .. } | Expr::PostfixOp { .. } => {
-                self.fallback_expr(expr);
+            Expr::PostfixOp { .. } => {
+                let idx = self.code.add_expr(expr.clone());
+                self.code.emit(OpCode::RunPostfixExpr(idx));
             }
         }
     }
