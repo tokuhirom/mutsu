@@ -84,6 +84,15 @@ impl VM {
         }
     }
 
+    fn call_arg_has_eval_value(arg: &CallArg) -> bool {
+        match arg {
+            CallArg::Positional(expr) => !Self::call_arg_needs_raw_expr(expr),
+            CallArg::Named { value, .. } => value
+                .as_ref()
+                .is_some_and(|expr| !Self::call_arg_needs_raw_expr(expr)),
+        }
+    }
+
     fn is_builtin_type(name: &str) -> bool {
         matches!(
             name,
@@ -1244,47 +1253,14 @@ impl VM {
             OpCode::ExecCallMixed(stmt_idx) => {
                 let stmt = &code.stmt_pool[*stmt_idx as usize];
                 if let Stmt::Call { name, args } = stmt {
-                    let mut rebuilt_rev = Vec::with_capacity(args.len());
-                    for arg in args.iter().rev() {
-                        match arg {
-                            CallArg::Positional(expr) => {
-                                if Self::call_arg_needs_raw_expr(expr) {
-                                    rebuilt_rev.push(CallArg::Positional(expr.clone()));
-                                } else {
-                                    let value = self.stack.pop().unwrap_or(Value::Nil);
-                                    rebuilt_rev.push(CallArg::Positional(Expr::Literal(value)));
-                                }
-                            }
-                            CallArg::Named { name, value } => {
-                                let rebuilt = if value.is_some() {
-                                    if let Some(expr) = value {
-                                        if Self::call_arg_needs_raw_expr(expr) {
-                                            CallArg::Named {
-                                                name: name.clone(),
-                                                value: Some(expr.clone()),
-                                            }
-                                        } else {
-                                            let v = self.stack.pop().unwrap_or(Value::Nil);
-                                            CallArg::Named {
-                                                name: name.clone(),
-                                                value: Some(Expr::Literal(v)),
-                                            }
-                                        }
-                                    } else {
-                                        unreachable!()
-                                    }
-                                } else {
-                                    CallArg::Named {
-                                        name: name.clone(),
-                                        value: None,
-                                    }
-                                };
-                                rebuilt_rev.push(rebuilt);
-                            }
-                        }
-                    }
-                    rebuilt_rev.reverse();
-                    self.interpreter.exec_call(name, &rebuilt_rev)?;
+                    let eval_value_count = args
+                        .iter()
+                        .filter(|arg| Self::call_arg_has_eval_value(arg))
+                        .count();
+                    let start = self.stack.len().saturating_sub(eval_value_count);
+                    let eval_values: Vec<Value> = self.stack.drain(start..).collect();
+                    self.interpreter
+                        .exec_call_mixed_values(name, args, eval_values)?;
                     self.sync_locals_from_env(code);
                     *ip += 1;
                 } else {
