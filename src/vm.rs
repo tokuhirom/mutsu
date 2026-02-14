@@ -2588,15 +2588,21 @@ impl VM {
             OpCode::IndexAssignInvalid => {
                 return Err(RuntimeError::new("Invalid assignment target"));
             }
-            OpCode::RunBlockExpr(idx) => {
-                let expr = &code.expr_pool[*idx as usize];
-                if let Expr::Block(body) = expr {
-                    let val = self.interpreter.eval_block_expr(body)?;
+            OpCode::MakeBlockClosure(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                if let Stmt::Block(body) = stmt {
+                    let val = Value::Sub {
+                        package: self.interpreter.current_package().to_string(),
+                        name: String::new(),
+                        params: vec![],
+                        body: body.clone(),
+                        env: self.interpreter.env().clone(),
+                        id: next_instance_id(),
+                    };
                     self.stack.push(val);
-                    self.sync_locals_from_env(code);
                     *ip += 1;
                 } else {
-                    return Err(RuntimeError::new("RunBlockExpr expects Block"));
+                    return Err(RuntimeError::new("MakeBlockClosure expects Block"));
                 }
             }
             OpCode::UnaryToken(token_idx) => {

@@ -1070,8 +1070,8 @@ impl Compiler {
             // Block inlining: compile inline if no placeholders
             Expr::Block(stmts) => {
                 if Self::has_block_placeholders(stmts) {
-                    let idx = self.code.add_expr(expr.clone());
-                    self.code.emit(OpCode::RunBlockExpr(idx));
+                    let idx = self.code.add_stmt(Stmt::Block(stmts.clone()));
+                    self.code.emit(OpCode::MakeBlockClosure(idx));
                 } else {
                     self.compile_block_inline(stmts);
                 }
