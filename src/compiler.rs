@@ -957,7 +957,10 @@ impl Compiler {
             | Expr::DoStmt(_) => {
                 self.fallback_expr(expr);
             }
-            _ => {
+            Expr::IndexAssign { .. }
+            | Expr::Try { .. }
+            | Expr::ControlFlow { .. }
+            | Expr::PostfixOp { .. } => {
                 self.fallback_expr(expr);
             }
         }
