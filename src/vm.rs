@@ -2261,6 +2261,28 @@ impl VM {
                     return Err(RuntimeError::new("RunBlockStmt expects Block"));
                 }
             }
+            OpCode::RunDoBlockExpr(idx) => {
+                let expr = &code.expr_pool[*idx as usize];
+                if let Expr::DoBlock { body, label } = expr {
+                    let val = self.interpreter.eval_do_block_expr(body, label)?;
+                    self.stack.push(val);
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RunDoBlockExpr expects DoBlock"));
+                }
+            }
+            OpCode::RunDoStmtExpr(idx) => {
+                let expr = &code.expr_pool[*idx as usize];
+                if let Expr::DoStmt(stmt) = expr {
+                    let val = self.interpreter.eval_do_stmt_expr(stmt)?;
+                    self.stack.push(val);
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RunDoStmtExpr expects DoStmt"));
+                }
+            }
             OpCode::RunExprFallback(idx) => {
                 let expr = &code.expr_pool[*idx as usize];
                 let val = self.interpreter.eval_expr(expr)?;

@@ -937,6 +937,25 @@ impl Compiler {
             Expr::Try { body, catch } if !body.iter().any(|s| matches!(s, Stmt::Control(_))) => {
                 self.compile_try(body, catch);
             }
+            Expr::DoBlock { .. } => {
+                let idx = self.code.add_expr(expr.clone());
+                self.code.emit(OpCode::RunDoBlockExpr(idx));
+            }
+            Expr::DoStmt(_) => {
+                let idx = self.code.add_expr(expr.clone());
+                self.code.emit(OpCode::RunDoStmtExpr(idx));
+            }
+            Expr::ControlFlow { kind, label } => match kind {
+                crate::ast::ControlFlowKind::Last => {
+                    self.code.emit(OpCode::Last(label.clone()));
+                }
+                crate::ast::ControlFlowKind::Next => {
+                    self.code.emit(OpCode::Next(label.clone()));
+                }
+                crate::ast::ControlFlowKind::Redo => {
+                    self.code.emit(OpCode::Redo(label.clone()));
+                }
+            },
             // Block inlining: compile inline if no placeholders
             Expr::Block(stmts) => {
                 if Self::has_block_placeholders(stmts) {
@@ -952,15 +971,10 @@ impl Compiler {
             | Expr::AnonSubParams { .. }
             | Expr::Lambda { .. }
             | Expr::Gather(_)
-            | Expr::CallOn { .. }
-            | Expr::DoBlock { .. }
-            | Expr::DoStmt(_) => {
+            | Expr::CallOn { .. } => {
                 self.fallback_expr(expr);
             }
-            Expr::IndexAssign { .. }
-            | Expr::Try { .. }
-            | Expr::ControlFlow { .. }
-            | Expr::PostfixOp { .. } => {
+            Expr::IndexAssign { .. } | Expr::Try { .. } | Expr::PostfixOp { .. } => {
                 self.fallback_expr(expr);
             }
         }

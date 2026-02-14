@@ -933,6 +933,52 @@ impl Interpreter {
         self.run_block(body)
     }
 
+    pub(crate) fn eval_do_block_expr(
+        &mut self,
+        body: &[Stmt],
+        label: &Option<String>,
+    ) -> Result<Value, RuntimeError> {
+        loop {
+            match self.eval_block_value(body) {
+                Ok(v) => return Ok(v),
+                Err(e)
+                    if e.is_redo
+                        && (e.label.is_none() || e.label.as_deref() == label.as_deref()) =>
+                {
+                    continue;
+                }
+                Err(e)
+                    if e.is_next
+                        && (e.label.is_none() || e.label.as_deref() == label.as_deref()) =>
+                {
+                    return Ok(Value::Array(vec![]));
+                }
+                Err(e)
+                    if e.is_last
+                        && (e.label.is_none() || e.label.as_deref() == label.as_deref()) =>
+                {
+                    return Ok(e.return_value.unwrap_or(Value::Array(vec![])));
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
+    pub(crate) fn eval_do_stmt_expr(&mut self, stmt: &Stmt) -> Result<Value, RuntimeError> {
+        match stmt {
+            Stmt::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => self.eval_do_if(cond, then_branch, else_branch),
+            Stmt::Given { topic, body } => self.eval_given_value(topic, body),
+            _ => {
+                self.exec_stmt(stmt)?;
+                Ok(Value::Nil)
+            }
+        }
+    }
+
     pub(crate) fn run_given_stmt(
         &mut self,
         topic: &Expr,
@@ -4647,47 +4693,8 @@ impl Interpreter {
                     self.eval_block_value(body)
                 }
             }
-            Expr::DoBlock { body, label } => {
-                loop {
-                    match self.eval_block_value(body) {
-                        Ok(v) => return Ok(v),
-                        Err(e)
-                            if e.is_redo
-                                && (e.label.is_none()
-                                    || e.label.as_deref() == label.as_deref()) =>
-                        {
-                            continue; // redo
-                        }
-                        Err(e)
-                            if e.is_next
-                                && (e.label.is_none()
-                                    || e.label.as_deref() == label.as_deref()) =>
-                        {
-                            return Ok(Value::Array(vec![]));
-                        }
-                        Err(e)
-                            if e.is_last
-                                && (e.label.is_none()
-                                    || e.label.as_deref() == label.as_deref()) =>
-                        {
-                            return Ok(e.return_value.unwrap_or(Value::Array(vec![])));
-                        }
-                        Err(e) => return Err(e),
-                    }
-                }
-            }
-            Expr::DoStmt(stmt) => match stmt.as_ref() {
-                Stmt::If {
-                    cond,
-                    then_branch,
-                    else_branch,
-                } => self.eval_do_if(cond, then_branch, else_branch),
-                Stmt::Given { topic, body } => self.eval_given_value(topic, body),
-                _ => {
-                    self.exec_stmt(stmt)?;
-                    Ok(Value::Nil)
-                }
-            },
+            Expr::DoBlock { body, label } => self.eval_do_block_expr(body, label),
+            Expr::DoStmt(stmt) => self.eval_do_stmt_expr(stmt),
             Expr::ControlFlow { kind, label } => {
                 use crate::ast::ControlFlowKind;
                 let mut sig = match kind {
