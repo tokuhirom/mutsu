@@ -2397,6 +2397,19 @@ impl Interpreter {
             }
             return self.eval_map_over_items(func, list_items);
         }
+        if name == "grep" {
+            let func = args.first().cloned();
+            let mut list_items = Vec::new();
+            for arg in args.iter().skip(1) {
+                match arg {
+                    Value::Array(items) => list_items.extend(items.clone()),
+                    Value::Range(a, b) => list_items.extend((*a..=*b).map(Value::Int)),
+                    Value::RangeExcl(a, b) => list_items.extend((*a..*b).map(Value::Int)),
+                    other => list_items.push(other.clone()),
+                }
+            }
+            return self.eval_grep_over_items(func, list_items);
+        }
         if let Some(native_result) = crate::builtins::native_function(name, &args) {
             return native_result;
         }
@@ -5032,6 +5045,40 @@ impl Interpreter {
                     }
                 }
                 i += arity;
+            }
+            return Ok(Value::Array(result));
+        }
+        Ok(Value::Array(list_items))
+    }
+
+    fn eval_grep_over_items(
+        &mut self,
+        func: Option<Value>,
+        list_items: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if let Some(Value::Sub {
+            params, body, env, ..
+        }) = func
+        {
+            let placeholders = collect_placeholders(&body);
+            let mut result = Vec::new();
+            for item in list_items {
+                let saved = self.env.clone();
+                for (k, v) in &env {
+                    self.env.insert(k.clone(), v.clone());
+                }
+                if let Some(p) = params.first() {
+                    self.env.insert(p.clone(), item.clone());
+                }
+                if let Some(ph) = placeholders.first() {
+                    self.env.insert(ph.clone(), item.clone());
+                }
+                self.env.insert("_".to_string(), item.clone());
+                let val = self.eval_block_value(&body)?;
+                self.env = saved;
+                if val.truthy() {
+                    result.push(item);
+                }
             }
             return Ok(Value::Array(result));
         }
@@ -9853,33 +9900,7 @@ impl Interpreter {
                             other => list_items.push(other),
                         }
                     }
-                    if let Some(Value::Sub {
-                        params, body, env, ..
-                    }) = func
-                    {
-                        let placeholders = collect_placeholders(&body);
-                        let mut result = Vec::new();
-                        for item in list_items {
-                            let saved = self.env.clone();
-                            for (k, v) in &env {
-                                self.env.insert(k.clone(), v.clone());
-                            }
-                            if let Some(p) = params.first() {
-                                self.env.insert(p.clone(), item.clone());
-                            }
-                            if let Some(ph) = placeholders.first() {
-                                self.env.insert(ph.clone(), item.clone());
-                            }
-                            self.env.insert("_".to_string(), item.clone());
-                            let val = self.eval_block_value(&body)?;
-                            self.env = saved;
-                            if val.truthy() {
-                                result.push(item);
-                            }
-                        }
-                        return Ok(Value::Array(result));
-                    }
-                    return Ok(Value::Array(list_items));
+                    return self.eval_grep_over_items(func, list_items);
                 }
                 if name == "defined" {
                     let val = args.first().and_then(|e| self.eval_expr(e).ok());
