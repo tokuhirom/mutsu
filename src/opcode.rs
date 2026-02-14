@@ -354,8 +354,10 @@ pub(crate) enum OpCode {
     RegisterClass(u32),
     RegisterRole(u32),
     RegisterSubset(u32),
-    RunSubtest(u32),
     RunWhenever(u32),
+    SubtestScope {
+        body_end: u32,
+    },
     UseModule(u32),
     UseLibPath,
 
@@ -440,7 +442,8 @@ impl CompiledCode {
             OpCode::Default { body_end, .. } => *body_end = target,
             OpCode::PackageScope { body_end, .. } => *body_end = target,
             OpCode::DoBlockExpr { body_end, .. } => *body_end = target,
-            _ => panic!("patch_body_end on non-Given/When/Default/PackageScope opcode"),
+            OpCode::SubtestScope { body_end, .. } => *body_end = target,
+            _ => panic!("patch_body_end on opcode without body_end"),
         }
     }
 

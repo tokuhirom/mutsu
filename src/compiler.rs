@@ -466,9 +466,13 @@ impl Compiler {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterSubset(idx));
             }
-            Stmt::Subtest { .. } => {
-                let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::RunSubtest(idx));
+            Stmt::Subtest { name, body } => {
+                self.compile_expr(name);
+                let idx = self.code.emit(OpCode::SubtestScope { body_end: 0 });
+                for s in body {
+                    self.compile_stmt(s);
+                }
+                self.code.patch_body_end(idx);
             }
             Stmt::Whenever { .. } => {
                 let idx = self.code.add_stmt(stmt.clone());

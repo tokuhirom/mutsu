@@ -2714,15 +2714,17 @@ impl VM {
                     return Err(RuntimeError::new("RegisterSubset expects SubsetDecl"));
                 }
             }
-            OpCode::RunSubtest(idx) => {
-                let stmt = &code.stmt_pool[*idx as usize];
-                if let Stmt::Subtest { name, body } = stmt {
-                    self.interpreter.run_subtest_stmt(name, body)?;
-                    self.sync_locals_from_env(code);
-                    *ip += 1;
-                } else {
-                    return Err(RuntimeError::new("RunSubtest expects Subtest"));
-                }
+            OpCode::SubtestScope { body_end } => {
+                let end = *body_end as usize;
+                let body_start = *ip + 1;
+                let label = self.stack.pop().unwrap_or(Value::Nil).to_string_value();
+                let ctx = self.interpreter.begin_subtest();
+                let saved_depth = self.stack.len();
+                let run_result = self.run_range(code, body_start, end, compiled_fns);
+                self.stack.truncate(saved_depth);
+                self.interpreter.finish_subtest(ctx, &label, run_result)?;
+                self.sync_locals_from_env(code);
+                *ip = end;
             }
             OpCode::RunWhenever(idx) => {
                 let stmt = &code.stmt_pool[*idx as usize];

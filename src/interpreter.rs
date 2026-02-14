@@ -465,6 +465,12 @@ pub struct Interpreter {
     chroot_root: Option<PathBuf>,
 }
 
+pub(crate) struct SubtestContext {
+    parent_test_state: Option<TestState>,
+    parent_output: String,
+    parent_halted: bool,
+}
+
 impl Default for Interpreter {
     fn default() -> Self {
         Self::new()
@@ -849,23 +855,37 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let name_value = self.eval_expr(name)?;
         let label = name_value.to_string_value();
+        let ctx = self.begin_subtest();
+        let run_result = self.run_block(body);
+        self.finish_subtest(ctx, &label, run_result)
+    }
 
+    pub(crate) fn begin_subtest(&mut self) -> SubtestContext {
         let parent_test_state = self.test_state.take();
         let parent_output = std::mem::take(&mut self.output);
         let parent_halted = self.halted;
-
         self.test_state = Some(TestState::new());
         self.halted = false;
+        SubtestContext {
+            parent_test_state,
+            parent_output,
+            parent_halted,
+        }
+    }
 
-        let run_result = self.run_block(body);
-
+    pub(crate) fn finish_subtest(
+        &mut self,
+        ctx: SubtestContext,
+        label: &str,
+        run_result: Result<(), RuntimeError>,
+    ) -> Result<(), RuntimeError> {
         let subtest_output = std::mem::take(&mut self.output);
         let subtest_state = self.test_state.take();
         let subtest_failed = subtest_state.as_ref().map(|s| s.failed).unwrap_or(0);
 
-        self.test_state = parent_test_state;
-        self.output = parent_output;
-        self.halted = parent_halted;
+        self.test_state = ctx.parent_test_state;
+        self.output = ctx.parent_output;
+        self.halted = ctx.parent_halted;
 
         for line in subtest_output.lines() {
             self.output.push_str("    ");
@@ -874,7 +894,7 @@ impl Interpreter {
         }
 
         let ok = run_result.is_ok() && subtest_failed == 0;
-        self.test_ok(ok, &label, false)?;
+        self.test_ok(ok, label, false)?;
         Ok(())
     }
 
