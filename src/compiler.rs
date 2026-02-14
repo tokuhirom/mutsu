@@ -270,6 +270,9 @@ impl Compiler {
                     self.code.emit(OpCode::SetGlobal(name_idx));
                 }
             }
+            Stmt::Assign { .. } => {
+                self.code.emit(OpCode::AssignReadOnly);
+            }
             // Given/When/Default
             Stmt::Given { topic, body } if !Self::has_phasers(body) => {
                 self.compile_expr(topic);
@@ -460,9 +463,17 @@ impl Compiler {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::InterpretStmt(idx));
             }
-
-            // Fallback for everything else
-            _ => {
+            // Variants currently delegated to interpreter execution.
+            Stmt::While { .. }
+            | Stmt::For { .. }
+            | Stmt::Loop { .. }
+            | Stmt::Given { .. }
+            | Stmt::When { .. }
+            | Stmt::Default(_)
+            | Stmt::React { .. }
+            | Stmt::Package { .. }
+            | Stmt::Use { .. }
+            | Stmt::Phaser { .. } => {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::InterpretStmt(idx));
             }

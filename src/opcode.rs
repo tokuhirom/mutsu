@@ -194,6 +194,7 @@ pub(crate) enum OpCode {
     AssignExpr(u32),
     /// Assignment as expression for local variable (indexed slot)
     AssignExprLocal(u32),
+    AssignReadOnly,
 
     // -- Loops (compound opcodes) --
     /// While loop. Condition opcodes follow at [ip+1..cond_end).

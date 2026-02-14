@@ -2353,6 +2353,9 @@ impl VM {
                 self.interpreter.env_mut().insert(name.clone(), val);
                 *ip += 1;
             }
+            OpCode::AssignReadOnly => {
+                return Err(RuntimeError::new("X::Assignment::RO"));
+            }
         }
         Ok(())
     }
