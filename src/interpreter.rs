@@ -5625,57 +5625,6 @@ impl Interpreter {
     }
 
     fn rewrite_call_expr(name: &str, args: &[Expr]) -> Option<Expr> {
-        if matches!(name, "shift" | "pop")
-            && let Some(target) = args.first()
-        {
-            return Some(Expr::MethodCall {
-                target: Box::new(target.clone()),
-                name: name.to_string(),
-                args: Vec::new(),
-                modifier: None,
-            });
-        }
-        if matches!(name, "push" | "unshift" | "append" | "prepend")
-            && let Some(target) = args.first()
-        {
-            return Some(Expr::MethodCall {
-                target: Box::new(target.clone()),
-                name: name.to_string(),
-                args: args[1..].to_vec(),
-                modifier: None,
-            });
-        }
-        if name == "undefine"
-            && let Some(arg) = args.first()
-        {
-            let key = match arg {
-                Expr::Var(n) => Some(n.clone()),
-                Expr::ArrayVar(n) => Some(format!("@{}", n)),
-                Expr::HashVar(n) => Some(format!("%{}", n)),
-                Expr::CodeVar(n) => Some(format!("&{}", n)),
-                _ => None,
-            };
-            if let Some(name) = key {
-                return Some(Expr::AssignExpr {
-                    name,
-                    expr: Box::new(Expr::Literal(Value::Nil)),
-                });
-            }
-        }
-        if name == "VAR"
-            && let Some(arg) = args.first()
-            && matches!(
-                arg,
-                Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::CodeVar(_)
-            )
-        {
-            return Some(Expr::MethodCall {
-                target: Box::new(arg.clone()),
-                name: "VAR".to_string(),
-                args: Vec::new(),
-                modifier: None,
-            });
-        }
         if name == "indir"
             && args.len() >= 2
             && let Expr::Block(body) = &args[1]
