@@ -545,14 +545,16 @@ impl VM {
                 self.stack.push(result);
                 *ip += 1;
             }
-            OpCode::SmartMatchExpr { rhs_idx, negate } => {
+            OpCode::SmartMatchExpr { rhs_end, negate } => {
                 let left = self.stack.pop().unwrap();
-                let rhs = &code.expr_pool[*rhs_idx as usize];
+                let rhs_start = *ip + 1;
+                let rhs_end = *rhs_end as usize;
                 let saved_topic = self.interpreter.env().get("_").cloned();
                 self.interpreter
                     .env_mut()
                     .insert("_".to_string(), left.clone());
-                let right = self.interpreter.eval_expr(rhs)?;
+                self.run_range(code, rhs_start, rhs_end, compiled_fns)?;
+                let right = self.stack.pop().unwrap_or(Value::Nil);
                 if let Some(v) = saved_topic {
                     self.interpreter.env_mut().insert("_".to_string(), v);
                 } else {
@@ -566,7 +568,7 @@ impl VM {
                 let out = self.interpreter.eval_binary(left, &op, right)?;
                 self.stack.push(out);
                 self.sync_locals_from_env(code);
-                *ip += 1;
+                *ip = rhs_end;
             }
 
             // -- Divisibility (native) --

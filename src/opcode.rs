@@ -59,9 +59,9 @@ pub(crate) enum OpCode {
     // -- Identity/value equality --
     StrictEq,
     Eqv,
-    /// Smart match with raw RHS expr index (evaluated after binding $_ to LHS).
+    /// Smart match with compiled RHS expression at [ip+1..rhs_end).
     SmartMatchExpr {
-        rhs_idx: u32,
+        rhs_end: u32,
         negate: bool,
     },
 
@@ -430,6 +430,14 @@ impl CompiledCode {
             OpCode::Default { body_end, .. } => *body_end = target,
             OpCode::PackageScope { body_end, .. } => *body_end = target,
             _ => panic!("patch_body_end on non-Given/When/Default/PackageScope opcode"),
+        }
+    }
+
+    pub(crate) fn patch_smart_match_rhs_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::SmartMatchExpr { rhs_end, .. } => *rhs_end = target,
+            _ => panic!("patch_smart_match_rhs_end on non-SmartMatchExpr opcode"),
         }
     }
 
