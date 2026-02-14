@@ -202,8 +202,25 @@ impl VM {
                 } else if self.interpreter.has_class(name) || Self::is_builtin_type(name) {
                     Value::Package(name.to_string())
                 } else if self.interpreter.has_function(name) {
-                    // Bare function call with no args
-                    self.interpreter.call_function(name, Vec::new())?
+                    // Bare function call with no args.
+                    if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
+                        let pkg = self.interpreter.current_package().to_string();
+                        let result = self.call_compiled_function_named(
+                            cf,
+                            Vec::new(),
+                            compiled_fns,
+                            &pkg,
+                            name,
+                        )?;
+                        self.sync_locals_from_env(code);
+                        result
+                    } else if let Some(native_result) = Self::try_native_function(name, &[]) {
+                        native_result?
+                    } else {
+                        let result = self.interpreter.eval_call_with_values(name, Vec::new())?;
+                        self.sync_locals_from_env(code);
+                        result
+                    }
                 } else if name == "NaN" {
                     Value::Num(f64::NAN)
                 } else if name == "Inf" {
