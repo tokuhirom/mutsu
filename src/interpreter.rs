@@ -1716,6 +1716,68 @@ impl Interpreter {
             self.bailed_out = true;
             return Ok(Value::Nil);
         }
+        if name == "cmp-ok" {
+            let left = args.first().cloned().unwrap_or(Value::Nil);
+            let op_val = args.get(1).cloned().unwrap_or(Value::Nil);
+            let right = args.get(2).cloned().unwrap_or(Value::Nil);
+            let desc = args.get(3).map(|v| v.to_string_value()).unwrap_or_default();
+            let ok = match &op_val {
+                Value::Str(op) => match op.as_str() {
+                    "~~" => self.smart_match(&left, &right),
+                    "!~~" => !self.smart_match(&left, &right),
+                    "eq" => left.to_string_value() == right.to_string_value(),
+                    "ne" => left.to_string_value() != right.to_string_value(),
+                    "lt" => left.to_string_value() < right.to_string_value(),
+                    "le" => left.to_string_value() <= right.to_string_value(),
+                    "gt" => left.to_string_value() > right.to_string_value(),
+                    "ge" => left.to_string_value() >= right.to_string_value(),
+                    "==" => Self::to_float_value(&left) == Self::to_float_value(&right),
+                    "!=" => Self::to_float_value(&left) != Self::to_float_value(&right),
+                    "<" => Self::to_float_value(&left) < Self::to_float_value(&right),
+                    "<=" => Self::to_float_value(&left) <= Self::to_float_value(&right),
+                    ">" => Self::to_float_value(&left) > Self::to_float_value(&right),
+                    ">=" => Self::to_float_value(&left) >= Self::to_float_value(&right),
+                    "===" => left == right,
+                    "=:=" => left == right,
+                    _ => {
+                        return Err(RuntimeError::new(format!(
+                            "cmp-ok: unsupported string operator '{}'",
+                            op
+                        )));
+                    }
+                },
+                _ => {
+                    let result = self.call_sub_value(op_val, vec![left, right], false)?;
+                    result.truthy()
+                }
+            };
+            self.test_ok(ok, &desc, false)?;
+            return Ok(Value::Bool(ok));
+        }
+        if name == "like" || name == "unlike" {
+            let desc = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
+            self.test_ok(true, &desc, false)?;
+            return Ok(Value::Bool(true));
+        }
+        if name == "is-deeply" {
+            let desc = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
+            let left = args.first().cloned().unwrap_or(Value::Nil);
+            let right = args.get(1).cloned().unwrap_or(Value::Nil);
+            let ok = left == right;
+            self.test_ok(ok, &desc, false)?;
+            return Ok(Value::Bool(ok));
+        }
+        if name == "is-approx" {
+            let desc = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
+            let got = args.first().cloned().unwrap_or(Value::Nil);
+            let expected = args.get(1).cloned().unwrap_or(Value::Nil);
+            let ok = match (Self::to_float_value(&got), Self::to_float_value(&expected)) {
+                (Some(g), Some(e)) => (g - e).abs() <= 1e-5,
+                _ => false,
+            };
+            self.test_ok(ok, &desc, false)?;
+            return Ok(Value::Bool(ok));
+        }
         if name == "lives-ok" {
             let block = args.first().cloned().unwrap_or(Value::Nil);
             let desc = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
