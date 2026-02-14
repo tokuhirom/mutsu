@@ -4301,6 +4301,36 @@ impl Interpreter {
         }
     }
 
+    fn method_target_var_name(target: &Expr) -> Option<String> {
+        match target {
+            Expr::Var(n) => Some(n.clone()),
+            Expr::ArrayVar(n) => Some(format!("@{}", n)),
+            Expr::HashVar(n) => Some(format!("%{}", n)),
+            Expr::CodeVar(n) => Some(format!("&{}", n)),
+            _ => None,
+        }
+    }
+
+    fn method_dispatch_expr_is_pure(expr: &Expr) -> bool {
+        matches!(
+            expr,
+            Expr::Var(_)
+                | Expr::ArrayVar(_)
+                | Expr::HashVar(_)
+                | Expr::CodeVar(_)
+                | Expr::BareWord(_)
+                | Expr::Literal(_)
+        )
+    }
+
+    fn is_unknown_method_dispatch_error(err: &RuntimeError) -> bool {
+        err.message
+            .starts_with("Unknown method value dispatch (fallback disabled):")
+            || err
+                .message
+                .starts_with("Unknown mutable method value dispatch (fallback disabled):")
+    }
+
     fn call_sub_value(
         &mut self,
         func: Value,
@@ -5440,6 +5470,27 @@ impl Interpreter {
                         Some('*') => Ok(Value::Array(vec![result?])),
                         _ => result,
                     };
+                }
+                if Self::method_dispatch_expr_is_pure(target)
+                    && args.iter().all(Self::method_dispatch_expr_is_pure)
+                {
+                    let target_val = self.eval_expr(target)?;
+                    let mut arg_vals = Vec::with_capacity(args.len());
+                    for arg in args {
+                        arg_vals.push(self.eval_expr(arg)?);
+                    }
+                    let dispatch_result = if let Some(target_var) =
+                        Self::method_target_var_name(target)
+                    {
+                        self.call_method_mut_with_values(&target_var, target_val, name, arg_vals)
+                    } else {
+                        self.call_method_with_values(target_val, name, arg_vals)
+                    };
+                    match dispatch_result {
+                        Ok(v) => return Ok(v),
+                        Err(e) if Self::is_unknown_method_dispatch_error(&e) => {}
+                        Err(e) => return Err(e),
+                    }
                 }
                 if name == "say" && args.is_empty() {
                     let value = self.eval_expr(target)?;
