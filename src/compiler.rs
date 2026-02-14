@@ -639,6 +639,18 @@ impl Compiler {
                         self.code.patch_jump(jump_nil);
                         return;
                     }
+                    TokenKind::NotAndThen => {
+                        self.compile_expr(left);
+                        let jump_eval_right = self.code.emit(OpCode::JumpIfNil(0));
+                        self.code.emit(OpCode::Pop);
+                        self.code.emit(OpCode::LoadNil);
+                        let jump_end = self.code.emit(OpCode::Jump(0));
+                        self.code.patch_jump(jump_eval_right);
+                        self.code.emit(OpCode::Pop);
+                        self.compile_expr(right);
+                        self.code.patch_jump(jump_end);
+                        return;
+                    }
                     TokenKind::SmartMatch | TokenKind::BangTilde => {
                         self.compile_expr(left);
                         let rhs_idx = self.code.add_expr((**right).clone());
