@@ -1018,17 +1018,33 @@ impl Compiler {
                     });
                 }
             }
-            Expr::AnonSub(_) => {
-                let idx = self.code.add_expr(expr.clone());
-                self.code.emit(OpCode::RunAnonSubExpr(idx));
+            Expr::AnonSub(body) => {
+                let idx = self.code.add_stmt(Stmt::Block(body.clone()));
+                self.code.emit(OpCode::MakeAnonSub(idx));
             }
-            Expr::AnonSubParams { .. } => {
-                let idx = self.code.add_expr(expr.clone());
-                self.code.emit(OpCode::RunAnonSubParamsExpr(idx));
+            Expr::AnonSubParams { params, body } => {
+                let idx = self.code.add_stmt(Stmt::SubDecl {
+                    name: String::new(),
+                    params: params.clone(),
+                    param_defs: Vec::new(),
+                    body: body.clone(),
+                    multi: false,
+                });
+                self.code.emit(OpCode::MakeAnonSubParams(idx));
             }
-            Expr::Lambda { .. } => {
-                let idx = self.code.add_expr(expr.clone());
-                self.code.emit(OpCode::RunLambdaExpr(idx));
+            Expr::Lambda { param, body } => {
+                let idx = self.code.add_stmt(Stmt::SubDecl {
+                    name: String::new(),
+                    params: if param.is_empty() {
+                        Vec::new()
+                    } else {
+                        vec![param.clone()]
+                    },
+                    param_defs: Vec::new(),
+                    body: body.clone(),
+                    multi: false,
+                });
+                self.code.emit(OpCode::MakeLambda(idx));
             }
             Expr::IndexAssign {
                 target,

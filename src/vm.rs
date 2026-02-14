@@ -2508,9 +2508,9 @@ impl VM {
                     return Err(RuntimeError::new("MakeGather expects Block"));
                 }
             }
-            OpCode::RunAnonSubExpr(idx) => {
-                let expr = &code.expr_pool[*idx as usize];
-                if let Expr::AnonSub(body) = expr {
+            OpCode::MakeAnonSub(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                if let Stmt::Block(body) = stmt {
                     let val = Value::Sub {
                         package: self.interpreter.current_package().to_string(),
                         name: String::new(),
@@ -2522,12 +2522,12 @@ impl VM {
                     self.stack.push(val);
                     *ip += 1;
                 } else {
-                    return Err(RuntimeError::new("RunAnonSubExpr expects AnonSub"));
+                    return Err(RuntimeError::new("MakeAnonSub expects Block"));
                 }
             }
-            OpCode::RunAnonSubParamsExpr(idx) => {
-                let expr = &code.expr_pool[*idx as usize];
-                if let Expr::AnonSubParams { params, body } = expr {
+            OpCode::MakeAnonSubParams(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                if let Stmt::SubDecl { params, body, .. } = stmt {
                     let val = Value::Sub {
                         package: self.interpreter.current_package().to_string(),
                         name: String::new(),
@@ -2539,22 +2539,16 @@ impl VM {
                     self.stack.push(val);
                     *ip += 1;
                 } else {
-                    return Err(RuntimeError::new(
-                        "RunAnonSubParamsExpr expects AnonSubParams",
-                    ));
+                    return Err(RuntimeError::new("MakeAnonSubParams expects SubDecl"));
                 }
             }
-            OpCode::RunLambdaExpr(idx) => {
-                let expr = &code.expr_pool[*idx as usize];
-                if let Expr::Lambda { param, body } = expr {
+            OpCode::MakeLambda(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                if let Stmt::SubDecl { params, body, .. } = stmt {
                     let val = Value::Sub {
                         package: self.interpreter.current_package().to_string(),
                         name: String::new(),
-                        params: if param.is_empty() {
-                            vec![]
-                        } else {
-                            vec![param.to_string()]
-                        },
+                        params: params.clone(),
                         body: body.clone(),
                         env: self.interpreter.env().clone(),
                         id: next_instance_id(),
@@ -2562,7 +2556,7 @@ impl VM {
                     self.stack.push(val);
                     *ip += 1;
                 } else {
-                    return Err(RuntimeError::new("RunLambdaExpr expects Lambda"));
+                    return Err(RuntimeError::new("MakeLambda expects SubDecl"));
                 }
             }
             OpCode::RunIndexAssignExpr(idx) => {
