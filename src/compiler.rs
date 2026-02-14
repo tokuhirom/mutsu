@@ -953,10 +953,21 @@ impl Compiler {
                 let idx = self.code.add_expr(expr.clone());
                 self.code.emit(OpCode::RunDoBlockExpr(idx));
             }
-            Expr::DoStmt(_) => {
-                let idx = self.code.add_expr(expr.clone());
-                self.code.emit(OpCode::RunDoStmtExpr(idx));
-            }
+            Expr::DoStmt(stmt) => match stmt.as_ref() {
+                Stmt::If {
+                    cond,
+                    then_branch,
+                    else_branch,
+                } if Self::do_if_branch_supported(then_branch)
+                    && Self::do_if_branch_supported(else_branch) =>
+                {
+                    self.compile_do_if_expr(cond, then_branch, else_branch);
+                }
+                _ => {
+                    let idx = self.code.add_expr(expr.clone());
+                    self.code.emit(OpCode::RunDoStmtExpr(idx));
+                }
+            },
             Expr::Gather(_) => {
                 let idx = self.code.add_expr(expr.clone());
                 self.code.emit(OpCode::RunGatherExpr(idx));
@@ -1301,6 +1312,57 @@ impl Compiler {
         if let Some(j) = jump_after_catch {
             self.code.patch_jump(j);
         }
+    }
+
+    fn compile_do_if_expr(&mut self, cond: &Expr, then_branch: &[Stmt], else_branch: &[Stmt]) {
+        self.compile_expr(cond);
+        let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
+        self.compile_block_inline(then_branch);
+        let jump_end = self.code.emit(OpCode::Jump(0));
+        self.code.patch_jump(jump_else);
+
+        if else_branch.is_empty() {
+            let empty_idx = self.code.add_constant(Value::Slip(vec![]));
+            self.code.emit(OpCode::LoadConst(empty_idx));
+        } else if else_branch.len() == 1 {
+            if let Stmt::If {
+                cond: inner_cond,
+                then_branch: inner_then,
+                else_branch: inner_else,
+            } = &else_branch[0]
+            {
+                self.compile_do_if_expr(inner_cond, inner_then, inner_else);
+            } else {
+                self.compile_block_inline(else_branch);
+            }
+        } else {
+            self.compile_block_inline(else_branch);
+        }
+        self.code.patch_jump(jump_end);
+    }
+
+    fn do_if_branch_supported(stmts: &[Stmt]) -> bool {
+        if Self::has_phasers(stmts) {
+            return false;
+        }
+        for stmt in stmts {
+            match stmt {
+                Stmt::Given { .. } => return false,
+                Stmt::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    if !Self::do_if_branch_supported(then_branch)
+                        || !Self::do_if_branch_supported(else_branch)
+                    {
+                        return false;
+                    }
+                }
+                _ => {}
+            }
+        }
+        true
     }
 
     /// Compile a block inline (for blocks without placeholders).
