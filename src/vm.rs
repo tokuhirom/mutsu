@@ -2195,6 +2195,16 @@ impl VM {
                 self.sync_locals_from_env(code);
                 *ip += 1;
             }
+            OpCode::RegisterEnum(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                if let Stmt::EnumDecl { name, variants } = stmt {
+                    self.interpreter.register_enum_decl(name, variants)?;
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RegisterEnum expects EnumDecl"));
+                }
+            }
 
             // -- Local variables (indexed slots) --
             OpCode::GetLocal(idx) => {

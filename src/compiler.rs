@@ -416,11 +416,14 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::Str(module.clone()));
                 self.code.emit(OpCode::UseModule(name_idx));
             }
+            Stmt::EnumDecl { .. } => {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::RegisterEnum(idx));
+            }
 
             // --- Declarations: delegate to interpreter (run once, complex state) ---
             Stmt::ClassDecl { .. }
             | Stmt::RoleDecl { .. }
-            | Stmt::EnumDecl { .. }
             | Stmt::SubsetDecl { .. }
             | Stmt::Subtest { .. }
             | Stmt::Whenever { .. } => {

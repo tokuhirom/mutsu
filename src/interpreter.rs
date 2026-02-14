@@ -669,6 +669,44 @@ impl Interpreter {
         self.proto_tokens.insert(key);
     }
 
+    pub(crate) fn register_enum_decl(
+        &mut self,
+        name: &str,
+        variants: &[(String, Option<Expr>)],
+    ) -> Result<(), RuntimeError> {
+        let mut enum_variants = Vec::new();
+        let mut next_value: i64 = 0;
+        for (key, value_expr) in variants {
+            let val = if let Some(expr) = value_expr {
+                let v = self.eval_expr(expr)?;
+                match v {
+                    Value::Int(i) => i,
+                    _ => next_value,
+                }
+            } else {
+                next_value
+            };
+            enum_variants.push((key.clone(), val));
+            next_value = val + 1;
+        }
+        self.enum_types
+            .insert(name.to_string(), enum_variants.clone());
+        self.env
+            .insert(name.to_string(), Value::Str(name.to_string()));
+        for (index, (key, val)) in enum_variants.iter().enumerate() {
+            let enum_val = Value::Enum {
+                enum_type: name.to_string(),
+                key: key.clone(),
+                value: *val,
+                index,
+            };
+            self.env
+                .insert(format!("{}::{}", name, key), enum_val.clone());
+            self.env.insert(key.clone(), enum_val);
+        }
+        Ok(())
+    }
+
     pub(crate) fn call_function(
         &mut self,
         name: &str,
@@ -2585,34 +2623,7 @@ impl Interpreter {
                 _ => {}
             },
             Stmt::EnumDecl { name, variants } => {
-                let mut enum_variants = Vec::new();
-                let mut next_value: i64 = 0;
-                for (key, value_expr) in variants {
-                    let val = if let Some(expr) = value_expr {
-                        let v = self.eval_expr(expr)?;
-                        match v {
-                            Value::Int(i) => i,
-                            _ => next_value,
-                        }
-                    } else {
-                        next_value
-                    };
-                    enum_variants.push((key.clone(), val));
-                    next_value = val + 1;
-                }
-                self.enum_types.insert(name.clone(), enum_variants.clone());
-                self.env.insert(name.clone(), Value::Str(name.clone()));
-                for (index, (key, val)) in enum_variants.iter().enumerate() {
-                    let enum_val = Value::Enum {
-                        enum_type: name.clone(),
-                        key: key.clone(),
-                        value: *val,
-                        index,
-                    };
-                    self.env
-                        .insert(format!("{}::{}", name, key), enum_val.clone());
-                    self.env.insert(key.clone(), enum_val);
-                }
+                self.register_enum_decl(name, variants)?;
             }
             Stmt::ClassDecl {
                 name,
