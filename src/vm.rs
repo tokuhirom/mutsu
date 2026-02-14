@@ -2384,59 +2384,6 @@ impl VM {
                 *ip += 1;
             }
 
-            OpCode::RunWhileStmt(idx) => {
-                let stmt = &code.stmt_pool[*idx as usize];
-                if let Stmt::While { cond, body, label } = stmt {
-                    self.interpreter.run_while_stmt(cond, body, label)?;
-                    self.sync_locals_from_env(code);
-                    *ip += 1;
-                } else {
-                    return Err(RuntimeError::new("RunWhileStmt expects While"));
-                }
-            }
-            OpCode::RunForStmt(idx) => {
-                let stmt = &code.stmt_pool[*idx as usize];
-                if let Stmt::For {
-                    iterable,
-                    param,
-                    params,
-                    body,
-                    label,
-                } = stmt
-                {
-                    self.interpreter
-                        .run_for_stmt(iterable, param, params, body, label)?;
-                    self.sync_locals_from_env(code);
-                    *ip += 1;
-                } else {
-                    return Err(RuntimeError::new("RunForStmt expects For"));
-                }
-            }
-            OpCode::RunLoopStmt(idx) => {
-                let stmt = &code.stmt_pool[*idx as usize];
-                if let Stmt::Loop {
-                    init,
-                    cond,
-                    step,
-                    body,
-                    repeat,
-                    label,
-                } = stmt
-                {
-                    self.interpreter.run_loop_stmt(
-                        init.as_deref(),
-                        cond.as_ref(),
-                        step.as_ref(),
-                        body,
-                        *repeat,
-                        label,
-                    )?;
-                    self.sync_locals_from_env(code);
-                    *ip += 1;
-                } else {
-                    return Err(RuntimeError::new("RunLoopStmt expects Loop"));
-                }
-            }
             OpCode::BlockScope {
                 enter_end,
                 body_end,
@@ -2592,7 +2539,7 @@ impl VM {
                 self.sync_locals_from_env(code);
                 *ip += 1;
             }
-            OpCode::RunBinaryToken(token_idx) => {
+            OpCode::BinaryToken(token_idx) => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
                 let op = &code.token_pool[*token_idx as usize];

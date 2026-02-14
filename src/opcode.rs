@@ -191,10 +191,7 @@ pub(crate) enum OpCode {
     MakeBlockClosure(u32),
     IndexAssignInvalid,
     UnaryToken(u32),
-    RunBinaryToken(u32),
-    RunWhileStmt(u32),
-    RunForStmt(u32),
-    RunLoopStmt(u32),
+    BinaryToken(u32),
 
     // -- Indexing --
     Index,

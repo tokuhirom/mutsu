@@ -10,6 +10,7 @@ pub(crate) struct Compiler {
     local_map: HashMap<String, u32>,
     compiled_functions: HashMap<String, CompiledFunction>,
     current_package: String,
+    tmp_counter: usize,
 }
 
 impl Compiler {
@@ -19,6 +20,7 @@ impl Compiler {
             local_map: HashMap::new(),
             compiled_functions: HashMap::new(),
             current_package: "GLOBAL".to_string(),
+            tmp_counter: 0,
         }
     }
 
@@ -161,7 +163,11 @@ impl Compiler {
                     self.code.patch_jump(jump_end);
                 }
             }
-            Stmt::While { cond, body, label } if !Self::has_phasers(body) => {
+            Stmt::While { cond, body, label } => {
+                let (pre_stmts, loop_body, post_stmts) = self.expand_loop_phasers(body);
+                for s in &pre_stmts {
+                    self.compile_stmt(s);
+                }
                 let loop_idx = self.code.emit(OpCode::WhileLoop {
                     cond_end: 0,
                     body_end: 0,
@@ -169,10 +175,13 @@ impl Compiler {
                 });
                 self.compile_expr(cond);
                 self.code.patch_while_cond_end(loop_idx);
-                for s in body {
+                for s in &loop_body {
                     self.compile_stmt(s);
                 }
                 self.code.patch_loop_end(loop_idx);
+                for s in &post_stmts {
+                    self.compile_stmt(s);
+                }
             }
             Stmt::For {
                 iterable,
@@ -180,22 +189,48 @@ impl Compiler {
                 params,
                 body,
                 label,
-            } if !Self::has_phasers(body) && params.is_empty() => {
+            } => {
+                let (pre_stmts, mut loop_body, post_stmts) = self.expand_loop_phasers(body);
+                for s in &pre_stmts {
+                    self.compile_stmt(s);
+                }
+                let mut bind_stmts = Vec::new();
+                if let Some(p) = param {
+                    bind_stmts.push(Stmt::Assign {
+                        name: p.clone(),
+                        expr: Expr::Var("_".to_string()),
+                        op: AssignOp::Assign,
+                    });
+                }
+                for (i, p) in params.iter().enumerate() {
+                    bind_stmts.push(Stmt::Assign {
+                        name: p.clone(),
+                        expr: Expr::Index {
+                            target: Box::new(Expr::Var("_".to_string())),
+                            index: Box::new(Expr::Literal(Value::Int(i as i64))),
+                        },
+                        op: AssignOp::Assign,
+                    });
+                }
+                if !bind_stmts.is_empty() {
+                    let mut merged = bind_stmts;
+                    merged.extend(loop_body);
+                    loop_body = merged;
+                }
                 self.compile_expr(iterable);
-                let param_idx = param
-                    .as_ref()
-                    .map(|p| self.code.add_constant(Value::Str(p.clone())));
-                let param_local = param.as_ref().map(|p| self.alloc_local(p));
                 let loop_idx = self.code.emit(OpCode::ForLoop {
-                    param_idx,
-                    param_local,
+                    param_idx: None,
+                    param_local: None,
                     body_end: 0,
                     label: label.clone(),
                 });
-                for s in body {
+                for s in &loop_body {
                     self.compile_stmt(s);
                 }
                 self.code.patch_loop_end(loop_idx);
+                for s in &post_stmts {
+                    self.compile_stmt(s);
+                }
             }
             // C-style loop (non-repeat, no phasers)
             Stmt::Loop {
@@ -205,10 +240,14 @@ impl Compiler {
                 body,
                 repeat,
                 label,
-            } if !*repeat && !Self::has_phasers(body) => {
+            } if !*repeat => {
+                let (pre_stmts, loop_body, post_stmts) = self.expand_loop_phasers(body);
                 // Compile init statement (if any) before the loop opcode
                 if let Some(init_stmt) = init {
                     self.compile_stmt(init_stmt);
+                }
+                for s in &pre_stmts {
+                    self.compile_stmt(s);
                 }
                 // Layout: [CStyleLoop] [cond..] [body..] [step..]
                 let loop_idx = self.code.emit(OpCode::CStyleLoop {
@@ -225,7 +264,7 @@ impl Compiler {
                 }
                 self.code.patch_cstyle_cond_end(loop_idx);
                 // Compile body
-                for s in body {
+                for s in &loop_body {
                     self.compile_stmt(s);
                 }
                 self.code.patch_cstyle_step_start(loop_idx);
@@ -235,14 +274,9 @@ impl Compiler {
                     self.code.emit(OpCode::Pop);
                 }
                 self.code.patch_loop_end(loop_idx);
-            }
-            Stmt::While { .. } => {
-                let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::RunWhileStmt(idx));
-            }
-            Stmt::For { .. } => {
-                let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::RunForStmt(idx));
+                for s in &post_stmts {
+                    self.compile_stmt(s);
+                }
             }
             // Statement-level call: compile positional args only.
             // Fall back if named args or Block/AnonSub args exist (exec_call
@@ -353,9 +387,13 @@ impl Compiler {
                 body,
                 repeat,
                 label,
-            } if *repeat && !Self::has_phasers(body) => {
+            } if *repeat => {
+                let (pre_stmts, loop_body, post_stmts) = self.expand_loop_phasers(body);
                 if let Some(init_stmt) = init {
                     self.compile_stmt(init_stmt);
+                }
+                for s in &pre_stmts {
+                    self.compile_stmt(s);
                 }
                 // Layout: [RepeatLoop] [body..] [cond..]
                 let loop_idx = self.code.emit(OpCode::RepeatLoop {
@@ -364,7 +402,7 @@ impl Compiler {
                     label: label.clone(),
                 });
                 // Compile body
-                for s in body {
+                for s in &loop_body {
                     self.compile_stmt(s);
                 }
                 self.code.patch_repeat_cond_end(loop_idx);
@@ -380,11 +418,11 @@ impl Compiler {
                     self.code.emit(OpCode::Pop);
                 }
                 self.code.patch_loop_end(loop_idx);
+                for s in &post_stmts {
+                    self.compile_stmt(s);
+                }
             }
-            Stmt::Loop { .. } => {
-                let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::RunLoopStmt(idx));
-            }
+            Stmt::Loop { .. } => unreachable!("loop repeat flag is exhaustive"),
             // --- No-ops: these statements are handled elsewhere ---
             // CATCH/CONTROL are handled by try expressions, not standalone
             Stmt::Catch(_) | Stmt::Control(_) => {}
@@ -699,7 +737,7 @@ impl Compiler {
                     self.compile_expr(left);
                     self.compile_expr(right);
                     let token_idx = self.code.add_token(op.clone());
-                    self.code.emit(OpCode::RunBinaryToken(token_idx));
+                    self.code.emit(OpCode::BinaryToken(token_idx));
                 }
             }
             Expr::Ternary {
@@ -1488,6 +1526,90 @@ impl Compiler {
                 }
             )
         })
+    }
+
+    fn next_tmp_name(&mut self, prefix: &str) -> String {
+        let name = format!("${}{}", prefix, self.tmp_counter);
+        self.tmp_counter += 1;
+        name
+    }
+
+    fn expand_loop_phasers(&mut self, body: &[Stmt]) -> (Vec<Stmt>, Vec<Stmt>, Vec<Stmt>) {
+        if !Self::has_phasers(body) {
+            return (Vec::new(), body.to_vec(), Vec::new());
+        }
+
+        let mut enter_ph = Vec::new();
+        let mut leave_ph = Vec::new();
+        let mut first_ph = Vec::new();
+        let mut next_ph = Vec::new();
+        let mut last_ph = Vec::new();
+        let mut body_main = Vec::new();
+        for stmt in body {
+            if let Stmt::Phaser { kind, body } = stmt {
+                match kind {
+                    PhaserKind::Enter => enter_ph.push(Stmt::Block(body.clone())),
+                    PhaserKind::Leave => leave_ph.push(Stmt::Block(body.clone())),
+                    PhaserKind::First => first_ph.push(Stmt::Block(body.clone())),
+                    PhaserKind::Next => next_ph.push(Stmt::Block(body.clone())),
+                    PhaserKind::Last => last_ph.push(Stmt::Block(body.clone())),
+                    _ => body_main.push(stmt.clone()),
+                }
+            } else {
+                body_main.push(stmt.clone());
+            }
+        }
+
+        let first_var = self.next_tmp_name("__mutsu_loop_first_");
+        let ran_var = self.next_tmp_name("__mutsu_loop_ran_");
+
+        let pre = vec![
+            Stmt::VarDecl {
+                name: first_var.clone(),
+                expr: Expr::Literal(Value::Bool(true)),
+                type_constraint: None,
+            },
+            Stmt::VarDecl {
+                name: ran_var.clone(),
+                expr: Expr::Literal(Value::Bool(false)),
+                type_constraint: None,
+            },
+        ];
+
+        let mut loop_body = Vec::new();
+        loop_body.push(Stmt::Assign {
+            name: ran_var.clone(),
+            expr: Expr::Literal(Value::Bool(true)),
+            op: AssignOp::Assign,
+        });
+        loop_body.extend(enter_ph);
+        if !first_ph.is_empty() || !next_ph.is_empty() {
+            let mut then_branch = first_ph;
+            then_branch.push(Stmt::Assign {
+                name: first_var.clone(),
+                expr: Expr::Literal(Value::Bool(false)),
+                op: AssignOp::Assign,
+            });
+            loop_body.push(Stmt::If {
+                cond: Expr::Var(first_var.clone()),
+                then_branch,
+                else_branch: next_ph,
+            });
+        }
+        loop_body.extend(body_main);
+        loop_body.extend(leave_ph);
+
+        let post = if last_ph.is_empty() {
+            Vec::new()
+        } else {
+            vec![Stmt::If {
+                cond: Expr::Var(ran_var),
+                then_branch: last_ph,
+                else_branch: Vec::new(),
+            }]
+        };
+
+        (pre, loop_body, post)
     }
 
     fn postfix_index_name(target: &Expr) -> Option<String> {
