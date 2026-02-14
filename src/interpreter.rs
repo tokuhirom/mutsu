@@ -1025,32 +1025,6 @@ impl Interpreter {
         Value::LazyList(std::rc::Rc::new(list))
     }
 
-    pub(crate) fn eval_call_on_expr(
-        &mut self,
-        target: &Expr,
-        args: &[Expr],
-    ) -> Result<Value, RuntimeError> {
-        // For CodeVar targets, check if it's a variable first, otherwise
-        // use proper multi-dispatch via call_function
-        if let Expr::CodeVar(fname) = target {
-            let var_key = format!("&{}", fname);
-            if !self.env.contains_key(&var_key) {
-                // Not a variable - call by name with multi-dispatch
-                let mut eval_args = Vec::new();
-                for arg in args {
-                    eval_args.push(self.eval_expr(arg)?);
-                }
-                return self.call_function(fname, eval_args);
-            }
-        }
-        let target_val = self.eval_expr(target)?;
-        let mut eval_args = Vec::with_capacity(args.len());
-        for arg in args {
-            eval_args.push(self.eval_expr(arg)?);
-        }
-        self.eval_call_on_value(target_val, eval_args)
-    }
-
     pub(crate) fn eval_call_on_value(
         &mut self,
         target_val: Value,
@@ -8510,7 +8484,26 @@ impl Interpreter {
                     Ok(Value::Str(text))
                 }
             }
-            Expr::CallOn { target, args } => self.eval_call_on_expr(target, args),
+            Expr::CallOn { target, args } => {
+                // For CodeVar targets, check if it's a variable first, otherwise
+                // call by function name using value dispatch.
+                if let Expr::CodeVar(fname) = target.as_ref() {
+                    let var_key = format!("&{}", fname);
+                    if !self.env.contains_key(&var_key) {
+                        let mut eval_args = Vec::with_capacity(args.len());
+                        for arg in args {
+                            eval_args.push(self.eval_expr(arg)?);
+                        }
+                        return self.call_function(fname, eval_args);
+                    }
+                }
+                let target_val = self.eval_expr(target)?;
+                let mut eval_args = Vec::with_capacity(args.len());
+                for arg in args {
+                    eval_args.push(self.eval_expr(arg)?);
+                }
+                self.eval_call_on_value(target_val, eval_args)
+            }
             Expr::Unary { op, expr } => self.eval_unary_expr(op, expr),
             Expr::PostfixOp { op, expr } => self.eval_postfix_expr(op, expr),
             Expr::Binary { left, op, right } => self.eval_binary_expr(left, op, right),
