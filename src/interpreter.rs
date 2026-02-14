@@ -23,6 +23,7 @@ use crate::ast::{
     AssignOp, CallArg, ExpectedMatcher, Expr, FunctionDef, ParamDef, PhaserKind, Stmt,
 };
 use crate::lexer::{Lexer, TokenKind};
+use crate::opcode::{CompiledCode, OpCode};
 use crate::parser::Parser;
 use crate::value::{JunctionKind, LazyList, RuntimeError, Value, make_rat, next_instance_id};
 use num_traits::{Signed, Zero};
@@ -1717,24 +1718,22 @@ impl Interpreter {
         self.env.insert("?LINE".to_string(), Value::Int(1));
         let mut parser = Parser::new(tokens);
         let stmts = parser.parse_program()?;
-        // Run through the bytecode VM (Phase 1: full fallback to tree-walker)
-        {
-            let (enter_ph, leave_ph, body_main) = self.split_block_phasers(&stmts);
-            self.run_block_raw(&enter_ph)?;
-            let compiler = crate::compiler::Compiler::new();
-            let (code, compiled_fns) = compiler.compile(&body_main);
-            let interp = std::mem::take(self);
-            let vm = crate::vm::VM::new(interp);
-            let (interp, body_result) = vm.run(&code, &compiled_fns);
-            *self = interp;
-            let leave_result = self.run_block_raw(&leave_ph);
-            if leave_result.is_err() && body_result.is_ok() {
-                leave_result?;
-            }
-            body_result?;
+        let (enter_ph, leave_ph, body_main) = self.split_block_phasers(&stmts);
+        self.run_block_raw(&enter_ph)?;
+        let compiler = crate::compiler::Compiler::new();
+        let (code, compiled_fns) = compiler.compile(&body_main);
+        let interp = std::mem::take(self);
+        let vm = crate::vm::VM::new(interp);
+        let (interp, body_result) = vm.run(&code, &compiled_fns);
+        *self = interp;
+        let leave_result = self.run_block_raw(&leave_ph);
+        if leave_result.is_err() && body_result.is_ok() {
+            leave_result?;
         }
+        body_result?;
+
         // Auto-call MAIN sub if defined
-        if let Some(main_def) = self.resolve_function("MAIN") {
+        if self.resolve_function("MAIN").is_some() {
             let args_val = self
                 .env
                 .get("@*ARGS")
@@ -1745,10 +1744,21 @@ impl Interpreter {
             } else {
                 Vec::new()
             };
-            let arg_exprs: Vec<Expr> = args_list.into_iter().map(Expr::Literal).collect();
-            self.bind_function_args(&main_def.param_defs, &main_def.params, &arg_exprs)?;
-            let body = main_def.body.clone();
-            match self.run_block(&body) {
+
+            let mut main_call = CompiledCode::new();
+            let arity = args_list.len() as u32;
+            for arg in args_list {
+                let arg_idx = main_call.add_constant(arg);
+                main_call.emit(OpCode::LoadConst(arg_idx));
+            }
+            let name_idx = main_call.add_constant(Value::Str("MAIN".to_string()));
+            main_call.emit(OpCode::ExecCall { name_idx, arity });
+
+            let interp = std::mem::take(self);
+            let vm = crate::vm::VM::new(interp);
+            let (interp, main_result) = vm.run(&main_call, &compiled_fns);
+            *self = interp;
+            match main_result {
                 Err(e) if e.return_value.is_some() => {}
                 Err(e) if e.message.is_empty() => {}
                 Err(e) => return Err(e),
