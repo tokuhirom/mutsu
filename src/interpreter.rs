@@ -2260,6 +2260,128 @@ impl Interpreter {
                 _ => Value::Str(String::new()),
             });
         }
+        if name == "item" {
+            return Ok(args.first().cloned().unwrap_or(Value::Nil));
+        }
+        if name == "list" {
+            let mut result = Vec::new();
+            for arg in &args {
+                result.extend(Self::value_to_list(arg));
+            }
+            return Ok(Value::Array(result));
+        }
+        if name == "lol" {
+            return Ok(Value::Array(args.clone()));
+        }
+        if name == "flat" {
+            let mut result = Vec::new();
+            for arg in &args {
+                match arg {
+                    Value::Array(items) => {
+                        for item in items {
+                            if let Value::Array(sub) = item {
+                                result.extend(sub.clone());
+                            } else {
+                                result.push(item.clone());
+                            }
+                        }
+                    }
+                    other => result.push(other.clone()),
+                }
+            }
+            return Ok(Value::Array(result));
+        }
+        if name == "slip" {
+            let mut items = Vec::new();
+            for arg in &args {
+                match arg {
+                    Value::Array(elems) => items.extend(elems.clone()),
+                    Value::Slip(elems) => items.extend(elems.clone()),
+                    other => items.push(other.clone()),
+                }
+            }
+            return Ok(Value::Slip(items));
+        }
+        if name == "reverse" {
+            let val = args.first().cloned();
+            return Ok(match val {
+                Some(Value::Array(mut items)) => {
+                    items.reverse();
+                    Value::Array(items)
+                }
+                Some(Value::Str(s)) => Value::Str(s.chars().rev().collect()),
+                _ => Value::Nil,
+            });
+        }
+        if name == "sort" {
+            let val = args.first().cloned();
+            return Ok(match val {
+                Some(Value::Array(mut items)) => {
+                    items.sort_by_key(|a| a.to_string_value());
+                    Value::Array(items)
+                }
+                _ => Value::Nil,
+            });
+        }
+        if name == "ords" {
+            if let Some(val) = args.first() {
+                let mut codes = Vec::new();
+                for ch in val.to_string_value().chars() {
+                    codes.push(Value::Int(ch as u32 as i64));
+                }
+                return Ok(Value::Array(codes));
+            }
+            return Ok(Value::Array(Vec::new()));
+        }
+        if name == "flip" {
+            let val = args
+                .first()
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            return Ok(Value::Str(val.chars().rev().collect()));
+        }
+        if name == "lc" {
+            let val = args.first().cloned().unwrap_or(Value::Nil);
+            return Ok(Value::Str(val.to_string_value().to_lowercase()));
+        }
+        if name == "uc" {
+            let val = args.first().cloned().unwrap_or(Value::Nil);
+            return Ok(Value::Str(val.to_string_value().to_uppercase()));
+        }
+        if name == "tc" {
+            let val = args
+                .first()
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            let mut result = String::new();
+            let mut capitalize = true;
+            for ch in val.chars() {
+                if capitalize {
+                    for c in ch.to_uppercase() {
+                        result.push(c);
+                    }
+                    capitalize = false;
+                } else {
+                    result.push(ch);
+                }
+            }
+            return Ok(Value::Str(result));
+        }
+        if name == "trim" {
+            let val = args
+                .first()
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            return Ok(Value::Str(val.trim().to_string()));
+        }
+        if name == "sprintf" {
+            let fmt = match args.first() {
+                Some(Value::Str(s)) => s.clone(),
+                _ => String::new(),
+            };
+            let rendered = Self::format_sprintf(&fmt, args.get(1));
+            return Ok(Value::Str(rendered));
+        }
         if let Some(native_result) = crate::builtins::native_function(name, &args) {
             return native_result;
         }
