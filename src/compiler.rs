@@ -997,9 +997,15 @@ impl Compiler {
                 self.code.emit(OpCode::RunGatherExpr(idx));
             }
             Expr::CallOn { target, args } => {
-                if matches!(target.as_ref(), Expr::CodeVar(_)) {
-                    let idx = self.code.add_expr(expr.clone());
-                    self.code.emit(OpCode::RunCallOnExpr(idx));
+                if let Expr::CodeVar(name) = target.as_ref() {
+                    for arg in args {
+                        self.compile_expr(arg);
+                    }
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::CallOnCodeVar {
+                        name_idx,
+                        arity: args.len() as u32,
+                    });
                 } else {
                     self.compile_expr(target);
                     for arg in args {

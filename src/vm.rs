@@ -1208,6 +1208,22 @@ impl VM {
                 self.sync_locals_from_env(code);
                 *ip += 1;
             }
+            OpCode::CallOnCodeVar { name_idx, arity } => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                let arity = *arity as usize;
+                let start = self.stack.len() - arity;
+                let args: Vec<Value> = self.stack.drain(start..).collect();
+                let key = format!("&{}", name);
+                let result = if self.interpreter.env().contains_key(&key) {
+                    let target = self.interpreter.resolve_code_var(&name);
+                    self.interpreter.eval_call_on_with_values(target, args)?
+                } else {
+                    self.interpreter.eval_call_with_values(&name, args)?
+                };
+                self.stack.push(result);
+                self.sync_locals_from_env(code);
+                *ip += 1;
+            }
             OpCode::ExecCall { name_idx, arity } => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 let arity = *arity as usize;
@@ -2490,17 +2506,6 @@ impl VM {
                     *ip += 1;
                 } else {
                     return Err(RuntimeError::new("RunGatherExpr expects Gather"));
-                }
-            }
-            OpCode::RunCallOnExpr(idx) => {
-                let expr = &code.expr_pool[*idx as usize];
-                if let Expr::CallOn { target, args } = expr {
-                    let val = self.interpreter.eval_call_on_expr(target, args)?;
-                    self.stack.push(val);
-                    self.sync_locals_from_env(code);
-                    *ip += 1;
-                } else {
-                    return Err(RuntimeError::new("RunCallOnExpr expects CallOn"));
                 }
             }
             OpCode::RunAnonSubExpr(idx) => {

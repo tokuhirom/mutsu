@@ -171,8 +171,11 @@ pub(crate) enum OpCode {
     RunDoBlockExpr(u32),
     RunDoStmtExpr(u32),
     RunGatherExpr(u32),
-    RunCallOnExpr(u32),
     CallOnValue {
+        arity: u32,
+    },
+    CallOnCodeVar {
+        name_idx: u32,
         arity: u32,
     },
     RunAnonSubExpr(u32),
