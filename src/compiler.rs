@@ -200,6 +200,14 @@ impl Compiler {
                 }
                 self.code.patch_loop_end(loop_idx);
             }
+            Stmt::While { .. } => {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::RunWhileStmt(idx));
+            }
+            Stmt::For { .. } => {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::RunForStmt(idx));
+            }
             // Statement-level call: compile positional args only.
             // Fall back if named args or Block/AnonSub args exist (exec_call
             // inspects raw expressions for throws-like, lives-ok, etc.).
@@ -345,6 +353,10 @@ impl Compiler {
                 }
                 self.code.patch_loop_end(loop_idx);
             }
+            Stmt::Loop { .. } => {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::RunLoopStmt(idx));
+            }
             // --- No-ops: these statements are handled elsewhere ---
             // CATCH/CONTROL are handled by try expressions, not standalone
             Stmt::Catch(_) | Stmt::Control(_) => {}
@@ -484,11 +496,6 @@ impl Compiler {
             Stmt::Call { .. } => {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RunCallStmt(idx));
-            }
-            // Variants currently delegated to interpreter execution.
-            Stmt::While { .. } | Stmt::For { .. } | Stmt::Loop { .. } => {
-                let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::RunStmtFallback(idx));
             }
         }
     }

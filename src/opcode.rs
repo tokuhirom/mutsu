@@ -159,13 +159,15 @@ pub(crate) enum OpCode {
     ExecCallMixed(u32),
     RunCallStmt(u32),
     RunBlockStmt(u32),
-    RunStmtFallback(u32),
     RunExprFallback(u32),
     RunReactStmt(u32),
     RunPackageStmt(u32),
     RunGivenStmt(u32),
     RunWhenStmt(u32),
     RunDefaultStmt(u32),
+    RunWhileStmt(u32),
+    RunForStmt(u32),
+    RunLoopStmt(u32),
 
     // -- Indexing --
     Index,
