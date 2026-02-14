@@ -4148,13 +4148,16 @@ impl Interpreter {
     }
 
     fn run_block_raw(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
-        for stmt in stmts {
-            self.exec_stmt(stmt)?;
-            if self.halted {
-                break;
-            }
+        if stmts.is_empty() {
+            return Ok(());
         }
-        Ok(())
+        let compiler = crate::compiler::Compiler::new();
+        let (code, compiled_fns) = compiler.compile(stmts);
+        let interp = std::mem::take(self);
+        let vm = crate::vm::VM::new(interp);
+        let (interp, result) = vm.run(&code, &compiled_fns);
+        *self = interp;
+        result
     }
 
     fn finish(&mut self) -> Result<(), RuntimeError> {
