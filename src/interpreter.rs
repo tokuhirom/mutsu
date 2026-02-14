@@ -11752,6 +11752,190 @@ impl Interpreter {
             ..
         } = &target
         {
+            if class_name == "IO::Path" {
+                let p = attributes
+                    .get("path")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let path_buf = self.resolve_path(&p);
+                let cwd_path = self.get_cwd_path();
+                let original = Path::new(&p);
+                match method {
+                    "Str" | "gist" => return Ok(Value::Str(p.clone())),
+                    "IO" => return Ok(target.clone()),
+                    "basename" => {
+                        let bname = original
+                            .file_name()
+                            .map(|s| s.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        return Ok(Value::Str(bname));
+                    }
+                    "parent" => {
+                        let mut levels = 1i64;
+                        if let Some(Value::Int(i)) = args.first() {
+                            levels = (*i).max(1);
+                        }
+                        let mut path = p.clone();
+                        for _ in 0..levels {
+                            if let Some(par) = Path::new(&path).parent() {
+                                let s = par.to_string_lossy().to_string();
+                                if s.is_empty() {
+                                    path = ".".to_string();
+                                    break;
+                                }
+                                path = s;
+                            } else {
+                                path = ".".to_string();
+                                break;
+                            }
+                        }
+                        return Ok(self.make_io_path_instance(&path));
+                    }
+                    "child" | "add" => {
+                        let child_name = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let joined = Self::stringify_path(&original.join(&child_name));
+                        return Ok(self.make_io_path_instance(&joined));
+                    }
+                    "extension" => {
+                        let ext = original
+                            .extension()
+                            .map(|s| s.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        return Ok(Value::Str(ext));
+                    }
+                    "absolute" => {
+                        let absolute = Self::stringify_path(&path_buf);
+                        return Ok(self.make_io_path_instance(&absolute));
+                    }
+                    "relative" => {
+                        let rel = path_buf
+                            .strip_prefix(&cwd_path)
+                            .map(Self::stringify_path)
+                            .unwrap_or_else(|_| Self::stringify_path(&path_buf));
+                        return Ok(Value::Str(rel));
+                    }
+                    "resolve" => {
+                        let canonical = fs::canonicalize(&path_buf).map_err(|err| {
+                            RuntimeError::new(format!("Failed to resolve '{}': {}", p, err))
+                        })?;
+                        let resolved = Self::stringify_path(&canonical);
+                        return Ok(self.make_io_path_instance(&resolved));
+                    }
+                    "volume" => {
+                        let volume = path_buf
+                            .components()
+                            .next()
+                            .map(|comp| comp.as_os_str().to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        return Ok(Value::Str(volume));
+                    }
+                    "is-absolute" => return Ok(Value::Bool(original.is_absolute())),
+                    "is-relative" => return Ok(Value::Bool(!original.is_absolute())),
+                    "e" => return Ok(Value::Bool(path_buf.exists())),
+                    "f" => return Ok(Value::Bool(path_buf.is_file())),
+                    "d" => return Ok(Value::Bool(path_buf.is_dir())),
+                    "l" => {
+                        let linked = fs::symlink_metadata(&path_buf)
+                            .map(|meta| meta.file_type().is_symlink())
+                            .unwrap_or(false);
+                        return Ok(Value::Bool(linked));
+                    }
+                    "r" => return Ok(Value::Bool(fs::metadata(&path_buf).is_ok())),
+                    "w" => {
+                        let writable = fs::metadata(&path_buf)
+                            .map(|meta| !meta.permissions().readonly())
+                            .unwrap_or(false);
+                        return Ok(Value::Bool(writable));
+                    }
+                    "x" => {
+                        let executable = fs::metadata(&path_buf)
+                            .map(|meta| Self::metadata_is_executable(&meta))
+                            .unwrap_or(false);
+                        return Ok(Value::Bool(executable));
+                    }
+                    "s" => {
+                        let size =
+                            fs::metadata(&path_buf)
+                                .map(|meta| meta.len())
+                                .map_err(|err| {
+                                    RuntimeError::new(format!("Failed to stat '{}': {}", p, err))
+                                })?;
+                        return Ok(Value::Int(size as i64));
+                    }
+                    "z" => {
+                        let zero = fs::metadata(&path_buf)
+                            .map(|meta| meta.len() == 0)
+                            .unwrap_or(false);
+                        return Ok(Value::Bool(zero));
+                    }
+                    "modified" => {
+                        let ts = fs::metadata(&path_buf)
+                            .and_then(|meta| meta.modified())
+                            .map(Self::system_time_to_int)
+                            .map_err(|err| {
+                                RuntimeError::new(format!(
+                                    "Failed to get modified time '{}': {}",
+                                    p, err
+                                ))
+                            })?;
+                        return Ok(Value::Int(ts));
+                    }
+                    "accessed" => {
+                        let ts = fs::metadata(&path_buf)
+                            .and_then(|meta| meta.accessed())
+                            .map(Self::system_time_to_int)
+                            .map_err(|err| {
+                                RuntimeError::new(format!(
+                                    "Failed to get accessed time '{}': {}",
+                                    p, err
+                                ))
+                            })?;
+                        return Ok(Value::Int(ts));
+                    }
+                    "changed" => {
+                        let ts = fs::metadata(&path_buf)
+                            .and_then(|meta| meta.modified())
+                            .map(Self::system_time_to_int)
+                            .map_err(|err| {
+                                RuntimeError::new(format!(
+                                    "Failed to get changed time '{}': {}",
+                                    p, err
+                                ))
+                            })?;
+                        return Ok(Value::Int(ts));
+                    }
+                    "lines" => {
+                        let content = fs::read_to_string(&path_buf).map_err(|err| {
+                            RuntimeError::new(format!("Failed to read '{}': {}", p, err))
+                        })?;
+                        let parts = content
+                            .lines()
+                            .map(|line| Value::Str(line.to_string()))
+                            .collect();
+                        return Ok(Value::Array(parts));
+                    }
+                    "words" => {
+                        let content = fs::read_to_string(&path_buf).map_err(|err| {
+                            RuntimeError::new(format!("Failed to read '{}': {}", p, err))
+                        })?;
+                        let parts = content
+                            .split_whitespace()
+                            .map(|token| Value::Str(token.to_string()))
+                            .collect();
+                        return Ok(Value::Array(parts));
+                    }
+                    "slurp" => {
+                        let content = fs::read_to_string(&path_buf).map_err(|err| {
+                            RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
+                        })?;
+                        return Ok(Value::Str(content));
+                    }
+                    _ => {}
+                }
+            }
             if class_name == "Promise" {
                 if method == "result" && args.is_empty() {
                     return Ok(attributes.get("result").cloned().unwrap_or(Value::Nil));
