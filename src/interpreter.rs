@@ -1636,12 +1636,7 @@ impl Interpreter {
     }
 
     pub(crate) fn run_default_stmt(&mut self, body: &[Stmt]) -> Result<(), RuntimeError> {
-        for stmt in body {
-            self.exec_stmt(stmt)?;
-            if self.halted {
-                break;
-            }
-        }
+        self.run_block_raw(body)?;
         self.when_matched = true;
         Ok(())
     }
