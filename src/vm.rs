@@ -2435,6 +2435,16 @@ impl VM {
                     return Err(RuntimeError::new("RunBinaryExpr expects Binary"));
                 }
             }
+            OpCode::RunBinaryIdent(name_idx) => {
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let name = Self::const_str(code, *name_idx).to_string();
+                let op = crate::lexer::TokenKind::Ident(name);
+                let val = self.interpreter.eval_binary(left, &op, right)?;
+                self.stack.push(val);
+                self.sync_locals_from_env(code);
+                *ip += 1;
+            }
             OpCode::RegisterSub(idx) => {
                 let stmt = &code.stmt_pool[*idx as usize];
                 if let Stmt::SubDecl {
