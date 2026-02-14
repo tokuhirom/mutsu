@@ -1523,6 +1523,44 @@ impl VM {
                 self.stack.push(effective);
                 *ip += 1;
             }
+            OpCode::IndexAssignExprNamed(name_idx) => {
+                let var_name = Self::const_str(code, *name_idx).to_string();
+                let idx = self.stack.pop().unwrap_or(Value::Nil);
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                match &idx {
+                    Value::Array(keys) => {
+                        let vals = match &val {
+                            Value::Array(v) => v.clone(),
+                            _ => vec![val.clone()],
+                        };
+                        if let Some(Value::Hash(hash)) =
+                            self.interpreter.env_mut().get_mut(&var_name)
+                        {
+                            for (i, key) in keys.iter().enumerate() {
+                                let k = key.to_string_value();
+                                let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                                hash.insert(k, v);
+                            }
+                        }
+                    }
+                    _ => {
+                        let key = idx.to_string_value();
+                        if let Some(Value::Hash(hash)) =
+                            self.interpreter.env_mut().get_mut(&var_name)
+                        {
+                            hash.insert(key, val.clone());
+                        } else {
+                            let mut hash = std::collections::HashMap::new();
+                            hash.insert(key, val.clone());
+                            self.interpreter
+                                .env_mut()
+                                .insert(var_name, Value::Hash(hash));
+                        }
+                    }
+                }
+                self.stack.push(val);
+                *ip += 1;
+            }
 
             // -- Unary coercion --
             OpCode::NumCoerce => {

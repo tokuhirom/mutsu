@@ -222,6 +222,7 @@ pub(crate) enum OpCode {
     PostDecrement(u32),
     PostIncrementIndex(u32),
     PostDecrementIndex(u32),
+    IndexAssignExprNamed(u32),
 
     // -- Assignment as expression --
     AssignExpr(u32),

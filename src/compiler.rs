@@ -1012,9 +1012,20 @@ impl Compiler {
                 let idx = self.code.add_expr(expr.clone());
                 self.code.emit(OpCode::RunLambdaExpr(idx));
             }
-            Expr::IndexAssign { .. } => {
-                let idx = self.code.add_expr(expr.clone());
-                self.code.emit(OpCode::RunIndexAssignExpr(idx));
+            Expr::IndexAssign {
+                target,
+                index,
+                value,
+            } => {
+                if let Some(name) = Self::index_assign_target_name(target) {
+                    self.compile_expr(value);
+                    self.compile_expr(index);
+                    let name_idx = self.code.add_constant(Value::Str(name));
+                    self.code.emit(OpCode::IndexAssignExprNamed(name_idx));
+                } else {
+                    let idx = self.code.add_expr(expr.clone());
+                    self.code.emit(OpCode::RunIndexAssignExpr(idx));
+                }
             }
             Expr::ControlFlow { kind, label } => match kind {
                 crate::ast::ControlFlowKind::Last => {
@@ -1390,6 +1401,15 @@ impl Compiler {
     }
 
     fn postfix_index_name(target: &Expr) -> Option<String> {
+        match target {
+            Expr::HashVar(name) => Some(format!("%{}", name)),
+            Expr::ArrayVar(name) => Some(format!("@{}", name)),
+            Expr::Var(name) => Some(name.clone()),
+            _ => None,
+        }
+    }
+
+    fn index_assign_target_name(target: &Expr) -> Option<String> {
         match target {
             Expr::HashVar(name) => Some(format!("%{}", name)),
             Expr::ArrayVar(name) => Some(format!("@{}", name)),
