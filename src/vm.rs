@@ -2154,6 +2154,26 @@ impl VM {
                 self.sync_locals_from_env(code);
                 *ip += 1;
             }
+            OpCode::RunReactStmt(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                if let Stmt::React { body } = stmt {
+                    self.interpreter.run_react_stmt(body)?;
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RunReactStmt expects React"));
+                }
+            }
+            OpCode::RunPackageStmt(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                if let Stmt::Package { name, body } = stmt {
+                    self.interpreter.run_package_stmt(name, body)?;
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RunPackageStmt expects Package"));
+                }
+            }
             OpCode::RunBlockStmt(idx) => {
                 let stmt = &code.stmt_pool[*idx as usize];
                 if let Stmt::Block(body) = stmt {

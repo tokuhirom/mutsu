@@ -161,6 +161,8 @@ pub(crate) enum OpCode {
     RunBlockStmt(u32),
     RunStmtFallback(u32),
     RunExprFallback(u32),
+    RunReactStmt(u32),
+    RunPackageStmt(u32),
 
     // -- Indexing --
     Index,

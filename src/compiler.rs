@@ -351,6 +351,10 @@ impl Compiler {
                     self.compile_stmt(s);
                 }
             }
+            Stmt::React { .. } => {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::RunReactStmt(idx));
+            }
 
             // --- Package scope ---
             Stmt::Package { name, body } if !Self::has_phasers(body) => {
@@ -366,6 +370,10 @@ impl Compiler {
                 }
                 self.current_package = saved_package;
                 self.code.patch_body_end(pkg_idx);
+            }
+            Stmt::Package { .. } => {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::RunPackageStmt(idx));
             }
 
             // --- Phaser (BEGIN/END) ---
@@ -471,9 +479,7 @@ impl Compiler {
             | Stmt::Loop { .. }
             | Stmt::Given { .. }
             | Stmt::When { .. }
-            | Stmt::Default(_)
-            | Stmt::React { .. }
-            | Stmt::Package { .. } => {
+            | Stmt::Default(_) => {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RunStmtFallback(idx));
             }

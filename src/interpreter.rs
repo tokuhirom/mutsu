@@ -917,6 +917,22 @@ impl Interpreter {
         Ok(())
     }
 
+    pub(crate) fn run_package_stmt(
+        &mut self,
+        name: &str,
+        body: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        let saved = self.current_package.clone();
+        self.current_package = name.to_string();
+        self.run_block(body)?;
+        self.current_package = saved;
+        Ok(())
+    }
+
+    pub(crate) fn run_react_stmt(&mut self, body: &[Stmt]) -> Result<(), RuntimeError> {
+        self.run_block(body)
+    }
+
     pub(crate) fn call_function(
         &mut self,
         name: &str,
@@ -2199,10 +2215,7 @@ impl Interpreter {
                 self.register_proto_token_decl(name);
             }
             Stmt::Package { name, body } => {
-                let saved = self.current_package.clone();
-                self.current_package = name.clone();
-                self.run_block(body)?;
-                self.current_package = saved;
+                self.run_package_stmt(name, body)?;
             }
             Stmt::Return(expr) => {
                 let val = self.eval_expr(expr)?;
@@ -2438,7 +2451,7 @@ impl Interpreter {
                 }
             }
             Stmt::React { body } => {
-                self.run_block(body)?;
+                self.run_react_stmt(body)?;
             }
             Stmt::Whenever {
                 supply,
