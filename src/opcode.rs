@@ -233,6 +233,7 @@ pub(crate) enum OpCode {
     AssignExpr(u32),
     /// Assignment as expression for local variable (indexed slot)
     AssignExprLocal(u32),
+    IndexAssignExprNested(u32),
     AssignReadOnly,
 
     // -- Loops (compound opcodes) --

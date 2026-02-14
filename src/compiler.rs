@@ -1046,6 +1046,12 @@ impl Compiler {
                     self.compile_expr(index);
                     let name_idx = self.code.add_constant(Value::Str(name));
                     self.code.emit(OpCode::IndexAssignExprNamed(name_idx));
+                } else if let Some((name, inner_index)) = Self::index_assign_nested_target(target) {
+                    self.compile_expr(value);
+                    self.compile_expr(index);
+                    self.compile_expr(inner_index);
+                    let name_idx = self.code.add_constant(Value::Str(name));
+                    self.code.emit(OpCode::IndexAssignExprNested(name_idx));
                 } else {
                     let idx = self.code.add_expr(expr.clone());
                     self.code.emit(OpCode::RunIndexAssignExpr(idx));
@@ -1439,6 +1445,18 @@ impl Compiler {
             Expr::Var(name) => Some(name.clone()),
             _ => None,
         }
+    }
+
+    fn index_assign_nested_target(target: &Expr) -> Option<(String, &Expr)> {
+        if let Expr::Index {
+            target: inner_target,
+            index: inner_index,
+        } = target
+            && let Some(name) = Self::index_assign_target_name(inner_target)
+        {
+            return Some((name, inner_index));
+        }
+        None
     }
 
     /// Compile a block inline (for blocks without placeholders).

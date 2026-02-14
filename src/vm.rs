@@ -1587,6 +1587,32 @@ impl VM {
                 self.stack.push(val);
                 *ip += 1;
             }
+            OpCode::IndexAssignExprNested(name_idx) => {
+                let var_name = Self::const_str(code, *name_idx).to_string();
+                let inner_idx = self.stack.pop().unwrap_or(Value::Nil);
+                let outer_idx = self.stack.pop().unwrap_or(Value::Nil);
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let inner_key = inner_idx.to_string_value();
+                let outer_key = outer_idx.to_string_value();
+
+                if !self.interpreter.env().contains_key(&var_name) {
+                    self.interpreter.env_mut().insert(
+                        var_name.clone(),
+                        Value::Hash(std::collections::HashMap::new()),
+                    );
+                }
+                if let Some(Value::Hash(outer_hash)) = self.interpreter.env_mut().get_mut(&var_name)
+                {
+                    let inner_hash = outer_hash
+                        .entry(inner_key)
+                        .or_insert_with(|| Value::Hash(std::collections::HashMap::new()));
+                    if let Value::Hash(h) = inner_hash {
+                        h.insert(outer_key, val.clone());
+                    }
+                }
+                self.stack.push(val);
+                *ip += 1;
+            }
 
             // -- Unary coercion --
             OpCode::NumCoerce => {
