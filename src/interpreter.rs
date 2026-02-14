@@ -2382,6 +2382,21 @@ impl Interpreter {
             let rendered = Self::format_sprintf(&fmt, args.get(1));
             return Ok(Value::Str(rendered));
         }
+        if name == "map" {
+            let func = args.first().cloned();
+            let mut list_items = Vec::new();
+            for arg in args.iter().skip(1) {
+                match arg {
+                    Value::Array(items) => list_items.extend(items.clone()),
+                    Value::Range(a, b) => list_items.extend((*a..=*b).map(Value::Int)),
+                    Value::RangeExcl(a, b) => list_items.extend((*a..*b).map(Value::Int)),
+                    Value::RangeExclStart(a, b) => list_items.extend((*a + 1..=*b).map(Value::Int)),
+                    Value::RangeExclBoth(a, b) => list_items.extend((*a + 1..*b).map(Value::Int)),
+                    other => list_items.push(other.clone()),
+                }
+            }
+            return self.eval_map_over_items(func, list_items);
+        }
         if let Some(native_result) = crate::builtins::native_function(name, &args) {
             return native_result;
         }
@@ -4944,6 +4959,83 @@ impl Interpreter {
             };
         }
         Err(RuntimeError::new("Callable expected"))
+    }
+
+    fn eval_map_over_items(
+        &mut self,
+        func: Option<Value>,
+        list_items: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if let Some(Value::Sub {
+            params, body, env, ..
+        }) = func
+        {
+            let placeholders = collect_placeholders(&body);
+            let arity = if !params.is_empty() {
+                params.len()
+            } else if !placeholders.is_empty() {
+                placeholders.len()
+            } else {
+                1
+            };
+            let mut result = Vec::new();
+            let mut i = 0usize;
+            while i < list_items.len() {
+                if arity > 1 && i + arity > list_items.len() {
+                    return Err(RuntimeError::new("Not enough elements for map block arity"));
+                }
+                let saved = self.env.clone();
+                for (k, v) in &env {
+                    self.env.insert(k.clone(), v.clone());
+                }
+                if arity == 1 {
+                    let item = list_items[i].clone();
+                    if let Some(p) = params.first() {
+                        self.env.insert(p.clone(), item.clone());
+                    }
+                    if let Some(ph) = placeholders.first() {
+                        self.env.insert(ph.clone(), item.clone());
+                    }
+                    self.env.insert("_".to_string(), item);
+                } else {
+                    for (idx, p) in params.iter().enumerate() {
+                        if i + idx < list_items.len() {
+                            self.env.insert(p.clone(), list_items[i + idx].clone());
+                        }
+                    }
+                    for (idx, ph) in placeholders.iter().enumerate() {
+                        if i + idx < list_items.len() {
+                            self.env.insert(ph.clone(), list_items[i + idx].clone());
+                        }
+                    }
+                    self.env.insert("_".to_string(), list_items[i].clone());
+                }
+                match self.eval_block_value(&body) {
+                    Ok(Value::Slip(elems)) => {
+                        self.env = saved;
+                        result.extend(elems);
+                    }
+                    Ok(val) => {
+                        self.env = saved;
+                        result.push(val);
+                    }
+                    Err(e) if e.is_next => {
+                        self.env = saved;
+                    }
+                    Err(e) if e.is_last => {
+                        self.env = saved;
+                        break;
+                    }
+                    Err(e) => {
+                        self.env = saved;
+                        return Err(e);
+                    }
+                }
+                i += arity;
+            }
+            return Ok(Value::Array(result));
+        }
+        Ok(Value::Array(list_items))
     }
 
     fn compute_class_mro(
@@ -9741,80 +9833,7 @@ impl Interpreter {
                             other => list_items.push(other),
                         }
                     }
-                    if let Some(Value::Sub {
-                        params, body, env, ..
-                    }) = func
-                    {
-                        let placeholders = collect_placeholders(&body);
-                        let arity = if !params.is_empty() {
-                            params.len()
-                        } else if !placeholders.is_empty() {
-                            placeholders.len()
-                        } else {
-                            1
-                        };
-                        let mut result = Vec::new();
-                        let mut i = 0;
-                        while i < list_items.len() {
-                            if arity > 1 && i + arity > list_items.len() {
-                                return Err(RuntimeError::new(
-                                    "Not enough elements for map block arity",
-                                ));
-                            }
-                            let saved = self.env.clone();
-                            for (k, v) in &env {
-                                self.env.insert(k.clone(), v.clone());
-                            }
-                            if arity == 1 {
-                                let item = list_items[i].clone();
-                                if let Some(p) = params.first() {
-                                    self.env.insert(p.clone(), item.clone());
-                                }
-                                if let Some(ph) = placeholders.first() {
-                                    self.env.insert(ph.clone(), item.clone());
-                                }
-                                self.env.insert("_".to_string(), item);
-                            } else {
-                                // Multi-arity: bind positional params/placeholders
-                                for (idx, p) in params.iter().enumerate() {
-                                    if i + idx < list_items.len() {
-                                        self.env.insert(p.clone(), list_items[i + idx].clone());
-                                    }
-                                }
-                                for (idx, ph) in placeholders.iter().enumerate() {
-                                    if i + idx < list_items.len() {
-                                        self.env.insert(ph.clone(), list_items[i + idx].clone());
-                                    }
-                                }
-                                self.env.insert("_".to_string(), list_items[i].clone());
-                            }
-                            match self.eval_block_value(&body) {
-                                Ok(Value::Slip(elems)) => {
-                                    self.env = saved;
-                                    result.extend(elems);
-                                }
-                                Ok(val) => {
-                                    self.env = saved;
-                                    result.push(val);
-                                }
-                                Err(e) if e.is_next => {
-                                    self.env = saved;
-                                    // next: skip this element
-                                }
-                                Err(e) if e.is_last => {
-                                    self.env = saved;
-                                    break;
-                                }
-                                Err(e) => {
-                                    self.env = saved;
-                                    return Err(e);
-                                }
-                            }
-                            i += arity;
-                        }
-                        return Ok(Value::Array(result));
-                    }
-                    return Ok(Value::Array(list_items));
+                    return self.eval_map_over_items(func, list_items);
                 }
                 if name == "grep" {
                     // grep { BLOCK }, @list
