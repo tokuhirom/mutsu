@@ -182,6 +182,7 @@
 - [ ] roast/S02-types/isDEPRECATED.t
 - [ ] roast/S02-types/is-type.t
 - [ ] roast/S02-types/lazy-lists.t
+  - Panic fixed (2026-02-14): `.splice` with start beyond array end no longer crashes. Current status: 14/27 pass; remaining failures at 1, 4-7, 9, 11, 13, 15, 21-23, 27.
 - [ ] roast/S02-types/lists.t
 - [ ] roast/S02-types/list.t
 - [ ] roast/S02-types/mixed_multi_dimensional.t

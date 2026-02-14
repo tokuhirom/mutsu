@@ -6113,7 +6113,8 @@ impl Interpreter {
                                         Value::Int(i) => Some(i.max(0) as usize),
                                         _ => None,
                                     })
-                                    .unwrap_or(0);
+                                    .unwrap_or(0)
+                                    .min(items.len());
                                 let count = count_val
                                     .and_then(|v| match v {
                                         Value::Int(i) => Some(i.max(0) as usize),
@@ -6607,7 +6608,8 @@ impl Interpreter {
                                     Value::Int(i) => Some(i.max(0) as usize),
                                     _ => None,
                                 })
-                                .unwrap_or(0);
+                                .unwrap_or(0)
+                                .min(items.len());
                             let count = args
                                 .get(1)
                                 .and_then(|a| self.eval_expr(a).ok())
