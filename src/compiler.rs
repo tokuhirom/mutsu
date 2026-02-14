@@ -958,9 +958,12 @@ impl Compiler {
                 {
                     self.compile_do_if_expr(cond, then_branch, else_branch);
                 }
+                Stmt::Given { .. } => {
+                    let idx = self.code.add_stmt(stmt.as_ref().clone());
+                    self.code.emit(OpCode::DoGivenExpr(idx));
+                }
                 _ => {
-                    let idx = self.code.add_expr(expr.clone());
-                    self.code.emit(OpCode::RunDoStmtExpr(idx));
+                    self.code.emit(OpCode::LoadNil);
                 }
             },
             Expr::Gather(_) => {

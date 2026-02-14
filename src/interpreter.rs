@@ -13468,6 +13468,14 @@ impl Interpreter {
         Ok(last)
     }
 
+    pub(crate) fn eval_given_value_bridge(
+        &mut self,
+        topic: &Expr,
+        body: &[Stmt],
+    ) -> Result<Value, RuntimeError> {
+        self.eval_given_value(topic, body)
+    }
+
     fn eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
         let (enter_ph, leave_ph, body_main) = self.split_block_phasers(body);
         self.run_block_raw(&enter_ph)?;

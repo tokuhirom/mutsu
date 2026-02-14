@@ -2469,15 +2469,15 @@ impl VM {
                 }
                 *ip = end;
             }
-            OpCode::RunDoStmtExpr(idx) => {
-                let expr = &code.expr_pool[*idx as usize];
-                if let Expr::DoStmt(stmt) = expr {
-                    let val = self.interpreter.eval_do_stmt_expr(stmt)?;
+            OpCode::DoGivenExpr(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                if let Stmt::Given { topic, body } = stmt {
+                    let val = self.interpreter.eval_given_value_bridge(topic, body)?;
                     self.stack.push(val);
                     self.sync_locals_from_env(code);
                     *ip += 1;
                 } else {
-                    return Err(RuntimeError::new("RunDoStmtExpr expects DoStmt"));
+                    return Err(RuntimeError::new("DoGivenExpr expects Given"));
                 }
             }
             OpCode::MakeGather(idx) => {

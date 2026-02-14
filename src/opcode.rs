@@ -1,4 +1,4 @@
-use crate::ast::{Expr, ParamDef, Stmt};
+use crate::ast::{ParamDef, Stmt};
 use crate::lexer::TokenKind;
 use crate::value::Value;
 
@@ -172,7 +172,7 @@ pub(crate) enum OpCode {
         body_end: u32,
         label: Option<String>,
     },
-    RunDoStmtExpr(u32),
+    DoGivenExpr(u32),
     MakeGather(u32),
     CallOnValue {
         arity: u32,
@@ -371,7 +371,6 @@ pub(crate) struct CompiledCode {
     pub(crate) ops: Vec<OpCode>,
     pub(crate) constants: Vec<Value>,
     pub(crate) token_pool: Vec<TokenKind>,
-    pub(crate) expr_pool: Vec<Expr>,
     pub(crate) stmt_pool: Vec<Stmt>,
     pub(crate) locals: Vec<String>,
 }
@@ -382,7 +381,6 @@ impl CompiledCode {
             ops: Vec::new(),
             constants: Vec::new(),
             token_pool: Vec::new(),
-            expr_pool: Vec::new(),
             stmt_pool: Vec::new(),
             locals: Vec::new(),
         }
@@ -505,12 +503,6 @@ impl CompiledCode {
     pub(crate) fn add_constant(&mut self, value: Value) -> u32 {
         let idx = self.constants.len() as u32;
         self.constants.push(value);
-        idx
-    }
-
-    pub(crate) fn add_expr(&mut self, expr: Expr) -> u32 {
-        let idx = self.expr_pool.len() as u32;
-        self.expr_pool.push(expr);
         idx
     }
 
