@@ -1649,6 +1649,73 @@ impl Interpreter {
             self.test_ok(ok, &desc, false)?;
             return Ok(Value::Bool(ok));
         }
+        if name == "plan" {
+            let planned = match args.first().cloned().unwrap_or(Value::Int(0)) {
+                Value::Int(i) if i >= 0 => i as usize,
+                _ => return Err(RuntimeError::new("plan expects Int")),
+            };
+            self.test_state.get_or_insert_with(TestState::new).planned = Some(planned);
+            self.output.push_str(&format!("1..{}\n", planned));
+            return Ok(Value::Nil);
+        }
+        if name == "done-testing" {
+            let state = self.test_state.get_or_insert_with(TestState::new);
+            if state.planned.is_none() {
+                state.planned = Some(state.ran);
+                self.output.push_str(&format!("1..{}\n", state.ran));
+            }
+            return Ok(Value::Nil);
+        }
+        if name == "skip" {
+            let desc = args
+                .first()
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            let count = match args.get(1).cloned().unwrap_or(Value::Int(1)) {
+                Value::Int(i) => i.max(1) as usize,
+                _ => 1usize,
+            };
+            let state = self.test_state.get_or_insert_with(TestState::new);
+            for _ in 0..count {
+                state.ran += 1;
+                self.output
+                    .push_str(&format!("ok {} - {} # SKIP\n", state.ran, desc));
+            }
+            return Ok(Value::Nil);
+        }
+        if name == "skip-rest" {
+            let desc = args
+                .first()
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            let state = self.test_state.get_or_insert_with(TestState::new);
+            if let Some(planned) = state.planned {
+                while state.ran < planned {
+                    state.ran += 1;
+                    if desc.is_empty() {
+                        self.output.push_str(&format!("ok {} # SKIP\n", state.ran));
+                    } else {
+                        self.output
+                            .push_str(&format!("ok {} - {} # SKIP\n", state.ran, desc));
+                    }
+                }
+            }
+            return Ok(Value::Nil);
+        }
+        if name == "bail-out" {
+            let desc = args
+                .first()
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            if desc.is_empty() {
+                self.output.push_str("Bail out!\n");
+            } else {
+                self.output.push_str(&format!("Bail out! {}\n", desc));
+            }
+            self.halted = true;
+            self.bailed_out = true;
+            return Ok(Value::Nil);
+        }
         if name == "isa-ok" {
             let value = args.first().cloned().unwrap_or(Value::Nil);
             let type_name = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();

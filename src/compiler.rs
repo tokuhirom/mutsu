@@ -292,6 +292,11 @@ impl Compiler {
                         | "undefine"
                         | "VAR"
                         | "indir"
+                        | "plan"
+                        | "done-testing"
+                        | "skip"
+                        | "skip-rest"
+                        | "bail-out"
                 ) && args.iter().all(|a| matches!(a, CallArg::Positional(_))) =>
             {
                 let expr_args: Vec<Expr> = args
