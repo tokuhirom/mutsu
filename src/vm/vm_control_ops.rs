@@ -220,6 +220,55 @@ impl VM {
         Ok(())
     }
 
+    pub(super) fn exec_do_given_expr_op(
+        &mut self,
+        code: &CompiledCode,
+        body_end: u32,
+        ip: &mut usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
+        let topic = self.stack.pop().unwrap_or(Value::Nil);
+        let body_start = *ip + 1;
+        let end = body_end as usize;
+
+        let saved_topic = self.interpreter.env().get("_").cloned();
+        let saved_when = self.interpreter.when_matched();
+        self.interpreter.env_mut().insert("_".to_string(), topic);
+        self.interpreter.set_when_matched(false);
+
+        let mut last = Value::Nil;
+        let body_result = self.run_range(code, body_start, end, compiled_fns);
+        match body_result {
+            Ok(()) => {}
+            Err(e) if e.is_succeed => {
+                if let Some(v) = e.return_value {
+                    last = v;
+                }
+                self.interpreter.set_when_matched(true);
+            }
+            Err(e) => {
+                self.interpreter.set_when_matched(saved_when);
+                if let Some(v) = saved_topic {
+                    self.interpreter.env_mut().insert("_".to_string(), v);
+                } else {
+                    self.interpreter.env_mut().remove("_");
+                }
+                return Err(e);
+            }
+        }
+
+        self.interpreter.set_when_matched(saved_when);
+        if let Some(v) = saved_topic {
+            self.interpreter.env_mut().insert("_".to_string(), v);
+        } else {
+            self.interpreter.env_mut().remove("_");
+        }
+        self.stack.push(last);
+        self.sync_locals_from_env(code);
+        *ip = end;
+        Ok(())
+    }
+
     pub(super) fn exec_when_op(
         &mut self,
         code: &CompiledCode,

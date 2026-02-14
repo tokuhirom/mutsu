@@ -8436,14 +8436,6 @@ impl Interpreter {
         self.eval_given_body_with_topic(topic_val, body)
     }
 
-    pub(crate) fn eval_given_with_value(
-        &mut self,
-        topic: Value,
-        body: &[Stmt],
-    ) -> Result<Value, RuntimeError> {
-        self.eval_given_body_with_topic(topic, body)
-    }
-
     fn eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
         let (enter_ph, leave_ph, body_main) = self.split_block_phasers(body);
         self.run_block_raw(&enter_ph)?;

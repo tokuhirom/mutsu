@@ -178,7 +178,9 @@ pub(crate) enum OpCode {
         body_end: u32,
         label: Option<String>,
     },
-    DoGivenExpr(u32),
+    DoGivenExpr {
+        body_end: u32,
+    },
     MakeGather(u32),
     CallOnValue {
         arity: u32,
@@ -462,6 +464,7 @@ impl CompiledCode {
             OpCode::Default { body_end, .. } => *body_end = target,
             OpCode::PackageScope { body_end, .. } => *body_end = target,
             OpCode::DoBlockExpr { body_end, .. } => *body_end = target,
+            OpCode::DoGivenExpr { body_end, .. } => *body_end = target,
             OpCode::SubtestScope { body_end, .. } => *body_end = target,
             _ => panic!("patch_body_end on opcode without body_end"),
         }

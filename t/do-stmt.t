@@ -1,5 +1,5 @@
 use Test;
-plan 5;
+plan 6;
 
 my $v1 = do if True { 42 };
 is $v1, 42, 'do if returns then-branch value';
@@ -21,3 +21,9 @@ my $v5 = do given 7 {
     default { "fallback" }
 };
 is $v5, Nil, 'do given default branch returns Nil';
+
+my $v6 = do given 5 {
+    when 5 { proceed }
+    when 5 { "next-branch" }
+};
+is $v6, "next-branch", 'do given with proceed returns later when value';

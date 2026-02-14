@@ -1690,17 +1690,8 @@ impl VM {
                 }
                 *ip = end;
             }
-            OpCode::DoGivenExpr(idx) => {
-                let topic = self.stack.pop().unwrap_or(Value::Nil);
-                let stmt = &code.stmt_pool[*idx as usize];
-                if let Stmt::Block(body) = stmt {
-                    let val = self.interpreter.eval_given_with_value(topic, body)?;
-                    self.stack.push(val);
-                    self.sync_locals_from_env(code);
-                    *ip += 1;
-                } else {
-                    return Err(RuntimeError::new("DoGivenExpr expects Block"));
-                }
+            OpCode::DoGivenExpr { body_end } => {
+                self.exec_do_given_expr_op(code, *body_end, ip, compiled_fns)?;
             }
             OpCode::MakeGather(idx) => {
                 let stmt = &code.stmt_pool[*idx as usize];
