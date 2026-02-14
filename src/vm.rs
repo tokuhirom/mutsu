@@ -2532,14 +2532,6 @@ impl VM {
                     return Err(RuntimeError::new("MakeBlockClosure expects Block"));
                 }
             }
-            OpCode::UnaryToken(token_idx) => {
-                let value = self.stack.pop().unwrap_or(Value::Nil);
-                let op = &code.token_pool[*token_idx as usize];
-                let val = self.interpreter.eval_unary_value(op, value)?;
-                self.stack.push(val);
-                self.sync_locals_from_env(code);
-                *ip += 1;
-            }
             OpCode::RegisterSub(idx) => {
                 let stmt = &code.stmt_pool[*idx as usize];
                 if let Stmt::SubDecl {

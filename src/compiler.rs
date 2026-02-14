@@ -660,9 +660,7 @@ impl Compiler {
                     }
                 }
                 _ => {
-                    self.compile_expr(expr);
-                    let token_idx = self.code.add_token(op.clone());
-                    self.code.emit(OpCode::UnaryToken(token_idx));
+                    panic!("unsupported unary operator in compiler: {:?}", op);
                 }
             },
             Expr::Binary { left, op, right } => {

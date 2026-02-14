@@ -1,5 +1,4 @@
 use crate::ast::{ParamDef, Stmt};
-use crate::lexer::TokenKind;
 use crate::value::Value;
 
 /// Bytecode operations for the VM.
@@ -190,7 +189,6 @@ pub(crate) enum OpCode {
     MakeLambda(u32),
     MakeBlockClosure(u32),
     IndexAssignInvalid,
-    UnaryToken(u32),
 
     // -- Indexing --
     Index,
@@ -376,7 +374,6 @@ pub(crate) enum OpCode {
 pub(crate) struct CompiledCode {
     pub(crate) ops: Vec<OpCode>,
     pub(crate) constants: Vec<Value>,
-    pub(crate) token_pool: Vec<TokenKind>,
     pub(crate) stmt_pool: Vec<Stmt>,
     pub(crate) locals: Vec<String>,
 }
@@ -386,7 +383,6 @@ impl CompiledCode {
         Self {
             ops: Vec::new(),
             constants: Vec::new(),
-            token_pool: Vec::new(),
             stmt_pool: Vec::new(),
             locals: Vec::new(),
         }
@@ -527,12 +523,6 @@ impl CompiledCode {
     pub(crate) fn add_constant(&mut self, value: Value) -> u32 {
         let idx = self.constants.len() as u32;
         self.constants.push(value);
-        idx
-    }
-
-    pub(crate) fn add_token(&mut self, token: TokenKind) -> u32 {
-        let idx = self.token_pool.len() as u32;
-        self.token_pool.push(token);
         idx
     }
 
