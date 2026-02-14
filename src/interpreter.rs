@@ -11275,23 +11275,6 @@ impl Interpreter {
         })
     }
 
-    /// Bridge: execute a statement-level call with pre-evaluated positional values (for VM).
-    pub(crate) fn exec_call_with_values(
-        &mut self,
-        name: &str,
-        args: Vec<Value>,
-    ) -> Result<(), RuntimeError> {
-        if self.resolve_function_with_types(name, &args).is_some() || self.has_proto(name) {
-            let _ = self.call_function(name, args)?;
-            return Ok(());
-        }
-        let call_args: Vec<CallArg> = args
-            .into_iter()
-            .map(|v| CallArg::Positional(Expr::Literal(v)))
-            .collect();
-        self.exec_call(name, &call_args)
-    }
-
     fn smart_match(&mut self, left: &Value, right: &Value) -> bool {
         match (left, right) {
             (Value::Version { .. }, Value::Version { parts, plus, minus }) => {

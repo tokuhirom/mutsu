@@ -1238,7 +1238,11 @@ impl VM {
                 } else if let Some(native_result) = Self::try_native_function(&name, &args) {
                     native_result?;
                 } else {
-                    self.interpreter.exec_call_with_values(&name, args)?;
+                    let call_args: Vec<CallArg> = args
+                        .into_iter()
+                        .map(|v| CallArg::Positional(Expr::Literal(v)))
+                        .collect();
+                    self.interpreter.exec_call(&name, &call_args)?;
                     self.sync_locals_from_env(code);
                 }
                 *ip += 1;
