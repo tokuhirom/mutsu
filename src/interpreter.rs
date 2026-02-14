@@ -979,6 +979,102 @@ impl Interpreter {
         }
     }
 
+    pub(crate) fn eval_gather_expr(&self, body: &[Stmt]) -> Value {
+        let list = LazyList {
+            body: body.to_vec(),
+            env: self.env.clone(),
+            cache: std::cell::RefCell::new(None),
+        };
+        Value::LazyList(std::rc::Rc::new(list))
+    }
+
+    pub(crate) fn eval_call_on_expr(
+        &mut self,
+        target: &Expr,
+        args: &[Expr],
+    ) -> Result<Value, RuntimeError> {
+        // For CodeVar targets, check if it's a variable first, otherwise
+        // use proper multi-dispatch via call_function
+        if let Expr::CodeVar(fname) = target {
+            let var_key = format!("&{}", fname);
+            if !self.env.contains_key(&var_key) {
+                // Not a variable - call by name with multi-dispatch
+                let mut eval_args = Vec::new();
+                for arg in args {
+                    eval_args.push(self.eval_expr(arg)?);
+                }
+                return self.call_function(fname, eval_args);
+            }
+        }
+        let target_val = self.eval_expr(target)?;
+        if let Value::Sub {
+            package,
+            name,
+            params,
+            body,
+            env,
+            ..
+        } = target_val
+        {
+            let saved_env = self.env.clone();
+            let mut new_env = saved_env.clone();
+            for (k, v) in env {
+                if matches!(new_env.get(&k), Some(Value::Array(_))) && matches!(v, Value::Array(_))
+                {
+                    continue;
+                }
+                new_env.insert(k, v);
+            }
+            // Bind named params
+            for (i, pname) in params.iter().enumerate() {
+                if let Some(arg) = args.get(i)
+                    && let Ok(value) = self.eval_expr(arg)
+                {
+                    new_env.insert(pname.clone(), value);
+                }
+            }
+            // Bind placeholder variables ($^a, $^b, ...)
+            let placeholders = collect_placeholders(&body);
+            if !placeholders.is_empty() {
+                let mut eval_args = Vec::new();
+                for arg in args {
+                    eval_args.push(self.eval_expr(arg)?);
+                }
+                for (i, ph) in placeholders.iter().enumerate() {
+                    if let Some(val) = eval_args.get(i) {
+                        new_env.insert(ph.clone(), val.clone());
+                    }
+                }
+            }
+            let block_sub = Value::Sub {
+                package: package.clone(),
+                name: name.clone(),
+                params: params.clone(),
+                body: body.clone(),
+                env: new_env.clone(),
+                id: next_instance_id(),
+            };
+            self.env = new_env;
+            self.routine_stack.push((package.clone(), name.clone()));
+            self.block_stack.push(block_sub);
+            let result = self.eval_block_value(&body);
+            self.block_stack.pop();
+            self.routine_stack.pop();
+            let mut merged = saved_env;
+            for (k, v) in self.env.iter() {
+                if matches!(v, Value::Array(_)) {
+                    merged.insert(k.clone(), v.clone());
+                }
+            }
+            self.env = merged;
+            return match result {
+                Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
+                other => other,
+            };
+        }
+        Ok(Value::Nil)
+    }
+
     pub(crate) fn run_given_stmt(
         &mut self,
         topic: &Expr,
@@ -7950,89 +8046,7 @@ impl Interpreter {
                     Ok(Value::Str(text))
                 }
             }
-            Expr::CallOn { target, args } => {
-                // For CodeVar targets, check if it's a variable first, otherwise
-                // use proper multi-dispatch via call_function
-                if let Expr::CodeVar(fname) = target.as_ref() {
-                    let var_key = format!("&{}", fname);
-                    if !self.env.contains_key(&var_key) {
-                        // Not a variable — call by name with multi-dispatch
-                        let mut eval_args = Vec::new();
-                        for arg in args {
-                            eval_args.push(self.eval_expr(arg)?);
-                        }
-                        return self.call_function(fname, eval_args);
-                    }
-                }
-                let target_val = self.eval_expr(target)?;
-                if let Value::Sub {
-                    package,
-                    name,
-                    params,
-                    body,
-                    env,
-                    ..
-                } = target_val
-                {
-                    let saved_env = self.env.clone();
-                    let mut new_env = saved_env.clone();
-                    for (k, v) in env {
-                        if matches!(new_env.get(&k), Some(Value::Array(_)))
-                            && matches!(v, Value::Array(_))
-                        {
-                            continue;
-                        }
-                        new_env.insert(k, v);
-                    }
-                    // Bind named params
-                    for (i, pname) in params.iter().enumerate() {
-                        if let Some(arg) = args.get(i)
-                            && let Ok(value) = self.eval_expr(arg)
-                        {
-                            new_env.insert(pname.clone(), value);
-                        }
-                    }
-                    // Bind placeholder variables ($^a, $^b, ...)
-                    let placeholders = collect_placeholders(&body);
-                    if !placeholders.is_empty() {
-                        let mut eval_args = Vec::new();
-                        for arg in args {
-                            eval_args.push(self.eval_expr(arg)?);
-                        }
-                        for (i, ph) in placeholders.iter().enumerate() {
-                            if let Some(val) = eval_args.get(i) {
-                                new_env.insert(ph.clone(), val.clone());
-                            }
-                        }
-                    }
-                    let block_sub = Value::Sub {
-                        package: package.clone(),
-                        name: name.clone(),
-                        params: params.clone(),
-                        body: body.clone(),
-                        env: new_env.clone(),
-                        id: next_instance_id(),
-                    };
-                    self.env = new_env;
-                    self.routine_stack.push((package.clone(), name.clone()));
-                    self.block_stack.push(block_sub);
-                    let result = self.eval_block_value(&body);
-                    self.block_stack.pop();
-                    self.routine_stack.pop();
-                    let mut merged = saved_env;
-                    for (k, v) in self.env.iter() {
-                        if matches!(v, Value::Array(_)) {
-                            merged.insert(k.clone(), v.clone());
-                        }
-                    }
-                    self.env = merged;
-                    return match result {
-                        Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
-                        other => other,
-                    };
-                }
-                Ok(Value::Nil)
-            }
+            Expr::CallOn { target, args } => self.eval_call_on_expr(target, args),
             Expr::Unary { op, expr } => match op {
                 TokenKind::PlusPlus => {
                     if let Expr::Var(name) = expr.as_ref() {
@@ -10123,14 +10137,7 @@ impl Interpreter {
                     }
                 }
             }
-            Expr::Gather(body) => {
-                let list = LazyList {
-                    body: body.clone(),
-                    env: self.env.clone(),
-                    cache: std::cell::RefCell::new(None),
-                };
-                Ok(Value::LazyList(std::rc::Rc::new(list)))
-            }
+            Expr::Gather(body) => Ok(self.eval_gather_expr(body)),
             Expr::Reduction { op, expr } => {
                 let list_value = self.eval_expr(expr)?;
                 let list = self.list_from_value(list_value)?;

@@ -945,6 +945,14 @@ impl Compiler {
                 let idx = self.code.add_expr(expr.clone());
                 self.code.emit(OpCode::RunDoStmtExpr(idx));
             }
+            Expr::Gather(_) => {
+                let idx = self.code.add_expr(expr.clone());
+                self.code.emit(OpCode::RunGatherExpr(idx));
+            }
+            Expr::CallOn { .. } => {
+                let idx = self.code.add_expr(expr.clone());
+                self.code.emit(OpCode::RunCallOnExpr(idx));
+            }
             Expr::ControlFlow { kind, label } => match kind {
                 crate::ast::ControlFlowKind::Last => {
                     self.code.emit(OpCode::Last(label.clone()));
@@ -967,11 +975,7 @@ impl Compiler {
             // AnonSub / Lambda / Gather / CallOn / DoBlock / DoStmt:
             // These capture env or have complex state interactions.
             // Delegate entirely to interpreter.
-            Expr::AnonSub(_)
-            | Expr::AnonSubParams { .. }
-            | Expr::Lambda { .. }
-            | Expr::Gather(_)
-            | Expr::CallOn { .. } => {
+            Expr::AnonSub(_) | Expr::AnonSubParams { .. } | Expr::Lambda { .. } => {
                 self.fallback_expr(expr);
             }
             Expr::IndexAssign { .. } | Expr::Try { .. } | Expr::PostfixOp { .. } => {

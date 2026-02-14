@@ -161,6 +161,8 @@ pub(crate) enum OpCode {
     RunBlockStmt(u32),
     RunDoBlockExpr(u32),
     RunDoStmtExpr(u32),
+    RunGatherExpr(u32),
+    RunCallOnExpr(u32),
     RunExprFallback(u32),
     RunReactStmt(u32),
     RunPackageStmt(u32),

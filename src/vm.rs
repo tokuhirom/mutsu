@@ -2283,6 +2283,28 @@ impl VM {
                     return Err(RuntimeError::new("RunDoStmtExpr expects DoStmt"));
                 }
             }
+            OpCode::RunGatherExpr(idx) => {
+                let expr = &code.expr_pool[*idx as usize];
+                if let Expr::Gather(body) = expr {
+                    let val = self.interpreter.eval_gather_expr(body);
+                    self.stack.push(val);
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RunGatherExpr expects Gather"));
+                }
+            }
+            OpCode::RunCallOnExpr(idx) => {
+                let expr = &code.expr_pool[*idx as usize];
+                if let Expr::CallOn { target, args } = expr {
+                    let val = self.interpreter.eval_call_on_expr(target, args)?;
+                    self.stack.push(val);
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RunCallOnExpr expects CallOn"));
+                }
+            }
             OpCode::RunExprFallback(idx) => {
                 let expr = &code.expr_pool[*idx as usize];
                 let val = self.interpreter.eval_expr(expr)?;
