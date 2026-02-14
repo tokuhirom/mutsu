@@ -311,6 +311,8 @@ pub(crate) enum OpCode {
     RegisterClass(u32),
     RegisterRole(u32),
     RegisterSubset(u32),
+    RunSubtest(u32),
+    RunWhenever(u32),
     UseModule(u32),
     UseLibPath,
 

@@ -842,6 +842,81 @@ impl Interpreter {
         );
     }
 
+    pub(crate) fn run_subtest_stmt(
+        &mut self,
+        name: &Expr,
+        body: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        let name_value = self.eval_expr(name)?;
+        let label = name_value.to_string_value();
+
+        let parent_test_state = self.test_state.take();
+        let parent_output = std::mem::take(&mut self.output);
+        let parent_halted = self.halted;
+
+        self.test_state = Some(TestState::new());
+        self.halted = false;
+
+        let run_result = self.run_block(body);
+
+        let subtest_output = std::mem::take(&mut self.output);
+        let subtest_state = self.test_state.take();
+        let subtest_failed = subtest_state.as_ref().map(|s| s.failed).unwrap_or(0);
+
+        self.test_state = parent_test_state;
+        self.output = parent_output;
+        self.halted = parent_halted;
+
+        for line in subtest_output.lines() {
+            self.output.push_str("    ");
+            self.output.push_str(line);
+            self.output.push('\n');
+        }
+
+        let ok = run_result.is_ok() && subtest_failed == 0;
+        self.test_ok(ok, &label, false)?;
+        Ok(())
+    }
+
+    pub(crate) fn run_whenever_stmt(
+        &mut self,
+        supply: &Expr,
+        param: &Option<String>,
+        body: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        let supply_val = self.eval_expr(supply)?;
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = supply_val
+            && class_name == "Supply"
+        {
+            let tap_sub = Value::Sub {
+                package: self.current_package.clone(),
+                name: String::new(),
+                params: param.iter().cloned().collect(),
+                body: body.to_vec(),
+                env: self.env.clone(),
+                id: next_instance_id(),
+            };
+            let mut attrs = attributes.clone();
+            if let Some(Value::Array(items)) = attrs.get_mut("taps") {
+                items.push(tap_sub.clone());
+            } else {
+                attrs.insert("taps".to_string(), Value::Array(vec![tap_sub.clone()]));
+            }
+            if let Some(Value::Array(values)) = attrs.get("values") {
+                for v in values {
+                    let _ = self.call_sub_value(tap_sub.clone(), vec![v.clone()], true);
+                }
+            }
+            let updated = Value::make_instance(class_name.clone(), attrs);
+            self.update_instance_target(supply, updated);
+        }
+        Ok(())
+    }
+
     pub(crate) fn call_function(
         &mut self,
         name: &str,
@@ -2215,41 +2290,7 @@ impl Interpreter {
                 }
             }
             Stmt::Subtest { name, body } => {
-                let name_value = self.eval_expr(name)?;
-                let label = name_value.to_string_value();
-
-                // Save parent test state and output
-                let parent_test_state = self.test_state.take();
-                let parent_output = std::mem::take(&mut self.output);
-                let parent_halted = self.halted;
-
-                // Initialize fresh test state for subtest
-                self.test_state = Some(TestState::new());
-                self.halted = false;
-
-                // Run the subtest body
-                let run_result = self.run_block(body);
-
-                // Collect subtest output and state
-                let subtest_output = std::mem::take(&mut self.output);
-                let subtest_state = self.test_state.take();
-                let subtest_failed = subtest_state.as_ref().map(|s| s.failed).unwrap_or(0);
-
-                // Restore parent state
-                self.test_state = parent_test_state;
-                self.output = parent_output;
-                self.halted = parent_halted;
-
-                // Emit subtest TAP output (indented)
-                for line in subtest_output.lines() {
-                    self.output.push_str("    ");
-                    self.output.push_str(line);
-                    self.output.push('\n');
-                }
-
-                // Determine pass/fail
-                let ok = run_result.is_ok() && subtest_failed == 0;
-                self.test_ok(ok, &label, false)?;
+                self.run_subtest_stmt(name, body)?;
             }
             Stmt::Block(body) => {
                 self.run_block(body)?;
@@ -2437,36 +2478,7 @@ impl Interpreter {
                 param,
                 body,
             } => {
-                let supply_val = self.eval_expr(supply)?;
-                if let Value::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } = supply_val
-                    && class_name == "Supply"
-                {
-                    let tap_sub = Value::Sub {
-                        package: self.current_package.clone(),
-                        name: String::new(),
-                        params: param.iter().cloned().collect(),
-                        body: body.clone(),
-                        env: self.env.clone(),
-                        id: next_instance_id(),
-                    };
-                    let mut attrs = attributes.clone();
-                    if let Some(Value::Array(items)) = attrs.get_mut("taps") {
-                        items.push(tap_sub.clone());
-                    } else {
-                        attrs.insert("taps".to_string(), Value::Array(vec![tap_sub.clone()]));
-                    }
-                    if let Some(Value::Array(values)) = attrs.get("values") {
-                        for v in values {
-                            let _ = self.call_sub_value(tap_sub.clone(), vec![v.clone()], true);
-                        }
-                    }
-                    let updated = Value::make_instance(class_name.clone(), attrs);
-                    self.update_instance_target(supply, updated);
-                }
+                self.run_whenever_stmt(supply, param, body)?;
             }
             Stmt::Last(label) => {
                 let mut sig = RuntimeError::last_signal();

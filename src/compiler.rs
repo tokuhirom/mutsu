@@ -445,15 +445,17 @@ impl Compiler {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterSubset(idx));
             }
-
-            // --- Declarations: delegate to interpreter (run once, complex state) ---
-            Stmt::Subtest { .. } | Stmt::Whenever { .. } => {
+            Stmt::Subtest { .. } => {
                 let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::InterpretStmt(idx));
+                self.code.emit(OpCode::RunSubtest(idx));
+            }
+            Stmt::Whenever { .. } => {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::RunWhenever(idx));
             }
 
-            // --- Call with named/Block/AnonSub args: needs raw expressions ---
-            // (The simple positional-only case is handled above)
+            // --- Declarations: delegate to interpreter (run once, complex state) ---
+            // --- Call with complex args still needs tree-walker fallback ---
             Stmt::Call { .. } => {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::InterpretStmt(idx));

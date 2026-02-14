@@ -2281,6 +2281,31 @@ impl VM {
                     return Err(RuntimeError::new("RegisterSubset expects SubsetDecl"));
                 }
             }
+            OpCode::RunSubtest(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                if let Stmt::Subtest { name, body } = stmt {
+                    self.interpreter.run_subtest_stmt(name, body)?;
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RunSubtest expects Subtest"));
+                }
+            }
+            OpCode::RunWhenever(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                if let Stmt::Whenever {
+                    supply,
+                    param,
+                    body,
+                } = stmt
+                {
+                    self.interpreter.run_whenever_stmt(supply, param, body)?;
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RunWhenever expects Whenever"));
+                }
+            }
 
             // -- Local variables (indexed slots) --
             OpCode::GetLocal(idx) => {
