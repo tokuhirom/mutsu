@@ -5530,171 +5530,70 @@ impl Interpreter {
                 // Handle .new() constructor on class type
                 if name == "new" {
                     let base = self.eval_expr(target)?;
-                    if let Value::Package(class_name) = &base {
-                        if class_name == "Hash" {
-                            // Hash.new("a", 1, "b", 2) or Hash.new(:42a, :666b)
-                            let mut flat_values = Vec::new();
-                            for arg in args {
-                                let val = self.eval_expr(arg)?;
-                                flat_values.extend(Self::value_to_list(&val));
-                            }
-                            let mut map = HashMap::new();
-                            let mut iter = flat_values.into_iter();
-                            while let Some(item) = iter.next() {
-                                match item {
-                                    Value::Pair(key, boxed_val) => {
-                                        map.insert(key, *boxed_val);
-                                    }
-                                    other => {
-                                        let key = other.to_string_value();
-                                        let value = iter.next().unwrap_or(Value::Nil);
-                                        map.insert(key, value);
-                                    }
-                                }
-                            }
-                            return Ok(Value::Hash(map));
-                        }
-                        if class_name == "Version" {
-                            let arg = args
-                                .first()
-                                .map(|a| self.eval_expr(a))
-                                .transpose()?
-                                .unwrap_or(Value::Nil);
-                            return Ok(Self::version_from_value(arg));
-                        }
-                        if class_name == "Promise" {
-                            return Ok(self.make_promise_instance("Planned", Value::Nil));
-                        }
-                        if class_name == "Channel" {
-                            let mut attrs = HashMap::new();
-                            attrs.insert("queue".to_string(), Value::Array(Vec::new()));
-                            attrs.insert("closed".to_string(), Value::Bool(false));
-                            return Ok(Value::make_instance(class_name.clone(), attrs));
-                        }
-                        if class_name == "Supply" {
-                            return Ok(self.make_supply_instance());
-                        }
-                        if class_name == "Proc::Async" {
-                            let mut cmd = Vec::new();
-                            for arg in args {
-                                let value = self.eval_expr(arg)?;
-                                cmd.push(value);
-                            }
-                            let mut attrs = HashMap::new();
-                            attrs.insert("cmd".to_string(), Value::Array(cmd));
-                            attrs.insert("started".to_string(), Value::Bool(false));
-                            attrs.insert("stdout".to_string(), self.make_supply_instance());
-                            attrs.insert("stderr".to_string(), self.make_supply_instance());
-                            return Ok(Value::make_instance(class_name.clone(), attrs));
-                        }
-                        if class_name == "IO::Path" {
-                            let path = args
-                                .first()
-                                .and_then(|a| self.eval_expr(a).ok())
-                                .map(|v| v.to_string_value())
-                                .unwrap_or_default();
-                            let mut attrs = HashMap::new();
-                            attrs.insert("path".to_string(), Value::Str(path));
-                            return Ok(Value::make_instance("IO::Path".to_string(), attrs));
-                        }
-                        if self.classes.contains_key(class_name) {
-                            let mut attrs = HashMap::new();
-                            // Set defaults
-                            for (attr_name, _is_public, default) in
-                                self.collect_class_attributes(class_name)
-                            {
-                                let val = if let Some(expr) = default {
-                                    self.eval_expr(&expr)?
-                                } else {
-                                    Value::Nil
-                                };
-                                attrs.insert(attr_name, val);
-                            }
-                            // Apply named arguments from constructor
-                            let mut eval_args = Vec::new();
-                            for arg in args {
-                                eval_args.push(self.eval_expr(arg)?);
-                            }
-                            for val in &eval_args {
-                                if let Value::Pair(k, v) = val {
-                                    attrs.insert(k.clone(), *v.clone());
-                                }
-                            }
-                            if self.class_has_method(class_name, "BUILD") {
-                                let (_v, updated) = self.run_instance_method(
-                                    class_name,
-                                    attrs,
-                                    "BUILD",
-                                    Vec::new(),
-                                )?;
-                                attrs = updated;
-                            }
-                            if self.class_has_method(class_name, "TWEAK") {
-                                let (_v, updated) = self.run_instance_method(
-                                    class_name,
-                                    attrs,
-                                    "TWEAK",
-                                    Vec::new(),
-                                )?;
-                                attrs = updated;
-                            }
-                            return Ok(Value::make_instance(class_name.clone(), attrs));
-                        }
+                    if let Value::Str(s) = &base
+                        && matches!(target.as_ref(), Expr::BareWord(_))
+                        && !self.classes.contains_key(s.as_str())
+                        && !matches!(
+                            s.as_str(),
+                            "Str"
+                                | "Int"
+                                | "Num"
+                                | "Bool"
+                                | "Array"
+                                | "Hash"
+                                | "Rat"
+                                | "FatRat"
+                                | "Complex"
+                                | "Set"
+                                | "Bag"
+                                | "Mix"
+                                | "Uni"
+                                | "Pair"
+                                | "Range"
+                                | "Map"
+                                | "Seq"
+                                | "Junction"
+                                | "Version"
+                                | "Exception"
+                                | "Failure"
+                                | "IO::Path"
+                                | "Regex"
+                                | "Code"
+                                | "Sub"
+                                | "Method"
+                                | "Block"
+                                | "Routine"
+                                | "CompUnit::DependencySpecification"
+                        )
+                    {
+                        return Err(RuntimeError::new(format!(
+                            "Undeclared name:\n    {} used",
+                            s
+                        )));
                     }
-                    // .new called on a non-Package value
-                    match &base {
-                        Value::Str(s) if matches!(target.as_ref(), Expr::BareWord(_)) => {
-                            // BareWord.new: the name was unknown to the parser.
-                            // If it's also not a known class/type, error.
-                            if !self.classes.contains_key(s.as_str())
-                                && !matches!(
-                                    s.as_str(),
-                                    "Str"
-                                        | "Int"
-                                        | "Num"
-                                        | "Bool"
-                                        | "Array"
-                                        | "Hash"
-                                        | "Rat"
-                                        | "FatRat"
-                                        | "Complex"
-                                        | "Set"
-                                        | "Bag"
-                                        | "Mix"
-                                        | "Uni"
-                                        | "Pair"
-                                        | "Range"
-                                        | "Map"
-                                        | "Seq"
-                                        | "Junction"
-                                        | "Version"
-                                        | "Exception"
-                                        | "Failure"
-                                        | "IO::Path"
-                                        | "Regex"
-                                        | "Code"
-                                        | "Sub"
-                                        | "Method"
-                                        | "Block"
-                                        | "Routine"
-                                        | "CompUnit::DependencySpecification"
-                                )
-                            {
-                                return Err(RuntimeError::new(format!(
-                                    "Undeclared name:\n    {} used",
-                                    s
-                                )));
-                            }
-                            // Known type as BareWord: fall through to class dispatch
-                        }
-                        Value::Str(_) => {
-                            // $x.new where $x is a Str: always creates a new Str
-                            return Ok(Value::Str(String::new()));
-                        }
+                    match base {
+                        Value::Str(_) => return Ok(Value::Str(String::new())),
                         Value::Int(_) => return Ok(Value::Int(0)),
                         Value::Num(_) => return Ok(Value::Num(0.0)),
                         Value::Bool(_) => return Ok(Value::Bool(false)),
-                        _ => {}
+                        target_val => {
+                            let mut arg_values = Vec::with_capacity(args.len());
+                            for arg in args {
+                                arg_values.push(self.eval_expr(arg)?);
+                            }
+                            let dispatch_result =
+                                if let Some(target_var) = Self::method_target_var_name(target) {
+                                    self.call_method_mut_with_values(
+                                        &target_var,
+                                        target_val,
+                                        name,
+                                        arg_values,
+                                    )
+                                } else {
+                                    self.call_method_with_values(target_val, name, arg_values)
+                                };
+                            return dispatch_result;
+                        }
                     }
                 }
                 // Method calls on instances are handled by value-dispatch now.
@@ -8712,6 +8611,33 @@ impl Interpreter {
                 }
                 _ => {}
             }
+            if self.classes.contains_key(class_name) {
+                let mut attrs = HashMap::new();
+                for (attr_name, _is_public, default) in self.collect_class_attributes(class_name) {
+                    let val = if let Some(expr) = default {
+                        self.eval_expr(&expr)?
+                    } else {
+                        Value::Nil
+                    };
+                    attrs.insert(attr_name, val);
+                }
+                for val in &args {
+                    if let Value::Pair(k, v) = val {
+                        attrs.insert(k.clone(), *v.clone());
+                    }
+                }
+                if self.class_has_method(class_name, "BUILD") {
+                    let (_v, updated) =
+                        self.run_instance_method(class_name, attrs, "BUILD", Vec::new())?;
+                    attrs = updated;
+                }
+                if self.class_has_method(class_name, "TWEAK") {
+                    let (_v, updated) =
+                        self.run_instance_method(class_name, attrs, "TWEAK", Vec::new())?;
+                    attrs = updated;
+                }
+                return Ok(Value::make_instance(class_name.clone(), attrs));
+            }
         }
         if method == "squish" {
             return match target {
@@ -9617,36 +9543,6 @@ impl Interpreter {
                     self.run_instance_method(class_name, attributes.clone(), method, args)?;
                 return Ok(result);
             }
-        }
-        if method == "new"
-            && let Value::Package(class_name) = &target
-            && self.classes.contains_key(class_name)
-        {
-            let mut attrs = HashMap::new();
-            for (attr_name, _is_public, default) in self.collect_class_attributes(class_name) {
-                let val = if let Some(expr) = default {
-                    self.eval_expr(&expr)?
-                } else {
-                    Value::Nil
-                };
-                attrs.insert(attr_name, val);
-            }
-            for val in &args {
-                if let Value::Pair(k, v) = val {
-                    attrs.insert(k.clone(), *v.clone());
-                }
-            }
-            if self.class_has_method(class_name, "BUILD") {
-                let (_v, updated) =
-                    self.run_instance_method(class_name, attrs, "BUILD", Vec::new())?;
-                attrs = updated;
-            }
-            if self.class_has_method(class_name, "TWEAK") {
-                let (_v, updated) =
-                    self.run_instance_method(class_name, attrs, "TWEAK", Vec::new())?;
-                attrs = updated;
-            }
-            return Ok(Value::make_instance(class_name.clone(), attrs));
         }
         if method == "gist" && args.is_empty() {
             return match target {
