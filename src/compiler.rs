@@ -668,11 +668,6 @@ impl Compiler {
                     self.compile_expr(left);
                     self.compile_expr(right);
                     self.code.emit(opcode);
-                } else if let TokenKind::Ident(name) = op {
-                    self.compile_expr(left);
-                    self.compile_expr(right);
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                    self.code.emit(OpCode::RunBinaryIdent(name_idx));
                 } else {
                     self.compile_expr(left);
                     self.compile_expr(right);
