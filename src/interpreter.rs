@@ -4277,20 +4277,6 @@ impl Interpreter {
         Value::make_instance("Supply".to_string(), attrs)
     }
 
-    /// Peek at the target expression and return the package name if it's a known type.
-    fn peek_target_package(&self, target: &Expr) -> Option<String> {
-        match target {
-            Expr::Var(name) | Expr::BareWord(name) => {
-                if self.env.contains_key(name) {
-                    None
-                } else {
-                    Some(name.clone())
-                }
-            }
-            _ => None,
-        }
-    }
-
     fn method_target_var_name(target: &Expr) -> Option<String> {
         match target {
             Expr::Var(n) => Some(n.clone()),
@@ -5511,22 +5497,6 @@ impl Interpreter {
                         Err(e) => return Err(e),
                     }
                 }
-                if name == "say" && args.is_empty() {
-                    let value = self.eval_expr(target)?;
-                    self.output.push_str(&value.to_string_value());
-                    self.output.push('\n');
-                    return Ok(Value::Nil);
-                }
-                // Handle Promise class methods: Promise.in, Promise.anyof, Promise.allof
-                if (name == "in" || name == "anyof" || name == "allof")
-                    && matches!(self.peek_target_package(target), Some(ref p) if p == "Promise")
-                {
-                    // Evaluate args (but ignore them for our synchronous stub)
-                    for arg in args {
-                        let _ = self.eval_expr(arg);
-                    }
-                    return Ok(self.make_promise_instance("Kept", Value::Nil));
-                }
                 // Handle .new() constructor on class type
                 if name == "new" {
                     let base = self.eval_expr(target)?;
@@ -5617,28 +5587,6 @@ impl Interpreter {
                             Err(e) => return Err(e),
                         }
                     }
-                }
-                if let Expr::ArrayVar(var_name) = target.as_ref()
-                    && matches!(
-                        name.as_str(),
-                        "push"
-                            | "append"
-                            | "pop"
-                            | "shift"
-                            | "unshift"
-                            | "prepend"
-                            | "splice"
-                            | "join"
-                            | "squish"
-                    )
-                {
-                    let key = format!("@{}", var_name);
-                    let target_val = self.eval_expr(target)?;
-                    let mut arg_values = Vec::with_capacity(args.len());
-                    for arg in args {
-                        arg_values.push(self.eval_expr(arg)?);
-                    }
-                    return self.call_method_mut_with_values(&key, target_val, name, arg_values);
                 }
                 let target_val = self.eval_expr(target)?;
                 let mut arg_values = Vec::with_capacity(args.len());
@@ -8231,6 +8179,11 @@ impl Interpreter {
             self.output.push_str(&target.to_string_value());
             self.output.push('\n');
             return Ok(Value::Nil);
+        }
+        if (method == "in" || method == "anyof" || method == "allof")
+            && matches!(&target, Value::Package(name) if name == "Promise")
+        {
+            return Ok(self.make_promise_instance("Kept", Value::Nil));
         }
         if method == "WHAT" && args.is_empty() {
             let type_name = match &target {
