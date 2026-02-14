@@ -297,6 +297,18 @@ impl Compiler {
                 }
                 self.code.patch_body_end(default_idx);
             }
+            Stmt::Given { .. } => {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::RunGivenStmt(idx));
+            }
+            Stmt::When { .. } => {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::RunWhenStmt(idx));
+            }
+            Stmt::Default(_) => {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::RunDefaultStmt(idx));
+            }
             // Repeat loop (repeat while / repeat until)
             Stmt::Loop {
                 init,
@@ -474,12 +486,7 @@ impl Compiler {
                 self.code.emit(OpCode::RunCallStmt(idx));
             }
             // Variants currently delegated to interpreter execution.
-            Stmt::While { .. }
-            | Stmt::For { .. }
-            | Stmt::Loop { .. }
-            | Stmt::Given { .. }
-            | Stmt::When { .. }
-            | Stmt::Default(_) => {
+            Stmt::While { .. } | Stmt::For { .. } | Stmt::Loop { .. } => {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RunStmtFallback(idx));
             }

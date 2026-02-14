@@ -933,6 +933,101 @@ impl Interpreter {
         self.run_block(body)
     }
 
+    pub(crate) fn run_given_stmt(
+        &mut self,
+        topic: &Expr,
+        body: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        let topic_val = self.eval_expr(topic)?;
+        let saved_topic = self.env.get("_").cloned();
+        self.env.insert("_".to_string(), topic_val);
+        let saved_when = self.when_matched;
+        self.when_matched = false;
+        for stmt in body {
+            match self.exec_stmt(stmt) {
+                Ok(()) => {}
+                Err(e) if e.is_succeed => {
+                    self.when_matched = true;
+                    break;
+                }
+                Err(e) => return Err(e),
+            }
+            if self.when_matched || self.halted {
+                break;
+            }
+        }
+        self.when_matched = saved_when;
+        if let Some(v) = saved_topic {
+            self.env.insert("_".to_string(), v);
+        } else {
+            self.env.remove("_");
+        }
+        Ok(())
+    }
+
+    pub(crate) fn run_when_stmt(&mut self, cond: &Expr, body: &[Stmt]) -> Result<(), RuntimeError> {
+        let topic = self.env.get("_").cloned().unwrap_or(Value::Nil);
+        let cond_val = self.eval_expr(cond)?;
+        if self.smart_match(&topic, &cond_val) {
+            let mut did_proceed = false;
+            let mut last_val = Value::Nil;
+            for stmt in body {
+                match stmt {
+                    Stmt::Expr(expr) => match self.eval_expr(expr) {
+                        Ok(v) => last_val = v,
+                        Err(e) if e.is_proceed => {
+                            did_proceed = true;
+                            break;
+                        }
+                        Err(e) if e.is_succeed => {
+                            if let Some(v) = e.return_value {
+                                last_val = v;
+                            }
+                            break;
+                        }
+                        Err(e) => return Err(e),
+                    },
+                    _ => match self.exec_stmt(stmt) {
+                        Err(e) if e.is_proceed => {
+                            did_proceed = true;
+                            break;
+                        }
+                        Err(e) if e.is_succeed => {
+                            if let Some(v) = e.return_value {
+                                last_val = v;
+                            }
+                            break;
+                        }
+                        other => {
+                            other?;
+                        }
+                    },
+                }
+                if self.halted {
+                    break;
+                }
+            }
+            if !did_proceed {
+                self.when_matched = true;
+                let mut sig = RuntimeError::succeed_signal();
+                sig.return_value = Some(last_val);
+                return Err(sig);
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn run_default_stmt(&mut self, body: &[Stmt]) -> Result<(), RuntimeError> {
+        for stmt in body {
+            self.exec_stmt(stmt)?;
+            if self.halted {
+                break;
+            }
+        }
+        self.when_matched = true;
+        Ok(())
+    }
+
     pub(crate) fn call_function(
         &mut self,
         name: &str,
@@ -2482,90 +2577,13 @@ impl Interpreter {
                 return Err(RuntimeError::succeed_signal());
             }
             Stmt::Given { topic, body } => {
-                let topic_val = self.eval_expr(topic)?;
-                let saved_topic = self.env.get("_").cloned();
-                self.env.insert("_".to_string(), topic_val);
-                let saved_when = self.when_matched;
-                self.when_matched = false;
-                for stmt in body {
-                    match self.exec_stmt(stmt) {
-                        Ok(()) => {}
-                        Err(e) if e.is_succeed => {
-                            self.when_matched = true;
-                            break;
-                        }
-                        Err(e) => return Err(e),
-                    }
-                    if self.when_matched || self.halted {
-                        break;
-                    }
-                }
-                self.when_matched = saved_when;
-                if let Some(v) = saved_topic {
-                    self.env.insert("_".to_string(), v);
-                } else {
-                    self.env.remove("_");
-                }
+                self.run_given_stmt(topic, body)?;
             }
             Stmt::When { cond, body } => {
-                let topic = self.env.get("_").cloned().unwrap_or(Value::Nil);
-                let cond_val = self.eval_expr(cond)?;
-                if self.smart_match(&topic, &cond_val) {
-                    let mut did_proceed = false;
-                    let mut last_val = Value::Nil;
-                    for stmt in body {
-                        match stmt {
-                            Stmt::Expr(expr) => match self.eval_expr(expr) {
-                                Ok(v) => last_val = v,
-                                Err(e) if e.is_proceed => {
-                                    did_proceed = true;
-                                    break;
-                                }
-                                Err(e) if e.is_succeed => {
-                                    if let Some(v) = e.return_value {
-                                        last_val = v;
-                                    }
-                                    break;
-                                }
-                                Err(e) => return Err(e),
-                            },
-                            _ => match self.exec_stmt(stmt) {
-                                Err(e) if e.is_proceed => {
-                                    did_proceed = true;
-                                    break;
-                                }
-                                Err(e) if e.is_succeed => {
-                                    if let Some(v) = e.return_value {
-                                        last_val = v;
-                                    }
-                                    break;
-                                }
-                                other => {
-                                    other?;
-                                }
-                            },
-                        }
-                        if self.halted {
-                            break;
-                        }
-                    }
-                    if !did_proceed {
-                        self.when_matched = true;
-                        // Emit succeed signal with the block's return value
-                        let mut sig = RuntimeError::succeed_signal();
-                        sig.return_value = Some(last_val);
-                        return Err(sig);
-                    }
-                }
+                self.run_when_stmt(cond, body)?;
             }
             Stmt::Default(body) => {
-                for stmt in body {
-                    self.exec_stmt(stmt)?;
-                    if self.halted {
-                        break;
-                    }
-                }
-                self.when_matched = true;
+                self.run_default_stmt(body)?;
             }
             Stmt::For {
                 iterable,

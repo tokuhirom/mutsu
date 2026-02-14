@@ -163,6 +163,9 @@ pub(crate) enum OpCode {
     RunExprFallback(u32),
     RunReactStmt(u32),
     RunPackageStmt(u32),
+    RunGivenStmt(u32),
+    RunWhenStmt(u32),
+    RunDefaultStmt(u32),
 
     // -- Indexing --
     Index,
