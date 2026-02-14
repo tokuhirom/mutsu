@@ -5600,17 +5600,19 @@ impl Interpreter {
 
         if name == "undefine" {
             if let Some(arg) = args.first() {
-                match arg {
-                    Expr::Var(n) => {
-                        self.env.insert(n.clone(), Value::Nil);
-                    }
-                    Expr::ArrayVar(n) => {
-                        self.env.insert(n.clone(), Value::Array(vec![]));
-                    }
-                    Expr::HashVar(n) => {
-                        self.env.insert(n.clone(), Value::Hash(HashMap::new()));
-                    }
-                    _ => {}
+                let key = match arg {
+                    Expr::Var(n) => Some(n.clone()),
+                    Expr::ArrayVar(n) => Some(format!("@{}", n)),
+                    Expr::HashVar(n) => Some(format!("%{}", n)),
+                    Expr::CodeVar(n) => Some(format!("&{}", n)),
+                    _ => None,
+                };
+                if let Some(name) = key {
+                    let assign_expr = Expr::AssignExpr {
+                        name,
+                        expr: Box::new(Expr::Literal(Value::Nil)),
+                    };
+                    return Some(self.eval_expr(&assign_expr));
                 }
             }
             return Some(Ok(Value::Nil));
@@ -5618,16 +5620,19 @@ impl Interpreter {
 
         if name == "VAR" {
             if let Some(arg) = args.first() {
-                let (var_name, class_name) = match arg {
-                    Expr::Var(n) => (format!("${}", n), "Scalar"),
-                    Expr::ArrayVar(n) => (format!("@{}", n), "Array"),
-                    Expr::HashVar(n) => (format!("%{}", n), "Hash"),
-                    Expr::CodeVar(n) => (format!("&{}", n), "Scalar"),
-                    _ => return Some(self.eval_expr(arg)),
-                };
-                let mut attributes = HashMap::new();
-                attributes.insert("name".to_string(), Value::Str(var_name));
-                return Some(Ok(Value::make_instance(class_name.to_string(), attributes)));
+                if matches!(
+                    arg,
+                    Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::CodeVar(_)
+                ) {
+                    let method_expr = Expr::MethodCall {
+                        target: Box::new(arg.clone()),
+                        name: "VAR".to_string(),
+                        args: Vec::new(),
+                        modifier: None,
+                    };
+                    return Some(self.eval_expr(&method_expr));
+                }
+                return Some(self.eval_expr(arg));
             }
             return Some(Ok(Value::Nil));
         }

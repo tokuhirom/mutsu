@@ -802,6 +802,23 @@ impl Compiler {
                     };
                     self.compile_expr(&method_call);
                 } else {
+                    // Rewrite VAR($var)/VAR(@var)/VAR(%var)/VAR(&var) → $var.VAR, etc.
+                    if name == "VAR"
+                        && args.len() == 1
+                        && matches!(
+                            args[0],
+                            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::CodeVar(_)
+                        )
+                    {
+                        let method_call = Expr::MethodCall {
+                            target: Box::new(args[0].clone()),
+                            name: "VAR".to_string(),
+                            args: Vec::new(),
+                            modifier: None,
+                        };
+                        self.compile_expr(&method_call);
+                        return;
+                    }
                     let arity = args.len() as u32;
                     for arg in args {
                         self.compile_expr(arg);
