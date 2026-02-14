@@ -576,10 +576,11 @@ impl Compiler {
                         let name_idx = self.code.add_constant(Value::Str(name.clone()));
                         self.code.emit(OpCode::PreIncrement(name_idx));
                     } else {
-                        self.fallback_expr(&Expr::Unary {
+                        let idx = self.code.add_expr(Expr::Unary {
                             op: op.clone(),
                             expr: expr.clone(),
                         });
+                        self.code.emit(OpCode::RunUnaryExpr(idx));
                     }
                 }
                 TokenKind::MinusMinus => {
@@ -587,17 +588,19 @@ impl Compiler {
                         let name_idx = self.code.add_constant(Value::Str(name.clone()));
                         self.code.emit(OpCode::PreDecrement(name_idx));
                     } else {
-                        self.fallback_expr(&Expr::Unary {
+                        let idx = self.code.add_expr(Expr::Unary {
                             op: op.clone(),
                             expr: expr.clone(),
                         });
+                        self.code.emit(OpCode::RunUnaryExpr(idx));
                     }
                 }
                 _ => {
-                    self.fallback_expr(&Expr::Unary {
+                    let idx = self.code.add_expr(Expr::Unary {
                         op: op.clone(),
                         expr: expr.clone(),
                     });
+                    self.code.emit(OpCode::RunUnaryExpr(idx));
                 }
             },
             Expr::Binary { left, op, right } => {
@@ -647,11 +650,12 @@ impl Compiler {
                     self.compile_expr(right);
                     self.code.emit(opcode);
                 } else {
-                    self.fallback_expr(&Expr::Binary {
+                    let idx = self.code.add_expr(Expr::Binary {
                         left: left.clone(),
                         op: op.clone(),
                         right: right.clone(),
                     });
+                    self.code.emit(OpCode::RunBinaryExpr(idx));
                 }
             }
             Expr::Ternary {
@@ -989,7 +993,8 @@ impl Compiler {
             // Block inlining: compile inline if no placeholders
             Expr::Block(stmts) => {
                 if Self::has_block_placeholders(stmts) {
-                    self.fallback_expr(expr);
+                    let idx = self.code.add_expr(expr.clone());
+                    self.code.emit(OpCode::RunBlockExpr(idx));
                 } else {
                     self.compile_block_inline(stmts);
                 }
@@ -1000,11 +1005,6 @@ impl Compiler {
                 self.code.emit(OpCode::RunPostfixExpr(idx));
             }
         }
-    }
-
-    fn fallback_expr(&mut self, expr: &Expr) {
-        let idx = self.code.add_expr(expr.clone());
-        self.code.emit(OpCode::RunExprFallback(idx));
     }
 
     fn can_compile_stmt_call(args: &[CallArg]) -> bool {

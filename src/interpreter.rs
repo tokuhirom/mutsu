@@ -1361,6 +1361,22 @@ impl Interpreter {
         }
     }
 
+    pub(crate) fn eval_block_expr(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
+        let placeholders = collect_placeholders(body);
+        if !placeholders.is_empty() {
+            Ok(Value::Sub {
+                package: self.current_package.clone(),
+                name: String::new(),
+                params: vec![],
+                body: body.to_vec(),
+                env: self.env.clone(),
+                id: next_instance_id(),
+            })
+        } else {
+            self.eval_block_value(body)
+        }
+    }
+
     pub(crate) fn run_given_stmt(
         &mut self,
         topic: &Expr,
@@ -5060,21 +5076,7 @@ impl Interpreter {
                     Err(RuntimeError::new("X::Undeclared::Symbols"))
                 }
             }
-            Expr::Block(body) => {
-                let placeholders = collect_placeholders(body);
-                if !placeholders.is_empty() {
-                    Ok(Value::Sub {
-                        package: self.current_package.clone(),
-                        name: String::new(),
-                        params: vec![],
-                        body: body.clone(),
-                        env: self.env.clone(),
-                        id: next_instance_id(),
-                    })
-                } else {
-                    self.eval_block_value(body)
-                }
-            }
+            Expr::Block(body) => self.eval_block_expr(body),
             Expr::DoBlock { body, label } => self.eval_do_block_expr(body, label),
             Expr::DoStmt(stmt) => self.eval_do_stmt_expr(stmt),
             Expr::ControlFlow { kind, label } => {

@@ -2380,12 +2380,38 @@ impl VM {
                     return Err(RuntimeError::new("RunTryExpr expects Try"));
                 }
             }
-            OpCode::RunExprFallback(idx) => {
+            OpCode::RunBlockExpr(idx) => {
                 let expr = &code.expr_pool[*idx as usize];
-                let val = self.interpreter.eval_expr(expr)?;
-                self.stack.push(val);
-                self.sync_locals_from_env(code);
-                *ip += 1;
+                if let Expr::Block(body) = expr {
+                    let val = self.interpreter.eval_block_expr(body)?;
+                    self.stack.push(val);
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RunBlockExpr expects Block"));
+                }
+            }
+            OpCode::RunUnaryExpr(idx) => {
+                let expr = &code.expr_pool[*idx as usize];
+                if let Expr::Unary { .. } = expr {
+                    let val = self.interpreter.eval_expr(expr)?;
+                    self.stack.push(val);
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RunUnaryExpr expects Unary"));
+                }
+            }
+            OpCode::RunBinaryExpr(idx) => {
+                let expr = &code.expr_pool[*idx as usize];
+                if let Expr::Binary { .. } = expr {
+                    let val = self.interpreter.eval_expr(expr)?;
+                    self.stack.push(val);
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RunBinaryExpr expects Binary"));
+                }
             }
             OpCode::RegisterSub(idx) => {
                 let stmt = &code.stmt_pool[*idx as usize];
