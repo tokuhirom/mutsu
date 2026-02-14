@@ -1088,8 +1088,8 @@ impl Compiler {
             TokenKind::SetSuperset => Some(OpCode::SetSuperset),
             TokenKind::SetStrictSubset => Some(OpCode::SetStrictSubset),
             TokenKind::SetStrictSuperset => Some(OpCode::SetStrictSuperset),
-            // Sequence: handled by interpreter eval_binary (needs closure support)
-            // TokenKind::DotDotDot => Some(OpCode::Sequence),
+            TokenKind::DotDotDot => Some(OpCode::Sequence { exclude_end: false }),
+            TokenKind::DotDotDotCaret => Some(OpCode::Sequence { exclude_end: true }),
             _ => None,
         }
     }

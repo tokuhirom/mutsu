@@ -933,55 +933,18 @@ impl VM {
                 *ip += 1;
             }
 
-            // -- Sequence (...) --
-            OpCode::Sequence => {
+            // -- Sequence (...) / (...^) --
+            OpCode::Sequence { exclude_end } => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let seeds = Interpreter::value_to_list(&left);
-                if seeds.is_empty() {
-                    self.stack.push(Value::Array(vec![]));
+                let op = if *exclude_end {
+                    crate::lexer::TokenKind::DotDotDotCaret
                 } else {
-                    let endpoint = match &right {
-                        Value::Num(f) if f.is_infinite() => None,
-                        Value::Int(n) => Some(*n),
-                        _ => {
-                            self.stack.push(Value::Array(seeds));
-                            *ip += 1;
-                            return Ok(());
-                        }
-                    };
-                    let mut result: Vec<Value> = seeds.clone();
-                    let step = if seeds.len() >= 2 {
-                        match (&seeds[seeds.len() - 1], &seeds[seeds.len() - 2]) {
-                            (Value::Int(b), Value::Int(a)) => b - a,
-                            _ => 1,
-                        }
-                    } else {
-                        1
-                    };
-                    let last = match seeds.last() {
-                        Some(Value::Int(n)) => *n,
-                        _ => {
-                            self.stack.push(Value::Array(result));
-                            *ip += 1;
-                            return Ok(());
-                        }
-                    };
-                    let mut cur = last + step;
-                    let limit = endpoint.unwrap_or(last + 1000);
-                    if step > 0 {
-                        while cur <= limit {
-                            result.push(Value::Int(cur));
-                            cur += step;
-                        }
-                    } else if step < 0 {
-                        while cur >= limit {
-                            result.push(Value::Int(cur));
-                            cur += step;
-                        }
-                    }
-                    self.stack.push(Value::Array(result));
-                }
+                    crate::lexer::TokenKind::DotDotDot
+                };
+                let out = self.interpreter.eval_binary(left, &op, right)?;
+                self.stack.push(out);
+                self.sync_locals_from_env(code);
                 *ip += 1;
             }
 
