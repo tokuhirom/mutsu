@@ -1619,6 +1619,76 @@ impl Interpreter {
             self.test_ok(ok, &desc, false)?;
             return Ok(Value::Bool(ok));
         }
+        if name == "isa-ok" {
+            let value = args.first().cloned().unwrap_or(Value::Nil);
+            let type_name = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
+            let desc = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
+            let ok = match type_name.as_str() {
+                "Array" => matches!(value, Value::Array(_)),
+                "Rat" => matches!(value, Value::Rat(_, _)),
+                "FatRat" => matches!(value, Value::FatRat(_, _)),
+                "Complex" => matches!(value, Value::Complex(_, _)),
+                "Set" => matches!(value, Value::Set(_)),
+                "Bag" => matches!(value, Value::Bag(_)),
+                "Mix" => matches!(value, Value::Mix(_)),
+                _ => {
+                    if let Value::Instance { class_name, .. } = &value {
+                        class_name == type_name.as_str()
+                    } else {
+                        true
+                    }
+                }
+            };
+            self.test_ok(ok, &desc, false)?;
+            return Ok(Value::Bool(ok));
+        }
+        if name == "callframe" || name == "caller" {
+            let default_depth = if name == "caller" { 1 } else { 0 };
+            let depth = args
+                .first()
+                .and_then(|v| match v {
+                    Value::Int(i) if *i >= 0 => Some(*i as usize),
+                    Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+                    _ => None,
+                })
+                .unwrap_or(default_depth);
+            if let Some(frame) = self.callframe_value(depth) {
+                return Ok(frame);
+            }
+            return Ok(Value::Nil);
+        }
+        if name == "EVALFILE" {
+            let path = args
+                .first()
+                .map(|v| v.to_string_value())
+                .ok_or_else(|| RuntimeError::new("EVALFILE requires a filename"))?;
+            let code = fs::read_to_string(&path)
+                .map_err(|err| RuntimeError::new(format!("Failed to read {}: {}", path, err)))?;
+            return self.eval_eval_string(&code);
+        }
+        if name == "EVAL" {
+            let code = args
+                .first()
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            if code.contains("&?ROUTINE") && self.routine_stack.is_empty() {
+                return Err(RuntimeError::new("X::Undeclared::Symbols"));
+            }
+            return self.eval_eval_string(&code);
+        }
+        if name == "exit" {
+            let _code = match args.first() {
+                Some(Value::Int(i)) => *i,
+                _ => 0,
+            };
+            self.halted = true;
+            return Ok(Value::Nil);
+        }
+        if name == "dd" {
+            let val = args.first().cloned().unwrap_or(Value::Nil);
+            self.output.push_str(&format!("{:?}\n", val));
+            return Ok(val);
+        }
         if name == "elems" {
             let val = args.first().cloned();
             return Ok(match val {
@@ -5875,95 +5945,6 @@ impl Interpreter {
                     };
                     return Err(RuntimeError::new(&msg));
                 }
-                if name == "isa-ok" {
-                    let value = args
-                        .first()
-                        .map(|e| self.eval_expr(e))
-                        .transpose()?
-                        .unwrap_or(Value::Nil);
-                    let type_name = args
-                        .get(1)
-                        .map(|e| self.eval_expr(e))
-                        .transpose()?
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default();
-                    let desc = args
-                        .get(2)
-                        .map(|e| self.eval_expr(e))
-                        .transpose()?
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default();
-                    let ok = match type_name.as_str() {
-                        "Array" => matches!(value, Value::Array(_)),
-                        "Rat" => matches!(value, Value::Rat(_, _)),
-                        "FatRat" => matches!(value, Value::FatRat(_, _)),
-                        "Complex" => matches!(value, Value::Complex(_, _)),
-                        "Set" => matches!(value, Value::Set(_)),
-                        "Bag" => matches!(value, Value::Bag(_)),
-                        "Mix" => matches!(value, Value::Mix(_)),
-                        _ => {
-                            if let Value::Instance { class_name, .. } = &value {
-                                class_name == type_name.as_str()
-                            } else {
-                                true
-                            }
-                        }
-                    };
-                    self.test_ok(ok, &desc, false)?;
-                    return Ok(Value::Bool(ok));
-                }
-                if name == "callframe" {
-                    let depth = args
-                        .first()
-                        .and_then(|e| self.eval_expr(e).ok())
-                        .and_then(|v| match v {
-                            Value::Int(i) if i >= 0 => Some(i as usize),
-                            Value::Num(f) if f >= 0.0 => Some(f as usize),
-                            _ => None,
-                        })
-                        .unwrap_or(0);
-                    if let Some(frame) = self.callframe_value(depth) {
-                        return Ok(frame);
-                    }
-                    return Ok(Value::Nil);
-                }
-                if name == "caller" {
-                    let depth = args
-                        .first()
-                        .and_then(|e| self.eval_expr(e).ok())
-                        .and_then(|v| match v {
-                            Value::Int(i) if i >= 0 => Some(i as usize),
-                            Value::Num(f) if f >= 0.0 => Some(f as usize),
-                            _ => None,
-                        })
-                        .unwrap_or(1);
-                    if let Some(frame) = self.callframe_value(depth) {
-                        return Ok(frame);
-                    }
-                    return Ok(Value::Nil);
-                }
-                if name == "EVALFILE" {
-                    let path = args
-                        .first()
-                        .and_then(|e| self.eval_expr(e).ok())
-                        .map(|v| v.to_string_value())
-                        .ok_or_else(|| RuntimeError::new("EVALFILE requires a filename"))?;
-                    let code = fs::read_to_string(&path).map_err(|err| {
-                        RuntimeError::new(format!("Failed to read {}: {}", path, err))
-                    })?;
-                    return self.eval_eval_string(&code);
-                }
-                if name == "EVAL" {
-                    let code = if let Some(arg) = args.first() {
-                        self.eval_expr(arg)?.to_string_value()
-                    } else {
-                        String::new()
-                    };
-                    if code.contains("&?ROUTINE") && self.routine_stack.is_empty() {
-                        return Err(RuntimeError::new("X::Undeclared::Symbols"));
-                    }
-                    return self.eval_eval_string(&code);
-                }
                 if name == "shift" || name == "pop" {
                     if let Some(arg) = args.first() {
                         // Get the variable name to mutate in-place
@@ -6063,24 +6044,6 @@ impl Interpreter {
                         return Ok(Value::make_instance(class_name.to_string(), attributes));
                     }
                     return Ok(Value::Nil);
-                }
-                if name == "exit" {
-                    let code = args.first().and_then(|e| self.eval_expr(e).ok());
-                    let _code = match code {
-                        Some(Value::Int(i)) => i,
-                        _ => 0,
-                    };
-                    self.halted = true;
-                    return Ok(Value::Nil);
-                }
-                if name == "dd" {
-                    // Debug dump
-                    let val = args
-                        .first()
-                        .and_then(|e| self.eval_expr(e).ok())
-                        .unwrap_or(Value::Nil);
-                    self.output.push_str(&format!("{:?}\n", val));
-                    return Ok(val);
                 }
                 if name == "indir" {
                     let path = args
