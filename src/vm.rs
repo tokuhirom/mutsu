@@ -1165,20 +1165,32 @@ impl VM {
                 }
                 *ip += 1;
             }
-            OpCode::CallMethod { name_idx, arity } => {
+            OpCode::CallMethod {
+                name_idx,
+                arity,
+                modifier_idx,
+            } => {
                 let method = Self::const_str(code, *name_idx).to_string();
+                let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
                 let arity = *arity as usize;
                 let start = self.stack.len() - arity;
                 let args: Vec<Value> = self.stack.drain(start..).collect();
                 let target = self.stack.pop().unwrap();
-                if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
-                    self.stack.push(native_result?);
-                } else {
-                    let result = self
-                        .interpreter
-                        .call_method_with_values(target, &method, args)?;
-                    self.stack.push(result);
-                    self.sync_locals_from_env(code);
+                let call_result =
+                    if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
+                        native_result
+                    } else {
+                        self.interpreter
+                            .call_method_with_values(target, &method, args)
+                    };
+                match modifier.as_deref() {
+                    Some("?") => {
+                        self.stack.push(call_result.unwrap_or(Value::Nil));
+                    }
+                    _ => {
+                        self.stack.push(call_result?);
+                        self.sync_locals_from_env(code);
+                    }
                 }
                 *ip += 1;
             }
@@ -1186,26 +1198,34 @@ impl VM {
                 name_idx,
                 arity,
                 target_name_idx,
+                modifier_idx,
             } => {
                 let method = Self::const_str(code, *name_idx).to_string();
                 let target_name = Self::const_str(code, *target_name_idx).to_string();
+                let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
                 let arity = *arity as usize;
                 let start = self.stack.len() - arity;
                 let args: Vec<Value> = self.stack.drain(start..).collect();
                 let target = self.stack.pop().unwrap();
-                // Try native dispatch first (non-mutating methods only)
-                if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
-                    self.stack.push(native_result?);
-                } else {
-                    // Fall back to interpreter bridge (may mutate target)
-                    let result = self.interpreter.call_method_mut_with_values(
-                        &target_name,
-                        target,
-                        &method,
-                        args,
-                    )?;
-                    self.stack.push(result);
-                    self.sync_locals_from_env(code);
+                let call_result =
+                    if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
+                        native_result
+                    } else {
+                        self.interpreter.call_method_mut_with_values(
+                            &target_name,
+                            target,
+                            &method,
+                            args,
+                        )
+                    };
+                match modifier.as_deref() {
+                    Some("?") => {
+                        self.stack.push(call_result.unwrap_or(Value::Nil));
+                    }
+                    _ => {
+                        self.stack.push(call_result?);
+                        self.sync_locals_from_env(code);
+                    }
                 }
                 *ip += 1;
             }

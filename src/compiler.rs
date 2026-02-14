@@ -812,7 +812,10 @@ impl Compiler {
             }
             // Method call on mutable variable target (needs writeback)
             Expr::MethodCall {
-                target, name, args, ..
+                target,
+                name,
+                args,
+                modifier,
             } if matches!(
                 target.as_ref(),
                 Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::CodeVar(_)
@@ -832,15 +835,21 @@ impl Compiler {
                 }
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
                 let target_name_idx = self.code.add_constant(Value::Str(target_name));
+                let modifier_idx =
+                    modifier.map(|m| self.code.add_constant(Value::Str(m.to_string())));
                 self.code.emit(OpCode::CallMethodMut {
                     name_idx,
                     arity,
                     target_name_idx,
+                    modifier_idx,
                 });
             }
             // Method call on non-variable target (no writeback needed)
             Expr::MethodCall {
-                target, name, args, ..
+                target,
+                name,
+                args,
+                modifier,
             } => {
                 self.compile_expr(target);
                 let arity = args.len() as u32;
@@ -848,7 +857,13 @@ impl Compiler {
                     self.compile_method_arg(arg);
                 }
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                self.code.emit(OpCode::CallMethod { name_idx, arity });
+                let modifier_idx =
+                    modifier.map(|m| self.code.add_constant(Value::Str(m.to_string())));
+                self.code.emit(OpCode::CallMethod {
+                    name_idx,
+                    arity,
+                    modifier_idx,
+                });
             }
             // Indexing
             Expr::Index { target, index } => {

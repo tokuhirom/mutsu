@@ -10977,32 +10977,793 @@ impl Interpreter {
             self.output.push('\n');
             return Ok(Value::Nil);
         }
+        if method == "WHAT" && args.is_empty() {
+            let type_name = match &target {
+                Value::Int(_) => "Int",
+                Value::BigInt(_) => "Int",
+                Value::Num(_) => "Num",
+                Value::Str(_) => "Str",
+                Value::Bool(_) => "Bool",
+                Value::Range(_, _) => "Range",
+                Value::RangeExcl(_, _)
+                | Value::RangeExclStart(_, _)
+                | Value::RangeExclBoth(_, _) => "Range",
+                Value::Array(_) => "Array",
+                Value::LazyList(_) => "Array",
+                Value::Hash(_) => "Hash",
+                Value::Rat(_, _) => "Rat",
+                Value::FatRat(_, _) => "FatRat",
+                Value::Complex(_, _) => "Complex",
+                Value::Set(_) => "Set",
+                Value::Bag(_) => "Bag",
+                Value::Mix(_) => "Mix",
+                Value::Pair(_, _) => "Pair",
+                Value::Enum { enum_type, .. } => enum_type.as_str(),
+                Value::Nil => "Any",
+                Value::Package(name) => name.as_str(),
+                Value::Routine { .. } => "Routine",
+                Value::Sub { .. } => "Sub",
+                Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
+                Value::Instance { class_name, .. } => class_name.as_str(),
+                Value::Junction { .. } => "Junction",
+                Value::Regex(_) => "Regex",
+                Value::Version { .. } => "Version",
+                Value::Slip(_) => "Slip",
+            };
+            return Ok(Value::Package(type_name.to_string()));
+        }
+        if method == "enums"
+            && let Value::Str(type_name) = &target
+            && let Some(variants) = self.enum_types.get(type_name)
+        {
+            let mut map = HashMap::new();
+            for (k, v) in variants {
+                map.insert(k.clone(), Value::Int(*v));
+            }
+            return Ok(Value::Hash(map));
+        }
+        if method == "key"
+            && args.is_empty()
+            && let Value::Pair(k, _) = &target
+        {
+            return Ok(Value::Str(k.clone()));
+        }
+        if (method == "list" || method == "Array") && args.is_empty() {
+            return match target {
+                Value::Range(a, b) => Ok(Value::Array((a..=b).map(Value::Int).collect())),
+                Value::RangeExcl(a, b) => Ok(Value::Array((a..b).map(Value::Int).collect())),
+                Value::RangeExclStart(a, b) => {
+                    Ok(Value::Array((a + 1..=b).map(Value::Int).collect()))
+                }
+                Value::RangeExclBoth(a, b) => {
+                    Ok(Value::Array((a + 1..b).map(Value::Int).collect()))
+                }
+                Value::Array(items) => Ok(Value::Array(items)),
+                other => Ok(Value::Array(vec![other])),
+            };
+        }
+        if method == "Range" && args.is_empty() {
+            return match target {
+                Value::Array(items) => Ok(Value::RangeExcl(0, items.len() as i64)),
+                Value::Str(s) => Ok(Value::RangeExcl(0, s.chars().count() as i64)),
+                other @ (Value::Range(_, _)
+                | Value::RangeExcl(_, _)
+                | Value::RangeExclStart(_, _)
+                | Value::RangeExclBoth(_, _)) => Ok(other),
+                _ => Ok(Value::Nil),
+            };
+        }
+        if method == "match" {
+            if let Some(pattern) = args.first() {
+                let text = target.to_string_value();
+                return match pattern {
+                    Value::Regex(pat) | Value::Str(pat) => {
+                        if let Some(captures) = self.regex_match_with_captures(pat, &text) {
+                            for (k, v) in captures {
+                                self.env.insert(format!("<{}>", k), Value::Str(v));
+                            }
+                            Ok(Value::Bool(true))
+                        } else {
+                            Ok(Value::Bool(false))
+                        }
+                    }
+                    _ => Ok(Value::Nil),
+                };
+            }
+            return Ok(Value::Nil);
+        }
+        if method == "Set" && args.is_empty() {
+            let mut elems = HashSet::new();
+            match target {
+                Value::Set(_) => return Ok(target),
+                Value::Array(items) => {
+                    for item in items {
+                        elems.insert(item.to_string_value());
+                    }
+                }
+                Value::Hash(items) => {
+                    for (k, v) in items {
+                        if v.truthy() {
+                            elems.insert(k);
+                        }
+                    }
+                }
+                Value::Bag(b) => {
+                    for k in b.keys() {
+                        elems.insert(k.clone());
+                    }
+                }
+                Value::Mix(m) => {
+                    for k in m.keys() {
+                        elems.insert(k.clone());
+                    }
+                }
+                other => {
+                    elems.insert(other.to_string_value());
+                }
+            }
+            return Ok(Value::Set(elems));
+        }
+        if method == "Bag" && args.is_empty() {
+            let mut counts: HashMap<String, i64> = HashMap::new();
+            match target {
+                Value::Bag(_) => return Ok(target),
+                Value::Array(items) => {
+                    for item in items {
+                        *counts.entry(item.to_string_value()).or_insert(0) += 1;
+                    }
+                }
+                Value::Set(s) => {
+                    for k in s {
+                        counts.insert(k, 1);
+                    }
+                }
+                Value::Mix(m) => {
+                    for (k, v) in m {
+                        counts.insert(k, v as i64);
+                    }
+                }
+                other => {
+                    counts.insert(other.to_string_value(), 1);
+                }
+            }
+            return Ok(Value::Bag(counts));
+        }
+        if method == "Mix" && args.is_empty() {
+            let mut weights: HashMap<String, f64> = HashMap::new();
+            match target {
+                Value::Mix(_) => return Ok(target),
+                Value::Array(items) => {
+                    for item in items {
+                        *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
+                    }
+                }
+                Value::Set(s) => {
+                    for k in s {
+                        weights.insert(k, 1.0);
+                    }
+                }
+                Value::Bag(b) => {
+                    for (k, v) in b {
+                        weights.insert(k, v as f64);
+                    }
+                }
+                other => {
+                    weights.insert(other.to_string_value(), 1.0);
+                }
+            }
+            return Ok(Value::Mix(weights));
+        }
+        if method == "abs"
+            && args.is_empty()
+            && let Value::Complex(r, i) = target
+        {
+            return Ok(Value::Num((r * r + i * i).sqrt()));
+        }
+        if method == "map" {
+            let items = Self::value_to_list(&target);
+            return self.eval_map_over_items(args.first().cloned(), items);
+        }
+        if method == "sort" {
+            return match target {
+                Value::Array(mut items) => {
+                    if let Some(Value::Sub {
+                        params, body, env, ..
+                    }) = args.first().cloned()
+                    {
+                        let placeholders = collect_placeholders(&body);
+                        let is_key_extractor =
+                            placeholders.len() < 2 && params.len() <= 1 || placeholders.len() == 1;
+                        if is_key_extractor {
+                            items.sort_by(|a, b| {
+                                let saved = self.env.clone();
+                                for (k, v) in &env {
+                                    self.env.insert(k.clone(), v.clone());
+                                }
+                                if let Some(p) = params.first() {
+                                    self.env.insert(p.clone(), a.clone());
+                                }
+                                self.env.insert("_".to_string(), a.clone());
+                                let key_a = self.eval_block_value(&body).unwrap_or(Value::Nil);
+                                self.env = saved.clone();
+                                for (k, v) in &env {
+                                    self.env.insert(k.clone(), v.clone());
+                                }
+                                if let Some(p) = params.first() {
+                                    self.env.insert(p.clone(), b.clone());
+                                }
+                                self.env.insert("_".to_string(), b.clone());
+                                let key_b = self.eval_block_value(&body).unwrap_or(Value::Nil);
+                                self.env = saved;
+                                key_a.to_string_value().cmp(&key_b.to_string_value())
+                            });
+                        } else {
+                            items.sort_by(|a, b| {
+                                let saved = self.env.clone();
+                                for (k, v) in &env {
+                                    self.env.insert(k.clone(), v.clone());
+                                }
+                                if let Some(p) = params.first() {
+                                    self.env.insert(p.clone(), a.clone());
+                                }
+                                if placeholders.len() >= 2 {
+                                    self.env.insert(placeholders[0].clone(), a.clone());
+                                    self.env.insert(placeholders[1].clone(), b.clone());
+                                }
+                                self.env.insert("_".to_string(), a.clone());
+                                let result = self.eval_block_value(&body).unwrap_or(Value::Int(0));
+                                self.env = saved;
+                                match result {
+                                    Value::Int(n) => n.cmp(&0),
+                                    Value::Enum {
+                                        enum_type, value, ..
+                                    } if enum_type == "Order" => value.cmp(&0),
+                                    _ => std::cmp::Ordering::Equal,
+                                }
+                            });
+                        }
+                    } else {
+                        items.sort_by_key(|a| a.to_string_value());
+                    }
+                    Ok(Value::Array(items))
+                }
+                other => Ok(other),
+            };
+        }
+        if method == "new"
+            && let Value::Package(class_name) = &target
+        {
+            match class_name.as_str() {
+                "Hash" | "Map" => {
+                    let mut flat = Vec::new();
+                    for arg in &args {
+                        flat.extend(Self::value_to_list(arg));
+                    }
+                    let mut map = HashMap::new();
+                    let mut iter = flat.into_iter();
+                    while let Some(item) = iter.next() {
+                        match item {
+                            Value::Pair(k, v) => {
+                                map.insert(k, *v);
+                            }
+                            other => {
+                                let key = other.to_string_value();
+                                let value = iter.next().unwrap_or(Value::Nil);
+                                map.insert(key, value);
+                            }
+                        }
+                    }
+                    return Ok(Value::Hash(map));
+                }
+                "Version" => {
+                    let arg = args.first().cloned().unwrap_or(Value::Nil);
+                    return Ok(Self::version_from_value(arg));
+                }
+                "Promise" => return Ok(self.make_promise_instance("Planned", Value::Nil)),
+                "Channel" => {
+                    let mut attrs = HashMap::new();
+                    attrs.insert("queue".to_string(), Value::Array(Vec::new()));
+                    attrs.insert("closed".to_string(), Value::Bool(false));
+                    return Ok(Value::make_instance(class_name.clone(), attrs));
+                }
+                "Supply" => return Ok(self.make_supply_instance()),
+                "Proc::Async" => {
+                    let mut attrs = HashMap::new();
+                    attrs.insert("cmd".to_string(), Value::Array(args.clone()));
+                    attrs.insert("started".to_string(), Value::Bool(false));
+                    attrs.insert("stdout".to_string(), self.make_supply_instance());
+                    attrs.insert("stderr".to_string(), self.make_supply_instance());
+                    return Ok(Value::make_instance(class_name.clone(), attrs));
+                }
+                "IO::Path" => {
+                    let path = args
+                        .first()
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    return Ok(self.make_io_path_instance(&path));
+                }
+                "Rat" => {
+                    let a = match args.first() {
+                        Some(Value::Int(i)) => *i,
+                        _ => 0,
+                    };
+                    let b = match args.get(1) {
+                        Some(Value::Int(i)) => *i,
+                        _ => 1,
+                    };
+                    return Ok(make_rat(a, b));
+                }
+                "FatRat" => {
+                    let a = match args.first() {
+                        Some(Value::Int(i)) => *i,
+                        _ => 0,
+                    };
+                    let b = match args.get(1) {
+                        Some(Value::Int(i)) => *i,
+                        _ => 1,
+                    };
+                    return Ok(Value::FatRat(a, b));
+                }
+                "Set" => {
+                    let mut elems = HashSet::new();
+                    for arg in &args {
+                        for item in Self::value_to_list(arg) {
+                            elems.insert(item.to_string_value());
+                        }
+                    }
+                    return Ok(Value::Set(elems));
+                }
+                "Bag" => {
+                    let mut counts: HashMap<String, i64> = HashMap::new();
+                    for arg in &args {
+                        for item in Self::value_to_list(arg) {
+                            *counts.entry(item.to_string_value()).or_insert(0) += 1;
+                        }
+                    }
+                    return Ok(Value::Bag(counts));
+                }
+                "Mix" => {
+                    let mut weights: HashMap<String, f64> = HashMap::new();
+                    for arg in &args {
+                        for item in Self::value_to_list(arg) {
+                            *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
+                        }
+                    }
+                    return Ok(Value::Mix(weights));
+                }
+                "Complex" => {
+                    let re = match args.first() {
+                        Some(Value::Int(i)) => *i as f64,
+                        Some(Value::Num(f)) => *f,
+                        _ => 0.0,
+                    };
+                    let im = match args.get(1) {
+                        Some(Value::Int(i)) => *i as f64,
+                        Some(Value::Num(f)) => *f,
+                        _ => 0.0,
+                    };
+                    return Ok(Value::Complex(re, im));
+                }
+                _ => {}
+            }
+        }
+        if method == "squish" {
+            return match target {
+                Value::Array(items) => {
+                    let mut result = Vec::new();
+                    let mut last: Option<String> = None;
+                    for item in items {
+                        let s = item.to_string_value();
+                        if last.as_ref() != Some(&s) {
+                            last = Some(s);
+                            result.push(item);
+                        }
+                    }
+                    Ok(Value::Array(result))
+                }
+                other => Ok(other),
+            };
+        }
+        if method == "value"
+            && args.is_empty()
+            && let Value::Pair(_, v) = target
+        {
+            return Ok(*v);
+        }
+        if method == "re" && args.is_empty() {
+            return match target {
+                Value::Complex(r, _) => Ok(Value::Num(r)),
+                Value::Int(i) => Ok(Value::Num(i as f64)),
+                Value::Num(f) => Ok(Value::Num(f)),
+                _ => Ok(Value::Num(0.0)),
+            };
+        }
+        if method == "nude" && args.is_empty() {
+            return match target {
+                Value::Rat(n, d) => Ok(Value::Array(vec![Value::Int(n), Value::Int(d)])),
+                Value::FatRat(n, d) => Ok(Value::Array(vec![Value::Int(n), Value::Int(d)])),
+                Value::Int(i) => Ok(Value::Array(vec![Value::Int(i), Value::Int(1)])),
+                _ => Ok(Value::Array(vec![Value::Int(0), Value::Int(1)])),
+            };
+        }
+        if method == "is-prime" && args.is_empty() {
+            return match target {
+                Value::Int(n) => {
+                    let n = n.abs();
+                    let prime = if n < 2 {
+                        false
+                    } else if n < 4 {
+                        true
+                    } else if n % 2 == 0 || n % 3 == 0 {
+                        false
+                    } else {
+                        let mut i = 5i64;
+                        let mut result = true;
+                        while i * i <= n {
+                            if n % i == 0 || n % (i + 2) == 0 {
+                                result = false;
+                                break;
+                            }
+                            i += 6;
+                        }
+                        result
+                    };
+                    Ok(Value::Bool(prime))
+                }
+                _ => Ok(Value::Bool(false)),
+            };
+        }
+        if method == "elems" && args.is_empty() {
+            return match target {
+                Value::Array(items) => Ok(Value::Int(items.len() as i64)),
+                Value::Hash(items) => Ok(Value::Int(items.len() as i64)),
+                Value::Set(s) => Ok(Value::Int(s.len() as i64)),
+                Value::Bag(b) => Ok(Value::Int(b.len() as i64)),
+                Value::Mix(m) => Ok(Value::Int(m.len() as i64)),
+                Value::Junction { values, .. } => Ok(Value::Int(values.len() as i64)),
+                _ => Ok(Value::Int(1)),
+            };
+        }
+        if method == "total" && args.is_empty() {
+            match target {
+                Value::Set(s) => return Ok(Value::Int(s.len() as i64)),
+                Value::Bag(b) => return Ok(Value::Int(b.values().sum::<i64>())),
+                Value::Mix(m) => return Ok(Value::Num(m.values().sum::<f64>())),
+                _ => {}
+            }
+        }
+        if method == "values" && args.is_empty() {
+            return match target {
+                Value::Hash(items) => Ok(Value::Array(items.values().cloned().collect())),
+                Value::Set(s) => Ok(Value::Array(s.iter().map(|_| Value::Bool(true)).collect())),
+                Value::Bag(b) => Ok(Value::Array(b.values().map(|v| Value::Int(*v)).collect())),
+                Value::Mix(m) => Ok(Value::Array(m.values().map(|v| Value::Num(*v)).collect())),
+                _ => Ok(Value::Array(Vec::new())),
+            };
+        }
+        if method == "keys" && args.is_empty() {
+            return match target {
+                Value::Hash(items) => Ok(Value::Array(
+                    items.keys().map(|k| Value::Str(k.clone())).collect(),
+                )),
+                Value::Set(s) => Ok(Value::Array(
+                    s.iter().map(|k| Value::Str(k.clone())).collect(),
+                )),
+                Value::Bag(b) => Ok(Value::Array(
+                    b.keys().map(|k| Value::Str(k.clone())).collect(),
+                )),
+                Value::Mix(m) => Ok(Value::Array(
+                    m.keys().map(|k| Value::Str(k.clone())).collect(),
+                )),
+                _ => Ok(Value::Array(Vec::new())),
+            };
+        }
+        if method == "kv" && args.is_empty() {
+            return match target {
+                Value::Hash(items) => {
+                    let mut kv = Vec::new();
+                    for (k, v) in &items {
+                        kv.push(Value::Str(k.clone()));
+                        kv.push(v.clone());
+                    }
+                    Ok(Value::Array(kv))
+                }
+                Value::Set(s) => {
+                    let mut kv = Vec::new();
+                    for k in &s {
+                        kv.push(Value::Str(k.clone()));
+                        kv.push(Value::Bool(true));
+                    }
+                    Ok(Value::Array(kv))
+                }
+                Value::Bag(b) => {
+                    let mut kv = Vec::new();
+                    for (k, v) in &b {
+                        kv.push(Value::Str(k.clone()));
+                        kv.push(Value::Int(*v));
+                    }
+                    Ok(Value::Array(kv))
+                }
+                Value::Mix(m) => {
+                    let mut kv = Vec::new();
+                    for (k, v) in &m {
+                        kv.push(Value::Str(k.clone()));
+                        kv.push(Value::Num(*v));
+                    }
+                    Ok(Value::Array(kv))
+                }
+                Value::Enum { key, value, .. } => {
+                    Ok(Value::Array(vec![Value::Str(key), Value::Int(value)]))
+                }
+                _ => Ok(Value::Array(Vec::new())),
+            };
+        }
+        if method == "pairs" && args.is_empty() {
+            return match target {
+                Value::Hash(items) => Ok(Value::Array(
+                    items
+                        .iter()
+                        .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                        .collect(),
+                )),
+                Value::Set(s) => Ok(Value::Array(
+                    s.iter()
+                        .map(|k| Value::Pair(k.clone(), Box::new(Value::Bool(true))))
+                        .collect(),
+                )),
+                Value::Bag(b) => Ok(Value::Array(
+                    b.iter()
+                        .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Int(*v))))
+                        .collect(),
+                )),
+                Value::Mix(m) => Ok(Value::Array(
+                    m.iter()
+                        .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Num(*v))))
+                        .collect(),
+                )),
+                _ => Ok(Value::Array(Vec::new())),
+            };
+        }
+        if method == "numerator" && args.is_empty() {
+            return match target {
+                Value::Rat(n, _) => Ok(Value::Int(n)),
+                Value::FatRat(n, _) => Ok(Value::Int(n)),
+                Value::Int(i) => Ok(Value::Int(i)),
+                _ => Ok(Value::Int(0)),
+            };
+        }
+        if method == "denominator" && args.is_empty() {
+            return match target {
+                Value::Rat(_, d) => Ok(Value::Int(d)),
+                Value::FatRat(_, d) => Ok(Value::Int(d)),
+                Value::Int(_) => Ok(Value::Int(1)),
+                _ => Ok(Value::Int(1)),
+            };
+        }
+        if method == "isNaN" && args.is_empty() {
+            return match target {
+                Value::Rat(0, 0) => Ok(Value::Bool(true)),
+                Value::Num(f) => Ok(Value::Bool(f.is_nan())),
+                _ => Ok(Value::Bool(false)),
+            };
+        }
+        if method == "minmax" && args.is_empty() {
+            return match target {
+                Value::Array(items) if !items.is_empty() => {
+                    let mut min = &items[0];
+                    let mut max = &items[0];
+                    for item in &items[1..] {
+                        if Self::compare_values(item, min) < 0 {
+                            min = item;
+                        }
+                        if Self::compare_values(item, max) > 0 {
+                            max = item;
+                        }
+                    }
+                    Ok(Value::Range(Self::to_int(min), Self::to_int(max)))
+                }
+                _ => Ok(Value::Nil),
+            };
+        }
+        if method == "grep" {
+            return match target {
+                Value::Array(items) => self.eval_grep_over_items(args.first().cloned(), items),
+                other => Ok(other),
+            };
+        }
+        if method == "VAR" && args.is_empty() {
+            return Ok(target);
+        }
+        if method == "im" && args.is_empty() {
+            return match target {
+                Value::Complex(_, i) => Ok(Value::Num(i)),
+                _ => Ok(Value::Num(0.0)),
+            };
+        }
+        if method == "conj" && args.is_empty() {
+            return match target {
+                Value::Complex(r, i) => Ok(Value::Complex(r, -i)),
+                Value::Int(i) => Ok(Value::Complex(i as f64, 0.0)),
+                Value::Num(f) => Ok(Value::Complex(f, 0.0)),
+                _ => Ok(Value::Complex(0.0, 0.0)),
+            };
+        }
+        if method == "reals" && args.is_empty() {
+            return match target {
+                Value::Complex(r, i) => Ok(Value::Array(vec![Value::Num(r), Value::Num(i)])),
+                other => Ok(Value::Array(vec![other, Value::Num(0.0)])),
+            };
+        }
+        if method == "Complex" && args.is_empty() {
+            return match target {
+                Value::Complex(_, _) => Ok(target),
+                Value::Int(i) => Ok(Value::Complex(i as f64, 0.0)),
+                Value::Num(f) => Ok(Value::Complex(f, 0.0)),
+                _ => Ok(Value::Complex(0.0, 0.0)),
+            };
+        }
+        if method == "Int"
+            && args.is_empty()
+            && let Value::Complex(r, _) = target
+        {
+            return Ok(Value::Int(r as i64));
+        }
+        if (method == "Num" || method == "Numeric")
+            && args.is_empty()
+            && let Value::Complex(r, _) = target
+        {
+            return Ok(Value::Num(r));
+        }
+        if let Value::Enum {
+            enum_type,
+            key,
+            value,
+            index,
+        } = &target
+        {
+            match method {
+                "key" => return Ok(Value::Str(key.clone())),
+                "value" | "Int" | "Numeric" => return Ok(Value::Int(*value)),
+                "WHAT" => return Ok(Value::Package(enum_type.clone())),
+                "raku" | "perl" => return Ok(Value::Str(format!("{}::{}", enum_type, key))),
+                "gist" | "Str" => return Ok(Value::Str(key.clone())),
+                "kv" => {
+                    return Ok(Value::Array(vec![
+                        Value::Str(key.clone()),
+                        Value::Int(*value),
+                    ]));
+                }
+                "pair" => return Ok(Value::Pair(key.clone(), Box::new(Value::Int(*value)))),
+                "pred" => {
+                    if *index == 0 {
+                        return Ok(Value::Nil);
+                    }
+                    if let Some(variants) = self.enum_types.get(enum_type)
+                        && let Some((prev_key, prev_val)) = variants.get(index - 1)
+                    {
+                        return Ok(Value::Enum {
+                            enum_type: enum_type.clone(),
+                            key: prev_key.clone(),
+                            value: *prev_val,
+                            index: index - 1,
+                        });
+                    }
+                    return Ok(Value::Nil);
+                }
+                "succ" => {
+                    if let Some(variants) = self.enum_types.get(enum_type)
+                        && let Some((next_key, next_val)) = variants.get(index + 1)
+                    {
+                        return Ok(Value::Enum {
+                            enum_type: enum_type.clone(),
+                            key: next_key.clone(),
+                            value: *next_val,
+                            index: index + 1,
+                        });
+                    }
+                    return Ok(Value::Nil);
+                }
+                _ => {}
+            }
+        }
         if let Value::Instance {
             class_name,
             attributes,
             ..
         } = &target
-            && self.class_has_method(class_name, method)
         {
-            let (result, _updated) =
-                self.run_instance_method(class_name, attributes.clone(), method, args)?;
-            return Ok(result);
+            if class_name == "Promise" {
+                if method == "result" && args.is_empty() {
+                    return Ok(attributes.get("result").cloned().unwrap_or(Value::Nil));
+                }
+                if method == "status" && args.is_empty() {
+                    return Ok(attributes
+                        .get("status")
+                        .cloned()
+                        .unwrap_or(Value::Str("Planned".to_string())));
+                }
+                if method == "then" {
+                    let block = args.first().cloned().unwrap_or(Value::Nil);
+                    let status = attributes
+                        .get("status")
+                        .cloned()
+                        .unwrap_or(Value::Str("Planned".to_string()));
+                    if matches!(status, Value::Str(ref s) if s == "Kept") {
+                        let value = attributes.get("result").cloned().unwrap_or(Value::Nil);
+                        let result = self.call_sub_value(block, vec![value], false)?;
+                        return Ok(self.make_promise_instance("Kept", result));
+                    }
+                    return Ok(self.make_promise_instance("Planned", Value::Nil));
+                }
+            }
+            if class_name == "Channel" && method == "closed" && args.is_empty() {
+                return Ok(attributes
+                    .get("closed")
+                    .cloned()
+                    .unwrap_or(Value::Bool(false)));
+            }
+            if class_name == "Proc::Async" {
+                if method == "command" && args.is_empty() {
+                    return Ok(attributes
+                        .get("cmd")
+                        .cloned()
+                        .unwrap_or(Value::Array(Vec::new())));
+                }
+                if method == "started" && args.is_empty() {
+                    return Ok(attributes
+                        .get("started")
+                        .cloned()
+                        .unwrap_or(Value::Bool(false)));
+                }
+                if method == "stdout" && args.is_empty() {
+                    return Ok(attributes.get("stdout").cloned().unwrap_or(Value::Nil));
+                }
+                if method == "stderr" && args.is_empty() {
+                    return Ok(attributes.get("stderr").cloned().unwrap_or(Value::Nil));
+                }
+            }
+            if method == "isa" {
+                let target_name = match args.first().cloned().unwrap_or(Value::Nil) {
+                    Value::Package(name) => name,
+                    Value::Str(name) => name,
+                    Value::Instance { class_name, .. } => class_name,
+                    other => other.to_string_value(),
+                };
+                return Ok(Value::Bool(
+                    self.class_mro(class_name).contains(&target_name),
+                ));
+            }
+            if (method == "raku" || method == "perl") && args.is_empty() {
+                return Ok(Value::Str(format!("{}.new()", class_name)));
+            }
+            if method == "name" && args.is_empty() {
+                return Ok(attributes.get("name").cloned().unwrap_or(Value::Nil));
+            }
+            if method == "clone" {
+                let mut attrs = attributes.clone();
+                for arg in &args {
+                    if let Value::Pair(key, boxed) = arg {
+                        attrs.insert(key.clone(), *boxed.clone());
+                    }
+                }
+                return Ok(Value::make_instance(class_name.clone(), attrs));
+            }
+            if args.is_empty() {
+                for (attr_name, is_public, _) in self.collect_class_attributes(class_name) {
+                    if is_public && attr_name == method {
+                        return Ok(attributes.get(method).cloned().unwrap_or(Value::Nil));
+                    }
+                }
+            }
+            if self.class_has_method(class_name, method) {
+                let (result, _updated) =
+                    self.run_instance_method(class_name, attributes.clone(), method, args)?;
+                return Ok(result);
+            }
         }
         if method == "new"
             && let Value::Package(class_name) = &target
             && self.classes.contains_key(class_name)
-            && !matches!(
-                class_name.as_str(),
-                "Hash"
-                    | "Version"
-                    | "Promise"
-                    | "Channel"
-                    | "Supply"
-                    | "Proc::Async"
-                    | "IO::Path"
-                    | "IO::Handle"
-                    | "IO::Spec"
-            )
         {
             let mut attrs = HashMap::new();
             for (attr_name, _is_public, default) in self.collect_class_attributes(class_name) {
@@ -11030,13 +11791,34 @@ impl Interpreter {
             }
             return Ok(Value::make_instance(class_name.clone(), attrs));
         }
-        let arg_exprs: Vec<Expr> = args.into_iter().map(Expr::Literal).collect();
-        self.eval_expr(&Expr::MethodCall {
-            target: Box::new(Expr::Literal(target)),
-            name: method.to_string(),
-            args: arg_exprs,
-            modifier: None,
-        })
+        if method == "gist" && args.is_empty() {
+            return match target {
+                Value::Package(name) => Ok(Value::Str(format!("({})", name))),
+                other => Ok(Value::Str(other.to_string_value())),
+            };
+        }
+        if (method == "raku" || method == "perl") && args.is_empty() {
+            return match target {
+                Value::Package(name) => Ok(Value::Str(format!("({})", name))),
+                other => Ok(Value::Str(other.to_string_value())),
+            };
+        }
+        if method == "name" && args.is_empty() {
+            return match target {
+                Value::Routine { name, .. } => Ok(Value::Str(name)),
+                Value::Package(name) => Ok(Value::Str(name)),
+                Value::Str(name) => Ok(Value::Str(name)),
+                Value::Sub { name, .. } => Ok(Value::Str(name)),
+                _ => Ok(Value::Nil),
+            };
+        }
+        if method == "Str" && args.is_empty() {
+            return Ok(Value::Str(target.to_string_value()));
+        }
+        Err(RuntimeError::new(format!(
+            "Unknown method value dispatch (fallback disabled): {}",
+            method
+        )))
     }
 
     pub(crate) fn call_method_mut_with_values(
@@ -11046,6 +11828,27 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if method == "VAR" && args.is_empty() {
+            let class_name = if target_var.starts_with('@') {
+                "Array"
+            } else if target_var.starts_with('%') {
+                "Hash"
+            } else {
+                "Scalar"
+            };
+            let display_name = if target_var.starts_with('$')
+                || target_var.starts_with('@')
+                || target_var.starts_with('%')
+                || target_var.starts_with('&')
+            {
+                target_var.to_string()
+            } else {
+                format!("${}", target_var)
+            };
+            let mut attributes = HashMap::new();
+            attributes.insert("name".to_string(), Value::Str(display_name));
+            return Ok(Value::make_instance(class_name.to_string(), attributes));
+        }
         if target_var.starts_with('@') {
             let key = target_var.to_string();
             match method {
@@ -11102,6 +11905,64 @@ impl Interpreter {
                     self.env.insert(key, Value::Array(items));
                     return Ok(out);
                 }
+                "splice" => {
+                    let mut items = match self.env.get(&key) {
+                        Some(Value::Array(existing)) => existing.clone(),
+                        _ => match target {
+                            Value::Array(v) => v,
+                            _ => Vec::new(),
+                        },
+                    };
+                    let start = args
+                        .first()
+                        .and_then(|v| match v {
+                            Value::Int(i) => Some((*i).max(0) as usize),
+                            _ => None,
+                        })
+                        .unwrap_or(0)
+                        .min(items.len());
+                    let count = args
+                        .get(1)
+                        .and_then(|v| match v {
+                            Value::Int(i) => Some((*i).max(0) as usize),
+                            _ => None,
+                        })
+                        .unwrap_or(items.len().saturating_sub(start));
+                    let end = (start + count).min(items.len());
+                    let removed: Vec<Value> = items.drain(start..end).collect();
+                    if let Some(new_val) = args.get(2) {
+                        match new_val {
+                            Value::Array(new_items) => {
+                                for (i, item) in new_items.iter().enumerate() {
+                                    items.insert(start + i, item.clone());
+                                }
+                            }
+                            other => items.insert(start, other.clone()),
+                        }
+                    }
+                    self.env.insert(key, Value::Array(items));
+                    return Ok(Value::Array(removed));
+                }
+                "squish" => {
+                    let items = match self.env.get(&key) {
+                        Some(Value::Array(existing)) => existing.clone(),
+                        _ => match target {
+                            Value::Array(v) => v,
+                            _ => Vec::new(),
+                        },
+                    };
+                    let mut squished = Vec::new();
+                    let mut last: Option<String> = None;
+                    for item in items {
+                        let s = item.to_string_value();
+                        if last.as_ref() != Some(&s) {
+                            last = Some(s);
+                            squished.push(item);
+                        }
+                    }
+                    self.env.insert(key, Value::Array(squished.clone()));
+                    return Ok(Value::Array(squished));
+                }
                 _ => {}
             }
         }
@@ -11111,33 +11972,118 @@ impl Interpreter {
             attributes,
             ..
         } = target.clone()
-            && self.class_has_method(&class_name, method)
         {
-            let (result, updated) =
-                self.run_instance_method(&class_name, attributes, method, args)?;
-            self.env.insert(
-                target_var.to_string(),
-                Value::make_instance(class_name, updated),
-            );
-            return Ok(result);
+            if class_name == "Promise" && method == "keep" {
+                let value = args.first().cloned().unwrap_or(Value::Nil);
+                let mut attrs = attributes.clone();
+                attrs.insert("result".to_string(), value);
+                attrs.insert("status".to_string(), Value::Str("Kept".to_string()));
+                self.env.insert(
+                    target_var.to_string(),
+                    Value::make_instance(class_name, attrs),
+                );
+                return Ok(Value::Nil);
+            }
+            if class_name == "Channel" {
+                if method == "send" {
+                    let value = args.first().cloned().unwrap_or(Value::Nil);
+                    let mut attrs = attributes.clone();
+                    match attrs.get_mut("queue") {
+                        Some(Value::Array(items)) => items.push(value),
+                        _ => {
+                            attrs.insert("queue".to_string(), Value::Array(vec![value]));
+                        }
+                    }
+                    self.env.insert(
+                        target_var.to_string(),
+                        Value::make_instance(class_name, attrs),
+                    );
+                    return Ok(Value::Nil);
+                }
+                if method == "receive" && args.is_empty() {
+                    let mut attrs = attributes.clone();
+                    let mut value = Value::Nil;
+                    if let Some(Value::Array(items)) = attrs.get_mut("queue")
+                        && !items.is_empty()
+                    {
+                        value = items.remove(0);
+                    }
+                    self.env.insert(
+                        target_var.to_string(),
+                        Value::make_instance(class_name, attrs),
+                    );
+                    return Ok(value);
+                }
+                if method == "close" && args.is_empty() {
+                    let mut attrs = attributes.clone();
+                    attrs.insert("closed".to_string(), Value::Bool(true));
+                    self.env.insert(
+                        target_var.to_string(),
+                        Value::make_instance(class_name, attrs),
+                    );
+                    return Ok(Value::Nil);
+                }
+            }
+            if class_name == "Supply" {
+                if method == "emit" {
+                    let value = args.first().cloned().unwrap_or(Value::Nil);
+                    let mut attrs = attributes.clone();
+                    if let Some(Value::Array(items)) = attrs.get_mut("values") {
+                        items.push(value.clone());
+                    } else {
+                        attrs.insert("values".to_string(), Value::Array(vec![value.clone()]));
+                    }
+                    if let Some(Value::Array(taps)) = attrs.get_mut("taps") {
+                        for tap in taps.clone() {
+                            let _ = self.call_sub_value(tap, vec![value.clone()], true);
+                        }
+                    }
+                    self.env.insert(
+                        target_var.to_string(),
+                        Value::make_instance(class_name, attrs),
+                    );
+                    return Ok(Value::Nil);
+                }
+                if method == "tap" {
+                    let tap = args.first().cloned().unwrap_or(Value::Nil);
+                    let mut attrs = attributes.clone();
+                    if let Some(Value::Array(items)) = attrs.get_mut("taps") {
+                        items.push(tap.clone());
+                    } else {
+                        attrs.insert("taps".to_string(), Value::Array(vec![tap.clone()]));
+                    }
+                    if let Some(Value::Array(values)) = attrs.get("values") {
+                        for v in values {
+                            let _ = self.call_sub_value(tap.clone(), vec![v.clone()], true);
+                        }
+                    }
+                    self.env.insert(
+                        target_var.to_string(),
+                        Value::make_instance(class_name, attrs),
+                    );
+                    return Ok(Value::Nil);
+                }
+            }
+            if class_name == "Proc::Async" && method == "start" && args.is_empty() {
+                let mut attrs = attributes.clone();
+                attrs.insert("started".to_string(), Value::Bool(true));
+                self.env.insert(
+                    target_var.to_string(),
+                    Value::make_instance(class_name, attrs),
+                );
+                return Ok(self.make_promise_instance("Kept", Value::Int(0)));
+            }
+            if self.class_has_method(&class_name, method) {
+                let (result, updated) =
+                    self.run_instance_method(&class_name, attributes, method, args)?;
+                self.env.insert(
+                    target_var.to_string(),
+                    Value::make_instance(class_name, updated),
+                );
+                return Ok(result);
+            }
         }
-
-        let arg_exprs: Vec<Expr> = args.into_iter().map(Expr::Literal).collect();
-        let target_expr = if let Some(name) = target_var.strip_prefix('@') {
-            Expr::ArrayVar(name.to_string())
-        } else if let Some(name) = target_var.strip_prefix('%') {
-            Expr::HashVar(name.to_string())
-        } else if let Some(name) = target_var.strip_prefix('&') {
-            Expr::CodeVar(name.to_string())
-        } else {
-            Expr::Var(target_var.to_string())
-        };
-        self.eval_expr(&Expr::MethodCall {
-            target: Box::new(target_expr),
-            name: method.to_string(),
-            args: arg_exprs,
-            modifier: None,
-        })
+        self.call_method_with_values(target, method, args)
     }
 
     fn smart_match(&mut self, left: &Value, right: &Value) -> bool {

@@ -153,12 +153,14 @@ pub(crate) enum OpCode {
     CallMethod {
         name_idx: u32,
         arity: u32,
+        modifier_idx: Option<u32>,
     },
     /// Method call with writeback: target is a variable that may be mutated.
     CallMethodMut {
         name_idx: u32,
         arity: u32,
         target_name_idx: u32,
+        modifier_idx: Option<u32>,
     },
     /// Statement-level call: pop `arity` args, call name (no push).
     ExecCall {
