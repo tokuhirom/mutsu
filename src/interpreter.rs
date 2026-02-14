@@ -4765,23 +4765,16 @@ impl Interpreter {
             }
             _ => {
                 // Try user-defined function with type-based dispatch
-                let call_args: Vec<Expr> = args
-                    .iter()
-                    .filter_map(|a| match a {
-                        CallArg::Positional(e) => Some(e.clone()),
-                        _ => None,
-                    })
-                    .collect();
-                let arg_values: Vec<Value> = call_args
-                    .iter()
-                    .filter_map(|a| self.eval_expr(a).ok())
-                    .collect();
+                let mut arg_values = Vec::new();
+                for arg in args {
+                    if let CallArg::Positional(expr) = arg {
+                        arg_values.push(self.eval_expr(expr)?);
+                    }
+                }
                 let def_opt = self.resolve_function_with_types(name, &arg_values);
                 if let Some(def) = def_opt {
                     let saved_env = self.env.clone();
-                    let literal_args: Vec<Expr> =
-                        arg_values.into_iter().map(Expr::Literal).collect();
-                    self.bind_function_args(&def.param_defs, &def.params, &literal_args)?;
+                    self.bind_function_args_values(&def.param_defs, &def.params, &arg_values)?;
                     self.routine_stack
                         .push((def.package.clone(), def.name.clone()));
                     let result = self.run_block(&def.body);
