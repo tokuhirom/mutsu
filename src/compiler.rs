@@ -765,6 +765,7 @@ impl Compiler {
                         Expr::Var(n) => Some(n.clone()),
                         Expr::ArrayVar(n) => Some(format!("@{}", n)),
                         Expr::HashVar(n) => Some(format!("%{}", n)),
+                        Expr::CodeVar(n) => Some(format!("&{}", n)),
                         _ => None,
                     };
                     if let Some(vname) = var_name {
