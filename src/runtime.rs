@@ -524,6 +524,71 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
     }
 }
 
+pub(crate) fn to_complex_parts(val: &Value) -> Option<(f64, f64)> {
+    match val {
+        Value::Complex(r, i) => Some((*r, *i)),
+        Value::Int(n) => Some((*n as f64, 0.0)),
+        Value::Num(f) => Some((*f, 0.0)),
+        Value::Rat(n, d) => {
+            if *d != 0 {
+                Some((*n as f64 / *d as f64, 0.0))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
+    match (a, b) {
+        (Value::Int(a), Value::Int(b)) => a.cmp(b) as i32,
+        (Value::Num(a), Value::Num(b)) => {
+            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal) as i32
+        }
+        (Value::Int(a), Value::Num(b)) => (*a as f64)
+            .partial_cmp(b)
+            .unwrap_or(std::cmp::Ordering::Equal) as i32,
+        (Value::Num(a), Value::Int(b)) => a
+            .partial_cmp(&(*b as f64))
+            .unwrap_or(std::cmp::Ordering::Equal) as i32,
+        _ => {
+            if let (Some((an, ad)), Some((bn, bd))) = (to_rat_parts(a), to_rat_parts(b)) {
+                let lhs = an as i128 * bd as i128;
+                let rhs = bn as i128 * ad as i128;
+                return lhs.cmp(&rhs) as i32;
+            }
+            a.to_string_value().cmp(&b.to_string_value()) as i32
+        }
+    }
+}
+
+pub(crate) fn to_int(v: &Value) -> i64 {
+    match v {
+        Value::Int(i) => *i,
+        Value::BigInt(n) => {
+            use num_traits::ToPrimitive;
+            n.to_i64()
+                .unwrap_or(if *n > num_bigint::BigInt::from(0i64) {
+                    i64::MAX
+                } else {
+                    i64::MIN
+                })
+        }
+        Value::Num(f) => *f as i64,
+        Value::Rat(n, d) => {
+            if *d != 0 {
+                n / d
+            } else {
+                0
+            }
+        }
+        Value::Complex(r, _) => *r as i64,
+        Value::Str(s) => s.parse().unwrap_or(0),
+        _ => 0,
+    }
+}
+
 pub(crate) fn merge_junction(kind: JunctionKind, left: Value, right: Value) -> Value {
     let mut values = Vec::new();
     push_junction_value(&kind, left, &mut values);

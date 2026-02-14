@@ -1,6 +1,6 @@
 #![allow(clippy::result_large_err)]
 
-use crate::interpreter::Interpreter;
+use crate::runtime;
 use crate::value::{RuntimeError, Value, make_rat};
 use num_traits::Signed;
 use std::cell::RefCell;
@@ -649,7 +649,7 @@ pub(crate) fn native_method_1arg(
         }
         "fmt" => {
             let fmt = arg.to_string_value();
-            let rendered = Interpreter::format_sprintf(&fmt, Some(target));
+            let rendered = runtime::format_sprintf(&fmt, Some(target));
             Some(Ok(Value::Str(rendered)))
         }
         "parse-base" => {
@@ -887,11 +887,11 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             _ => Value::Num(f64::NAN),
         })),
         "log" => {
-            let x = Interpreter::to_float_value(arg).unwrap_or(f64::NAN);
+            let x = runtime::to_float_value(arg).unwrap_or(f64::NAN);
             Some(Ok(Value::Num(x.ln())))
         }
         "sin" | "cos" | "tan" | "asin" | "acos" | "atan" => {
-            let x = Interpreter::to_float_value(arg).unwrap_or(0.0);
+            let x = runtime::to_float_value(arg).unwrap_or(0.0);
             let result = match name {
                 "sin" => x.sin(),
                 "cos" => x.cos(),
@@ -904,14 +904,14 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             Some(Ok(Value::Num(result)))
         }
         "truncate" => {
-            if let Some(num) = Interpreter::to_float_value(arg) {
+            if let Some(num) = runtime::to_float_value(arg) {
                 if num.is_nan() || num.is_infinite() {
                     Some(Ok(Value::Num(num)))
                 } else {
                     Some(Ok(Value::Int(num.trunc() as i64)))
                 }
             } else {
-                Some(Ok(Value::Int(Interpreter::to_int(arg))))
+                Some(Ok(Value::Int(runtime::to_int(arg))))
             }
         }
         "defined" => Some(Ok(Value::Bool(match arg {
@@ -1056,13 +1056,13 @@ fn native_function_2arg(
             )))
         }
         "atan2" => {
-            let y = Interpreter::to_float_value(arg1).unwrap_or(0.0);
-            let x = Interpreter::to_float_value(arg2).unwrap_or(0.0);
+            let y = runtime::to_float_value(arg1).unwrap_or(0.0);
+            let x = runtime::to_float_value(arg2).unwrap_or(0.0);
             Some(Ok(Value::Num(y.atan2(x))))
         }
         "log" => {
-            let x = Interpreter::to_float_value(arg1).unwrap_or(f64::NAN);
-            let base_val = Interpreter::to_float_value(arg2).unwrap_or(f64::NAN);
+            let x = runtime::to_float_value(arg1).unwrap_or(f64::NAN);
+            let base_val = runtime::to_float_value(arg2).unwrap_or(f64::NAN);
             if base_val.is_finite() && base_val > 0.0 && base_val != 1.0 && x > 0.0 {
                 Some(Ok(Value::Num(x.ln() / base_val.ln())))
             } else {
@@ -1070,8 +1070,8 @@ fn native_function_2arg(
             }
         }
         "round" => {
-            let x = Interpreter::to_float_value(arg1)?;
-            let scale = Interpreter::to_float_value(arg2)?;
+            let x = runtime::to_float_value(arg1)?;
+            let scale = runtime::to_float_value(arg2)?;
             if scale == 0.0 {
                 Some(Ok(Value::Int(x.round() as i64)))
             } else {
@@ -1237,17 +1237,17 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
         }
         _ => {}
     }
-    let (l, r) = Interpreter::coerce_numeric(left, right);
+    let (l, r) = runtime::coerce_numeric(left, right);
     Ok(arith_add_coerced(l, r))
 }
 
 fn arith_add_coerced(l: Value, r: Value) -> Value {
     if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
-        let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
-        let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+        let (ar, ai) = runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+        let (br, bi) = runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
         Value::Complex(ar + br, ai + bi)
     } else if let (Some((an, ad)), Some((bn, bd))) =
-        (Interpreter::to_rat_parts(&l), Interpreter::to_rat_parts(&r))
+        (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
     {
         if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
             make_rat(an * bd + bn * ad, ad * bd)
@@ -1272,13 +1272,13 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
 }
 
 pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
-    let (l, r) = Interpreter::coerce_numeric(left, right);
+    let (l, r) = runtime::coerce_numeric(left, right);
     if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
-        let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
-        let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+        let (ar, ai) = runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+        let (br, bi) = runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
         Value::Complex(ar - br, ai - bi)
     } else if let (Some((an, ad)), Some((bn, bd))) =
-        (Interpreter::to_rat_parts(&l), Interpreter::to_rat_parts(&r))
+        (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
     {
         if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
             make_rat(an * bd - bn * ad, ad * bd)
@@ -1303,13 +1303,13 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
 }
 
 pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
-    let (l, r) = Interpreter::coerce_numeric(left, right);
+    let (l, r) = runtime::coerce_numeric(left, right);
     if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
-        let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
-        let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+        let (ar, ai) = runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+        let (br, bi) = runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
         Value::Complex(ar * br - ai * bi, ar * bi + ai * br)
     } else if let (Some((an, ad)), Some((bn, bd))) =
-        (Interpreter::to_rat_parts(&l), Interpreter::to_rat_parts(&r))
+        (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
     {
         if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
             make_rat(an * bn, ad * bd)
@@ -1334,10 +1334,10 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
 }
 
 pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError> {
-    let (l, r) = Interpreter::coerce_numeric(left, right);
+    let (l, r) = runtime::coerce_numeric(left, right);
     if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
-        let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
-        let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+        let (ar, ai) = runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+        let (br, bi) = runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
         let denom = br * br + bi * bi;
         if denom == 0.0 {
             return Err(RuntimeError::new("Division by zero"));
@@ -1349,8 +1349,8 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
     } else {
         Ok(match (&l, &r) {
             (Value::Rat(_, _), _) | (_, Value::Rat(_, _)) | (Value::Int(_), Value::Int(_)) => {
-                let (an, ad) = Interpreter::to_rat_parts(&l).unwrap_or((0, 1));
-                let (bn, bd) = Interpreter::to_rat_parts(&r).unwrap_or((0, 1));
+                let (an, ad) = runtime::to_rat_parts(&l).unwrap_or((0, 1));
+                let (bn, bd) = runtime::to_rat_parts(&r).unwrap_or((0, 1));
                 if bn == 0 {
                     return Err(RuntimeError::new("Division by zero"));
                 }
@@ -1365,9 +1365,8 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
 }
 
 pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError> {
-    let (l, r) = Interpreter::coerce_numeric(left, right);
-    if let (Some((an, ad)), Some((bn, bd))) =
-        (Interpreter::to_rat_parts(&l), Interpreter::to_rat_parts(&r))
+    let (l, r) = runtime::coerce_numeric(left, right);
+    if let (Some((an, ad)), Some((bn, bd))) = (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
     {
         if matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)) {
             if bn == 0 {
@@ -1403,10 +1402,10 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
 }
 
 pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
-    let (l, r) = Interpreter::coerce_numeric(left, right);
+    let (l, r) = runtime::coerce_numeric(left, right);
     if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
-        let (ar, ai) = Interpreter::to_complex_parts(&l).unwrap_or((0.0, 0.0));
-        let (br, bi) = Interpreter::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+        let (ar, ai) = runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+        let (br, bi) = runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
         let ln_r = (ar * ar + ai * ai).sqrt().ln();
         let ln_i = ai.atan2(ar);
         let wr = br * ln_r - bi * ln_i;

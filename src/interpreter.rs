@@ -1734,12 +1734,12 @@ impl Interpreter {
                     "le" => left.to_string_value() <= right.to_string_value(),
                     "gt" => left.to_string_value() > right.to_string_value(),
                     "ge" => left.to_string_value() >= right.to_string_value(),
-                    "==" => Self::to_float_value(&left) == Self::to_float_value(&right),
-                    "!=" => Self::to_float_value(&left) != Self::to_float_value(&right),
-                    "<" => Self::to_float_value(&left) < Self::to_float_value(&right),
-                    "<=" => Self::to_float_value(&left) <= Self::to_float_value(&right),
-                    ">" => Self::to_float_value(&left) > Self::to_float_value(&right),
-                    ">=" => Self::to_float_value(&left) >= Self::to_float_value(&right),
+                    "==" => runtime::to_float_value(&left) == runtime::to_float_value(&right),
+                    "!=" => runtime::to_float_value(&left) != runtime::to_float_value(&right),
+                    "<" => runtime::to_float_value(&left) < runtime::to_float_value(&right),
+                    "<=" => runtime::to_float_value(&left) <= runtime::to_float_value(&right),
+                    ">" => runtime::to_float_value(&left) > runtime::to_float_value(&right),
+                    ">=" => runtime::to_float_value(&left) >= runtime::to_float_value(&right),
                     "===" => left == right,
                     "=:=" => left == right,
                     _ => {
@@ -1774,7 +1774,10 @@ impl Interpreter {
             let desc = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
             let got = args.first().cloned().unwrap_or(Value::Nil);
             let expected = args.get(1).cloned().unwrap_or(Value::Nil);
-            let ok = match (Self::to_float_value(&got), Self::to_float_value(&expected)) {
+            let ok = match (
+                runtime::to_float_value(&got),
+                runtime::to_float_value(&expected),
+            ) {
                 (Some(g), Some(e)) => (g - e).abs() <= 1e-5,
                 _ => false,
             };
@@ -2086,12 +2089,12 @@ impl Interpreter {
             return Ok(Value::Bool(status));
         }
         if name == "kill" {
-            let signal = args.first().map(Self::to_int).unwrap_or(15);
+            let signal = args.first().map(runtime::to_int).unwrap_or(15);
             let mut success = true;
             let mut had_pid = false;
             for val in args.iter().skip(1) {
                 had_pid = true;
-                let pid = Self::to_int(val);
+                let pid = runtime::to_int(val);
                 success &= Self::send_signal(pid, signal);
             }
             if !had_pid {
@@ -2102,7 +2105,7 @@ impl Interpreter {
         if name == "syscall" {
             let num_val = args.first();
             if let Some(val) = num_val {
-                let num = Self::to_int(val);
+                let num = runtime::to_int(val);
                 if num == 0 {
                     let pid = self
                         .env
@@ -2350,7 +2353,7 @@ impl Interpreter {
                 Some(Value::Str(s)) => s.clone(),
                 _ => String::new(),
             };
-            let rendered = Self::format_sprintf(&fmt, args.get(1));
+            let rendered = runtime::format_sprintf(&fmt, args.get(1));
             return Ok(Value::Str(rendered));
         }
         if name == "map" {
@@ -4545,7 +4548,7 @@ impl Interpreter {
         let arity = arg_values.len();
         let type_sig: Vec<&str> = arg_values
             .iter()
-            .map(|v| Self::value_type_name(v))
+            .map(|v| runtime::value_type_name(v))
             .collect();
         let typed_key = format!(
             "{}::{}/{}:{}",
@@ -4671,41 +4674,6 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn value_type_name(value: &Value) -> &'static str {
-        match value {
-            Value::Int(_) => "Int",
-            Value::BigInt(_) => "Int",
-            Value::Num(_) => "Num",
-            Value::Str(_) => "Str",
-            Value::Bool(_) => "Bool",
-            Value::Array(_) => "Array",
-            Value::LazyList(_) => "Array",
-            Value::Hash(_) => "Hash",
-            Value::Range(_, _)
-            | Value::RangeExcl(_, _)
-            | Value::RangeExclStart(_, _)
-            | Value::RangeExclBoth(_, _) => "Range",
-            Value::Pair(_, _) => "Pair",
-            Value::Rat(_, _) => "Rat",
-            Value::FatRat(_, _) => "FatRat",
-            Value::Complex(_, _) => "Complex",
-            Value::Set(_) => "Set",
-            Value::Bag(_) => "Bag",
-            Value::Mix(_) => "Mix",
-            Value::Nil => "Any",
-            Value::Sub { .. } => "Sub",
-            Value::Routine { .. } => "Routine",
-            Value::Package(_) => "Package",
-            Value::CompUnitDepSpec { .. } => "Any",
-            Value::Enum { .. } => "Int",
-            Value::Instance { .. } => "Any",
-            Value::Junction { .. } => "Junction",
-            Value::Regex(_) => "Regex",
-            Value::Version { .. } => "Version",
-            Value::Slip(_) => "Slip",
-        }
-    }
-
     fn type_matches(constraint: &str, value_type: &str) -> bool {
         if constraint == "Any" || constraint == "Mu" {
             return true;
@@ -4787,7 +4755,7 @@ impl Interpreter {
                 }
             }
         }
-        let value_type = Self::value_type_name(value);
+        let value_type = runtime::value_type_name(value);
         Self::type_matches(constraint, value_type)
     }
 
@@ -5354,9 +5322,9 @@ impl Interpreter {
                 if name == "atan2" {
                     let mut x = right_vals
                         .first()
-                        .and_then(Self::to_float_value)
+                        .and_then(runtime::to_float_value)
                         .unwrap_or(0.0);
-                    let mut y = Self::to_float_value(&left_val).unwrap_or(0.0);
+                    let mut y = runtime::to_float_value(&left_val).unwrap_or(0.0);
                     if modifier.as_deref() == Some("R") {
                         std::mem::swap(&mut x, &mut y);
                     }
@@ -5370,12 +5338,12 @@ impl Interpreter {
                     if modifier.as_deref() == Some("X") {
                         let mut parts = Vec::new();
                         for val in right_vals {
-                            parts.push(Self::format_sprintf(&fmt, Some(&val)));
+                            parts.push(runtime::format_sprintf(&fmt, Some(&val)));
                         }
                         return Ok(Value::Str(parts.join(" ")));
                     }
                     let arg = right_vals.first();
-                    let rendered = Self::format_sprintf(&fmt, arg);
+                    let rendered = runtime::format_sprintf(&fmt, arg);
                     return Ok(Value::Str(rendered));
                 }
                 Ok(Value::Nil)
@@ -5426,9 +5394,9 @@ impl Interpreter {
             });
         }
         match op {
-            TokenKind::Pipe => Ok(Self::merge_junction(JunctionKind::Any, left, right)),
-            TokenKind::Ampersand => Ok(Self::merge_junction(JunctionKind::All, left, right)),
-            TokenKind::Caret => Ok(Self::merge_junction(JunctionKind::One, left, right)),
+            TokenKind::Pipe => Ok(runtime::merge_junction(JunctionKind::Any, left, right)),
+            TokenKind::Ampersand => Ok(runtime::merge_junction(JunctionKind::All, left, right)),
+            TokenKind::Caret => Ok(runtime::merge_junction(JunctionKind::One, left, right)),
             TokenKind::Plus => {
                 // Range + Int: shift both bounds
                 match (&left, &right) {
@@ -5454,14 +5422,14 @@ impl Interpreter {
                     }
                     _ => {}
                 }
-                let (l, r) = Self::coerce_numeric(left, right);
+                let (l, r) = runtime::coerce_numeric(left, right);
                 if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
-                    let (ar, ai) = Self::to_complex_parts(&l).unwrap_or((0.0, 0.0));
-                    let (br, bi) = Self::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                    let (ar, ai) = runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                    let (br, bi) = runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
                     return Ok(Value::Complex(ar + br, ai + bi));
                 }
                 if let (Some((an, ad)), Some((bn, bd))) =
-                    (Self::to_rat_parts(&l), Self::to_rat_parts(&r))
+                    (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
                     && (matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)))
                 {
                     return Ok(make_rat(an * bd + bn * ad, ad * bd));
@@ -5475,14 +5443,14 @@ impl Interpreter {
                 }
             }
             TokenKind::Minus => {
-                let (l, r) = Self::coerce_numeric(left, right);
+                let (l, r) = runtime::coerce_numeric(left, right);
                 if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
-                    let (ar, ai) = Self::to_complex_parts(&l).unwrap_or((0.0, 0.0));
-                    let (br, bi) = Self::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                    let (ar, ai) = runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                    let (br, bi) = runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
                     return Ok(Value::Complex(ar - br, ai - bi));
                 }
                 if let (Some((an, ad)), Some((bn, bd))) =
-                    (Self::to_rat_parts(&l), Self::to_rat_parts(&r))
+                    (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
                     && (matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)))
                 {
                     return Ok(make_rat(an * bd - bn * ad, ad * bd));
@@ -5496,15 +5464,15 @@ impl Interpreter {
                 }
             }
             TokenKind::Star => {
-                let (l, r) = Self::coerce_numeric(left, right);
+                let (l, r) = runtime::coerce_numeric(left, right);
                 if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
-                    let (ar, ai) = Self::to_complex_parts(&l).unwrap_or((0.0, 0.0));
-                    let (br, bi) = Self::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                    let (ar, ai) = runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                    let (br, bi) = runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
                     // (a+bi)(c+di) = (ac-bd) + (ad+bc)i
                     return Ok(Value::Complex(ar * br - ai * bi, ar * bi + ai * br));
                 }
                 if let (Some((an, ad)), Some((bn, bd))) =
-                    (Self::to_rat_parts(&l), Self::to_rat_parts(&r))
+                    (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
                     && (matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)))
                 {
                     return Ok(make_rat(an * bn, ad * bd));
@@ -5518,10 +5486,10 @@ impl Interpreter {
                 }
             }
             TokenKind::Slash => {
-                let (l, r) = Self::coerce_numeric(left, right);
+                let (l, r) = runtime::coerce_numeric(left, right);
                 if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
-                    let (ar, ai) = Self::to_complex_parts(&l).unwrap_or((0.0, 0.0));
-                    let (br, bi) = Self::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                    let (ar, ai) = runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                    let (br, bi) = runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
                     // (a+bi)/(c+di) = ((ac+bd) + (bc-ad)i) / (c²+d²)
                     let denom = br * br + bi * bi;
                     if denom == 0.0 {
@@ -5536,8 +5504,8 @@ impl Interpreter {
                     (Value::Rat(_, _), _)
                     | (_, Value::Rat(_, _))
                     | (Value::Int(_), Value::Int(_)) => {
-                        let (an, ad) = Self::to_rat_parts(&l).unwrap_or((0, 1));
-                        let (bn, bd) = Self::to_rat_parts(&r).unwrap_or((0, 1));
+                        let (an, ad) = runtime::to_rat_parts(&l).unwrap_or((0, 1));
+                        let (bn, bd) = runtime::to_rat_parts(&r).unwrap_or((0, 1));
                         if bn == 0 {
                             return Err(RuntimeError::new("Division by zero"));
                         }
@@ -5550,9 +5518,9 @@ impl Interpreter {
                 }
             }
             TokenKind::Percent => {
-                let (l, r) = Self::coerce_numeric(left, right);
+                let (l, r) = runtime::coerce_numeric(left, right);
                 if let (Some((an, ad)), Some((bn, bd))) =
-                    (Self::to_rat_parts(&l), Self::to_rat_parts(&r))
+                    (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
                     && (matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)))
                 {
                     if bn == 0 {
@@ -5574,7 +5542,7 @@ impl Interpreter {
                 }
             }
             TokenKind::PercentPercent => {
-                let (l, r) = Self::coerce_numeric(left, right);
+                let (l, r) = runtime::coerce_numeric(left, right);
                 match (l, r) {
                     (Value::Int(_), Value::Int(0)) => {
                         Err(RuntimeError::new("Divisibility by zero"))
@@ -5584,10 +5552,10 @@ impl Interpreter {
                 }
             }
             TokenKind::StarStar => {
-                let (l, r) = Self::coerce_numeric(left, right);
+                let (l, r) = runtime::coerce_numeric(left, right);
                 if matches!(l, Value::Complex(_, _)) || matches!(r, Value::Complex(_, _)) {
-                    let (ar, ai) = Self::to_complex_parts(&l).unwrap_or((0.0, 0.0));
-                    let (br, bi) = Self::to_complex_parts(&r).unwrap_or((0.0, 0.0));
+                    let (ar, ai) = runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
+                    let (br, bi) = runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
                     // z^w = e^(w * ln(z))
                     let ln_r = (ar * ar + ai * ai).sqrt().ln();
                     let ln_i = ai.atan2(ar);
@@ -5619,35 +5587,35 @@ impl Interpreter {
                 }
             }
             TokenKind::BitAnd => {
-                let (l, r) = Self::coerce_numeric(left, right);
+                let (l, r) = runtime::coerce_numeric(left, right);
                 match (l, r) {
                     (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a & b)),
                     _ => Ok(Value::Int(0)),
                 }
             }
             TokenKind::BitOr => {
-                let (l, r) = Self::coerce_numeric(left, right);
+                let (l, r) = runtime::coerce_numeric(left, right);
                 match (l, r) {
                     (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a | b)),
                     _ => Ok(Value::Int(0)),
                 }
             }
             TokenKind::BitXor => {
-                let (l, r) = Self::coerce_numeric(left, right);
+                let (l, r) = runtime::coerce_numeric(left, right);
                 match (l, r) {
                     (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a ^ b)),
                     _ => Ok(Value::Int(0)),
                 }
             }
             TokenKind::BitShiftLeft => {
-                let (l, r) = Self::coerce_numeric(left, right);
+                let (l, r) = runtime::coerce_numeric(left, right);
                 match (l, r) {
                     (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a << b)),
                     _ => Ok(Value::Int(0)),
                 }
             }
             TokenKind::BitShiftRight => {
-                let (l, r) = Self::coerce_numeric(left, right);
+                let (l, r) = runtime::coerce_numeric(left, right);
                 match (l, r) {
                     (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a >> b)),
                     _ => Ok(Value::Int(0)),
@@ -5738,7 +5706,7 @@ impl Interpreter {
                     | (Value::FatRat(_, _), _)
                     | (_, Value::FatRat(_, _)) => {
                         if let (Some((an, ad)), Some((bn, bd))) =
-                            (Self::to_rat_parts(&left), Self::to_rat_parts(&right))
+                            (runtime::to_rat_parts(&left), runtime::to_rat_parts(&right))
                         {
                             (an * bd).cmp(&(bn * ad))
                         } else {
@@ -5817,7 +5785,7 @@ impl Interpreter {
                     | (Value::FatRat(_, _), _)
                     | (_, Value::FatRat(_, _)) => {
                         if let (Some((an, ad)), Some((bn, bd))) =
-                            (Self::to_rat_parts(&left), Self::to_rat_parts(&right))
+                            (runtime::to_rat_parts(&left), runtime::to_rat_parts(&right))
                         {
                             (an * bd).cmp(&(bn * ad))
                         } else {
@@ -5921,8 +5889,8 @@ impl Interpreter {
                     Ok(Value::Bag(a))
                 }
                 (l, r) => {
-                    let a = Self::coerce_to_set(&l);
-                    let b = Self::coerce_to_set(&r);
+                    let a = runtime::coerce_to_set(&l);
+                    let b = runtime::coerce_to_set(&r);
                     let mut result = a;
                     for elem in b {
                         result.insert(elem);
@@ -5953,8 +5921,8 @@ impl Interpreter {
                     Ok(Value::Mix(result))
                 }
                 (l, r) => {
-                    let a = Self::coerce_to_set(&l);
-                    let b = Self::coerce_to_set(&r);
+                    let a = runtime::coerce_to_set(&l);
+                    let b = runtime::coerce_to_set(&r);
                     Ok(Value::Set(a.intersection(&b).cloned().collect()))
                 }
             },
@@ -5983,8 +5951,8 @@ impl Interpreter {
                     Ok(Value::Mix(result))
                 }
                 (l, r) => {
-                    let a = Self::coerce_to_set(&l);
-                    let b = Self::coerce_to_set(&r);
+                    let a = runtime::coerce_to_set(&l);
+                    let b = runtime::coerce_to_set(&r);
                     Ok(Value::Set(a.difference(&b).cloned().collect()))
                 }
             },
@@ -5993,29 +5961,29 @@ impl Interpreter {
                     Ok(Value::Set(a.symmetric_difference(&b).cloned().collect()))
                 }
                 (l, r) => {
-                    let a = Self::coerce_to_set(&l);
-                    let b = Self::coerce_to_set(&r);
+                    let a = runtime::coerce_to_set(&l);
+                    let b = runtime::coerce_to_set(&r);
                     Ok(Value::Set(a.symmetric_difference(&b).cloned().collect()))
                 }
             },
             TokenKind::SetSubset => {
-                let a = Self::coerce_to_set(&left);
-                let b = Self::coerce_to_set(&right);
+                let a = runtime::coerce_to_set(&left);
+                let b = runtime::coerce_to_set(&right);
                 Ok(Value::Bool(a.is_subset(&b)))
             }
             TokenKind::SetSuperset => {
-                let a = Self::coerce_to_set(&left);
-                let b = Self::coerce_to_set(&right);
+                let a = runtime::coerce_to_set(&left);
+                let b = runtime::coerce_to_set(&right);
                 Ok(Value::Bool(a.is_superset(&b)))
             }
             TokenKind::SetStrictSubset => {
-                let a = Self::coerce_to_set(&left);
-                let b = Self::coerce_to_set(&right);
+                let a = runtime::coerce_to_set(&left);
+                let b = runtime::coerce_to_set(&right);
                 Ok(Value::Bool(a.is_subset(&b) && a.len() < b.len()))
             }
             TokenKind::SetStrictSuperset => {
-                let a = Self::coerce_to_set(&left);
-                let b = Self::coerce_to_set(&right);
+                let a = runtime::coerce_to_set(&left);
+                let b = runtime::coerce_to_set(&right);
                 Ok(Value::Bool(a.is_superset(&b) && a.len() > b.len()))
             }
             _ => Err(RuntimeError::new("Unknown binary operator")),
@@ -6726,14 +6694,14 @@ impl Interpreter {
                     let mut min = &items[0];
                     let mut max = &items[0];
                     for item in &items[1..] {
-                        if Self::compare_values(item, min) < 0 {
+                        if runtime::compare_values(item, min) < 0 {
                             min = item;
                         }
-                        if Self::compare_values(item, max) > 0 {
+                        if runtime::compare_values(item, max) > 0 {
                             max = item;
                         }
                     }
-                    Ok(Value::Range(Self::to_int(min), Self::to_int(max)))
+                    Ok(Value::Range(runtime::to_int(min), runtime::to_int(max)))
                 }
                 _ => Ok(Value::Nil),
             };
@@ -8999,7 +8967,7 @@ impl Interpreter {
                     | (Value::FatRat(_, _), _)
                     | (_, Value::FatRat(_, _)) => {
                         if let (Some((an, ad)), Some((bn, bd))) =
-                            (Self::to_rat_parts(left), Self::to_rat_parts(right))
+                            (runtime::to_rat_parts(left), runtime::to_rat_parts(right))
                         {
                             (an * bd).cmp(&(bn * ad))
                         } else {
@@ -9936,7 +9904,7 @@ impl Interpreter {
                                 "Type check failed for {}: expected {}, got {}",
                                 pd.name,
                                 constraint,
-                                Self::value_type_name(&value)
+                                runtime::value_type_name(&value)
                             )));
                         }
                         if !pd.name.is_empty() {
@@ -9963,7 +9931,7 @@ impl Interpreter {
                             "Type check failed for {}: expected {}, got {}",
                             pd.name,
                             constraint,
-                            Self::value_type_name(&value)
+                            runtime::value_type_name(&value)
                         )));
                     }
                     if !pd.name.is_empty() {
@@ -10027,7 +9995,7 @@ impl Interpreter {
                             "Type check failed for {}: expected {}, got {}",
                             pd.name,
                             constraint,
-                            Self::value_type_name(&value)
+                            runtime::value_type_name(&value)
                         )));
                     }
                     if !pd.name.is_empty() {
@@ -10217,292 +10185,6 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
-        let mut chars = fmt.chars().peekable();
-        let mut out = String::new();
-        while let Some(c) = chars.next() {
-            if c != '%' {
-                out.push(c);
-                continue;
-            }
-            if chars.peek() == Some(&'%') {
-                chars.next();
-                out.push('%');
-                continue;
-            }
-            let mut flags = String::new();
-            while let Some(f) = chars.peek().copied() {
-                if f == '-' || f == '+' || f == ' ' || f == '#' {
-                    flags.push(f);
-                    chars.next();
-                } else {
-                    break;
-                }
-            }
-            let mut width = String::new();
-            while let Some(d) = chars.peek().copied() {
-                if d.is_ascii_digit() {
-                    width.push(d);
-                    chars.next();
-                } else {
-                    break;
-                }
-            }
-            let mut precision = String::new();
-            if chars.peek() == Some(&'.') {
-                chars.next();
-                while let Some(d) = chars.peek().copied() {
-                    if d.is_ascii_digit() {
-                        precision.push(d);
-                        chars.next();
-                    } else {
-                        break;
-                    }
-                }
-            }
-            let spec = chars.next().unwrap_or('s');
-            let width_num = width.parse::<usize>().unwrap_or(0);
-            let prec_num = precision.parse::<usize>().ok();
-            let zero_pad = width.starts_with('0') && !flags.contains('-');
-            let left_align = flags.contains('-');
-            let plus_sign = flags.contains('+');
-            let hash_flag = flags.contains('#');
-            let int_val = || match arg {
-                Some(Value::Int(i)) => *i,
-                Some(Value::Num(f)) => *f as i64,
-                Some(Value::Str(s)) => s.trim().parse::<i64>().unwrap_or(0),
-                Some(Value::Bool(b)) => {
-                    if *b {
-                        1
-                    } else {
-                        0
-                    }
-                }
-                _ => 0,
-            };
-            let float_val = || match arg {
-                Some(Value::Int(i)) => *i as f64,
-                Some(Value::Num(f)) => *f,
-                Some(Value::Str(s)) => s.trim().parse::<f64>().unwrap_or(0.0),
-                _ => 0.0,
-            };
-            let rendered = match spec {
-                's' => match arg {
-                    Some(v) => {
-                        let s = v.to_string_value();
-                        if let Some(p) = prec_num {
-                            s[..p.min(s.len())].to_string()
-                        } else {
-                            s
-                        }
-                    }
-                    _ => String::new(),
-                },
-                'd' | 'i' => {
-                    let i = int_val();
-                    if plus_sign && i >= 0 {
-                        format!("+{}", i)
-                    } else {
-                        format!("{}", i)
-                    }
-                }
-                'u' => format!("{}", int_val() as u64),
-                'x' => {
-                    let i = int_val();
-                    let s = format!("{:x}", i);
-                    if hash_flag { format!("0x{}", s) } else { s }
-                }
-                'X' => {
-                    let i = int_val();
-                    let s = format!("{:X}", i);
-                    if hash_flag { format!("0X{}", s) } else { s }
-                }
-                'o' => {
-                    let i = int_val();
-                    let s = format!("{:o}", i);
-                    if hash_flag { format!("0{}", s) } else { s }
-                }
-                'b' => {
-                    let i = int_val();
-                    let s = format!("{:b}", i);
-                    if hash_flag { format!("0b{}", s) } else { s }
-                }
-                'B' => {
-                    let i = int_val();
-                    let s = format!("{:b}", i);
-                    if hash_flag { format!("0B{}", s) } else { s }
-                }
-                'e' | 'E' => {
-                    let f = float_val();
-                    let p = prec_num.unwrap_or(6);
-                    if spec == 'e' {
-                        format!("{:.prec$e}", f, prec = p)
-                    } else {
-                        format!("{:.prec$E}", f, prec = p)
-                    }
-                }
-                'f' => {
-                    let f = float_val();
-                    let p = prec_num.unwrap_or(6);
-                    format!("{:.prec$}", f, prec = p)
-                }
-                'g' | 'G' => {
-                    let f = float_val();
-                    let p = prec_num.unwrap_or(6);
-                    if f.abs() < 1e-4 || f.abs() >= 10f64.powi(p as i32) {
-                        if spec == 'g' {
-                            format!("{:.prec$e}", f, prec = p.saturating_sub(1))
-                        } else {
-                            format!("{:.prec$E}", f, prec = p.saturating_sub(1))
-                        }
-                    } else {
-                        format!("{:.prec$}", f, prec = p.saturating_sub(1))
-                    }
-                }
-                'c' => {
-                    let i = int_val();
-                    char::from_u32(i as u32)
-                        .map(|c| c.to_string())
-                        .unwrap_or_default()
-                }
-                _ => String::new(),
-            };
-            if width_num > rendered.len() {
-                let pad = width_num - rendered.len();
-                if left_align {
-                    out.push_str(&rendered);
-                    out.push_str(&" ".repeat(pad));
-                } else {
-                    let ch = if zero_pad { '0' } else { ' ' };
-                    out.push_str(&ch.to_string().repeat(pad));
-                    out.push_str(&rendered);
-                }
-            } else {
-                out.push_str(&rendered);
-            }
-        }
-        out
-    }
-
-    pub(crate) fn coerce_to_numeric(val: Value) -> Value {
-        match val {
-            Value::Int(_)
-            | Value::Num(_)
-            | Value::Rat(_, _)
-            | Value::FatRat(_, _)
-            | Value::Complex(_, _) => val,
-            Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
-            Value::Enum { value, .. } => Value::Int(value),
-            Value::Str(ref s) => {
-                let s = s.trim();
-                if let Ok(i) = s.parse::<i64>() {
-                    Value::Int(i)
-                } else if let Ok(f) = s.parse::<f64>() {
-                    Value::Num(f)
-                } else {
-                    Value::Int(0)
-                }
-            }
-            Value::Array(items) => Value::Int(items.len() as i64),
-            Value::Nil => Value::Int(0),
-            _ => Value::Int(0),
-        }
-    }
-
-    pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
-        match val {
-            Value::Set(s) => s.clone(),
-            Value::Bag(b) => b.keys().cloned().collect(),
-            Value::Mix(m) => m.keys().cloned().collect(),
-            Value::Array(items) => items.iter().map(|v| v.to_string_value()).collect(),
-            _ => {
-                let mut s = HashSet::new();
-                let sv = val.to_string_value();
-                if !sv.is_empty() {
-                    s.insert(sv);
-                }
-                s
-            }
-        }
-    }
-
-    pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
-        let l = match &left {
-            Value::Int(_)
-            | Value::Num(_)
-            | Value::Rat(_, _)
-            | Value::FatRat(_, _)
-            | Value::Complex(_, _) => left,
-            _ => Self::coerce_to_numeric(left),
-        };
-        let r = match &right {
-            Value::Int(_)
-            | Value::Num(_)
-            | Value::Rat(_, _)
-            | Value::FatRat(_, _)
-            | Value::Complex(_, _) => right,
-            _ => Self::coerce_to_numeric(right),
-        };
-        (l, r)
-    }
-
-    pub(crate) fn to_rat_parts(val: &Value) -> Option<(i64, i64)> {
-        match val {
-            Value::Int(i) => Some((*i, 1)),
-            Value::Rat(n, d) => Some((*n, *d)),
-            Value::FatRat(n, d) => Some((*n, *d)),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
-        match val {
-            Value::Num(f) => Some(*f),
-            Value::Int(i) => Some(*i as f64),
-            Value::Rat(n, d) => {
-                if *d != 0 {
-                    Some(*n as f64 / *d as f64)
-                } else {
-                    None
-                }
-            }
-            Value::FatRat(n, d) => {
-                if *d != 0 {
-                    Some(*n as f64 / *d as f64)
-                } else {
-                    None
-                }
-            }
-            Value::Complex(r, i) => {
-                if *i == 0.0 {
-                    Some(*r)
-                } else {
-                    None
-                }
-            }
-            Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
-            Value::Str(s) => s.parse::<f64>().ok(),
-            Value::Nil => Some(0.0),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn to_complex_parts(val: &Value) -> Option<(f64, f64)> {
-        match val {
-            Value::Complex(r, i) => Some((*r, *i)),
-            Value::Int(n) => Some((*n as f64, 0.0)),
-            Value::Num(f) => Some((*f, 0.0)),
-            Value::Rat(n, d) => {
-                if *d != 0 {
-                    Some((*n as f64 / *d as f64, 0.0))
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
-    }
-
     fn callframe_value(&self, depth: usize) -> Option<Value> {
         self.routine_stack
             .len()
@@ -10542,7 +10224,7 @@ impl Interpreter {
     }
 
     fn seconds_from_value(val: Option<Value>) -> Option<f64> {
-        val.and_then(|v| Self::to_float_value(&v))
+        val.and_then(|v| runtime::to_float_value(&v))
     }
 
     fn duration_from_seconds(secs: Option<f64>) -> Duration {
@@ -10626,78 +10308,6 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn merge_junction(kind: JunctionKind, left: Value, right: Value) -> Value {
-        let mut values = Vec::new();
-        Self::push_junction_value(&kind, left, &mut values);
-        Self::push_junction_value(&kind, right, &mut values);
-        Value::Junction { kind, values }
-    }
-
-    pub(crate) fn push_junction_value(kind: &JunctionKind, value: Value, out: &mut Vec<Value>) {
-        match value {
-            Value::Junction {
-                kind: inner_kind,
-                values,
-            } if &inner_kind == kind => {
-                out.extend(values);
-            }
-            other => out.push(other),
-        }
-    }
-
-    pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
-        match (a, b) {
-            (Value::Int(a), Value::Int(b)) => a.cmp(b) as i32,
-            (Value::Num(a), Value::Num(b)) => {
-                a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal) as i32
-            }
-            (Value::Int(a), Value::Num(b)) => (*a as f64)
-                .partial_cmp(b)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                as i32,
-            (Value::Num(a), Value::Int(b)) => {
-                a.partial_cmp(&(*b as f64))
-                    .unwrap_or(std::cmp::Ordering::Equal) as i32
-            }
-            _ => {
-                if let (Some((an, ad)), Some((bn, bd))) =
-                    (Self::to_rat_parts(a), Self::to_rat_parts(b))
-                {
-                    let lhs = an as i128 * bd as i128;
-                    let rhs = bn as i128 * ad as i128;
-                    return lhs.cmp(&rhs) as i32;
-                }
-                a.to_string_value().cmp(&b.to_string_value()) as i32
-            }
-        }
-    }
-
-    pub(crate) fn to_int(v: &Value) -> i64 {
-        match v {
-            Value::Int(i) => *i,
-            Value::BigInt(n) => {
-                use num_traits::ToPrimitive;
-                n.to_i64()
-                    .unwrap_or(if *n > num_bigint::BigInt::from(0i64) {
-                        i64::MAX
-                    } else {
-                        i64::MIN
-                    })
-            }
-            Value::Num(f) => *f as i64,
-            Value::Rat(n, d) => {
-                if *d != 0 {
-                    n / d
-                } else {
-                    0
-                }
-            }
-            Value::Complex(r, _) => *r as i64,
-            Value::Str(s) => s.parse().unwrap_or(0),
-            _ => 0,
-        }
-    }
-
     fn is_threadable_op(op: &TokenKind) -> bool {
         match op {
             TokenKind::EqEq
@@ -10729,8 +10339,9 @@ impl Interpreter {
         right: Value,
         f: fn(i32) -> bool,
     ) -> Result<Value, RuntimeError> {
-        let (l, r) = Self::coerce_numeric(left, right);
-        if let (Some((an, ad)), Some((bn, bd))) = (Self::to_rat_parts(&l), Self::to_rat_parts(&r))
+        let (l, r) = runtime::coerce_numeric(left, right);
+        if let (Some((an, ad)), Some((bn, bd))) =
+            (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
             && (matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)))
         {
             let lhs = an as i128 * bd as i128;

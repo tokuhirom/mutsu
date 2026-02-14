@@ -326,12 +326,30 @@ impl Interpreter {
                         "le" => left.to_string_value() <= right.to_string_value(),
                         "gt" => left.to_string_value() > right.to_string_value(),
                         "ge" => left.to_string_value() >= right.to_string_value(),
-                        "==" => Self::to_float_value(&left) == Self::to_float_value(&right),
-                        "!=" => Self::to_float_value(&left) != Self::to_float_value(&right),
-                        "<" => Self::to_float_value(&left) < Self::to_float_value(&right),
-                        "<=" => Self::to_float_value(&left) <= Self::to_float_value(&right),
-                        ">" => Self::to_float_value(&left) > Self::to_float_value(&right),
-                        ">=" => Self::to_float_value(&left) >= Self::to_float_value(&right),
+                        "==" => {
+                            crate::runtime::to_float_value(&left)
+                                == crate::runtime::to_float_value(&right)
+                        }
+                        "!=" => {
+                            crate::runtime::to_float_value(&left)
+                                != crate::runtime::to_float_value(&right)
+                        }
+                        "<" => {
+                            crate::runtime::to_float_value(&left)
+                                < crate::runtime::to_float_value(&right)
+                        }
+                        "<=" => {
+                            crate::runtime::to_float_value(&left)
+                                <= crate::runtime::to_float_value(&right)
+                        }
+                        ">" => {
+                            crate::runtime::to_float_value(&left)
+                                > crate::runtime::to_float_value(&right)
+                        }
+                        ">=" => {
+                            crate::runtime::to_float_value(&left)
+                                >= crate::runtime::to_float_value(&right)
+                        }
                         "===" => left == right,
                         "=:=" => left == right,
                         _ => {
@@ -388,7 +406,10 @@ impl Interpreter {
                         1,
                         "is-approx expects expected",
                     )?)?;
-                    let ok = match (Self::to_float_value(&got), Self::to_float_value(&expected)) {
+                    let ok = match (
+                        crate::runtime::to_float_value(&got),
+                        crate::runtime::to_float_value(&expected),
+                    ) {
                         (Some(g), Some(e)) => (g - e).abs() <= 1e-5,
                         _ => false,
                     };
