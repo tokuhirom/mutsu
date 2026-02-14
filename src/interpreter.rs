@@ -5429,23 +5429,6 @@ impl Interpreter {
                 args,
                 modifier,
             } => {
-                // Handle .VAR — returns a container object with the variable name
-                if name == "VAR" && args.is_empty() {
-                    let (var_name, class_name) = match target.as_ref() {
-                        Expr::Var(n) => (format!("${}", n), "Scalar"),
-                        Expr::ArrayVar(n) => (format!("@{}", n), "Array"),
-                        Expr::HashVar(n) => (format!("%{}", n), "Hash"),
-                        Expr::CodeVar(n) => (format!("&{}", n), "Scalar"),
-                        _ => {
-                            // .VAR on non-container is identity
-                            let value = self.eval_expr(target)?;
-                            return Ok(value);
-                        }
-                    };
-                    let mut attributes = HashMap::new();
-                    attributes.insert("name".to_string(), Value::Str(var_name));
-                    return Ok(Value::make_instance(class_name.to_string(), attributes));
-                }
                 // Handle method dispatch modifiers: .?method, .+method, .*method
                 if modifier.is_some() {
                     let inner = Expr::MethodCall {
@@ -8064,6 +8047,11 @@ impl Interpreter {
             self.output.push_str(&target.to_string_value());
             self.output.push('\n');
             return Ok(Value::Nil);
+        }
+        if method == "VAR" && args.is_empty() {
+            // Non-container .VAR is identity. Container variables are handled in
+            // call_method_mut_with_values via target variable metadata.
+            return Ok(target);
         }
         if (method == "in" || method == "anyof" || method == "allof")
             && matches!(&target, Value::Package(name) if name == "Promise")
