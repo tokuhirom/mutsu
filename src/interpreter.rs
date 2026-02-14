@@ -5573,55 +5573,29 @@ impl Interpreter {
         args: &[Expr],
     ) -> Option<Result<Value, RuntimeError>> {
         if name == "shift" || name == "pop" {
-            if let Some(arg) = args.first() {
-                let var_key = match arg {
-                    Expr::ArrayVar(v) => Some(format!("@{}", v)),
-                    Expr::Var(v) => Some(v.clone()),
-                    _ => None,
-                };
-                if let Some(key) = var_key
-                    && let Some(Value::Array(items)) = self.env.get_mut(&key)
-                {
-                    if items.is_empty() {
-                        return Some(Ok(Value::Nil));
-                    }
-                    return Some(Ok(if name == "shift" {
-                        items.remove(0)
-                    } else {
-                        items.pop().unwrap_or(Value::Nil)
-                    }));
-                }
-            }
-            return Some(Ok(Value::Nil));
+            let Some(target) = args.first().cloned() else {
+                return Some(Ok(Value::Nil));
+            };
+            let method_expr = Expr::MethodCall {
+                target: Box::new(target),
+                name: name.to_string(),
+                args: Vec::new(),
+                modifier: None,
+            };
+            return Some(self.eval_expr(&method_expr));
         }
 
         if name == "push" || name == "unshift" || name == "append" || name == "prepend" {
-            if let Some(arr_arg) = args.first() {
-                let var_key = match arr_arg {
-                    Expr::ArrayVar(v) => Some(format!("@{}", v)),
-                    Expr::Var(v) => Some(v.clone()),
-                    _ => None,
-                };
-                if let Some(key) = var_key {
-                    let values: Vec<Value> = args[1..]
-                        .iter()
-                        .map(|e| self.eval_expr(e).unwrap_or(Value::Nil))
-                        .collect();
-                    if let Some(Value::Array(items)) = self.env.get_mut(&key) {
-                        if name == "push" || name == "append" {
-                            items.extend(values);
-                        } else {
-                            for v in values.into_iter().rev() {
-                                items.insert(0, v);
-                            }
-                        }
-                    } else {
-                        self.env.insert(key, Value::Array(values));
-                    }
-                    return Some(Ok(Value::Nil));
-                }
-            }
-            return Some(Ok(Value::Nil));
+            let Some(target) = args.first().cloned() else {
+                return Some(Ok(Value::Nil));
+            };
+            let method_expr = Expr::MethodCall {
+                target: Box::new(target),
+                name: name.to_string(),
+                args: args[1..].to_vec(),
+                modifier: None,
+            };
+            return Some(self.eval_expr(&method_expr));
         }
 
         if name == "undefine" {
