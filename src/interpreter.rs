@@ -1786,6 +1786,20 @@ impl Interpreter {
                 .unwrap_or(false);
             return Ok(Value::Bool(status));
         }
+        if name == "kill" {
+            let signal = args.first().map(Self::to_int).unwrap_or(15);
+            let mut success = true;
+            let mut had_pid = false;
+            for val in args.iter().skip(1) {
+                had_pid = true;
+                let pid = Self::to_int(val);
+                success &= Self::send_signal(pid, signal);
+            }
+            if !had_pid {
+                success = false;
+            }
+            return Ok(Value::Bool(success));
+        }
         if name == "syscall" {
             let num_val = args.first();
             if let Some(val) = num_val {
@@ -1804,6 +1818,34 @@ impl Interpreter {
                 return Ok(Value::Int(-1));
             }
             return Ok(Value::Nil);
+        }
+        if name == "sleep" {
+            let duration =
+                Self::duration_from_seconds(Self::seconds_from_value(args.first().cloned()));
+            thread::sleep(duration);
+            return Ok(Value::Nil);
+        }
+        if name == "sleep-timer" {
+            let duration =
+                Self::duration_from_seconds(Self::seconds_from_value(args.first().cloned()));
+            let start = Instant::now();
+            thread::sleep(duration);
+            let elapsed = start.elapsed();
+            let remaining = duration.checked_sub(elapsed).unwrap_or_default();
+            return Ok(Value::Num(remaining.as_secs_f64()));
+        }
+        if name == "sleep-till" {
+            if let Some(target_time) = Self::system_time_from_value(args.first().cloned()) {
+                let now = SystemTime::now();
+                if target_time <= now {
+                    return Ok(Value::Bool(false));
+                }
+                if let Ok(diff) = target_time.duration_since(now) {
+                    thread::sleep(diff);
+                    return Ok(Value::Bool(true));
+                }
+            }
+            return Ok(Value::Bool(false));
         }
         if name == "chrs" {
             let mut result = String::new();
@@ -4723,15 +4765,6 @@ impl Interpreter {
         }
     }
 
-    fn eval_token_call(
-        &mut self,
-        name: &str,
-        args: &[Expr],
-    ) -> Result<Option<String>, RuntimeError> {
-        let arg_values: Vec<Value> = args.iter().filter_map(|a| self.eval_expr(a).ok()).collect();
-        self.eval_token_call_values(name, &arg_values)
-    }
-
     fn eval_token_call_values(
         &mut self,
         name: &str,
@@ -5684,88 +5717,6 @@ impl Interpreter {
                     }
                     return Ok(Value::Nil);
                 }
-                if matches!(name.as_str(), "Int" | "Num" | "Str" | "Bool")
-                    && let Some(arg) = args.first()
-                {
-                    let value = self.eval_expr(arg)?;
-                    let coerced = match name.as_str() {
-                        "Int" => match value {
-                            Value::Int(i) => Value::Int(i),
-                            Value::Num(f) => Value::Int(f as i64),
-                            Value::Rat(n, d) => {
-                                if d == 0 {
-                                    Value::Int(0)
-                                } else {
-                                    Value::Int(n / d)
-                                }
-                            }
-                            Value::Complex(r, _) => Value::Int(r as i64),
-                            Value::Str(s) => Value::Int(s.trim().parse::<i64>().unwrap_or(0)),
-                            Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
-                            _ => Value::Int(0),
-                        },
-                        "Num" => match value {
-                            Value::Int(i) => Value::Num(i as f64),
-                            Value::Num(f) => Value::Num(f),
-                            Value::Rat(n, d) => {
-                                if d == 0 {
-                                    Value::Num(if n == 0 {
-                                        f64::NAN
-                                    } else if n > 0 {
-                                        f64::INFINITY
-                                    } else {
-                                        f64::NEG_INFINITY
-                                    })
-                                } else {
-                                    Value::Num(n as f64 / d as f64)
-                                }
-                            }
-                            Value::Complex(r, _) => Value::Num(r),
-                            Value::Str(s) => {
-                                if let Ok(i) = s.trim().parse::<i64>() {
-                                    Value::Num(i as f64)
-                                } else if let Ok(f) = s.trim().parse::<f64>() {
-                                    Value::Num(f)
-                                } else {
-                                    Value::Num(0.0)
-                                }
-                            }
-                            Value::Bool(b) => Value::Num(if b { 1.0 } else { 0.0 }),
-                            _ => Value::Num(0.0),
-                        },
-                        "Str" => Value::Str(value.to_string_value()),
-                        "Bool" => Value::Bool(value.truthy()),
-                        _ => Value::Nil,
-                    };
-                    return Ok(coerced);
-                }
-                if let Some(pattern) = self.eval_token_call(name, args)? {
-                    return Ok(Value::Regex(pattern));
-                }
-                // Try type-based multi dispatch first
-                let arg_values: Vec<Value> =
-                    args.iter().filter_map(|a| self.eval_expr(a).ok()).collect();
-                if let Some(def) = self.resolve_function_with_types(name, &arg_values) {
-                    let saved_env = self.env.clone();
-                    let literal_args: Vec<Expr> =
-                        arg_values.into_iter().map(Expr::Literal).collect();
-                    self.bind_function_args(&def.param_defs, &def.params, &literal_args)?;
-                    self.routine_stack
-                        .push((def.package.clone(), def.name.clone()));
-                    let result = self.eval_block_value(&def.body);
-                    self.routine_stack.pop();
-                    self.env = saved_env;
-                    return match result {
-                        Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
-                        other => other,
-                    };
-                }
-                if self.has_proto(name) {
-                    return Err(RuntimeError::new(format!(
-                        "No matching candidates for proto sub: {}",
-                        name
-                    )));
-                }
                 if name == "EVALFILE" {
                     let path = args
                         .first()
@@ -5839,524 +5790,17 @@ impl Interpreter {
                     }
                     return Ok(Value::Nil);
                 }
-                if name == "elems" {
-                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
-                    return Ok(match val {
-                        Some(Value::Array(items)) => Value::Int(items.len() as i64),
-                        Some(Value::LazyList(list)) => {
-                            Value::Int(self.force_lazy_list(&list)?.len() as i64)
-                        }
-                        Some(Value::Hash(items)) => Value::Int(items.len() as i64),
-                        Some(Value::Str(s)) => Value::Int(s.chars().count() as i64),
-                        _ => Value::Int(0),
-                    });
-                }
-                if name == "keys" {
-                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
-                    return Ok(match val {
-                        Some(Value::Hash(items)) => {
-                            Value::Array(items.keys().map(|k| Value::Str(k.clone())).collect())
-                        }
-                        _ => Value::Array(Vec::new()),
-                    });
-                }
-                if name == "values" {
-                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
-                    return Ok(match val {
-                        Some(Value::Hash(items)) => Value::Array(items.values().cloned().collect()),
-                        _ => Value::Array(Vec::new()),
-                    });
-                }
-                if name == "abs" {
-                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
-                    return Ok(match val {
-                        Some(Value::Int(i)) => Value::Int(i.abs()),
-                        Some(Value::Num(f)) => Value::Num(f.abs()),
-                        _ => Value::Int(0),
-                    });
-                }
-                if name == "chars" {
-                    use unicode_segmentation::UnicodeSegmentation;
-                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
-                    return Ok(match val {
-                        Some(Value::Str(s)) => Value::Int(s.graphemes(true).count() as i64),
-                        Some(v) => Value::Int(v.to_string_value().graphemes(true).count() as i64),
-                        _ => Value::Int(0),
-                    });
-                }
-                if name == "sprintf" {
-                    let fmt = args.first().and_then(|e| self.eval_expr(e).ok());
-                    let fmt = match fmt {
-                        Some(Value::Str(s)) => s,
-                        _ => String::new(),
-                    };
-                    let arg = args.get(1).and_then(|e| self.eval_expr(e).ok());
-                    let rendered = Self::format_sprintf(&fmt, arg.as_ref());
-                    return Ok(Value::Str(rendered));
-                }
-                if name == "join" {
-                    let sep = args
-                        .first()
-                        .and_then(|e| self.eval_expr(e).ok())
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default();
-                    let list = args.get(1).and_then(|e| self.eval_expr(e).ok());
-                    return Ok(match list {
-                        Some(Value::Array(items)) => {
-                            let joined = items
-                                .iter()
-                                .map(|v| v.to_string_value())
-                                .collect::<Vec<_>>()
-                                .join(&sep);
-                            Value::Str(joined)
-                        }
-                        _ => Value::Str(String::new()),
-                    });
-                }
-                if name == "set" {
-                    let mut elems = HashSet::new();
-                    for arg in args {
-                        let val = self.eval_expr(arg)?;
-                        match val {
-                            Value::Array(items) => {
-                                for item in items {
-                                    elems.insert(item.to_string_value());
-                                }
-                            }
-                            other => {
-                                elems.insert(other.to_string_value());
-                            }
-                        }
+                let eval_args: Vec<Value> = args
+                    .iter()
+                    .map(|arg| self.eval_expr(arg))
+                    .collect::<Result<Vec<_>, _>>()?;
+                match self.call_function(name, eval_args) {
+                    Ok(value) => return Ok(value),
+                    Err(e)
+                        if e.message
+                            .starts_with("Unknown function (call_function fallback disabled):") => {
                     }
-                    return Ok(Value::Set(elems));
-                }
-                if name == "bag" {
-                    let mut counts: HashMap<String, i64> = HashMap::new();
-                    for arg in args {
-                        let val = self.eval_expr(arg)?;
-                        match val {
-                            Value::Array(items) => {
-                                for item in items {
-                                    *counts.entry(item.to_string_value()).or_insert(0) += 1;
-                                }
-                            }
-                            other => {
-                                *counts.entry(other.to_string_value()).or_insert(0) += 1;
-                            }
-                        }
-                    }
-                    return Ok(Value::Bag(counts));
-                }
-                if name == "mix" {
-                    let mut weights: HashMap<String, f64> = HashMap::new();
-                    for arg in args {
-                        let val = self.eval_expr(arg)?;
-                        match val {
-                            Value::Array(items) => {
-                                for item in items {
-                                    *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
-                                }
-                            }
-                            other => {
-                                *weights.entry(other.to_string_value()).or_insert(0.0) += 1.0;
-                            }
-                        }
-                    }
-                    return Ok(Value::Mix(weights));
-                }
-                if name == "hash" {
-                    let mut flat_values = Vec::new();
-                    for arg in args {
-                        let val = self.eval_expr(arg)?;
-                        flat_values.extend(Self::value_to_list(&val));
-                    }
-                    let mut map = HashMap::new();
-                    let mut iter = flat_values.into_iter();
-                    while let Some(item) = iter.next() {
-                        match item {
-                            Value::Pair(key, boxed_val) => {
-                                map.insert(key, *boxed_val);
-                            }
-                            other => {
-                                let key = other.to_string_value();
-                                let value = iter.next().unwrap_or(Value::Nil);
-                                map.insert(key, value);
-                            }
-                        }
-                    }
-                    return Ok(Value::Hash(map));
-                }
-                if name == "chroot" {
-                    let path_str = args
-                        .first()
-                        .and_then(|expr| self.eval_expr(expr).ok())
-                        .map(|val| val.to_string_value())
-                        .or_else(|| {
-                            self.get_dynamic_string("$*CWD")
-                                .or_else(|| self.get_dynamic_string("$*CHROOT"))
-                        })
-                        .unwrap_or_else(|| ".".to_string());
-                    let path_buf = PathBuf::from(path_str.clone());
-                    if !path_buf.is_dir() {
-                        return Ok(Value::Bool(false));
-                    }
-                    let canonical = path_buf.canonicalize().unwrap_or_else(|_| path_buf.clone());
-                    if std::env::set_current_dir(&canonical).is_err() {
-                        return Ok(Value::Bool(false));
-                    }
-                    self.chroot_root = Some(canonical.clone());
-                    let repr = Self::stringify_path(&canonical);
-                    self.env
-                        .insert("$*CHROOT".to_string(), Value::Str(repr.clone()));
-                    self.env.insert("$*CWD".to_string(), Value::Str(repr));
-                    return Ok(Value::Bool(true));
-                }
-                if name == "gethost" {
-                    let host_str = args
-                        .first()
-                        .and_then(|expr| self.eval_expr(expr).ok())
-                        .map(|val| val.to_string_value());
-                    let hostname = host_str.unwrap_or_else(Self::hostname);
-                    let addrs = Self::resolve_host(&hostname);
-                    return Ok(Self::make_os_name_value(hostname, addrs));
-                }
-                if name == "kill" {
-                    let mut iter = args.iter();
-                    let signal = iter
-                        .next()
-                        .and_then(|expr| self.eval_expr(expr).ok())
-                        .map(|val| Self::to_int(&val))
-                        .unwrap_or(15);
-                    let mut success = true;
-                    let mut had_pid = false;
-                    for expr in iter {
-                        if let Ok(val) = self.eval_expr(expr) {
-                            had_pid = true;
-                            let pid = Self::to_int(&val);
-                            success &= Self::send_signal(pid, signal);
-                        } else {
-                            success = false;
-                        }
-                    }
-                    if !had_pid {
-                        success = false;
-                    }
-                    return Ok(Value::Bool(success));
-                }
-                if name == "shell" {
-                    let command_str = args
-                        .first()
-                        .and_then(|expr| self.eval_expr(expr).ok())
-                        .map(|val| val.to_string_value())
-                        .unwrap_or_default();
-                    if command_str.is_empty() {
-                        return Ok(Value::Bool(false));
-                    }
-                    let mut opts = HashMap::new();
-                    let mut cwd_opt: Option<String> = None;
-                    for expr in args.iter().skip(1) {
-                        if let Value::Hash(map) = self.eval_expr(expr)? {
-                            for (key, value) in map {
-                                match key.as_str() {
-                                    "cwd" => {
-                                        cwd_opt = Some(value.to_string_value());
-                                    }
-                                    "env" => {
-                                        if let Value::Hash(env_map) = value {
-                                            for (ek, ev) in env_map {
-                                                opts.insert(ek, ev.to_string_value());
-                                            }
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-                    }
-                    let mut command = if cfg!(windows) {
-                        let mut cmd = Command::new("cmd");
-                        cmd.arg("/C").arg(&command_str);
-                        cmd
-                    } else {
-                        let mut cmd = Command::new("sh");
-                        cmd.arg("-c").arg(&command_str);
-                        cmd
-                    };
-                    if let Some(cwd) = cwd_opt {
-                        command.current_dir(cwd);
-                    }
-                    for (k, v) in opts {
-                        command.env(k, v);
-                    }
-                    let status = command
-                        .status()
-                        .map(|status| status.success())
-                        .unwrap_or(false);
-                    return Ok(Value::Bool(status));
-                }
-                if name == "syscall" {
-                    let num_val = args.first().and_then(|expr| self.eval_expr(expr).ok());
-                    if let Some(val) = num_val {
-                        let num = Self::to_int(&val);
-                        if num == 0 {
-                            let pid = self
-                                .env
-                                .get("*PID")
-                                .and_then(|v| match v {
-                                    Value::Int(i) => Some(*i),
-                                    _ => None,
-                                })
-                                .unwrap_or_else(|| std::process::id() as i64);
-                            return Ok(Value::Int(pid));
-                        }
-                        return Ok(Value::Int(-1));
-                    }
-                    return Ok(Value::Nil);
-                }
-                if name == "getlogin" {
-                    let login = Self::get_login_name().unwrap_or_default();
-                    return Ok(Value::Str(login));
-                }
-                if name == "sleep" {
-                    let arg_val = args.first().and_then(|e| self.eval_expr(e).ok());
-                    let duration =
-                        Self::duration_from_seconds(Self::seconds_from_value(arg_val.clone()));
-                    thread::sleep(duration);
-                    return Ok(Value::Nil);
-                }
-                if name == "sleep-timer" {
-                    let arg_val = args.first().and_then(|e| self.eval_expr(e).ok());
-                    let duration =
-                        Self::duration_from_seconds(Self::seconds_from_value(arg_val.clone()));
-                    let start = Instant::now();
-                    thread::sleep(duration);
-                    let elapsed = start.elapsed();
-                    let remaining = duration.checked_sub(elapsed).unwrap_or_default();
-                    return Ok(Value::Num(remaining.as_secs_f64()));
-                }
-                if name == "sleep-till" {
-                    let arg_val = args.first().and_then(|e| self.eval_expr(e).ok());
-                    if let Some(target_time) = Self::system_time_from_value(arg_val) {
-                        let now = SystemTime::now();
-                        if target_time <= now {
-                            return Ok(Value::Bool(false));
-                        }
-                        if let Ok(diff) = target_time.duration_since(now) {
-                            thread::sleep(diff);
-                            return Ok(Value::Bool(true));
-                        }
-                    }
-                    return Ok(Value::Bool(false));
-                }
-                if name == "any" || name == "all" || name == "one" || name == "none" {
-                    let kind = match name.as_str() {
-                        "any" => JunctionKind::Any,
-                        "all" => JunctionKind::All,
-                        "one" => JunctionKind::One,
-                        _ => JunctionKind::None,
-                    };
-                    let mut elems = Vec::new();
-                    for arg in args {
-                        let val = self.eval_expr(arg)?;
-                        match val {
-                            Value::Array(items) => elems.extend(items),
-                            other => elems.push(other),
-                        }
-                    }
-                    return Ok(Value::Junction {
-                        kind,
-                        values: elems,
-                    });
-                }
-                // start: synchronously evaluate the block, return a Promise
-                if name == "start" {
-                    if let Some(block_expr) = args.first() {
-                        let block_val = self.eval_expr(block_expr)?;
-                        match self.call_sub_value(block_val, vec![], false) {
-                            Ok(result) => {
-                                return Ok(self.make_promise_instance("Kept", result));
-                            }
-                            Err(e) => {
-                                return Ok(self.make_promise_instance(
-                                    "Broken",
-                                    Value::Str(e.message.clone()),
-                                ));
-                            }
-                        }
-                    }
-                    return Ok(self.make_promise_instance("Kept", Value::Nil));
-                }
-                // await: extract result from a Promise (synchronous)
-                if name == "await" {
-                    let val = if let Some(arg) = args.first() {
-                        self.eval_expr(arg)?
-                    } else {
-                        Value::Nil
-                    };
-                    if let Value::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } = &val
-                        && class_name == "Promise"
-                    {
-                        return Ok(attributes.get("result").cloned().unwrap_or(Value::Nil));
-                    }
-                    return Ok(val);
-                }
-                if name == "item" {
-                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
-                    return Ok(val.unwrap_or(Value::Nil));
-                }
-                if name == "list" {
-                    let mut result = Vec::new();
-                    for arg in args {
-                        let val = self.eval_expr(arg)?;
-                        for item in Self::value_to_list(&val) {
-                            result.push(item);
-                        }
-                    }
-                    return Ok(Value::Array(result));
-                }
-                if name == "lol" {
-                    let mut result = Vec::new();
-                    for arg in args {
-                        result.push(self.eval_expr(arg)?);
-                    }
-                    return Ok(Value::Array(result));
-                }
-                if name == "flat" {
-                    let mut result = Vec::new();
-                    for arg in args {
-                        let val = self.eval_expr(arg)?;
-                        match val {
-                            Value::Array(items) => {
-                                for item in items {
-                                    if let Value::Array(sub) = item {
-                                        result.extend(sub);
-                                    } else {
-                                        result.push(item);
-                                    }
-                                }
-                            }
-                            other => result.push(other),
-                        }
-                    }
-                    return Ok(Value::Array(result));
-                }
-                if name == "classify" || name == "categorize" {
-                    let func_expr = match args.first() {
-                        Some(expr) => expr,
-                        None => return Ok(Value::Hash(HashMap::new())),
-                    };
-                    let func = self.eval_expr(func_expr)?;
-                    let mut buckets: HashMap<String, Vec<Value>> = HashMap::new();
-                    for expr in args.iter().skip(1) {
-                        let item = self.eval_expr(expr)?;
-                        let keys = match self.call_lambda_with_arg(&func, item.clone()) {
-                            Ok(Value::Array(values)) => values,
-                            Ok(value) => vec![value],
-                            Err(_) => vec![Value::Nil],
-                        };
-                        let target_keys = if name == "classify" {
-                            if keys.is_empty() {
-                                vec![Value::Nil]
-                            } else {
-                                vec![keys[0].clone()]
-                            }
-                        } else {
-                            keys
-                        };
-                        for key in target_keys {
-                            let bucket_key = key.to_string_value();
-                            buckets.entry(bucket_key).or_default().push(item.clone());
-                        }
-                    }
-                    let hash_map = buckets
-                        .into_iter()
-                        .map(|(k, v)| (k, Value::Array(v)))
-                        .collect();
-                    return Ok(Value::Hash(hash_map));
-                }
-                if name == "reverse" {
-                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
-                    return Ok(match val {
-                        Some(Value::Array(mut items)) => {
-                            items.reverse();
-                            Value::Array(items)
-                        }
-                        Some(Value::Str(s)) => Value::Str(s.chars().rev().collect()),
-                        _ => Value::Nil,
-                    });
-                }
-                if name == "sort" {
-                    let val = args.first().and_then(|e| self.eval_expr(e).ok());
-                    return Ok(match val {
-                        Some(Value::Array(mut items)) => {
-                            items.sort_by_key(|a| a.to_string_value());
-                            Value::Array(items)
-                        }
-                        _ => Value::Nil,
-                    });
-                }
-                if name == "slip" {
-                    let mut items = Vec::new();
-                    for arg_expr in args {
-                        let val = self.eval_expr(arg_expr)?;
-                        match val {
-                            Value::Array(elems) => items.extend(elems),
-                            Value::Slip(elems) => items.extend(elems),
-                            other => items.push(other),
-                        }
-                    }
-                    return Ok(Value::Slip(items));
-                }
-                if name == "map" {
-                    // map { BLOCK }, @list
-                    let mut arg_iter = args.iter();
-                    let func = arg_iter.next().map(|e| self.eval_expr(e)).transpose()?;
-                    // Collect remaining args into a list
-                    let mut list_items = Vec::new();
-                    for arg_expr in arg_iter {
-                        let val = self.eval_expr(arg_expr)?;
-                        match val {
-                            Value::Array(items) => list_items.extend(items),
-                            Value::Range(a, b) => {
-                                list_items.extend((a..=b).map(Value::Int));
-                            }
-                            Value::RangeExcl(a, b) => {
-                                list_items.extend((a..b).map(Value::Int));
-                            }
-                            Value::RangeExclStart(a, b) => {
-                                list_items.extend((a + 1..=b).map(Value::Int));
-                            }
-                            Value::RangeExclBoth(a, b) => {
-                                list_items.extend((a + 1..b).map(Value::Int));
-                            }
-                            other => list_items.push(other),
-                        }
-                    }
-                    return self.eval_map_over_items(func, list_items);
-                }
-                if name == "grep" {
-                    // grep { BLOCK }, @list
-                    let mut arg_iter = args.iter();
-                    let func = arg_iter.next().map(|e| self.eval_expr(e)).transpose()?;
-                    let mut list_items = Vec::new();
-                    for arg_expr in arg_iter {
-                        let val = self.eval_expr(arg_expr)?;
-                        match val {
-                            Value::Array(items) => list_items.extend(items),
-                            Value::Range(a, b) => {
-                                list_items.extend((a..=b).map(Value::Int));
-                            }
-                            Value::RangeExcl(a, b) => {
-                                list_items.extend((a..b).map(Value::Int));
-                            }
-                            other => list_items.push(other),
-                        }
-                    }
-                    return self.eval_grep_over_items(func, list_items);
+                    Err(e) => return Err(e),
                 }
                 if name == "defined" {
                     let val = args.first().and_then(|e| self.eval_expr(e).ok());
