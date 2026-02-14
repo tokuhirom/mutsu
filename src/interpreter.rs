@@ -11101,22 +11101,6 @@ impl Interpreter {
         }
     }
 
-    /// Bridge: call a method on a pre-evaluated target with pre-evaluated args (for VM).
-    pub(crate) fn eval_method_call_with_values(
-        &mut self,
-        target: Value,
-        method: &str,
-        args: Vec<Value>,
-    ) -> Result<Value, RuntimeError> {
-        let arg_exprs: Vec<Expr> = args.into_iter().map(Expr::Literal).collect();
-        self.eval_expr(&Expr::MethodCall {
-            target: Box::new(Expr::Literal(target)),
-            name: method.to_string(),
-            args: arg_exprs,
-            modifier: None,
-        })
-    }
-
     pub(crate) fn call_method_with_values(
         &mut self,
         target: Value,
@@ -11181,29 +11165,9 @@ impl Interpreter {
             }
             return Ok(Value::make_instance(class_name.clone(), attrs));
         }
-        self.eval_method_call_with_values(target, method, args)
-    }
-
-    /// Bridge: method call on a mutable variable target (for VM CallMethodMut).
-    /// Constructs the correct Expr variant so the interpreter can write back mutations.
-    pub(crate) fn eval_method_call_mut_with_values(
-        &mut self,
-        target_var: &str,
-        method: &str,
-        args: Vec<Value>,
-    ) -> Result<Value, RuntimeError> {
         let arg_exprs: Vec<Expr> = args.into_iter().map(Expr::Literal).collect();
-        let target_expr = if let Some(name) = target_var.strip_prefix('@') {
-            Expr::ArrayVar(name.to_string())
-        } else if let Some(name) = target_var.strip_prefix('%') {
-            Expr::HashVar(name.to_string())
-        } else if let Some(name) = target_var.strip_prefix('&') {
-            Expr::CodeVar(name.to_string())
-        } else {
-            Expr::Var(target_var.to_string())
-        };
         self.eval_expr(&Expr::MethodCall {
-            target: Box::new(target_expr),
+            target: Box::new(Expr::Literal(target)),
             name: method.to_string(),
             args: arg_exprs,
             modifier: None,
@@ -11293,7 +11257,22 @@ impl Interpreter {
             return Ok(result);
         }
 
-        self.eval_method_call_mut_with_values(target_var, method, args)
+        let arg_exprs: Vec<Expr> = args.into_iter().map(Expr::Literal).collect();
+        let target_expr = if let Some(name) = target_var.strip_prefix('@') {
+            Expr::ArrayVar(name.to_string())
+        } else if let Some(name) = target_var.strip_prefix('%') {
+            Expr::HashVar(name.to_string())
+        } else if let Some(name) = target_var.strip_prefix('&') {
+            Expr::CodeVar(name.to_string())
+        } else {
+            Expr::Var(target_var.to_string())
+        };
+        self.eval_expr(&Expr::MethodCall {
+            target: Box::new(target_expr),
+            name: method.to_string(),
+            args: arg_exprs,
+            modifier: None,
+        })
     }
 
     /// Bridge: execute a statement-level call with pre-evaluated positional values (for VM).
