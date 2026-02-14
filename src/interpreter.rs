@@ -777,7 +777,7 @@ impl Interpreter {
                     }
                 }
                 _ => {
-                    self.exec_stmt(stmt)?;
+                    self.run_block_raw(std::slice::from_ref(stmt))?;
                 }
             }
         }
@@ -830,7 +830,7 @@ impl Interpreter {
                     }
                 }
                 _ => {
-                    self.exec_stmt(stmt)?;
+                    self.run_block_raw(std::slice::from_ref(stmt))?;
                 }
             }
         }
