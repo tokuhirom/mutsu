@@ -1053,8 +1053,7 @@ impl Compiler {
                     let name_idx = self.code.add_constant(Value::Str(name));
                     self.code.emit(OpCode::IndexAssignExprNested(name_idx));
                 } else {
-                    let idx = self.code.add_expr(expr.clone());
-                    self.code.emit(OpCode::RunIndexAssignExpr(idx));
+                    self.code.emit(OpCode::IndexAssignInvalid);
                 }
             }
             Expr::ControlFlow { kind, label } => match kind {
