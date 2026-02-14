@@ -1010,7 +1010,7 @@ impl Interpreter {
             } => self.eval_do_if(cond, then_branch, else_branch),
             Stmt::Given { topic, body } => self.eval_given_value(topic, body),
             _ => {
-                self.exec_stmt(stmt)?;
+                self.run_block_raw(std::slice::from_ref(stmt))?;
                 Ok(Value::Nil)
             }
         }
