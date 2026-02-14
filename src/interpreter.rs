@@ -2069,6 +2069,59 @@ impl Interpreter {
             }
             return Ok(Value::Set(elems));
         }
+        if name == "bag" {
+            let mut counts: HashMap<String, i64> = HashMap::new();
+            for arg in &args {
+                match arg {
+                    Value::Array(items) => {
+                        for item in items {
+                            *counts.entry(item.to_string_value()).or_insert(0) += 1;
+                        }
+                    }
+                    other => {
+                        *counts.entry(other.to_string_value()).or_insert(0) += 1;
+                    }
+                }
+            }
+            return Ok(Value::Bag(counts));
+        }
+        if name == "mix" {
+            let mut weights: HashMap<String, f64> = HashMap::new();
+            for arg in &args {
+                match arg {
+                    Value::Array(items) => {
+                        for item in items {
+                            *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
+                        }
+                    }
+                    other => {
+                        *weights.entry(other.to_string_value()).or_insert(0.0) += 1.0;
+                    }
+                }
+            }
+            return Ok(Value::Mix(weights));
+        }
+        if name == "hash" {
+            let mut flat_values = Vec::new();
+            for arg in &args {
+                flat_values.extend(Self::value_to_list(arg));
+            }
+            let mut map = HashMap::new();
+            let mut iter = flat_values.into_iter();
+            while let Some(item) = iter.next() {
+                match item {
+                    Value::Pair(key, boxed_val) => {
+                        map.insert(key, *boxed_val);
+                    }
+                    other => {
+                        let key = other.to_string_value();
+                        let value = iter.next().unwrap_or(Value::Nil);
+                        map.insert(key, value);
+                    }
+                }
+            }
+            return Ok(Value::Hash(map));
+        }
         if matches!(name, "any" | "all" | "one" | "none") {
             let kind = match name {
                 "any" => JunctionKind::Any,
@@ -2138,6 +2191,74 @@ impl Interpreter {
                 }
             }
             return Ok(Value::Str(result));
+        }
+        if name == "chr" {
+            if let Some(Value::Int(i)) = args.first()
+                && *i >= 0
+                && let Some(ch) = std::char::from_u32(*i as u32)
+            {
+                return Ok(Value::Str(ch.to_string()));
+            }
+            return Ok(Value::Str(String::new()));
+        }
+        if name == "ord" {
+            if let Some(val) = args.first()
+                && let Some(ch) = val.to_string_value().chars().next()
+            {
+                return Ok(Value::Int(ch as u32 as i64));
+            }
+            return Ok(Value::Nil);
+        }
+        if name == "keys" {
+            let val = args.first().cloned();
+            return Ok(match val {
+                Some(Value::Hash(items)) => {
+                    Value::Array(items.keys().map(|k| Value::Str(k.clone())).collect())
+                }
+                _ => Value::Array(Vec::new()),
+            });
+        }
+        if name == "values" {
+            let val = args.first().cloned();
+            return Ok(match val {
+                Some(Value::Hash(items)) => Value::Array(items.values().cloned().collect()),
+                _ => Value::Array(Vec::new()),
+            });
+        }
+        if name == "abs" {
+            let val = args.first().cloned();
+            return Ok(match val {
+                Some(Value::Int(i)) => Value::Int(i.abs()),
+                Some(Value::Num(f)) => Value::Num(f.abs()),
+                _ => Value::Int(0),
+            });
+        }
+        if name == "chars" {
+            use unicode_segmentation::UnicodeSegmentation;
+            let val = args.first().cloned();
+            return Ok(match val {
+                Some(Value::Str(s)) => Value::Int(s.graphemes(true).count() as i64),
+                Some(v) => Value::Int(v.to_string_value().graphemes(true).count() as i64),
+                _ => Value::Int(0),
+            });
+        }
+        if name == "join" {
+            let sep = args
+                .first()
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            let list = args.get(1).cloned();
+            return Ok(match list {
+                Some(Value::Array(items)) => {
+                    let joined = items
+                        .iter()
+                        .map(|v| v.to_string_value())
+                        .collect::<Vec<_>>()
+                        .join(&sep);
+                    Value::Str(joined)
+                }
+                _ => Value::Str(String::new()),
+            });
         }
         if let Some(native_result) = crate::builtins::native_function(name, &args) {
             return native_result;
