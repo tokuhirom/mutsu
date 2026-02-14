@@ -1089,10 +1089,7 @@ impl Compiler {
     /// exec_call handlers (e.g. throws-like needs Expr::Block to run code).
     fn needs_raw_expr(expr: &Expr) -> bool {
         match expr {
-            Expr::Block(_)
-            | Expr::AnonSub(_)
-            | Expr::AnonSubParams { .. }
-            | Expr::DoBlock { .. } => true,
+            Expr::Block(_) | Expr::DoBlock { .. } => true,
             // Hash literals containing block values need raw expr for is_run lambda matchers
             Expr::Hash(pairs) => pairs
                 .iter()
