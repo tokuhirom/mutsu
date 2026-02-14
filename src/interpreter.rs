@@ -3980,13 +3980,9 @@ impl Interpreter {
                 else_branch,
             } => {
                 if self.eval_expr(cond)?.truthy() {
-                    for stmt in then_branch {
-                        self.exec_stmt(stmt)?;
-                    }
+                    self.run_block(then_branch)?;
                 } else {
-                    for stmt in else_branch {
-                        self.exec_stmt(stmt)?;
-                    }
+                    self.run_block(else_branch)?;
                 }
             }
             Stmt::While { cond, body, label } => {
