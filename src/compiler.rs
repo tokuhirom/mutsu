@@ -792,7 +792,10 @@ impl Compiler {
                 self.code.emit(OpCode::StringConcat(n));
             }
             // Postfix ++ on variable
-            Expr::PostfixOp { op, expr } if matches!(op, TokenKind::PlusPlus) => {
+            Expr::PostfixOp {
+                op: TokenKind::PlusPlus,
+                expr,
+            } => {
                 if let Expr::Var(name) = expr.as_ref() {
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
                     self.code.emit(OpCode::PostIncrement(name_idx));
@@ -802,22 +805,17 @@ impl Compiler {
                         let name_idx = self.code.add_constant(Value::Str(name));
                         self.code.emit(OpCode::PostIncrementIndex(name_idx));
                     } else {
-                        let idx = self.code.add_expr(Expr::PostfixOp {
-                            op: op.clone(),
-                            expr: expr.clone(),
-                        });
-                        self.code.emit(OpCode::RunPostfixExpr(idx));
+                        self.code.emit(OpCode::LoadNil);
                     }
                 } else {
-                    let idx = self.code.add_expr(Expr::PostfixOp {
-                        op: op.clone(),
-                        expr: expr.clone(),
-                    });
-                    self.code.emit(OpCode::RunPostfixExpr(idx));
+                    self.code.emit(OpCode::LoadNil);
                 }
             }
             // Postfix -- on variable
-            Expr::PostfixOp { op, expr } if matches!(op, TokenKind::MinusMinus) => {
+            Expr::PostfixOp {
+                op: TokenKind::MinusMinus,
+                expr,
+            } => {
                 if let Expr::Var(name) = expr.as_ref() {
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
                     self.code.emit(OpCode::PostDecrement(name_idx));
@@ -827,18 +825,10 @@ impl Compiler {
                         let name_idx = self.code.add_constant(Value::Str(name));
                         self.code.emit(OpCode::PostDecrementIndex(name_idx));
                     } else {
-                        let idx = self.code.add_expr(Expr::PostfixOp {
-                            op: op.clone(),
-                            expr: expr.clone(),
-                        });
-                        self.code.emit(OpCode::RunPostfixExpr(idx));
+                        self.code.emit(OpCode::LoadNil);
                     }
                 } else {
-                    let idx = self.code.add_expr(Expr::PostfixOp {
-                        op: op.clone(),
-                        expr: expr.clone(),
-                    });
-                    self.code.emit(OpCode::RunPostfixExpr(idx));
+                    self.code.emit(OpCode::LoadNil);
                 }
             }
             // Assignment as expression
@@ -1083,8 +1073,7 @@ impl Compiler {
             }
             // Remaining expression forms not yet bytecode-native.
             Expr::PostfixOp { .. } => {
-                let idx = self.code.add_expr(expr.clone());
-                self.code.emit(OpCode::RunPostfixExpr(idx));
+                self.code.emit(OpCode::LoadNil);
             }
         }
     }

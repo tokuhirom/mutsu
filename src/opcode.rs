@@ -182,7 +182,6 @@ pub(crate) enum OpCode {
     MakeAnonSubParams(u32),
     MakeLambda(u32),
     RunIndexAssignExpr(u32),
-    RunPostfixExpr(u32),
     RunBlockExpr(u32),
     UnaryToken(u32),
     RunBinaryToken(u32),
