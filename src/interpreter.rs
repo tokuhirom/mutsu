@@ -1270,6 +1270,76 @@ impl Interpreter {
         }
     }
 
+    pub(crate) fn eval_binary_expr(
+        &mut self,
+        left: &Expr,
+        op: &TokenKind,
+        right: &Expr,
+    ) -> Result<Value, RuntimeError> {
+        // Short-circuit operators
+        match op {
+            TokenKind::AndAnd => {
+                let l = self.eval_expr(left)?;
+                if !l.truthy() {
+                    return Ok(l);
+                }
+                return self.eval_expr(right);
+            }
+            TokenKind::OrOr => {
+                let l = self.eval_expr(left)?;
+                if l.truthy() {
+                    return Ok(l);
+                }
+                return self.eval_expr(right);
+            }
+            TokenKind::OrWord => {
+                let l = self.eval_expr(left)?;
+                if l.truthy() {
+                    return Ok(l);
+                }
+                return self.eval_expr(right);
+            }
+            TokenKind::SlashSlash | TokenKind::OrElse => {
+                let l = self.eval_expr(left)?;
+                if !matches!(l, Value::Nil) {
+                    return Ok(l);
+                }
+                return self.eval_expr(right);
+            }
+            TokenKind::AndThen => {
+                let l = self.eval_expr(left)?;
+                if matches!(l, Value::Nil) {
+                    return Ok(Value::Nil);
+                }
+                return self.eval_expr(right);
+            }
+            TokenKind::NotAndThen => {
+                let l = self.eval_expr(left)?;
+                if matches!(l, Value::Nil) {
+                    return self.eval_expr(right);
+                }
+                return Ok(Value::Nil);
+            }
+            // Smartmatch: set $_ to LHS before evaluating RHS
+            TokenKind::SmartMatch | TokenKind::BangTilde => {
+                let l = self.eval_expr(left)?;
+                let saved_topic = self.env.get("_").cloned();
+                self.env.insert("_".to_string(), l.clone());
+                let r = self.eval_expr(right)?;
+                if let Some(v) = saved_topic {
+                    self.env.insert("_".to_string(), v);
+                } else {
+                    self.env.remove("_");
+                }
+                return self.eval_binary(l, op, r);
+            }
+            _ => {}
+        }
+        let l = self.eval_expr(left)?;
+        let r = self.eval_expr(right)?;
+        self.eval_binary(l, op, r)
+    }
+
     pub(crate) fn eval_postfix_expr(
         &mut self,
         op: &TokenKind,
@@ -8315,70 +8385,7 @@ impl Interpreter {
             Expr::CallOn { target, args } => self.eval_call_on_expr(target, args),
             Expr::Unary { op, expr } => self.eval_unary_expr(op, expr),
             Expr::PostfixOp { op, expr } => self.eval_postfix_expr(op, expr),
-            Expr::Binary { left, op, right } => {
-                // Short-circuit operators
-                match op {
-                    TokenKind::AndAnd => {
-                        let l = self.eval_expr(left)?;
-                        if !l.truthy() {
-                            return Ok(l);
-                        }
-                        return self.eval_expr(right);
-                    }
-                    TokenKind::OrOr => {
-                        let l = self.eval_expr(left)?;
-                        if l.truthy() {
-                            return Ok(l);
-                        }
-                        return self.eval_expr(right);
-                    }
-                    TokenKind::OrWord => {
-                        let l = self.eval_expr(left)?;
-                        if l.truthy() {
-                            return Ok(l);
-                        }
-                        return self.eval_expr(right);
-                    }
-                    TokenKind::SlashSlash | TokenKind::OrElse => {
-                        let l = self.eval_expr(left)?;
-                        if !matches!(l, Value::Nil) {
-                            return Ok(l);
-                        }
-                        return self.eval_expr(right);
-                    }
-                    TokenKind::AndThen => {
-                        let l = self.eval_expr(left)?;
-                        if matches!(l, Value::Nil) {
-                            return Ok(Value::Nil);
-                        }
-                        return self.eval_expr(right);
-                    }
-                    TokenKind::NotAndThen => {
-                        let l = self.eval_expr(left)?;
-                        if matches!(l, Value::Nil) {
-                            return self.eval_expr(right);
-                        }
-                        return Ok(Value::Nil);
-                    }
-                    // Smartmatch: set $_ to LHS before evaluating RHS
-                    TokenKind::SmartMatch | TokenKind::BangTilde => {
-                        let l = self.eval_expr(left)?;
-                        let saved_topic = self.env.get("_").cloned();
-                        self.env.insert("_".to_string(), l.clone());
-                        let r = self.eval_expr(right)?;
-                        if let Some(v) = saved_topic {
-                            self.env.insert("_".to_string(), v);
-                        } else {
-                            self.env.remove("_");
-                        }
-                        return self.eval_binary(l, op, r);
-                    }
-                    _ => {}
-                }
-                let l = self.eval_expr(left)?;
-                let r = self.eval_expr(right)?;
-                self.eval_binary(l, op, r)
-            }
+            Expr::Binary { left, op, right } => self.eval_binary_expr(left, op, right),
             Expr::Hash(pairs) => {
                 let mut map = HashMap::new();
                 for (key, value_expr) in pairs {

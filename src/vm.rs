@@ -2404,8 +2404,8 @@ impl VM {
             }
             OpCode::RunBinaryExpr(idx) => {
                 let expr = &code.expr_pool[*idx as usize];
-                if let Expr::Binary { .. } = expr {
-                    let val = self.interpreter.eval_expr(expr)?;
+                if let Expr::Binary { left, op, right } = expr {
+                    let val = self.interpreter.eval_binary_expr(left, op, right)?;
                     self.stack.push(val);
                     self.sync_locals_from_env(code);
                     *ip += 1;
