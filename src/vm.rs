@@ -2183,6 +2183,18 @@ impl VM {
                     return Err(RuntimeError::new("RegisterProtoToken expects ProtoToken"));
                 }
             }
+            OpCode::UseModule(name_idx) => {
+                let module = Self::const_str(code, *name_idx);
+                self.interpreter.use_module(module)?;
+                self.sync_locals_from_env(code);
+                *ip += 1;
+            }
+            OpCode::UseLibPath => {
+                let value = self.stack.pop().unwrap_or(Value::Nil);
+                self.interpreter.add_lib_path(value.to_string_value());
+                self.sync_locals_from_env(code);
+                *ip += 1;
+            }
 
             // -- Local variables (indexed slots) --
             OpCode::GetLocal(idx) => {

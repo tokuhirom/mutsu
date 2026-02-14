@@ -565,6 +565,16 @@ impl Interpreter {
         self.env.insert("@*ARGS".to_string(), Value::Array(args));
     }
 
+    pub(crate) fn add_lib_path(&mut self, path: String) {
+        if !path.is_empty() {
+            self.lib_paths.push(path);
+        }
+    }
+
+    pub(crate) fn use_module(&mut self, module: &str) -> Result<(), RuntimeError> {
+        self.load_module(module)
+    }
+
     pub fn output(&self) -> &str {
         &self.output
     }
@@ -2017,9 +2027,7 @@ impl Interpreter {
                     if let Some(expr) = arg {
                         let value = self.eval_expr(expr)?;
                         let path = value.to_string_value();
-                        if !path.is_empty() {
-                            self.lib_paths.push(path);
-                        }
+                        self.add_lib_path(path);
                     }
                 } else if module == "v6" {
                     // `use v6;` pragma - silently accepted
@@ -2030,7 +2038,7 @@ impl Interpreter {
                 {
                     // Built-in test helpers are handled by the interpreter itself.
                 } else {
-                    self.load_module(module)?;
+                    self.use_module(module)?;
                 }
             }
             Stmt::Subtest { name, body } => {

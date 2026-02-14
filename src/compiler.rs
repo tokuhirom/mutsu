@@ -400,13 +400,28 @@ impl Compiler {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterProtoToken(idx));
             }
+            Stmt::Use { module, arg } if module == "lib" => {
+                if let Some(expr) = arg {
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::UseLibPath);
+                }
+            }
+            Stmt::Use { module, .. }
+                if module == "v6"
+                    || module == "Test"
+                    || module.starts_with("Test::")
+                    || module == "customtrait"
+                    || module == "isms" => {}
+            Stmt::Use { module, arg } if arg.is_none() => {
+                let name_idx = self.code.add_constant(Value::Str(module.clone()));
+                self.code.emit(OpCode::UseModule(name_idx));
+            }
 
             // --- Declarations: delegate to interpreter (run once, complex state) ---
             Stmt::ClassDecl { .. }
             | Stmt::RoleDecl { .. }
             | Stmt::EnumDecl { .. }
             | Stmt::SubsetDecl { .. }
-            | Stmt::Use { .. }
             | Stmt::Subtest { .. }
             | Stmt::Whenever { .. } => {
                 let idx = self.code.add_stmt(stmt.clone());

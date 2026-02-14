@@ -305,6 +305,8 @@ pub(crate) enum OpCode {
     RegisterToken(u32),
     RegisterProtoSub(u32),
     RegisterProtoToken(u32),
+    UseModule(u32),
+    UseLibPath,
 
     // -- Type checking --
     /// Check that the value on top of stack matches the given type constraint.
