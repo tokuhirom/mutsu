@@ -1,0 +1,57 @@
+use super::*;
+
+impl VM {
+    pub(super) fn exec_make_array_op(&mut self, n: u32) {
+        let n = n as usize;
+        let start = self.stack.len() - n;
+        let raw: Vec<Value> = self.stack.drain(start..).collect();
+        let mut elems = Vec::with_capacity(raw.len());
+        for val in raw {
+            match val {
+                Value::Slip(items) => elems.extend(items),
+                other => elems.push(other),
+            }
+        }
+        self.stack.push(Value::Array(elems));
+    }
+
+    pub(super) fn exec_make_hash_op(&mut self, n: u32) {
+        let n = n as usize;
+        let start = self.stack.len() - n * 2;
+        let items: Vec<Value> = self.stack.drain(start..).collect();
+        let mut map = HashMap::new();
+        for pair in items.chunks(2) {
+            let key = pair[0].to_string_value();
+            let val = pair[1].clone();
+            map.insert(key, val);
+        }
+        self.stack.push(Value::Hash(map));
+    }
+
+    pub(super) fn exec_say_op(&mut self, n: u32) -> Result<(), RuntimeError> {
+        let n = n as usize;
+        let start = self.stack.len() - n;
+        let values: Vec<Value> = self.stack.drain(start..).collect();
+        let mut parts = Vec::new();
+        for v in &values {
+            parts.push(Interpreter::gist_value(v));
+        }
+        let line = parts.join(" ");
+        self.interpreter
+            .write_to_named_handle("$*OUT", &line, true)?;
+        Ok(())
+    }
+
+    pub(super) fn exec_print_op(&mut self, n: u32) -> Result<(), RuntimeError> {
+        let n = n as usize;
+        let start = self.stack.len() - n;
+        let values: Vec<Value> = self.stack.drain(start..).collect();
+        let mut content = String::new();
+        for v in &values {
+            content.push_str(&v.to_string_value());
+        }
+        self.interpreter
+            .write_to_named_handle("$*OUT", &content, false)?;
+        Ok(())
+    }
+}
