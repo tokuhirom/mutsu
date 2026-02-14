@@ -11936,6 +11936,142 @@ impl Interpreter {
                     _ => {}
                 }
             }
+            if class_name == "IO::Handle" {
+                match method {
+                    "close" => return Ok(Value::Bool(self.close_handle_value(&target)?)),
+                    "get" => {
+                        let line = self.read_line_from_handle_value(&target)?;
+                        if line.is_empty() {
+                            return Ok(Value::Nil);
+                        }
+                        return Ok(Value::Str(line));
+                    }
+                    "getc" => {
+                        let bytes = self.read_bytes_from_handle_value(&target, 1)?;
+                        return Ok(Value::Str(String::from_utf8_lossy(&bytes).to_string()));
+                    }
+                    "lines" => {
+                        let mut lines = Vec::new();
+                        loop {
+                            let line = self.read_line_from_handle_value(&target)?;
+                            if line.is_empty() {
+                                break;
+                            }
+                            lines.push(Value::Str(line));
+                        }
+                        return Ok(Value::Array(lines));
+                    }
+                    "words" => {
+                        let mut words = Vec::new();
+                        loop {
+                            let line = self.read_line_from_handle_value(&target)?;
+                            if line.is_empty() {
+                                break;
+                            }
+                            for token in line.split_whitespace() {
+                                words.push(Value::Str(token.to_string()));
+                            }
+                        }
+                        return Ok(Value::Array(words));
+                    }
+                    "read" => {
+                        let count = args
+                            .first()
+                            .and_then(|v| match v {
+                                Value::Int(i) if *i > 0 => Some(*i as usize),
+                                _ => None,
+                            })
+                            .unwrap_or(0);
+                        if count > 0 {
+                            let bytes = self.read_bytes_from_handle_value(&target, count)?;
+                            return Ok(Value::Str(String::from_utf8_lossy(&bytes).to_string()));
+                        }
+                        let path = {
+                            let state = self.handle_state_mut(&target)?;
+                            state.path.clone()
+                        };
+                        if let Some(path) = path {
+                            let content = fs::read_to_string(&path).map_err(|err| {
+                                RuntimeError::new(format!("Failed to read '{}': {}", path, err))
+                            })?;
+                            return Ok(Value::Str(content));
+                        }
+                        return Ok(Value::Str(String::new()));
+                    }
+                    "write" | "print" => {
+                        let content = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        self.write_to_handle_value(&target, &content, false)?;
+                        return Ok(Value::Bool(true));
+                    }
+                    "say" => {
+                        let content = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        self.write_to_handle_value(&target, &content, true)?;
+                        return Ok(Value::Bool(true));
+                    }
+                    "flush" => {
+                        if let Ok(state) = self.handle_state_mut(&target)
+                            && let Some(file) = state.file.as_mut()
+                        {
+                            file.flush().map_err(|err| {
+                                RuntimeError::new(format!("Failed to flush handle: {}", err))
+                            })?;
+                        }
+                        return Ok(Value::Bool(true));
+                    }
+                    "seek" => {
+                        let pos = args
+                            .first()
+                            .and_then(|v| match v {
+                                Value::Int(i) => Some(*i),
+                                _ => None,
+                            })
+                            .unwrap_or(0);
+                        let offset = self.seek_handle_value(&target, pos)?;
+                        return Ok(Value::Int(offset));
+                    }
+                    "tell" => {
+                        let position = self.tell_handle_value(&target)?;
+                        return Ok(Value::Int(position));
+                    }
+                    "eof" => {
+                        let at_end = self.handle_eof_value(&target)?;
+                        return Ok(Value::Bool(at_end));
+                    }
+                    "encoding" => {
+                        if let Some(arg) = args.first() {
+                            let encoding = arg.to_string_value();
+                            let prev = self.set_handle_encoding(&target, Some(encoding.clone()))?;
+                            return Ok(Value::Str(prev));
+                        }
+                        let current = self.set_handle_encoding(&target, None)?;
+                        return Ok(Value::Str(current));
+                    }
+                    "opened" => {
+                        let state = self.handle_state_mut(&target)?;
+                        return Ok(Value::Bool(!state.closed));
+                    }
+                    "slurp" => {
+                        let path = {
+                            let state = self.handle_state_mut(&target)?;
+                            state.path.clone()
+                        };
+                        if let Some(path) = path {
+                            let content = fs::read_to_string(&path).map_err(|err| {
+                                RuntimeError::new(format!("Failed to slurp '{}': {}", path, err))
+                            })?;
+                            return Ok(Value::Str(content));
+                        }
+                        return Ok(Value::Str(String::new()));
+                    }
+                    _ => {}
+                }
+            }
             if class_name == "Promise" {
                 if method == "result" && args.is_empty() {
                     return Ok(attributes.get("result").cloned().unwrap_or(Value::Nil));
