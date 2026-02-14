@@ -1212,6 +1212,8 @@ impl VM {
                 let result = if self.interpreter.env().contains_key(&key) {
                     let target = self.interpreter.resolve_code_var(&name);
                     self.interpreter.eval_call_on_value(target, args)?
+                } else if let Some(native_result) = Self::try_native_function(&name, &args) {
+                    native_result?
                 } else {
                     self.interpreter.call_function(&name, args)?
                 };
