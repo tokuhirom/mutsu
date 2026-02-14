@@ -2033,6 +2033,112 @@ impl Interpreter {
             };
             return Ok(coerced);
         }
+        if name == "make" {
+            let value = args.first().cloned().unwrap_or(Value::Nil);
+            self.env.insert("made".to_string(), value.clone());
+            return Ok(value);
+        }
+        if name == "made" {
+            return Ok(self.env.get("made").cloned().unwrap_or(Value::Nil));
+        }
+        if name == "elems" {
+            let val = args.first().cloned();
+            return Ok(match val {
+                Some(Value::Array(items)) => Value::Int(items.len() as i64),
+                Some(Value::LazyList(list)) => {
+                    Value::Int(self.force_lazy_list(&list)?.len() as i64)
+                }
+                Some(Value::Hash(items)) => Value::Int(items.len() as i64),
+                Some(Value::Str(s)) => Value::Int(s.chars().count() as i64),
+                _ => Value::Int(0),
+            });
+        }
+        if name == "set" {
+            let mut elems = HashSet::new();
+            for arg in &args {
+                match arg {
+                    Value::Array(items) => {
+                        for item in items {
+                            elems.insert(item.to_string_value());
+                        }
+                    }
+                    other => {
+                        elems.insert(other.to_string_value());
+                    }
+                }
+            }
+            return Ok(Value::Set(elems));
+        }
+        if matches!(name, "any" | "all" | "one" | "none") {
+            let kind = match name {
+                "any" => JunctionKind::Any,
+                "all" => JunctionKind::All,
+                "one" => JunctionKind::One,
+                _ => JunctionKind::None,
+            };
+            let mut elems = Vec::new();
+            for arg in args {
+                match arg {
+                    Value::Array(items) => elems.extend(items),
+                    other => elems.push(other),
+                }
+            }
+            return Ok(Value::Junction {
+                kind,
+                values: elems,
+            });
+        }
+        if name == "pair" {
+            let key = args
+                .first()
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            let val = args.get(1).cloned().unwrap_or(Value::Nil);
+            return Ok(Value::Pair(key, Box::new(val)));
+        }
+        if name == "slurp" {
+            let path = args
+                .first()
+                .map(|v| v.to_string_value())
+                .ok_or_else(|| RuntimeError::new("slurp requires a path argument"))?;
+            let content = fs::read_to_string(&path)
+                .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
+            return Ok(Value::Str(content));
+        }
+        if name == "spurt" {
+            let path = args
+                .first()
+                .map(|v| v.to_string_value())
+                .ok_or_else(|| RuntimeError::new("spurt requires a path argument"))?;
+            let content = args
+                .get(1)
+                .map(|v| v.to_string_value())
+                .ok_or_else(|| RuntimeError::new("spurt requires a content argument"))?;
+            fs::write(&path, &content)
+                .map_err(|err| RuntimeError::new(format!("Failed to spurt '{}': {}", path, err)))?;
+            return Ok(Value::Bool(true));
+        }
+        if name == "getlogin" {
+            let login = Self::get_login_name().unwrap_or_default();
+            return Ok(Value::Str(login));
+        }
+        if name == "chrs" {
+            let mut result = String::new();
+            for arg in &args {
+                for item in Self::value_to_list(arg) {
+                    if let Value::Int(i) = item
+                        && i >= 0
+                        && (i as u64) <= 0x10ffff
+                        && let Some(ch) = std::char::from_u32(i as u32)
+                    {
+                        result.push(ch);
+                        continue;
+                    }
+                    result.push_str(&item.to_string_value());
+                }
+            }
+            return Ok(Value::Str(result));
+        }
         if let Some(native_result) = crate::builtins::native_function(name, &args) {
             return native_result;
         }
