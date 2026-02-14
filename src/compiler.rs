@@ -734,10 +734,7 @@ impl Compiler {
                     self.compile_expr(right);
                     self.code.emit(opcode);
                 } else {
-                    self.compile_expr(left);
-                    self.compile_expr(right);
-                    let token_idx = self.code.add_token(op.clone());
-                    self.code.emit(OpCode::BinaryToken(token_idx));
+                    panic!("unsupported binary operator in compiler: {:?}", op);
                 }
             }
             Expr::Ternary {
