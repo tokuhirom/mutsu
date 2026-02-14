@@ -801,6 +801,20 @@ impl Compiler {
                         modifier: None,
                     };
                     self.compile_expr(&method_call);
+                }
+                // Rewrite indir($path, { ... }) body into a callable block value so
+                // call_function("indir", ...) can execute it after switching $*CWD.
+                else if name == "indir" && args.len() >= 2 {
+                    let mut rewritten_args = args.clone();
+                    if let Expr::Block(body) = &rewritten_args[1] {
+                        rewritten_args[1] = Expr::AnonSub(body.clone());
+                    }
+                    let arity = rewritten_args.len() as u32;
+                    for arg in &rewritten_args {
+                        self.compile_expr(arg);
+                    }
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::CallFunc { name_idx, arity });
                 } else {
                     // Rewrite VAR($var)/VAR(@var)/VAR(%var)/VAR(&var) → $var.VAR, etc.
                     if name == "VAR"
