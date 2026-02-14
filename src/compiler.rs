@@ -278,6 +278,36 @@ impl Compiler {
                     self.compile_stmt(s);
                 }
             }
+            // Normalize mutating/structural call statements through Expr::Call
+            // so they reuse call rewrites and method-based mutation paths.
+            Stmt::Call { name, args }
+                if matches!(
+                    name.as_str(),
+                    "shift"
+                        | "pop"
+                        | "push"
+                        | "unshift"
+                        | "append"
+                        | "prepend"
+                        | "undefine"
+                        | "VAR"
+                        | "indir"
+                ) && args.iter().all(|a| matches!(a, CallArg::Positional(_))) =>
+            {
+                let expr_args: Vec<Expr> = args
+                    .iter()
+                    .filter_map(|arg| match arg {
+                        CallArg::Positional(expr) => Some(expr.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                let call_expr = Expr::Call {
+                    name: name.clone(),
+                    args: expr_args,
+                };
+                self.compile_expr(&call_expr);
+                self.code.emit(OpCode::Pop);
+            }
             // Statement-level call: compile positional args only.
             // Fall back if named args or Block/AnonSub args exist (exec_call
             // inspects raw expressions for throws-like, lives-ok, etc.).
