@@ -4287,55 +4287,6 @@ impl Interpreter {
         }
     }
 
-    fn method_dispatch_expr_is_pure(expr: &Expr) -> bool {
-        match expr {
-            Expr::Var(_)
-            | Expr::ArrayVar(_)
-            | Expr::HashVar(_)
-            | Expr::CodeVar(_)
-            | Expr::BareWord(_)
-            | Expr::Literal(_)
-            | Expr::EnvIndex(_) => true,
-            Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => {
-                Self::method_dispatch_expr_is_pure(expr)
-            }
-            Expr::Binary { left, right, .. } => {
-                Self::method_dispatch_expr_is_pure(left)
-                    && Self::method_dispatch_expr_is_pure(right)
-            }
-            Expr::Index { target, index } => {
-                Self::method_dispatch_expr_is_pure(target)
-                    && Self::method_dispatch_expr_is_pure(index)
-            }
-            Expr::Ternary {
-                cond,
-                then_expr,
-                else_expr,
-            } => {
-                Self::method_dispatch_expr_is_pure(cond)
-                    && Self::method_dispatch_expr_is_pure(then_expr)
-                    && Self::method_dispatch_expr_is_pure(else_expr)
-            }
-            Expr::AssignExpr { .. } => false,
-            Expr::ArrayLiteral(items) | Expr::StringInterpolation(items) => {
-                items.iter().all(Self::method_dispatch_expr_is_pure)
-            }
-            Expr::Hash(pairs) => pairs
-                .iter()
-                .all(|(_, v)| v.as_ref().is_none_or(Self::method_dispatch_expr_is_pure)),
-            Expr::Exists(expr) => Self::method_dispatch_expr_is_pure(expr),
-            _ => false,
-        }
-    }
-
-    fn is_unknown_method_dispatch_error(err: &RuntimeError) -> bool {
-        err.message
-            .starts_with("Unknown method value dispatch (fallback disabled):")
-            || err
-                .message
-                .starts_with("Unknown mutable method value dispatch (fallback disabled):")
-    }
-
     fn call_sub_value(
         &mut self,
         func: Value,
@@ -5476,27 +5427,6 @@ impl Interpreter {
                         _ => result,
                     };
                 }
-                if Self::method_dispatch_expr_is_pure(target)
-                    && args.iter().all(Self::method_dispatch_expr_is_pure)
-                {
-                    let target_val = self.eval_expr(target)?;
-                    let mut arg_vals = Vec::with_capacity(args.len());
-                    for arg in args {
-                        arg_vals.push(self.eval_expr(arg)?);
-                    }
-                    let dispatch_result = if let Some(target_var) =
-                        Self::method_target_var_name(target)
-                    {
-                        self.call_method_mut_with_values(&target_var, target_val, name, arg_vals)
-                    } else {
-                        self.call_method_with_values(target_val, name, arg_vals)
-                    };
-                    match dispatch_result {
-                        Ok(v) => return Ok(v),
-                        Err(e) if Self::is_unknown_method_dispatch_error(&e) => {}
-                        Err(e) => return Err(e),
-                    }
-                }
                 // Handle .new() constructor on class type
                 if name == "new" {
                     let base = self.eval_expr(target)?;
@@ -5563,28 +5493,6 @@ impl Interpreter {
                                     self.call_method_with_values(target_val, name, arg_values)
                                 };
                             return dispatch_result;
-                        }
-                    }
-                }
-                // Method calls on instances are handled by value-dispatch now.
-                {
-                    let base = self.eval_expr(target)?;
-                    if matches!(base, Value::Instance { .. }) {
-                        let mut arg_values = Vec::with_capacity(args.len());
-                        for arg in args {
-                            arg_values.push(self.eval_expr(arg)?);
-                        }
-                        let dispatch_result = if let Some(target_var) =
-                            Self::method_target_var_name(target)
-                        {
-                            self.call_method_mut_with_values(&target_var, base, name, arg_values)
-                        } else {
-                            self.call_method_with_values(base, name, arg_values)
-                        };
-                        match dispatch_result {
-                            Ok(value) => return Ok(value),
-                            Err(e) if Self::is_unknown_method_dispatch_error(&e) => {}
-                            Err(e) => return Err(e),
                         }
                     }
                 }
