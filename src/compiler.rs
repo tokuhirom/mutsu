@@ -297,8 +297,26 @@ impl Compiler {
                         | "skip"
                         | "skip-rest"
                         | "bail-out"
+                        | "ok"
+                        | "nok"
+                        | "is"
+                        | "isnt"
+                        | "diag"
+                        | "pass"
+                        | "flunk"
+                        | "cmp-ok"
+                        | "like"
+                        | "unlike"
+                        | "is-deeply"
+                        | "is-approx"
+                        | "isa-ok"
                         | "lives-ok"
                         | "dies-ok"
+                        | "eval-lives-ok"
+                        | "eval-dies-ok"
+                        | "throws-like"
+                        | "force_todo"
+                        | "force-todo"
                 ) && args.iter().all(|a| matches!(a, CallArg::Positional(_))) =>
             {
                 let mut expr_args: Vec<Expr> = args
@@ -308,7 +326,7 @@ impl Compiler {
                         _ => None,
                     })
                     .collect();
-                if matches!(name.as_str(), "lives-ok" | "dies-ok")
+                if matches!(name.as_str(), "lives-ok" | "dies-ok" | "throws-like")
                     && let Some(Expr::Block(body)) = expr_args.first()
                 {
                     expr_args[0] = Expr::AnonSub(body.clone());
