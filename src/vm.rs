@@ -1198,6 +1198,16 @@ impl VM {
                 }
                 *ip += 1;
             }
+            OpCode::CallOnValue { arity } => {
+                let arity = *arity as usize;
+                let start = self.stack.len() - arity;
+                let args: Vec<Value> = self.stack.drain(start..).collect();
+                let target = self.stack.pop().unwrap_or(Value::Nil);
+                let result = self.interpreter.eval_call_on_with_values(target, args)?;
+                self.stack.push(result);
+                self.sync_locals_from_env(code);
+                *ip += 1;
+            }
             OpCode::ExecCall { name_idx, arity } => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 let arity = *arity as usize;

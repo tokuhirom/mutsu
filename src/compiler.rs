@@ -996,9 +996,19 @@ impl Compiler {
                 let idx = self.code.add_expr(expr.clone());
                 self.code.emit(OpCode::RunGatherExpr(idx));
             }
-            Expr::CallOn { .. } => {
-                let idx = self.code.add_expr(expr.clone());
-                self.code.emit(OpCode::RunCallOnExpr(idx));
+            Expr::CallOn { target, args } => {
+                if matches!(target.as_ref(), Expr::CodeVar(_)) {
+                    let idx = self.code.add_expr(expr.clone());
+                    self.code.emit(OpCode::RunCallOnExpr(idx));
+                } else {
+                    self.compile_expr(target);
+                    for arg in args {
+                        self.compile_expr(arg);
+                    }
+                    self.code.emit(OpCode::CallOnValue {
+                        arity: args.len() as u32,
+                    });
+                }
             }
             Expr::AnonSub(_) => {
                 let idx = self.code.add_expr(expr.clone());

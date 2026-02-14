@@ -11061,6 +11061,16 @@ impl Interpreter {
         })
     }
 
+    /// Bridge: call Expr::CallOn target with pre-evaluated target/args (for VM).
+    pub(crate) fn eval_call_on_with_values(
+        &mut self,
+        target: Value,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let arg_exprs: Vec<Expr> = args.into_iter().map(Expr::Literal).collect();
+        self.eval_call_on_expr(&Expr::Literal(target), &arg_exprs)
+    }
+
     /// Bridge: method call on a mutable variable target (for VM CallMethodMut).
     /// Constructs the correct Expr variant so the interpreter can write back mutations.
     pub(crate) fn eval_method_call_mut_with_values(

@@ -172,6 +172,9 @@ pub(crate) enum OpCode {
     RunDoStmtExpr(u32),
     RunGatherExpr(u32),
     RunCallOnExpr(u32),
+    CallOnValue {
+        arity: u32,
+    },
     RunAnonSubExpr(u32),
     RunAnonSubParamsExpr(u32),
     RunLambdaExpr(u32),
