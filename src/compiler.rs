@@ -461,7 +461,7 @@ impl Compiler {
             // --- Call with complex args still needs tree-walker fallback ---
             Stmt::Call { .. } => {
                 let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::InterpretStmt(idx));
+                self.code.emit(OpCode::RunCallStmt(idx));
             }
             // Variants currently delegated to interpreter execution.
             Stmt::While { .. }

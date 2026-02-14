@@ -1233,6 +1233,16 @@ impl VM {
                     return Err(RuntimeError::new("ExecCallMixed expects Call"));
                 }
             }
+            OpCode::RunCallStmt(stmt_idx) => {
+                let stmt = &code.stmt_pool[*stmt_idx as usize];
+                if let Stmt::Call { name, args } = stmt {
+                    self.interpreter.run_call_stmt(name, args)?;
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RunCallStmt expects Call"));
+                }
+            }
 
             // -- Indexing --
             OpCode::Index => {
