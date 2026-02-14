@@ -159,6 +159,8 @@ pub(crate) enum OpCode {
     ExecCallMixed(u32),
     RunCallStmt(u32),
     RunBlockStmt(u32),
+    RunStmtFallback(u32),
+    RunExprFallback(u32),
 
     // -- Indexing --
     Index,
@@ -323,10 +325,6 @@ pub(crate) enum OpCode {
     /// Check that the value on top of stack matches the given type constraint.
     /// The u32 is a constant index for the type name string.
     TypeCheck(u32),
-
-    // -- Fallback to tree-walker --
-    InterpretExpr(u32),
-    InterpretStmt(u32),
 }
 
 /// A compiled chunk of bytecode.

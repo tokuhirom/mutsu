@@ -2148,8 +2148,7 @@ impl VM {
                 *ip += 1;
             }
 
-            // -- Fallback to tree-walker --
-            OpCode::InterpretStmt(idx) => {
+            OpCode::RunStmtFallback(idx) => {
                 let stmt = &code.stmt_pool[*idx as usize];
                 self.interpreter.exec_stmt(stmt)?;
                 self.sync_locals_from_env(code);
@@ -2165,7 +2164,7 @@ impl VM {
                     return Err(RuntimeError::new("RunBlockStmt expects Block"));
                 }
             }
-            OpCode::InterpretExpr(idx) => {
+            OpCode::RunExprFallback(idx) => {
                 let expr = &code.expr_pool[*idx as usize];
                 let val = self.interpreter.eval_expr(expr)?;
                 self.stack.push(val);
@@ -2420,7 +2419,7 @@ impl VM {
     }
 
     /// Sync local variable slots from the interpreter environment.
-    /// Called after operations that may modify env (InterpretExpr, InterpretStmt, etc.).
+    /// Called after operations that may modify env (fallback execution, calls, etc.).
     fn sync_locals_from_env(&mut self, code: &CompiledCode) {
         for (i, name) in code.locals.iter().enumerate() {
             if let Some(val) = self.interpreter.env().get(name) {

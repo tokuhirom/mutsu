@@ -475,7 +475,7 @@ impl Compiler {
             | Stmt::React { .. }
             | Stmt::Package { .. } => {
                 let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::InterpretStmt(idx));
+                self.code.emit(OpCode::RunStmtFallback(idx));
             }
         }
     }
@@ -945,7 +945,7 @@ impl Compiler {
 
     fn fallback_expr(&mut self, expr: &Expr) {
         let idx = self.code.add_expr(expr.clone());
-        self.code.emit(OpCode::InterpretExpr(idx));
+        self.code.emit(OpCode::RunExprFallback(idx));
     }
 
     fn can_compile_stmt_call(args: &[CallArg]) -> bool {
