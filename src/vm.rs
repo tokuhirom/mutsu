@@ -10,6 +10,7 @@ use num_traits::{Signed, Zero};
 mod vm_call_ops;
 mod vm_data_ops;
 mod vm_helpers;
+mod vm_var_ops;
 
 pub(crate) struct VM {
     interpreter: Interpreter,
@@ -1087,96 +1088,13 @@ impl VM {
 
             // -- Indexing --
             OpCode::Index => {
-                let index = self.stack.pop().unwrap();
-                let mut target = self.stack.pop().unwrap();
-                if let Value::LazyList(ref ll) = target {
-                    target = Value::Array(self.interpreter.force_lazy_list_bridge(ll)?);
-                }
-                let result = match (target, index) {
-                    (Value::Array(items), Value::Int(i)) => {
-                        if i < 0 {
-                            Value::Nil
-                        } else {
-                            items.get(i as usize).cloned().unwrap_or(Value::Nil)
-                        }
-                    }
-                    (Value::Array(items), Value::Range(a, b)) => {
-                        let start = a.max(0) as usize;
-                        let end = b.max(-1) as usize;
-                        let slice = if start >= items.len() {
-                            Vec::new()
-                        } else {
-                            let end = end.min(items.len().saturating_sub(1));
-                            items[start..=end].to_vec()
-                        };
-                        Value::Array(slice)
-                    }
-                    (Value::Array(items), Value::RangeExcl(a, b)) => {
-                        let start = a.max(0) as usize;
-                        let end_excl = b.max(0) as usize;
-                        let slice = if start >= items.len() {
-                            Vec::new()
-                        } else {
-                            let end_excl = end_excl.min(items.len());
-                            if start >= end_excl {
-                                Vec::new()
-                            } else {
-                                items[start..end_excl].to_vec()
-                            }
-                        };
-                        Value::Array(slice)
-                    }
-                    (Value::Hash(items), Value::Num(f)) if f.is_infinite() && f > 0.0 => {
-                        // Whatever slice: %h{*} returns all values
-                        Value::Array(items.values().cloned().collect())
-                    }
-                    (Value::Hash(items), Value::Nil) => {
-                        // Zen slice: %h{} returns the hash itself
-                        Value::Hash(items)
-                    }
-                    (Value::Hash(items), Value::Array(keys)) => {
-                        // Hash slicing: %hash{"one", "three"} returns array of values
-                        Value::Array(
-                            keys.iter()
-                                .map(|k| {
-                                    let key = k.to_string_value();
-                                    items.get(&key).cloned().unwrap_or(Value::Nil)
-                                })
-                                .collect(),
-                        )
-                    }
-                    (Value::Hash(items), Value::Str(key)) => {
-                        items.get(&key).cloned().unwrap_or(Value::Nil)
-                    }
-                    (Value::Hash(items), Value::Int(key)) => {
-                        items.get(&key.to_string()).cloned().unwrap_or(Value::Nil)
-                    }
-                    (Value::Set(s), Value::Str(key)) => Value::Bool(s.contains(&key)),
-                    (Value::Set(s), idx) => Value::Bool(s.contains(&idx.to_string_value())),
-                    (Value::Bag(b), Value::Str(key)) => Value::Int(*b.get(&key).unwrap_or(&0)),
-                    (Value::Bag(b), idx) => {
-                        Value::Int(*b.get(&idx.to_string_value()).unwrap_or(&0))
-                    }
-                    (Value::Mix(m), Value::Str(key)) => Value::Num(*m.get(&key).unwrap_or(&0.0)),
-                    (Value::Mix(m), idx) => {
-                        Value::Num(*m.get(&idx.to_string_value()).unwrap_or(&0.0))
-                    }
-                    _ => Value::Nil,
-                };
-                self.stack.push(result);
+                self.exec_index_op()?;
                 *ip += 1;
             }
 
             // -- String interpolation --
             OpCode::StringConcat(n) => {
-                let n = *n as usize;
-                let start = self.stack.len() - n;
-                let values: Vec<Value> = self.stack.drain(start..).collect();
-                let mut result = String::new();
-                for v in values {
-                    result.push_str(&v.to_string_value());
-                }
-                self.stack.push(Value::Str(result));
+                self.exec_string_concat_op(*n);
                 *ip += 1;
             }
 
@@ -1207,201 +1125,27 @@ impl VM {
 
             // -- Postfix operators --
             OpCode::PostIncrement(name_idx) => {
-                let name = Self::const_str(code, *name_idx);
-                let val = self
-                    .interpreter
-                    .env()
-                    .get(name)
-                    .cloned()
-                    .unwrap_or(Value::Int(0));
-                let new_val = match &val {
-                    Value::Int(i) => Value::Int(i + 1),
-                    Value::Rat(n, d) => make_rat(n + d, *d),
-                    _ => Value::Int(1),
-                };
-                self.interpreter
-                    .env_mut()
-                    .insert(name.to_string(), new_val.clone());
-                self.update_local_if_exists(code, name, &new_val);
-                self.stack.push(val);
+                self.exec_post_increment_op(code, *name_idx);
                 *ip += 1;
             }
             OpCode::PostDecrement(name_idx) => {
-                let name = Self::const_str(code, *name_idx);
-                let val = self
-                    .interpreter
-                    .env()
-                    .get(name)
-                    .cloned()
-                    .unwrap_or(Value::Int(0));
-                let new_val = match &val {
-                    Value::Int(i) => Value::Int(i - 1),
-                    Value::Rat(n, d) => make_rat(n - d, *d),
-                    _ => Value::Int(-1),
-                };
-                self.interpreter
-                    .env_mut()
-                    .insert(name.to_string(), new_val.clone());
-                self.update_local_if_exists(code, name, &new_val);
-                self.stack.push(val);
+                self.exec_post_decrement_op(code, *name_idx);
                 *ip += 1;
             }
             OpCode::PostIncrementIndex(name_idx) => {
-                let name = Self::const_str(code, *name_idx).to_string();
-                let idx_val = self.stack.pop().unwrap_or(Value::Nil);
-                let key = idx_val.to_string_value();
-                let current = if let Some(container) = self.interpreter.env().get(&name) {
-                    match container {
-                        Value::Hash(h) => h.get(&key).cloned().unwrap_or(Value::Nil),
-                        Value::Array(arr) => {
-                            if let Ok(i) = key.parse::<usize>() {
-                                arr.get(i).cloned().unwrap_or(Value::Nil)
-                            } else {
-                                Value::Nil
-                            }
-                        }
-                        _ => Value::Nil,
-                    }
-                } else {
-                    Value::Nil
-                };
-                let effective = match &current {
-                    Value::Nil => Value::Int(0),
-                    other => other.clone(),
-                };
-                let new_val = match &effective {
-                    Value::Int(i) => Value::Int(i + 1),
-                    Value::Rat(n, d) => make_rat(n + d, *d),
-                    _ => Value::Int(1),
-                };
-                if let Some(container) = self.interpreter.env_mut().get_mut(&name) {
-                    match container {
-                        Value::Hash(h) => {
-                            h.insert(key, new_val);
-                        }
-                        Value::Array(arr) => {
-                            if let Ok(i) = idx_val.to_string_value().parse::<usize>() {
-                                while arr.len() <= i {
-                                    arr.push(Value::Nil);
-                                }
-                                arr[i] = new_val;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                self.stack.push(effective);
+                self.exec_post_increment_index_op(code, *name_idx);
                 *ip += 1;
             }
             OpCode::PostDecrementIndex(name_idx) => {
-                let name = Self::const_str(code, *name_idx).to_string();
-                let idx_val = self.stack.pop().unwrap_or(Value::Nil);
-                let key = idx_val.to_string_value();
-                let current = if let Some(container) = self.interpreter.env().get(&name) {
-                    match container {
-                        Value::Hash(h) => h.get(&key).cloned().unwrap_or(Value::Nil),
-                        Value::Array(arr) => {
-                            if let Ok(i) = key.parse::<usize>() {
-                                arr.get(i).cloned().unwrap_or(Value::Nil)
-                            } else {
-                                Value::Nil
-                            }
-                        }
-                        _ => Value::Nil,
-                    }
-                } else {
-                    Value::Nil
-                };
-                let effective = match &current {
-                    Value::Nil => Value::Int(0),
-                    other => other.clone(),
-                };
-                let new_val = match &effective {
-                    Value::Int(i) => Value::Int(i - 1),
-                    Value::Rat(n, d) => make_rat(n - d, *d),
-                    _ => Value::Int(-1),
-                };
-                if let Some(container) = self.interpreter.env_mut().get_mut(&name) {
-                    match container {
-                        Value::Hash(h) => {
-                            h.insert(key, new_val);
-                        }
-                        Value::Array(arr) => {
-                            if let Ok(i) = idx_val.to_string_value().parse::<usize>() {
-                                while arr.len() <= i {
-                                    arr.push(Value::Nil);
-                                }
-                                arr[i] = new_val;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                self.stack.push(effective);
+                self.exec_post_decrement_index_op(code, *name_idx);
                 *ip += 1;
             }
             OpCode::IndexAssignExprNamed(name_idx) => {
-                let var_name = Self::const_str(code, *name_idx).to_string();
-                let idx = self.stack.pop().unwrap_or(Value::Nil);
-                let val = self.stack.pop().unwrap_or(Value::Nil);
-                match &idx {
-                    Value::Array(keys) => {
-                        let vals = match &val {
-                            Value::Array(v) => v.clone(),
-                            _ => vec![val.clone()],
-                        };
-                        if let Some(Value::Hash(hash)) =
-                            self.interpreter.env_mut().get_mut(&var_name)
-                        {
-                            for (i, key) in keys.iter().enumerate() {
-                                let k = key.to_string_value();
-                                let v = vals.get(i).cloned().unwrap_or(Value::Nil);
-                                hash.insert(k, v);
-                            }
-                        }
-                    }
-                    _ => {
-                        let key = idx.to_string_value();
-                        if let Some(Value::Hash(hash)) =
-                            self.interpreter.env_mut().get_mut(&var_name)
-                        {
-                            hash.insert(key, val.clone());
-                        } else {
-                            let mut hash = std::collections::HashMap::new();
-                            hash.insert(key, val.clone());
-                            self.interpreter
-                                .env_mut()
-                                .insert(var_name, Value::Hash(hash));
-                        }
-                    }
-                }
-                self.stack.push(val);
+                self.exec_index_assign_expr_named_op(code, *name_idx);
                 *ip += 1;
             }
             OpCode::IndexAssignExprNested(name_idx) => {
-                let var_name = Self::const_str(code, *name_idx).to_string();
-                let inner_idx = self.stack.pop().unwrap_or(Value::Nil);
-                let outer_idx = self.stack.pop().unwrap_or(Value::Nil);
-                let val = self.stack.pop().unwrap_or(Value::Nil);
-                let inner_key = inner_idx.to_string_value();
-                let outer_key = outer_idx.to_string_value();
-
-                if !self.interpreter.env().contains_key(&var_name) {
-                    self.interpreter.env_mut().insert(
-                        var_name.clone(),
-                        Value::Hash(std::collections::HashMap::new()),
-                    );
-                }
-                if let Some(Value::Hash(outer_hash)) = self.interpreter.env_mut().get_mut(&var_name)
-                {
-                    let inner_hash = outer_hash
-                        .entry(inner_key)
-                        .or_insert_with(|| Value::Hash(std::collections::HashMap::new()));
-                    if let Value::Hash(h) = inner_hash {
-                        h.insert(outer_key, val.clone());
-                    }
-                }
-                self.stack.push(val);
+                self.exec_index_assign_expr_nested_op(code, *name_idx);
                 *ip += 1;
             }
 
@@ -2498,48 +2242,16 @@ impl VM {
 
             // -- Local variables (indexed slots) --
             OpCode::GetLocal(idx) => {
-                self.stack.push(self.locals[*idx as usize].clone());
+                self.exec_get_local_op(*idx);
                 *ip += 1;
             }
             OpCode::SetLocal(idx) => {
-                let val = self.stack.pop().unwrap();
-                let idx = *idx as usize;
-                // Dual-write to env for interpreter bridge compatibility
-                let name = &code.locals[idx];
-                let val = if name.starts_with('@') {
-                    if let Value::LazyList(ref list) = val {
-                        Value::Array(self.interpreter.force_lazy_list_bridge(list)?)
-                    } else {
-                        val
-                    }
-                } else {
-                    val
-                };
-                let val = if name.starts_with('%') {
-                    Interpreter::coerce_to_hash(val)
-                } else if name.starts_with('@') {
-                    Interpreter::coerce_to_array(val)
-                } else {
-                    val
-                };
-                self.locals[idx] = val.clone();
-                self.interpreter.env_mut().insert(name.clone(), val);
+                self.exec_set_local_op(code, *idx)?;
                 *ip += 1;
             }
             // -- Assignment as expression for local variable --
             OpCode::AssignExprLocal(idx) => {
-                let val = self.stack.last().unwrap().clone();
-                let idx = *idx as usize;
-                let name = &code.locals[idx];
-                let val = if name.starts_with('%') {
-                    Interpreter::coerce_to_hash(val)
-                } else if name.starts_with('@') {
-                    Interpreter::coerce_to_array(val)
-                } else {
-                    val
-                };
-                self.locals[idx] = val.clone();
-                self.interpreter.env_mut().insert(name.clone(), val);
+                self.exec_assign_expr_local_op(code, *idx);
                 *ip += 1;
             }
             OpCode::AssignReadOnly => {
