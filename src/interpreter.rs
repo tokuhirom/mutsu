@@ -1510,6 +1510,13 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         crate::trace::trace_log!("call", "call_function: {} ({} args)", name, args.len());
+        if name == "die" || name == "fail" {
+            let msg = args
+                .first()
+                .map(|v| v.to_string_value())
+                .unwrap_or_else(|| "Died".to_string());
+            return Err(RuntimeError::new(&msg));
+        }
         if matches!(name, "Int" | "Num" | "Str" | "Bool")
             && let Some(value) = args.first().cloned()
         {
@@ -5935,15 +5942,6 @@ impl Interpreter {
                     .and_then(|s| s.strip_suffix('>'))
                 {
                     return self.eval_infix_as_func(op_name, args);
-                }
-                // die/fail in expression context should throw immediately
-                if name == "die" || name == "fail" {
-                    let msg = if let Some(arg) = args.first() {
-                        self.eval_expr(arg)?.to_string_value()
-                    } else {
-                        "Died".to_string()
-                    };
-                    return Err(RuntimeError::new(&msg));
                 }
                 if name == "shift" || name == "pop" {
                     if let Some(arg) = args.first() {
