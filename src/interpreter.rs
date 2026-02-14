@@ -1265,45 +1265,53 @@ impl Interpreter {
             }
             _ => {
                 let value = self.eval_expr(expr)?;
-                match op {
-                    TokenKind::Plus => match value {
-                        Value::Int(i) => Ok(Value::Int(i)),
-                        Value::Bool(b) => Ok(Value::Int(if b { 1 } else { 0 })),
-                        Value::Array(items) => Ok(Value::Int(items.len() as i64)),
-                        Value::Str(s) => Ok(Value::Int(s.parse::<i64>().unwrap_or(0))),
-                        Value::Enum { value, .. } => Ok(Value::Int(value)),
-                        _ => Ok(Value::Int(0)),
-                    },
-                    TokenKind::Minus => match value {
-                        Value::Int(i) => Ok(Value::Int(-i)),
-                        Value::Num(f) => Ok(Value::Num(-f)),
-                        Value::Rat(n, d) => Ok(Value::Rat(-n, d)),
-                        Value::Complex(r, i) => Ok(Value::Complex(-r, -i)),
-                        Value::Str(ref s) => {
-                            if let Ok(i) = s.trim().parse::<i64>() {
-                                Ok(Value::Int(-i))
-                            } else if let Ok(f) = s.trim().parse::<f64>() {
-                                Ok(Value::Num(-f))
-                            } else {
-                                Err(RuntimeError::new("Unary - expects numeric"))
-                            }
-                        }
-                        _ => Err(RuntimeError::new("Unary - expects numeric")),
-                    },
-                    TokenKind::Tilde => Ok(Value::Str(value.to_string_value())),
-                    TokenKind::Bang => Ok(Value::Bool(!value.truthy())),
-                    TokenKind::Question => Ok(Value::Bool(value.truthy())),
-                    TokenKind::Caret => {
-                        let n = match value {
-                            Value::Int(i) => i,
-                            _ => 0,
-                        };
-                        Ok(Value::RangeExcl(0, n))
-                    }
-                    TokenKind::Ident(name) if name == "so" => Ok(Value::Bool(value.truthy())),
-                    _ => Err(RuntimeError::new("Unknown unary operator")),
-                }
+                self.eval_unary_value(op, value)
             }
+        }
+    }
+
+    pub(crate) fn eval_unary_value(
+        &mut self,
+        op: &TokenKind,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        match op {
+            TokenKind::Plus => match value {
+                Value::Int(i) => Ok(Value::Int(i)),
+                Value::Bool(b) => Ok(Value::Int(if b { 1 } else { 0 })),
+                Value::Array(items) => Ok(Value::Int(items.len() as i64)),
+                Value::Str(s) => Ok(Value::Int(s.parse::<i64>().unwrap_or(0))),
+                Value::Enum { value, .. } => Ok(Value::Int(value)),
+                _ => Ok(Value::Int(0)),
+            },
+            TokenKind::Minus => match value {
+                Value::Int(i) => Ok(Value::Int(-i)),
+                Value::Num(f) => Ok(Value::Num(-f)),
+                Value::Rat(n, d) => Ok(Value::Rat(-n, d)),
+                Value::Complex(r, i) => Ok(Value::Complex(-r, -i)),
+                Value::Str(ref s) => {
+                    if let Ok(i) = s.trim().parse::<i64>() {
+                        Ok(Value::Int(-i))
+                    } else if let Ok(f) = s.trim().parse::<f64>() {
+                        Ok(Value::Num(-f))
+                    } else {
+                        Err(RuntimeError::new("Unary - expects numeric"))
+                    }
+                }
+                _ => Err(RuntimeError::new("Unary - expects numeric")),
+            },
+            TokenKind::Tilde => Ok(Value::Str(value.to_string_value())),
+            TokenKind::Bang => Ok(Value::Bool(!value.truthy())),
+            TokenKind::Question => Ok(Value::Bool(value.truthy())),
+            TokenKind::Caret => {
+                let n = match value {
+                    Value::Int(i) => i,
+                    _ => 0,
+                };
+                Ok(Value::RangeExcl(0, n))
+            }
+            TokenKind::Ident(name) if name == "so" => Ok(Value::Bool(value.truthy())),
+            _ => Err(RuntimeError::new("Unknown unary operator")),
         }
     }
 
@@ -13461,8 +13469,11 @@ impl Interpreter {
     }
 
     /// Evaluate a given block, returning the value from the matching when branch.
-    fn eval_given_value(&mut self, topic: &Expr, body: &[Stmt]) -> Result<Value, RuntimeError> {
-        let topic_val = self.eval_expr(topic)?;
+    fn eval_given_body_with_topic(
+        &mut self,
+        topic_val: Value,
+        body: &[Stmt],
+    ) -> Result<Value, RuntimeError> {
         let saved_topic = self.env.get("_").cloned();
         self.env.insert("_".to_string(), topic_val);
         let saved_when = self.when_matched;
@@ -13501,12 +13512,17 @@ impl Interpreter {
         Ok(last)
     }
 
-    pub(crate) fn eval_given_value_bridge(
+    fn eval_given_value(&mut self, topic: &Expr, body: &[Stmt]) -> Result<Value, RuntimeError> {
+        let topic_val = self.eval_expr(topic)?;
+        self.eval_given_body_with_topic(topic_val, body)
+    }
+
+    pub(crate) fn eval_given_with_value(
         &mut self,
-        topic: &Expr,
+        topic: Value,
         body: &[Stmt],
     ) -> Result<Value, RuntimeError> {
-        self.eval_given_value(topic, body)
+        self.eval_given_body_with_topic(topic, body)
     }
 
     fn eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {

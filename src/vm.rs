@@ -2433,14 +2433,15 @@ impl VM {
                 *ip = end;
             }
             OpCode::DoGivenExpr(idx) => {
+                let topic = self.stack.pop().unwrap_or(Value::Nil);
                 let stmt = &code.stmt_pool[*idx as usize];
-                if let Stmt::Given { topic, body } = stmt {
-                    let val = self.interpreter.eval_given_value_bridge(topic, body)?;
+                if let Stmt::Block(body) = stmt {
+                    let val = self.interpreter.eval_given_with_value(topic, body)?;
                     self.stack.push(val);
                     self.sync_locals_from_env(code);
                     *ip += 1;
                 } else {
-                    return Err(RuntimeError::new("DoGivenExpr expects Given"));
+                    return Err(RuntimeError::new("DoGivenExpr expects Block"));
                 }
             }
             OpCode::MakeGather(idx) => {
@@ -2532,9 +2533,7 @@ impl VM {
             OpCode::UnaryToken(token_idx) => {
                 let value = self.stack.pop().unwrap_or(Value::Nil);
                 let op = &code.token_pool[*token_idx as usize];
-                let val = self
-                    .interpreter
-                    .eval_unary_expr(op, &Expr::Literal(value))?;
+                let val = self.interpreter.eval_unary_value(op, value)?;
                 self.stack.push(val);
                 self.sync_locals_from_env(code);
                 *ip += 1;
