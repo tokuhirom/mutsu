@@ -2426,16 +2426,14 @@ impl VM {
                     return Err(RuntimeError::new("RunUnaryExpr expects Unary"));
                 }
             }
-            OpCode::RunBinaryExpr(idx) => {
-                let expr = &code.expr_pool[*idx as usize];
-                if let Expr::Binary { left, op, right } = expr {
-                    let val = self.interpreter.eval_binary_expr(left, op, right)?;
-                    self.stack.push(val);
-                    self.sync_locals_from_env(code);
-                    *ip += 1;
-                } else {
-                    return Err(RuntimeError::new("RunBinaryExpr expects Binary"));
-                }
+            OpCode::RunBinaryToken(token_idx) => {
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let op = &code.token_pool[*token_idx as usize];
+                let val = self.interpreter.eval_binary(left, op, right)?;
+                self.stack.push(val);
+                self.sync_locals_from_env(code);
+                *ip += 1;
             }
             OpCode::RunBinaryIdent(name_idx) => {
                 let right = self.stack.pop().unwrap();

@@ -674,12 +674,10 @@ impl Compiler {
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
                     self.code.emit(OpCode::RunBinaryIdent(name_idx));
                 } else {
-                    let idx = self.code.add_expr(Expr::Binary {
-                        left: left.clone(),
-                        op: op.clone(),
-                        right: right.clone(),
-                    });
-                    self.code.emit(OpCode::RunBinaryExpr(idx));
+                    self.compile_expr(left);
+                    self.compile_expr(right);
+                    let token_idx = self.code.add_token(op.clone());
+                    self.code.emit(OpCode::RunBinaryToken(token_idx));
                 }
             }
             Expr::Ternary {
