@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::ast::{CallArg, Expr, Stmt};
 use crate::interpreter::Interpreter;
 use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
-use crate::value::{JunctionKind, RuntimeError, Value, make_rat};
+use crate::value::{JunctionKind, LazyList, RuntimeError, Value, make_rat, next_instance_id};
 use num_traits::{Signed, Zero};
 
 pub(crate) struct VM {
@@ -2480,9 +2480,13 @@ impl VM {
             OpCode::RunGatherExpr(idx) => {
                 let expr = &code.expr_pool[*idx as usize];
                 if let Expr::Gather(body) = expr {
-                    let val = self.interpreter.eval_gather_expr(body);
+                    let list = LazyList {
+                        body: body.clone(),
+                        env: self.interpreter.env().clone(),
+                        cache: std::cell::RefCell::new(None),
+                    };
+                    let val = Value::LazyList(std::rc::Rc::new(list));
                     self.stack.push(val);
-                    self.sync_locals_from_env(code);
                     *ip += 1;
                 } else {
                     return Err(RuntimeError::new("RunGatherExpr expects Gather"));
@@ -2502,9 +2506,15 @@ impl VM {
             OpCode::RunAnonSubExpr(idx) => {
                 let expr = &code.expr_pool[*idx as usize];
                 if let Expr::AnonSub(body) = expr {
-                    let val = self.interpreter.eval_anon_sub_expr(body);
+                    let val = Value::Sub {
+                        package: self.interpreter.current_package().to_string(),
+                        name: String::new(),
+                        params: vec![],
+                        body: body.clone(),
+                        env: self.interpreter.env().clone(),
+                        id: next_instance_id(),
+                    };
                     self.stack.push(val);
-                    self.sync_locals_from_env(code);
                     *ip += 1;
                 } else {
                     return Err(RuntimeError::new("RunAnonSubExpr expects AnonSub"));
@@ -2513,9 +2523,15 @@ impl VM {
             OpCode::RunAnonSubParamsExpr(idx) => {
                 let expr = &code.expr_pool[*idx as usize];
                 if let Expr::AnonSubParams { params, body } = expr {
-                    let val = self.interpreter.eval_anon_sub_params_expr(params, body);
+                    let val = Value::Sub {
+                        package: self.interpreter.current_package().to_string(),
+                        name: String::new(),
+                        params: params.clone(),
+                        body: body.clone(),
+                        env: self.interpreter.env().clone(),
+                        id: next_instance_id(),
+                    };
                     self.stack.push(val);
-                    self.sync_locals_from_env(code);
                     *ip += 1;
                 } else {
                     return Err(RuntimeError::new(
@@ -2526,9 +2542,19 @@ impl VM {
             OpCode::RunLambdaExpr(idx) => {
                 let expr = &code.expr_pool[*idx as usize];
                 if let Expr::Lambda { param, body } = expr {
-                    let val = self.interpreter.eval_lambda_expr(param, body);
+                    let val = Value::Sub {
+                        package: self.interpreter.current_package().to_string(),
+                        name: String::new(),
+                        params: if param.is_empty() {
+                            vec![]
+                        } else {
+                            vec![param.to_string()]
+                        },
+                        body: body.clone(),
+                        env: self.interpreter.env().clone(),
+                        id: next_instance_id(),
+                    };
                     self.stack.push(val);
-                    self.sync_locals_from_env(code);
                     *ip += 1;
                 } else {
                     return Err(RuntimeError::new("RunLambdaExpr expects Lambda"));
