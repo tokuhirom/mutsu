@@ -5429,22 +5429,6 @@ impl Interpreter {
                 args,
                 modifier,
             } => {
-                // Handle method dispatch modifiers: .?method, .+method, .*method
-                if modifier.is_some() {
-                    let inner = Expr::MethodCall {
-                        target: target.clone(),
-                        name: name.clone(),
-                        args: args.clone(),
-                        modifier: None,
-                    };
-                    let result = self.eval_expr(&inner);
-                    return match modifier {
-                        Some('?') => Ok(result.unwrap_or(Value::Nil)),
-                        Some('+') => Ok(Value::Array(vec![result?])),
-                        Some('*') => Ok(Value::Array(vec![result?])),
-                        _ => result,
-                    };
-                }
                 let target_val = self.eval_expr(target)?;
                 if name == "new"
                     && matches!(target.as_ref(), Expr::BareWord(_))
@@ -5461,10 +5445,15 @@ impl Interpreter {
                 for arg in args {
                     arg_values.push(self.eval_expr(arg)?);
                 }
-                if let Some(target_var) = Self::method_target_var_name(target) {
+                let result = if let Some(target_var) = Self::method_target_var_name(target) {
                     self.call_method_mut_with_values(&target_var, target_val, name, arg_values)
                 } else {
                     self.call_method_with_values(target_val, name, arg_values)
+                };
+                match modifier {
+                    Some('?') => Ok(result.unwrap_or(Value::Nil)),
+                    Some('+') | Some('*') => Ok(Value::Array(vec![result?])),
+                    _ => result,
                 }
             }
             Expr::Exists(inner) => match inner.as_ref() {
