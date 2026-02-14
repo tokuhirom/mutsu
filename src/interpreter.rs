@@ -3260,7 +3260,39 @@ impl Interpreter {
                 self.write_to_named_handle("$*ERR", &line, true)?;
             }
             Stmt::Call { name, args } => {
-                self.run_call_stmt(name, args)?;
+                if let Err(e) = self.exec_call(name, args) {
+                    if matches!(
+                        name.as_str(),
+                        "is" | "ok"
+                            | "nok"
+                            | "isnt"
+                            | "is-deeply"
+                            | "is-approx"
+                            | "like"
+                            | "unlike"
+                            | "cmp-ok"
+                            | "does-ok"
+                            | "isa-ok"
+                            | "lives-ok"
+                            | "dies-ok"
+                            | "eval-lives-ok"
+                            | "eval-dies-ok"
+                            | "throws-like"
+                            | "can-ok"
+                            | "use-ok"
+                            | "pass"
+                            | "flunk"
+                    ) && !e.is_last
+                        && !e.is_next
+                        && !e.is_redo
+                        && e.return_value.is_none()
+                    {
+                        eprintln!("Runtime error: {}", e.message);
+                        self.test_ok(false, &e.message, false)?;
+                    } else {
+                        return Err(e);
+                    }
+                }
             }
             Stmt::Use { module, arg } => {
                 if module == "lib" {
@@ -11075,47 +11107,6 @@ impl Interpreter {
         args: Vec<CallArg>,
     ) -> Result<(), RuntimeError> {
         self.exec_call(name, &args)
-    }
-
-    pub(crate) fn run_call_stmt(
-        &mut self,
-        name: &str,
-        args: &[CallArg],
-    ) -> Result<(), RuntimeError> {
-        if let Err(e) = self.exec_call(name, args) {
-            if matches!(
-                name,
-                "is" | "ok"
-                    | "nok"
-                    | "isnt"
-                    | "is-deeply"
-                    | "is-approx"
-                    | "like"
-                    | "unlike"
-                    | "cmp-ok"
-                    | "does-ok"
-                    | "isa-ok"
-                    | "lives-ok"
-                    | "dies-ok"
-                    | "eval-lives-ok"
-                    | "eval-dies-ok"
-                    | "throws-like"
-                    | "can-ok"
-                    | "use-ok"
-                    | "pass"
-                    | "flunk"
-            ) && !e.is_last
-                && !e.is_next
-                && !e.is_redo
-                && e.return_value.is_none()
-            {
-                eprintln!("Runtime error: {}", e.message);
-                self.test_ok(false, &e.message, false)?;
-            } else {
-                return Err(e);
-            }
-        }
-        Ok(())
     }
 
     fn smart_match(&mut self, left: &Value, right: &Value) -> bool {
