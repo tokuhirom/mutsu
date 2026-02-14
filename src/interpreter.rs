@@ -905,6 +905,21 @@ impl Interpreter {
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
         let supply_val = self.eval_expr(supply)?;
+        let target_var = if let Expr::Var(name) = supply {
+            Some(name.as_str())
+        } else {
+            None
+        };
+        self.run_whenever_with_value(supply_val, target_var, param, body)
+    }
+
+    pub(crate) fn run_whenever_with_value(
+        &mut self,
+        supply_val: Value,
+        target_var: Option<&str>,
+        param: &Option<String>,
+        body: &[Stmt],
+    ) -> Result<(), RuntimeError> {
         if let Value::Instance {
             class_name,
             attributes,
@@ -931,8 +946,10 @@ impl Interpreter {
                     let _ = self.call_sub_value(tap_sub.clone(), vec![v.clone()], true);
                 }
             }
-            let updated = Value::make_instance(class_name.clone(), attrs);
-            self.update_instance_target(supply, updated);
+            let updated = Value::make_instance(class_name, attrs);
+            if let Some(name) = target_var {
+                self.env.insert(name.to_string(), updated);
+            }
         }
         Ok(())
     }

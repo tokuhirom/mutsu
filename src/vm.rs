@@ -2726,19 +2726,22 @@ impl VM {
                 self.sync_locals_from_env(code);
                 *ip = end;
             }
-            OpCode::RunWhenever(idx) => {
-                let stmt = &code.stmt_pool[*idx as usize];
-                if let Stmt::Whenever {
-                    supply,
-                    param,
-                    body,
-                } = stmt
-                {
-                    self.interpreter.run_whenever_stmt(supply, param, body)?;
+            OpCode::WheneverScope {
+                body_idx,
+                param_idx,
+                target_var_idx,
+            } => {
+                let supply_val = self.stack.pop().unwrap_or(Value::Nil);
+                let param = param_idx.map(|idx| Self::const_str(code, idx).to_string());
+                let target_var = target_var_idx.map(|idx| Self::const_str(code, idx));
+                let stmt = &code.stmt_pool[*body_idx as usize];
+                if let Stmt::Block(body) = stmt {
+                    self.interpreter
+                        .run_whenever_with_value(supply_val, target_var, &param, body)?;
                     self.sync_locals_from_env(code);
                     *ip += 1;
                 } else {
-                    return Err(RuntimeError::new("RunWhenever expects Whenever"));
+                    return Err(RuntimeError::new("WheneverScope expects Block body"));
                 }
             }
 

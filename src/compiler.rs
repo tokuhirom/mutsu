@@ -474,9 +474,26 @@ impl Compiler {
                 }
                 self.code.patch_body_end(idx);
             }
-            Stmt::Whenever { .. } => {
-                let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::RunWhenever(idx));
+            Stmt::Whenever {
+                supply,
+                param,
+                body,
+            } => {
+                self.compile_expr(supply);
+                let body_idx = self.code.add_stmt(Stmt::Block(body.clone()));
+                let param_idx = param
+                    .as_ref()
+                    .map(|p| self.code.add_constant(Value::Str(p.clone())));
+                let target_var_idx = if let Expr::Var(name) = supply {
+                    Some(self.code.add_constant(Value::Str(name.clone())))
+                } else {
+                    None
+                };
+                self.code.emit(OpCode::WheneverScope {
+                    body_idx,
+                    param_idx,
+                    target_var_idx,
+                });
             }
         }
     }
