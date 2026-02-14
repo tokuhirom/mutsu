@@ -228,7 +228,7 @@ impl VM {
                     } else if let Some(native_result) = Self::try_native_function(name, &[]) {
                         native_result?
                     } else {
-                        let result = self.interpreter.eval_call_with_values(name, Vec::new())?;
+                        let result = self.interpreter.call_function(name, Vec::new())?;
                         self.sync_locals_from_env(code);
                         result
                     }
@@ -1149,7 +1149,7 @@ impl VM {
                 } else if let Some(native_result) = Self::try_native_function(&name, &args) {
                     self.stack.push(native_result?);
                 } else {
-                    let result = self.interpreter.eval_call_with_values(&name, args)?;
+                    let result = self.interpreter.call_function(&name, args)?;
                     self.stack.push(result);
                     self.sync_locals_from_env(code);
                 }
@@ -1218,7 +1218,7 @@ impl VM {
                     let target = self.interpreter.resolve_code_var(&name);
                     self.interpreter.eval_call_on_value(target, args)?
                 } else {
-                    self.interpreter.eval_call_with_values(&name, args)?
+                    self.interpreter.call_function(&name, args)?
                 };
                 self.stack.push(result);
                 self.sync_locals_from_env(code);

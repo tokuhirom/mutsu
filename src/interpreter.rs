@@ -11032,20 +11032,6 @@ impl Interpreter {
         }
     }
 
-    /// Bridge: call a named function with pre-evaluated values (for VM).
-    /// Wraps each value in Expr::Literal and delegates to eval_expr(Expr::Call).
-    pub(crate) fn eval_call_with_values(
-        &mut self,
-        name: &str,
-        args: Vec<Value>,
-    ) -> Result<Value, RuntimeError> {
-        let arg_exprs: Vec<Expr> = args.into_iter().map(Expr::Literal).collect();
-        self.eval_expr(&Expr::Call {
-            name: name.to_string(),
-            args: arg_exprs,
-        })
-    }
-
     /// Evaluate an infix operator called as a function: `infix:<op>(args)`.
     /// With 0 or 1 args, returns True (identity for chaining operators).
     /// With 2 args, evaluates `left op right`.
