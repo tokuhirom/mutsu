@@ -226,13 +226,17 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
                 self.code.emit(OpCode::ExecCall { name_idx, arity });
             }
-            Stmt::Call { args, .. } if Self::can_compile_stmt_call(args) => {
+            Stmt::Call { args, .. } => {
                 for arg in args {
                     match arg {
-                        CallArg::Positional(expr) => self.compile_expr(expr),
+                        CallArg::Positional(expr) if !Self::needs_raw_expr(expr) => {
+                            self.compile_expr(expr)
+                        }
+                        CallArg::Positional(_) => {}
                         CallArg::Named {
                             value: Some(expr), ..
-                        } => self.compile_expr(expr),
+                        } if !Self::needs_raw_expr(expr) => self.compile_expr(expr),
+                        CallArg::Named { value: Some(_), .. } => {}
                         CallArg::Named { value: None, .. } => {}
                     }
                 }
@@ -489,13 +493,6 @@ impl Compiler {
             Stmt::Whenever { .. } => {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RunWhenever(idx));
-            }
-
-            // --- Declarations: delegate to interpreter (run once, complex state) ---
-            // --- Call with complex args still needs tree-walker fallback ---
-            Stmt::Call { .. } => {
-                let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::RunCallStmt(idx));
             }
         }
     }
@@ -1005,15 +1002,6 @@ impl Compiler {
                 self.code.emit(OpCode::RunPostfixExpr(idx));
             }
         }
-    }
-
-    fn can_compile_stmt_call(args: &[CallArg]) -> bool {
-        args.iter().all(|a| match a {
-            CallArg::Positional(expr) => !Self::needs_raw_expr(expr),
-            CallArg::Named { value, .. } => value
-                .as_ref()
-                .is_none_or(|expr| !Self::needs_raw_expr(expr)),
-        })
     }
 
     fn binary_opcode(op: &TokenKind) -> Option<OpCode> {

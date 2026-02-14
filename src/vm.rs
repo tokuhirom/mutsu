@@ -74,6 +74,16 @@ impl VM {
         }
     }
 
+    fn call_arg_needs_raw_expr(expr: &Expr) -> bool {
+        match expr {
+            Expr::Block(_) | Expr::DoBlock { .. } => true,
+            Expr::Hash(pairs) => pairs
+                .iter()
+                .any(|(_, v)| v.as_ref().is_some_and(Self::call_arg_needs_raw_expr)),
+            _ => false,
+        }
+    }
+
     fn is_builtin_type(name: &str) -> bool {
         matches!(
             name,
@@ -1203,16 +1213,31 @@ impl VM {
                     let mut rebuilt_rev = Vec::with_capacity(args.len());
                     for arg in args.iter().rev() {
                         match arg {
-                            CallArg::Positional(_) => {
-                                let value = self.stack.pop().unwrap_or(Value::Nil);
-                                rebuilt_rev.push(CallArg::Positional(Expr::Literal(value)));
+                            CallArg::Positional(expr) => {
+                                if Self::call_arg_needs_raw_expr(expr) {
+                                    rebuilt_rev.push(CallArg::Positional(expr.clone()));
+                                } else {
+                                    let value = self.stack.pop().unwrap_or(Value::Nil);
+                                    rebuilt_rev.push(CallArg::Positional(Expr::Literal(value)));
+                                }
                             }
                             CallArg::Named { name, value } => {
                                 let rebuilt = if value.is_some() {
-                                    let v = self.stack.pop().unwrap_or(Value::Nil);
-                                    CallArg::Named {
-                                        name: name.clone(),
-                                        value: Some(Expr::Literal(v)),
+                                    if let Some(expr) = value {
+                                        if Self::call_arg_needs_raw_expr(expr) {
+                                            CallArg::Named {
+                                                name: name.clone(),
+                                                value: Some(expr.clone()),
+                                            }
+                                        } else {
+                                            let v = self.stack.pop().unwrap_or(Value::Nil);
+                                            CallArg::Named {
+                                                name: name.clone(),
+                                                value: Some(Expr::Literal(v)),
+                                            }
+                                        }
+                                    } else {
+                                        unreachable!()
                                     }
                                 } else {
                                     CallArg::Named {
@@ -1231,16 +1256,6 @@ impl VM {
                     *ip += 1;
                 } else {
                     return Err(RuntimeError::new("ExecCallMixed expects Call"));
-                }
-            }
-            OpCode::RunCallStmt(stmt_idx) => {
-                let stmt = &code.stmt_pool[*stmt_idx as usize];
-                if let Stmt::Call { name, args } = stmt {
-                    self.interpreter.run_call_stmt(name, args)?;
-                    self.sync_locals_from_env(code);
-                    *ip += 1;
-                } else {
-                    return Err(RuntimeError::new("RunCallStmt expects Call"));
                 }
             }
 
