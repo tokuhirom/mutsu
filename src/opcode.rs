@@ -155,6 +155,8 @@ pub(crate) enum OpCode {
         name_idx: u32,
         arity: u32,
     },
+    /// Statement-level call with mixed positional/named args shape from stmt pool.
+    ExecCallMixed(u32),
 
     // -- Indexing --
     Index,

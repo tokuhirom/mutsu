@@ -10950,6 +10950,15 @@ impl Interpreter {
         self.exec_call(name, &call_args)
     }
 
+    /// Bridge: execute a statement-level call with full CallArg shape (for VM).
+    pub(crate) fn exec_call_with_call_args(
+        &mut self,
+        name: &str,
+        args: Vec<CallArg>,
+    ) -> Result<(), RuntimeError> {
+        self.exec_call(name, &args)
+    }
+
     fn smart_match(&mut self, left: &Value, right: &Value) -> bool {
         match (left, right) {
             (Value::Version { .. }, Value::Version { parts, plus, minus }) => {

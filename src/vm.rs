@@ -1,7 +1,7 @@
 #![allow(clippy::result_large_err)]
 use std::collections::HashMap;
 
-use crate::ast::Stmt;
+use crate::ast::{CallArg, Expr, Stmt};
 use crate::interpreter::Interpreter;
 use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::value::{RuntimeError, Value, make_rat};
@@ -1196,6 +1196,42 @@ impl VM {
                     self.sync_locals_from_env(code);
                 }
                 *ip += 1;
+            }
+            OpCode::ExecCallMixed(stmt_idx) => {
+                let stmt = &code.stmt_pool[*stmt_idx as usize];
+                if let Stmt::Call { name, args } = stmt {
+                    let mut rebuilt_rev = Vec::with_capacity(args.len());
+                    for arg in args.iter().rev() {
+                        match arg {
+                            CallArg::Positional(_) => {
+                                let value = self.stack.pop().unwrap_or(Value::Nil);
+                                rebuilt_rev.push(CallArg::Positional(Expr::Literal(value)));
+                            }
+                            CallArg::Named { name, value } => {
+                                let rebuilt = if value.is_some() {
+                                    let v = self.stack.pop().unwrap_or(Value::Nil);
+                                    CallArg::Named {
+                                        name: name.clone(),
+                                        value: Some(Expr::Literal(v)),
+                                    }
+                                } else {
+                                    CallArg::Named {
+                                        name: name.clone(),
+                                        value: None,
+                                    }
+                                };
+                                rebuilt_rev.push(rebuilt);
+                            }
+                        }
+                    }
+                    rebuilt_rev.reverse();
+                    self.interpreter
+                        .exec_call_with_call_args(name, rebuilt_rev)?;
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("ExecCallMixed expects Call"));
+                }
             }
 
             // -- Indexing --

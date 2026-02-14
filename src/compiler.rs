@@ -218,6 +218,19 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
                 self.code.emit(OpCode::ExecCall { name_idx, arity });
             }
+            Stmt::Call { args, .. } if Self::can_compile_stmt_call(args) => {
+                for arg in args {
+                    match arg {
+                        CallArg::Positional(expr) => self.compile_expr(expr),
+                        CallArg::Named {
+                            value: Some(expr), ..
+                        } => self.compile_expr(expr),
+                        CallArg::Named { value: None, .. } => {}
+                    }
+                }
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::ExecCallMixed(idx));
+            }
             // Loop control
             Stmt::Last(label) => {
                 self.code.emit(OpCode::Last(label.clone()));
@@ -920,6 +933,15 @@ impl Compiler {
     fn fallback_expr(&mut self, expr: &Expr) {
         let idx = self.code.add_expr(expr.clone());
         self.code.emit(OpCode::InterpretExpr(idx));
+    }
+
+    fn can_compile_stmt_call(args: &[CallArg]) -> bool {
+        args.iter().all(|a| match a {
+            CallArg::Positional(expr) => !Self::needs_raw_expr(expr),
+            CallArg::Named { value, .. } => value
+                .as_ref()
+                .is_none_or(|expr| !Self::needs_raw_expr(expr)),
+        })
     }
 
     fn binary_opcode(op: &TokenKind) -> Option<OpCode> {
