@@ -4802,11 +4802,20 @@ impl Interpreter {
         name: &str,
         args: Vec<Value>,
     ) -> Result<(), RuntimeError> {
-        let call_args: Vec<CallArg> = args
-            .into_iter()
-            .map(|v| CallArg::Positional(Expr::Literal(v)))
-            .collect();
-        self.exec_call(name, &call_args)
+        match self.call_function(name, args.clone()) {
+            Ok(_) => Ok(()),
+            Err(e)
+                if e.message
+                    .starts_with("Unknown function (call_function fallback disabled):") =>
+            {
+                let call_args: Vec<CallArg> = args
+                    .into_iter()
+                    .map(|v| CallArg::Positional(Expr::Literal(v)))
+                    .collect();
+                self.exec_call(name, &call_args)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     pub(crate) fn exec_call_mixed_values(
