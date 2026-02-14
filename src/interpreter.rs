@@ -1572,6 +1572,53 @@ impl Interpreter {
         if name == "made" {
             return Ok(self.env.get("made").cloned().unwrap_or(Value::Nil));
         }
+        if name == "ok" {
+            let desc = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
+            let value = args.first().cloned().unwrap_or(Value::Nil);
+            let ok = value.truthy();
+            self.test_ok(ok, &desc, false)?;
+            return Ok(Value::Bool(ok));
+        }
+        if name == "nok" {
+            let desc = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
+            let value = args.first().cloned().unwrap_or(Value::Nil);
+            let ok = !value.truthy();
+            self.test_ok(ok, &desc, false)?;
+            return Ok(Value::Bool(ok));
+        }
+        if name == "diag" {
+            let msg = args
+                .first()
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            self.output.push_str(&format!("# {}\n", msg));
+            return Ok(Value::Nil);
+        }
+        if name == "pass" {
+            let desc = args
+                .first()
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            self.test_ok(true, &desc, false)?;
+            return Ok(Value::Bool(true));
+        }
+        if name == "flunk" {
+            let desc = args
+                .first()
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            self.test_ok(false, &desc, false)?;
+            return Ok(Value::Bool(false));
+        }
+        if name == "is" || name == "isnt" {
+            let desc = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
+            let left = args.first().cloned().unwrap_or(Value::Nil);
+            let right = args.get(1).cloned().unwrap_or(Value::Nil);
+            let eq = left.to_string_value() == right.to_string_value();
+            let ok = if name == "isnt" { !eq } else { eq };
+            self.test_ok(ok, &desc, false)?;
+            return Ok(Value::Bool(ok));
+        }
         if name == "elems" {
             let val = args.first().cloned();
             return Ok(match val {
@@ -5828,39 +5875,6 @@ impl Interpreter {
                     };
                     return Err(RuntimeError::new(&msg));
                 }
-                // Handle test functions in expression context (e.g., `diag "x" if ! ok ...`)
-                if name == "ok" {
-                    let desc = args
-                        .get(1)
-                        .map(|e| self.eval_expr(e))
-                        .transpose()?
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default();
-                    let value = args
-                        .first()
-                        .map(|e| self.eval_expr(e))
-                        .transpose()?
-                        .unwrap_or(Value::Nil);
-                    let ok = value.truthy();
-                    self.test_ok(ok, &desc, false)?;
-                    return Ok(Value::Bool(ok));
-                }
-                if name == "nok" {
-                    let desc = args
-                        .get(1)
-                        .map(|e| self.eval_expr(e))
-                        .transpose()?
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default();
-                    let value = args
-                        .first()
-                        .map(|e| self.eval_expr(e))
-                        .transpose()?
-                        .unwrap_or(Value::Nil);
-                    let ok = !value.truthy();
-                    self.test_ok(ok, &desc, false)?;
-                    return Ok(Value::Bool(ok));
-                }
                 if name == "isa-ok" {
                     let value = args
                         .first()
@@ -5897,70 +5911,6 @@ impl Interpreter {
                     };
                     self.test_ok(ok, &desc, false)?;
                     return Ok(Value::Bool(ok));
-                }
-                if name == "diag" {
-                    let msg = args
-                        .first()
-                        .map(|e| self.eval_expr(e))
-                        .transpose()?
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default();
-                    self.output.push_str(&format!("# {}\n", msg));
-                    return Ok(Value::Nil);
-                }
-                if name == "pass" {
-                    let desc = args
-                        .first()
-                        .map(|e| self.eval_expr(e))
-                        .transpose()?
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default();
-                    self.test_ok(true, &desc, false)?;
-                    return Ok(Value::Bool(true));
-                }
-                if name == "flunk" {
-                    let desc = args
-                        .first()
-                        .map(|e| self.eval_expr(e))
-                        .transpose()?
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default();
-                    self.test_ok(false, &desc, false)?;
-                    return Ok(Value::Bool(false));
-                }
-                if name == "is" || name == "isnt" {
-                    let desc = args
-                        .get(2)
-                        .map(|e| self.eval_expr(e))
-                        .transpose()?
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default();
-                    let left = args
-                        .first()
-                        .map(|e| self.eval_expr(e))
-                        .transpose()?
-                        .unwrap_or(Value::Nil);
-                    let right = args
-                        .get(1)
-                        .map(|e| self.eval_expr(e))
-                        .transpose()?
-                        .unwrap_or(Value::Nil);
-                    let eq = left.to_string_value() == right.to_string_value();
-                    let ok = if name == "isnt" { !eq } else { eq };
-                    self.test_ok(ok, &desc, false)?;
-                    return Ok(Value::Bool(ok));
-                }
-                if name == "make" {
-                    let value = if let Some(arg) = args.first() {
-                        self.eval_expr(arg)?
-                    } else {
-                        Value::Nil
-                    };
-                    self.env.insert("made".to_string(), value.clone());
-                    return Ok(value);
-                }
-                if name == "made" {
-                    return Ok(self.env.get("made").cloned().unwrap_or(Value::Nil));
                 }
                 if name == "callframe" {
                     let depth = args
