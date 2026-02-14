@@ -1286,8 +1286,7 @@ impl VM {
                         }
                     }
                     rebuilt_rev.reverse();
-                    self.interpreter
-                        .exec_call_with_call_args(name, rebuilt_rev)?;
+                    self.interpreter.exec_call(name, &rebuilt_rev)?;
                     self.sync_locals_from_env(code);
                     *ip += 1;
                 } else {

@@ -3640,7 +3640,7 @@ impl Interpreter {
         Ok(())
     }
 
-    fn exec_call(&mut self, name: &str, args: &[CallArg]) -> Result<(), RuntimeError> {
+    pub(crate) fn exec_call(&mut self, name: &str, args: &[CallArg]) -> Result<(), RuntimeError> {
         match name {
             "plan" => {
                 if let Some(reason) = self.named_arg_value(args, "skip-all")? {
@@ -11290,15 +11290,6 @@ impl Interpreter {
             .map(|v| CallArg::Positional(Expr::Literal(v)))
             .collect();
         self.exec_call(name, &call_args)
-    }
-
-    /// Bridge: execute a statement-level call with full CallArg shape (for VM).
-    pub(crate) fn exec_call_with_call_args(
-        &mut self,
-        name: &str,
-        args: Vec<CallArg>,
-    ) -> Result<(), RuntimeError> {
-        self.exec_call(name, &args)
     }
 
     fn smart_match(&mut self, left: &Value, right: &Value) -> bool {
