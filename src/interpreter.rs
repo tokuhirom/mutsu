@@ -4287,6 +4287,41 @@ impl Interpreter {
         }
     }
 
+    fn is_builtin_type_name_for_new(name: &str) -> bool {
+        matches!(
+            name,
+            "Str"
+                | "Int"
+                | "Num"
+                | "Bool"
+                | "Array"
+                | "Hash"
+                | "Rat"
+                | "FatRat"
+                | "Complex"
+                | "Set"
+                | "Bag"
+                | "Mix"
+                | "Uni"
+                | "Pair"
+                | "Range"
+                | "Map"
+                | "Seq"
+                | "Junction"
+                | "Version"
+                | "Exception"
+                | "Failure"
+                | "IO::Path"
+                | "Regex"
+                | "Code"
+                | "Sub"
+                | "Method"
+                | "Block"
+                | "Routine"
+                | "CompUnit::DependencySpecification"
+        )
+    }
+
     fn call_sub_value(
         &mut self,
         func: Value,
@@ -5427,76 +5462,18 @@ impl Interpreter {
                         _ => result,
                     };
                 }
-                // Handle .new() constructor on class type
-                if name == "new" {
-                    let base = self.eval_expr(target)?;
-                    if let Value::Str(s) = &base
-                        && matches!(target.as_ref(), Expr::BareWord(_))
-                        && !self.classes.contains_key(s.as_str())
-                        && !matches!(
-                            s.as_str(),
-                            "Str"
-                                | "Int"
-                                | "Num"
-                                | "Bool"
-                                | "Array"
-                                | "Hash"
-                                | "Rat"
-                                | "FatRat"
-                                | "Complex"
-                                | "Set"
-                                | "Bag"
-                                | "Mix"
-                                | "Uni"
-                                | "Pair"
-                                | "Range"
-                                | "Map"
-                                | "Seq"
-                                | "Junction"
-                                | "Version"
-                                | "Exception"
-                                | "Failure"
-                                | "IO::Path"
-                                | "Regex"
-                                | "Code"
-                                | "Sub"
-                                | "Method"
-                                | "Block"
-                                | "Routine"
-                                | "CompUnit::DependencySpecification"
-                        )
-                    {
-                        return Err(RuntimeError::new(format!(
-                            "Undeclared name:\n    {} used",
-                            s
-                        )));
-                    }
-                    match base {
-                        Value::Str(_) => return Ok(Value::Str(String::new())),
-                        Value::Int(_) => return Ok(Value::Int(0)),
-                        Value::Num(_) => return Ok(Value::Num(0.0)),
-                        Value::Bool(_) => return Ok(Value::Bool(false)),
-                        target_val => {
-                            let mut arg_values = Vec::with_capacity(args.len());
-                            for arg in args {
-                                arg_values.push(self.eval_expr(arg)?);
-                            }
-                            let dispatch_result =
-                                if let Some(target_var) = Self::method_target_var_name(target) {
-                                    self.call_method_mut_with_values(
-                                        &target_var,
-                                        target_val,
-                                        name,
-                                        arg_values,
-                                    )
-                                } else {
-                                    self.call_method_with_values(target_val, name, arg_values)
-                                };
-                            return dispatch_result;
-                        }
-                    }
-                }
                 let target_val = self.eval_expr(target)?;
+                if name == "new"
+                    && matches!(target.as_ref(), Expr::BareWord(_))
+                    && let Value::Str(s) = &target_val
+                    && !self.classes.contains_key(s.as_str())
+                    && !Self::is_builtin_type_name_for_new(s)
+                {
+                    return Err(RuntimeError::new(format!(
+                        "Undeclared name:\n    {} used",
+                        s
+                    )));
+                }
                 let mut arg_values = Vec::with_capacity(args.len());
                 for arg in args {
                     arg_values.push(self.eval_expr(arg)?);
@@ -8499,6 +8476,18 @@ impl Interpreter {
                 }
                 return Ok(Value::make_instance(class_name.clone(), attrs));
             }
+        }
+        if method == "new" {
+            return match target {
+                Value::Str(_) => Ok(Value::Str(String::new())),
+                Value::Int(_) => Ok(Value::Int(0)),
+                Value::Num(_) => Ok(Value::Num(0.0)),
+                Value::Bool(_) => Ok(Value::Bool(false)),
+                _ => Err(RuntimeError::new(format!(
+                    "Unknown method value dispatch (fallback disabled): {}",
+                    method
+                ))),
+            };
         }
         if method == "squish" {
             return match target {
