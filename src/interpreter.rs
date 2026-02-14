@@ -5979,7 +5979,15 @@ impl Interpreter {
                         if name == "raku" || name == "perl" {
                             return Ok(Value::Str(format!("{}.new()", class_name)));
                         }
-                        if class_name == "IO::Path" || class_name == "IO::Handle" {
+                        if matches!(
+                            class_name.as_str(),
+                            "IO::Path"
+                                | "IO::Handle"
+                                | "Promise"
+                                | "Channel"
+                                | "Supply"
+                                | "Proc::Async"
+                        ) {
                             let mut arg_values = Vec::with_capacity(args.len());
                             for arg in args {
                                 arg_values.push(self.eval_expr(arg)?);
