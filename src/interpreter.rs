@@ -1044,6 +1044,18 @@ impl Interpreter {
             }
         }
         let target_val = self.eval_expr(target)?;
+        let mut eval_args = Vec::with_capacity(args.len());
+        for arg in args {
+            eval_args.push(self.eval_expr(arg)?);
+        }
+        self.eval_call_on_value(target_val, eval_args)
+    }
+
+    pub(crate) fn eval_call_on_value(
+        &mut self,
+        target_val: Value,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
         if let Value::Sub {
             package,
             name,
@@ -1064,21 +1076,15 @@ impl Interpreter {
             }
             // Bind named params
             for (i, pname) in params.iter().enumerate() {
-                if let Some(arg) = args.get(i)
-                    && let Ok(value) = self.eval_expr(arg)
-                {
-                    new_env.insert(pname.clone(), value);
+                if let Some(value) = args.get(i) {
+                    new_env.insert(pname.clone(), value.clone());
                 }
             }
             // Bind placeholder variables ($^a, $^b, ...)
             let placeholders = collect_placeholders(&body);
             if !placeholders.is_empty() {
-                let mut eval_args = Vec::new();
-                for arg in args {
-                    eval_args.push(self.eval_expr(arg)?);
-                }
                 for (i, ph) in placeholders.iter().enumerate() {
-                    if let Some(val) = eval_args.get(i) {
+                    if let Some(val) = args.get(i) {
                         new_env.insert(ph.clone(), val.clone());
                     }
                 }
@@ -1108,6 +1114,9 @@ impl Interpreter {
                 Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
                 other => other,
             };
+        }
+        if matches!(target_val, Value::Routine { .. }) {
+            return self.call_sub_value(target_val, args, false);
         }
         Ok(Value::Nil)
     }
@@ -11100,16 +11109,6 @@ impl Interpreter {
             args: arg_exprs,
             modifier: None,
         })
-    }
-
-    /// Bridge: call Expr::CallOn target with pre-evaluated target/args (for VM).
-    pub(crate) fn eval_call_on_with_values(
-        &mut self,
-        target: Value,
-        args: Vec<Value>,
-    ) -> Result<Value, RuntimeError> {
-        let arg_exprs: Vec<Expr> = args.into_iter().map(Expr::Literal).collect();
-        self.eval_call_on_expr(&Expr::Literal(target), &arg_exprs)
     }
 
     /// Bridge: method call on a mutable variable target (for VM CallMethodMut).
