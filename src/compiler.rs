@@ -297,15 +297,22 @@ impl Compiler {
                         | "skip"
                         | "skip-rest"
                         | "bail-out"
+                        | "lives-ok"
+                        | "dies-ok"
                 ) && args.iter().all(|a| matches!(a, CallArg::Positional(_))) =>
             {
-                let expr_args: Vec<Expr> = args
+                let mut expr_args: Vec<Expr> = args
                     .iter()
                     .filter_map(|arg| match arg {
                         CallArg::Positional(expr) => Some(expr.clone()),
                         _ => None,
                     })
                     .collect();
+                if matches!(name.as_str(), "lives-ok" | "dies-ok")
+                    && let Some(Expr::Block(body)) = expr_args.first()
+                {
+                    expr_args[0] = Expr::AnonSub(body.clone());
+                }
                 let call_expr = Expr::Call {
                     name: name.clone(),
                     args: expr_args,

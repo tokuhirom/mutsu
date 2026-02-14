@@ -1716,6 +1716,26 @@ impl Interpreter {
             self.bailed_out = true;
             return Ok(Value::Nil);
         }
+        if name == "lives-ok" {
+            let block = args.first().cloned().unwrap_or(Value::Nil);
+            let desc = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
+            let ok = match block {
+                Value::Sub { .. } => self.call_sub_value(block, vec![], false).is_ok(),
+                _ => true,
+            };
+            self.test_ok(ok, &desc, false)?;
+            return Ok(Value::Bool(ok));
+        }
+        if name == "dies-ok" {
+            let block = args.first().cloned().unwrap_or(Value::Nil);
+            let desc = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
+            let ok = match block {
+                Value::Sub { .. } => self.call_sub_value(block, vec![], false).is_err(),
+                _ => false,
+            };
+            self.test_ok(ok, &desc, false)?;
+            return Ok(Value::Bool(ok));
+        }
         if name == "isa-ok" {
             let value = args.first().cloned().unwrap_or(Value::Nil);
             let type_name = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
