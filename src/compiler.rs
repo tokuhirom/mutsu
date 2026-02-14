@@ -956,13 +956,8 @@ impl Compiler {
                     modifier_idx,
                 });
             }
-            // Try/Catch: compile to TryCatch opcode (only if no CONTROL blocks)
-            Expr::Try { body, catch } if !body.iter().any(|s| matches!(s, Stmt::Control(_))) => {
+            Expr::Try { body, catch } => {
                 self.compile_try(body, catch);
-            }
-            Expr::Try { .. } => {
-                let idx = self.code.add_expr(expr.clone());
-                self.code.emit(OpCode::RunTryExpr(idx));
             }
             Expr::DoBlock { .. } => {
                 let idx = self.code.add_expr(expr.clone());
@@ -1253,19 +1248,23 @@ impl Compiler {
 
     /// Compile Expr::Try { body, catch } to TryCatch opcode.
     fn compile_try(&mut self, body: &[Stmt], catch: &Option<Vec<Stmt>>) {
-        // Separate CATCH/CONTROL blocks from body
+        // Separate CATCH/CONTROL blocks from body.
         let mut main_stmts = Vec::new();
         let mut catch_stmts = catch.clone();
+        let mut control_stmts: Option<Vec<Stmt>> = None;
         for stmt in body {
             if let Stmt::Catch(catch_body) = stmt {
                 catch_stmts = Some(catch_body.clone());
+            } else if let Stmt::Control(control_body) = stmt {
+                control_stmts = Some(control_body.clone());
             } else {
                 main_stmts.push(stmt.clone());
             }
         }
-        // Emit TryCatch placeholder
+        // Emit TryCatch placeholder.
         let try_idx = self.code.emit(OpCode::TryCatch {
             catch_start: 0,
+            control_start: 0,
             body_end: 0,
         });
         // Compile main body (last Stmt::Expr leaves value on stack)
@@ -1280,20 +1279,38 @@ impl Compiler {
         if main_stmts.is_empty() {
             self.code.emit(OpCode::LoadNil);
         }
-        // Jump over catch on success
+        // Jump over catch/control on success.
         let jump_end = self.code.emit(OpCode::Jump(0));
-        // Patch catch_start
+        // Patch catch_start.
         self.code.patch_try_catch_start(try_idx);
-        // Compile catch block
+        // Compile catch block.
+        let mut jump_after_catch = None;
         if let Some(ref catch_body) = catch_stmts {
             for stmt in catch_body {
                 self.compile_stmt(stmt);
             }
+            if control_stmts.is_some() {
+                jump_after_catch = Some(self.code.emit(OpCode::Jump(0)));
+            }
         }
-        self.code.emit(OpCode::LoadNil); // catch result is Nil
-        // Patch body_end and jump_end
+        // catch result is Nil
+        self.code.emit(OpCode::LoadNil);
+        // Patch control_start.
+        self.code.patch_try_control_start(try_idx);
+        // Compile control block.
+        if let Some(ref control_body) = control_stmts {
+            for stmt in control_body {
+                self.compile_stmt(stmt);
+            }
+            // control result is Nil
+            self.code.emit(OpCode::LoadNil);
+        }
+        // Patch body_end and jump targets.
         self.code.patch_try_body_end(try_idx);
         self.code.patch_jump(jump_end);
+        if let Some(j) = jump_after_catch {
+            self.code.patch_jump(j);
+        }
     }
 
     /// Compile a block inline (for blocks without placeholders).

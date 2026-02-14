@@ -1808,11 +1808,13 @@ impl VM {
             // -- Exception handling (try/catch) --
             OpCode::TryCatch {
                 catch_start,
+                control_start,
                 body_end,
             } => {
                 let saved_depth = self.stack.len();
                 let body_start = *ip + 1;
                 let catch_begin = *catch_start as usize;
+                let control_begin = *control_start as usize;
                 let end = *body_end as usize;
                 match self.run_range(code, body_start, catch_begin, compiled_fns) {
                     Ok(()) => {
@@ -1821,11 +1823,26 @@ impl VM {
                     }
                     Err(e) if e.return_value.is_some() => return Err(e),
                     Err(e)
-                        if e.is_last || e.is_next || e.is_redo || e.is_proceed || e.is_succeed =>
+                        if (e.is_last
+                            || e.is_next
+                            || e.is_redo
+                            || e.is_proceed
+                            || e.is_succeed)
+                            && control_begin < end =>
                     {
-                        return Err(e);
+                        // Control-flow signal handled by CONTROL block.
+                        self.stack.truncate(saved_depth);
+                        let saved_when = self.interpreter.when_matched();
+                        self.interpreter.set_when_matched(false);
+                        self.run_range(code, control_begin, end, compiled_fns)?;
+                        self.interpreter.set_when_matched(saved_when);
+                        *ip = end;
                     }
                     Err(e) => {
+                        if catch_begin >= control_begin {
+                            // No catch block; propagate.
+                            return Err(e);
+                        }
                         // Error caught
                         self.stack.truncate(saved_depth);
                         // Set $! to an Exception instance so that $! ~~ Exception works
@@ -1840,7 +1857,7 @@ impl VM {
                         // Run catch block
                         let saved_when = self.interpreter.when_matched();
                         self.interpreter.set_when_matched(false);
-                        self.run_range(code, catch_begin, end, compiled_fns)?;
+                        self.run_range(code, catch_begin, control_begin, compiled_fns)?;
                         self.interpreter.set_when_matched(saved_when);
                         // Restore $_ but leave $! set (try semantics: $! persists after try)
                         if let Some(v) = saved_topic {
@@ -2391,17 +2408,6 @@ impl VM {
                     *ip += 1;
                 } else {
                     return Err(RuntimeError::new("RunPostfixExpr expects PostfixOp"));
-                }
-            }
-            OpCode::RunTryExpr(idx) => {
-                let expr = &code.expr_pool[*idx as usize];
-                if let Expr::Try { body, catch } = expr {
-                    let val = self.interpreter.eval_try_expr(body, catch)?;
-                    self.stack.push(val);
-                    self.sync_locals_from_env(code);
-                    *ip += 1;
-                } else {
-                    return Err(RuntimeError::new("RunTryExpr expects Try"));
                 }
             }
             OpCode::RunBlockExpr(idx) => {

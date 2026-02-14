@@ -177,7 +177,6 @@ pub(crate) enum OpCode {
     RunLambdaExpr(u32),
     RunIndexAssignExpr(u32),
     RunPostfixExpr(u32),
-    RunTryExpr(u32),
     RunBlockExpr(u32),
     RunUnaryExpr(u32),
     RunBinaryToken(u32),
@@ -325,9 +324,13 @@ pub(crate) enum OpCode {
     },
 
     // -- Exception handling --
-    /// Try/catch block. Body at [ip+1..catch_start), catch at [catch_start..body_end).
+    /// Try block layout:
+    /// body at [ip+1..catch_start),
+    /// catch at [catch_start..control_start),
+    /// control at [control_start..body_end).
     TryCatch {
         catch_start: u32,
+        control_start: u32,
         body_end: u32,
     },
 
@@ -456,6 +459,14 @@ impl CompiledCode {
         match &mut self.ops[idx] {
             OpCode::TryCatch { body_end, .. } => *body_end = target,
             _ => panic!("patch_try_body_end on non-TryCatch opcode"),
+        }
+    }
+
+    pub(crate) fn patch_try_control_start(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::TryCatch { control_start, .. } => *control_start = target,
+            _ => panic!("patch_try_control_start on non-TryCatch opcode"),
         }
     }
 
