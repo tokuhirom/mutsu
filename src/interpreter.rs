@@ -2005,6 +2005,26 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         crate::trace::trace_log!("call", "call_function: {} ({} args)", name, args.len());
+        if let Some(def) = self.resolve_function_with_types(name, &args) {
+            let saved_env = self.env.clone();
+            self.bind_function_args_values(&def.param_defs, &def.params, &args)?;
+            self.routine_stack
+                .push((def.package.clone(), def.name.clone()));
+            let result = self.eval_block_value(&def.body);
+            self.routine_stack.pop();
+            self.env = saved_env;
+            return match result {
+                Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
+                other => other,
+            };
+        }
+        if self.has_proto(name) {
+            return Err(RuntimeError::new(format!(
+                "No matching candidates for proto sub: {}",
+                name
+            )));
+        }
+
         let arg_exprs: Vec<Expr> = args.into_iter().map(Expr::Literal).collect();
         self.eval_expr(&Expr::Call {
             name: name.to_string(),
