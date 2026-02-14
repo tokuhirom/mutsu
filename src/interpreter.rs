@@ -5481,18 +5481,6 @@ impl Interpreter {
                 }
             }
             Expr::CallOn { target, args } => {
-                // For CodeVar targets, check if it's a variable first, otherwise
-                // call by function name using value dispatch.
-                if let Expr::CodeVar(fname) = target.as_ref() {
-                    let var_key = format!("&{}", fname);
-                    if !self.env.contains_key(&var_key) {
-                        let mut eval_args = Vec::with_capacity(args.len());
-                        for arg in args {
-                            eval_args.push(self.eval_expr(arg)?);
-                        }
-                        return self.call_function(fname, eval_args);
-                    }
-                }
                 let target_val = self.eval_expr(target)?;
                 let mut eval_args = Vec::with_capacity(args.len());
                 for arg in args {
