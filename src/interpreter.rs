@@ -2005,6 +2005,9 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         crate::trace::trace_log!("call", "call_function: {} ({} args)", name, args.len());
+        if let Some(native_result) = crate::builtins::native_function(name, &args) {
+            return native_result;
+        }
         if let Some(def) = self.resolve_function_with_types(name, &args) {
             let saved_env = self.env.clone();
             self.bind_function_args_values(&def.param_defs, &def.params, &args)?;
@@ -11130,6 +11133,15 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        let native_result = match args.as_slice() {
+            [] => crate::builtins::native_method_0arg(&target, method),
+            [a] => crate::builtins::native_method_1arg(&target, method, a),
+            [a, b] => crate::builtins::native_method_2arg(&target, method, a, b),
+            _ => None,
+        };
+        if let Some(result) = native_result {
+            return result;
+        }
         if method == "say" && args.is_empty() {
             self.output.push_str(&target.to_string_value());
             self.output.push('\n');
