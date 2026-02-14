@@ -5567,6 +5567,137 @@ impl Interpreter {
         Ok(())
     }
 
+    fn eval_call_special_expr(
+        &mut self,
+        name: &str,
+        args: &[Expr],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if name == "shift" || name == "pop" {
+            if let Some(arg) = args.first() {
+                let var_key = match arg {
+                    Expr::ArrayVar(v) => Some(format!("@{}", v)),
+                    Expr::Var(v) => Some(v.clone()),
+                    _ => None,
+                };
+                if let Some(key) = var_key
+                    && let Some(Value::Array(items)) = self.env.get_mut(&key)
+                {
+                    if items.is_empty() {
+                        return Some(Ok(Value::Nil));
+                    }
+                    return Some(Ok(if name == "shift" {
+                        items.remove(0)
+                    } else {
+                        items.pop().unwrap_or(Value::Nil)
+                    }));
+                }
+            }
+            return Some(Ok(Value::Nil));
+        }
+
+        if name == "push" || name == "unshift" || name == "append" || name == "prepend" {
+            if let Some(arr_arg) = args.first() {
+                let var_key = match arr_arg {
+                    Expr::ArrayVar(v) => Some(format!("@{}", v)),
+                    Expr::Var(v) => Some(v.clone()),
+                    _ => None,
+                };
+                if let Some(key) = var_key {
+                    let values: Vec<Value> = args[1..]
+                        .iter()
+                        .map(|e| self.eval_expr(e).unwrap_or(Value::Nil))
+                        .collect();
+                    if let Some(Value::Array(items)) = self.env.get_mut(&key) {
+                        if name == "push" || name == "append" {
+                            items.extend(values);
+                        } else {
+                            for v in values.into_iter().rev() {
+                                items.insert(0, v);
+                            }
+                        }
+                    } else {
+                        self.env.insert(key, Value::Array(values));
+                    }
+                    return Some(Ok(Value::Nil));
+                }
+            }
+            return Some(Ok(Value::Nil));
+        }
+
+        if name == "undefine" {
+            if let Some(arg) = args.first() {
+                match arg {
+                    Expr::Var(n) => {
+                        self.env.insert(n.clone(), Value::Nil);
+                    }
+                    Expr::ArrayVar(n) => {
+                        self.env.insert(n.clone(), Value::Array(vec![]));
+                    }
+                    Expr::HashVar(n) => {
+                        self.env.insert(n.clone(), Value::Hash(HashMap::new()));
+                    }
+                    _ => {}
+                }
+            }
+            return Some(Ok(Value::Nil));
+        }
+
+        if name == "VAR" {
+            if let Some(arg) = args.first() {
+                let (var_name, class_name) = match arg {
+                    Expr::Var(n) => (format!("${}", n), "Scalar"),
+                    Expr::ArrayVar(n) => (format!("@{}", n), "Array"),
+                    Expr::HashVar(n) => (format!("%{}", n), "Hash"),
+                    Expr::CodeVar(n) => (format!("&{}", n), "Scalar"),
+                    _ => return Some(self.eval_expr(arg)),
+                };
+                let mut attributes = HashMap::new();
+                attributes.insert("name".to_string(), Value::Str(var_name));
+                return Some(Ok(Value::make_instance(class_name.to_string(), attributes)));
+            }
+            return Some(Ok(Value::Nil));
+        }
+
+        if name == "indir" {
+            let path = match args.first().and_then(|e| self.eval_expr(e).ok()) {
+                Some(v) => v.to_string_value(),
+                None => return Some(Err(RuntimeError::new("indir requires a path"))),
+            };
+            let path_buf = self.resolve_path(&path);
+            if !path_buf.is_dir() {
+                return Some(Err(RuntimeError::new(format!(
+                    "indir path is not a directory: {}",
+                    path
+                ))));
+            }
+            let saved = self.env.get("$*CWD").cloned();
+            self.env.insert(
+                "$*CWD".to_string(),
+                Value::Str(Self::stringify_path(&path_buf)),
+            );
+            let result = if let Some(body) = args.get(1) {
+                match body {
+                    Expr::Block(body_stmts)
+                    | Expr::AnonSub(body_stmts)
+                    | Expr::AnonSubParams {
+                        body: body_stmts, ..
+                    } => self.eval_block_value(body_stmts),
+                    other => self.eval_expr(other),
+                }
+            } else {
+                Ok(Value::Nil)
+            };
+            if let Some(prev) = saved {
+                self.env.insert("$*CWD".to_string(), prev);
+            } else {
+                self.env.remove("$*CWD");
+            }
+            return Some(result);
+        }
+
+        None
+    }
+
     pub(crate) fn eval_expr(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
         crate::trace::trace_log!("eval", "eval_expr: {:?}", std::mem::discriminant(expr));
         match expr {
@@ -5943,56 +6074,8 @@ impl Interpreter {
                 {
                     return self.eval_infix_as_func(op_name, args);
                 }
-                if name == "shift" || name == "pop" {
-                    if let Some(arg) = args.first() {
-                        // Get the variable name to mutate in-place
-                        let var_key = match arg {
-                            Expr::ArrayVar(v) => Some(format!("@{}", v)),
-                            Expr::Var(v) => Some(v.clone()),
-                            _ => None,
-                        };
-                        if let Some(key) = var_key
-                            && let Some(Value::Array(items)) = self.env.get_mut(&key)
-                        {
-                            if items.is_empty() {
-                                return Ok(Value::Nil);
-                            }
-                            return Ok(if name == "shift" {
-                                items.remove(0)
-                            } else {
-                                items.pop().unwrap_or(Value::Nil)
-                            });
-                        }
-                    }
-                    return Ok(Value::Nil);
-                }
-                if name == "push" || name == "unshift" || name == "append" || name == "prepend" {
-                    if let Some(arr_arg) = args.first() {
-                        let var_key = match arr_arg {
-                            Expr::ArrayVar(v) => Some(format!("@{}", v)),
-                            Expr::Var(v) => Some(v.clone()),
-                            _ => None,
-                        };
-                        if let Some(key) = var_key {
-                            let values: Vec<Value> = args[1..]
-                                .iter()
-                                .map(|e| self.eval_expr(e).unwrap_or(Value::Nil))
-                                .collect();
-                            if let Some(Value::Array(items)) = self.env.get_mut(&key) {
-                                if name == "push" || name == "append" {
-                                    items.extend(values);
-                                } else {
-                                    for v in values.into_iter().rev() {
-                                        items.insert(0, v);
-                                    }
-                                }
-                            } else {
-                                self.env.insert(key, Value::Array(values));
-                            }
-                            return Ok(Value::Nil);
-                        }
-                    }
-                    return Ok(Value::Nil);
+                if let Some(result) = self.eval_call_special_expr(name, args) {
+                    return result;
                 }
                 let eval_args: Vec<Value> = args
                     .iter()
@@ -6005,80 +6088,6 @@ impl Interpreter {
                             .starts_with("Unknown function (call_function fallback disabled):") => {
                     }
                     Err(e) => return Err(e),
-                }
-                if name == "undefine" {
-                    // undefine($var) sets the variable to Nil (undefined)
-                    if let Some(arg) = args.first() {
-                        match arg {
-                            Expr::Var(n) => {
-                                self.env.insert(n.clone(), Value::Nil);
-                            }
-                            Expr::ArrayVar(n) => {
-                                self.env.insert(n.clone(), Value::Array(vec![]));
-                            }
-                            Expr::HashVar(n) => {
-                                self.env.insert(n.clone(), Value::Hash(HashMap::new()));
-                            }
-                            _ => {}
-                        }
-                    }
-                    return Ok(Value::Nil);
-                }
-                if name == "VAR" {
-                    // VAR($x) returns a container object with the variable name
-                    if let Some(arg) = args.first() {
-                        let (var_name, class_name) = match arg {
-                            Expr::Var(n) => (format!("${}", n), "Scalar"),
-                            Expr::ArrayVar(n) => (format!("@{}", n), "Array"),
-                            Expr::HashVar(n) => (format!("%{}", n), "Hash"),
-                            Expr::CodeVar(n) => (format!("&{}", n), "Scalar"),
-                            _ => {
-                                let value = self.eval_expr(arg)?;
-                                return Ok(value);
-                            }
-                        };
-                        let mut attributes = HashMap::new();
-                        attributes.insert("name".to_string(), Value::Str(var_name));
-                        return Ok(Value::make_instance(class_name.to_string(), attributes));
-                    }
-                    return Ok(Value::Nil);
-                }
-                if name == "indir" {
-                    let path = args
-                        .first()
-                        .and_then(|e| self.eval_expr(e).ok())
-                        .map(|v| v.to_string_value())
-                        .ok_or_else(|| RuntimeError::new("indir requires a path"))?;
-                    let path_buf = self.resolve_path(&path);
-                    if !path_buf.is_dir() {
-                        return Err(RuntimeError::new(format!(
-                            "indir path is not a directory: {}",
-                            path
-                        )));
-                    }
-                    let saved = self.env.get("$*CWD").cloned();
-                    self.env.insert(
-                        "$*CWD".to_string(),
-                        Value::Str(Self::stringify_path(&path_buf)),
-                    );
-                    let result = if let Some(body) = args.get(1) {
-                        match body {
-                            Expr::Block(body_stmts)
-                            | Expr::AnonSub(body_stmts)
-                            | Expr::AnonSubParams {
-                                body: body_stmts, ..
-                            } => self.eval_block_value(body_stmts),
-                            other => self.eval_expr(other),
-                        }
-                    } else {
-                        Ok(Value::Nil)
-                    };
-                    if let Some(prev) = saved {
-                        self.env.insert("$*CWD".to_string(), prev);
-                    } else {
-                        self.env.remove("$*CWD");
-                    }
-                    return result;
                 }
                 Ok(Value::Nil)
             }
