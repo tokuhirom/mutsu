@@ -1700,6 +1700,16 @@ impl VM {
                 let mut inner_ip = body_start;
                 while inner_ip < end {
                     if let Err(e) = self.exec_one(code, &mut inner_ip, compiled_fns) {
+                        if e.is_succeed {
+                            self.interpreter.set_when_matched(saved_when);
+                            if let Some(v) = saved_topic.clone() {
+                                self.interpreter.env_mut().insert("_".to_string(), v);
+                            } else {
+                                self.interpreter.env_mut().remove("_");
+                            }
+                            *ip = end;
+                            break;
+                        }
                         // Restore state before propagating
                         self.interpreter.set_when_matched(saved_when);
                         if let Some(v) = saved_topic {
@@ -1742,7 +1752,8 @@ impl VM {
                             did_proceed = true;
                         }
                         Err(e) if e.is_succeed => {
-                            // succeed: stop but mark matched
+                            self.interpreter.set_when_matched(true);
+                            return Err(e);
                         }
                         Err(e) => return Err(e),
                     }
