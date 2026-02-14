@@ -166,6 +166,7 @@ pub(crate) enum OpCode {
     RunAnonSubExpr(u32),
     RunAnonSubParamsExpr(u32),
     RunLambdaExpr(u32),
+    RunIndexAssignExpr(u32),
     RunExprFallback(u32),
     RunReactStmt(u32),
     RunPackageStmt(u32),

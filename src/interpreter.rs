@@ -1112,6 +1112,88 @@ impl Interpreter {
         }
     }
 
+    pub(crate) fn eval_index_assign_expr(
+        &mut self,
+        target: &Expr,
+        index: &Expr,
+        value: &Expr,
+    ) -> Result<Value, RuntimeError> {
+        let val = self.eval_expr(value)?;
+        let idx = self.eval_expr(index)?;
+
+        // Handle chained index assignment: %h<foo><bar> = "baz"
+        if let Expr::Index {
+            target: inner_target,
+            index: inner_index,
+        } = target
+        {
+            let inner_var = match inner_target.as_ref() {
+                Expr::HashVar(name) => format!("%{}", name),
+                Expr::ArrayVar(name) => format!("@{}", name),
+                Expr::Var(name) => name.clone(),
+                _ => return Err(RuntimeError::new("Invalid assignment target")),
+            };
+            let inner_key = self.eval_expr(inner_index)?.to_string_value();
+            let outer_key = idx.to_string_value();
+            // Ensure the outer hash exists
+            if !self.env.contains_key(&inner_var) {
+                self.env.insert(
+                    inner_var.clone(),
+                    Value::Hash(std::collections::HashMap::new()),
+                );
+            }
+            if let Some(Value::Hash(outer_hash)) = self.env.get_mut(&inner_var) {
+                // Get or create inner hash
+                let inner_hash = outer_hash
+                    .entry(inner_key)
+                    .or_insert_with(|| Value::Hash(std::collections::HashMap::new()));
+                if let Value::Hash(h) = inner_hash {
+                    h.insert(outer_key, val.clone());
+                }
+            }
+            return Ok(val);
+        }
+
+        // Get the variable name from the target expression
+        let var_name = match target {
+            Expr::HashVar(name) => format!("%{}", name),
+            Expr::ArrayVar(name) => format!("@{}", name),
+            Expr::Var(name) => name.clone(),
+            _ => {
+                return Err(RuntimeError::new("Invalid assignment target"));
+            }
+        };
+        match &idx {
+            Value::Array(keys) => {
+                // Slice assignment: %hash{"one","three"} = (5, 10)
+                let vals = match &val {
+                    Value::Array(v) => v.clone(),
+                    _ => vec![val.clone()],
+                };
+                if let Some(Value::Hash(hash)) = self.env.get_mut(&var_name) {
+                    for (i, key) in keys.iter().enumerate() {
+                        let k = key.to_string_value();
+                        let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                        hash.insert(k, v);
+                    }
+                }
+                Ok(val)
+            }
+            _ => {
+                let key = idx.to_string_value();
+                if let Some(Value::Hash(hash)) = self.env.get_mut(&var_name) {
+                    hash.insert(key, val.clone());
+                } else {
+                    // Auto-vivify: create a new hash
+                    let mut hash = std::collections::HashMap::new();
+                    hash.insert(key, val.clone());
+                    self.env.insert(var_name, Value::Hash(hash));
+                }
+                Ok(val)
+            }
+        }
+    }
+
     pub(crate) fn run_given_stmt(
         &mut self,
         topic: &Expr,
@@ -4954,82 +5036,7 @@ impl Interpreter {
                 target,
                 index,
                 value,
-            } => {
-                let val = self.eval_expr(value)?;
-                let idx = self.eval_expr(index)?;
-
-                // Handle chained index assignment: %h<foo><bar> = "baz"
-                if let Expr::Index {
-                    target: inner_target,
-                    index: inner_index,
-                } = target.as_ref()
-                {
-                    let inner_var = match inner_target.as_ref() {
-                        Expr::HashVar(name) => format!("%{}", name),
-                        Expr::ArrayVar(name) => format!("@{}", name),
-                        Expr::Var(name) => name.clone(),
-                        _ => return Err(RuntimeError::new("Invalid assignment target")),
-                    };
-                    let inner_key = self.eval_expr(inner_index)?.to_string_value();
-                    let outer_key = idx.to_string_value();
-                    // Ensure the outer hash exists
-                    if !self.env.contains_key(&inner_var) {
-                        self.env.insert(
-                            inner_var.clone(),
-                            Value::Hash(std::collections::HashMap::new()),
-                        );
-                    }
-                    if let Some(Value::Hash(outer_hash)) = self.env.get_mut(&inner_var) {
-                        // Get or create inner hash
-                        let inner_hash = outer_hash
-                            .entry(inner_key)
-                            .or_insert_with(|| Value::Hash(std::collections::HashMap::new()));
-                        if let Value::Hash(h) = inner_hash {
-                            h.insert(outer_key, val.clone());
-                        }
-                    }
-                    return Ok(val);
-                }
-
-                // Get the variable name from the target expression
-                let var_name = match target.as_ref() {
-                    Expr::HashVar(name) => format!("%{}", name),
-                    Expr::ArrayVar(name) => format!("@{}", name),
-                    Expr::Var(name) => name.clone(),
-                    _ => {
-                        return Err(RuntimeError::new("Invalid assignment target"));
-                    }
-                };
-                match &idx {
-                    Value::Array(keys) => {
-                        // Slice assignment: %hash{"one","three"} = (5, 10)
-                        let vals = match &val {
-                            Value::Array(v) => v.clone(),
-                            _ => vec![val.clone()],
-                        };
-                        if let Some(Value::Hash(hash)) = self.env.get_mut(&var_name) {
-                            for (i, key) in keys.iter().enumerate() {
-                                let k = key.to_string_value();
-                                let v = vals.get(i).cloned().unwrap_or(Value::Nil);
-                                hash.insert(k, v);
-                            }
-                        }
-                        Ok(val)
-                    }
-                    _ => {
-                        let key = idx.to_string_value();
-                        if let Some(Value::Hash(hash)) = self.env.get_mut(&var_name) {
-                            hash.insert(key, val.clone());
-                        } else {
-                            // Auto-vivify: create a new hash
-                            let mut hash = std::collections::HashMap::new();
-                            hash.insert(key, val.clone());
-                            self.env.insert(var_name, Value::Hash(hash));
-                        }
-                        Ok(val)
-                    }
-                }
-            }
+            } => self.eval_index_assign_expr(target, index, value),
             Expr::AssignExpr { name, expr } => {
                 let value = self.eval_expr(expr)?;
                 self.env.insert(name.clone(), value.clone());

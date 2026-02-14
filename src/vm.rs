@@ -2340,6 +2340,24 @@ impl VM {
                     return Err(RuntimeError::new("RunLambdaExpr expects Lambda"));
                 }
             }
+            OpCode::RunIndexAssignExpr(idx) => {
+                let expr = &code.expr_pool[*idx as usize];
+                if let Expr::IndexAssign {
+                    target,
+                    index,
+                    value,
+                } = expr
+                {
+                    let val = self
+                        .interpreter
+                        .eval_index_assign_expr(target, index, value)?;
+                    self.stack.push(val);
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RunIndexAssignExpr expects IndexAssign"));
+                }
+            }
             OpCode::RunExprFallback(idx) => {
                 let expr = &code.expr_pool[*idx as usize];
                 let val = self.interpreter.eval_expr(expr)?;

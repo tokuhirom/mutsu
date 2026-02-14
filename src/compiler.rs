@@ -965,6 +965,10 @@ impl Compiler {
                 let idx = self.code.add_expr(expr.clone());
                 self.code.emit(OpCode::RunLambdaExpr(idx));
             }
+            Expr::IndexAssign { .. } => {
+                let idx = self.code.add_expr(expr.clone());
+                self.code.emit(OpCode::RunIndexAssignExpr(idx));
+            }
             Expr::ControlFlow { kind, label } => match kind {
                 crate::ast::ControlFlowKind::Last => {
                     self.code.emit(OpCode::Last(label.clone()));
@@ -985,7 +989,7 @@ impl Compiler {
                 }
             }
             // Remaining expression forms not yet bytecode-native.
-            Expr::IndexAssign { .. } | Expr::Try { .. } | Expr::PostfixOp { .. } => {
+            Expr::Try { .. } | Expr::PostfixOp { .. } => {
                 self.fallback_expr(expr);
             }
         }
