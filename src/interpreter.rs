@@ -1579,6 +1579,29 @@ impl Interpreter {
         if name == "made" {
             return Ok(self.env.get("made").cloned().unwrap_or(Value::Nil));
         }
+        if name == "undefine" {
+            return Ok(Value::Nil);
+        }
+        if name == "VAR" {
+            return Ok(args.first().cloned().unwrap_or(Value::Nil));
+        }
+        if name == "shift" || name == "pop" {
+            return Ok(match args.first().cloned() {
+                Some(Value::Array(mut items)) => {
+                    if items.is_empty() {
+                        Value::Nil
+                    } else if name == "shift" {
+                        items.remove(0)
+                    } else {
+                        items.pop().unwrap_or(Value::Nil)
+                    }
+                }
+                _ => Value::Nil,
+            });
+        }
+        if matches!(name, "push" | "unshift" | "append" | "prepend") {
+            return Ok(Value::Nil);
+        }
         if name == "ok" {
             let desc = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
             let value = args.first().cloned().unwrap_or(Value::Nil);
@@ -5601,88 +5624,69 @@ impl Interpreter {
         Ok(())
     }
 
-    fn eval_call_special_expr(
-        &mut self,
-        name: &str,
-        args: &[Expr],
-    ) -> Option<Result<Value, RuntimeError>> {
-        if name == "shift" || name == "pop" {
-            let Some(target) = args.first().cloned() else {
-                return Some(Ok(Value::Nil));
-            };
-            let method_expr = Expr::MethodCall {
-                target: Box::new(target),
+    fn rewrite_call_expr(name: &str, args: &[Expr]) -> Option<Expr> {
+        if matches!(name, "shift" | "pop")
+            && let Some(target) = args.first()
+        {
+            return Some(Expr::MethodCall {
+                target: Box::new(target.clone()),
                 name: name.to_string(),
                 args: Vec::new(),
                 modifier: None,
-            };
-            return Some(self.eval_expr(&method_expr));
+            });
         }
-
-        if name == "push" || name == "unshift" || name == "append" || name == "prepend" {
-            let Some(target) = args.first().cloned() else {
-                return Some(Ok(Value::Nil));
-            };
-            let method_expr = Expr::MethodCall {
-                target: Box::new(target),
+        if matches!(name, "push" | "unshift" | "append" | "prepend")
+            && let Some(target) = args.first()
+        {
+            return Some(Expr::MethodCall {
+                target: Box::new(target.clone()),
                 name: name.to_string(),
                 args: args[1..].to_vec(),
                 modifier: None,
+            });
+        }
+        if name == "undefine"
+            && let Some(arg) = args.first()
+        {
+            let key = match arg {
+                Expr::Var(n) => Some(n.clone()),
+                Expr::ArrayVar(n) => Some(format!("@{}", n)),
+                Expr::HashVar(n) => Some(format!("%{}", n)),
+                Expr::CodeVar(n) => Some(format!("&{}", n)),
+                _ => None,
             };
-            return Some(self.eval_expr(&method_expr));
-        }
-
-        if name == "undefine" {
-            if let Some(arg) = args.first() {
-                let key = match arg {
-                    Expr::Var(n) => Some(n.clone()),
-                    Expr::ArrayVar(n) => Some(format!("@{}", n)),
-                    Expr::HashVar(n) => Some(format!("%{}", n)),
-                    Expr::CodeVar(n) => Some(format!("&{}", n)),
-                    _ => None,
-                };
-                if let Some(name) = key {
-                    let assign_expr = Expr::AssignExpr {
-                        name,
-                        expr: Box::new(Expr::Literal(Value::Nil)),
-                    };
-                    return Some(self.eval_expr(&assign_expr));
-                }
+            if let Some(name) = key {
+                return Some(Expr::AssignExpr {
+                    name,
+                    expr: Box::new(Expr::Literal(Value::Nil)),
+                });
             }
-            return Some(Ok(Value::Nil));
         }
-
-        if name == "VAR" {
-            if let Some(arg) = args.first() {
-                if matches!(
-                    arg,
-                    Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::CodeVar(_)
-                ) {
-                    let method_expr = Expr::MethodCall {
-                        target: Box::new(arg.clone()),
-                        name: "VAR".to_string(),
-                        args: Vec::new(),
-                        modifier: None,
-                    };
-                    return Some(self.eval_expr(&method_expr));
-                }
-                return Some(self.eval_expr(arg));
-            }
-            return Some(Ok(Value::Nil));
+        if name == "VAR"
+            && let Some(arg) = args.first()
+            && matches!(
+                arg,
+                Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::CodeVar(_)
+            )
+        {
+            return Some(Expr::MethodCall {
+                target: Box::new(arg.clone()),
+                name: "VAR".to_string(),
+                args: Vec::new(),
+                modifier: None,
+            });
         }
-
-        if name == "indir" {
-            let mut rewritten_args = args.to_vec();
-            if let Some(Expr::Block(body)) = rewritten_args.get(1) {
-                rewritten_args[1] = Expr::AnonSub(body.clone());
-            }
-            let eval_args = rewritten_args
-                .iter()
-                .map(|e| self.eval_expr(e))
-                .collect::<Result<Vec<_>, _>>();
-            return Some(eval_args.and_then(|vals| self.call_function("indir", vals)));
+        if name == "indir"
+            && args.len() >= 2
+            && let Expr::Block(body) = &args[1]
+        {
+            let mut rewritten = args.to_vec();
+            rewritten[1] = Expr::AnonSub(body.clone());
+            return Some(Expr::Call {
+                name: name.to_string(),
+                args: rewritten,
+            });
         }
-
         None
     }
 
@@ -6062,8 +6066,8 @@ impl Interpreter {
                 {
                     return self.eval_infix_as_func(op_name, args);
                 }
-                if let Some(result) = self.eval_call_special_expr(name, args) {
-                    return result;
+                if let Some(rewritten) = Self::rewrite_call_expr(name, args) {
+                    return self.eval_expr(&rewritten);
                 }
                 let eval_args: Vec<Value> = args
                     .iter()
