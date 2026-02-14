@@ -87,14 +87,6 @@ pub(crate) fn builtin_srand_auto() {
     });
 }
 
-/// Return a random integer in [0, n)
-pub(crate) fn builtin_rand_int(n: usize) -> usize {
-    RNG.with(|rng| {
-        let r = rng.borrow_mut().next_u64();
-        (r as usize) % n
-    })
-}
-
 /// Unicode titlecase for the first character of a string.
 /// Titlecase differs from uppercase for certain characters:
 /// - 'ß' → "Ss" (not "SS")
