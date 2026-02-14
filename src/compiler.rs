@@ -499,7 +499,10 @@ impl Compiler {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterToken(idx));
             }
-            Stmt::ProtoDecl { .. } => {
+            Stmt::ProtoDecl {
+                params, param_defs, ..
+            } => {
+                let _ = (params.len(), param_defs.len());
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterProtoSub(idx));
             }

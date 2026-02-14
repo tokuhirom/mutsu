@@ -2567,7 +2567,13 @@ impl VM {
             }
             OpCode::RegisterProtoSub(idx) => {
                 let stmt = &code.stmt_pool[*idx as usize];
-                if let Stmt::ProtoDecl { name, .. } = stmt {
+                if let Stmt::ProtoDecl {
+                    name,
+                    params,
+                    param_defs,
+                } = stmt
+                {
+                    let _ = (params.len(), param_defs.len());
                     self.interpreter.register_proto_decl(name);
                     self.sync_locals_from_env(code);
                     *ip += 1;

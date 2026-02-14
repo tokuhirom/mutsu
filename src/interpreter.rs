@@ -19,9 +19,7 @@ thread_local! {
         RefCell::new(HashMap::new());
 }
 
-use crate::ast::{
-    AssignOp, CallArg, ExpectedMatcher, Expr, FunctionDef, ParamDef, PhaserKind, Stmt,
-};
+use crate::ast::{CallArg, ExpectedMatcher, Expr, FunctionDef, ParamDef, PhaserKind, Stmt};
 use crate::lexer::{Lexer, TokenKind};
 use crate::opcode::{CompiledCode, OpCode};
 use crate::parser::Parser;
@@ -848,18 +846,6 @@ impl Interpreter {
         );
     }
 
-    pub(crate) fn run_subtest_stmt(
-        &mut self,
-        name: &Expr,
-        body: &[Stmt],
-    ) -> Result<(), RuntimeError> {
-        let name_value = self.eval_expr(name)?;
-        let label = name_value.to_string_value();
-        let ctx = self.begin_subtest();
-        let run_result = self.run_block(body);
-        self.finish_subtest(ctx, &label, run_result)
-    }
-
     pub(crate) fn begin_subtest(&mut self) -> SubtestContext {
         let parent_test_state = self.test_state.take();
         let parent_output = std::mem::take(&mut self.output);
@@ -896,21 +882,6 @@ impl Interpreter {
         let ok = run_result.is_ok() && subtest_failed == 0;
         self.test_ok(ok, label, false)?;
         Ok(())
-    }
-
-    pub(crate) fn run_whenever_stmt(
-        &mut self,
-        supply: &Expr,
-        param: &Option<String>,
-        body: &[Stmt],
-    ) -> Result<(), RuntimeError> {
-        let supply_val = self.eval_expr(supply)?;
-        let target_var = if let Expr::Var(name) = supply {
-            Some(name.as_str())
-        } else {
-            None
-        };
-        self.run_whenever_with_value(supply_val, target_var, param, body)
     }
 
     pub(crate) fn run_whenever_with_value(
@@ -952,22 +923,6 @@ impl Interpreter {
             }
         }
         Ok(())
-    }
-
-    pub(crate) fn run_package_stmt(
-        &mut self,
-        name: &str,
-        body: &[Stmt],
-    ) -> Result<(), RuntimeError> {
-        let saved = self.current_package.clone();
-        self.current_package = name.to_string();
-        self.run_block(body)?;
-        self.current_package = saved;
-        Ok(())
-    }
-
-    pub(crate) fn run_react_stmt(&mut self, body: &[Stmt]) -> Result<(), RuntimeError> {
-        self.run_block(body)
     }
 
     pub(crate) fn eval_do_block_expr(
@@ -1490,11 +1445,10 @@ impl Interpreter {
                 {
                     let saved_when = self.when_matched;
                     self.when_matched = false;
-                    for stmt in &control_body {
-                        self.exec_stmt(stmt)?;
-                        if self.when_matched || self.halted {
-                            break;
-                        }
+                    match self.run_block_raw(&control_body) {
+                        Ok(()) => {}
+                        Err(sig) if sig.is_succeed => {}
+                        Err(err) => return Err(err),
                     }
                     self.when_matched = saved_when;
                     return Ok(Value::Nil);
@@ -1509,11 +1463,10 @@ impl Interpreter {
                     self.env.insert("_".to_string(), err_val);
                     let saved_when = self.when_matched;
                     self.when_matched = false;
-                    for stmt in &catch_body {
-                        self.exec_stmt(stmt)?;
-                        if self.when_matched || self.halted {
-                            break;
-                        }
+                    match self.run_block_raw(&catch_body) {
+                        Ok(()) => {}
+                        Err(sig) if sig.is_succeed => {}
+                        Err(err) => return Err(err),
                     }
                     self.when_matched = saved_when;
                     // Restore $_ but leave $! set (try semantics: $! persists after try)
@@ -3377,349 +3330,6 @@ impl Interpreter {
             }
         }
         tokens
-    }
-
-    pub(crate) fn exec_stmt(&mut self, stmt: &Stmt) -> Result<(), RuntimeError> {
-        crate::trace::trace_log!("eval", "exec_stmt: {:?}", std::mem::discriminant(stmt));
-        match stmt {
-            Stmt::VarDecl {
-                name,
-                expr,
-                type_constraint,
-            } => {
-                let mut value = self.eval_expr(expr)?;
-                if name.starts_with('@')
-                    && let Value::LazyList(ref list) = value
-                {
-                    value = Value::Array(self.force_lazy_list(list)?);
-                }
-                let value = if name.starts_with('%') {
-                    Self::coerce_to_hash(value)
-                } else if name.starts_with('@') {
-                    Self::coerce_to_array(value)
-                } else {
-                    value
-                };
-                if let Some(constraint) = type_constraint
-                    && !matches!(value, Value::Nil)
-                    && Self::is_known_type_constraint(constraint)
-                    && !self.type_matches_value(constraint, &value)
-                {
-                    return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
-                }
-                self.env.insert(name.clone(), value);
-            }
-            Stmt::Assign { name, expr, op } => {
-                if name == "*PID" {
-                    return Err(RuntimeError::new("X::Assignment::RO"));
-                }
-                let value = self.eval_expr(expr)?;
-                let value = match op {
-                    AssignOp::Assign | AssignOp::Bind => value,
-                    AssignOp::MatchAssign => Value::Str(value.to_string_value()),
-                };
-                let value = if name.starts_with('%') {
-                    Self::coerce_to_hash(value)
-                } else if name.starts_with('@') {
-                    Self::coerce_to_array(value)
-                } else {
-                    value
-                };
-                self.env.insert(name.clone(), value);
-            }
-            Stmt::SubDecl {
-                name,
-                params,
-                param_defs,
-                body,
-                multi,
-            } => {
-                self.register_sub_decl(name, params, param_defs, body, *multi);
-            }
-            Stmt::TokenDecl {
-                name,
-                params,
-                param_defs,
-                body,
-                multi,
-            }
-            | Stmt::RuleDecl {
-                name,
-                params,
-                param_defs,
-                body,
-                multi,
-            } => {
-                self.register_token_decl(name, params, param_defs, body, *multi);
-            }
-            Stmt::ProtoDecl {
-                name,
-                params,
-                param_defs,
-            } => {
-                self.register_proto_decl(name);
-                let _ = params.len();
-                let _ = param_defs.len();
-            }
-            Stmt::ProtoToken { name } => {
-                self.register_proto_token_decl(name);
-            }
-            Stmt::Package { name, body } => {
-                self.run_package_stmt(name, body)?;
-            }
-            Stmt::Return(expr) => {
-                let val = self.eval_expr(expr)?;
-                return Err(RuntimeError::return_val(val));
-            }
-            Stmt::Say(exprs) => {
-                let mut parts = Vec::new();
-                for expr in exprs {
-                    let value = self.eval_expr(expr)?;
-                    parts.push(Self::gist_value(&value));
-                }
-                let line = parts.join(" ");
-                self.write_to_named_handle("$*OUT", &line, true)?;
-            }
-            Stmt::Print(exprs) => {
-                let mut content = String::new();
-                for expr in exprs {
-                    let value = self.eval_expr(expr)?;
-                    content.push_str(&value.to_string_value());
-                }
-                self.write_to_named_handle("$*OUT", &content, false)?;
-            }
-            Stmt::Note(exprs) => {
-                let mut parts = Vec::new();
-                for expr in exprs {
-                    let value = self.eval_expr(expr)?;
-                    parts.push(Self::gist_value(&value));
-                }
-                let line = parts.join(" ");
-                self.write_to_named_handle("$*ERR", &line, true)?;
-            }
-            Stmt::Call { name, args } => {
-                if let Err(e) = self.exec_call(name, args) {
-                    if matches!(
-                        name.as_str(),
-                        "is" | "ok"
-                            | "nok"
-                            | "isnt"
-                            | "is-deeply"
-                            | "is-approx"
-                            | "like"
-                            | "unlike"
-                            | "cmp-ok"
-                            | "does-ok"
-                            | "isa-ok"
-                            | "lives-ok"
-                            | "dies-ok"
-                            | "eval-lives-ok"
-                            | "eval-dies-ok"
-                            | "throws-like"
-                            | "can-ok"
-                            | "use-ok"
-                            | "pass"
-                            | "flunk"
-                    ) && !e.is_last
-                        && !e.is_next
-                        && !e.is_redo
-                        && e.return_value.is_none()
-                    {
-                        eprintln!("Runtime error: {}", e.message);
-                        self.test_ok(false, &e.message, false)?;
-                    } else {
-                        return Err(e);
-                    }
-                }
-            }
-            Stmt::Use { module, arg } => {
-                if module == "lib" {
-                    if let Some(expr) = arg {
-                        let value = self.eval_expr(expr)?;
-                        let path = value.to_string_value();
-                        self.add_lib_path(path);
-                    }
-                } else if module == "v6" {
-                    // `use v6;` pragma - silently accepted
-                } else if module == "Test"
-                    || module.starts_with("Test::")
-                    || module == "customtrait"
-                    || module == "isms"
-                {
-                    // Built-in test helpers are handled by the interpreter itself.
-                } else {
-                    self.use_module(module)?;
-                }
-            }
-            Stmt::Subtest { name, body } => {
-                self.run_subtest_stmt(name, body)?;
-            }
-            Stmt::Block(body) => {
-                self.run_block(body)?;
-            }
-            Stmt::If {
-                cond,
-                then_branch,
-                else_branch,
-            } => {
-                if self.eval_expr(cond)?.truthy() {
-                    self.run_block(then_branch)?;
-                } else {
-                    self.run_block(else_branch)?;
-                }
-            }
-            Stmt::While { cond, body, label } => {
-                let stmt = Stmt::While {
-                    cond: cond.clone(),
-                    body: body.clone(),
-                    label: label.clone(),
-                };
-                self.run_block_raw(std::slice::from_ref(&stmt))?;
-            }
-            Stmt::Loop {
-                init,
-                cond,
-                step,
-                body,
-                repeat,
-                label,
-            } => {
-                let stmt = Stmt::Loop {
-                    init: init.clone(),
-                    cond: cond.clone(),
-                    step: step.clone(),
-                    body: body.clone(),
-                    repeat: *repeat,
-                    label: label.clone(),
-                };
-                self.run_block_raw(std::slice::from_ref(&stmt))?;
-            }
-            Stmt::React { body } => {
-                self.run_react_stmt(body)?;
-            }
-            Stmt::Whenever {
-                supply,
-                param,
-                body,
-            } => {
-                self.run_whenever_stmt(supply, param, body)?;
-            }
-            Stmt::Last(label) => {
-                let mut sig = RuntimeError::last_signal();
-                sig.label = label.clone();
-                return Err(sig);
-            }
-            Stmt::Next(label) => {
-                let mut sig = RuntimeError::next_signal();
-                sig.label = label.clone();
-                return Err(sig);
-            }
-            Stmt::Redo(label) => {
-                let mut sig = RuntimeError::redo_signal();
-                sig.label = label.clone();
-                return Err(sig);
-            }
-            Stmt::Proceed => {
-                return Err(RuntimeError::proceed_signal());
-            }
-            Stmt::Succeed => {
-                return Err(RuntimeError::succeed_signal());
-            }
-            Stmt::Given { topic, body } => {
-                let stmt = Stmt::Given {
-                    topic: topic.clone(),
-                    body: body.clone(),
-                };
-                self.run_block_raw(std::slice::from_ref(&stmt))?;
-            }
-            Stmt::When { cond, body } => {
-                let stmt = Stmt::When {
-                    cond: cond.clone(),
-                    body: body.clone(),
-                };
-                self.run_block_raw(std::slice::from_ref(&stmt))?;
-            }
-            Stmt::Default(body) => {
-                let stmt = Stmt::Default(body.clone());
-                self.run_block_raw(std::slice::from_ref(&stmt))?;
-            }
-            Stmt::For {
-                iterable,
-                param,
-                params,
-                body,
-                label,
-            } => {
-                let stmt = Stmt::For {
-                    iterable: iterable.clone(),
-                    param: param.clone(),
-                    params: params.clone(),
-                    body: body.clone(),
-                    label: label.clone(),
-                };
-                self.run_block_raw(std::slice::from_ref(&stmt))?;
-            }
-            Stmt::Die(expr) => {
-                let msg = self.eval_expr(expr)?.to_string_value();
-                return Err(RuntimeError::new(&msg));
-            }
-            Stmt::Catch(_) => {
-                // CATCH blocks are handled by try expressions
-            }
-            Stmt::Control(_) => {
-                // CONTROL blocks are handled by try expressions
-            }
-            Stmt::Take(expr) => {
-                let val = self.eval_expr(expr)?;
-                if let Some(items) = self.gather_items.last_mut() {
-                    items.push(val);
-                }
-            }
-            Stmt::Phaser { kind, body } => match kind {
-                PhaserKind::Begin => {
-                    self.run_block(body)?;
-                }
-                PhaserKind::End => {
-                    let captured_env = self.env.clone();
-                    self.end_phasers.push((body.clone(), captured_env));
-                }
-                _ => {}
-            },
-            Stmt::EnumDecl { name, variants } => {
-                self.register_enum_decl(name, variants)?;
-            }
-            Stmt::ClassDecl {
-                name,
-                parents,
-                body,
-            } => {
-                self.register_class_decl(name, parents, body)?;
-            }
-            Stmt::RoleDecl { name, body } => {
-                self.register_role_decl(name, body)?;
-            }
-            Stmt::SubsetDecl {
-                name,
-                base,
-                predicate,
-            } => {
-                self.register_subset_decl(name, base, predicate);
-            }
-            Stmt::HasDecl { .. } => {
-                // HasDecl outside a class is a no-op (handled during ClassDecl)
-            }
-            Stmt::MethodDecl { .. } => {
-                // MethodDecl outside a class is a no-op (handled during ClassDecl)
-            }
-            Stmt::DoesDecl { .. } => {
-                // DoesDecl outside a class is a no-op (handled during ClassDecl)
-            }
-            Stmt::Expr(expr) => {
-                let value = self.eval_expr(expr)?;
-                self.env.insert("_".to_string(), value);
-            }
-        }
-        Ok(())
     }
 
     fn run_block(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
@@ -13919,7 +13529,7 @@ impl Interpreter {
                     }
                 },
                 _ => {
-                    if let Err(e) = self.exec_stmt(stmt) {
+                    if let Err(e) = self.run_block_raw(std::slice::from_ref(stmt)) {
                         result = Err(e);
                         break;
                     }
