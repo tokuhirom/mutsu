@@ -2155,6 +2155,16 @@ impl VM {
                 self.sync_locals_from_env(code);
                 *ip += 1;
             }
+            OpCode::RunBlockStmt(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                if let Stmt::Block(body) = stmt {
+                    self.interpreter.run_block_stmt(body)?;
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RunBlockStmt expects Block"));
+                }
+            }
             OpCode::InterpretExpr(idx) => {
                 let expr = &code.expr_pool[*idx as usize];
                 let val = self.interpreter.eval_expr(expr)?;

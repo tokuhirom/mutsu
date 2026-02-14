@@ -2793,6 +2793,10 @@ impl Interpreter {
         result
     }
 
+    pub(crate) fn run_block_stmt(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        self.run_block(stmts)
+    }
+
     fn run_block_raw(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
         for stmt in stmts {
             self.exec_stmt(stmt)?;

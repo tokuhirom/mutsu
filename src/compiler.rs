@@ -52,7 +52,7 @@ impl Compiler {
                 if Self::has_phasers(stmts) {
                     // Fall back for blocks with phasers
                     let idx = self.code.add_stmt(stmt.clone());
-                    self.code.emit(OpCode::InterpretStmt(idx));
+                    self.code.emit(OpCode::RunBlockStmt(idx));
                 } else {
                     for s in stmts {
                         self.compile_stmt(s);
