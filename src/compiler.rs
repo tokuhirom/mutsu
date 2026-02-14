@@ -286,7 +286,7 @@ impl Compiler {
                 self.code.emit(OpCode::AssignReadOnly);
             }
             // Given/When/Default
-            Stmt::Given { topic, body } if !Self::has_phasers(body) => {
+            Stmt::Given { topic, body } => {
                 self.compile_expr(topic);
                 let given_idx = self.code.emit(OpCode::Given { body_end: 0 });
                 for s in body {
@@ -294,7 +294,7 @@ impl Compiler {
                 }
                 self.code.patch_body_end(given_idx);
             }
-            Stmt::When { cond, body } if !Self::has_phasers(body) => {
+            Stmt::When { cond, body } => {
                 self.compile_expr(cond);
                 let when_idx = self.code.emit(OpCode::When { body_end: 0 });
                 for s in body {
@@ -302,24 +302,12 @@ impl Compiler {
                 }
                 self.code.patch_body_end(when_idx);
             }
-            Stmt::Default(body) if !Self::has_phasers(body) => {
+            Stmt::Default(body) => {
                 let default_idx = self.code.emit(OpCode::Default { body_end: 0 });
                 for s in body {
                     self.compile_stmt(s);
                 }
                 self.code.patch_body_end(default_idx);
-            }
-            Stmt::Given { .. } => {
-                let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::RunGivenStmt(idx));
-            }
-            Stmt::When { .. } => {
-                let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::RunWhenStmt(idx));
-            }
-            Stmt::Default(_) => {
-                let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::RunDefaultStmt(idx));
             }
             // Repeat loop (repeat while / repeat until)
             Stmt::Loop {

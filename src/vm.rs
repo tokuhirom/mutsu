@@ -2457,36 +2457,6 @@ impl VM {
                     return Err(RuntimeError::new("RunPackageStmt expects Package"));
                 }
             }
-            OpCode::RunGivenStmt(idx) => {
-                let stmt = &code.stmt_pool[*idx as usize];
-                if let Stmt::Given { topic, body } = stmt {
-                    self.interpreter.run_given_stmt(topic, body)?;
-                    self.sync_locals_from_env(code);
-                    *ip += 1;
-                } else {
-                    return Err(RuntimeError::new("RunGivenStmt expects Given"));
-                }
-            }
-            OpCode::RunWhenStmt(idx) => {
-                let stmt = &code.stmt_pool[*idx as usize];
-                if let Stmt::When { cond, body } = stmt {
-                    self.interpreter.run_when_stmt(cond, body)?;
-                    self.sync_locals_from_env(code);
-                    *ip += 1;
-                } else {
-                    return Err(RuntimeError::new("RunWhenStmt expects When"));
-                }
-            }
-            OpCode::RunDefaultStmt(idx) => {
-                let stmt = &code.stmt_pool[*idx as usize];
-                if let Stmt::Default(body) = stmt {
-                    self.interpreter.run_default_stmt(body)?;
-                    self.sync_locals_from_env(code);
-                    *ip += 1;
-                } else {
-                    return Err(RuntimeError::new("RunDefaultStmt expects Default"));
-                }
-            }
             OpCode::RunBlockStmt(idx) => {
                 let stmt = &code.stmt_pool[*idx as usize];
                 if let Stmt::Block(body) = stmt {
