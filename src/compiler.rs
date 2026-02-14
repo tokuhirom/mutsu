@@ -49,10 +49,46 @@ impl Compiler {
                 self.code.emit(OpCode::Pop);
             }
             Stmt::Block(stmts) => {
-                if Self::has_phasers(stmts) {
-                    // Fall back for blocks with phasers
-                    let idx = self.code.add_stmt(stmt.clone());
-                    self.code.emit(OpCode::RunBlockStmt(idx));
+                if Self::has_block_enter_leave_phasers(stmts) {
+                    let idx = self.code.emit(OpCode::BlockScope {
+                        enter_end: 0,
+                        body_end: 0,
+                        end: 0,
+                    });
+                    for s in stmts {
+                        if let Stmt::Phaser {
+                            kind: PhaserKind::Enter,
+                            body,
+                        } = s
+                        {
+                            for inner in body {
+                                self.compile_stmt(inner);
+                            }
+                        }
+                    }
+                    self.code.patch_block_enter_end(idx);
+                    for s in stmts {
+                        match s {
+                            Stmt::Phaser {
+                                kind: PhaserKind::Enter | PhaserKind::Leave,
+                                ..
+                            } => {}
+                            _ => self.compile_stmt(s),
+                        }
+                    }
+                    self.code.patch_block_body_end(idx);
+                    for s in stmts {
+                        if let Stmt::Phaser {
+                            kind: PhaserKind::Leave,
+                            body,
+                        } = s
+                        {
+                            for inner in body {
+                                self.compile_stmt(inner);
+                            }
+                        }
+                    }
+                    self.code.patch_loop_end(idx);
                 } else {
                     for s in stmts {
                         self.compile_stmt(s);
@@ -1440,6 +1476,18 @@ impl Compiler {
             }
         }
         true
+    }
+
+    fn has_block_enter_leave_phasers(stmts: &[Stmt]) -> bool {
+        stmts.iter().any(|s| {
+            matches!(
+                s,
+                Stmt::Phaser {
+                    kind: PhaserKind::Enter | PhaserKind::Leave,
+                    ..
+                }
+            )
+        })
     }
 
     fn postfix_index_name(target: &Expr) -> Option<String> {

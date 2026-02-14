@@ -2437,15 +2437,31 @@ impl VM {
                     return Err(RuntimeError::new("RunLoopStmt expects Loop"));
                 }
             }
-            OpCode::RunBlockStmt(idx) => {
-                let stmt = &code.stmt_pool[*idx as usize];
-                if let Stmt::Block(body) = stmt {
-                    self.interpreter.run_block_stmt(body)?;
-                    self.sync_locals_from_env(code);
-                    *ip += 1;
-                } else {
-                    return Err(RuntimeError::new("RunBlockStmt expects Block"));
+            OpCode::BlockScope {
+                enter_end,
+                body_end,
+                end,
+            } => {
+                let enter_start = *ip + 1;
+                let body_start = *enter_end as usize;
+                let leave_start = *body_end as usize;
+                let end = *end as usize;
+
+                self.run_range(code, enter_start, body_start, compiled_fns)?;
+                let mut body_err = None;
+                if let Err(e) = self.run_range(code, body_start, leave_start, compiled_fns) {
+                    body_err = Some(e);
                 }
+                let leave_res = self.run_range(code, leave_start, end, compiled_fns);
+                if let Err(e) = leave_res
+                    && body_err.is_none()
+                {
+                    return Err(e);
+                }
+                if let Some(e) = body_err {
+                    return Err(e);
+                }
+                *ip = end;
             }
             OpCode::DoBlockExpr { body_end, label } => {
                 let body_start = *ip + 1;

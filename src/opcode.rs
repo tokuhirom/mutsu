@@ -167,7 +167,11 @@ pub(crate) enum OpCode {
     },
     /// Statement-level call with mixed positional/named args shape from stmt pool.
     ExecCallMixed(u32),
-    RunBlockStmt(u32),
+    BlockScope {
+        enter_end: u32,
+        body_end: u32,
+        end: u32,
+    },
     DoBlockExpr {
         body_end: u32,
         label: Option<String>,
@@ -426,7 +430,24 @@ impl CompiledCode {
             OpCode::ForLoop { body_end, .. } => *body_end = target,
             OpCode::CStyleLoop { body_end, .. } => *body_end = target,
             OpCode::RepeatLoop { body_end, .. } => *body_end = target,
+            OpCode::BlockScope { end, .. } => *end = target,
             _ => panic!("patch_loop_end on non-loop opcode"),
+        }
+    }
+
+    pub(crate) fn patch_block_enter_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::BlockScope { enter_end, .. } => *enter_end = target,
+            _ => panic!("patch_block_enter_end on non-BlockScope opcode"),
+        }
+    }
+
+    pub(crate) fn patch_block_body_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::BlockScope { body_end, .. } => *body_end = target,
+            _ => panic!("patch_block_body_end on non-BlockScope opcode"),
         }
     }
 
