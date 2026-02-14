@@ -1551,401 +1551,6 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn run_given_stmt(
-        &mut self,
-        topic: &Expr,
-        body: &[Stmt],
-    ) -> Result<(), RuntimeError> {
-        let topic_val = self.eval_expr(topic)?;
-        let _ = self.eval_given_body_with_topic(topic_val, body)?;
-        Ok(())
-    }
-
-    pub(crate) fn run_when_stmt(&mut self, cond: &Expr, body: &[Stmt]) -> Result<(), RuntimeError> {
-        let topic = self.env.get("_").cloned().unwrap_or(Value::Nil);
-        let cond_val = self.eval_expr(cond)?;
-        if self.smart_match(&topic, &cond_val) {
-            let mut did_proceed = false;
-            let mut last_val = Value::Nil;
-            for stmt in body {
-                match stmt {
-                    Stmt::Expr(expr) => match self.eval_expr(expr) {
-                        Ok(v) => last_val = v,
-                        Err(e) if e.is_proceed => {
-                            did_proceed = true;
-                            break;
-                        }
-                        Err(e) if e.is_succeed => {
-                            if let Some(v) = e.return_value {
-                                last_val = v;
-                            }
-                            break;
-                        }
-                        Err(e) => return Err(e),
-                    },
-                    _ => match self.exec_stmt(stmt) {
-                        Err(e) if e.is_proceed => {
-                            did_proceed = true;
-                            break;
-                        }
-                        Err(e) if e.is_succeed => {
-                            if let Some(v) = e.return_value {
-                                last_val = v;
-                            }
-                            break;
-                        }
-                        other => {
-                            other?;
-                        }
-                    },
-                }
-                if self.halted {
-                    break;
-                }
-            }
-            if !did_proceed {
-                self.when_matched = true;
-                let mut sig = RuntimeError::succeed_signal();
-                sig.return_value = Some(last_val);
-                return Err(sig);
-            }
-        }
-        Ok(())
-    }
-
-    pub(crate) fn run_default_stmt(&mut self, body: &[Stmt]) -> Result<(), RuntimeError> {
-        self.run_block_raw(body)?;
-        self.when_matched = true;
-        Ok(())
-    }
-
-    pub(crate) fn run_while_stmt(
-        &mut self,
-        cond: &Expr,
-        body: &[Stmt],
-        label: &Option<String>,
-    ) -> Result<(), RuntimeError> {
-        let mut iter_idx = 0usize;
-        let (enter_ph, leave_ph, first_ph, next_ph, last_ph, body_main) =
-            self.split_loop_phasers(body);
-        'while_loop: while self.eval_expr(cond)?.truthy() {
-            loop {
-                let mut should_redo = false;
-                let mut control: Option<RuntimeError> = None;
-                self.run_block(&enter_ph)?;
-                if iter_idx == 0 {
-                    self.run_block(&first_ph)?;
-                } else {
-                    self.run_block(&next_ph)?;
-                }
-                for stmt in &body_main {
-                    match self.exec_stmt(stmt) {
-                        Err(e)
-                            if e.is_redo
-                                && (e.label.is_none()
-                                    || e.label.as_deref() == label.as_deref()) =>
-                        {
-                            should_redo = true;
-                            break;
-                        }
-                        Err(e) => {
-                            control = Some(e);
-                            break;
-                        }
-                        Ok(()) => {}
-                    }
-                }
-                if should_redo {
-                    continue;
-                }
-                let leave_res = self.run_block(&leave_ph);
-                if let Err(e) = leave_res
-                    && control.is_none()
-                {
-                    return Err(e);
-                }
-                if let Some(e) = control {
-                    if e.is_last {
-                        if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                            break 'while_loop;
-                        }
-                        return Err(e);
-                    }
-                    if e.is_next {
-                        if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                            break;
-                        }
-                        return Err(e);
-                    }
-                    if e.is_redo {
-                        if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                            continue;
-                        }
-                        return Err(e);
-                    }
-                    return Err(e);
-                }
-                break;
-            }
-            iter_idx += 1;
-        }
-        if iter_idx > 0 {
-            self.run_block(&last_ph)?;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn run_loop_stmt(
-        &mut self,
-        init: Option<&Stmt>,
-        cond: Option<&Expr>,
-        step: Option<&Expr>,
-        body: &[Stmt],
-        repeat: bool,
-        label: &Option<String>,
-    ) -> Result<(), RuntimeError> {
-        if let Some(init_stmt) = init {
-            self.exec_stmt(init_stmt)?;
-        }
-        let mut first = true;
-        let mut iter_idx = 0usize;
-        let (enter_ph, leave_ph, first_ph, next_ph, last_ph, body_main) =
-            self.split_loop_phasers(body);
-        'c_loop: loop {
-            if let Some(cond_expr) = cond {
-                if repeat && first {
-                    first = false;
-                } else if !self.eval_expr(cond_expr)?.truthy() {
-                    break;
-                }
-            }
-            loop {
-                let mut should_redo = false;
-                let mut control: Option<RuntimeError> = None;
-                self.run_block(&enter_ph)?;
-                if iter_idx == 0 {
-                    self.run_block(&first_ph)?;
-                } else {
-                    self.run_block(&next_ph)?;
-                }
-                for stmt in &body_main {
-                    match self.exec_stmt(stmt) {
-                        Err(e)
-                            if e.is_redo
-                                && (e.label.is_none()
-                                    || e.label.as_deref() == label.as_deref()) =>
-                        {
-                            should_redo = true;
-                            break;
-                        }
-                        Err(e) => {
-                            control = Some(e);
-                            break;
-                        }
-                        Ok(()) => {}
-                    }
-                }
-                if should_redo {
-                    continue;
-                }
-                let leave_res = self.run_block(&leave_ph);
-                if let Err(e) = leave_res
-                    && control.is_none()
-                {
-                    return Err(e);
-                }
-                if let Some(e) = control {
-                    if e.is_last {
-                        if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                            break 'c_loop;
-                        }
-                        return Err(e);
-                    }
-                    if e.is_next {
-                        if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                            break;
-                        }
-                        return Err(e);
-                    }
-                    if e.is_redo {
-                        if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                            continue;
-                        }
-                        return Err(e);
-                    }
-                    return Err(e);
-                }
-                break;
-            }
-            if let Some(step_expr) = step {
-                self.eval_expr(step_expr)?;
-            }
-            iter_idx += 1;
-        }
-        if iter_idx > 0 {
-            self.run_block(&last_ph)?;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn run_for_stmt(
-        &mut self,
-        iterable: &Expr,
-        param: &Option<String>,
-        params: &[String],
-        body: &[Stmt],
-        label: &Option<String>,
-    ) -> Result<(), RuntimeError> {
-        let iterable_val = self.eval_expr(iterable)?;
-        let values = self.list_from_value(iterable_val)?;
-        let (enter_ph, leave_ph, first_ph, next_ph, last_ph, body_main) =
-            self.split_loop_phasers(body);
-        let mut iter_idx = 0usize;
-        if !params.is_empty() {
-            let chunk_size = params.len();
-            let mut i = 0;
-            'for_loop_multi: while i + chunk_size <= values.len() {
-                for (pi, p) in params.iter().enumerate() {
-                    self.env.insert(p.clone(), values[i + pi].clone());
-                }
-                self.env.insert("_".to_string(), values[i].clone());
-                loop {
-                    let mut should_redo = false;
-                    let mut control: Option<RuntimeError> = None;
-                    self.run_block(&enter_ph)?;
-                    if iter_idx == 0 {
-                        self.run_block(&first_ph)?;
-                    } else {
-                        self.run_block(&next_ph)?;
-                    }
-                    for stmt in &body_main {
-                        match self.exec_stmt(stmt) {
-                            Err(e)
-                                if e.is_redo
-                                    && (e.label.is_none()
-                                        || e.label.as_deref() == label.as_deref()) =>
-                            {
-                                should_redo = true;
-                                break;
-                            }
-                            Err(e) => {
-                                control = Some(e);
-                                break;
-                            }
-                            Ok(()) => {}
-                        }
-                    }
-                    if should_redo {
-                        continue;
-                    }
-                    let leave_res = self.run_block(&leave_ph);
-                    if let Err(e) = leave_res
-                        && control.is_none()
-                    {
-                        return Err(e);
-                    }
-                    if let Some(e) = control {
-                        if e.is_last {
-                            if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                                break 'for_loop_multi;
-                            }
-                            return Err(e);
-                        }
-                        if e.is_next {
-                            if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                                break;
-                            }
-                            return Err(e);
-                        }
-                        if e.is_redo {
-                            if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                                continue;
-                            }
-                            return Err(e);
-                        }
-                        return Err(e);
-                    }
-                    break;
-                }
-                i += chunk_size;
-                iter_idx += 1;
-            }
-            if iter_idx > 0 {
-                self.run_block(&last_ph)?;
-            }
-        } else {
-            'for_loop: for value in values {
-                self.env.insert("_".to_string(), value.clone());
-                if let Some(p) = param {
-                    self.env.insert(p.clone(), value);
-                }
-                loop {
-                    let mut should_redo = false;
-                    let mut control: Option<RuntimeError> = None;
-                    self.run_block(&enter_ph)?;
-                    if iter_idx == 0 {
-                        self.run_block(&first_ph)?;
-                    } else {
-                        self.run_block(&next_ph)?;
-                    }
-                    for stmt in &body_main {
-                        match self.exec_stmt(stmt) {
-                            Err(e)
-                                if e.is_redo
-                                    && (e.label.is_none()
-                                        || e.label.as_deref() == label.as_deref()) =>
-                            {
-                                should_redo = true;
-                                break;
-                            }
-                            Err(e) => {
-                                control = Some(e);
-                                break;
-                            }
-                            Ok(()) => {}
-                        }
-                    }
-                    if should_redo {
-                        continue;
-                    }
-                    let leave_res = self.run_block(&leave_ph);
-                    if let Err(e) = leave_res
-                        && control.is_none()
-                    {
-                        return Err(e);
-                    }
-                    if let Some(e) = control {
-                        if e.is_last {
-                            if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                                break 'for_loop;
-                            }
-                            return Err(e);
-                        }
-                        if e.is_next {
-                            if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                                break;
-                            }
-                            return Err(e);
-                        }
-                        if e.is_redo {
-                            if e.label.is_none() || e.label.as_deref() == label.as_deref() {
-                                continue;
-                            }
-                            return Err(e);
-                        }
-                        return Err(e);
-                    }
-                    break;
-                }
-                iter_idx += 1;
-            }
-            if iter_idx > 0 {
-                self.run_block(&last_ph)?;
-            }
-        }
-        Ok(())
-    }
-
     pub(crate) fn call_function(
         &mut self,
         name: &str,
@@ -3964,7 +3569,12 @@ impl Interpreter {
                 }
             }
             Stmt::While { cond, body, label } => {
-                self.run_while_stmt(cond, body, label)?;
+                let stmt = Stmt::While {
+                    cond: cond.clone(),
+                    body: body.clone(),
+                    label: label.clone(),
+                };
+                self.run_block_raw(std::slice::from_ref(&stmt))?;
             }
             Stmt::Loop {
                 init,
@@ -3974,14 +3584,15 @@ impl Interpreter {
                 repeat,
                 label,
             } => {
-                self.run_loop_stmt(
-                    init.as_deref(),
-                    cond.as_ref(),
-                    step.as_ref(),
-                    body,
-                    *repeat,
-                    label,
-                )?;
+                let stmt = Stmt::Loop {
+                    init: init.clone(),
+                    cond: cond.clone(),
+                    step: step.clone(),
+                    body: body.clone(),
+                    repeat: *repeat,
+                    label: label.clone(),
+                };
+                self.run_block_raw(std::slice::from_ref(&stmt))?;
             }
             Stmt::React { body } => {
                 self.run_react_stmt(body)?;
@@ -4015,13 +3626,22 @@ impl Interpreter {
                 return Err(RuntimeError::succeed_signal());
             }
             Stmt::Given { topic, body } => {
-                self.run_given_stmt(topic, body)?;
+                let stmt = Stmt::Given {
+                    topic: topic.clone(),
+                    body: body.clone(),
+                };
+                self.run_block_raw(std::slice::from_ref(&stmt))?;
             }
             Stmt::When { cond, body } => {
-                self.run_when_stmt(cond, body)?;
+                let stmt = Stmt::When {
+                    cond: cond.clone(),
+                    body: body.clone(),
+                };
+                self.run_block_raw(std::slice::from_ref(&stmt))?;
             }
             Stmt::Default(body) => {
-                self.run_default_stmt(body)?;
+                let stmt = Stmt::Default(body.clone());
+                self.run_block_raw(std::slice::from_ref(&stmt))?;
             }
             Stmt::For {
                 iterable,
@@ -4030,7 +3650,14 @@ impl Interpreter {
                 body,
                 label,
             } => {
-                self.run_for_stmt(iterable, param, params, body, label)?;
+                let stmt = Stmt::For {
+                    iterable: iterable.clone(),
+                    param: param.clone(),
+                    params: params.clone(),
+                    body: body.clone(),
+                    label: label.clone(),
+                };
+                self.run_block_raw(std::slice::from_ref(&stmt))?;
             }
             Stmt::Die(expr) => {
                 let msg = self.eval_expr(expr)?.to_string_value();
@@ -5028,41 +4655,6 @@ impl Interpreter {
             }
         }
         (enter_ph, leave_ph, body_main)
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn split_loop_phasers(
-        &self,
-        stmts: &[Stmt],
-    ) -> (
-        Vec<Stmt>,
-        Vec<Stmt>,
-        Vec<Stmt>,
-        Vec<Stmt>,
-        Vec<Stmt>,
-        Vec<Stmt>,
-    ) {
-        let mut enter_ph = Vec::new();
-        let mut leave_ph = Vec::new();
-        let mut first_ph = Vec::new();
-        let mut next_ph = Vec::new();
-        let mut last_ph = Vec::new();
-        let mut body_main = Vec::new();
-        for stmt in stmts {
-            if let Stmt::Phaser { kind, body } = stmt {
-                match kind {
-                    PhaserKind::Enter => enter_ph.push(Stmt::Block(body.clone())),
-                    PhaserKind::Leave => leave_ph.push(Stmt::Block(body.clone())),
-                    PhaserKind::First => first_ph.push(Stmt::Block(body.clone())),
-                    PhaserKind::Next => next_ph.push(Stmt::Block(body.clone())),
-                    PhaserKind::Last => last_ph.push(Stmt::Block(body.clone())),
-                    _ => body_main.push(stmt.clone()),
-                }
-            } else {
-                body_main.push(stmt.clone());
-            }
-        }
-        (enter_ph, leave_ph, first_ph, next_ph, last_ph, body_main)
     }
 
     fn update_instance_target(&mut self, target: &Expr, instance: Value) {
