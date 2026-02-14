@@ -796,6 +796,18 @@ impl Compiler {
                 if let Expr::Var(name) = expr.as_ref() {
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
                     self.code.emit(OpCode::PostIncrement(name_idx));
+                } else if let Expr::Index { target, index } = expr.as_ref() {
+                    if let Some(name) = Self::postfix_index_name(target) {
+                        self.compile_expr(index);
+                        let name_idx = self.code.add_constant(Value::Str(name));
+                        self.code.emit(OpCode::PostIncrementIndex(name_idx));
+                    } else {
+                        let idx = self.code.add_expr(Expr::PostfixOp {
+                            op: op.clone(),
+                            expr: expr.clone(),
+                        });
+                        self.code.emit(OpCode::RunPostfixExpr(idx));
+                    }
                 } else {
                     let idx = self.code.add_expr(Expr::PostfixOp {
                         op: op.clone(),
@@ -809,6 +821,18 @@ impl Compiler {
                 if let Expr::Var(name) = expr.as_ref() {
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
                     self.code.emit(OpCode::PostDecrement(name_idx));
+                } else if let Expr::Index { target, index } = expr.as_ref() {
+                    if let Some(name) = Self::postfix_index_name(target) {
+                        self.compile_expr(index);
+                        let name_idx = self.code.add_constant(Value::Str(name));
+                        self.code.emit(OpCode::PostDecrementIndex(name_idx));
+                    } else {
+                        let idx = self.code.add_expr(Expr::PostfixOp {
+                            op: op.clone(),
+                            expr: expr.clone(),
+                        });
+                        self.code.emit(OpCode::RunPostfixExpr(idx));
+                    }
                 } else {
                     let idx = self.code.add_expr(Expr::PostfixOp {
                         op: op.clone(),
@@ -1363,6 +1387,15 @@ impl Compiler {
             }
         }
         true
+    }
+
+    fn postfix_index_name(target: &Expr) -> Option<String> {
+        match target {
+            Expr::HashVar(name) => Some(format!("%{}", name)),
+            Expr::ArrayVar(name) => Some(format!("@{}", name)),
+            Expr::Var(name) => Some(name.clone()),
+            _ => None,
+        }
     }
 
     /// Compile a block inline (for blocks without placeholders).

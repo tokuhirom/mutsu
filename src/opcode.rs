@@ -220,6 +220,8 @@ pub(crate) enum OpCode {
     // -- Postfix operators --
     PostIncrement(u32),
     PostDecrement(u32),
+    PostIncrementIndex(u32),
+    PostDecrementIndex(u32),
 
     // -- Assignment as expression --
     AssignExpr(u32),

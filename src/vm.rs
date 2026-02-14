@@ -1429,6 +1429,100 @@ impl VM {
                 self.stack.push(val);
                 *ip += 1;
             }
+            OpCode::PostIncrementIndex(name_idx) => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                let idx_val = self.stack.pop().unwrap_or(Value::Nil);
+                let key = idx_val.to_string_value();
+                let current = if let Some(container) = self.interpreter.env().get(&name) {
+                    match container {
+                        Value::Hash(h) => h.get(&key).cloned().unwrap_or(Value::Nil),
+                        Value::Array(arr) => {
+                            if let Ok(i) = key.parse::<usize>() {
+                                arr.get(i).cloned().unwrap_or(Value::Nil)
+                            } else {
+                                Value::Nil
+                            }
+                        }
+                        _ => Value::Nil,
+                    }
+                } else {
+                    Value::Nil
+                };
+                let effective = match &current {
+                    Value::Nil => Value::Int(0),
+                    other => other.clone(),
+                };
+                let new_val = match &effective {
+                    Value::Int(i) => Value::Int(i + 1),
+                    Value::Rat(n, d) => make_rat(n + d, *d),
+                    _ => Value::Int(1),
+                };
+                if let Some(container) = self.interpreter.env_mut().get_mut(&name) {
+                    match container {
+                        Value::Hash(h) => {
+                            h.insert(key, new_val);
+                        }
+                        Value::Array(arr) => {
+                            if let Ok(i) = idx_val.to_string_value().parse::<usize>() {
+                                while arr.len() <= i {
+                                    arr.push(Value::Nil);
+                                }
+                                arr[i] = new_val;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                self.stack.push(effective);
+                *ip += 1;
+            }
+            OpCode::PostDecrementIndex(name_idx) => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                let idx_val = self.stack.pop().unwrap_or(Value::Nil);
+                let key = idx_val.to_string_value();
+                let current = if let Some(container) = self.interpreter.env().get(&name) {
+                    match container {
+                        Value::Hash(h) => h.get(&key).cloned().unwrap_or(Value::Nil),
+                        Value::Array(arr) => {
+                            if let Ok(i) = key.parse::<usize>() {
+                                arr.get(i).cloned().unwrap_or(Value::Nil)
+                            } else {
+                                Value::Nil
+                            }
+                        }
+                        _ => Value::Nil,
+                    }
+                } else {
+                    Value::Nil
+                };
+                let effective = match &current {
+                    Value::Nil => Value::Int(0),
+                    other => other.clone(),
+                };
+                let new_val = match &effective {
+                    Value::Int(i) => Value::Int(i - 1),
+                    Value::Rat(n, d) => make_rat(n - d, *d),
+                    _ => Value::Int(-1),
+                };
+                if let Some(container) = self.interpreter.env_mut().get_mut(&name) {
+                    match container {
+                        Value::Hash(h) => {
+                            h.insert(key, new_val);
+                        }
+                        Value::Array(arr) => {
+                            if let Ok(i) = idx_val.to_string_value().parse::<usize>() {
+                                while arr.len() <= i {
+                                    arr.push(Value::Nil);
+                                }
+                                arr[i] = new_val;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                self.stack.push(effective);
+                *ip += 1;
+            }
 
             // -- Unary coercion --
             OpCode::NumCoerce => {
