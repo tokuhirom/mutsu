@@ -5672,54 +5672,15 @@ impl Interpreter {
         }
 
         if name == "indir" {
-            if matches!(
-                args.get(1),
-                Some(Expr::Block(_)) | Some(Expr::AnonSub(_)) | Some(Expr::AnonSubParams { .. })
-            ) {
-                let mut rewritten_args = args.to_vec();
-                if let Some(Expr::Block(body)) = rewritten_args.get(1) {
-                    rewritten_args[1] = Expr::AnonSub(body.clone());
-                }
-                let eval_args = rewritten_args
-                    .iter()
-                    .map(|e| self.eval_expr(e))
-                    .collect::<Result<Vec<_>, _>>();
-                return Some(eval_args.and_then(|vals| self.call_function("indir", vals)));
+            let mut rewritten_args = args.to_vec();
+            if let Some(Expr::Block(body)) = rewritten_args.get(1) {
+                rewritten_args[1] = Expr::AnonSub(body.clone());
             }
-            let path = match args.first().and_then(|e| self.eval_expr(e).ok()) {
-                Some(v) => v.to_string_value(),
-                None => return Some(Err(RuntimeError::new("indir requires a path"))),
-            };
-            let path_buf = self.resolve_path(&path);
-            if !path_buf.is_dir() {
-                return Some(Err(RuntimeError::new(format!(
-                    "indir path is not a directory: {}",
-                    path
-                ))));
-            }
-            let saved = self.env.get("$*CWD").cloned();
-            self.env.insert(
-                "$*CWD".to_string(),
-                Value::Str(Self::stringify_path(&path_buf)),
-            );
-            let result = if let Some(body) = args.get(1) {
-                match body {
-                    Expr::Block(body_stmts)
-                    | Expr::AnonSub(body_stmts)
-                    | Expr::AnonSubParams {
-                        body: body_stmts, ..
-                    } => self.eval_block_value(body_stmts),
-                    other => self.eval_expr(other),
-                }
-            } else {
-                Ok(Value::Nil)
-            };
-            if let Some(prev) = saved {
-                self.env.insert("$*CWD".to_string(), prev);
-            } else {
-                self.env.remove("$*CWD");
-            }
-            return Some(result);
+            let eval_args = rewritten_args
+                .iter()
+                .map(|e| self.eval_expr(e))
+                .collect::<Result<Vec<_>, _>>();
+            return Some(eval_args.and_then(|vals| self.call_function("indir", vals)));
         }
 
         None
