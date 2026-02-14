@@ -2493,9 +2493,9 @@ impl VM {
                     return Err(RuntimeError::new("RunDoStmtExpr expects DoStmt"));
                 }
             }
-            OpCode::RunGatherExpr(idx) => {
-                let expr = &code.expr_pool[*idx as usize];
-                if let Expr::Gather(body) = expr {
+            OpCode::MakeGather(idx) => {
+                let stmt = &code.stmt_pool[*idx as usize];
+                if let Stmt::Block(body) = stmt {
                     let list = LazyList {
                         body: body.clone(),
                         env: self.interpreter.env().clone(),
@@ -2505,7 +2505,7 @@ impl VM {
                     self.stack.push(val);
                     *ip += 1;
                 } else {
-                    return Err(RuntimeError::new("RunGatherExpr expects Gather"));
+                    return Err(RuntimeError::new("MakeGather expects Block"));
                 }
             }
             OpCode::RunAnonSubExpr(idx) => {

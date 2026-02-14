@@ -170,7 +170,7 @@ pub(crate) enum OpCode {
     RunBlockStmt(u32),
     RunDoBlockExpr(u32),
     RunDoStmtExpr(u32),
-    RunGatherExpr(u32),
+    MakeGather(u32),
     CallOnValue {
         arity: u32,
     },

@@ -993,8 +993,10 @@ impl Compiler {
                 }
             },
             Expr::Gather(_) => {
-                let idx = self.code.add_expr(expr.clone());
-                self.code.emit(OpCode::RunGatherExpr(idx));
+                if let Expr::Gather(body) = expr {
+                    let idx = self.code.add_stmt(Stmt::Block(body.clone()));
+                    self.code.emit(OpCode::MakeGather(idx));
+                }
             }
             Expr::CallOn { target, args } => {
                 if let Expr::CodeVar(name) = target.as_ref() {
