@@ -2175,6 +2175,105 @@ impl Interpreter {
             let login = Self::get_login_name().unwrap_or_default();
             return Ok(Value::Str(login));
         }
+        if name == "gethost" {
+            let host_str = args.first().map(|v| v.to_string_value());
+            let hostname = host_str.unwrap_or_else(Self::hostname);
+            let addrs = Self::resolve_host(&hostname);
+            return Ok(Self::make_os_name_value(hostname, addrs));
+        }
+        if name == "chroot" {
+            let path_str = args
+                .first()
+                .map(|v| v.to_string_value())
+                .or_else(|| {
+                    self.get_dynamic_string("$*CWD")
+                        .or_else(|| self.get_dynamic_string("$*CHROOT"))
+                })
+                .unwrap_or_else(|| ".".to_string());
+            let path_buf = PathBuf::from(path_str.clone());
+            if !path_buf.is_dir() {
+                return Ok(Value::Bool(false));
+            }
+            let canonical = path_buf.canonicalize().unwrap_or_else(|_| path_buf.clone());
+            if std::env::set_current_dir(&canonical).is_err() {
+                return Ok(Value::Bool(false));
+            }
+            self.chroot_root = Some(canonical.clone());
+            let repr = Self::stringify_path(&canonical);
+            self.env
+                .insert("$*CHROOT".to_string(), Value::Str(repr.clone()));
+            self.env.insert("$*CWD".to_string(), Value::Str(repr));
+            return Ok(Value::Bool(true));
+        }
+        if name == "shell" {
+            let command_str = args
+                .first()
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            if command_str.is_empty() {
+                return Ok(Value::Bool(false));
+            }
+            let mut opts = HashMap::new();
+            let mut cwd_opt: Option<String> = None;
+            for value in args.iter().skip(1) {
+                if let Value::Hash(map) = value {
+                    for (key, inner) in map {
+                        match key.as_str() {
+                            "cwd" => {
+                                cwd_opt = Some(inner.to_string_value());
+                            }
+                            "env" => {
+                                if let Value::Hash(env_map) = inner {
+                                    for (ek, ev) in env_map {
+                                        opts.insert(ek.clone(), ev.to_string_value());
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            let mut command = if cfg!(windows) {
+                let mut cmd = Command::new("cmd");
+                cmd.arg("/C").arg(&command_str);
+                cmd
+            } else {
+                let mut cmd = Command::new("sh");
+                cmd.arg("-c").arg(&command_str);
+                cmd
+            };
+            if let Some(cwd) = cwd_opt {
+                command.current_dir(cwd);
+            }
+            for (k, v) in opts {
+                command.env(k, v);
+            }
+            let status = command
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false);
+            return Ok(Value::Bool(status));
+        }
+        if name == "syscall" {
+            let num_val = args.first();
+            if let Some(val) = num_val {
+                let num = Self::to_int(val);
+                if num == 0 {
+                    let pid = self
+                        .env
+                        .get("*PID")
+                        .and_then(|v| match v {
+                            Value::Int(i) => Some(*i),
+                            _ => None,
+                        })
+                        .unwrap_or_else(|| std::process::id() as i64);
+                    return Ok(Value::Int(pid));
+                }
+                return Ok(Value::Int(-1));
+            }
+            return Ok(Value::Nil);
+        }
         if name == "chrs" {
             let mut result = String::new();
             for arg in &args {
@@ -2410,6 +2509,78 @@ impl Interpreter {
             }
             return self.eval_grep_over_items(func, list_items);
         }
+        if name == "classify" || name == "categorize" {
+            let func = match args.first() {
+                Some(value) => value.clone(),
+                None => return Ok(Value::Hash(HashMap::new())),
+            };
+            let mut buckets: HashMap<String, Vec<Value>> = HashMap::new();
+            for item in args.iter().skip(1) {
+                let keys = match self.call_lambda_with_arg(&func, item.clone()) {
+                    Ok(Value::Array(values)) => values,
+                    Ok(value) => vec![value],
+                    Err(_) => vec![Value::Nil],
+                };
+                let target_keys = if name == "classify" {
+                    if keys.is_empty() {
+                        vec![Value::Nil]
+                    } else {
+                        vec![keys[0].clone()]
+                    }
+                } else {
+                    keys
+                };
+                for key in target_keys {
+                    let bucket_key = key.to_string_value();
+                    buckets.entry(bucket_key).or_default().push(item.clone());
+                }
+            }
+            let hash_map = buckets
+                .into_iter()
+                .map(|(k, v)| (k, Value::Array(v)))
+                .collect();
+            return Ok(Value::Hash(hash_map));
+        }
+        if name == "min" {
+            let mut vals = Vec::new();
+            for arg in &args {
+                vals.push(arg.clone());
+            }
+            return Ok(vals
+                .into_iter()
+                .min_by(|a, b| match (a, b) {
+                    (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                    _ => a.to_string_value().cmp(&b.to_string_value()),
+                })
+                .unwrap_or(Value::Nil));
+        }
+        if name == "max" {
+            let mut vals = Vec::new();
+            for arg in &args {
+                vals.push(arg.clone());
+            }
+            return Ok(vals
+                .into_iter()
+                .max_by(|a, b| match (a, b) {
+                    (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                    _ => a.to_string_value().cmp(&b.to_string_value()),
+                })
+                .unwrap_or(Value::Nil));
+        }
+        if name == "unlink" {
+            let path = args
+                .first()
+                .map(|v| v.to_string_value())
+                .ok_or_else(|| RuntimeError::new("unlink requires a path argument"))?;
+            fs::remove_file(&path).map_err(|err| {
+                RuntimeError::new(format!("Failed to unlink '{}': {}", path, err))
+            })?;
+            return Ok(Value::Bool(true));
+        }
+        let token_args: Vec<Expr> = args.iter().cloned().map(Expr::Literal).collect();
+        if let Some(pattern) = self.eval_token_call(name, &token_args)? {
+            return Ok(Value::Regex(pattern));
+        }
         if let Some(native_result) = crate::builtins::native_function(name, &args) {
             return native_result;
         }
@@ -2433,11 +2604,10 @@ impl Interpreter {
             )));
         }
 
-        let arg_exprs: Vec<Expr> = args.into_iter().map(Expr::Literal).collect();
-        self.eval_expr(&Expr::Call {
-            name: name.to_string(),
-            args: arg_exprs,
-        })
+        Err(RuntimeError::new(format!(
+            "Unknown function (call_function fallback disabled): {}",
+            name
+        )))
     }
 
     pub(crate) fn env_mut(&mut self) -> &mut HashMap<String, Value> {
