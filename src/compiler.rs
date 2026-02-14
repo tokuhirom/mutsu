@@ -48,7 +48,7 @@ impl Compiler {
         match stmt {
             Stmt::Expr(expr) => {
                 self.compile_expr(expr);
-                self.code.emit(OpCode::Pop);
+                self.code.emit(OpCode::SetTopic);
             }
             Stmt::Block(stmts) => {
                 if Self::has_block_enter_leave_phasers(stmts) {

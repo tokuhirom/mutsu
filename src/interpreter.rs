@@ -4129,16 +4129,7 @@ impl Interpreter {
     fn run_block(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
         let (enter_ph, leave_ph, body_main) = self.split_block_phasers(stmts);
         self.run_block_raw(&enter_ph)?;
-        let mut result = Ok(());
-        for stmt in &body_main {
-            if let Err(e) = self.exec_stmt(stmt) {
-                result = Err(e);
-                break;
-            }
-            if self.halted {
-                break;
-            }
-        }
+        let result = self.run_block_raw(&body_main);
         let leave_res = self.run_block_raw(&leave_ph);
         if leave_res.is_err() && result.is_ok() {
             return leave_res;

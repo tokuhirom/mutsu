@@ -15,6 +15,7 @@ pub(crate) enum OpCode {
     SetLocal(u32),
     GetGlobal(u32),
     SetGlobal(u32),
+    SetTopic,
     GetArrayVar(u32),
     GetHashVar(u32),
     GetBareWord(u32),

@@ -265,6 +265,11 @@ impl VM {
                 self.interpreter.env_mut().insert(name, val);
                 *ip += 1;
             }
+            OpCode::SetTopic => {
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                self.interpreter.env_mut().insert("_".to_string(), val);
+                *ip += 1;
+            }
 
             // -- Arithmetic (native) --
             OpCode::Add => {
