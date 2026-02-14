@@ -6011,10 +6011,7 @@ impl Interpreter {
                 }
                 // Check if bare word is a known function — call it with zero args
                 if self.has_function(name.as_str()) {
-                    return self.eval_expr(&Expr::Call {
-                        name: name.clone(),
-                        args: Vec::new(),
-                    });
+                    return self.call_function(name, Vec::new());
                 }
                 // NaN and Inf are Num literals
                 if name == "NaN" {
