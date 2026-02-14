@@ -1194,6 +1194,82 @@ impl Interpreter {
         }
     }
 
+    pub(crate) fn eval_unary_expr(
+        &mut self,
+        op: &TokenKind,
+        expr: &Expr,
+    ) -> Result<Value, RuntimeError> {
+        match op {
+            TokenKind::PlusPlus => {
+                if let Expr::Var(name) = expr {
+                    let val = self.env.get(name).cloned().unwrap_or(Value::Int(0));
+                    let new_val = match val {
+                        Value::Int(i) => Value::Int(i + 1),
+                        Value::Rat(n, d) => make_rat(n + d, d),
+                        _ => Value::Int(1),
+                    };
+                    self.env.insert(name.clone(), new_val.clone());
+                    return Ok(new_val);
+                }
+                Ok(Value::Nil)
+            }
+            TokenKind::MinusMinus => {
+                if let Expr::Var(name) = expr {
+                    let val = self.env.get(name).cloned().unwrap_or(Value::Int(0));
+                    let new_val = match val {
+                        Value::Int(i) => Value::Int(i - 1),
+                        Value::Rat(n, d) => make_rat(n - d, d),
+                        _ => Value::Int(-1),
+                    };
+                    self.env.insert(name.clone(), new_val.clone());
+                    return Ok(new_val);
+                }
+                Ok(Value::Nil)
+            }
+            _ => {
+                let value = self.eval_expr(expr)?;
+                match op {
+                    TokenKind::Plus => match value {
+                        Value::Int(i) => Ok(Value::Int(i)),
+                        Value::Bool(b) => Ok(Value::Int(if b { 1 } else { 0 })),
+                        Value::Array(items) => Ok(Value::Int(items.len() as i64)),
+                        Value::Str(s) => Ok(Value::Int(s.parse::<i64>().unwrap_or(0))),
+                        Value::Enum { value, .. } => Ok(Value::Int(value)),
+                        _ => Ok(Value::Int(0)),
+                    },
+                    TokenKind::Minus => match value {
+                        Value::Int(i) => Ok(Value::Int(-i)),
+                        Value::Num(f) => Ok(Value::Num(-f)),
+                        Value::Rat(n, d) => Ok(Value::Rat(-n, d)),
+                        Value::Complex(r, i) => Ok(Value::Complex(-r, -i)),
+                        Value::Str(ref s) => {
+                            if let Ok(i) = s.trim().parse::<i64>() {
+                                Ok(Value::Int(-i))
+                            } else if let Ok(f) = s.trim().parse::<f64>() {
+                                Ok(Value::Num(-f))
+                            } else {
+                                Err(RuntimeError::new("Unary - expects numeric"))
+                            }
+                        }
+                        _ => Err(RuntimeError::new("Unary - expects numeric")),
+                    },
+                    TokenKind::Tilde => Ok(Value::Str(value.to_string_value())),
+                    TokenKind::Bang => Ok(Value::Bool(!value.truthy())),
+                    TokenKind::Question => Ok(Value::Bool(value.truthy())),
+                    TokenKind::Caret => {
+                        let n = match value {
+                            Value::Int(i) => i,
+                            _ => 0,
+                        };
+                        Ok(Value::RangeExcl(0, n))
+                    }
+                    TokenKind::Ident(name) if name == "so" => Ok(Value::Bool(value.truthy())),
+                    _ => Err(RuntimeError::new("Unknown unary operator")),
+                }
+            }
+        }
+    }
+
     pub(crate) fn eval_postfix_expr(
         &mut self,
         op: &TokenKind,
@@ -8237,75 +8313,7 @@ impl Interpreter {
                 }
             }
             Expr::CallOn { target, args } => self.eval_call_on_expr(target, args),
-            Expr::Unary { op, expr } => match op {
-                TokenKind::PlusPlus => {
-                    if let Expr::Var(name) = expr.as_ref() {
-                        let val = self.env.get(name).cloned().unwrap_or(Value::Int(0));
-                        let new_val = match val {
-                            Value::Int(i) => Value::Int(i + 1),
-                            Value::Rat(n, d) => make_rat(n + d, d),
-                            _ => Value::Int(1),
-                        };
-                        self.env.insert(name.clone(), new_val.clone());
-                        return Ok(new_val);
-                    }
-                    Ok(Value::Nil)
-                }
-                TokenKind::MinusMinus => {
-                    if let Expr::Var(name) = expr.as_ref() {
-                        let val = self.env.get(name).cloned().unwrap_or(Value::Int(0));
-                        let new_val = match val {
-                            Value::Int(i) => Value::Int(i - 1),
-                            Value::Rat(n, d) => make_rat(n - d, d),
-                            _ => Value::Int(-1),
-                        };
-                        self.env.insert(name.clone(), new_val.clone());
-                        return Ok(new_val);
-                    }
-                    Ok(Value::Nil)
-                }
-                _ => {
-                    let value = self.eval_expr(expr)?;
-                    match op {
-                        TokenKind::Plus => match value {
-                            Value::Int(i) => Ok(Value::Int(i)),
-                            Value::Bool(b) => Ok(Value::Int(if b { 1 } else { 0 })),
-                            Value::Array(items) => Ok(Value::Int(items.len() as i64)),
-                            Value::Str(s) => Ok(Value::Int(s.parse::<i64>().unwrap_or(0))),
-                            Value::Enum { value, .. } => Ok(Value::Int(value)),
-                            _ => Ok(Value::Int(0)),
-                        },
-                        TokenKind::Minus => match value {
-                            Value::Int(i) => Ok(Value::Int(-i)),
-                            Value::Num(f) => Ok(Value::Num(-f)),
-                            Value::Rat(n, d) => Ok(Value::Rat(-n, d)),
-                            Value::Complex(r, i) => Ok(Value::Complex(-r, -i)),
-                            Value::Str(ref s) => {
-                                if let Ok(i) = s.trim().parse::<i64>() {
-                                    Ok(Value::Int(-i))
-                                } else if let Ok(f) = s.trim().parse::<f64>() {
-                                    Ok(Value::Num(-f))
-                                } else {
-                                    Err(RuntimeError::new("Unary - expects numeric"))
-                                }
-                            }
-                            _ => Err(RuntimeError::new("Unary - expects numeric")),
-                        },
-                        TokenKind::Tilde => Ok(Value::Str(value.to_string_value())),
-                        TokenKind::Bang => Ok(Value::Bool(!value.truthy())),
-                        TokenKind::Question => Ok(Value::Bool(value.truthy())),
-                        TokenKind::Caret => {
-                            let n = match value {
-                                Value::Int(i) => i,
-                                _ => 0,
-                            };
-                            Ok(Value::RangeExcl(0, n))
-                        }
-                        TokenKind::Ident(name) if name == "so" => Ok(Value::Bool(value.truthy())),
-                        _ => Err(RuntimeError::new("Unknown unary operator")),
-                    }
-                }
-            },
+            Expr::Unary { op, expr } => self.eval_unary_expr(op, expr),
             Expr::PostfixOp { op, expr } => self.eval_postfix_expr(op, expr),
             Expr::Binary { left, op, right } => {
                 // Short-circuit operators

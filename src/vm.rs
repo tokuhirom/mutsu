@@ -2393,8 +2393,8 @@ impl VM {
             }
             OpCode::RunUnaryExpr(idx) => {
                 let expr = &code.expr_pool[*idx as usize];
-                if let Expr::Unary { .. } = expr {
-                    let val = self.interpreter.eval_expr(expr)?;
+                if let Expr::Unary { op, expr } = expr {
+                    let val = self.interpreter.eval_unary_expr(op, expr)?;
                     self.stack.push(val);
                     self.sync_locals_from_env(code);
                     *ip += 1;
