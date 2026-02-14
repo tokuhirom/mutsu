@@ -2305,6 +2305,41 @@ impl VM {
                     return Err(RuntimeError::new("RunCallOnExpr expects CallOn"));
                 }
             }
+            OpCode::RunAnonSubExpr(idx) => {
+                let expr = &code.expr_pool[*idx as usize];
+                if let Expr::AnonSub(body) = expr {
+                    let val = self.interpreter.eval_anon_sub_expr(body);
+                    self.stack.push(val);
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RunAnonSubExpr expects AnonSub"));
+                }
+            }
+            OpCode::RunAnonSubParamsExpr(idx) => {
+                let expr = &code.expr_pool[*idx as usize];
+                if let Expr::AnonSubParams { params, body } = expr {
+                    let val = self.interpreter.eval_anon_sub_params_expr(params, body);
+                    self.stack.push(val);
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new(
+                        "RunAnonSubParamsExpr expects AnonSubParams",
+                    ));
+                }
+            }
+            OpCode::RunLambdaExpr(idx) => {
+                let expr = &code.expr_pool[*idx as usize];
+                if let Expr::Lambda { param, body } = expr {
+                    let val = self.interpreter.eval_lambda_expr(param, body);
+                    self.stack.push(val);
+                    self.sync_locals_from_env(code);
+                    *ip += 1;
+                } else {
+                    return Err(RuntimeError::new("RunLambdaExpr expects Lambda"));
+                }
+            }
             OpCode::RunExprFallback(idx) => {
                 let expr = &code.expr_pool[*idx as usize];
                 let val = self.interpreter.eval_expr(expr)?;

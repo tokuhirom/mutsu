@@ -953,6 +953,18 @@ impl Compiler {
                 let idx = self.code.add_expr(expr.clone());
                 self.code.emit(OpCode::RunCallOnExpr(idx));
             }
+            Expr::AnonSub(_) => {
+                let idx = self.code.add_expr(expr.clone());
+                self.code.emit(OpCode::RunAnonSubExpr(idx));
+            }
+            Expr::AnonSubParams { .. } => {
+                let idx = self.code.add_expr(expr.clone());
+                self.code.emit(OpCode::RunAnonSubParamsExpr(idx));
+            }
+            Expr::Lambda { .. } => {
+                let idx = self.code.add_expr(expr.clone());
+                self.code.emit(OpCode::RunLambdaExpr(idx));
+            }
             Expr::ControlFlow { kind, label } => match kind {
                 crate::ast::ControlFlowKind::Last => {
                     self.code.emit(OpCode::Last(label.clone()));
@@ -972,12 +984,7 @@ impl Compiler {
                     self.compile_block_inline(stmts);
                 }
             }
-            // AnonSub / Lambda / Gather / CallOn / DoBlock / DoStmt:
-            // These capture env or have complex state interactions.
-            // Delegate entirely to interpreter.
-            Expr::AnonSub(_) | Expr::AnonSubParams { .. } | Expr::Lambda { .. } => {
-                self.fallback_expr(expr);
-            }
+            // Remaining expression forms not yet bytecode-native.
             Expr::IndexAssign { .. } | Expr::Try { .. } | Expr::PostfixOp { .. } => {
                 self.fallback_expr(expr);
             }

@@ -1075,6 +1075,43 @@ impl Interpreter {
         Ok(Value::Nil)
     }
 
+    pub(crate) fn eval_anon_sub_expr(&self, body: &[Stmt]) -> Value {
+        Value::Sub {
+            package: self.current_package.clone(),
+            name: String::new(),
+            params: vec![],
+            body: body.to_vec(),
+            env: self.env.clone(),
+            id: next_instance_id(),
+        }
+    }
+
+    pub(crate) fn eval_anon_sub_params_expr(&self, params: &[String], body: &[Stmt]) -> Value {
+        Value::Sub {
+            package: self.current_package.clone(),
+            name: String::new(),
+            params: params.to_vec(),
+            body: body.to_vec(),
+            env: self.env.clone(),
+            id: next_instance_id(),
+        }
+    }
+
+    pub(crate) fn eval_lambda_expr(&self, param: &str, body: &[Stmt]) -> Value {
+        Value::Sub {
+            package: self.current_package.clone(),
+            name: String::new(),
+            params: if param.is_empty() {
+                vec![]
+            } else {
+                vec![param.to_string()]
+            },
+            body: body.to_vec(),
+            env: self.env.clone(),
+            id: next_instance_id(),
+        }
+    }
+
     pub(crate) fn run_given_stmt(
         &mut self,
         topic: &Expr,
@@ -4801,34 +4838,11 @@ impl Interpreter {
                 sig.label = label.clone();
                 Err(sig)
             }
-            Expr::AnonSub(body) => Ok(Value::Sub {
-                package: self.current_package.clone(),
-                name: String::new(),
-                params: vec![],
-                body: body.clone(),
-                env: self.env.clone(),
-                id: next_instance_id(),
-            }),
-            Expr::AnonSubParams { params, body } => Ok(Value::Sub {
-                package: self.current_package.clone(),
-                name: String::new(),
-                params: params.clone(),
-                body: body.clone(),
-                env: self.env.clone(),
-                id: next_instance_id(),
-            }),
-            Expr::Lambda { param, body } => Ok(Value::Sub {
-                package: self.current_package.clone(),
-                name: String::new(),
-                params: if param.is_empty() {
-                    vec![]
-                } else {
-                    vec![param.clone()]
-                },
-                body: body.clone(),
-                env: self.env.clone(),
-                id: next_instance_id(),
-            }),
+            Expr::AnonSub(body) => Ok(self.eval_anon_sub_expr(body)),
+            Expr::AnonSubParams { params, body } => {
+                Ok(self.eval_anon_sub_params_expr(params, body))
+            }
+            Expr::Lambda { param, body } => Ok(self.eval_lambda_expr(param, body)),
             Expr::ArrayLiteral(items) => {
                 let mut values = Vec::new();
                 for item in items {
