@@ -379,7 +379,11 @@ impl Interpreter {
 
         // Generate values
         let mut result: Vec<Value> = seeds.clone();
-        let max_gen = if endpoint.is_some() { 10000 } else { 32 };
+        let max_gen = match (&mode, &endpoint_kind) {
+            (SeqMode::Closure, Some(EndpointKind::Value(_))) => 256,
+            (_, Some(_)) => 10000,
+            (_, None) => 32,
+        };
         let is_string_seq = !seeds.is_empty() && matches!(seeds.last(), Some(Value::Str(_)));
 
         for _ in 0..max_gen {
