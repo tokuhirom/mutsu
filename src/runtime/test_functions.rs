@@ -139,6 +139,17 @@ impl Interpreter {
             let count = Self::positional_value_required(args, 0, "plan expects count")?;
             let planned = match count {
                 Value::Int(i) if *i >= 0 => *i as usize,
+                Value::BigInt(i) => {
+                    use num_traits::ToPrimitive;
+                    let n = i.to_i128().unwrap_or(-1);
+                    if n < 0 {
+                        return Err(RuntimeError::new("plan expects Int"));
+                    }
+                    n as usize
+                }
+                Value::Num(f) if *f >= 0.0 && f.fract() == 0.0 => *f as usize,
+                Value::Rat(n, d) if *d != 0 && *n >= 0 && *n % *d == 0 => (*n / *d) as usize,
+                Value::FatRat(n, d) if *d != 0 && *n >= 0 && *n % *d == 0 => (*n / *d) as usize,
                 _ => return Err(RuntimeError::new("plan expects Int")),
             };
             self.test_state.get_or_insert_with(TestState::new).planned = Some(planned);

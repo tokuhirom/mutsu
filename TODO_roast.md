@@ -236,6 +236,7 @@
 - [ ] roast/S03-binding/ro.t
 - [ ] roast/S03-binding/scalars.t
 - [ ] roast/S03-buf/read-int.t
+  - Current blocker: `blob8.new(...)` dies (`Unknown method ...: new`), and this file also needs `Blob/Buf` typed constructors, `Kernel.endian`, and `read-int*/read-uint*` methods.
 - [ ] roast/S03-buf/read-num.t
 - [ ] roast/S03-buf/read-write-bits.t
 - [ ] roast/S03-buf/write-int.t
@@ -250,6 +251,8 @@
 - [ ] roast/S03-metaops/eager-hyper.t
 - [ ] roast/S03-metaops/hyper.t
 - [ ] roast/S03-metaops/infix.t
+  - `plan` now accepts integral Num/Rat values, so early `plan expects Int` abort is fixed.
+  - Current blocker: callable code-ref invocation in this file dies (`Unknown function ...: op`).
 - [ ] roast/S03-metaops/misc.t
 - [ ] roast/S03-metaops/not.t
 - [ ] roast/S03-metaops/reduce.t
