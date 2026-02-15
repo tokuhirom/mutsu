@@ -42,6 +42,7 @@ mod sequence;
 mod sprintf;
 mod subtest;
 mod system;
+mod test_functions;
 mod types;
 mod unicode;
 pub(crate) mod utils;
@@ -186,6 +187,7 @@ pub struct Interpreter {
     proto_tokens: HashSet<String>,
     end_phasers: Vec<(Vec<Stmt>, HashMap<String, Value>)>,
     chroot_root: Option<PathBuf>,
+    loaded_modules: HashSet<String>,
 }
 
 pub(crate) struct SubtestContext {
@@ -271,6 +273,7 @@ impl Interpreter {
             proto_tokens: HashSet::new(),
             end_phasers: Vec::new(),
             chroot_root: None,
+            loaded_modules: HashSet::new(),
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -301,6 +304,10 @@ impl Interpreter {
     }
 
     pub(crate) fn use_module(&mut self, module: &str) -> Result<(), RuntimeError> {
+        self.loaded_modules.insert(module.to_string());
+        if module == "Test" || module.starts_with("Test::") {
+            return Ok(());
+        }
         self.load_module(module)
     }
 
