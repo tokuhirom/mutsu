@@ -1,0 +1,187 @@
+mod core;
+mod heredoc;
+mod regex;
+mod string;
+#[cfg(test)]
+mod tests;
+mod tokenize;
+
+use crate::value::VersionPart;
+use num_bigint::BigInt as NumBigInt;
+
+pub(crate) use self::core::Lexer;
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum DStrPart {
+    Lit(String),
+    Var(String),
+    Block(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum TokenKind {
+    Number(i64),
+    BigNumber(NumBigInt),
+    Float(f64),
+    Imaginary(f64),
+    Str(String),
+    DStr(Vec<DStrPart>),
+    Regex(String),
+    Subst {
+        pattern: String,
+        replacement: String,
+    },
+    /// Quote-word list: < word1 word2 ... >
+    QWords(Vec<String>),
+    Ident(String),
+    Var(String),
+    CaptureVar(String),
+    HashVar(String),
+    RoutineMagic,
+    BlockMagic,
+    ArrayVar(String),
+    CodeVar(String),
+    True,
+    False,
+    Nil,
+    Plus,
+    Minus,
+    Star,
+    StarStar,
+    Percent,
+    PercentPercent,
+    Slash,
+    Tilde,
+    Eq,
+    EqEq,
+    FatArrow,
+    MatchAssign,
+    Dot,
+    DotDot,
+    DotDotDot,
+    DotDotDotCaret,
+    DotDotCaret,
+    CaretDotDot,
+    CaretDotDotCaret,
+    EqEqEq,
+    Arrow,
+    SmartMatch,
+    BangEq,
+    BangTilde,
+    BangBang,
+    Lt,
+    Lte,
+    Gt,
+    Gte,
+    AndAnd,
+    OrOr,
+    OrWord,
+    OrElse,
+    AndThen,
+    NotAndThen,
+    Bang,
+    QuestionQuestion,
+    Ampersand,
+    Pipe,
+    LParen,
+    RParen,
+    LBracket,
+    RBracket,
+    LBrace,
+    RBrace,
+    Comma,
+    Colon,
+    PlusPlus,
+    MinusMinus,
+    PlusEq,
+    MinusEq,
+    TildeEq,
+    StarEq,
+    SlashSlash,
+    DotEq,
+    Bind,
+    Question,
+    Caret,
+    BitAnd,
+    BitOr,
+    BitXor,
+    BitShiftLeft,
+    BitShiftRight,
+    LtEqGt,
+    SetUnion,          // (|) ∪
+    SetIntersect,      // (&) ∩
+    SetDiff,           // (-)
+    SetSymDiff,        // (^)
+    SetElem,           // (elem) ∈
+    SetCont,           // (cont)
+    SetSubset,         // (<=) ⊆
+    SetSuperset,       // (>=) ⊇
+    SetStrictSubset,   // (<) ⊂
+    SetStrictSuperset, // (>) ⊃
+    HyperLeft,         // << or «
+    HyperRight,        // >> or »
+    VersionLiteral {
+        parts: Vec<VersionPart>,
+        plus: bool,
+        minus: bool,
+    },
+    Semicolon,
+    Eof,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Token {
+    pub(crate) kind: TokenKind,
+    pub(crate) line: usize,
+}
+
+/// Look up a Unicode character by name, with fallback for control characters and aliases.
+pub(crate) fn lookup_unicode_char_by_name(name: &str) -> Option<char> {
+    // Try the unicode_names2 crate first (covers most named characters)
+    if let Some(c) = unicode_names2::character(name) {
+        return Some(c);
+    }
+    // Fallback: control characters and common aliases (case-insensitive)
+    let upper = name.to_uppercase();
+    match upper.as_str() {
+        "NULL" | "NUL" => Some('\u{0000}'),
+        "START OF HEADING" | "SOH" => Some('\u{0001}'),
+        "START OF TEXT" | "STX" => Some('\u{0002}'),
+        "END OF TEXT" | "ETX" => Some('\u{0003}'),
+        "END OF TRANSMISSION" | "EOT" => Some('\u{0004}'),
+        "ENQUIRY" | "ENQ" => Some('\u{0005}'),
+        "ACKNOWLEDGE" | "ACK" => Some('\u{0006}'),
+        "BELL" | "BEL" | "ALERT" => Some('\u{0007}'),
+        "BACKSPACE" | "BS" => Some('\u{0008}'),
+        "CHARACTER TABULATION" | "HORIZONTAL TABULATION" | "HT" | "TAB" => Some('\u{0009}'),
+        "LINE FEED" | "LINE FEED (LF)" | "NEW LINE" | "END OF LINE" | "LF" | "NL" | "EOL" => {
+            Some('\u{000A}')
+        }
+        "LINE TABULATION" | "VERTICAL TABULATION" | "VT" => Some('\u{000B}'),
+        "FORM FEED" | "FORM FEED (FF)" | "FF" => Some('\u{000C}'),
+        "CARRIAGE RETURN" | "CARRIAGE RETURN (CR)" | "CR" => Some('\u{000D}'),
+        "SHIFT OUT" | "LOCKING-SHIFT ONE" | "SO" => Some('\u{000E}'),
+        "SHIFT IN" | "LOCKING-SHIFT ZERO" | "SI" => Some('\u{000F}'),
+        "DATA LINK ESCAPE" | "DLE" => Some('\u{0010}'),
+        "DEVICE CONTROL ONE" | "DC1" => Some('\u{0011}'),
+        "DEVICE CONTROL TWO" | "DC2" => Some('\u{0012}'),
+        "DEVICE CONTROL THREE" | "DC3" => Some('\u{0013}'),
+        "DEVICE CONTROL FOUR" | "DC4" => Some('\u{0014}'),
+        "NEGATIVE ACKNOWLEDGE" | "NAK" => Some('\u{0015}'),
+        "SYNCHRONOUS IDLE" | "SYN" => Some('\u{0016}'),
+        "END OF TRANSMISSION BLOCK" | "ETB" => Some('\u{0017}'),
+        "CANCEL" | "CAN" => Some('\u{0018}'),
+        "END OF MEDIUM" | "EM" => Some('\u{0019}'),
+        "SUBSTITUTE" | "SUB" => Some('\u{001A}'),
+        "ESCAPE" | "ESC" => Some('\u{001B}'),
+        "INFORMATION SEPARATOR FOUR" | "FILE SEPARATOR" | "FS" => Some('\u{001C}'),
+        "INFORMATION SEPARATOR THREE" | "GROUP SEPARATOR" | "GS" => Some('\u{001D}'),
+        "INFORMATION SEPARATOR TWO" | "RECORD SEPARATOR" | "RS" => Some('\u{001E}'),
+        "INFORMATION SEPARATOR ONE" | "UNIT SEPARATOR" | "US" => Some('\u{001F}'),
+        "SPACE" | "SP" => Some('\u{0020}'),
+        "DELETE" | "DEL" => Some('\u{007F}'),
+        "NEXT LINE" | "NEXT LINE (NEL)" | "NEL" => Some('\u{0085}'),
+        "NO-BREAK SPACE" | "NBSP" => Some('\u{00A0}'),
+        _ => None,
+    }
+}
