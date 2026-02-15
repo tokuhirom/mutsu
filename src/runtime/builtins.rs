@@ -1,4 +1,5 @@
 use super::*;
+use crate::lexer::TokenKind;
 
 impl Interpreter {
     pub(crate) fn eval_call_on_value(
@@ -182,6 +183,12 @@ impl Interpreter {
         name: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        if let Some(op) = name
+            .strip_prefix("infix:<")
+            .and_then(|s| s.strip_suffix('>'))
+        {
+            return self.call_infix_routine(op, args);
+        }
         if (self.loaded_modules.contains("Test")
             || self.loaded_modules.iter().any(|m| m.starts_with("Test::")))
             && let Some(result) = self.call_test_function(name, args)?
@@ -227,6 +234,42 @@ impl Interpreter {
             "Unknown function (call_function fallback disabled): {}",
             name
         )))
+    }
+
+    fn call_infix_routine(&mut self, op: &str, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.is_empty() {
+            return Ok(reduction_identity(op));
+        }
+        if args.len() == 1 {
+            return Ok(args[0].clone());
+        }
+        let mut acc = args[0].clone();
+        for rhs in &args[1..] {
+            let token = match op {
+                "+" => TokenKind::Plus,
+                "-" => TokenKind::Minus,
+                "*" | "×" => TokenKind::Star,
+                "/" | "÷" => TokenKind::Slash,
+                "**" => TokenKind::StarStar,
+                "%" => TokenKind::Percent,
+                "~" => TokenKind::Tilde,
+                "+&" => TokenKind::BitAnd,
+                "+|" => TokenKind::BitOr,
+                "+^" => TokenKind::BitXor,
+                "(|)" | "∪" => TokenKind::SetUnion,
+                "(&)" | "∩" => TokenKind::SetIntersect,
+                "(^)" | "⊖" => TokenKind::SetSymDiff,
+                "(elem)" | "∈" => TokenKind::SetElem,
+                "(cont)" | "∋" => TokenKind::SetCont,
+                _ => TokenKind::Ident(op.to_string()),
+            };
+            acc = self.eval_block_value(&[Stmt::Expr(Expr::Binary {
+                left: Box::new(Expr::Literal(acc)),
+                op: token,
+                right: Box::new(Expr::Literal(rhs.clone())),
+            })])?;
+        }
+        Ok(acc)
     }
 
     fn builtin_die(&self, args: &[Value]) -> Result<Value, RuntimeError> {

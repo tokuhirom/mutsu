@@ -4765,10 +4765,18 @@ impl Parser {
                         self.pos += 1;
                         break;
                     }
+                    Some(TokenKind::LParen | TokenKind::RParen) => {
+                        self.pos += 1;
+                        continue;
+                    }
                     Some(TokenKind::FatArrow) => {
                         op_str.push('=');
                         self.pos += 1;
                         break;
+                    }
+                    Some(TokenKind::Ident(name)) => {
+                        op_str.push_str(name);
+                        self.pos += 1;
                     }
                     Some(tok) => {
                         if let Some(s) = Self::token_to_op_str(tok) {
@@ -4804,10 +4812,18 @@ impl Parser {
                     self.pos += 1;
                     break;
                 }
+                Some(TokenKind::LParen | TokenKind::RParen) => {
+                    self.pos += 1;
+                    continue;
+                }
                 Some(TokenKind::FatArrow) => {
                     op_str.push('=');
                     self.pos += 1;
                     break;
+                }
+                Some(TokenKind::Ident(name)) => {
+                    op_str.push_str(name);
+                    self.pos += 1;
                 }
                 Some(TokenKind::Gte) => {
                     op_str.push('=');

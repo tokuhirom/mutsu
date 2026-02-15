@@ -1118,6 +1118,7 @@ impl Lexer {
                 '\u{2208}' => TokenKind::SetElem,           // ∈
                 '\u{2209}' => TokenKind::SetElem,           // ∉ (handled as negated in parser)
                 '\u{220B}' => TokenKind::SetCont,           // ∋
+                '\u{228E}' => TokenKind::Plus,              // ⊎ (baggy addition)
                 '\u{222A}' => TokenKind::SetUnion,          // ∪
                 '\u{2229}' => TokenKind::SetIntersect,      // ∩
                 '\u{2216}' => TokenKind::SetDiff,           // ∖

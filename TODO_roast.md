@@ -353,8 +353,8 @@
 - [ ] roast/S03-operators/scalar-assign.t
   - 2/4 pass.
 - [ ] roast/S03-operators/set_addition.t
-  - Added minimal `SetHash/BagHash/MixHash` method support and type-object `.new` handling to avoid immediate `Unknown method ...: SetHash`.
-  - Current blocker: code-ref invocation path (`op(...)`) is unresolved and aborts with `Unknown function ...: op`.
+  - Added minimal `SetHash/BagHash/MixHash` method support, type-object `.new`, `&infix:<...>` parsing for `⊎`, and callable infix routine dispatch.
+  - Now reaches 46/395 tests; current blocker shifts to argument parsing/evaluation around `is-deeply` in this file (`is-deeply expects right`).
 - [ ] roast/S03-operators/set_difference.t
   - 0/? pass. Crashes mid-run.
 - [ ] roast/S03-operators/set_elem.t

@@ -66,6 +66,13 @@ impl Interpreter {
             };
             return Ok(Value::Package(type_name.to_string()));
         }
+        if method == "^name" && args.is_empty() {
+            return Ok(Value::Str(match &target {
+                Value::Package(name) => name.clone(),
+                Value::Instance { class_name, .. } => class_name.clone(),
+                other => value_type_name(other).to_string(),
+            }));
+        }
         if method == "enums"
             && let Value::Str(type_name) = &target
             && let Some(variants) = self.enum_types.get(type_name)

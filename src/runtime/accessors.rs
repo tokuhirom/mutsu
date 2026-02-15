@@ -27,6 +27,12 @@ impl Interpreter {
     }
 
     pub(crate) fn resolve_code_var(&self, name: &str) -> Value {
+        if name.starts_with("infix:<") && name.ends_with('>') {
+            return Value::Routine {
+                package: "GLOBAL".to_string(),
+                name: name.to_string(),
+            };
+        }
         // Check if stored as a variable first (my &f = ...)
         let var_key = format!("&{}", name);
         if let Some(val) = self.env.get(&var_key) {

@@ -153,6 +153,9 @@ impl Interpreter {
         args: Vec<Value>,
         merge_all: bool,
     ) -> Result<Value, RuntimeError> {
+        if let Value::Routine { name, .. } = &func {
+            return self.call_function(name, args);
+        }
         if let Value::Sub {
             package,
             name,
