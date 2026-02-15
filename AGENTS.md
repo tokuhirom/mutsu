@@ -65,6 +65,7 @@ Flow: `call_method_with_values()` tries `native_method_*arg()` first; if `None`,
 ## Reference implementation
 
 - `raku` is available on this system. Use `raku -e '<code>'` to check expected behavior when the spec is unclear.
+- When investigating a roast test, always run it with `raku` first to see the expected output before comparing with mutsu.
 - Design docs: `./old-design-docs/`
 
 ## Roast (official Raku test suite)
@@ -91,6 +92,7 @@ Flow: `call_method_with_values()` tries `native_method_*arg()` first; if `None`,
   - `tmp/roast-pass.txt` — fully passing
 - Priority order: panic → timeout → error/fail.
 - Do NOT cherry-pick "almost passing" tests. Pick tests randomly from the fail/error lists. The goal is broad language coverage, not gaming the pass count.
+- After making changes, always run `./scripts/roast-history.sh` to regenerate category lists and check for newly passing tests. Compare the new `tmp/roast-pass.txt` against the whitelist to find tests to add.
 
 ## Checking `make roast` results
 
