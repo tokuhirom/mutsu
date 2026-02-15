@@ -49,6 +49,9 @@ impl Parser {
                 .advance_if(|k| matches!(k, TokenKind::VersionLiteral { .. }))
                 .is_some()
             {
+                while !self.check(&TokenKind::Semicolon) && !self.check(&TokenKind::Eof) {
+                    self.pos += 1;
+                }
                 self.match_kind(TokenKind::Semicolon);
                 return Ok(Stmt::Use {
                     module: "v6".to_string(),
@@ -58,6 +61,16 @@ impl Parser {
             let module = self
                 .consume_ident()
                 .unwrap_or_else(|_| "unknown".to_string());
+            if module == "v6" {
+                while !self.check(&TokenKind::Semicolon) && !self.check(&TokenKind::Eof) {
+                    self.pos += 1;
+                }
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::Use {
+                    module: "v6".to_string(),
+                    arg: None,
+                });
+            }
             let arg = if self.check(&TokenKind::Semicolon) {
                 None
             } else if self.check(&TokenKind::Lt) {
@@ -951,6 +964,23 @@ impl Parser {
             } else {
                 self.parse_call_args()?
             };
+            let stmt = Stmt::Call { name, args };
+            return self.parse_statement_modifier(stmt);
+        }
+        if let Some(name) = self.peek_ident()
+            && name != "temp"
+            && matches!(
+                self.peek_next_kind(),
+                Some(
+                    TokenKind::Var(_)
+                        | TokenKind::ArrayVar(_)
+                        | TokenKind::HashVar(_)
+                        | TokenKind::CaptureVar(_)
+                )
+            )
+        {
+            self.pos += 1;
+            let args = self.parse_call_args()?;
             let stmt = Stmt::Call { name, args };
             return self.parse_statement_modifier(stmt);
         }
@@ -3552,7 +3582,7 @@ impl Parser {
                     Expr::Var("self".to_string())
                 } else if matches!(
                     name.as_str(),
-                    "ok" | "nok" | "is" | "isnt" | "isa-ok" | "diag" | "pass" | "flunk"
+                    "ok" | "nok" | "is" | "isnt" | "isa-ok" | "diag" | "pass" | "flunk" | "slip"
                 ) && !self.check(&TokenKind::Semicolon)
                     && !self.check(&TokenKind::Eof)
                     && !self.check(&TokenKind::RBrace)

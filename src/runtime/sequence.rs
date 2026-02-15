@@ -379,7 +379,7 @@ impl Interpreter {
 
         // Generate values
         let mut result: Vec<Value> = seeds.clone();
-        let max_gen = if endpoint.is_some() { 10000 } else { 1000 };
+        let max_gen = if endpoint.is_some() { 10000 } else { 32 };
         let is_string_seq = !seeds.is_empty() && matches!(seeds.last(), Some(Value::Str(_)));
 
         for _ in 0..max_gen {
@@ -470,6 +470,14 @@ impl Interpreter {
                 }
             };
 
+            if endpoint_kind.is_none() {
+                match next {
+                    Value::Slip(items) => result.extend(items),
+                    other => result.push(other),
+                }
+                continue;
+            }
+
             // Check endpoint
             if let Some(ref epk) = endpoint_kind {
                 match epk {
@@ -554,6 +562,14 @@ impl Interpreter {
                         }
                     }
                     EndpointKind::Value(ep) => {
+                        if let Value::Package(type_name) = ep
+                            && super::value_type_name(&next) == type_name
+                        {
+                            if !exclusive {
+                                result.push(next);
+                            }
+                            break;
+                        }
                         if Self::seq_values_equal(&next, ep) {
                             if !exclusive {
                                 result.push(next);

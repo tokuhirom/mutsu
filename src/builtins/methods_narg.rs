@@ -177,6 +177,26 @@ pub(crate) fn native_method_1arg(
             let factor = (1.0 / scale).abs();
             Some(Ok(Value::Num((x * factor).round() / factor)))
         }
+        "roll" => {
+            let count = match arg {
+                Value::Int(i) if *i > 0 => *i as usize,
+                Value::Int(_) => 0,
+                _ => return None,
+            };
+            let items = runtime::value_to_list(target);
+            if items.is_empty() || count == 0 {
+                return Some(Ok(Value::Array(Vec::new())));
+            }
+            let mut result = Vec::with_capacity(count);
+            for _ in 0..count {
+                let mut idx = (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
+                if idx >= items.len() {
+                    idx = items.len() - 1;
+                }
+                result.push(items[idx].clone());
+            }
+            Some(Ok(Value::Array(result)))
+        }
         "log" => {
             let base_val = match arg {
                 Value::Int(i) => *i as f64,
