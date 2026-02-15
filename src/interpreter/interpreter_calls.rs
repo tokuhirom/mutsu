@@ -68,13 +68,7 @@ impl Interpreter {
     }
 
     pub(super) fn call_arg_needs_raw_expr(expr: &Expr) -> bool {
-        match expr {
-            Expr::Block(_) => true,
-            Expr::Hash(pairs) => pairs
-                .iter()
-                .any(|(_, v)| v.as_ref().is_some_and(Self::call_arg_needs_raw_expr)),
-            _ => false,
-        }
+        matches!(expr, Expr::Block(_))
     }
 
     pub(super) fn positional_arg<'a>(
@@ -531,6 +525,7 @@ impl Interpreter {
                     Expr::Block(body) | Expr::AnonSub(body) | Expr::AnonSubParams { body, .. } => {
                         self.eval_block_value(body)
                     }
+                    Expr::Literal(Value::Sub { body, .. }) => self.eval_block_value(body),
                     _ => {
                         let code = match self.eval_expr(code_expr)? {
                             Value::Str(s) => s,
@@ -590,6 +585,27 @@ impl Interpreter {
                                 } else if let Some(expr) = value
                                     && let Ok(Value::Int(i)) = self.eval_expr(expr)
                                 {
+                                    expected_status = Some(i);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                } else if let Value::Hash(expected_hash) = self.eval_expr(expected_expr)? {
+                    for (name, value) in expected_hash {
+                        let matcher = match value {
+                            Value::Sub { params, body, .. } => {
+                                let param =
+                                    params.first().cloned().unwrap_or_else(|| "_".to_string());
+                                Some(ExpectedMatcher::Lambda { param, body })
+                            }
+                            other => Some(ExpectedMatcher::Exact(other)),
+                        };
+                        match name.as_str() {
+                            "out" => expected_out = matcher,
+                            "err" => expected_err = matcher,
+                            "status" => {
+                                if let Some(ExpectedMatcher::Exact(Value::Int(i))) = matcher {
                                     expected_status = Some(i);
                                 }
                             }

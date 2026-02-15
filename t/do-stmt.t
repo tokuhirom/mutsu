@@ -1,5 +1,5 @@
 use Test;
-plan 6;
+plan 8;
 
 my $v1 = do if True { 42 };
 is $v1, 42, 'do if returns then-branch value';
@@ -27,3 +27,8 @@ my $v6 = do given 5 {
     when 5 { "next-branch" }
 };
 is $v6, "next-branch", 'do given with proceed returns later when value';
+
+my $side = 0;
+my $v7 = do $side = 10;
+is $side, 10, 'do stmt executes statement side effects';
+is $v7, 10, 'do EXPR returns expression value';

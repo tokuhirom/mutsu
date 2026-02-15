@@ -1167,6 +1167,7 @@ impl Compiler {
                     self.code.patch_body_end(given_idx);
                 }
                 _ => {
+                    self.compile_stmt(stmt);
                     self.code.emit(OpCode::LoadNil);
                 }
             },
