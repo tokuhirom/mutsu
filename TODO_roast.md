@@ -255,6 +255,7 @@
   - Current blocker: callable code-ref invocation in this file dies (`Unknown function ...: op`).
 - [ ] roast/S03-metaops/misc.t
 - [ ] roast/S03-metaops/not.t
+  - Panic on `&infix:<!===>(...)` is fixed; remaining failures are semantic gaps in `!` metaoperators (`!before/!after`, `!&&/!||/!^^`, and related callable forms).
 - [ ] roast/S03-metaops/reduce.t
 - [ ] roast/S03-metaops/reverse.t
 - [ ] roast/S03-metaops/zip.t
@@ -268,6 +269,7 @@
   - 0/? pass. Panic: `attempt to multiply with overflow` in `i64::pow`. Needs BigInt or checked arithmetic.
 - [x] roast/S03-operators/assign-is-not-binding.t
 - [ ] roast/S03-operators/assign.t
+  - Panic on infix routine `=` dispatch is fixed; current blocker is package/hash assignment semantics (hits `Unknown method value dispatch ... keys` and exits early).
   - 36/302 pass.
 - [ ] roast/S03-operators/autoincrement-range.t
   - 5/104 pass.
@@ -781,6 +783,7 @@
   - No longer panics (`Unknown call: our` fixed by parsing `our` declarations), but still fails all subtests because `require/use/no` return values and `%*INC` updates are not yet implemented correctly.
 - [ ] roast/S10-packages/require-and-use.t
 - [ ] roast/S10-packages/scope.t
+  - No longer panics; still has broad package-scope semantic failures (module `use/require` scoping, import visibility, and `%*INC` behavior).
 - [ ] roast/S10-packages/use-with-class.t
 - [ ] roast/S11-compunit/compunit-dependencyspecification.t
   - 2/6 pass (1-2). Tests 3-6 regressed: CompUnit::DependencySpecification.new(:short-name<Foo>) now fails (returns Nil instead of instance). Removed from whitelist.

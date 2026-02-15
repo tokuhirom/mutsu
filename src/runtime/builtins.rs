@@ -245,31 +245,60 @@ impl Interpreter {
         }
         let mut acc = args[0].clone();
         for rhs in &args[1..] {
-            let token = match op {
-                "+" => TokenKind::Plus,
-                "-" => TokenKind::Minus,
-                "*" | "×" => TokenKind::Star,
-                "/" | "÷" => TokenKind::Slash,
-                "**" => TokenKind::StarStar,
-                "%" => TokenKind::Percent,
-                "~" => TokenKind::Tilde,
-                "+&" => TokenKind::BitAnd,
-                "+|" => TokenKind::BitOr,
-                "+^" => TokenKind::BitXor,
-                "(|)" | "∪" => TokenKind::SetUnion,
-                "(&)" | "∩" => TokenKind::SetIntersect,
-                "(^)" | "⊖" => TokenKind::SetSymDiff,
-                "(elem)" | "∈" => TokenKind::SetElem,
-                "(cont)" | "∋" => TokenKind::SetCont,
-                _ => TokenKind::Ident(op.to_string()),
-            };
-            acc = self.eval_block_value(&[Stmt::Expr(Expr::Binary {
-                left: Box::new(Expr::Literal(acc)),
-                op: token,
-                right: Box::new(Expr::Literal(rhs.clone())),
-            })])?;
+            acc =
+                self.eval_block_value(&[Stmt::Expr(Self::build_infix_expr(op, acc, rhs.clone()))])?;
         }
         Ok(acc)
+    }
+
+    fn build_infix_expr(op: &str, left: Value, right: Value) -> Expr {
+        if let Some(inner) = op.strip_prefix("![")
+            && let Some(inner) = inner.strip_suffix(']')
+        {
+            return Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(Self::build_infix_expr(inner, left, right)),
+            };
+        }
+        if let Some(inner) = op.strip_prefix('!')
+            && !inner.is_empty()
+        {
+            return Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(Self::build_infix_expr(inner, left, right)),
+            };
+        }
+        Expr::Binary {
+            left: Box::new(Expr::Literal(left)),
+            op: Self::infix_token(op),
+            right: Box::new(Expr::Literal(right)),
+        }
+    }
+
+    fn infix_token(op: &str) -> TokenKind {
+        match op {
+            "+" => TokenKind::Plus,
+            "-" => TokenKind::Minus,
+            "*" | "×" => TokenKind::Star,
+            "/" | "÷" => TokenKind::Slash,
+            "**" => TokenKind::StarStar,
+            "%" => TokenKind::Percent,
+            "%%" => TokenKind::PercentPercent,
+            "==" => TokenKind::EqEq,
+            "=" => TokenKind::EqEq,
+            "!=" => TokenKind::BangEq,
+            "===" | "=:=" => TokenKind::EqEqEq,
+            "~" => TokenKind::Tilde,
+            "+&" => TokenKind::BitAnd,
+            "+|" => TokenKind::BitOr,
+            "+^" => TokenKind::BitXor,
+            "(|)" | "∪" => TokenKind::SetUnion,
+            "(&)" | "∩" => TokenKind::SetIntersect,
+            "(^)" | "⊖" => TokenKind::SetSymDiff,
+            "(elem)" | "∈" => TokenKind::SetElem,
+            "(cont)" | "∋" => TokenKind::SetCont,
+            _ => TokenKind::Ident(op.to_string()),
+        }
     }
 
     fn builtin_die(&self, args: &[Value]) -> Result<Value, RuntimeError> {
