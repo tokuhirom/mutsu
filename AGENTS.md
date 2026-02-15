@@ -1,112 +1,134 @@
-# AGENTS
+# CLAUDE.md
 
-This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpreter.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpreter called **mutsu**.
+
+## Build & run
+
+- Build: `cargo build`
+- Run: `cargo run -- <file.p6>` or `./target/debug/mutsu <file>`
+- Run inline code: `cargo run -- -e 'say 42'`
+- Test (cargo + prove): `make test`
+- Run a single prove test: `cargo build && prove -e 'target/debug/mutsu' t/<file>.t`
+- Roast (official spec tests): `make roast`
+- Run a single roast test: `cargo build && prove -e 'target/debug/mutsu' roast/<path>.t`
+- Pre-commit hooks (lefthook): `cargo clippy -- -D warnings` and `cargo fmt` run automatically on commit.
+- Temporary test scripts: write to `tmp/` (gitignored) using the Write tool (not cat/heredoc). Build first, then run with `./target/debug/mutsu ./tmp/<file>`.
+
+## Architecture
+
+### Execution pipeline
+
+Source → **Lexer** (`lexer.rs`) → **Parser** (`parser.rs`) → **Compiler** (`compiler.rs`) → **VM** (`vm.rs`) → Output
+
+This is a **hybrid** architecture: the bytecode VM handles primitive operations (arithmetic, comparisons, loops, jumps) natively, but delegates complex operations (user-defined function calls, method dispatch, regex, class instantiation) back to the tree-walking `Interpreter` (`runtime/`). The VM holds an embedded `Interpreter` and calls into it for anything beyond simple bytecode.
+
+### Core data types
+
+- **Value** (`value.rs`): Single enum with ~25 variants covering all Raku runtime types (Int, Num, Str, Bool, Rat, Complex, Array, Hash, Set, Bag, Mix, Pair, Range variants, Sub, Instance, Junction, etc.)
+- **AST** (`ast.rs`): `Expr` (~50 variants) and `Stmt` (~30 variants)
+- **OpCode** (`opcode.rs`): ~100 bytecode instructions, including compound loop ops
+
+### Method dispatch (two-tier)
+
+1. **Fast path** — `builtins/methods_0arg/`, `builtins/methods_narg.rs`: Pure Rust native methods dispatched by arity. No AST execution needed.
+2. **Slow path** — `runtime/methods.rs`: Falls through from builtins for methods needing `&mut self` (say, match, map, sort with comparator, grep, new), enum dispatch, instance dispatch, and user-defined class methods.
+
+Flow: `call_method_with_values()` tries `native_method_*arg()` first; if `None`, falls through to runtime handlers.
+
+### Key modules
+
+- `runtime/` (~35 submodules): Main interpreter engine — function dispatch (`calls.rs`, `dispatch.rs`), method dispatch (`methods.rs`, `methods_mut.rs`), built-in functions (`builtins_*.rs`), class system (`class.rs`), regex engine (`regex.rs`, `regex_parse.rs`), TAP test functions (`test_functions.rs`)
+- `builtins/`: Pure value operations — arithmetic (`arith.rs`), native functions (`functions.rs`), native methods (`methods_0arg/`, `methods_narg.rs`), RNG (`rng.rs`), unicode (`unicode.rs`)
+- `vm/`: Bytecode VM — call ops (`vm_call_ops.rs`), control flow (`vm_control_ops.rs`), data ops (`vm_data_ops.rs`), variable ops (`vm_var_ops.rs`)
+
+### Test infrastructure
+
+- `t/*.t`: Local tests in Raku syntax, run via prove
+- `roast/`: Official Raku spec test suite (read-only git submodule)
+- `roast-whitelist.txt`: Tests that pass completely; `make roast` runs only these
+- `TODO_roast.md`: Per-file pass/fail tracking with failure notes
+- TAP protocol implemented in `runtime/test_functions.rs`
 
 ## Working agreements
-- Keep changes small and well-documented
+
 - Perl 6 (Raku) regex is not compatible with Perl 5 regex; never assume Perl 5 compatibility.
 - Prefer ASCII in source files unless a specific Unicode feature is required.
 - Do not rewrite or reformat unrelated code.
 - Do not use stubs, hardcoded outputs, or early returns to make tests pass.
 - Commit directly to the main branch. Do not use feature branches.
 - Push to remote after completing work.
-- Write all documents (CLAUDE.md, TODO.md, etc.), code comments, and commit messages in English.
-
-## Layout
-- `src/` holds the interpreter implementation.
-- `bin/` holds the CLI entrypoint (if needed).
-- `tests/` holds local Rust tests (unit/integration).
-
-## Build & run
-- Build: `cargo build`
-- Run: `cargo run -- <file.p6>`
-- Test: `cargo test`
-- Full test (cargo + prove): `make test`
-- Temporary test scripts: write to `tmp/` in the project root using the Write tool (not cat/heredoc). The `tmp/` directory is gitignored.
+- Write all documents, code comments, and commit messages in English.
 - Do not use `echo`, `cat`, `printf`, or heredoc via Bash to create files. Always use the Write tool.
-- When verifying behavior manually, build first with `cargo build`, then run with `./target/debug/mutsu ./tmp/<file>`.
 
 ## Reference implementation
-- The reference Raku implementation is available as `raku` on this system.
-- Use `raku -e '<code>'` to check expected behavior when the spec is unclear.
 
-## Spec sources
-- Design docs live at `./old-design-docs/`.
-- The official Raku test suite (roast) is available at `./roast/` as a git submodule.
+- `raku` is available on this system. Use `raku -e '<code>'` to check expected behavior when the spec is unclear.
+- Design docs: `./old-design-docs/`
 
 ## Roast (official Raku test suite)
-- The ultimate goal is to pass ALL roast tests. The order in which tests are fixed does not matter — pick any failing test and work on it.
-- `roast/` contains the upstream Raku spec tests. It is read-only; never modify files under `roast/`.
-- `TODO_roast.md` tracks per-file pass/fail status. Mark a test `[x]` only when **all** of its subtests pass.
+
+- The ultimate goal is to pass ALL roast tests. Pick any failing test and work on it.
+- `roast/` is read-only; never modify files under `roast/`.
+- `TODO_roast.md` tracks per-file pass/fail status. Mark a test `[x]` only when **all** subtests pass.
 - When a test file has known partial failures, add indented notes under its entry describing the blockers.
-- `roast-whitelist.txt` lists tests that pass completely. `make roast` runs only these via prove.
-- After fixing a bug or adding a feature, check whether any roast tests now pass and update the whitelist and TODO accordingly.
-- Do not add a roast test to the whitelist unless `prove -e 'cargo run --' <file>` exits cleanly (all subtests pass).
-- Roast tests may use constructs the interpreter does not yet support. Prefer fixing the interpreter over skipping tests.
-- Never add special-case logic, hardcoded results, or test-specific hacks just to pass a roast test. Every fix must be a genuine, general-purpose improvement to the interpreter.
-- When the expected behavior of a roast test is unclear, consult `./old-design-docs/` for the original Raku language specification before implementing.
-- When investigating a roast test and deciding to defer it, always record the reason for failure in `TODO_roast.md` under the corresponding entry. Even if a test is not fixed now, the diagnosis is valuable for future work.
-- Roast is the authoritative spec. If passing a roast test requires changing a local test under `t/`, update the local test to match roast's expected behavior.
-- When `make roast` shows failures in whitelisted tests, do NOT dismiss them as "pre-existing". Investigate each failure, fix what can be fixed, and remove from the whitelist only tests that truly cannot pass yet (with documented reasons in TODO_roast.md).
-- When a roast test requires solving multiple unrelated prerequisite problems that go beyond the test's main topic, fix what you can, update `TODO_roast.md` with the diagnosis, and move on to the next test. Do not get stuck on a single test.
+- Do not add a roast test to the whitelist unless `prove -e 'cargo run --' <file>` exits cleanly.
+- Never add special-case logic, hardcoded results, or test-specific hacks just to pass a roast test. Every fix must be a genuine, general-purpose improvement.
+- When the expected behavior is unclear, consult `./old-design-docs/` for the original Raku language specification.
+- When investigating a roast test and deciding to defer it, always record the reason for failure in `TODO_roast.md`.
+- Roast is the authoritative spec. If passing a roast test requires changing a local test under `t/`, update the local test.
+- When `make roast` shows failures in whitelisted tests, investigate each failure — do NOT dismiss them as "pre-existing".
+- When a roast test requires solving multiple unrelated prerequisites, fix what you can, update `TODO_roast.md`, and move on.
 
 ## Roast test prioritization
+
 - Run `./scripts/roast-history.sh` to generate per-file category lists under `tmp/`:
-  - `tmp/roast-panic.txt` — tests that cause a Rust panic (interpreter crash)
-  - `tmp/roast-timeout.txt` — tests that exceed the timeout limit
-  - `tmp/roast-error.txt` — tests that produce no valid TAP plan (parse/runtime error before TAP output)
-  - `tmp/roast-fail.txt` — tests with some subtests failing
-  - `tmp/roast-pass.txt` — tests that pass completely
-- When choosing which roast tests to work on, follow this priority order:
-  1. **Panic** (highest priority): These indicate interpreter bugs that crash the process. Fix these first.
-  2. **Timeout**: These may indicate infinite loops or severe performance issues. Fix these second.
-  3. **Error / Fail** (remaining): Pick from these in any order. Prefer tests that seem close to passing (few failing subtests) or that exercise widely-used features.
-- The category files are regenerated each time the script runs, so always use the latest output.
+  - `tmp/roast-panic.txt` — Rust panics (highest priority)
+  - `tmp/roast-timeout.txt` — timeouts
+  - `tmp/roast-error.txt` — no valid TAP plan
+  - `tmp/roast-fail.txt` — some subtests failing
+  - `tmp/roast-pass.txt` — fully passing
+- Priority order: panic → timeout → error/fail. Prefer tests close to passing.
 
 ## Checking `make roast` results
-- To find failing tests in `make roast` output:
-  ```
-  make roast 2>&1 | grep -E "(FAILED|Failed)" | head -20
-  ```
-- To see detailed failure info:
-  ```
-  make roast 2>&1 | grep -E "(not ok|FAILED|Failed|Wstat)" | head -20
-  ```
+
+```
+make roast 2>&1 | grep -E "(FAILED|Failed)" | head -20
+make roast 2>&1 | grep -E "(not ok|FAILED|Failed|Wstat)" | head -20
+```
 
 ## Parallel agents with git worktrees
-- When running multiple sub-agents in parallel that modify source code, each agent MUST work in its own git worktree to avoid file conflicts.
+
+- Each sub-agent MUST work in its own git worktree to avoid file conflicts.
 - Create worktrees under `.git/worktrees-work/` (not `/tmp`):
   ```
   git worktree add .git/worktrees-work/<name> -b worktree/<name> HEAD
   ```
-- Each sub-agent works, builds, and tests entirely within its own worktree directory. It does NOT commit or push.
-- When a sub-agent finishes, the parent agent integrates its changes immediately (don't wait for all agents). After integrating, launch a new agent for the next task to keep the pipeline full.
+- Sub-agents work, build, and test within their worktree. They do NOT commit or push.
+- Integrate immediately when a sub-agent finishes; launch a new agent to keep the pipeline full.
 - To integrate: export diff from worktree, apply to main repo, fix clippy/fmt, run `make roast`, commit and push.
-- After integration, clean up the finished worktree:
+- Clean up after integration:
   ```
   git worktree remove .git/worktrees-work/<name>
   git branch -d worktree/<name>
   ```
-
-## Process optimization
-- After integrating a sub-agent's work, review its processing log for optimization opportunities (e.g., repeated failures, unnecessary steps, patterns that could be avoided). Apply improvements to CLAUDE.md or agent prompts.
-- Always ensure cwd is the main repo (`/home/tokuhirom/work/mutsu`) before running `make roast`, `git commit`, or `git push`. Worktree cwd can leak between commands.
-- When applying patches from worktrees, prefer manual edits over `git apply` since the worktree base commit differs from main HEAD after incremental integration.
+- Always ensure cwd is the main repo before running `make roast`, `git commit`, or `git push`.
+- Prefer manual edits over `git apply` since the worktree base commit differs from main HEAD after incremental integration.
 
 ## Debugging guidelines
-- Do NOT use printf debugging (adding eprintln! → build → check → repeat). Rust builds are slow and this wastes time.
-- Instead, use these approaches in order of preference:
-  1. **AST dump**: Run with `./target/debug/mutsu --dump-ast <file>` (or `--dump-ast -e '<code>'`) to see the parsed AST without executing. Useful for verifying that the parser produces the expected tree structure.
-  2. **Trace logs**: Run with `MUTSU_TRACE=1 ./target/debug/mutsu <file>` to see execution flow. Use `MUTSU_TRACE=eval` or `MUTSU_TRACE=parse,vm` to filter by phase.
-  3. **Focused unit tests**: Write a small `#[test]` in the relevant module to isolate the problem. `cargo test <name>` is fast with incremental compilation.
-  4. **Read the code**: Trace the logic by reading, not by running. Many bugs are visible from careful code review.
-  5. **Debugger**: Use `rust-gdb ./target/debug/mutsu` with breakpoints for complex state inspection.
-- If you must add temporary debug prints, add ALL of them in one pass before building — never do build-run cycles for individual print statements.
-- Always remove debug prints before committing.
+
+- Do NOT use printf debugging (eprintln! → build → check → repeat). Rust builds are slow.
+- Preferred approaches in order:
+  1. **AST dump**: `./target/debug/mutsu --dump-ast <file>` or `--dump-ast -e '<code>'`
+  2. **Trace logs**: `MUTSU_TRACE=1 ./target/debug/mutsu <file>` (filter: `MUTSU_TRACE=eval` or `MUTSU_TRACE=parse,vm`)
+  3. **Focused unit tests**: `#[test]` in the relevant module, run with `cargo test <name>`
+  4. **Read the code**: Trace logic by reading, not running
+  5. **Debugger**: `rust-gdb ./target/debug/mutsu`
+- If you must add debug prints, add ALL of them in one pass. Always remove before committing.
 
 ## Conventions
-- Keep each Rust source file under 500 lines. If a file grows beyond this limit, split it into smaller modules.
-- Add small, focused tests for each new syntax feature.
-- Keep the parser and evaluator readable; comment only non-obvious logic.
-- Write tests using prove. Do not use Rust integration tests in `tests/*.rs` for new coverage.
-- Every feature addition must include tests. A feature without tests is considered incomplete.
+
+- Keep each Rust source file under 500 lines. Split into smaller modules if exceeded.
+- Write tests using prove (`t/*.t`). Do not use Rust integration tests in `tests/*.rs` for new coverage.
+- Every feature addition must include tests.
