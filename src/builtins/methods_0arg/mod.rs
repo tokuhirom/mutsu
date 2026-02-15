@@ -40,6 +40,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "Str" => match target {
             Value::Package(_) | Value::Instance { .. } => None,
             Value::Str(s) if s == "IO::Special" => Some(Ok(Value::Str(String::new()))),
+            Value::Array(items) if items.iter().all(|v| matches!(v, Value::Int(_))) => {
+                // Uni-like array: convert codepoints to string
+                let s: String = items
+                    .iter()
+                    .filter_map(|v| match v {
+                        Value::Int(cp) => char::from_u32(*cp as u32),
+                        _ => None,
+                    })
+                    .collect();
+                Some(Ok(Value::Str(s)))
+            }
             _ => Some(Ok(Value::Str(target.to_string_value()))),
         },
         "Int" => {
@@ -416,6 +427,33 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             _ => Some(Ok(make_rat(0, 1))),
         },
         "sink" => Some(Ok(Value::Nil)),
+        "NFC" | "NFD" | "NFKC" | "NFKD" => {
+            use unicode_normalization::UnicodeNormalization;
+            let s = uni_or_str(target);
+            let normalized: String = match method {
+                "NFC" => s.nfc().collect(),
+                "NFD" => s.nfd().collect(),
+                "NFKC" => s.nfkc().collect(),
+                _ => s.nfkd().collect(),
+            };
+            let codepoints: Vec<Value> = normalized.chars().map(|c| Value::Int(c as i64)).collect();
+            Some(Ok(Value::Array(codepoints)))
+        }
         _ => None,
+    }
+}
+
+/// Convert a Value to a string for Unicode normalization.
+/// If the value is an Array of Int (Uni-like), convert codepoints to a string.
+fn uni_or_str(target: &Value) -> String {
+    match target {
+        Value::Array(items) if items.iter().all(|v| matches!(v, Value::Int(_))) => items
+            .iter()
+            .filter_map(|v| match v {
+                Value::Int(cp) => char::from_u32(*cp as u32),
+                _ => None,
+            })
+            .collect(),
+        _ => target.to_string_value(),
     }
 }

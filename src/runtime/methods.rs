@@ -272,6 +272,20 @@ impl Interpreter {
                     }
                     return Ok(Value::Hash(map));
                 }
+                "Uni" => {
+                    // Uni.new(codepoint, ...) → array of Int codepoints
+                    let codepoints: Vec<Value> = args
+                        .iter()
+                        .map(|a| match a {
+                            Value::Int(i) => Value::Int(*i),
+                            Value::Num(f) => Value::Int(*f as i64),
+                            other => {
+                                Value::Int(other.to_string_value().parse::<i64>().unwrap_or(0))
+                            }
+                        })
+                        .collect();
+                    return Ok(Value::Array(codepoints));
+                }
                 "Version" => {
                     let arg = args.first().cloned().unwrap_or(Value::Nil);
                     return Ok(Self::version_from_value(arg));
