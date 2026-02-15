@@ -356,8 +356,9 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
                 self.code.emit(OpCode::ExecCall { name_idx, arity });
             }
-            Stmt::Call { args, .. } => {
-                for arg in args {
+            Stmt::Call { name, args } => {
+                let rewritten_args = Self::rewrite_stmt_call_args(name, args);
+                for arg in &rewritten_args {
                     match arg {
                         CallArg::Positional(expr) if !Self::needs_raw_expr(expr) => {
                             self.compile_expr(expr)
@@ -370,7 +371,10 @@ impl Compiler {
                         CallArg::Named { value: None, .. } => {}
                     }
                 }
-                let idx = self.code.add_stmt(stmt.clone());
+                let idx = self.code.add_stmt(Stmt::Call {
+                    name: name.clone(),
+                    args: rewritten_args,
+                });
                 self.code.emit(OpCode::ExecCallMixed(idx));
             }
             // Loop control
@@ -1355,6 +1359,35 @@ impl Compiler {
                 .any(|(_, v)| v.as_ref().is_some_and(Self::needs_raw_expr)),
             _ => false,
         }
+    }
+
+    fn rewrite_stmt_call_args(name: &str, args: &[CallArg]) -> Vec<CallArg> {
+        let needs_code_block_as_value = matches!(name, "lives-ok" | "dies-ok" | "throws-like");
+        if !needs_code_block_as_value {
+            return args.to_vec();
+        }
+        let mut positional_index = 0usize;
+        args.iter()
+            .map(|arg| match arg {
+                CallArg::Positional(expr) => {
+                    let rewritten = if positional_index == 0 {
+                        if let Expr::Block(body) = expr {
+                            Expr::AnonSub(body.clone())
+                        } else {
+                            expr.clone()
+                        }
+                    } else {
+                        expr.clone()
+                    };
+                    positional_index += 1;
+                    CallArg::Positional(rewritten)
+                }
+                CallArg::Named { name, value } => CallArg::Named {
+                    name: name.clone(),
+                    value: value.clone(),
+                },
+            })
+            .collect()
     }
 
     fn has_phasers(stmts: &[Stmt]) -> bool {
