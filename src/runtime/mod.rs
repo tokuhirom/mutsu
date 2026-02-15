@@ -22,6 +22,11 @@ use num_traits::Signed;
 
 mod accessors;
 mod builtins;
+mod builtins_coerce;
+mod builtins_collection;
+mod builtins_io;
+mod builtins_string;
+mod builtins_system;
 mod call_helpers;
 mod calls;
 mod class;
