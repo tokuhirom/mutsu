@@ -127,6 +127,7 @@ impl Interpreter {
             parents: parents.to_vec(),
             attributes: Vec::new(),
             methods: HashMap::new(),
+            native_methods: HashSet::new(),
             mro: Vec::new(),
         };
         for stmt in body {

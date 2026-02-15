@@ -36,6 +36,8 @@ mod helpers;
 mod io;
 mod methods;
 mod methods_mut;
+mod native_io;
+mod native_methods;
 mod ops;
 mod regex;
 mod regex_parse;
@@ -60,6 +62,7 @@ struct ClassDef {
     parents: Vec<String>,
     attributes: Vec<(String, bool, Option<Expr>)>, // (name, is_public, default)
     methods: HashMap<String, Vec<MethodDef>>,      // name -> overloads
+    native_methods: HashSet<String>,
     mro: Vec<String>,
 }
 
@@ -219,6 +222,10 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
+                native_methods: ["keep", "result", "status", "then"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
                 mro: vec!["Promise".to_string()],
             },
         );
@@ -228,6 +235,10 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
+                native_methods: ["send", "receive", "close", "closed"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
                 mro: vec!["Channel".to_string()],
             },
         );
@@ -237,6 +248,7 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
+                native_methods: ["emit", "tap"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["Supply".to_string()],
             },
         );
@@ -246,7 +258,116 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
+                native_methods: ["start", "command", "started", "stdout", "stderr"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
                 mro: vec!["Proc::Async".to_string()],
+            },
+        );
+        classes.insert(
+            "IO::Path".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: [
+                    "Str",
+                    "gist",
+                    "IO",
+                    "basename",
+                    "parent",
+                    "child",
+                    "add",
+                    "extension",
+                    "absolute",
+                    "relative",
+                    "resolve",
+                    "volume",
+                    "is-absolute",
+                    "is-relative",
+                    "e",
+                    "f",
+                    "d",
+                    "l",
+                    "r",
+                    "w",
+                    "x",
+                    "s",
+                    "z",
+                    "modified",
+                    "accessed",
+                    "changed",
+                    "lines",
+                    "words",
+                    "slurp",
+                    "open",
+                    "copy",
+                    "rename",
+                    "move",
+                    "chmod",
+                    "mkdir",
+                    "rmdir",
+                    "dir",
+                    "spurt",
+                    "unlink",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                mro: vec!["IO::Path".to_string()],
+            },
+        );
+        classes.insert(
+            "IO::Handle".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: [
+                    "close", "get", "getc", "lines", "words", "read", "write", "print", "say",
+                    "flush", "seek", "tell", "eof", "encoding", "opened", "slurp",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                mro: vec!["IO::Handle".to_string()],
+            },
+        );
+        classes.insert(
+            "Distro".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: [
+                    "name",
+                    "auth",
+                    "desc",
+                    "release",
+                    "path-sep",
+                    "is-win",
+                    "version",
+                    "signature",
+                    "gist",
+                    "Str",
+                    "raku",
+                    "perl",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                mro: vec!["Distro".to_string()],
+            },
+        );
+        classes.insert(
+            "Perl".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["DISTROnames"].iter().map(|s| s.to_string()).collect(),
+                mro: vec!["Perl".to_string()],
             },
         );
         let mut interpreter = Self {

@@ -76,6 +76,31 @@ impl Interpreter {
         let mro = self.class_mro(class_name);
         for cn in mro {
             if let Some(class_def) = self.classes.get(&cn)
+                && (class_def.methods.contains_key(method_name)
+                    || class_def.native_methods.contains(method_name))
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub(super) fn is_native_method(&mut self, class_name: &str, method_name: &str) -> bool {
+        let mro = self.class_mro(class_name);
+        for cn in mro {
+            if let Some(class_def) = self.classes.get(&cn)
+                && class_def.native_methods.contains(method_name)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub(super) fn has_user_method(&mut self, class_name: &str, method_name: &str) -> bool {
+        let mro = self.class_mro(class_name);
+        for cn in mro {
+            if let Some(class_def) = self.classes.get(&cn)
                 && class_def.methods.contains_key(method_name)
             {
                 return true;

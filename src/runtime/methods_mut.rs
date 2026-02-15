@@ -170,107 +170,32 @@ impl Interpreter {
             ..
         } = target.clone()
         {
-            if class_name == "Promise" && method == "keep" {
-                let value = args.first().cloned().unwrap_or(Value::Nil);
-                let mut attrs = attributes.clone();
-                attrs.insert("result".to_string(), value);
-                attrs.insert("status".to_string(), Value::Str("Kept".to_string()));
-                self.env.insert(
-                    target_var.to_string(),
-                    Value::make_instance(class_name, attrs),
-                );
-                return Ok(Value::Nil);
-            }
-            if class_name == "Channel" {
-                if method == "send" {
-                    let value = args.first().cloned().unwrap_or(Value::Nil);
-                    let mut attrs = attributes.clone();
-                    match attrs.get_mut("queue") {
-                        Some(Value::Array(items)) => items.push(value),
-                        _ => {
-                            attrs.insert("queue".to_string(), Value::Array(vec![value]));
-                        }
+            if self.is_native_method(&class_name, method) {
+                // Try mutable dispatch first; if no mutable handler, fall back to immutable
+                match self.call_native_instance_method_mut(
+                    &class_name,
+                    attributes.clone(),
+                    method,
+                    args.clone(),
+                ) {
+                    Ok((result, updated)) => {
+                        self.env.insert(
+                            target_var.to_string(),
+                            Value::make_instance(class_name, updated),
+                        );
+                        return Ok(result);
                     }
-                    self.env.insert(
-                        target_var.to_string(),
-                        Value::make_instance(class_name, attrs),
-                    );
-                    return Ok(Value::Nil);
-                }
-                if method == "receive" && args.is_empty() {
-                    let mut attrs = attributes.clone();
-                    let mut value = Value::Nil;
-                    if let Some(Value::Array(items)) = attrs.get_mut("queue")
-                        && !items.is_empty()
-                    {
-                        value = items.remove(0);
+                    Err(_) => {
+                        return self.call_native_instance_method(
+                            &class_name,
+                            &attributes,
+                            method,
+                            args,
+                        );
                     }
-                    self.env.insert(
-                        target_var.to_string(),
-                        Value::make_instance(class_name, attrs),
-                    );
-                    return Ok(value);
-                }
-                if method == "close" && args.is_empty() {
-                    let mut attrs = attributes.clone();
-                    attrs.insert("closed".to_string(), Value::Bool(true));
-                    self.env.insert(
-                        target_var.to_string(),
-                        Value::make_instance(class_name, attrs),
-                    );
-                    return Ok(Value::Nil);
                 }
             }
-            if class_name == "Supply" {
-                if method == "emit" {
-                    let value = args.first().cloned().unwrap_or(Value::Nil);
-                    let mut attrs = attributes.clone();
-                    if let Some(Value::Array(items)) = attrs.get_mut("values") {
-                        items.push(value.clone());
-                    } else {
-                        attrs.insert("values".to_string(), Value::Array(vec![value.clone()]));
-                    }
-                    if let Some(Value::Array(taps)) = attrs.get_mut("taps") {
-                        for tap in taps.clone() {
-                            let _ = self.call_sub_value(tap, vec![value.clone()], true);
-                        }
-                    }
-                    self.env.insert(
-                        target_var.to_string(),
-                        Value::make_instance(class_name, attrs),
-                    );
-                    return Ok(Value::Nil);
-                }
-                if method == "tap" {
-                    let tap = args.first().cloned().unwrap_or(Value::Nil);
-                    let mut attrs = attributes.clone();
-                    if let Some(Value::Array(items)) = attrs.get_mut("taps") {
-                        items.push(tap.clone());
-                    } else {
-                        attrs.insert("taps".to_string(), Value::Array(vec![tap.clone()]));
-                    }
-                    if let Some(Value::Array(values)) = attrs.get("values") {
-                        for v in values {
-                            let _ = self.call_sub_value(tap.clone(), vec![v.clone()], true);
-                        }
-                    }
-                    self.env.insert(
-                        target_var.to_string(),
-                        Value::make_instance(class_name, attrs),
-                    );
-                    return Ok(Value::Nil);
-                }
-            }
-            if class_name == "Proc::Async" && method == "start" && args.is_empty() {
-                let mut attrs = attributes.clone();
-                attrs.insert("started".to_string(), Value::Bool(true));
-                self.env.insert(
-                    target_var.to_string(),
-                    Value::make_instance(class_name, attrs),
-                );
-                return Ok(self.make_promise_instance("Kept", Value::Int(0)));
-            }
-            if self.class_has_method(&class_name, method) {
+            if self.has_user_method(&class_name, method) {
                 let (result, updated) =
                     self.run_instance_method(&class_name, attributes, method, args)?;
                 self.env.insert(
