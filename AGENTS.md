@@ -130,11 +130,12 @@ make roast 2>&1 | grep -E "(not ok|FAILED|Failed|Wstat)" | head -20
 
 - Do NOT use printf debugging (eprintln! → build → check → repeat). Rust builds are slow.
 - Preferred approaches in order:
-  1. **AST dump**: `./target/debug/mutsu --dump-ast <file>` or `--dump-ast -e '<code>'`
-  2. **Trace logs**: `MUTSU_TRACE=1 ./target/debug/mutsu <file>` (filter: `MUTSU_TRACE=eval` or `MUTSU_TRACE=parse,vm`)
-  3. **Focused unit tests**: `#[test]` in the relevant module, run with `cargo test <name>`
-  4. **Read the code**: Trace logic by reading, not running
-  5. **Debugger**: `rust-gdb ./target/debug/mutsu`
+  1. **Token dump**: `./target/debug/mutsu --dump-tokens <file>` or `--dump-tokens -e '<code>'`
+  2. **AST dump**: `./target/debug/mutsu --dump-ast <file>` or `--dump-ast -e '<code>'`
+  3. **Trace logs**: `MUTSU_TRACE=1 ./target/debug/mutsu <file>` (filter: `MUTSU_TRACE=eval` or `MUTSU_TRACE=parse,vm`)
+  4. **Focused unit tests**: `#[test]` in the relevant module, run with `cargo test <name>`
+  5. **Read the code**: Trace logic by reading, not running
+  6. **Debugger**: `rust-gdb ./target/debug/mutsu`
 - If you must add debug prints, add ALL of them in one pass. Always remove before committing.
 
 ## Conventions

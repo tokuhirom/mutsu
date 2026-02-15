@@ -4,17 +4,24 @@ impl Interpreter {
     pub(super) fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
         let trimmed = code.trim();
         // Handle angle-bracket word lists: <a b c>, ~<a b>, +<a b>, ?<a b>
-        let (prefix, rest) = if let Some(pos) = trimmed.find('<') {
-            (trimmed.chars().next().unwrap_or(' '), &trimmed[pos..])
-        } else {
-            (' ', trimmed)
-        };
-        let start = rest.find('<');
-        let end = rest.rfind('>');
-        if (prefix != ' ' || (start.is_some() && trimmed.starts_with('<')))
-            && let (Some(s), Some(e)) = (start, end)
-        {
-            let inner = &rest[s + 1..e];
+        // Only match when the entire expression is a word list with optional prefix
+        let wl = trimmed
+            .strip_prefix('~')
+            .or_else(|| trimmed.strip_prefix('+'))
+            .or_else(|| trimmed.strip_prefix('?'))
+            .unwrap_or(trimmed)
+            .trim();
+        if wl.starts_with('<') && wl.ends_with('>') && wl.matches('<').count() == 1 {
+            let prefix = if trimmed.starts_with('~') {
+                '~'
+            } else if trimmed.starts_with('+') {
+                '+'
+            } else if trimmed.starts_with('?') {
+                '?'
+            } else {
+                ' '
+            };
+            let inner = &wl[1..wl.len() - 1];
             let words: Vec<&str> = inner.split_whitespace().collect();
             return Ok(match prefix {
                 '~' => Value::Str(words.join(" ")),

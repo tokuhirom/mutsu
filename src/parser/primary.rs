@@ -563,6 +563,13 @@ impl Parser {
                 } else if name == "try" && self.check(&TokenKind::LBrace) {
                     let body = self.parse_block()?;
                     Expr::Try { body, catch: None }
+                } else if name == "try" {
+                    // try EXPR — wrap expression in exception handler
+                    let inner = self.parse_stmt()?;
+                    Expr::Try {
+                        body: vec![inner],
+                        catch: None,
+                    }
                 } else if name == "rand" {
                     Expr::Call {
                         name: "rand".to_string(),

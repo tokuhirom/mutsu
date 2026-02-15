@@ -208,7 +208,7 @@ impl Lexer {
                 break;
             }
             self.pos += 1;
-            if c.is_whitespace() {
+            if c.is_whitespace() && !is_nonbreaking_space(c) {
                 if !current.is_empty() {
                     words.push(std::mem::take(&mut current));
                 }
@@ -227,4 +227,10 @@ impl Lexer {
         }
         TokenKind::QWords(words)
     }
+}
+
+/// Returns true for non-breaking Unicode whitespace characters.
+/// These should NOT be treated as word separators in `< >` lists.
+fn is_nonbreaking_space(c: char) -> bool {
+    matches!(c, '\u{00A0}' | '\u{2007}' | '\u{202F}' | '\u{FEFF}')
 }
