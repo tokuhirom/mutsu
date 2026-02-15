@@ -1,6 +1,6 @@
 pre-commit:
   commands:
     fmt:
-      run: cargo fmt -- --check
+      run: cargo fmt && git add -u
     clippy:
       run: cargo clippy -- -D warnings
