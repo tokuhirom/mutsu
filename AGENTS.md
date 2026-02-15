@@ -61,6 +61,8 @@ Flow: `call_method_with_values()` tries `native_method_*arg()` first; if `None`,
 - Push to remote after completing work.
 - Write all documents, code comments, and commit messages in English.
 - Do not use `echo`, `cat`, `printf`, or heredoc via Bash to create files. Always use the Write tool.
+- Do not use `cat`, `head`, `tail`, or `sed` via Bash to read files. Always use the Read tool.
+- Do not use `grep`, `rg`, or `find` via Bash to search files. Always use the Grep and Glob tools.
 
 ## Reference implementation
 
