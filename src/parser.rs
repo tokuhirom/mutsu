@@ -5375,11 +5375,24 @@ impl Parser {
                     if matches!(
                         self.tokens.get(next).map(|t| &t.kind),
                         Some(TokenKind::Colon)
-                    ) && matches!(
-                        self.tokens.get(next + 1).map(|t| &t.kind),
-                        Some(TokenKind::Ident(_))
                     ) {
-                        next += 2;
+                        if matches!(
+                            self.tokens.get(next + 1).map(|t| &t.kind),
+                            Some(TokenKind::Ident(_))
+                        ) {
+                            next += 2;
+                        } else if matches!(
+                            self.tokens.get(next + 1).map(|t| &t.kind),
+                            Some(
+                                TokenKind::Var(_)
+                                    | TokenKind::CaptureVar(_)
+                                    | TokenKind::ArrayVar(_)
+                                    | TokenKind::HashVar(_)
+                            )
+                        ) {
+                            is_named = true;
+                            next += 1;
+                        }
                     }
                     if matches!(
                         self.tokens.get(next).map(|t| &t.kind),
@@ -5507,6 +5520,19 @@ impl Parser {
                 }
                 if !param_added {
                     break;
+                }
+                while self.match_ident("is") {
+                    let _ = self.consume_ident();
+                    while self.match_kind(TokenKind::Minus) {
+                        let _ = self.consume_ident();
+                    }
+                    if self.match_kind(TokenKind::LParen) {
+                        self.skip_balanced_parens();
+                    } else if self.check(&TokenKind::Colon) {
+                        let _ = self.try_parse_angled_op_name();
+                    } else if self.match_kind(TokenKind::Lt) {
+                        self.skip_balanced_angles();
+                    }
                 }
                 if !self.match_kind(TokenKind::Comma) {
                     break;

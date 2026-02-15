@@ -714,8 +714,8 @@
 - [ ] roast/S06-signature/multi-invocant.t
 - [ ] roast/S06-signature/multiple-signatures.t
 - [ ] roast/S06-signature/named-parameters.t
-  - Panic is gone (was VM `CallMethod` stack unwrap), but this file still exits early with `VM stack underflow in CallMethod`.
-  - Current blocker is named-argument lowering/stack layout for method calls (colonpairs / fat-arrow named args).
+  - Panic and early `try` stack-underflow are fixed; this file now reaches 72/104 before stopping.
+  - Current hard blocker is named-parameter renaming syntax (e.g. `:y($x)`): sub declaration for `renames` is still not registered (`Unknown function ...: renames`).
   - 7/104 pass (1, 10, 14, 25, 27-28, 40). Named parameter passing mostly broken: colonpair `:$x` syntax (4-8), `=> value` fat-arrow (3, 9, 12-13, 17-24), named array params (29-31), mixed named/positional (32-39, 41-44), mandatory named (45+). Difficulty: High (fundamental named-param dispatch needs work)
 - [ ] roast/S06-signature/named-placeholders.t
 - [ ] roast/S06-signature/named-renaming.t
