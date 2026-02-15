@@ -2240,66 +2240,10 @@ impl Parser {
                 Some(TokenKind::SetDiff)
             } else if self.match_kind(TokenKind::SetSymDiff) {
                 Some(TokenKind::SetSymDiff)
-            } else if self.match_ident("before") {
-                Some(TokenKind::Ident("before".to_string()))
-            } else if self.match_ident("after") {
-                Some(TokenKind::Ident("after".to_string()))
             } else if self.match_ident("but") {
                 Some(TokenKind::Ident("but".to_string()))
             } else {
                 None
-            };
-            // Check for negation meta-operator: ! followed by comparison op
-            let (op, negate) = if op.is_some() {
-                (op, false)
-            } else if self.check(&TokenKind::Bang) {
-                let saved = self.pos;
-                self.pos += 1; // consume !
-                // Doubled prefix !! is illegal
-                if self.check(&TokenKind::Bang) {
-                    return Err(RuntimeError::new(
-                        "X::Syntax::Confused: Confused".to_string(),
-                    ));
-                }
-                let negated_op = if self.match_kind(TokenKind::Lt) {
-                    Some(TokenKind::Lt)
-                } else if self.match_kind(TokenKind::Lte) {
-                    Some(TokenKind::Lte)
-                } else if self.match_kind(TokenKind::Gt) {
-                    Some(TokenKind::Gt)
-                } else if self.match_kind(TokenKind::Gte) {
-                    Some(TokenKind::Gte)
-                } else if self.match_kind(TokenKind::EqEq) {
-                    Some(TokenKind::EqEq)
-                } else if self.match_kind(TokenKind::EqEqEq) {
-                    Some(TokenKind::EqEqEq)
-                } else if self.match_ident("lt") {
-                    Some(TokenKind::Ident("lt".to_string()))
-                } else if self.match_ident("le") {
-                    Some(TokenKind::Ident("le".to_string()))
-                } else if self.match_ident("gt") {
-                    Some(TokenKind::Ident("gt".to_string()))
-                } else if self.match_ident("ge") {
-                    Some(TokenKind::Ident("ge".to_string()))
-                } else if self.match_ident("eq") {
-                    Some(TokenKind::Ident("eq".to_string()))
-                } else if self.match_ident("eqv") {
-                    Some(TokenKind::Ident("eqv".to_string()))
-                } else if self.match_ident("before") {
-                    Some(TokenKind::Ident("before".to_string()))
-                } else if self.match_ident("after") {
-                    Some(TokenKind::Ident("after".to_string()))
-                } else {
-                    self.pos = saved; // backtrack
-                    None
-                };
-                if let Some(inner) = negated_op {
-                    (Some(inner), true)
-                } else {
-                    (None, false)
-                }
-            } else {
-                (None, false)
             };
             if let Some(op) = op {
                 let right = self.parse_meta_op()?;
@@ -2322,12 +2266,6 @@ impl Parser {
                         left: Box::new(expr),
                         op: op.clone(),
                         right: Box::new(right.clone()),
-                    };
-                }
-                if negate {
-                    expr = Expr::Unary {
-                        op: TokenKind::Bang,
-                        expr: Box::new(expr),
                     };
                 }
                 if is_chainable {
@@ -2356,7 +2294,7 @@ impl Parser {
             | TokenKind::EqEqEq => true,
             TokenKind::Ident(name) => matches!(
                 name.as_str(),
-                "eqv" | "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "before" | "after"
+                "eqv" | "eq" | "ne" | "lt" | "le" | "gt" | "ge"
             ),
             _ => false,
         }

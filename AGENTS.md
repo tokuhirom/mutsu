@@ -67,6 +67,7 @@ Flow: `call_method_with_values()` tries `native_method_*arg()` first; if `None`,
 - `raku` is available on this system. Use `raku -e '<code>'` to check expected behavior when the spec is unclear.
 - When investigating a roast test, always run it with `raku` first to see the expected output before comparing with mutsu.
 - Design docs: `./old-design-docs/`
+- Raku language documentation: `./raku-doc/` — consult these docs when the language spec or behavior is unclear.
 
 ## Roast (official Raku test suite)
 
