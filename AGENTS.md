@@ -48,7 +48,7 @@ Flow: `call_method_with_values()` tries `native_method_*arg()` first; if `None`,
 - `t/*.t`: Local tests in Raku syntax, run via prove
 - `roast/`: Official Raku spec test suite (read-only git submodule)
 - `roast-whitelist.txt`: Tests that pass completely; `make roast` runs only these
-- `TODO_roast.md`: Per-file pass/fail tracking with failure notes
+- `TODO_roast/`: Per-file pass/fail tracking (split by synopsis number, e.g. `TODO_roast/S02.md`)
 - TAP protocol implemented in `runtime/test_functions.rs`
 
 ## Working agreements
@@ -71,15 +71,15 @@ Flow: `call_method_with_values()` tries `native_method_*arg()` first; if `None`,
 
 - The ultimate goal is to pass ALL roast tests. Pick any failing test and work on it.
 - `roast/` is read-only; never modify files under `roast/`.
-- `TODO_roast.md` tracks per-file pass/fail status. Mark a test `[x]` only when **all** subtests pass.
+- `TODO_roast/` tracks per-file pass/fail status (split by synopsis number). Mark a test `[x]` only when **all** subtests pass.
 - When a test file has known partial failures, add indented notes under its entry describing the blockers.
 - Do not add a roast test to the whitelist unless `prove -e 'cargo run --' <file>` exits cleanly.
 - Never add special-case logic, hardcoded results, or test-specific hacks just to pass a roast test. Every fix must be a genuine, general-purpose improvement.
 - When the expected behavior is unclear, consult `./old-design-docs/` for the original Raku language specification.
-- When investigating a roast test and deciding to defer it, always record the reason for failure in `TODO_roast.md`.
+- When investigating a roast test and deciding to defer it, always record the reason for failure in the relevant file under `TODO_roast/`.
 - Roast is the authoritative spec. If passing a roast test requires changing a local test under `t/`, update the local test.
 - When `make roast` shows failures in whitelisted tests, investigate each failure — do NOT dismiss them as "pre-existing".
-- When a roast test requires solving multiple unrelated prerequisites, fix what you can, update `TODO_roast.md`, and move on.
+- When a roast test requires solving multiple unrelated prerequisites, fix what you can, update the relevant file under `TODO_roast/`, and move on.
 
 ## Roast test prioritization
 
@@ -89,7 +89,8 @@ Flow: `call_method_with_values()` tries `native_method_*arg()` first; if `None`,
   - `tmp/roast-error.txt` — no valid TAP plan
   - `tmp/roast-fail.txt` — some subtests failing
   - `tmp/roast-pass.txt` — fully passing
-- Priority order: panic → timeout → error/fail. Prefer tests close to passing.
+- Priority order: panic → timeout → error/fail.
+- Do NOT cherry-pick "almost passing" tests. Pick tests randomly from the fail/error lists. The goal is broad language coverage, not gaming the pass count.
 
 ## Checking `make roast` results
 
