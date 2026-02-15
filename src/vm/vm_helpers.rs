@@ -98,6 +98,9 @@ impl VM {
                 | "IO"
                 | "Proc"
                 | "Slip"
+                | "Duration"
+                | "Date"
+                | "DateTime"
         )
     }
 

@@ -1870,6 +1870,9 @@ impl VM {
                 } = stmt
                 {
                     self.interpreter.register_class_decl(name, parents, body)?;
+                    self.interpreter
+                        .env_mut()
+                        .insert("_".to_string(), Value::Package(name.clone()));
                     self.sync_locals_from_env(code);
                     *ip += 1;
                 } else {

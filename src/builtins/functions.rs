@@ -22,6 +22,13 @@ pub(crate) fn native_function(name: &str, args: &[Value]) -> Option<Result<Value
 fn native_function_0arg(name: &str) -> Option<Result<Value, RuntimeError>> {
     match name {
         "rand" => Some(Ok(Value::Num(builtin_rand()))),
+        "now" => {
+            let secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0);
+            Some(Ok(Value::Num(secs)))
+        }
         "srand" => {
             builtin_srand_auto();
             Some(Ok(Value::Nil))

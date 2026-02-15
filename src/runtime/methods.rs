@@ -102,6 +102,15 @@ impl Interpreter {
             }
             return Ok(Value::Nil);
         }
+        if method == "IO" && args.is_empty() {
+            return Ok(self.make_io_path_instance(&target.to_string_value()));
+        }
+        if method == "Seq" && args.is_empty() {
+            return Ok(match target {
+                Value::Array(_) | Value::LazyList(_) => target,
+                other => Value::Array(vec![other]),
+            });
+        }
         if (method == "Set" || method == "SetHash") && args.is_empty() {
             let mut elems = HashSet::new();
             match target {
@@ -236,6 +245,48 @@ impl Interpreter {
             let items = Self::value_to_list(&target);
             return self.eval_map_over_items(args.first().cloned(), items);
         }
+        if (method == "minpairs" || method == "maxpairs") && args.is_empty() {
+            if matches!(target, Value::Instance { .. })
+                && let Ok(pairs) = self.call_method_with_values(target.clone(), "pairs", Vec::new())
+            {
+                return Ok(pairs);
+            }
+            let want_max = method == "maxpairs";
+            let to_pairs = |items: &[Value]| -> Value {
+                let mut best: Option<Value> = None;
+                let mut out: Vec<Value> = Vec::new();
+                for (idx, item) in items.iter().enumerate() {
+                    if matches!(item, Value::Nil) {
+                        continue;
+                    }
+                    let ord = if let Some(current) = &best {
+                        match (to_float_value(item), to_float_value(current)) {
+                            (Some(a), Some(b)) => {
+                                a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
+                            }
+                            _ => item.to_string_value().cmp(&current.to_string_value()),
+                        }
+                    } else {
+                        std::cmp::Ordering::Equal
+                    };
+                    let replace = best.is_none()
+                        || (want_max && ord == std::cmp::Ordering::Greater)
+                        || (!want_max && ord == std::cmp::Ordering::Less);
+                    if replace {
+                        best = Some(item.clone());
+                        out.clear();
+                        out.push(Value::Pair(idx.to_string(), Box::new(item.clone())));
+                    } else if ord == std::cmp::Ordering::Equal {
+                        out.push(Value::Pair(idx.to_string(), Box::new(item.clone())));
+                    }
+                }
+                Value::Array(out)
+            };
+            return Ok(match target {
+                Value::Array(items) => to_pairs(&items),
+                other => Value::Array(vec![Value::Pair("0".to_string(), Box::new(other))]),
+            });
+        }
         if method == "sort" {
             return match target {
                 Value::Array(mut items) => {
@@ -344,6 +395,10 @@ impl Interpreter {
                 "Version" => {
                     let arg = args.first().cloned().unwrap_or(Value::Nil);
                     return Ok(Self::version_from_value(arg));
+                }
+                "Duration" => {
+                    let secs = args.first().map(to_float_value).unwrap_or(Some(0.0));
+                    return Ok(Value::Num(secs.unwrap_or(0.0)));
                 }
                 "Promise" => return Ok(self.make_promise_instance("Planned", Value::Nil)),
                 "Channel" => {
@@ -460,6 +515,29 @@ impl Interpreter {
                 return Ok(Value::make_instance(class_name.clone(), attrs));
             }
         }
+        if method == "now"
+            && args.is_empty()
+            && let Value::Package(class_name) = &target
+            && class_name == "DateTime"
+        {
+            let secs = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0);
+            return Ok(Value::Num(secs));
+        }
+        if method == "today"
+            && args.is_empty()
+            && let Value::Package(class_name) = &target
+            && class_name == "Date"
+        {
+            let secs = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let days = secs / 86_400;
+            return Ok(Value::Int(days as i64));
+        }
         if method == "new" {
             return match target {
                 Value::Package(name) => match name.as_str() {
@@ -475,6 +553,7 @@ impl Interpreter {
                 Value::Int(_) => Ok(Value::Int(0)),
                 Value::Num(_) => Ok(Value::Num(0.0)),
                 Value::Bool(_) => Ok(Value::Bool(false)),
+                Value::Nil => Ok(Value::Nil),
                 _ => Err(RuntimeError::new(format!(
                     "Unknown method value dispatch (fallback disabled): {}",
                     method

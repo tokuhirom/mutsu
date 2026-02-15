@@ -1290,6 +1290,7 @@
 - [ ] roast/S29-any/isa.t
   - 6/11 pass (2-3, 8-11). `.isa` works for negative checks and named classes. Failures: `@arr.isa("Array")` (1), no sub `isa()` error (4), single-arg/extra-args error (5-6), array literal `.isa` (7). Difficulty: Low-Medium
 - [ ] roast/S29-any/minpairs-maxpairs.t
+  - No longer aborts on `DateTime.now` / `.IO` / missing `minpairs`/`maxpairs`; now reaches assertions. Remaining issues are plan accounting mismatch (runs 29 vs planned 27) and failing tail assertions.
 - [ ] roast/S29-context/die.t
   - 0/? pass. Stack overflow before any tests run. Likely infinite recursion in parsing or evaluating the test file. Difficulty: High
 - [ ] roast/S29-context/evalfile.t
