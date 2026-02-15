@@ -1,0 +1,352 @@
+use super::*;
+
+impl Interpreter {
+    pub(super) fn init_order_enum(&mut self) {
+        let variants = vec![
+            ("Less".to_string(), -1i64),
+            ("Same".to_string(), 0i64),
+            ("More".to_string(), 1i64),
+        ];
+        self.enum_types
+            .insert("Order".to_string(), variants.clone());
+        self.env
+            .insert("Order".to_string(), Value::Str("Order".to_string()));
+        for (index, (key, val)) in variants.iter().enumerate() {
+            let enum_val = Value::Enum {
+                enum_type: "Order".to_string(),
+                key: key.clone(),
+                value: *val,
+                index,
+            };
+            self.env.insert(format!("Order::{}", key), enum_val.clone());
+        }
+    }
+
+    pub(super) fn version_from_value(arg: Value) -> Value {
+        use crate::value::VersionPart;
+        match arg {
+            Value::Str(s) => {
+                if s.is_empty() {
+                    return Value::Version {
+                        parts: Vec::new(),
+                        plus: false,
+                        minus: false,
+                    };
+                }
+                let mut plus = false;
+                let mut minus = false;
+                let mut raw = s.as_str();
+                if let Some(stripped) = raw.strip_suffix('+') {
+                    plus = true;
+                    raw = stripped;
+                } else if let Some(stripped) = raw.strip_suffix('-') {
+                    minus = true;
+                    raw = stripped;
+                }
+                let parts: Vec<VersionPart> = raw
+                    .split('.')
+                    .map(|p| {
+                        if p == "*" {
+                            VersionPart::Whatever
+                        } else {
+                            VersionPart::Num(p.parse::<i64>().unwrap_or(0))
+                        }
+                    })
+                    .collect();
+                Value::Version { parts, plus, minus }
+            }
+            // Version.new(*) - Whatever argument (Inf is how * is represented)
+            Value::Num(f) if f.is_infinite() && f.is_sign_positive() => Value::Version {
+                parts: vec![VersionPart::Whatever],
+                plus: false,
+                minus: false,
+            },
+            _ => {
+                let s = arg.to_string_value();
+                Self::version_from_value(Value::Str(s))
+            }
+        }
+    }
+
+    pub(super) fn version_smart_match(
+        left: &Value,
+        right_parts: &[crate::value::VersionPart],
+        right_plus: bool,
+        right_minus: bool,
+    ) -> bool {
+        use crate::value::VersionPart;
+        if let Value::Version {
+            parts: left_parts, ..
+        } = left
+        {
+            if right_plus {
+                // LHS >= RHS (base version without +)
+                super::version_cmp_parts(left_parts, right_parts) != std::cmp::Ordering::Less
+            } else if right_minus {
+                // LHS <= RHS (base version without -)
+                super::version_cmp_parts(left_parts, right_parts) != std::cmp::Ordering::Greater
+            } else {
+                // Compare up to the length of the RHS; extra LHS parts are ignored
+                let rhs_len = right_parts.len();
+                for i in 0..rhs_len {
+                    let l = left_parts.get(i).unwrap_or(&VersionPart::Num(0));
+                    let r = right_parts.get(i).unwrap_or(&VersionPart::Num(0));
+                    match (l, r) {
+                        (VersionPart::Whatever, _) | (_, VersionPart::Whatever) => continue,
+                        (VersionPart::Num(a), VersionPart::Num(b)) => {
+                            if a != b {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                // If RHS is longer than LHS, extra RHS parts must be zero
+                if rhs_len > left_parts.len() {
+                    for p in &right_parts[left_parts.len()..] {
+                        match p {
+                            VersionPart::Num(n) if *n != 0 => return false,
+                            _ => {}
+                        }
+                    }
+                }
+                true
+            }
+        } else {
+            false
+        }
+    }
+
+    pub(super) fn value_is_nan(value: &Value) -> bool {
+        match value {
+            Value::Num(f) => f.is_nan(),
+            Value::Complex(r, i) => r.is_nan() || i.is_nan(),
+            _ => false,
+        }
+    }
+
+    pub(super) fn type_matches(constraint: &str, value_type: &str) -> bool {
+        if constraint == "Any" || constraint == "Mu" {
+            return true;
+        }
+        if constraint == value_type {
+            return true;
+        }
+        // Native type aliases: num → Num, int → Int, str → Str
+        if constraint == "num" && value_type == "Num" {
+            return true;
+        }
+        if constraint == "int" && value_type == "Int" {
+            return true;
+        }
+        if constraint == "str" && value_type == "Str" {
+            return true;
+        }
+        // Numeric hierarchy: Int is a Numeric, Num is a Numeric
+        if constraint == "Numeric"
+            && matches!(value_type, "Int" | "Num" | "Rat" | "FatRat" | "Complex")
+        {
+            return true;
+        }
+        if constraint == "Real" && matches!(value_type, "Int" | "Num" | "Rat" | "FatRat") {
+            return true;
+        }
+        if constraint == "Cool"
+            && matches!(
+                value_type,
+                "Int" | "Num" | "Str" | "Bool" | "Rat" | "FatRat" | "Complex"
+            )
+        {
+            return true;
+        }
+        if constraint == "Stringy" && matches!(value_type, "Str") {
+            return true;
+        }
+        // Role-like type relationships
+        if constraint == "Positional" && matches!(value_type, "Array" | "List" | "Seq") {
+            return true;
+        }
+        if constraint == "Associative"
+            && matches!(value_type, "Hash" | "Map" | "Bag" | "Set" | "Mix")
+        {
+            return true;
+        }
+        false
+    }
+
+    pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
+        if let Some(subset) = self.subsets.get(constraint).cloned() {
+            if !self.type_matches_value(&subset.base, value) {
+                return false;
+            }
+            let saved = self.env.get("_").cloned();
+            self.env.insert("_".to_string(), value.clone());
+            let ok = self
+                .eval_block_value(&[Stmt::Expr(subset.predicate.clone())])
+                .map(|v| v.truthy())
+                .unwrap_or(false);
+            if let Some(old) = saved {
+                self.env.insert("_".to_string(), old);
+            } else {
+                self.env.remove("_");
+            }
+            return ok;
+        }
+        // Check Instance class name against constraint (including parent classes)
+        if let Value::Instance { class_name, .. } = value {
+            if Self::type_matches(constraint, class_name) {
+                return true;
+            }
+            // Check parent classes of the instance
+            if let Some(class_def) = self.classes.get(class_name.as_str()) {
+                for parent in class_def.parents.clone() {
+                    if Self::type_matches(constraint, &parent) {
+                        return true;
+                    }
+                }
+            }
+        }
+        let value_type = super::value_type_name(value);
+        Self::type_matches(constraint, value_type)
+    }
+
+    pub(super) fn args_match_param_types(
+        &mut self,
+        args: &[Value],
+        param_defs: &[ParamDef],
+    ) -> bool {
+        let positional_params: Vec<&ParamDef> = param_defs
+            .iter()
+            .filter(|p| !p.slurpy && !p.named)
+            .collect();
+        for (i, pd) in positional_params.iter().enumerate() {
+            if let Some(literal) = &pd.literal_value {
+                if let Some(arg) = args.get(i) {
+                    if arg != literal {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            }
+            if let Some(constraint) = &pd.type_constraint
+                && let Some(arg) = args.get(i)
+                && !self.type_matches_value(constraint, arg)
+            {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub(super) fn method_args_match(&mut self, args: &[Value], param_defs: &[ParamDef]) -> bool {
+        let positional_params: Vec<&ParamDef> = param_defs.iter().filter(|p| !p.named).collect();
+        let mut required = 0usize;
+        let mut has_slurpy = false;
+        for pd in &positional_params {
+            if pd.slurpy {
+                has_slurpy = true;
+            } else {
+                required += 1;
+            }
+        }
+        if has_slurpy {
+            if args.len() < required {
+                return false;
+            }
+        } else if args.len() != required {
+            return false;
+        }
+        self.args_match_param_types(args, param_defs)
+    }
+
+    pub(super) fn matches_expected(
+        &mut self,
+        matcher: &ExpectedMatcher,
+        actual: &str,
+    ) -> Result<bool, RuntimeError> {
+        match matcher {
+            ExpectedMatcher::Exact(Value::Str(s)) => Ok(actual == s),
+            ExpectedMatcher::Exact(Value::Int(i)) => Ok(actual.trim() == i.to_string()),
+            ExpectedMatcher::Exact(Value::Bool(b)) => Ok(*b != actual.is_empty()),
+            ExpectedMatcher::Exact(Value::Nil) => Ok(actual.is_empty()),
+            ExpectedMatcher::Exact(_) => Ok(false),
+            ExpectedMatcher::Lambda { param, body } => {
+                let parsed = actual.trim().parse::<i64>().ok();
+                let arg = parsed
+                    .map(Value::Int)
+                    .unwrap_or_else(|| Value::Str(actual.to_string()));
+                let saved = self.env.insert(param.clone(), arg);
+                let result = self.eval_block_value(body);
+                if let Some(old) = saved {
+                    self.env.insert(param.clone(), old);
+                } else {
+                    self.env.remove(param);
+                }
+                Ok(result?.truthy())
+            }
+        }
+    }
+
+    pub(crate) fn bind_function_args_values(
+        &mut self,
+        param_defs: &[ParamDef],
+        params: &[String],
+        args: &[Value],
+    ) -> Result<(), RuntimeError> {
+        if param_defs.is_empty() {
+            // Legacy path: just bind by position
+            for (i, param) in params.iter().enumerate() {
+                if let Some(value) = args.get(i) {
+                    self.env.insert(param.clone(), value.clone());
+                }
+            }
+            return Ok(());
+        }
+        let mut positional_idx = 0usize;
+        for pd in param_defs {
+            if pd.slurpy {
+                let mut items = Vec::new();
+                while positional_idx < args.len() {
+                    items.push(args[positional_idx].clone());
+                    positional_idx += 1;
+                }
+                if !pd.name.is_empty() {
+                    self.env.insert(pd.name.clone(), Value::Array(items));
+                }
+            } else if pd.named {
+                // Named params not supported with pre-evaluated values, use default
+                if let Some(default_expr) = &pd.default {
+                    let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?;
+                    if !pd.name.is_empty() {
+                        self.env.insert(pd.name.clone(), value);
+                    }
+                }
+            } else {
+                // Positional param
+                if positional_idx < args.len() {
+                    let value = args[positional_idx].clone();
+                    if let Some(constraint) = &pd.type_constraint
+                        && !self.type_matches_value(constraint, &value)
+                    {
+                        return Err(RuntimeError::new(format!(
+                            "Type check failed for {}: expected {}, got {}",
+                            pd.name,
+                            constraint,
+                            super::value_type_name(&value)
+                        )));
+                    }
+                    if !pd.name.is_empty() {
+                        self.env.insert(pd.name.clone(), value);
+                    }
+                    positional_idx += 1;
+                } else if let Some(default_expr) = &pd.default {
+                    let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?;
+                    if !pd.name.is_empty() {
+                        self.env.insert(pd.name.clone(), value);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}

@@ -145,7 +145,7 @@ impl Interpreter {
             )),
             "leg" => {
                 let ord = left.to_string_value().cmp(&right.to_string_value());
-                Ok(runtime::make_order(ord))
+                Ok(super::make_order(ord))
             }
             "cmp" => {
                 let ord = match (left, right) {
@@ -155,7 +155,7 @@ impl Interpreter {
                     | (Value::FatRat(_, _), _)
                     | (_, Value::FatRat(_, _)) => {
                         if let (Some((an, ad)), Some((bn, bd))) =
-                            (runtime::to_rat_parts(left), runtime::to_rat_parts(right))
+                            (super::to_rat_parts(left), super::to_rat_parts(right))
                         {
                             (an * bd).cmp(&(bn * ad))
                         } else {
@@ -172,11 +172,11 @@ impl Interpreter {
                         .partial_cmp(&(*b as f64))
                         .unwrap_or(std::cmp::Ordering::Equal),
                     (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
-                        runtime::version_cmp_parts(ap, bp)
+                        super::version_cmp_parts(ap, bp)
                     }
                     _ => left.to_string_value().cmp(&right.to_string_value()),
                 };
-                Ok(runtime::make_order(ord))
+                Ok(super::make_order(ord))
             }
             "gcd" => {
                 let (mut a, mut b) = (to_int(left).abs(), to_int(right).abs());
@@ -289,9 +289,8 @@ impl Interpreter {
         right: Value,
         f: fn(i32) -> bool,
     ) -> Result<Value, RuntimeError> {
-        let (l, r) = runtime::coerce_numeric(left, right);
-        if let (Some((an, ad)), Some((bn, bd))) =
-            (runtime::to_rat_parts(&l), runtime::to_rat_parts(&r))
+        let (l, r) = super::coerce_numeric(left, right);
+        if let (Some((an, ad)), Some((bn, bd))) = (super::to_rat_parts(&l), super::to_rat_parts(&r))
             && (matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)))
         {
             let lhs = an as i128 * bd as i128;
