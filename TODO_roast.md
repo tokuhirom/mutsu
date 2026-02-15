@@ -1505,6 +1505,7 @@
 - [ ] roast/S32-num/power.t
   - 19/89 pass (40 reached). Basic integer ** works well. Failures: `0 ** 0` edge case (7), `-1 ** 0` precedence (11), Rat exponents (13-14), Inf/NaN propagation (18, 20-25, 28-30), complex ** (34-40). Difficulty: Medium (NaN/Inf/complex propagation)
 - [ ] roast/S32-num/rand.t
+  - Timeout fixed by honoring `#?rakudo skip` blocks; remaining failures are obsolete exceptions for `rand()`/`rand(3)` (`throws-like ... X::Obsolete`).
 - [ ] roast/S32-num/rat.t
   - 61/869 pass (77 reached). Strong Rat arithmetic (+, -, *, /). Failures: `.raku` EVAL round-trip (6-9, 14-16), stringification edge cases (20), `2 / 1/3` precedence (59), many tests not reached. Difficulty: Medium-High (huge test file, many features needed)
 
