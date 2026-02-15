@@ -590,7 +590,7 @@ impl Interpreter {
                     "Bag" | "BagHash" => Ok(Value::Bag(HashMap::new())),
                     "Mix" | "MixHash" => Ok(Value::Mix(HashMap::new())),
                     _ => Err(RuntimeError::new(format!(
-                        "Unknown method value dispatch (fallback disabled): {}",
+                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
                         method
                     ))),
                 },
@@ -600,7 +600,7 @@ impl Interpreter {
                 Value::Bool(_) => Ok(Value::Bool(false)),
                 Value::Nil => Ok(Value::Nil),
                 _ => Err(RuntimeError::new(format!(
-                    "Unknown method value dispatch (fallback disabled): {}",
+                    "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
                     method
                 ))),
             };
@@ -736,7 +736,7 @@ impl Interpreter {
             return Ok(Value::Str(target.to_string_value()));
         }
         Err(RuntimeError::new(format!(
-            "Unknown method value dispatch (fallback disabled): {}",
+            "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
             method
         )))
     }

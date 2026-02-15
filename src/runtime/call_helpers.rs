@@ -10,7 +10,7 @@ impl Interpreter {
             Ok(_) => Ok(()),
             Err(e)
                 if e.message
-                    .starts_with("Unknown function (call_function fallback disabled):") =>
+                    .contains("Unknown function (call_function fallback disabled):") =>
             {
                 self.exec_call(name, args)
             }

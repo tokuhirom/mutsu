@@ -231,7 +231,7 @@ impl Interpreter {
         }
 
         Err(RuntimeError::new(format!(
-            "Unknown function (call_function fallback disabled): {}",
+            "X::Undeclared: Unknown function (call_function fallback disabled): {}",
             name
         )))
     }

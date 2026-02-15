@@ -329,7 +329,7 @@ impl Interpreter {
                         && !self.type_matches_value(constraint, &value)
                     {
                         return Err(RuntimeError::new(format!(
-                            "Type check failed for {}: expected {}, got {}",
+                            "X::TypeCheck: Type check failed for {}: expected {}, got {}",
                             pd.name,
                             constraint,
                             super::value_type_name(&value)

@@ -433,7 +433,7 @@ impl Interpreter {
                 if expected.is_empty() {
                     true
                 } else {
-                    err.message.contains(&expected) || err.message.contains("X::Assignment::RO")
+                    err.message.contains(&expected)
                 }
             }
         };

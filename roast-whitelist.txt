@@ -137,4 +137,5 @@ roast/S32-str/lc.t
 roast/S32-str/tc.t
 roast/S32-str/tclc.t
 roast/S32-str/uc.t
+roast/S32-trig/e.t
 roast/S32-trig/simple.t
