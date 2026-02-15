@@ -52,6 +52,9 @@ impl Interpreter {
         let perl = Self::make_perl_instance();
         self.env.insert("*PERL".to_string(), perl.clone());
         self.env.insert("?PERL".to_string(), perl);
+        let raku = Self::make_perl_instance();
+        self.env.insert("*RAKU".to_string(), raku.clone());
+        self.env.insert("?RAKU".to_string(), raku);
     }
 
     pub(super) fn create_handle(

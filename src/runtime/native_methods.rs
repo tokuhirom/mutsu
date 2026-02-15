@@ -316,6 +316,10 @@ impl Interpreter {
     // --- Perl ---
 
     fn native_perl(&self, attributes: &HashMap<String, Value>, method: &str) -> Value {
-        attributes.get(method).cloned().unwrap_or(Value::Nil)
+        match method {
+            "compiler" => Value::make_instance("Perl".to_string(), attributes.clone()),
+            "backend" => Value::Str("mutsu".to_string()),
+            _ => attributes.get(method).cloned().unwrap_or(Value::Nil),
+        }
     }
 }

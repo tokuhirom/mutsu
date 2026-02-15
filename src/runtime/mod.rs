@@ -366,7 +366,10 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["DISTROnames"].iter().map(|s| s.to_string()).collect(),
+                native_methods: ["DISTROnames", "compiler", "backend"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
                 mro: vec!["Perl".to_string()],
             },
         );

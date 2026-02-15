@@ -105,6 +105,51 @@ impl Interpreter {
         if method == "IO" && args.is_empty() {
             return Ok(self.make_io_path_instance(&target.to_string_value()));
         }
+        if method == "contains" {
+            let mut positional: Vec<Value> = Vec::new();
+            let mut ignore_case = false;
+            for arg in &args {
+                if let Value::Pair(key, value) = arg {
+                    if matches!(key.as_str(), "i" | "ignorecase" | "m" | "ignoremark") {
+                        ignore_case = value.truthy();
+                    }
+                } else {
+                    positional.push(arg.clone());
+                }
+            }
+            let needle = positional
+                .first()
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            let start = if let Some(pos) = positional.get(1) {
+                match pos {
+                    Value::Int(i) => *i,
+                    Value::Num(f) => *f as i64,
+                    Value::Str(s) => s.parse::<i64>().unwrap_or(0),
+                    Value::BigInt(b) => {
+                        if b > &num_bigint::BigInt::from(i64::MAX) {
+                            return Err(RuntimeError::new("X::OutOfRange"));
+                        }
+                        b.to_string().parse::<i64>().unwrap_or(0)
+                    }
+                    _ => 0,
+                }
+            } else {
+                0
+            };
+            let text = target.to_string_value();
+            let len = text.chars().count() as i64;
+            if start < 0 || start > len {
+                return Err(RuntimeError::new("X::OutOfRange"));
+            }
+            let hay: String = text.chars().skip(start as usize).collect();
+            let ok = if ignore_case {
+                hay.to_lowercase().contains(&needle.to_lowercase())
+            } else {
+                hay.contains(&needle)
+            };
+            return Ok(Value::Bool(ok));
+        }
         if method == "Seq" && args.is_empty() {
             return Ok(match target {
                 Value::Array(_) | Value::LazyList(_) => target,

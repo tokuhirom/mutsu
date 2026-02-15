@@ -5050,7 +5050,28 @@ impl Parser {
     }
 
     fn parse_token_rule_decl(&mut self, is_rule: bool, multi: bool) -> Result<Stmt, RuntimeError> {
-        let name = self.consume_ident()?;
+        let mut name = self.consume_ident()?;
+        if self.match_kind(TokenKind::Colon)
+            && let Some(variant) = self.consume_ident().ok()
+            && variant == "sym"
+            && self.match_kind(TokenKind::Lt)
+        {
+            let mut sym = String::new();
+            while !self.check(&TokenKind::Gt) && !self.check(&TokenKind::Eof) {
+                if let Some(tok) = self.tokens.get(self.pos).map(|t| &t.kind) {
+                    if let Some(op) = Self::token_to_op_str(tok) {
+                        sym.push_str(op);
+                    } else if let TokenKind::Ident(s) | TokenKind::Str(s) = tok {
+                        sym.push_str(s);
+                    }
+                }
+                self.pos += 1;
+            }
+            self.match_kind(TokenKind::Gt);
+            if !sym.is_empty() {
+                name = format!("{name}:sym<{sym}>");
+            }
+        }
         let mut params = Vec::new();
         let mut param_defs = Vec::new();
         if self.match_kind(TokenKind::LParen) {
