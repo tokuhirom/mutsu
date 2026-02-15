@@ -127,7 +127,10 @@ pub(crate) fn gist_value(value: &Value) -> String {
                 }
             }
         }
-        Value::Array(items) => items.iter().map(gist_value).collect::<Vec<_>>().join(" "),
+        Value::Array(items) => format!(
+            "[{}]",
+            items.iter().map(gist_value).collect::<Vec<_>>().join(" ")
+        ),
         Value::Hash(items) => items
             .iter()
             .map(|(k, v)| format!("{}\t{}", k, gist_value(v)))

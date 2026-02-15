@@ -38,7 +38,14 @@ impl Compiler {
         mut self,
         stmts: &[Stmt],
     ) -> (CompiledCode, HashMap<String, CompiledFunction>) {
-        for stmt in stmts {
+        for (i, stmt) in stmts.iter().enumerate() {
+            let is_last = i == stmts.len() - 1;
+            if is_last && let Stmt::Expr(expr) = stmt {
+                // Last expression: leave value on stack for EVAL return
+                self.compile_expr(expr);
+                self.code.emit(OpCode::SetTopic);
+                continue;
+            }
             self.compile_stmt(stmt);
         }
         (self.code, self.compiled_functions)
@@ -48,7 +55,7 @@ impl Compiler {
         match stmt {
             Stmt::Expr(expr) => {
                 self.compile_expr(expr);
-                self.code.emit(OpCode::SetTopic);
+                self.code.emit(OpCode::Pop);
             }
             Stmt::Block(stmts) => {
                 if Self::has_block_enter_leave_phasers(stmts) {
@@ -407,15 +414,33 @@ impl Compiler {
             Stmt::When { cond, body } => {
                 self.compile_expr(cond);
                 let when_idx = self.code.emit(OpCode::When { body_end: 0 });
-                for s in body {
-                    self.compile_stmt(s);
+                for (i, s) in body.iter().enumerate() {
+                    let is_last = i == body.len() - 1;
+                    if is_last {
+                        if let Stmt::Expr(expr) = s {
+                            self.compile_expr(expr);
+                        } else {
+                            self.compile_stmt(s);
+                        }
+                    } else {
+                        self.compile_stmt(s);
+                    }
                 }
                 self.code.patch_body_end(when_idx);
             }
             Stmt::Default(body) => {
                 let default_idx = self.code.emit(OpCode::Default { body_end: 0 });
-                for s in body {
-                    self.compile_stmt(s);
+                for (i, s) in body.iter().enumerate() {
+                    let is_last = i == body.len() - 1;
+                    if is_last {
+                        if let Stmt::Expr(expr) = s {
+                            self.compile_expr(expr);
+                        } else {
+                            self.compile_stmt(s);
+                        }
+                    } else {
+                        self.compile_stmt(s);
+                    }
                 }
                 self.code.patch_body_end(default_idx);
             }
@@ -1820,10 +1845,17 @@ impl Compiler {
         }
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
-            if is_last && let Stmt::Expr(expr) = stmt {
-                self.compile_expr(expr);
-                // Don't emit Pop — leave value on stack as block's return value
-                return;
+            if is_last {
+                if let Stmt::Expr(expr) = stmt {
+                    self.compile_expr(expr);
+                    // Don't emit Pop — leave value on stack as block's return value
+                    return;
+                }
+                if matches!(stmt, Stmt::Given { .. }) {
+                    // given block pushes succeed value onto stack
+                    self.compile_stmt(stmt);
+                    return;
+                }
             }
             self.compile_stmt(stmt);
         }

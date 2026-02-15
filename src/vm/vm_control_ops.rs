@@ -198,6 +198,9 @@ impl VM {
         while inner_ip < end {
             if let Err(e) = self.exec_one(code, &mut inner_ip, compiled_fns) {
                 if e.is_succeed {
+                    if let Some(v) = e.return_value {
+                        self.stack.push(v);
+                    }
                     self.interpreter.set_when_matched(saved_when);
                     if let Some(v) = saved_topic.clone() {
                         self.interpreter.env_mut().insert("_".to_string(), v);
