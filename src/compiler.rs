@@ -1616,14 +1616,31 @@ impl Compiler {
             control_start: 0,
             body_end: 0,
         });
-        // Compile main body (last Stmt::Expr leaves value on stack)
+        // Compile main body (last Stmt::Expr/Call leaves value on stack)
         let mut main_leaves_value = false;
         for (i, stmt) in main_stmts.iter().enumerate() {
             let is_last = i == main_stmts.len() - 1;
-            if is_last && let Stmt::Expr(expr) = stmt {
-                self.compile_expr(expr);
-                main_leaves_value = true;
-                continue;
+            if is_last {
+                if let Stmt::Expr(expr) = stmt {
+                    self.compile_expr(expr);
+                    main_leaves_value = true;
+                    continue;
+                } else if let Stmt::Call { name, args } = stmt {
+                    // Compile as expression to leave value on stack
+                    let expr_args: Vec<Expr> = args
+                        .iter()
+                        .filter_map(|a| match a {
+                            CallArg::Positional(e) => Some(e.clone()),
+                            _ => None,
+                        })
+                        .collect();
+                    self.compile_expr(&Expr::Call {
+                        name: name.clone(),
+                        args: expr_args,
+                    });
+                    main_leaves_value = true;
+                    continue;
+                }
             }
             self.compile_stmt(stmt);
         }

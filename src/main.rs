@@ -8,10 +8,13 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     let mut dump_ast = false;
+    let mut dump_tokens = false;
     let mut filtered_args: Vec<String> = Vec::new();
     for arg in &args[1..] {
         if arg == "--dump-ast" {
             dump_ast = true;
+        } else if arg == "--dump-tokens" {
+            dump_tokens = true;
         } else {
             filtered_args.push(arg.clone());
         }
@@ -37,6 +40,11 @@ fn main() {
         });
         (buf, "<stdin>".to_string())
     };
+
+    if dump_tokens {
+        println!("{}", mutsu::dump_tokens(&input));
+        return;
+    }
 
     if dump_ast {
         match mutsu::dump_ast(&input) {
