@@ -236,6 +236,7 @@
 - [ ] roast/S03-binding/ro.t
 - [ ] roast/S03-binding/scalars.t
 - [ ] roast/S03-buf/read-int.t
+  - Blocks early at `blob8.new(...)` / `buf8.new(...)` (`Unknown method ...: new`): typed `Buf/Blob` constructors and corresponding read-int/read-uint method family are still missing.
   - Current blocker: `blob8.new(...)` dies (`Unknown method ...: new`), and this file also needs `Blob/Buf` typed constructors, `Kernel.endian`, and `read-int*/read-uint*` methods.
 - [ ] roast/S03-buf/read-num.t
 - [ ] roast/S03-buf/read-write-bits.t
@@ -360,6 +361,7 @@
 - [ ] roast/S03-operators/set_difference.t
   - 0/? pass. Crashes mid-run.
 - [ ] roast/S03-operators/set_elem.t
+  - First blocker moved from `.Map` dispatch (added basic `.Map`/`.Hash` conversion support) to `for &infix:<(elem)> ... -> &op` binding: infix codevar capture for `(elem)/(cont)` forms still resolves incorrectly, so `op(...)` is undefined.
   - 0/? pass. Crashes mid-run.
 - [ ] roast/S03-operators/set_equality.t
   - 0/? pass. Crashes mid-run.
@@ -1472,6 +1474,7 @@
 - [ ] roast/S32-list/rotor.t
 - [ ] roast/S32-list/seq.t
 - [ ] roast/S32-list/skip.t
+  - Fails at selective `BEGIN` import pattern (`my (&plan,...) = do { use Test; ... }`): extracted `&plan` stays unresolved, so subsequent `plan` call aborts.
 - [ ] roast/S32-list/snip.t
 - [ ] roast/S32-list/sort.t
   - ~20/74 pass. Basic sort works for method form on strings/numbers/lists. Crashes with `is-deeply expects right`. Failures: sort with comparator sub (1-5, 7, 12, 14-18), Schwartzian transform (18, 20), stability tests (27-28, 35), many advanced features. Difficulty: Medium-High

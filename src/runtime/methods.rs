@@ -184,6 +184,54 @@ impl Interpreter {
             }
             return Ok(Value::Mix(weights));
         }
+        if (method == "Map" || method == "Hash") && args.is_empty() {
+            match target {
+                Value::Hash(_) => return Ok(target),
+                Value::Array(items) => {
+                    let mut map = HashMap::new();
+                    let mut iter = items.into_iter();
+                    while let Some(item) = iter.next() {
+                        match item {
+                            Value::Pair(k, v) => {
+                                map.insert(k, *v);
+                            }
+                            other => {
+                                let key = other.to_string_value();
+                                let value = iter.next().unwrap_or(Value::Nil);
+                                map.insert(key, value);
+                            }
+                        }
+                    }
+                    return Ok(Value::Hash(map));
+                }
+                Value::Set(s) => {
+                    let mut map = HashMap::new();
+                    for k in s {
+                        map.insert(k, Value::Bool(true));
+                    }
+                    return Ok(Value::Hash(map));
+                }
+                Value::Bag(b) => {
+                    let mut map = HashMap::new();
+                    for (k, v) in b {
+                        map.insert(k, Value::Int(v));
+                    }
+                    return Ok(Value::Hash(map));
+                }
+                Value::Mix(m) => {
+                    let mut map = HashMap::new();
+                    for (k, v) in m {
+                        map.insert(k, Value::Num(v));
+                    }
+                    return Ok(Value::Hash(map));
+                }
+                other => {
+                    let mut map = HashMap::new();
+                    map.insert(other.to_string_value(), Value::Bool(true));
+                    return Ok(Value::Hash(map));
+                }
+            }
+        }
         if method == "map" {
             let items = Self::value_to_list(&target);
             return self.eval_map_over_items(args.first().cloned(), items);

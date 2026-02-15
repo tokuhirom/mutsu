@@ -4500,7 +4500,7 @@ impl Parser {
 
     fn parse_labeled_loop(&mut self, label: Option<String>) -> Result<Stmt, RuntimeError> {
         if self.match_ident("for") {
-            let iterable = self.parse_expr()?;
+            let iterable = self.parse_comma_expr()?;
             let mut param = None;
             let mut params = Vec::new();
             if self.match_kind(TokenKind::Arrow) {
