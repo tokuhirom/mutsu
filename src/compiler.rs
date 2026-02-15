@@ -278,86 +278,50 @@ impl Compiler {
                     self.compile_stmt(s);
                 }
             }
-            // Normalize mutating/structural call statements through Expr::Call
-            // so they reuse call rewrites and method-based mutation paths.
-            Stmt::Call { name, args }
-                if matches!(
-                    name.as_str(),
-                    "shift"
-                        | "pop"
-                        | "push"
-                        | "unshift"
-                        | "append"
-                        | "prepend"
-                        | "undefine"
-                        | "VAR"
-                        | "indir"
-                        | "plan"
-                        | "done-testing"
-                        | "skip"
-                        | "skip-rest"
-                        | "bail-out"
-                        | "ok"
-                        | "nok"
-                        | "is"
-                        | "isnt"
-                        | "diag"
-                        | "pass"
-                        | "flunk"
-                        | "cmp-ok"
-                        | "like"
-                        | "unlike"
-                        | "is-deeply"
-                        | "is-approx"
-                        | "isa-ok"
-                        | "lives-ok"
-                        | "dies-ok"
-                        | "eval-lives-ok"
-                        | "eval-dies-ok"
-                        | "throws-like"
-                        | "force_todo"
-                        | "force-todo"
-                ) && args.iter().all(|a| matches!(a, CallArg::Positional(_))) =>
-            {
-                let mut expr_args: Vec<Expr> = args
-                    .iter()
-                    .filter_map(|arg| match arg {
-                        CallArg::Positional(expr) => Some(expr.clone()),
-                        _ => None,
-                    })
-                    .collect();
-                if matches!(name.as_str(), "lives-ok" | "dies-ok" | "throws-like")
-                    && let Some(Expr::Block(body)) = expr_args.first()
-                {
-                    expr_args[0] = Expr::AnonSub(body.clone());
-                }
-                let call_expr = Expr::Call {
-                    name: name.clone(),
-                    args: expr_args,
-                };
-                self.compile_expr(&call_expr);
-                self.code.emit(OpCode::Pop);
-            }
-            // Statement-level call: compile positional args only.
-            // Fall back if named args or Block/AnonSub args exist (exec_call
-            // inspects raw expressions for throws-like, lives-ok, etc.).
-            Stmt::Call { name, args }
-                if args.iter().all(|a| match a {
-                    CallArg::Positional(expr) => !Self::needs_raw_expr(expr),
-                    _ => false,
-                }) =>
-            {
-                let arity = args.len() as u32;
-                for arg in args {
-                    if let CallArg::Positional(expr) = arg {
-                        self.compile_expr(expr);
-                    }
-                }
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                self.code.emit(OpCode::ExecCall { name_idx, arity });
-            }
             Stmt::Call { name, args } => {
                 let rewritten_args = Self::rewrite_stmt_call_args(name, args);
+                let positional_only = rewritten_args
+                    .iter()
+                    .all(|arg| matches!(arg, CallArg::Positional(_)));
+
+                // Normalize mutating/structural call statements through Expr::Call
+                // so they reuse call rewrites and method-based mutation paths.
+                if positional_only && Self::is_normalized_stmt_call_name(name) {
+                    let expr_args: Vec<Expr> = rewritten_args
+                        .iter()
+                        .filter_map(|arg| match arg {
+                            CallArg::Positional(expr) => Some(expr.clone()),
+                            _ => None,
+                        })
+                        .collect();
+                    let call_expr = Expr::Call {
+                        name: name.clone(),
+                        args: expr_args,
+                    };
+                    self.compile_expr(&call_expr);
+                    self.code.emit(OpCode::Pop);
+                    return;
+                }
+
+                // Statement-level call: compile positional args only.
+                // Fall back if named args or raw-expression args remain.
+                if positional_only
+                    && rewritten_args.iter().all(|arg| match arg {
+                        CallArg::Positional(expr) => !Self::needs_raw_expr(expr),
+                        _ => false,
+                    })
+                {
+                    let arity = rewritten_args.len() as u32;
+                    for arg in &rewritten_args {
+                        if let CallArg::Positional(expr) = arg {
+                            self.compile_expr(expr);
+                        }
+                    }
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::ExecCall { name_idx, arity });
+                    return;
+                }
+
                 for arg in &rewritten_args {
                     match arg {
                         CallArg::Positional(expr) if !Self::needs_raw_expr(expr) => {
@@ -1361,21 +1325,64 @@ impl Compiler {
         }
     }
 
+    fn is_normalized_stmt_call_name(name: &str) -> bool {
+        matches!(
+            name,
+            "shift"
+                | "pop"
+                | "push"
+                | "unshift"
+                | "append"
+                | "prepend"
+                | "undefine"
+                | "VAR"
+                | "indir"
+                | "plan"
+                | "done-testing"
+                | "skip"
+                | "skip-rest"
+                | "bail-out"
+                | "ok"
+                | "nok"
+                | "is"
+                | "isnt"
+                | "diag"
+                | "pass"
+                | "flunk"
+                | "cmp-ok"
+                | "like"
+                | "unlike"
+                | "is-deeply"
+                | "is-approx"
+                | "isa-ok"
+                | "lives-ok"
+                | "dies-ok"
+                | "eval-lives-ok"
+                | "eval-dies-ok"
+                | "throws-like"
+                | "force_todo"
+                | "force-todo"
+        )
+    }
+
     fn rewrite_stmt_call_args(name: &str, args: &[CallArg]) -> Vec<CallArg> {
-        let needs_code_block_as_value = matches!(name, "lives-ok" | "dies-ok" | "throws-like");
-        if !needs_code_block_as_value {
+        let rewrites_needed = matches!(name, "lives-ok" | "dies-ok" | "throws-like" | "is_run");
+        if !rewrites_needed {
             return args.to_vec();
         }
         let mut positional_index = 0usize;
         args.iter()
             .map(|arg| match arg {
                 CallArg::Positional(expr) => {
-                    let rewritten = if positional_index == 0 {
-                        if let Expr::Block(body) = expr {
-                            Expr::AnonSub(body.clone())
-                        } else {
-                            expr.clone()
+                    let rewritten = if matches!(name, "lives-ok" | "dies-ok" | "throws-like")
+                        && positional_index == 0
+                    {
+                        match expr {
+                            Expr::Block(body) => Expr::AnonSub(body.clone()),
+                            _ => expr.clone(),
                         }
+                    } else if name == "is_run" && positional_index == 1 {
+                        Self::rewrite_is_run_expectation_expr(expr)
                     } else {
                         expr.clone()
                     };
@@ -1388,6 +1395,27 @@ impl Compiler {
                 },
             })
             .collect()
+    }
+
+    fn rewrite_is_run_expectation_expr(expr: &Expr) -> Expr {
+        if let Expr::Hash(pairs) = expr {
+            let rewritten_pairs = pairs
+                .iter()
+                .map(|(name, value)| {
+                    let rewritten_value = value.as_ref().map(|v| {
+                        if let Expr::Block(body) = v {
+                            Expr::AnonSub(body.clone())
+                        } else {
+                            v.clone()
+                        }
+                    });
+                    (name.clone(), rewritten_value)
+                })
+                .collect();
+            Expr::Hash(rewritten_pairs)
+        } else {
+            expr.clone()
+        }
     }
 
     fn has_phasers(stmts: &[Stmt]) -> bool {
