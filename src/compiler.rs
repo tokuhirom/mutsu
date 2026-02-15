@@ -1610,15 +1610,17 @@ impl Compiler {
             body_end: 0,
         });
         // Compile main body (last Stmt::Expr leaves value on stack)
+        let mut main_leaves_value = false;
         for (i, stmt) in main_stmts.iter().enumerate() {
             let is_last = i == main_stmts.len() - 1;
             if is_last && let Stmt::Expr(expr) = stmt {
                 self.compile_expr(expr);
+                main_leaves_value = true;
                 continue;
             }
             self.compile_stmt(stmt);
         }
-        if main_stmts.is_empty() {
+        if !main_leaves_value {
             self.code.emit(OpCode::LoadNil);
         }
         // Jump over catch/control on success.
