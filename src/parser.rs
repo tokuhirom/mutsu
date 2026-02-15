@@ -689,13 +689,22 @@ impl Parser {
                 ) {
                     self.pos += 1;
                 }
-                if self.peek_is_var() {
-                    let first = self.consume_var()?;
+                if self.peek_is_var() || self.peek_is_codevar() {
+                    let first = if self.peek_is_var() {
+                        self.consume_var()?
+                    } else {
+                        self.consume_codevar()?
+                    };
                     if self.match_kind(TokenKind::Comma) {
                         params.push(first);
-                        while self.peek_is_var() || self.peek_ident().is_some() {
+                        while self.peek_is_var()
+                            || self.peek_is_codevar()
+                            || self.peek_ident().is_some()
+                        {
                             if self.peek_is_var() {
                                 params.push(self.consume_var()?);
+                            } else if self.peek_is_codevar() {
+                                params.push(self.consume_codevar()?);
                             } else {
                                 // Sigilless parameter (e.g., \t → t)
                                 params.push(self.consume_ident()?);
@@ -4381,6 +4390,15 @@ impl Parser {
         Err(RuntimeError::new("Expected variable"))
     }
 
+    fn consume_codevar(&mut self) -> Result<String, RuntimeError> {
+        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::CodeVar(_)))
+            && let TokenKind::CodeVar(name) = token.kind
+        {
+            return Ok(name);
+        }
+        Err(RuntimeError::new("Expected code variable"))
+    }
+
     fn consume_ident(&mut self) -> Result<String, RuntimeError> {
         if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::Ident(_)))
             && let TokenKind::Ident(name) = token.kind
@@ -4447,6 +4465,13 @@ impl Parser {
         )
     }
 
+    fn peek_is_codevar(&self) -> bool {
+        matches!(
+            self.tokens.get(self.pos).map(|t| &t.kind),
+            Some(TokenKind::CodeVar(_))
+        )
+    }
+
     fn peek_ident(&self) -> Option<String> {
         match self.tokens.get(self.pos).map(|t| &t.kind) {
             Some(TokenKind::Ident(name)) => Some(name.clone()),
@@ -4488,12 +4513,20 @@ impl Parser {
                 ) {
                     self.pos += 1;
                 }
-                if self.peek_is_var() {
-                    let first = self.consume_var()?;
+                if self.peek_is_var() || self.peek_is_codevar() {
+                    let first = if self.peek_is_var() {
+                        self.consume_var()?
+                    } else {
+                        self.consume_codevar()?
+                    };
                     if self.match_kind(TokenKind::Comma) {
                         params.push(first);
-                        while self.peek_is_var() {
-                            params.push(self.consume_var()?);
+                        while self.peek_is_var() || self.peek_is_codevar() {
+                            if self.peek_is_var() {
+                                params.push(self.consume_var()?);
+                            } else {
+                                params.push(self.consume_codevar()?);
+                            }
                             if !self.match_kind(TokenKind::Comma) {
                                 break;
                             }
