@@ -3938,7 +3938,12 @@ impl Interpreter {
             self.env = new_env;
             self.routine_stack.push((package.clone(), name.clone()));
             self.block_stack.push(block_sub);
-            let result = self.eval_block_value(&body);
+            let (enter_ph, leave_ph, _) = self.split_block_phasers(&body);
+            let result = if enter_ph.is_empty() && leave_ph.is_empty() {
+                self.eval_block_value_vm(&body)
+            } else {
+                self.eval_block_value(&body)
+            };
             self.block_stack.pop();
             self.routine_stack.pop();
             let mut merged = saved_env;
@@ -3960,6 +3965,21 @@ impl Interpreter {
             };
         }
         Err(RuntimeError::new("Callable expected"))
+    }
+
+    fn eval_block_value_vm(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
+        let wrapped = vec![Stmt::Expr(Expr::DoBlock {
+            body: body.to_vec(),
+            label: None,
+        })];
+        let compiler = crate::compiler::Compiler::new();
+        let (code, compiled_fns) = compiler.compile(&wrapped);
+        let interp = std::mem::take(self);
+        let vm = crate::vm::VM::new(interp);
+        let (interp, result) = vm.run(&code, &compiled_fns);
+        let value = interp.env().get("_").cloned().unwrap_or(Value::Nil);
+        *self = interp;
+        result.map(|_| value)
     }
 
     fn eval_map_over_items(
