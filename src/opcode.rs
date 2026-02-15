@@ -52,6 +52,10 @@ pub(crate) enum OpCode {
     StrLe,
     StrGe,
 
+    // -- Generic ordering (cmp-based) --
+    Before,
+    After,
+
     // -- Three-way comparison --
     Spaceship,
     Cmp,

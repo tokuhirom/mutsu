@@ -8,19 +8,26 @@ import sys
 
 def load_rows(history_path: str):
     rows = []
+    total_files = None
     with open(history_path, newline="", encoding="utf-8") as file_handle:
         reader = csv.DictReader(file_handle, delimiter="\t")
         for row in reader:
             date = row.get("date", "").strip()
             passed = row.get("pass", "").strip()
+            files = row.get("files", "").strip()
             if not date or not passed:
                 continue
             try:
                 passed_value = int(passed)
             except ValueError:
                 continue
+            if files:
+                try:
+                    total_files = int(files)
+                except ValueError:
+                    pass
             rows.append((date, passed_value))
-    return rows
+    return rows, total_files
 
 
 def nice_step(value_range: int) -> int:
@@ -38,11 +45,11 @@ def nice_step(value_range: int) -> int:
     return 10 * magnitude
 
 
-def render_svg(rows, output_path: str):
+def render_svg(rows, output_path: str, total_files: int | None = None):
     width = 1280
     height = 720
     left = 90
-    right = 40
+    right = 100
     top = 50
     bottom = 120
 
@@ -50,12 +57,12 @@ def render_svg(rows, output_path: str):
     chart_height = height - top - bottom
 
     values = [value for _, value in rows]
-    min_value = min(values)
     max_value = max(values)
 
-    pad = max(2, int((max_value - min_value) * 0.1) or 2)
-    y_min = max(0, min_value - pad)
-    y_max = max_value + pad
+    y_min = 0
+    ceiling = max(max_value, total_files or 0)
+    pad = max(2, int(ceiling * 0.05) or 2)
+    y_max = ceiling + pad
     if y_max == y_min:
         y_max = y_min + 1
 
@@ -118,6 +125,15 @@ def render_svg(rows, output_path: str):
             f'<text x="{x:.2f}" y="{top + chart_height + 24}" text-anchor="end" font-size="11" fill="#111" transform="rotate(-40 {x:.2f},{top + chart_height + 24})" font-family="sans-serif">{escaped_date}</text>'
         )
 
+    if total_files is not None:
+        goal_y = y_pos(total_files)
+        lines.append(
+            f'<line x1="{left}" y1="{goal_y:.2f}" x2="{left + chart_width}" y2="{goal_y:.2f}" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="8,4"/>'
+        )
+        lines.append(
+            f'<text x="{left + chart_width + 4}" y="{goal_y + 4:.2f}" font-size="12" fill="#dc2626" font-family="sans-serif">Goal: {total_files}</text>'
+        )
+
     lines.append(
         f'<polyline fill="none" stroke="#2563eb" stroke-width="3" points="{polyline_points}"/>'
     )
@@ -149,12 +165,12 @@ def main():
     history_path = sys.argv[1]
     output_path = sys.argv[2]
 
-    rows = load_rows(history_path)
+    rows, total_files = load_rows(history_path)
     if not rows:
         print("No valid history rows found", file=sys.stderr)
         return 1
 
-    render_svg(rows, output_path)
+    render_svg(rows, output_path, total_files)
     return 0
 
 

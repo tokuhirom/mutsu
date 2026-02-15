@@ -2083,6 +2083,17 @@ impl Parser {
     fn parse_equality(&mut self) -> Result<Expr, RuntimeError> {
         let mut expr = self.parse_junction()?;
         loop {
+            // Doubled prefix !! is illegal (e.g. !!eq)
+            if self.check(&TokenKind::Bang)
+                && matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::Bang)
+                )
+            {
+                return Err(RuntimeError::new(
+                    "X::Syntax::Confused: Confused".to_string(),
+                ));
+            }
             // Negated relational operators: !eq, !==, !===
             if self.check(&TokenKind::Bang)
                 && matches!(
@@ -2240,10 +2251,66 @@ impl Parser {
                 Some(TokenKind::SetDiff)
             } else if self.match_kind(TokenKind::SetSymDiff) {
                 Some(TokenKind::SetSymDiff)
+            } else if self.match_ident("before") {
+                Some(TokenKind::Ident("before".to_string()))
+            } else if self.match_ident("after") {
+                Some(TokenKind::Ident("after".to_string()))
             } else if self.match_ident("but") {
                 Some(TokenKind::Ident("but".to_string()))
             } else {
                 None
+            };
+            // Check for negation meta-operator: ! followed by comparison op
+            let (op, negate) = if op.is_some() {
+                (op, false)
+            } else if self.check(&TokenKind::Bang) {
+                let saved = self.pos;
+                self.pos += 1; // consume !
+                // Doubled prefix !! is illegal
+                if self.check(&TokenKind::Bang) {
+                    return Err(RuntimeError::new(
+                        "X::Syntax::Confused: Confused".to_string(),
+                    ));
+                }
+                let negated_op = if self.match_kind(TokenKind::Lt) {
+                    Some(TokenKind::Lt)
+                } else if self.match_kind(TokenKind::Lte) {
+                    Some(TokenKind::Lte)
+                } else if self.match_kind(TokenKind::Gt) {
+                    Some(TokenKind::Gt)
+                } else if self.match_kind(TokenKind::Gte) {
+                    Some(TokenKind::Gte)
+                } else if self.match_kind(TokenKind::EqEq) {
+                    Some(TokenKind::EqEq)
+                } else if self.match_kind(TokenKind::EqEqEq) {
+                    Some(TokenKind::EqEqEq)
+                } else if self.match_ident("lt") {
+                    Some(TokenKind::Ident("lt".to_string()))
+                } else if self.match_ident("le") {
+                    Some(TokenKind::Ident("le".to_string()))
+                } else if self.match_ident("gt") {
+                    Some(TokenKind::Ident("gt".to_string()))
+                } else if self.match_ident("ge") {
+                    Some(TokenKind::Ident("ge".to_string()))
+                } else if self.match_ident("eq") {
+                    Some(TokenKind::Ident("eq".to_string()))
+                } else if self.match_ident("eqv") {
+                    Some(TokenKind::Ident("eqv".to_string()))
+                } else if self.match_ident("before") {
+                    Some(TokenKind::Ident("before".to_string()))
+                } else if self.match_ident("after") {
+                    Some(TokenKind::Ident("after".to_string()))
+                } else {
+                    self.pos = saved; // backtrack
+                    None
+                };
+                if let Some(inner) = negated_op {
+                    (Some(inner), true)
+                } else {
+                    (None, false)
+                }
+            } else {
+                (None, false)
             };
             if let Some(op) = op {
                 let right = self.parse_meta_op()?;
@@ -2251,11 +2318,17 @@ impl Parser {
                 let is_chainable = Self::is_chainable_comparison(&op);
                 if is_chainable && prev_op.is_some() {
                     // Chained comparison: `prev_right op right`
-                    let new_cmp = Expr::Binary {
+                    let mut new_cmp = Expr::Binary {
                         left: Box::new(prev_right.unwrap()),
                         op: op.clone(),
                         right: Box::new(right.clone()),
                     };
+                    if negate {
+                        new_cmp = Expr::Unary {
+                            op: TokenKind::Bang,
+                            expr: Box::new(new_cmp),
+                        };
+                    }
                     expr = Expr::Binary {
                         left: Box::new(expr),
                         op: TokenKind::AndAnd,
@@ -2267,6 +2340,12 @@ impl Parser {
                         op: op.clone(),
                         right: Box::new(right.clone()),
                     };
+                    if negate {
+                        expr = Expr::Unary {
+                            op: TokenKind::Bang,
+                            expr: Box::new(expr),
+                        };
+                    }
                 }
                 if is_chainable {
                     prev_right = Some(right);
@@ -2294,7 +2373,7 @@ impl Parser {
             | TokenKind::EqEqEq => true,
             TokenKind::Ident(name) => matches!(
                 name.as_str(),
-                "eqv" | "eq" | "ne" | "lt" | "le" | "gt" | "ge"
+                "eqv" | "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "before" | "after"
             ),
             _ => false,
         }

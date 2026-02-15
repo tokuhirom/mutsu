@@ -1300,6 +1300,8 @@ impl Compiler {
             TokenKind::Ident(name) if name == "ne" => Some(OpCode::StrNe),
             TokenKind::Ident(name) if name == "lt" => Some(OpCode::StrLt),
             TokenKind::Ident(name) if name == "gt" => Some(OpCode::StrGt),
+            TokenKind::Ident(name) if name == "before" => Some(OpCode::Before),
+            TokenKind::Ident(name) if name == "after" => Some(OpCode::After),
             TokenKind::Ident(name) if name == "le" => Some(OpCode::StrLe),
             TokenKind::Ident(name) if name == "ge" => Some(OpCode::StrGe),
             TokenKind::DotDot => Some(OpCode::MakeRange),

@@ -420,6 +420,46 @@ impl VM {
                 self.stack.push(runtime::make_order(ord));
                 *ip += 1;
             }
+            OpCode::Before | OpCode::After => {
+                let is_before = matches!(code.ops[*ip], OpCode::Before);
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let ord = match (&left, &right) {
+                    (Value::Int(a), Value::Int(b)) => a.cmp(b),
+                    (Value::Rat(_, _), _)
+                    | (_, Value::Rat(_, _))
+                    | (Value::FatRat(_, _), _)
+                    | (_, Value::FatRat(_, _)) => {
+                        if let (Some((an, ad)), Some((bn, bd))) =
+                            (runtime::to_rat_parts(&left), runtime::to_rat_parts(&right))
+                        {
+                            (an.wrapping_mul(bd)).cmp(&(bn.wrapping_mul(ad)))
+                        } else {
+                            left.to_string_value().cmp(&right.to_string_value())
+                        }
+                    }
+                    (Value::Num(a), Value::Num(b)) => {
+                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                    (Value::Int(a), Value::Num(b)) => (*a as f64)
+                        .partial_cmp(b)
+                        .unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Num(a), Value::Int(b)) => a
+                        .partial_cmp(&(*b as f64))
+                        .unwrap_or(std::cmp::Ordering::Equal),
+                    (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
+                        runtime::version_cmp_parts(ap, bp)
+                    }
+                    _ => left.to_string_value().cmp(&right.to_string_value()),
+                };
+                let result = if is_before {
+                    ord == std::cmp::Ordering::Less
+                } else {
+                    ord == std::cmp::Ordering::Greater
+                };
+                self.stack.push(Value::Bool(result));
+                *ip += 1;
+            }
             OpCode::Cmp => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
