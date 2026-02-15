@@ -1,6 +1,25 @@
 use super::*;
 
 impl Interpreter {
+    pub(super) fn resolve_function_with_alias(
+        &mut self,
+        name: &str,
+        arg_values: &[Value],
+    ) -> Option<FunctionDef> {
+        if let Some(def) = self.resolve_function_with_types(name, arg_values) {
+            return Some(def);
+        }
+        if name.contains(':') || name.contains("::") {
+            return None;
+        }
+        for alias in [format!("prefix:<{name}>"), format!("postfix:<{name}>")] {
+            if let Some(def) = self.resolve_function_with_types(&alias, arg_values) {
+                return Some(def);
+            }
+        }
+        None
+    }
+
     pub(super) fn resolve_function_with_arity(
         &self,
         name: &str,

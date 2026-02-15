@@ -201,7 +201,7 @@ impl Interpreter {
         if let Some(native_result) = crate::builtins::native_function(name, args) {
             return native_result;
         }
-        if let Some(def) = self.resolve_function_with_types(name, args) {
+        if let Some(def) = self.resolve_function_with_alias(name, args) {
             let saved_env = self.env.clone();
             self.bind_function_args_values(&def.param_defs, &def.params, args)?;
             self.routine_stack

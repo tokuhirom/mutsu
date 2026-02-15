@@ -20,7 +20,7 @@ impl Interpreter {
                 let _ = self.env.get("made");
             }
             _ => {
-                let def_opt = self.resolve_function_with_types(name, &args);
+                let def_opt = self.resolve_function_with_alias(name, &args);
                 if let Some(def) = def_opt {
                     let saved_env = self.env.clone();
                     self.bind_function_args_values(&def.param_defs, &def.params, &args)?;

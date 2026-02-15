@@ -4845,6 +4845,10 @@ impl Parser {
                     op_str.push_str(name);
                     self.pos += 1;
                 }
+                Some(TokenKind::Str(value)) => {
+                    op_str.push_str(value);
+                    self.pos += 1;
+                }
                 Some(TokenKind::Gte) => {
                     op_str.push('=');
                     self.pos += 1;
@@ -4870,6 +4874,49 @@ impl Parser {
             return None;
         }
         Some(op_str)
+    }
+
+    fn parse_routine_name(&mut self) -> Result<String, RuntimeError> {
+        let name = self.consume_ident()?;
+        if matches!(
+            name.as_str(),
+            "prefix" | "infix" | "postfix" | "circumfix" | "postcircumfix"
+        ) && self.check(&TokenKind::Colon)
+            && let Some(op_name) = self.try_parse_angled_op_name()
+        {
+            return Ok(format!("{name}:<{op_name}>"));
+        }
+        Ok(name)
+    }
+
+    fn skip_balanced_parens(&mut self) {
+        let mut depth = 1usize;
+        while depth > 0 && !self.check(&TokenKind::Eof) {
+            if self.match_kind(TokenKind::LParen) {
+                depth += 1;
+                continue;
+            }
+            if self.match_kind(TokenKind::RParen) {
+                depth -= 1;
+                continue;
+            }
+            self.pos += 1;
+        }
+    }
+
+    fn skip_balanced_angles(&mut self) {
+        let mut depth = 1usize;
+        while depth > 0 && !self.check(&TokenKind::Eof) {
+            if self.match_kind(TokenKind::Lt) {
+                depth += 1;
+                continue;
+            }
+            if self.match_kind(TokenKind::Gt) {
+                depth -= 1;
+                continue;
+            }
+            self.pos += 1;
+        }
     }
 
     fn token_to_op_str(tok: &TokenKind) -> Option<&'static str> {
@@ -5195,7 +5242,7 @@ impl Parser {
     }
 
     fn parse_proto_sub_decl(&mut self) -> Result<Stmt, RuntimeError> {
-        let name = self.consume_ident()?;
+        let name = self.parse_routine_name()?;
         let mut params = Vec::new();
         let mut param_defs = Vec::new();
         if self.match_kind(TokenKind::LParen) {
@@ -5287,7 +5334,7 @@ impl Parser {
     }
 
     fn parse_sub_decl(&mut self, is_multi: bool) -> Result<Stmt, RuntimeError> {
-        let name = self.consume_ident()?;
+        let name = self.parse_routine_name()?;
         let mut params = Vec::new();
         let mut param_defs = Vec::new();
         if self.match_kind(TokenKind::LParen) {
@@ -5395,6 +5442,13 @@ impl Parser {
             let _ = self.consume_ident();
             while self.match_kind(TokenKind::Minus) {
                 let _ = self.consume_ident();
+            }
+            if self.match_kind(TokenKind::LParen) {
+                self.skip_balanced_parens();
+            } else if self.check(&TokenKind::Colon) {
+                let _ = self.try_parse_angled_op_name();
+            } else if self.match_kind(TokenKind::Lt) {
+                self.skip_balanced_angles();
             }
         }
         if self.match_kind(TokenKind::LBrace) {
