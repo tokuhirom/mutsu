@@ -69,6 +69,8 @@ impl Interpreter {
             (Value::Nil, Value::Str(s)) => s.is_empty(),
             // Instance identity: two instances match iff they have the same id
             (Value::Instance { id: id_a, .. }, Value::Instance { id: id_b, .. }) => id_a == id_b,
+            // When RHS is a Bool, result is that Bool
+            (_, Value::Bool(b)) => *b,
             // Default: non-matching types don't match
             (Value::Instance { .. }, _) | (_, Value::Instance { .. }) => false,
             _ => true,

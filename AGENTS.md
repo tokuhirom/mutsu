@@ -83,6 +83,12 @@ Flow: `call_method_with_values()` tries `native_method_*arg()` first; if `None`,
 - When `make roast` shows failures in whitelisted tests, investigate each failure — do NOT dismiss them as "pre-existing".
 - When a roast test requires solving multiple unrelated prerequisites, fix what you can, update the relevant file under `TODO_roast/`, and move on.
 
+## Working on complex features
+
+- Do NOT fear complex cases. Every feature must eventually be implemented fully.
+- Deferring hard work does not make it go away — tackle difficult features head-on.
+- When a roast test requires a complex feature (e.g., attribute traits, arbitrary regex delimiters, module precompilation), implement it rather than skipping to easier tests.
+
 ## Roast test prioritization
 
 - Run `./scripts/roast-history.sh` to generate per-file category lists under `tmp/`:

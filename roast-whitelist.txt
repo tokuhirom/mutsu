@@ -36,6 +36,7 @@ roast/S03-operators/not.t
 roast/S03-operators/so.t
 roast/S03-operators/spaceship-and-containers.t
 roast/S03-smartmatch/any-any.t
+roast/S03-smartmatch/any-bool.t
 roast/S03-smartmatch/any-callable.t
 roast/S03-smartmatch/any-str.t
 roast/S04-exceptions/control_across_runloop.t
@@ -76,6 +77,7 @@ roast/S15-nfg/mass-roundtrip-nfd.t
 roast/S15-nfg/mass-roundtrip-nfkc.t
 roast/S15-nfg/mass-roundtrip-nfkd.t
 roast/S15-normalization/nfc-0.t
+roast/S15-normalization/nfc-10.t
 roast/S15-normalization/nfc-1.t
 roast/S15-normalization/nfc-2.t
 roast/S15-normalization/nfc-3.t
@@ -85,10 +87,10 @@ roast/S15-normalization/nfc-6.t
 roast/S15-normalization/nfc-7.t
 roast/S15-normalization/nfc-8.t
 roast/S15-normalization/nfc-9.t
-roast/S15-normalization/nfc-10.t
 roast/S15-normalization/nfc-concat.t
 roast/S15-normalization/nfc-sanity.t
 roast/S15-normalization/nfd-0.t
+roast/S15-normalization/nfd-10.t
 roast/S15-normalization/nfd-1.t
 roast/S15-normalization/nfd-2.t
 roast/S15-normalization/nfd-3.t
@@ -98,9 +100,9 @@ roast/S15-normalization/nfd-6.t
 roast/S15-normalization/nfd-7.t
 roast/S15-normalization/nfd-8.t
 roast/S15-normalization/nfd-9.t
-roast/S15-normalization/nfd-10.t
 roast/S15-normalization/nfd-sanity.t
 roast/S15-normalization/nfkc-0.t
+roast/S15-normalization/nfkc-10.t
 roast/S15-normalization/nfkc-1.t
 roast/S15-normalization/nfkc-2.t
 roast/S15-normalization/nfkc-3.t
@@ -110,9 +112,9 @@ roast/S15-normalization/nfkc-6.t
 roast/S15-normalization/nfkc-7.t
 roast/S15-normalization/nfkc-8.t
 roast/S15-normalization/nfkc-9.t
-roast/S15-normalization/nfkc-10.t
 roast/S15-normalization/nfkc-sanity.t
 roast/S15-normalization/nfkd-0.t
+roast/S15-normalization/nfkd-10.t
 roast/S15-normalization/nfkd-1.t
 roast/S15-normalization/nfkd-2.t
 roast/S15-normalization/nfkd-3.t
@@ -122,7 +124,6 @@ roast/S15-normalization/nfkd-6.t
 roast/S15-normalization/nfkd-7.t
 roast/S15-normalization/nfkd-8.t
 roast/S15-normalization/nfkd-9.t
-roast/S15-normalization/nfkd-10.t
 roast/S15-normalization/nfkd-sanity.t
 roast/S16-filehandles/misc.t
 roast/S16-io/cwd.t
@@ -146,8 +147,8 @@ roast/S32-scalar/defined.t
 roast/S32-str/append.t
 roast/S32-str/bool.t
 roast/S32-str/lc.t
-roast/S32-str/tc.t
 roast/S32-str/tclc.t
+roast/S32-str/tc.t
 roast/S32-str/trim.t
 roast/S32-str/uc.t
 roast/S32-trig/e.t
