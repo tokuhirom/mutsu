@@ -201,7 +201,15 @@ impl Parser {
                 self.pos += 1; // consume (
                 let mut names = Vec::new();
                 while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
-                    names.push(self.consume_var()?);
+                    if self.peek_is_var() {
+                        names.push(self.consume_var()?);
+                    } else if self.peek_is_codevar() {
+                        names.push(format!("&{}", self.consume_codevar()?));
+                    } else {
+                        return Err(RuntimeError::new(
+                            "Expected variable in destructuring declaration",
+                        ));
+                    }
                     if !self.match_kind(TokenKind::Comma) {
                         break;
                     }
@@ -804,21 +812,33 @@ impl Parser {
             return Ok(Stmt::Control(body));
         }
         if self.match_ident("BEGIN") {
-            let body = self.parse_block()?;
+            let body = if self.check(&TokenKind::LBrace) {
+                self.parse_block()?
+            } else {
+                vec![self.parse_stmt()?]
+            };
             return Ok(Stmt::Phaser {
                 kind: PhaserKind::Begin,
                 body,
             });
         }
         if self.match_ident("CHECK") || self.match_ident("INIT") {
-            let body = self.parse_block()?;
+            let body = if self.check(&TokenKind::LBrace) {
+                self.parse_block()?
+            } else {
+                vec![self.parse_stmt()?]
+            };
             return Ok(Stmt::Phaser {
                 kind: PhaserKind::Begin,
                 body,
             });
         }
         if self.match_ident("END") {
-            let body = self.parse_block()?;
+            let body = if self.check(&TokenKind::LBrace) {
+                self.parse_block()?
+            } else {
+                vec![self.parse_stmt()?]
+            };
             return Ok(Stmt::Phaser {
                 kind: PhaserKind::End,
                 body,

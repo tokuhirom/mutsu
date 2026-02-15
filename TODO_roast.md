@@ -455,6 +455,7 @@
 - [ ] roast/S04-exceptions/control_across_runloop.t
   - 0/1 pass. Test uses `sub foo($x = last) { $x }` where `last` is used as a default parameter value that should propagate as a control exception to the enclosing `for` loop. Requires X::ControlFlow exception propagation across call boundaries. Difficulty: Medium-High
 - [ ] roast/S04-exceptions/exceptions-alternatives.t
+  - Still exits with no TAP plan. Likely blocked by incomplete parsing/execution around complex `grammar` + `token value:sym<...>` constructs in this file.
 - [ ] roast/S04-exceptions/fail-6e.t
 - [ ] roast/S04-exceptions/fail.t
 - [ ] roast/S04-exceptions/pending.t
@@ -1474,7 +1475,7 @@
 - [ ] roast/S32-list/rotor.t
 - [ ] roast/S32-list/seq.t
 - [ ] roast/S32-list/skip.t
-  - Fails at selective `BEGIN` import pattern (`my (&plan,...) = do { use Test; ... }`): extracted `&plan` stays unresolved, so subsequent `plan` call aborts.
+  - `BEGIN` single-statement phaser parsing now works (no longer aborts at `plan`), but test currently fails immediately at missing `.skip` method dispatch (`Unknown method ...: skip`).
 - [ ] roast/S32-list/snip.t
 - [ ] roast/S32-list/sort.t
   - ~20/74 pass. Basic sort works for method form on strings/numbers/lists. Crashes with `is-deeply expects right`. Failures: sort with comparator sub (1-5, 7, 12, 14-18), Schwartzian transform (18, 20), stability tests (27-28, 35), many advanced features. Difficulty: Medium-High
