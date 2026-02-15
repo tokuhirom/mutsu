@@ -129,10 +129,10 @@ impl Interpreter {
             self.test_state.get_or_insert_with(TestState::new).planned = Some(0);
             let reason_str = reason.to_string_value();
             if reason_str.is_empty() || reason_str == "True" {
-                self.output.push_str("1..0 # SKIP\n");
+                self.output.push_str("1..0 # Skipped: no reason given\n");
             } else {
                 self.output
-                    .push_str(&format!("1..0 # SKIP {}\n", reason_str));
+                    .push_str(&format!("1..0 # Skipped: {}\n", reason_str));
             }
             self.halted = true;
         } else {
