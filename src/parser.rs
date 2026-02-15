@@ -686,50 +686,19 @@ impl Parser {
             let iterable = self.parse_comma_expr()?;
             let mut param = None;
             let mut params = Vec::new();
-            if self.match_kind(TokenKind::Arrow) {
-                // Skip optional type annotation
-                if matches!(
-                    self.tokens.get(self.pos).map(|t| &t.kind),
-                    Some(TokenKind::Ident(_))
-                ) && matches!(
-                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
-                    Some(TokenKind::Var(_))
-                ) {
-                    self.pos += 1;
-                }
-                if self.peek_is_var() || self.peek_is_codevar() {
-                    let first = if self.peek_is_var() {
-                        self.consume_var()?
-                    } else {
-                        self.consume_codevar()?
-                    };
-                    if self.match_kind(TokenKind::Comma) {
-                        params.push(first);
-                        while self.peek_is_var()
-                            || self.peek_is_codevar()
-                            || self.peek_ident().is_some()
-                        {
-                            if self.peek_is_var() {
-                                params.push(self.consume_var()?);
-                            } else if self.peek_is_codevar() {
-                                params.push(self.consume_codevar()?);
-                            } else {
-                                // Sigilless parameter (e.g., \t → t)
-                                params.push(self.consume_ident()?);
-                            }
-                            if !self.match_kind(TokenKind::Comma) {
-                                break;
-                            }
+            if self.match_kind(TokenKind::Arrow)
+                && let Some(first) = self.parse_pointy_param_name()
+            {
+                if self.match_kind(TokenKind::Comma) {
+                    params.push(first);
+                    while let Some(name) = self.parse_pointy_param_name() {
+                        params.push(name);
+                        if !self.match_kind(TokenKind::Comma) {
+                            break;
                         }
-                    } else {
-                        param = Some(first);
                     }
-                } else if let Some(name) = self.peek_ident() {
-                    // Sigilless parameter (e.g., -> \t where \ is skipped by lexer)
-                    if !matches!(name.as_str(), "if" | "unless" | "while" | "until" | "for") {
-                        self.pos += 1;
-                        param = Some(name);
-                    }
+                } else {
+                    param = Some(first);
                 }
             }
             let body = self.parse_block()?;
@@ -4492,6 +4461,51 @@ impl Parser {
         )
     }
 
+    fn parse_pointy_param_name(&mut self) -> Option<String> {
+        if let Some(TokenKind::Ident(_)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+            let mut next = self.pos + 1;
+            if matches!(
+                self.tokens.get(next).map(|t| &t.kind),
+                Some(TokenKind::Colon)
+            ) && matches!(
+                self.tokens.get(next + 1).map(|t| &t.kind),
+                Some(TokenKind::Ident(_))
+            ) {
+                next += 2;
+            }
+            match self.tokens.get(next).map(|t| &t.kind) {
+                Some(TokenKind::Var(name)) => {
+                    self.pos = next + 1;
+                    return Some(name.clone());
+                }
+                Some(TokenKind::CodeVar(name)) => {
+                    self.pos = next + 1;
+                    return Some(name.clone());
+                }
+                Some(TokenKind::Ident(name))
+                    if !matches!(name.as_str(), "if" | "unless" | "while" | "until" | "for") =>
+                {
+                    self.pos = next + 1;
+                    return Some(name.clone());
+                }
+                _ => {}
+            }
+        }
+        if self.peek_is_var() {
+            return self.consume_var().ok();
+        }
+        if self.peek_is_codevar() {
+            return self.consume_codevar().ok();
+        }
+        if let Some(name) = self.peek_ident()
+            && !matches!(name.as_str(), "if" | "unless" | "while" | "until" | "for")
+        {
+            self.pos += 1;
+            return Some(name);
+        }
+        None
+    }
+
     fn peek_ident(&self) -> Option<String> {
         match self.tokens.get(self.pos).map(|t| &t.kind) {
             Some(TokenKind::Ident(name)) => Some(name.clone()),
@@ -5348,17 +5362,37 @@ impl Parser {
                     is_named = true;
                 }
                 let mut type_constraint = None;
-                if matches!(
-                    self.tokens.get(self.pos).map(|t| &t.kind),
-                    Some(TokenKind::Ident(_))
-                ) && matches!(
-                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
-                    Some(TokenKind::Var(_))
-                ) {
-                    if let Some(TokenKind::Ident(ty)) = self.tokens.get(self.pos).map(|t| &t.kind) {
-                        type_constraint = Some(ty.clone());
+                let mut type_only_constraint: Option<String> = None;
+                if let Some(TokenKind::Ident(ty)) = self.tokens.get(self.pos).map(|t| &t.kind) {
+                    let mut next = self.pos + 1;
+                    if matches!(
+                        self.tokens.get(next).map(|t| &t.kind),
+                        Some(TokenKind::Colon)
+                    ) && matches!(
+                        self.tokens.get(next + 1).map(|t| &t.kind),
+                        Some(TokenKind::Ident(_))
+                    ) {
+                        next += 2;
                     }
-                    self.pos += 1;
+                    if matches!(
+                        self.tokens.get(next).map(|t| &t.kind),
+                        Some(
+                            TokenKind::Var(_)
+                                | TokenKind::CaptureVar(_)
+                                | TokenKind::ArrayVar(_)
+                                | TokenKind::HashVar(_)
+                                | TokenKind::Ident(_)
+                        )
+                    ) {
+                        type_constraint = Some(ty.clone());
+                        self.pos = next;
+                    } else if matches!(
+                        self.tokens.get(next).map(|t| &t.kind),
+                        Some(TokenKind::Comma | TokenKind::RParen)
+                    ) {
+                        type_only_constraint = Some(ty.clone());
+                        self.pos = next;
+                    }
                 }
                 let mut param_added = false;
                 if self.peek_is_var() {
@@ -5411,6 +5445,35 @@ impl Parser {
                         });
                         param_added = true;
                     }
+                } else if let Some(token) =
+                    self.advance_if(|k| matches!(k, TokenKind::CaptureVar(_)))
+                {
+                    if let TokenKind::CaptureVar(n) = token.kind {
+                        params.push(n.clone());
+                        param_defs.push(ParamDef {
+                            name: n,
+                            default: None,
+                            named: is_named,
+                            slurpy: is_slurpy,
+                            type_constraint,
+                            literal_value: None,
+                        });
+                        param_added = true;
+                    }
+                } else if let Some(TokenKind::Ident(n)) = self.tokens.get(self.pos).map(|t| &t.kind)
+                {
+                    let name = n.clone();
+                    self.pos += 1;
+                    params.push(name.clone());
+                    param_defs.push(ParamDef {
+                        name,
+                        default: None,
+                        named: is_named,
+                        slurpy: is_slurpy,
+                        type_constraint,
+                        literal_value: None,
+                    });
+                    param_added = true;
                 } else if let Some(literal_value) = self.parse_literal_param_value() {
                     params.push(String::new());
                     param_defs.push(ParamDef {
@@ -5420,6 +5483,18 @@ impl Parser {
                         slurpy: false,
                         type_constraint: None,
                         literal_value: Some(literal_value),
+                    });
+                    param_added = true;
+                } else if let Some(constraint) = type_only_constraint {
+                    let name = format!("__param{}", param_defs.len());
+                    params.push(name.clone());
+                    param_defs.push(ParamDef {
+                        name,
+                        default: None,
+                        named: is_named,
+                        slurpy: is_slurpy,
+                        type_constraint: Some(constraint),
+                        literal_value: None,
                     });
                     param_added = true;
                 }
