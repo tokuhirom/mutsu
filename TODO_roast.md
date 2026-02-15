@@ -163,6 +163,8 @@
   - 1/1 pass.
 - [ ] roast/S02-types/flattening.t
 - [ ] roast/S02-types/generics.t
+  - `use nqp;` fatal (`Module not found: nqp`) is fixed by treating `nqp` as a pragma/no-op.
+  - Current blocker: generic nominalized method dispatch fails (`Unknown method value dispatch: t-nominalizables`).
 - [ ] roast/S02-types/hash_ref.t
 - [ ] roast/S02-types/hash.t
   - 94/112 pass (111 reached). Remaining failures:

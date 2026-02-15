@@ -586,7 +586,8 @@ impl Compiler {
                 if module == "v6"
                     || module == "customtrait"
                     || module == "isms"
-                    || module == "MONKEY-TYPING" => {}
+                    || module == "MONKEY-TYPING"
+                    || module == "nqp" => {}
             Stmt::Use { module, .. } if module == "Test" || module.starts_with("Test::") => {
                 let name_idx = self.code.add_constant(Value::Str(module.clone()));
                 self.code.emit(OpCode::UseModule(name_idx));
