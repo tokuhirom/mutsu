@@ -2029,6 +2029,22 @@ impl Parser {
                     op: TokenKind::SlashSlash,
                     right: Box::new(right),
                 };
+            } else if self.check(&TokenKind::Bang)
+                && matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::OrOr)
+                )
+            {
+                self.pos += 2; // consume ! and ||
+                let right = self.parse_tight_and()?;
+                expr = Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(Expr::Binary {
+                        left: Box::new(expr),
+                        op: TokenKind::OrOr,
+                        right: Box::new(right),
+                    }),
+                };
             } else {
                 break;
             }
@@ -2046,6 +2062,22 @@ impl Parser {
                     left: Box::new(expr),
                     op: TokenKind::AndAnd,
                     right: Box::new(right),
+                };
+            } else if self.check(&TokenKind::Bang)
+                && matches!(
+                    self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                    Some(TokenKind::AndAnd)
+                )
+            {
+                self.pos += 2; // consume ! and &&
+                let right = self.parse_equality()?;
+                expr = Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(Expr::Binary {
+                        left: Box::new(expr),
+                        op: TokenKind::AndAnd,
+                        right: Box::new(right),
+                    }),
                 };
             } else {
                 break;
