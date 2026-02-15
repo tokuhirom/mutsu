@@ -217,12 +217,18 @@ impl Compiler {
                     merged.extend(loop_body);
                     loop_body = merged;
                 }
+                let arity = if !params.is_empty() {
+                    params.len() as u32
+                } else {
+                    1
+                };
                 self.compile_expr(iterable);
                 let loop_idx = self.code.emit(OpCode::ForLoop {
                     param_idx: None,
                     param_local: None,
                     body_end: 0,
                     label: label.clone(),
+                    arity,
                 });
                 for s in &loop_body {
                     self.compile_stmt(s);

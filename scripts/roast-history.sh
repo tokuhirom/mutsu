@@ -131,3 +131,12 @@ printf "%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n" \
 
 echo ""
 echo "Appended to $HISTORY"
+
+# Auto-commit only when the script reaches this point (completed run).
+if git diff --quiet -- "$HISTORY"; then
+  echo "No changes to commit in $HISTORY"
+else
+  git add "$HISTORY"
+  git commit -m "Update roast history ($DATE)" -- "$HISTORY"
+  echo "Committed $HISTORY"
+fi

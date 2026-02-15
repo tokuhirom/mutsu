@@ -1264,12 +1264,14 @@ impl VM {
                 param_local,
                 body_end,
                 label,
+                arity,
             } => {
                 let spec = vm_control_ops::ForLoopSpec {
                     param_idx: *param_idx,
                     param_local: *param_local,
                     body_end: *body_end,
                     label: label.clone(),
+                    arity: *arity,
                 };
                 self.exec_for_loop_op(code, &spec, ip, compiled_fns)?;
             }

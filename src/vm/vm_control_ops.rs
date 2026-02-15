@@ -5,6 +5,7 @@ pub(super) struct ForLoopSpec {
     pub(super) param_local: Option<u32>,
     pub(super) body_end: u32,
     pub(super) label: Option<String>,
+    pub(super) arity: u32,
 }
 
 pub(super) struct CStyleLoopSpec {
@@ -80,7 +81,16 @@ impl VM {
                 _ => unreachable!("ForLoop param must be a string constant"),
             });
 
-        'for_loop: for item in items {
+        let arity = spec.arity.max(1) as usize;
+        let chunked_items: Vec<Value> = if arity > 1 {
+            items
+                .chunks(arity)
+                .map(|chunk| Value::Array(chunk.to_vec()))
+                .collect()
+        } else {
+            items
+        };
+        'for_loop: for item in chunked_items {
             self.interpreter
                 .env_mut()
                 .insert("_".to_string(), item.clone());
@@ -301,12 +311,7 @@ impl VM {
             }
             if !did_proceed {
                 self.interpreter.set_when_matched(true);
-                let last = self
-                    .interpreter
-                    .env()
-                    .get("_")
-                    .cloned()
-                    .unwrap_or(Value::Nil);
+                let last = self.stack.last().cloned().unwrap_or(Value::Nil);
                 let mut sig = RuntimeError::succeed_signal();
                 sig.return_value = Some(last);
                 return Err(sig);
