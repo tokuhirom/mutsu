@@ -236,9 +236,10 @@
 - [ ] roast/S03-binding/ro.t
 - [ ] roast/S03-binding/scalars.t
 - [ ] roast/S03-buf/read-int.t
-  - Blocks early at `blob8.new(...)` / `buf8.new(...)` (`Unknown method ...: new`): typed `Buf/Blob` constructors and corresponding read-int/read-uint method family are still missing.
-  - Current blocker: `blob8.new(...)` dies (`Unknown method ...: new`), and this file also needs `Blob/Buf` typed constructors, `Kernel.endian`, and `read-int*/read-uint*` methods.
+  - Constructor blocking is improved, but file now stops at `Unknown method value dispatch (fallback disabled): read-uint8`.
+  - Remaining blocker: implement `Blob/Buf` read-int/read-uint family (`read-int8..128`, `read-uint8..128`) with endian handling.
 - [ ] roast/S03-buf/read-num.t
+  - Reaches 72/200 subtests, then exits due missing `Blob/Buf` numeric read family (`read-num32`, `read-num64`) behavior/completeness.
 - [ ] roast/S03-buf/read-write-bits.t
 - [ ] roast/S03-buf/write-int.t
 - [ ] roast/S03-buf/write-num.t
@@ -713,6 +714,8 @@
 - [ ] roast/S06-signature/multi-invocant.t
 - [ ] roast/S06-signature/multiple-signatures.t
 - [ ] roast/S06-signature/named-parameters.t
+  - Panic is gone (was VM `CallMethod` stack unwrap), but this file still exits early with `VM stack underflow in CallMethod`.
+  - Current blocker is named-argument lowering/stack layout for method calls (colonpairs / fat-arrow named args).
   - 7/104 pass (1, 10, 14, 25, 27-28, 40). Named parameter passing mostly broken: colonpair `:$x` syntax (4-8), `=> value` fat-arrow (3, 9, 12-13, 17-24), named array params (29-31), mixed named/positional (32-39, 41-44), mandatory named (45+). Difficulty: High (fundamental named-param dispatch needs work)
 - [ ] roast/S06-signature/named-placeholders.t
 - [ ] roast/S06-signature/named-renaming.t

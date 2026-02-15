@@ -101,7 +101,14 @@ pub(crate) fn native_method_1arg(
                 };
                 Some(Ok(Value::Array(items[..n.min(items.len())].to_vec())))
             }
-            _ => None,
+            _ => {
+                let n = match arg {
+                    Value::Int(i) => *i as usize,
+                    _ => return None,
+                };
+                let items = runtime::value_to_list(target);
+                Some(Ok(Value::Array(items[..n.min(items.len())].to_vec())))
+            }
         },
         "tail" => match target {
             Value::Array(items) => {
@@ -112,7 +119,15 @@ pub(crate) fn native_method_1arg(
                 let start = items.len().saturating_sub(n);
                 Some(Ok(Value::Array(items[start..].to_vec())))
             }
-            _ => None,
+            _ => {
+                let n = match arg {
+                    Value::Int(i) => *i as usize,
+                    _ => return None,
+                };
+                let items = runtime::value_to_list(target);
+                let start = items.len().saturating_sub(n);
+                Some(Ok(Value::Array(items[start..].to_vec())))
+            }
         },
         "rindex" => {
             let s = target.to_string_value();

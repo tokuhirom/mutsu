@@ -2924,6 +2924,13 @@ impl Parser {
                 expr: Box::new(expr),
             });
         }
+        if self.match_kind(TokenKind::Pipe) {
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Call {
+                name: "slip".to_string(),
+                args: vec![expr],
+            });
+        }
         if self.match_kind(TokenKind::Bang) {
             let expr = self.parse_unary()?;
             return Ok(Expr::Unary {

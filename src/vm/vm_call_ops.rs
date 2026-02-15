@@ -10,6 +10,9 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
+        if self.stack.len() < arity {
+            return Err(RuntimeError::new("VM stack underflow in CallFunc"));
+        }
         let start = self.stack.len() - arity;
         let args: Vec<Value> = self.stack.drain(start..).collect();
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
@@ -37,9 +40,14 @@ impl VM {
         let method = Self::const_str(code, name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
         let arity = arity as usize;
+        if self.stack.len() < arity + 1 {
+            return Err(RuntimeError::new("VM stack underflow in CallMethod"));
+        }
         let start = self.stack.len() - arity;
         let args: Vec<Value> = self.stack.drain(start..).collect();
-        let target = self.stack.pop().unwrap();
+        let target = self.stack.pop().ok_or_else(|| {
+            RuntimeError::new("VM stack underflow in CallMethod target".to_string())
+        })?;
         let call_result =
             if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
                 native_result
@@ -71,9 +79,14 @@ impl VM {
         let target_name = Self::const_str(code, target_name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
         let arity = arity as usize;
+        if self.stack.len() < arity + 1 {
+            return Err(RuntimeError::new("VM stack underflow in CallMethodMut"));
+        }
         let start = self.stack.len() - arity;
         let args: Vec<Value> = self.stack.drain(start..).collect();
-        let target = self.stack.pop().unwrap();
+        let target = self.stack.pop().ok_or_else(|| {
+            RuntimeError::new("VM stack underflow in CallMethodMut target".to_string())
+        })?;
         let call_result =
             if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
                 native_result
@@ -99,9 +112,14 @@ impl VM {
         arity: u32,
     ) -> Result<(), RuntimeError> {
         let arity = arity as usize;
+        if self.stack.len() < arity + 1 {
+            return Err(RuntimeError::new("VM stack underflow in CallOnValue"));
+        }
         let start = self.stack.len() - arity;
         let args: Vec<Value> = self.stack.drain(start..).collect();
-        let target = self.stack.pop().unwrap_or(Value::Nil);
+        let target = self.stack.pop().ok_or_else(|| {
+            RuntimeError::new("VM stack underflow in CallOnValue target".to_string())
+        })?;
         let result = self.interpreter.eval_call_on_value(target, args)?;
         self.stack.push(result);
         self.sync_locals_from_env(code);
@@ -116,6 +134,9 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
+        if self.stack.len() < arity {
+            return Err(RuntimeError::new("VM stack underflow in CallOnCodeVar"));
+        }
         let start = self.stack.len() - arity;
         let args: Vec<Value> = self.stack.drain(start..).collect();
         let key = format!("&{}", name);
@@ -141,6 +162,9 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
+        if self.stack.len() < arity {
+            return Err(RuntimeError::new("VM stack underflow in ExecCall"));
+        }
         let start = self.stack.len() - arity;
         let args: Vec<Value> = self.stack.drain(start..).collect();
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
@@ -164,6 +188,9 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
+        if self.stack.len() < arity {
+            return Err(RuntimeError::new("VM stack underflow in ExecCallPairs"));
+        }
         let start = self.stack.len() - arity;
         let args: Vec<Value> = self.stack.drain(start..).collect();
         self.interpreter.exec_call_pairs_values(&name, args)?;

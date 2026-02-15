@@ -1,5 +1,6 @@
 #![allow(clippy::result_large_err)]
 
+use crate::runtime;
 use crate::value::{RuntimeError, Value, make_rat};
 use num_traits::Signed;
 use unicode_segmentation::UnicodeSegmentation;
@@ -345,11 +346,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "head" => match target {
             Value::Array(items) => Some(Ok(items.first().cloned().unwrap_or(Value::Nil))),
-            _ => None,
+            _ => {
+                let items = runtime::value_to_list(target);
+                Some(Ok(items.first().cloned().unwrap_or(Value::Nil)))
+            }
         },
         "tail" => match target {
             Value::Array(items) => Some(Ok(items.last().cloned().unwrap_or(Value::Nil))),
-            _ => None,
+            _ => {
+                let items = runtime::value_to_list(target);
+                Some(Ok(items.last().cloned().unwrap_or(Value::Nil)))
+            }
         },
         "first" => match target {
             Value::Array(items) => Some(Ok(items.first().cloned().unwrap_or(Value::Nil))),
