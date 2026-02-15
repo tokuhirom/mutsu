@@ -108,34 +108,19 @@ impl VM {
             // -- Variables --
             OpCode::GetGlobal(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
-                let val = self
-                    .interpreter
-                    .env()
-                    .get(name)
-                    .cloned()
-                    .unwrap_or(Value::Nil);
+                let val = self.get_env_with_main_alias(name).unwrap_or(Value::Nil);
                 self.stack.push(val);
                 *ip += 1;
             }
             OpCode::GetArrayVar(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
-                let val = self
-                    .interpreter
-                    .env()
-                    .get(name)
-                    .cloned()
-                    .unwrap_or(Value::Nil);
+                let val = self.get_env_with_main_alias(name).unwrap_or(Value::Nil);
                 self.stack.push(val);
                 *ip += 1;
             }
             OpCode::GetHashVar(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
-                let val = self
-                    .interpreter
-                    .env()
-                    .get(name)
-                    .cloned()
-                    .unwrap_or(Value::Nil);
+                let val = self.get_env_with_main_alias(name).unwrap_or(Value::Nil);
                 self.stack.push(val);
                 *ip += 1;
             }
@@ -198,7 +183,7 @@ impl VM {
                 } else {
                     val
                 };
-                self.interpreter.env_mut().insert(name, val);
+                self.set_env_with_main_alias(&name, val);
                 *ip += 1;
             }
             OpCode::SetTopic => {

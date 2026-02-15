@@ -187,7 +187,7 @@ impl Parser {
             }
             return Err(RuntimeError::new("Expected sub or block for subtest"));
         }
-        if self.match_ident("my") {
+        if self.match_ident("my") || self.match_ident("our") {
             // my enum Foo <...> or my enum Foo (...)
             if self.match_ident("enum") {
                 return self.parse_enum_decl();

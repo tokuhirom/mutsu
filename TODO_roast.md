@@ -778,6 +778,7 @@
 - [ ] roast/S10-packages/nested-use.t
 - [ ] roast/S10-packages/precompilation.t
 - [ ] roast/S10-packages/require-and-use--dead-file.t
+  - No longer panics (`Unknown call: our` fixed by parsing `our` declarations), but still fails all subtests because `require/use/no` return values and `%*INC` updates are not yet implemented correctly.
 - [ ] roast/S10-packages/require-and-use.t
 - [ ] roast/S10-packages/scope.t
 - [ ] roast/S10-packages/use-with-class.t

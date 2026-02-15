@@ -82,40 +82,26 @@ impl VM {
 
     pub(super) fn exec_post_increment_op(&mut self, code: &CompiledCode, name_idx: u32) {
         let name = Self::const_str(code, name_idx);
-        let val = self
-            .interpreter
-            .env()
-            .get(name)
-            .cloned()
-            .unwrap_or(Value::Int(0));
+        let val = self.get_env_with_main_alias(name).unwrap_or(Value::Int(0));
         let new_val = match &val {
             Value::Int(i) => Value::Int(i + 1),
             Value::Rat(n, d) => make_rat(n + d, *d),
             _ => Value::Int(1),
         };
-        self.interpreter
-            .env_mut()
-            .insert(name.to_string(), new_val.clone());
+        self.set_env_with_main_alias(name, new_val.clone());
         self.update_local_if_exists(code, name, &new_val);
         self.stack.push(val);
     }
 
     pub(super) fn exec_post_decrement_op(&mut self, code: &CompiledCode, name_idx: u32) {
         let name = Self::const_str(code, name_idx);
-        let val = self
-            .interpreter
-            .env()
-            .get(name)
-            .cloned()
-            .unwrap_or(Value::Int(0));
+        let val = self.get_env_with_main_alias(name).unwrap_or(Value::Int(0));
         let new_val = match &val {
             Value::Int(i) => Value::Int(i - 1),
             Value::Rat(n, d) => make_rat(n - d, *d),
             _ => Value::Int(-1),
         };
-        self.interpreter
-            .env_mut()
-            .insert(name.to_string(), new_val.clone());
+        self.set_env_with_main_alias(name, new_val.clone());
         self.update_local_if_exists(code, name, &new_val);
         self.stack.push(val);
     }

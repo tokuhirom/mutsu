@@ -1,6 +1,55 @@
 use super::*;
 
 impl VM {
+    fn main_unqualified_name(name: &str) -> Option<String> {
+        for sigil in ["$", "@", "%", "&"] {
+            let prefix = format!("{sigil}Main::");
+            if let Some(rest) = name.strip_prefix(&prefix) {
+                return Some(format!("{sigil}{rest}"));
+            }
+        }
+        None
+    }
+
+    fn main_qualified_name(name: &str) -> Option<String> {
+        for sigil in ["$", "@", "%", "&"] {
+            if let Some(rest) = name.strip_prefix(sigil)
+                && !rest.contains("::")
+            {
+                return Some(format!("{sigil}Main::{rest}"));
+            }
+        }
+        None
+    }
+
+    pub(super) fn get_env_with_main_alias(&self, name: &str) -> Option<Value> {
+        if let Some(val) = self.interpreter.env().get(name) {
+            return Some(val.clone());
+        }
+        if let Some(alias) = Self::main_unqualified_name(name) {
+            return self.interpreter.env().get(&alias).cloned();
+        }
+        if let Some(qualified) = Self::main_qualified_name(name) {
+            return self.interpreter.env().get(&qualified).cloned();
+        }
+        None
+    }
+
+    pub(super) fn set_env_with_main_alias(&mut self, name: &str, value: Value) {
+        self.interpreter
+            .env_mut()
+            .insert(name.to_string(), value.clone());
+        if let Some(alias) = Self::main_unqualified_name(name) {
+            self.interpreter.env_mut().insert(alias, value);
+            return;
+        }
+        if let Some(qualified) = Self::main_qualified_name(name)
+            && self.interpreter.env().contains_key(&qualified)
+        {
+            self.interpreter.env_mut().insert(qualified, value);
+        }
+    }
+
     pub(super) fn const_str(code: &CompiledCode, idx: u32) -> &str {
         match &code.constants[idx as usize] {
             Value::Str(s) => s.as_str(),

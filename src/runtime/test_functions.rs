@@ -279,9 +279,12 @@ impl Interpreter {
             self.test_ok(true, &desc, todo)?;
             return Ok(Value::Bool(true));
         }
-        let left = Self::positional_value_required(args, 0, "is-deeply expects left")?;
-        let right = Self::positional_value_required(args, 1, "is-deeply expects right")?;
-        let ok = left == right;
+        let left = Self::positional_value(args, 0);
+        let right = Self::positional_value(args, 1);
+        let ok = match (left, right) {
+            (Some(left), Some(right)) => left == right,
+            _ => false,
+        };
         self.test_ok(ok, &desc, todo)?;
         Ok(Value::Bool(ok))
     }
