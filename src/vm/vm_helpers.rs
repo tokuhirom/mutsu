@@ -201,8 +201,18 @@ impl VM {
                 .push_routine(fn_package.to_string(), fn_name.to_string());
         }
 
-        self.interpreter
-            .bind_function_args_values(&cf.param_defs, &cf.params, &args)?;
+        if let Err(e) =
+            self.interpreter
+                .bind_function_args_values(&cf.param_defs, &cf.params, &args)
+        {
+            if !fn_name.is_empty() {
+                self.interpreter.pop_routine();
+            }
+            self.stack.truncate(saved_stack_depth);
+            self.locals = saved_locals;
+            *self.interpreter.env_mut() = saved_env;
+            return Err(e);
+        }
 
         self.locals = vec![Value::Nil; cf.code.locals.len()];
         for (i, local_name) in cf.code.locals.iter().enumerate() {
