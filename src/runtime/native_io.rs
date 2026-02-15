@@ -264,12 +264,14 @@ impl Interpreter {
                 })?;
                 Ok(Value::Bool(true))
             }
-            "unlink" => {
-                fs::remove_file(&path_buf).map_err(|err| {
-                    RuntimeError::new(format!("Failed to unlink '{}': {}", p, err))
-                })?;
-                Ok(Value::Bool(true))
-            }
+            "unlink" => match fs::remove_file(&path_buf) {
+                Ok(()) => Ok(Value::Bool(true)),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Value::Bool(false)),
+                Err(err) => Err(RuntimeError::new(format!(
+                    "Failed to unlink '{}': {}",
+                    p, err
+                ))),
+            },
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on IO::Path",
                 method

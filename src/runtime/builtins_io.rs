@@ -30,9 +30,14 @@ impl Interpreter {
             .first()
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("unlink requires a path argument"))?;
-        fs::remove_file(&path)
-            .map_err(|err| RuntimeError::new(format!("Failed to unlink '{}': {}", path, err)))?;
-        Ok(Value::Bool(true))
+        match fs::remove_file(&path) {
+            Ok(()) => Ok(Value::Bool(true)),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Value::Bool(false)),
+            Err(err) => Err(RuntimeError::new(format!(
+                "Failed to unlink '{}': {}",
+                path, err
+            ))),
+        }
     }
 
     pub(super) fn builtin_open(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

@@ -969,6 +969,17 @@ impl Parser {
         }
         if let Some(name) = self.peek_ident()
             && name != "temp"
+            && name != "do"
+            && name != "if"
+            && name != "unless"
+            && name != "while"
+            && name != "until"
+            && name != "for"
+            && name != "given"
+            && name != "when"
+            && name != "with"
+            && name != "without"
+            && name != "try"
             && matches!(
                 self.peek_next_kind(),
                 Some(
@@ -976,6 +987,14 @@ impl Parser {
                         | TokenKind::ArrayVar(_)
                         | TokenKind::HashVar(_)
                         | TokenKind::CaptureVar(_)
+                        | TokenKind::Number(_)
+                        | TokenKind::BigNumber(_)
+                        | TokenKind::Float(_)
+                        | TokenKind::Imaginary(_)
+                        | TokenKind::Str(_)
+                        | TokenKind::DStr(_)
+                        | TokenKind::Regex(_)
+                        | TokenKind::Subst { .. }
                 )
             )
         {
