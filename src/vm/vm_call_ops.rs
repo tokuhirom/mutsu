@@ -170,26 +170,4 @@ impl VM {
         self.sync_locals_from_env(code);
         Ok(())
     }
-
-    pub(super) fn exec_exec_call_mixed_op(
-        &mut self,
-        code: &CompiledCode,
-        stmt_idx: u32,
-    ) -> Result<(), RuntimeError> {
-        let stmt = &code.stmt_pool[stmt_idx as usize];
-        if let Stmt::Call { name, args } = stmt {
-            let eval_value_count = args
-                .iter()
-                .filter(|arg| Self::call_arg_has_eval_value(arg))
-                .count();
-            let start = self.stack.len().saturating_sub(eval_value_count);
-            let eval_values: Vec<Value> = self.stack.drain(start..).collect();
-            self.interpreter
-                .exec_call_mixed_values(name, args, eval_values)?;
-            self.sync_locals_from_env(code);
-            Ok(())
-        } else {
-            Err(RuntimeError::new("ExecCallMixed expects Call"))
-        }
-    }
 }

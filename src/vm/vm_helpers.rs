@@ -8,25 +8,6 @@ impl VM {
         }
     }
 
-    pub(super) fn call_arg_needs_raw_expr(expr: &Expr) -> bool {
-        match expr {
-            Expr::Block(_) => true,
-            Expr::Hash(pairs) => pairs
-                .iter()
-                .any(|(_, v)| v.as_ref().is_some_and(Self::call_arg_needs_raw_expr)),
-            _ => false,
-        }
-    }
-
-    pub(super) fn call_arg_has_eval_value(arg: &CallArg) -> bool {
-        match arg {
-            CallArg::Positional(expr) => !Self::call_arg_needs_raw_expr(expr),
-            CallArg::Named { value, .. } => value
-                .as_ref()
-                .is_some_and(|expr| !Self::call_arg_needs_raw_expr(expr)),
-        }
-    }
-
     pub(super) fn is_builtin_type(name: &str) -> bool {
         matches!(
             name,

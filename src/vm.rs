@@ -1,7 +1,7 @@
 #![allow(clippy::result_large_err)]
 use std::collections::HashMap;
 
-use crate::ast::{CallArg, Expr, Stmt};
+use crate::ast::Stmt;
 use crate::interpreter::Interpreter;
 use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::runtime;
@@ -1083,10 +1083,6 @@ impl VM {
             }
             OpCode::ExecCallPairs { name_idx, arity } => {
                 self.exec_exec_call_pairs_op(code, *name_idx, *arity)?;
-                *ip += 1;
-            }
-            OpCode::ExecCallMixed(stmt_idx) => {
-                self.exec_exec_call_mixed_op(code, *stmt_idx)?;
                 *ip += 1;
             }
 

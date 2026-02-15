@@ -306,10 +306,9 @@ impl Compiler {
                 // Statement-level call: compile positional args only.
                 // Fall back if named args or raw-expression args remain.
                 if positional_only
-                    && rewritten_args.iter().all(|arg| match arg {
-                        CallArg::Positional(expr) => !Self::needs_raw_expr(expr),
-                        _ => false,
-                    })
+                    && rewritten_args
+                        .iter()
+                        .all(|arg| matches!(arg, CallArg::Positional(_)))
                 {
                     let arity = rewritten_args.len() as u32;
                     for arg in &rewritten_args {
@@ -324,57 +323,29 @@ impl Compiler {
 
                 // Statement-level call with named args: compile values and encode
                 // named args as Pair(name => value), then dispatch without stmt_pool.
-                if rewritten_args.iter().all(|arg| match arg {
-                    CallArg::Positional(expr) => !Self::needs_raw_expr(expr),
-                    CallArg::Named {
-                        value: Some(expr), ..
-                    } => !Self::needs_raw_expr(expr),
-                    CallArg::Named { value: None, .. } => true,
-                }) {
-                    for arg in &rewritten_args {
-                        match arg {
-                            CallArg::Positional(expr) => self.compile_expr(expr),
-                            CallArg::Named {
-                                name,
-                                value: Some(expr),
-                            } => {
-                                self.compile_expr(&Expr::Literal(Value::Str(name.clone())));
-                                self.compile_expr(expr);
-                                self.code.emit(OpCode::MakePair);
-                            }
-                            CallArg::Named { name, value: None } => {
-                                self.compile_expr(&Expr::Literal(Value::Str(name.clone())));
-                                self.compile_expr(&Expr::Literal(Value::Bool(true)));
-                                self.code.emit(OpCode::MakePair);
-                            }
-                        }
-                    }
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                    self.code.emit(OpCode::ExecCallPairs {
-                        name_idx,
-                        arity: rewritten_args.len() as u32,
-                    });
-                    return;
-                }
-
                 for arg in &rewritten_args {
                     match arg {
-                        CallArg::Positional(expr) if !Self::needs_raw_expr(expr) => {
-                            self.compile_expr(expr)
-                        }
-                        CallArg::Positional(_) => {}
+                        CallArg::Positional(expr) => self.compile_expr(expr),
                         CallArg::Named {
-                            value: Some(expr), ..
-                        } if !Self::needs_raw_expr(expr) => self.compile_expr(expr),
-                        CallArg::Named { value: Some(_), .. } => {}
-                        CallArg::Named { value: None, .. } => {}
+                            name,
+                            value: Some(expr),
+                        } => {
+                            self.compile_expr(&Expr::Literal(Value::Str(name.clone())));
+                            self.compile_expr(expr);
+                            self.code.emit(OpCode::MakePair);
+                        }
+                        CallArg::Named { name, value: None } => {
+                            self.compile_expr(&Expr::Literal(Value::Str(name.clone())));
+                            self.compile_expr(&Expr::Literal(Value::Bool(true)));
+                            self.code.emit(OpCode::MakePair);
+                        }
                     }
                 }
-                let idx = self.code.add_stmt(Stmt::Call {
-                    name: name.clone(),
-                    args: rewritten_args,
+                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                self.code.emit(OpCode::ExecCallPairs {
+                    name_idx,
+                    arity: rewritten_args.len() as u32,
                 });
-                self.code.emit(OpCode::ExecCallMixed(idx));
             }
             // Loop control
             Stmt::Last(label) => {
@@ -1345,13 +1316,6 @@ impl Compiler {
             TokenKind::DotDotDotCaret => Some(OpCode::Sequence { exclude_end: true }),
             _ => None,
         }
-    }
-
-    /// Returns true if the expression must be kept as a raw Expr for
-    /// exec_call handlers.
-    fn needs_raw_expr(expr: &Expr) -> bool {
-        let _ = expr;
-        false
     }
 
     fn is_normalized_stmt_call_name(name: &str) -> bool {

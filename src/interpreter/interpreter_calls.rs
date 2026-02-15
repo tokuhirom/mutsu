@@ -22,51 +22,6 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn exec_call_mixed_values(
-        &mut self,
-        name: &str,
-        template_args: &[CallArg],
-        eval_values: Vec<Value>,
-    ) -> Result<(), RuntimeError> {
-        let mut value_iter = eval_values.into_iter();
-        let mut rebuilt = Vec::with_capacity(template_args.len());
-        for arg in template_args {
-            match arg {
-                CallArg::Positional(expr) => {
-                    if Self::call_arg_needs_raw_expr(expr) {
-                        rebuilt.push(CallArg::Positional(expr.clone()));
-                    } else {
-                        let value = value_iter.next().unwrap_or(Value::Nil);
-                        rebuilt.push(CallArg::Positional(Expr::Literal(value)));
-                    }
-                }
-                CallArg::Named { name, value } => {
-                    let rebuilt_arg = if let Some(expr) = value {
-                        if Self::call_arg_needs_raw_expr(expr) {
-                            CallArg::Named {
-                                name: name.clone(),
-                                value: Some(expr.clone()),
-                            }
-                        } else {
-                            let v = value_iter.next().unwrap_or(Value::Nil);
-                            CallArg::Named {
-                                name: name.clone(),
-                                value: Some(Expr::Literal(v)),
-                            }
-                        }
-                    } else {
-                        CallArg::Named {
-                            name: name.clone(),
-                            value: None,
-                        }
-                    };
-                    rebuilt.push(rebuilt_arg);
-                }
-            }
-        }
-        self.exec_call(name, &rebuilt)
-    }
-
     pub(crate) fn exec_call_pairs_values(
         &mut self,
         name: &str,
@@ -83,10 +38,6 @@ impl Interpreter {
             })
             .collect();
         self.exec_call(name, &rebuilt)
-    }
-
-    pub(super) fn call_arg_needs_raw_expr(expr: &Expr) -> bool {
-        matches!(expr, Expr::Block(_))
     }
 
     pub(super) fn positional_arg<'a>(
