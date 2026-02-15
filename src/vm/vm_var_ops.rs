@@ -249,7 +249,7 @@ impl VM {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
-        let val = self.stack.pop().unwrap();
+        let val = self.stack.pop().unwrap_or(Value::Nil);
         let idx = idx as usize;
         let name = &code.locals[idx];
         let val = if name.starts_with('@') {
