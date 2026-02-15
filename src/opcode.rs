@@ -167,6 +167,11 @@ pub(crate) enum OpCode {
         name_idx: u32,
         arity: u32,
     },
+    /// Statement-level call with positional/named values encoded as Value::Pair.
+    ExecCallPairs {
+        name_idx: u32,
+        arity: u32,
+    },
     /// Statement-level call with mixed positional/named args shape from stmt pool.
     ExecCallMixed(u32),
     BlockScope {

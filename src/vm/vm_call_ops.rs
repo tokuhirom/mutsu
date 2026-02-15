@@ -156,6 +156,21 @@ impl VM {
         Ok(())
     }
 
+    pub(super) fn exec_exec_call_pairs_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        arity: u32,
+    ) -> Result<(), RuntimeError> {
+        let name = Self::const_str(code, name_idx).to_string();
+        let arity = arity as usize;
+        let start = self.stack.len() - arity;
+        let args: Vec<Value> = self.stack.drain(start..).collect();
+        self.interpreter.exec_call_pairs_values(&name, args)?;
+        self.sync_locals_from_env(code);
+        Ok(())
+    }
+
     pub(super) fn exec_exec_call_mixed_op(
         &mut self,
         code: &CompiledCode,

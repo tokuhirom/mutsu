@@ -322,6 +322,41 @@ impl Compiler {
                     return;
                 }
 
+                // Statement-level call with named args: compile values and encode
+                // named args as Pair(name => value), then dispatch without stmt_pool.
+                if rewritten_args.iter().all(|arg| match arg {
+                    CallArg::Positional(expr) => !Self::needs_raw_expr(expr),
+                    CallArg::Named {
+                        value: Some(expr), ..
+                    } => !Self::needs_raw_expr(expr),
+                    CallArg::Named { value: None, .. } => true,
+                }) {
+                    for arg in &rewritten_args {
+                        match arg {
+                            CallArg::Positional(expr) => self.compile_expr(expr),
+                            CallArg::Named {
+                                name,
+                                value: Some(expr),
+                            } => {
+                                self.compile_expr(&Expr::Literal(Value::Str(name.clone())));
+                                self.compile_expr(expr);
+                                self.code.emit(OpCode::MakePair);
+                            }
+                            CallArg::Named { name, value: None } => {
+                                self.compile_expr(&Expr::Literal(Value::Str(name.clone())));
+                                self.compile_expr(&Expr::Literal(Value::Bool(true)));
+                                self.code.emit(OpCode::MakePair);
+                            }
+                        }
+                    }
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::ExecCallPairs {
+                        name_idx,
+                        arity: rewritten_args.len() as u32,
+                    });
+                    return;
+                }
+
                 for arg in &rewritten_args {
                     match arg {
                         CallArg::Positional(expr) if !Self::needs_raw_expr(expr) => {

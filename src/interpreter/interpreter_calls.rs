@@ -67,6 +67,24 @@ impl Interpreter {
         self.exec_call(name, &rebuilt)
     }
 
+    pub(crate) fn exec_call_pairs_values(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+    ) -> Result<(), RuntimeError> {
+        let rebuilt: Vec<CallArg> = args
+            .into_iter()
+            .map(|arg| match arg {
+                Value::Pair(key, value) => CallArg::Named {
+                    name: key,
+                    value: Some(Expr::Literal(*value)),
+                },
+                other => CallArg::Positional(Expr::Literal(other)),
+            })
+            .collect();
+        self.exec_call(name, &rebuilt)
+    }
+
     pub(super) fn call_arg_needs_raw_expr(expr: &Expr) -> bool {
         matches!(expr, Expr::Block(_))
     }

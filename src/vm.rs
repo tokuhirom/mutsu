@@ -1081,6 +1081,10 @@ impl VM {
                 self.exec_exec_call_op(code, *name_idx, *arity, compiled_fns)?;
                 *ip += 1;
             }
+            OpCode::ExecCallPairs { name_idx, arity } => {
+                self.exec_exec_call_pairs_op(code, *name_idx, *arity)?;
+                *ip += 1;
+            }
             OpCode::ExecCallMixed(stmt_idx) => {
                 self.exec_exec_call_mixed_op(code, *stmt_idx)?;
                 *ip += 1;
