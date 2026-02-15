@@ -353,7 +353,8 @@
 - [ ] roast/S03-operators/scalar-assign.t
   - 2/4 pass.
 - [ ] roast/S03-operators/set_addition.t
-  - 0/? pass. Crashes mid-run.
+  - Added minimal `SetHash/BagHash/MixHash` method support and type-object `.new` handling to avoid immediate `Unknown method ...: SetHash`.
+  - Current blocker: code-ref invocation path (`op(...)`) is unresolved and aborts with `Unknown function ...: op`.
 - [ ] roast/S03-operators/set_difference.t
   - 0/? pass. Crashes mid-run.
 - [ ] roast/S03-operators/set_elem.t
@@ -441,6 +442,8 @@
 - [ ] roast/S04-declarations/state.t
   - 0/? pass. No test output at all - `state` declarations not implemented. Silently fails/exits. Difficulty: Medium-High (need `state` variable scoping)
 - [ ] roast/S04-declarations/will.t
+  - `CHECK`/`INIT` phaser parsing now avoids immediate `Unknown call: CHECK` abort.
+  - Current status: runs 15/19 tests, with remaining failures in `will` trait behavior and missing full phaser semantics.
 - [ ] roast/S04-exception-handlers/catch.t
   - 2/33 pass (1, 5). Only 5 reached; crashes with unhandled "blah" exception. CATCH in sub works, but CATCH in try/closure/do-block doesn't properly suppress exceptions. Difficulty: Medium-High
 - [ ] roast/S04-exception-handlers/control.t

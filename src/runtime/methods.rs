@@ -95,7 +95,7 @@ impl Interpreter {
             }
             return Ok(Value::Nil);
         }
-        if method == "Set" && args.is_empty() {
+        if (method == "Set" || method == "SetHash") && args.is_empty() {
             let mut elems = HashSet::new();
             match target {
                 Value::Set(_) => return Ok(target),
@@ -127,7 +127,7 @@ impl Interpreter {
             }
             return Ok(Value::Set(elems));
         }
-        if method == "Bag" && args.is_empty() {
+        if (method == "Bag" || method == "BagHash") && args.is_empty() {
             let mut counts: HashMap<String, i64> = HashMap::new();
             match target {
                 Value::Bag(_) => return Ok(target),
@@ -152,7 +152,7 @@ impl Interpreter {
             }
             return Ok(Value::Bag(counts));
         }
-        if method == "Mix" && args.is_empty() {
+        if (method == "Mix" || method == "MixHash") && args.is_empty() {
             let mut weights: HashMap<String, f64> = HashMap::new();
             match target {
                 Value::Mix(_) => return Ok(target),
@@ -407,6 +407,15 @@ impl Interpreter {
         }
         if method == "new" {
             return match target {
+                Value::Package(name) => match name.as_str() {
+                    "Set" | "SetHash" => Ok(Value::Set(HashSet::new())),
+                    "Bag" | "BagHash" => Ok(Value::Bag(HashMap::new())),
+                    "Mix" | "MixHash" => Ok(Value::Mix(HashMap::new())),
+                    _ => Err(RuntimeError::new(format!(
+                        "Unknown method value dispatch (fallback disabled): {}",
+                        method
+                    ))),
+                },
                 Value::Str(_) => Ok(Value::Str(String::new())),
                 Value::Int(_) => Ok(Value::Int(0)),
                 Value::Num(_) => Ok(Value::Num(0.0)),

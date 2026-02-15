@@ -213,6 +213,15 @@ impl Interpreter {
                 name
             )));
         }
+        if let Some(callable) = self
+            .env
+            .get(name)
+            .cloned()
+            .or_else(|| self.env.get(&format!("&{}", name)).cloned())
+            && matches!(callable, Value::Sub { .. } | Value::Routine { .. })
+        {
+            return self.eval_call_on_value(callable, args.to_vec());
+        }
 
         Err(RuntimeError::new(format!(
             "Unknown function (call_function fallback disabled): {}",

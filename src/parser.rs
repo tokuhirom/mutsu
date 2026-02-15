@@ -801,6 +801,13 @@ impl Parser {
                 body,
             });
         }
+        if self.match_ident("CHECK") || self.match_ident("INIT") {
+            let body = self.parse_block()?;
+            return Ok(Stmt::Phaser {
+                kind: PhaserKind::Begin,
+                body,
+            });
+        }
         if self.match_ident("END") {
             let body = self.parse_block()?;
             return Ok(Stmt::Phaser {
