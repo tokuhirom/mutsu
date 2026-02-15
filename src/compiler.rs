@@ -787,10 +787,15 @@ impl Compiler {
                         return;
                     }
                     TokenKind::SmartMatch | TokenKind::BangTilde => {
+                        let lhs_var = match left.as_ref() {
+                            Expr::Var(name) => Some(name.clone()),
+                            _ => None,
+                        };
                         self.compile_expr(left);
                         let sm_idx = self.code.emit(OpCode::SmartMatchExpr {
                             rhs_end: 0,
                             negate: matches!(op, TokenKind::BangTilde),
+                            lhs_var,
                         });
                         self.compile_expr(right);
                         self.code.patch_smart_match_rhs_end(sm_idx);

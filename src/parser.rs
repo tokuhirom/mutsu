@@ -73,7 +73,7 @@ impl Parser {
             }
             let arg = if self.check(&TokenKind::Semicolon) {
                 None
-            } else if self.check(&TokenKind::Lt) {
+            } else if self.check_angle_start() {
                 Some(self.parse_angle_literal())
             } else {
                 Some(self.parse_expr()?)
@@ -1259,7 +1259,7 @@ impl Parser {
 
     fn parse_enum_decl(&mut self) -> Result<Stmt, RuntimeError> {
         let name = self.consume_ident()?;
-        let variants = if self.check(&TokenKind::Lt) {
+        let variants = if self.check_angle_start() {
             self.parse_enum_angle_variants()?
         } else if self.match_kind(TokenKind::LParen) {
             self.parse_enum_paren_variants()?
@@ -1271,6 +1271,14 @@ impl Parser {
     }
 
     fn parse_enum_angle_variants(&mut self) -> Result<Vec<(String, Option<Expr>)>, RuntimeError> {
+        // Handle QWords token (lexer-level word list)
+        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::QWords(_))) {
+            let words = match token.kind {
+                TokenKind::QWords(w) => w,
+                _ => unreachable!(),
+            };
+            return Ok(words.into_iter().map(|w| (w, None)).collect());
+        }
         self.consume_kind(TokenKind::Lt)?;
         let mut variants = Vec::new();
         while !self.check(&TokenKind::Gt) && !self.check(&TokenKind::Eof) {
@@ -1824,7 +1832,7 @@ impl Parser {
         {
             self.match_kind(TokenKind::Colon);
             let name = self.consume_ident().unwrap_or_default();
-            let value = if self.check(&TokenKind::Lt) {
+            let value = if self.check_angle_start() {
                 self.parse_angle_literal()
             } else if self.match_kind(TokenKind::LParen) {
                 let expr = self.parse_expr_or_true();
@@ -1861,6 +1869,24 @@ impl Parser {
     }
 
     fn parse_angle_literal(&mut self) -> Expr {
+        // New path: lexer produces QWords token directly
+        if let Some(token) = self.advance_if(|k| matches!(k, TokenKind::QWords(_))) {
+            let words = match token.kind {
+                TokenKind::QWords(w) => w,
+                _ => unreachable!(),
+            };
+            return if words.len() == 1 {
+                Expr::Literal(Value::Str(words.into_iter().next().unwrap()))
+            } else {
+                Expr::ArrayLiteral(
+                    words
+                        .into_iter()
+                        .map(|w| Expr::Literal(Value::Str(w)))
+                        .collect(),
+                )
+            };
+        }
+        // Fallback: Lt token (comparison context, shouldn't normally reach here for word lists)
         if !self.match_kind(TokenKind::Lt) {
             return Expr::Literal(Value::Nil);
         }
@@ -1882,23 +1908,7 @@ impl Parser {
                 TokenKind::Number(n) => n.to_string(),
                 TokenKind::BigNumber(n) => n.to_string(),
                 TokenKind::Float(f) => f.to_string(),
-                TokenKind::Minus => {
-                    if let Some(next) = self.advance_if(|k| {
-                        matches!(
-                            k,
-                            TokenKind::Number(_) | TokenKind::BigNumber(_) | TokenKind::Float(_)
-                        )
-                    }) {
-                        match next.kind {
-                            TokenKind::Number(n) => format!("-{}", n),
-                            TokenKind::BigNumber(n) => format!("-{}", n),
-                            TokenKind::Float(f) => format!("-{}", f),
-                            _ => "-".to_string(),
-                        }
-                    } else {
-                        "-".to_string()
-                    }
-                }
+                TokenKind::Minus => "-".to_string(),
                 _ => String::new(),
             };
             words.push(word);
@@ -3346,7 +3356,7 @@ impl Parser {
                 }
             } else {
                 let name = self.consume_ident().unwrap_or_default();
-                if self.check(&TokenKind::Lt) {
+                if self.check_angle_start() {
                     // :key<value>
                     let val = self.parse_angle_literal();
                     Expr::Binary {
@@ -4012,7 +4022,7 @@ impl Parser {
                 // Immediate execution (do { ... }) uses Expr::Block instead.
                 Expr::AnonSub(body)
             }
-        } else if self.check(&TokenKind::Lt) {
+        } else if self.check_angle_start() {
             self.parse_angle_literal()
         } else if self.match_kind(TokenKind::Star) {
             // Whatever star (*) — check if it's a WhateverCode (*.method, * op expr)
@@ -4166,7 +4176,7 @@ impl Parser {
                 };
                 continue;
             }
-            if self.check(&TokenKind::Lt) {
+            if self.check_angle_start() {
                 let is_postcircumfix = if matches!(expr, Expr::HashVar(_)) {
                     true
                 } else if matches!(expr, Expr::Var(_)) {
@@ -4390,7 +4400,7 @@ impl Parser {
             return Ok((name, Some(Expr::Literal(literal))));
         }
         let name = self.consume_ident()?;
-        if self.check(&TokenKind::Lt) {
+        if self.check_angle_start() {
             // :key<value>
             let val = self.parse_angle_literal();
             return Ok((name, Some(val)));
@@ -4412,7 +4422,7 @@ impl Parser {
         let mut pairs = Vec::new();
         let mut failed = false;
         if !self.check(&TokenKind::RBrace) {
-            if self.check(&TokenKind::Lt) {
+            if self.check_angle_start() {
                 self.parse_angle_into_hash_pairs(&mut pairs);
             } else {
                 match self.parse_hash_pair() {
@@ -4426,7 +4436,7 @@ impl Parser {
                 if self.check(&TokenKind::RBrace) {
                     break;
                 }
-                if self.check(&TokenKind::Lt) {
+                if self.check_angle_start() {
                     self.parse_angle_into_hash_pairs(&mut pairs);
                 } else {
                     match self.parse_hash_pair() {
@@ -4550,6 +4560,14 @@ impl Parser {
             Some(t) => &t.kind == kind,
             None => *kind == TokenKind::Eof,
         }
+    }
+
+    /// Check if the current token starts an angle-bracket word list (QWords or Lt)
+    fn check_angle_start(&self) -> bool {
+        matches!(
+            self.tokens.get(self.pos).map(|t| &t.kind),
+            Some(TokenKind::QWords(_)) | Some(TokenKind::Lt)
+        )
     }
 
     fn advance_if<F>(&mut self, predicate: F) -> Option<Token>

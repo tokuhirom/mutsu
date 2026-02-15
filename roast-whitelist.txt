@@ -57,6 +57,7 @@ roast/S05-mass/properties-contributory.t
 roast/S05-mass/properties-derived.t
 roast/S05-mass/properties-script.t
 roast/S05-metachars/newline.t
+roast/S05-metasyntax/delimiters.t
 roast/S05-metasyntax/null.t
 roast/S06-multi/compile-time.t
 roast/S06-signature/passing-hashes.t

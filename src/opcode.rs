@@ -68,6 +68,8 @@ pub(crate) enum OpCode {
     SmartMatchExpr {
         rhs_end: u32,
         negate: bool,
+        /// Variable name for LHS (to write back after s/// substitution)
+        lhs_var: Option<String>,
     },
 
     // -- Divisibility --

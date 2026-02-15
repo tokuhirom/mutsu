@@ -518,7 +518,11 @@ impl VM {
                 self.stack.push(result);
                 *ip += 1;
             }
-            OpCode::SmartMatchExpr { rhs_end, negate } => {
+            OpCode::SmartMatchExpr {
+                rhs_end,
+                negate,
+                lhs_var,
+            } => {
                 let left = self.stack.pop().unwrap();
                 let rhs_start = *ip + 1;
                 let rhs_end = *rhs_end as usize;
@@ -528,6 +532,18 @@ impl VM {
                     .insert("_".to_string(), left.clone());
                 self.run_range(code, rhs_start, rhs_end, compiled_fns)?;
                 let right = self.stack.pop().unwrap_or(Value::Nil);
+                // Write back modified $_ to LHS variable (for s/// substitution)
+                if let Some(var_name) = lhs_var {
+                    let modified_topic = self
+                        .interpreter
+                        .env()
+                        .get("_")
+                        .cloned()
+                        .unwrap_or(Value::Nil);
+                    self.interpreter
+                        .env_mut()
+                        .insert(var_name.clone(), modified_topic);
+                }
                 if let Some(v) = saved_topic {
                     self.interpreter.env_mut().insert("_".to_string(), v);
                 } else {

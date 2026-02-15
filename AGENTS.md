@@ -140,5 +140,6 @@ make roast 2>&1 | grep -E "(not ok|FAILED|Failed|Wstat)" | head -20
 ## Conventions
 
 - Keep each Rust source file under 500 lines. Split into smaller modules if exceeded.
-- Write tests using prove (`t/*.t`). Do not use Rust integration tests in `tests/*.rs` for new coverage.
+- Write feature tests using prove (`t/*.t`).
+- Use Rust unit tests (`#[test]`) for internal components like the lexer and parser.
 - Every feature addition must include tests.

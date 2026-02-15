@@ -21,6 +21,8 @@ pub(crate) enum TokenKind {
         pattern: String,
         replacement: String,
     },
+    /// Quote-word list: < word1 word2 ... >
+    QWords(Vec<String>),
     Ident(String),
     Var(String),
     CaptureVar(String),
@@ -451,6 +453,16 @@ impl Lexer {
                         self.pos += 1;
                         let regex = self.read_brace_regex_literal();
                         TokenKind::Regex(regex)
+                    } else if let Some(d) = self.peek()
+                        && !d.is_alphanumeric()
+                        && !d.is_whitespace()
+                        && d != '_'
+                        && d != '('
+                        && d != ')'
+                    {
+                        self.pos += 1;
+                        let regex = self.read_regex_with_delim(d);
+                        TokenKind::Regex(regex)
                     } else {
                         let ident = self.read_ident_start(ch);
                         match ident.as_str() {
@@ -488,6 +500,21 @@ impl Lexer {
                         self.pos += 1;
                         let pattern = self.read_regex_literal();
                         let replacement = self.read_delimited_string('/');
+                        TokenKind::Subst {
+                            pattern,
+                            replacement,
+                        }
+                    } else if let Some(d) = self.peek()
+                        && !d.is_alphanumeric()
+                        && !d.is_whitespace()
+                        && d != '_'
+                        && d != '('
+                        && d != ')'
+                        && d != '{'
+                    {
+                        self.pos += 1;
+                        let pattern = self.read_regex_with_delim(d);
+                        let replacement = self.read_delimited_string(d);
                         TokenKind::Subst {
                             pattern,
                             replacement,
@@ -1000,6 +1027,10 @@ impl Lexer {
                         } else {
                             TokenKind::Lte
                         }
+                    } else if !self.last_was_term {
+                        // Quote-word list: < word1 word2 ... >
+                        // Read raw content until matching >
+                        self.read_angle_bracket_words()
                     } else {
                         TokenKind::Lt
                     }
@@ -1184,6 +1215,7 @@ impl Lexer {
                     | TokenKind::Str(_)
                     | TokenKind::DStr(_)
                     | TokenKind::Regex(_)
+                    | TokenKind::QWords(_)
                     | TokenKind::Ident(_)
                     | TokenKind::Var(_)
                     | TokenKind::ArrayVar(_)
@@ -1196,6 +1228,7 @@ impl Lexer {
                     | TokenKind::RParen
                     | TokenKind::RBracket
                     | TokenKind::RBrace
+                    | TokenKind::Gt
                     | TokenKind::HyperRight
             );
             return Token {
@@ -1586,6 +1619,10 @@ impl Lexer {
     }
 
     fn read_regex_literal(&mut self) -> String {
+        self.read_regex_with_delim('/')
+    }
+
+    fn read_regex_with_delim(&mut self, delim: char) -> String {
         let mut s = String::new();
         let mut escaped = false;
         let mut in_bracket = 0usize;
@@ -1593,6 +1630,11 @@ impl Lexer {
         let mut in_quote: Option<char> = None;
         while let Some(c) = self.peek() {
             self.pos += 1;
+            // Check delimiter first (before quote tracking), so that
+            // delimiters like " or ' are not mistaken for quote-starters
+            if !escaped && in_bracket == 0 && in_brace == 0 && in_quote.is_none() && c == delim {
+                break;
+            }
             if !escaped {
                 if let Some(q) = in_quote {
                     if c == q {
@@ -1610,9 +1652,6 @@ impl Lexer {
                     in_brace -= 1;
                 }
             }
-            if !escaped && in_bracket == 0 && in_brace == 0 && in_quote.is_none() && c == '/' {
-                break;
-            }
             if !escaped && c == '\\' {
                 escaped = true;
                 s.push(c);
@@ -1622,6 +1661,37 @@ impl Lexer {
             s.push(c);
         }
         s
+    }
+
+    /// Read a quote-word list: content between < and >.
+    /// Splits on whitespace, returns QWords token or a single Str for one word.
+    fn read_angle_bracket_words(&mut self) -> TokenKind {
+        let mut words = Vec::new();
+        let mut current = String::new();
+        while let Some(c) = self.peek() {
+            if c == '>' {
+                self.pos += 1;
+                break;
+            }
+            self.pos += 1;
+            if c.is_whitespace() {
+                if !current.is_empty() {
+                    words.push(std::mem::take(&mut current));
+                }
+            } else if c == '\\' {
+                // Backslash escape: next char is literal
+                if let Some(next) = self.peek() {
+                    self.pos += 1;
+                    current.push(next);
+                }
+            } else {
+                current.push(c);
+            }
+        }
+        if !current.is_empty() {
+            words.push(current);
+        }
+        TokenKind::QWords(words)
     }
 
     fn match_char(&mut self, expected: char) -> bool {
@@ -2210,5 +2280,106 @@ impl Lexer {
                 .collect::<String>();
             TokenKind::Str(s)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Collect all non-Eof token kinds from input
+    fn token_kinds(input: &str) -> Vec<TokenKind> {
+        let mut lexer = Lexer::new(input);
+        let mut kinds = Vec::new();
+        loop {
+            let tok = lexer.next_token();
+            if matches!(tok.kind, TokenKind::Eof) {
+                break;
+            }
+            kinds.push(tok.kind);
+        }
+        kinds
+    }
+
+    #[test]
+    fn test_m_slash_delim() {
+        let kinds = token_kinds("m/abc/");
+        assert_eq!(kinds, vec![TokenKind::Regex("abc".to_string())]);
+    }
+
+    #[test]
+    fn test_m_brace_delim() {
+        let kinds = token_kinds("m{abc}");
+        assert_eq!(kinds, vec![TokenKind::Regex("abc".to_string())]);
+    }
+
+    #[test]
+    fn test_m_bang_delim() {
+        let kinds = token_kinds("m!b!");
+        assert_eq!(kinds, vec![TokenKind::Regex("b".to_string())]);
+    }
+
+    #[test]
+    fn test_m_caret_delim() {
+        let kinds = token_kinds("m^pattern^");
+        assert_eq!(kinds, vec![TokenKind::Regex("pattern".to_string())]);
+    }
+
+    #[test]
+    fn test_m_hash_delim() {
+        let kinds = token_kinds("m#test#");
+        assert_eq!(kinds, vec![TokenKind::Regex("test".to_string())]);
+    }
+
+    #[test]
+    fn test_m_pipe_delim() {
+        let kinds = token_kinds("m|foo|");
+        assert_eq!(kinds, vec![TokenKind::Regex("foo".to_string())]);
+    }
+
+    #[test]
+    fn test_m_at_delim() {
+        let kinds = token_kinds("m@bar@");
+        assert_eq!(kinds, vec![TokenKind::Regex("bar".to_string())]);
+    }
+
+    #[test]
+    fn test_m_followed_by_alpha_is_ident() {
+        let kinds = token_kinds("my");
+        assert_eq!(kinds, vec![TokenKind::Ident("my".to_string())]);
+    }
+
+    #[test]
+    fn test_s_bang_delim() {
+        let kinds = token_kinds("s!a!b!");
+        assert_eq!(
+            kinds,
+            vec![TokenKind::Subst {
+                pattern: "a".to_string(),
+                replacement: "b".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn test_s_caret_delim() {
+        let kinds = token_kinds("s^pat^repl^");
+        assert_eq!(
+            kinds,
+            vec![TokenKind::Subst {
+                pattern: "pat".to_string(),
+                replacement: "repl".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn test_smartmatch_with_m_bang() {
+        let kinds = token_kinds("'abc' ~~ m!b!");
+        assert!(
+            kinds.contains(&TokenKind::Regex("b".to_string())),
+            "Expected Regex(\"b\") in tokens, got: {:?}",
+            kinds
+        );
     }
 }
