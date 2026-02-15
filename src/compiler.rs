@@ -1348,16 +1348,10 @@ impl Compiler {
     }
 
     /// Returns true if the expression must be kept as a raw Expr for
-    /// exec_call handlers (e.g. throws-like needs Expr::Block to run code).
+    /// exec_call handlers.
     fn needs_raw_expr(expr: &Expr) -> bool {
-        match expr {
-            Expr::Block(_) => true,
-            // Hash literals containing block values need raw expr for is_run lambda matchers
-            Expr::Hash(pairs) => pairs
-                .iter()
-                .any(|(_, v)| v.as_ref().is_some_and(Self::needs_raw_expr)),
-            _ => false,
-        }
+        let _ = expr;
+        false
     }
 
     fn is_normalized_stmt_call_name(name: &str) -> bool {
