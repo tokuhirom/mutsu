@@ -4,3 +4,6 @@
 [submodule "roast"]
 	path = roast
 	url = git@github.com:Raku/roast.git
+[submodule "raku-doc"]
+	path = raku-doc
+	url = git@github.com:Raku/doc.git
