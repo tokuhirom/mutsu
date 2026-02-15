@@ -105,6 +105,7 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - Always remove debug prints before committing.
 
 ## Conventions
+- Keep each Rust source file under 500 lines. If a file grows beyond this limit, split it into smaller modules.
 - Add small, focused tests for each new syntax feature.
 - Keep the parser and evaluator readable; comment only non-obvious logic.
 - Write tests using prove. Do not use Rust integration tests in `tests/*.rs` for new coverage.
