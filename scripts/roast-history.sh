@@ -9,6 +9,7 @@ cd "$(dirname "$0")/.."
 
 MUTSU=./target/release/mutsu
 HISTORY=HISTORY.tsv
+HISTORY_GRAPH=HISTORY-pass.svg
 TIMEOUT=10  # seconds per test file
 OUTDIR=tmp
 
@@ -132,11 +133,14 @@ printf "%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n" \
 echo ""
 echo "Appended to $HISTORY"
 
+python3 scripts/plot_roast_history.py "$HISTORY" "$HISTORY_GRAPH"
+echo "Generated $HISTORY_GRAPH"
+
 # Auto-commit only when the script reaches this point (completed run).
-if git diff --quiet -- "$HISTORY"; then
-  echo "No changes to commit in $HISTORY"
+if git diff --quiet -- "$HISTORY" "$HISTORY_GRAPH"; then
+  echo "No changes to commit in $HISTORY or $HISTORY_GRAPH"
 else
-  git add "$HISTORY"
-  git commit -m "Update roast history ($DATE)" -- "$HISTORY"
-  echo "Committed $HISTORY"
+  git add "$HISTORY" "$HISTORY_GRAPH"
+  git commit -m "Update roast history ($DATE)" -- "$HISTORY" "$HISTORY_GRAPH"
+  echo "Committed $HISTORY and $HISTORY_GRAPH"
 fi
