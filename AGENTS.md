@@ -81,6 +81,7 @@ Flow: `call_method_with_values()` tries `native_method_*arg()` first; if `None`,
 - When investigating a roast test and deciding to defer it, always record the reason for failure in the relevant file under `TODO_roast/`.
 - Roast is the authoritative spec. If passing a roast test requires changing a local test under `t/`, update the local test.
 - When `make roast` shows failures in whitelisted tests, investigate each failure — do NOT dismiss them as "pre-existing".
+- Never remove a previously passing test from the whitelist due to a regression. If a change causes a whitelisted test to fail, fix the regression so the test passes again.
 - When a roast test requires solving multiple unrelated prerequisites, fix what you can, update the relevant file under `TODO_roast/`, and move on.
 
 ## Working on complex features
