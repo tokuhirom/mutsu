@@ -1,32 +1,6 @@
 use super::*;
 
 impl Interpreter {
-    pub(crate) fn char_idx_to_byte(text: &str, idx: usize) -> usize {
-        if idx == 0 {
-            return 0;
-        }
-        for (count, (b, _)) in text.char_indices().enumerate() {
-            if count == idx {
-                return b;
-            }
-        }
-        text.len()
-    }
-
-    pub(crate) fn reduction_identity(op: &str) -> Value {
-        match op {
-            "+" => Value::Int(0),
-            "*" => Value::Int(1),
-            "~" => Value::Str(String::new()),
-            "&&" | "and" => Value::Bool(true),
-            "||" | "or" => Value::Bool(false),
-            "//" => Value::Nil,
-            "min" => Value::Num(f64::INFINITY),
-            "max" => Value::Num(f64::NEG_INFINITY),
-            _ => Value::Nil,
-        }
-    }
-
     pub(crate) fn apply_reduction_op(
         op: &str,
         left: &Value,

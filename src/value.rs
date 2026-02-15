@@ -671,19 +671,6 @@ impl RuntimeError {
         }
     }
 
-    pub(crate) fn return_val(value: Value) -> Self {
-        Self {
-            message: String::new(),
-            return_value: Some(value),
-            is_last: false,
-            is_next: false,
-            is_redo: false,
-            is_proceed: false,
-            is_succeed: false,
-            label: None,
-        }
-    }
-
     pub(crate) fn last_signal() -> Self {
         Self {
             message: "X::ControlFlow".to_string(),

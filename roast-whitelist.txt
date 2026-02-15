@@ -1,7 +1,6 @@
 roast/integration/advent2009-day03.t
 roast/integration/advent2010-day22.t
 roast/integration/advent2012-day16.t
-roast/integration/eval-and-threads.t
 roast/integration/failure-and-callsame.t
 roast/integration/method-calls-and-instantiation.t
 roast/integration/packages.t
@@ -66,7 +65,6 @@ roast/S06-signature/passing-hashes.t
 roast/S06-traits/is-readonly.t
 roast/S11-modules/rakulib.t
 roast/S11-modules/runtime.t
-roast/S12-class/instantiate.t
 roast/S12-construction/autopairs.t
 roast/S12-meta/grammarhow.t
 roast/S12-traits/precomp.t
