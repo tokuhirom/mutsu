@@ -2237,6 +2237,51 @@ fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         }
     }
 
+    // Check for comma-separated expressions (e.g., "1,2, until $++")
+    // The statement modifier applies only to the last expression
+    if rest.starts_with(',') && !rest.starts_with(",,") {
+        let mut exprs = vec![expr];
+        let mut r = rest;
+
+        // Collect comma-separated expressions
+        while r.starts_with(',') && !r.starts_with(",,") {
+            let r2 = &r[1..];
+            let (r2, _) = ws(r2)?;
+
+            // Check if we hit a statement modifier - if so, stop parsing exprs
+            if is_stmt_modifier_keyword(r2) {
+                r = r2;
+                break;
+            }
+
+            // Stop at semicolon, closing brace, or end of input
+            if r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') {
+                r = r2;
+                break;
+            }
+
+            let (r2, next_expr) = expression(r2)?;
+            exprs.push(next_expr);
+            let (r2, _) = ws(r2)?;
+            r = r2;
+        }
+
+        // Convert all but last expr to Stmt::Expr
+        let mut stmts = Vec::new();
+        let last_expr = exprs.pop().unwrap();
+        for e in exprs {
+            stmts.push(Stmt::Expr(e));
+        }
+
+        // Apply statement modifier to the last expression
+        let last_stmt = Stmt::Expr(last_expr);
+        let (r, last_stmt_with_modifier) = parse_statement_modifier(r, last_stmt)?;
+        stmts.push(last_stmt_with_modifier);
+
+        // Return as a block
+        return Ok((r, Stmt::Block(stmts)));
+    }
+
     let stmt = Stmt::Expr(expr);
     parse_statement_modifier(rest, stmt)
 }
