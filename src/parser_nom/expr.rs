@@ -1,4 +1,6 @@
-use super::parse_result::{PResult, parse_char, parse_tag, take_while1};
+use super::parse_result::{PError, PResult, parse_char, parse_tag, take_while1};
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 use crate::ast::{Expr, Stmt};
 use crate::token_kind::TokenKind;
@@ -6,6 +8,47 @@ use crate::value::Value;
 
 use super::helpers::ws;
 use super::primary::{parse_call_arg_list, primary};
+
+#[derive(Debug, Clone)]
+enum ExprMemoEntry {
+    Ok { consumed: usize, expr: Box<Expr> },
+    Err(PError),
+}
+
+thread_local! {
+    static EXPR_MEMO: RefCell<HashMap<(usize, usize), ExprMemoEntry>> = RefCell::new(HashMap::new());
+}
+
+fn expression_memo_key(input: &str) -> (usize, usize) {
+    (input.as_ptr() as usize, input.len())
+}
+
+fn expression_memo_get(input: &str) -> Option<PResult<'_, Expr>> {
+    let key = expression_memo_key(input);
+    let entry = EXPR_MEMO.with(|memo| memo.borrow().get(&key).cloned())?;
+    Some(match entry {
+        ExprMemoEntry::Ok { consumed, expr } => Ok((&input[consumed..], *expr)),
+        ExprMemoEntry::Err(err) => Err(err),
+    })
+}
+
+fn expression_memo_store(input: &str, result: &PResult<'_, Expr>) {
+    let key = expression_memo_key(input);
+    let entry = match result {
+        Ok((rest, expr)) => ExprMemoEntry::Ok {
+            consumed: input.len().saturating_sub(rest.len()),
+            expr: Box::new(expr.clone()),
+        },
+        Err(err) => ExprMemoEntry::Err(err.clone()),
+    };
+    EXPR_MEMO.with(|memo| {
+        memo.borrow_mut().insert(key, entry);
+    });
+}
+
+pub(super) fn reset_expression_memo() {
+    EXPR_MEMO.with(|memo| memo.borrow_mut().clear());
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ComparisonOp {
@@ -376,36 +419,43 @@ fn parse_word_logical_op(input: &str) -> Option<(LogicalOp, usize)> {
 
 /// Parse an expression (full precedence).
 pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
-    let (rest, mut expr) = ternary(input)?;
-    // Handle => (fat arrow / pair constructor) - lower precedence than ternary
-    let (r, _) = ws(rest)?;
-    if r.starts_with("=>") && !r.starts_with("==>") {
-        let r = &r[2..];
-        let (r, _) = ws(r)?;
-        let (r, value) = or_expr(r)?;
-        // Auto-quote bareword on LHS of => to a string literal
-        let left = match expr {
-            Expr::BareWord(ref name) => Expr::Literal(Value::Str(name.clone())),
-            _ => expr,
-        };
-        return Ok((
-            r,
-            Expr::Binary {
-                left: Box::new(left),
-                op: TokenKind::FatArrow,
-                right: Box::new(value),
-            },
-        ));
+    if let Some(cached) = expression_memo_get(input) {
+        return cached;
     }
-    // Wrap WhateverCode expressions in a lambda
-    if contains_whatever(&expr) {
-        let body_expr = replace_whatever(&expr);
-        expr = Expr::Lambda {
-            param: "_".to_string(),
-            body: vec![Stmt::Expr(body_expr)],
-        };
-    }
-    Ok((rest, expr))
+    let result = (|| {
+        let (rest, mut expr) = ternary(input)?;
+        // Handle => (fat arrow / pair constructor) - lower precedence than ternary
+        let (r, _) = ws(rest)?;
+        if r.starts_with("=>") && !r.starts_with("==>") {
+            let r = &r[2..];
+            let (r, _) = ws(r)?;
+            let (r, value) = or_expr(r)?;
+            // Auto-quote bareword on LHS of => to a string literal
+            let left = match expr {
+                Expr::BareWord(ref name) => Expr::Literal(Value::Str(name.clone())),
+                _ => expr,
+            };
+            return Ok((
+                r,
+                Expr::Binary {
+                    left: Box::new(left),
+                    op: TokenKind::FatArrow,
+                    right: Box::new(value),
+                },
+            ));
+        }
+        // Wrap WhateverCode expressions in a lambda
+        if contains_whatever(&expr) {
+            let body_expr = replace_whatever(&expr);
+            expr = Expr::Lambda {
+                param: "_".to_string(),
+                body: vec![Stmt::Expr(body_expr)],
+            };
+        }
+        Ok((rest, expr))
+    })();
+    expression_memo_store(input, &result);
+    result
 }
 
 fn is_whatever(expr: &Expr) -> bool {
@@ -1267,5 +1317,16 @@ mod tests {
                 panic!("Expected Binary expression");
             }
         }
+    }
+
+    #[test]
+    fn expression_memo_reuses_result() {
+        reset_expression_memo();
+        let (rest, expr) = expression("1 + 2").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Binary { .. }));
+        let (rest2, expr2) = expression("1 + 2").unwrap();
+        assert_eq!(rest2, "");
+        assert!(matches!(expr2, Expr::Binary { .. }));
     }
 }

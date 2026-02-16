@@ -11,6 +11,7 @@ use crate::value::RuntimeError;
 /// Returns `(statements, Option<finish_content>)`.
 #[allow(clippy::result_large_err)]
 pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
+    expr::reset_expression_memo();
     stmt::reset_statement_memo();
     // Split off =finish content before parsing
     let (source, finish_content) = if let Some(idx) = input.find("\n=finish") {
