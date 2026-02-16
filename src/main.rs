@@ -21,6 +21,9 @@ fn print_error(prefix: &str, err: &RuntimeError) {
     if !meta.is_empty() {
         eprintln!("{} metadata: {}", prefix, meta.join(", "));
     }
+    if let Some(hint) = &err.hint {
+        eprintln!("{} hint: {}", prefix, hint);
+    }
 }
 
 fn main() {

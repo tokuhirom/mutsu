@@ -61,12 +61,11 @@ fn parse_error_hint(message: &str) -> Option<&'static str> {
     }
 }
 
-fn with_parse_hint(message: String) -> String {
-    if let Some(hint) = parse_error_hint(&message) {
-        format!("{} — hint: {}", message, hint)
-    } else {
-        message
+fn with_parse_hint(mut err: RuntimeError) -> RuntimeError {
+    if let Some(hint) = parse_error_hint(&err.message) {
+        err.hint = Some(hint.to_string());
     }
+    err
 }
 
 /// Parse a full program using the nom-based parser.
@@ -121,32 +120,30 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 let near_offset = consumed + leading_ws_bytes(tail);
                 let (line_num, col_num) = line_col_at_offset(source, near_offset);
                 if let Some(context) = near_snippet(tail, 60) {
-                    let message = with_parse_hint(format!(
-                        "parse error at line {}, column {}: {} — near: {:?}",
-                        line_num, col_num, e, context
-                    ));
-                    Err(RuntimeError::with_location(
-                        message,
+                    Err(with_parse_hint(RuntimeError::with_location(
+                        format!(
+                            "parse error at line {}, column {}: {} — near: {:?}",
+                            line_num, col_num, e, context
+                        ),
                         RuntimeErrorCode::ParseExpected,
                         line_num,
                         col_num,
-                    ))
+                    )))
                 } else {
-                    let message = with_parse_hint(format!(
-                        "parse error at line {}, column {}: {}",
-                        line_num, col_num, e
-                    ));
-                    Err(RuntimeError::with_location(
-                        message,
+                    Err(with_parse_hint(RuntimeError::with_location(
+                        format!(
+                            "parse error at line {}, column {}: {}",
+                            line_num, col_num, e
+                        ),
                         RuntimeErrorCode::ParseExpected,
                         line_num,
                         col_num,
-                    ))
+                    )))
                 }
             } else {
-                let mut err = RuntimeError::new(with_parse_hint(format!("parse error: {}", e)));
+                let mut err = RuntimeError::new(format!("parse error: {}", e));
                 err.code = Some(RuntimeErrorCode::ParseGeneric);
-                Err(err)
+                Err(with_parse_hint(err))
             }
         }
     };
@@ -207,7 +204,11 @@ mod tests {
     #[test]
     fn parse_program_includes_hint_for_common_method_error() {
         let err = parse_program("$x.").unwrap_err();
-        assert!(err.message.contains("hint:"));
-        assert!(err.message.contains("method-call syntax"));
+        assert!(err.message.contains("parse error"));
+        assert!(
+            err.hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("method-call syntax"))
+        );
     }
 }

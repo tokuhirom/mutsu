@@ -1418,6 +1418,7 @@ impl VM {
                     code: None,
                     line: None,
                     column: None,
+                    hint: None,
                     return_value: Some(val),
                     is_last: false,
                     is_next: false,
