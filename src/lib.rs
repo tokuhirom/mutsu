@@ -5,7 +5,6 @@ mod interpreter;
 mod lexer;
 mod opcode;
 mod parse_dispatch;
-mod parser;
 mod parser_nom;
 mod runtime;
 mod trace;
@@ -14,13 +13,6 @@ mod vm;
 
 pub use interpreter::Interpreter;
 pub use value::{RuntimeError, Value};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ParserBackend {
-    #[default]
-    RecursiveDescent,
-    Nom,
-}
 
 /// Tokenize source code and return a pretty-printed token list string.
 pub fn dump_tokens(input: &str) -> String {
@@ -39,7 +31,7 @@ pub fn dump_tokens(input: &str) -> String {
 
 /// Parse source code and return a pretty-printed AST string.
 #[allow(clippy::result_large_err)]
-pub fn dump_ast(input: &str, backend: ParserBackend) -> Result<String, RuntimeError> {
-    let (stmts, _) = parse_dispatch::parse_source(input, backend)?;
+pub fn dump_ast(input: &str) -> Result<String, RuntimeError> {
+    let (stmts, _) = parse_dispatch::parse_source(input)?;
     Ok(format!("{:#?}", stmts))
 }

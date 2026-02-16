@@ -31,24 +31,8 @@ impl Interpreter {
             });
         }
         // General case: parse and evaluate as Raku code
-        let mut lexer = Lexer::new(trimmed);
-        let mut tokens = Vec::new();
-        loop {
-            let token = lexer.next_token();
-            let end = matches!(token.kind, TokenKind::Eof);
-            tokens.push(token);
-            if end {
-                break;
-            }
-        }
-        if let Some(err) = lexer.errors.first() {
-            return Err(RuntimeError::new(err));
-        }
-        let mut parser = Parser::new(tokens);
-        match parser.parse_program() {
-            Ok(stmts) => self.eval_block_value(&stmts),
-            Err(e) => Err(e),
-        }
+        let (stmts, _) = parse_dispatch::parse_source(trimmed)?;
+        self.eval_block_value(&stmts)
     }
 
     pub(super) fn callframe_value(&self, depth: usize) -> Option<Value> {

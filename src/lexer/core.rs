@@ -27,6 +27,7 @@ impl Lexer {
     }
 
     /// Returns the content captured after `=finish`, if any.
+    #[allow(dead_code)]
     pub(crate) fn finish_content(&self) -> Option<&str> {
         self.finish_content.as_deref()
     }

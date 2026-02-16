@@ -37,6 +37,7 @@ roast/S03-operators/so.t
 roast/S03-operators/spaceship-and-containers.t
 roast/S03-smartmatch/any-any.t
 roast/S03-smartmatch/any-bool.t
+roast/S03-smartmatch/any-sub.t
 roast/S03-smartmatch/any-callable.t
 roast/S03-smartmatch/any-str.t
 roast/S04-exceptions/control_across_runloop.t
@@ -60,6 +61,7 @@ roast/S05-metachars/newline.t
 roast/S05-metasyntax/delimiters.t
 roast/S05-metasyntax/null.t
 roast/S06-multi/compile-time.t
+roast/S06-other/main-eval.t
 roast/S06-signature/passing-hashes.t
 roast/S06-traits/is-readonly.t
 roast/S06-traits/native-is-copy.t
@@ -146,6 +148,7 @@ roast/S32-io/other.t
 roast/S32-scalar/defined.t
 roast/S32-str/append.t
 roast/S32-str/bool.t
+roast/S32-str/chop.t
 roast/S32-str/lc.t
 roast/S32-str/tclc.t
 roast/S32-str/tc.t

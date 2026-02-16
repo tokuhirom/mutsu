@@ -198,6 +198,7 @@ pub(crate) enum Stmt {
         body: Vec<Stmt>,
         multi: bool,
     },
+    #[allow(dead_code)]
     ProtoToken {
         name: String,
     },
@@ -322,5 +323,6 @@ pub(crate) enum Stmt {
 pub(crate) enum AssignOp {
     Assign,
     Bind,
+    #[allow(dead_code)]
     MatchAssign,
 }

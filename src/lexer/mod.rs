@@ -133,6 +133,7 @@ pub(crate) enum TokenKind {
 #[derive(Debug, Clone)]
 pub(crate) struct Token {
     pub(crate) kind: TokenKind,
+    #[allow(dead_code)]
     pub(crate) line: usize,
 }
 
