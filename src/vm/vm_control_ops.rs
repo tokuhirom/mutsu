@@ -91,9 +91,13 @@ impl VM {
             items
         };
         'for_loop: for item in chunked_items {
-            self.interpreter
-                .env_mut()
-                .insert("_".to_string(), item.clone());
+            // Only set $_ when no named parameter is given (for @list { ... })
+            // When -> $k is used, $_ should remain from the enclosing scope
+            if param_name.is_none() {
+                self.interpreter
+                    .env_mut()
+                    .insert("_".to_string(), item.clone());
+            }
             if let Some(ref name) = param_name {
                 self.interpreter
                     .env_mut()
@@ -106,9 +110,11 @@ impl VM {
                 match self.run_range(code, body_start, loop_end, compiled_fns) {
                     Ok(()) => break 'body_redo,
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
-                        self.interpreter
-                            .env_mut()
-                            .insert("_".to_string(), item.clone());
+                        if param_name.is_none() {
+                            self.interpreter
+                                .env_mut()
+                                .insert("_".to_string(), item.clone());
+                        }
                         if let Some(ref name) = param_name {
                             self.interpreter
                                 .env_mut()

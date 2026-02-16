@@ -74,6 +74,7 @@ pub(crate) enum OpCode {
 
     // -- Divisibility --
     DivisibleBy,
+    NotDivisibleBy,
 
     // -- Keyword math --
     IntDiv,

@@ -284,6 +284,7 @@ impl Interpreter {
             "**" => TokenKind::StarStar,
             "%" => TokenKind::Percent,
             "%%" => TokenKind::PercentPercent,
+            "!%%" => TokenKind::BangPercentPercent,
             "==" => TokenKind::EqEq,
             "=" => TokenKind::EqEq,
             "!=" => TokenKind::BangEq,

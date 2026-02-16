@@ -201,10 +201,17 @@ impl Compiler {
                 for s in &pre_stmts {
                     self.compile_stmt(s);
                 }
+                // When there's a single named param (-> $k), store its name as a constant
+                // so the VM can bind $k directly without overriding $_
+                let param_idx = param
+                    .as_ref()
+                    .map(|p| self.code.add_constant(Value::Str(p.clone())));
                 let mut bind_stmts = Vec::new();
-                if let Some(p) = param {
+                // When there's a single named param, the VM handles binding directly
+                // Only add $_ -> $param assignment for the legacy path (no param_idx)
+                if param.is_some() && param_idx.is_none() {
                     bind_stmts.push(Stmt::Assign {
-                        name: p.clone(),
+                        name: param.as_ref().unwrap().clone(),
                         expr: Expr::Var("_".to_string()),
                         op: AssignOp::Assign,
                     });
@@ -231,7 +238,7 @@ impl Compiler {
                 };
                 self.compile_expr(iterable);
                 let loop_idx = self.code.emit(OpCode::ForLoop {
-                    param_idx: None,
+                    param_idx,
                     param_local: None,
                     body_end: 0,
                     label: label.clone(),
@@ -1323,6 +1330,7 @@ impl Compiler {
             TokenKind::Ident(name) if name == "eqv" => Some(OpCode::Eqv),
             // Divisibility
             TokenKind::PercentPercent => Some(OpCode::DivisibleBy),
+            TokenKind::BangPercentPercent => Some(OpCode::NotDivisibleBy),
             // Keyword math
             TokenKind::Ident(name) if name == "div" => Some(OpCode::IntDiv),
             TokenKind::Ident(name) if name == "mod" => Some(OpCode::IntMod),

@@ -50,6 +50,7 @@ pub(crate) enum TokenKind {
     StarStar,
     Percent,
     PercentPercent,
+    BangPercentPercent,
     Slash,
     Tilde,
     Eq,

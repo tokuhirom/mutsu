@@ -320,6 +320,7 @@ impl Parser {
                 | TokenKind::StarStar
                 | TokenKind::EqEq
                 | TokenKind::BangEq
+                | TokenKind::BangPercentPercent
                 | TokenKind::Lte
                 | TokenKind::Gte
                 | TokenKind::Plus

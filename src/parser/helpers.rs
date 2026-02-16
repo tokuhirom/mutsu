@@ -490,6 +490,7 @@ impl Parser {
                 | TokenKind::LtEqGt
                 | TokenKind::EqEq
                 | TokenKind::BangEq
+                | TokenKind::BangPercentPercent
                 | TokenKind::Lt
                 | TokenKind::Gt
                 | TokenKind::Lte
@@ -539,6 +540,7 @@ impl Parser {
             Some(TokenKind::LtEqGt) => "<=>".to_string(),
             Some(TokenKind::EqEq) => "==".to_string(),
             Some(TokenKind::BangEq) => "!=".to_string(),
+            Some(TokenKind::BangPercentPercent) => "!%%".to_string(),
             Some(TokenKind::Lt) => "<".to_string(),
             Some(TokenKind::Gt) => ">".to_string(),
             Some(TokenKind::Lte) => "<=".to_string(),
@@ -725,6 +727,7 @@ impl Parser {
             TokenKind::EqEq => Some("=="),
             TokenKind::EqEqEq => Some("==="),
             TokenKind::BangEq => Some("!="),
+            TokenKind::BangPercentPercent => Some("!%%"),
             TokenKind::Lt => Some("<"),
             TokenKind::Gt => Some(">"),
             TokenKind::Lte => Some("<="),

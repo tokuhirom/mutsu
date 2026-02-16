@@ -733,6 +733,14 @@ impl Lexer {
                 '!' => {
                     if self.match_char('!') {
                         TokenKind::BangBang
+                    } else if self.match_char('%') {
+                        if self.match_char('%') {
+                            TokenKind::BangPercentPercent
+                        } else {
+                            // Put back the '%' — this was just '!' followed by '%'
+                            self.pos -= 1;
+                            TokenKind::Bang
+                        }
                     } else if self.match_char('=') {
                         TokenKind::BangEq
                     } else if self.match_char('~') {

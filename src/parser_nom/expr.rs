@@ -255,6 +255,8 @@ fn comparison_expr(input: &str) -> PResult<'_, Expr> {
         (Some(TokenKind::EqEqEq), 3)
     } else if r.starts_with("==") && !r.starts_with("===") {
         (Some(TokenKind::EqEq), 2)
+    } else if r.starts_with("!%%") {
+        (Some(TokenKind::BangPercentPercent), 3)
     } else if r.starts_with("!=") {
         (Some(TokenKind::BangEq), 2)
     } else if r.starts_with("!~~") {
@@ -344,6 +346,8 @@ fn parse_comparison_op(r: &str) -> (Option<TokenKind>, usize) {
         (Some(TokenKind::EqEqEq), 3)
     } else if r.starts_with("==") && !r.starts_with("===") {
         (Some(TokenKind::EqEq), 2)
+    } else if r.starts_with("!%%") {
+        (Some(TokenKind::BangPercentPercent), 3)
     } else if r.starts_with("!=") {
         (Some(TokenKind::BangEq), 2)
     } else if r.starts_with("!~~") {

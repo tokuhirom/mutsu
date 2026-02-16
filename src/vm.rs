@@ -575,6 +575,21 @@ impl VM {
                 *ip += 1;
             }
 
+            OpCode::NotDivisibleBy => {
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let (l, r) = runtime::coerce_numeric(left, right);
+                let result = match (l, r) {
+                    (Value::Int(_), Value::Int(0)) => {
+                        return Err(RuntimeError::new("Divisibility by zero"));
+                    }
+                    (Value::Int(a), Value::Int(b)) => Value::Bool(a % b != 0),
+                    _ => Value::Bool(true),
+                };
+                self.stack.push(result);
+                *ip += 1;
+            }
+
             // -- Keyword math (native) --
             OpCode::IntDiv => {
                 let right = self.stack.pop().unwrap();

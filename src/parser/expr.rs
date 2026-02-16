@@ -542,6 +542,13 @@ impl Parser {
                     op,
                     right: Box::new(right),
                 };
+            } else if self.match_kind(TokenKind::BangPercentPercent) {
+                let right = self.parse_junction()?;
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op: TokenKind::BangPercentPercent,
+                    right: Box::new(right),
+                };
             } else if self.match_ident("eq") {
                 let right = self.parse_junction()?;
                 expr = Expr::Binary {
@@ -741,6 +748,7 @@ impl Parser {
         match op {
             TokenKind::EqEq
             | TokenKind::BangEq
+            | TokenKind::BangPercentPercent
             | TokenKind::Lt
             | TokenKind::Lte
             | TokenKind::Gt
