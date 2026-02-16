@@ -2493,148 +2493,72 @@ fn with_stmt(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Parse a single statement.
+/// Statement parser function type.
+type StmtParser = fn(&str) -> PResult<'_, Stmt>;
+
+/// Dispatch table for statement parsers.
+/// Each parser is tried in order until one succeeds.
+/// Order is critical — do not reorder without careful consideration.
+const STMT_PARSERS: &[StmtParser] = &[
+    use_stmt,
+    unit_module_stmt,
+    my_decl,
+    constant_decl,
+    class_decl,
+    role_decl,
+    grammar_decl,
+    subset_decl,
+    enum_decl,
+    has_decl,
+    does_decl,
+    proto_decl,
+    sub_decl,
+    method_decl,
+    token_decl,
+    say_stmt,
+    print_stmt,
+    note_stmt,
+    if_stmt,
+    unless_stmt,
+    with_stmt,
+    labeled_loop_stmt,
+    for_stmt,
+    while_stmt,
+    until_stmt,
+    loop_stmt,
+    repeat_stmt,
+    given_stmt,
+    when_stmt,
+    default_stmt,
+    return_stmt,
+    last_stmt,
+    next_stmt,
+    redo_stmt,
+    die_stmt,
+    take_stmt,
+    catch_stmt,
+    control_stmt,
+    phaser_stmt,
+    subtest_stmt,
+    react_stmt,
+    whenever_stmt,
+    package_decl,
+    known_call_stmt,
+    assign_stmt,
+    block_stmt,
+];
+
 fn statement(input: &str) -> PResult<'_, Stmt> {
     let (input, _) = ws(input)?;
 
-    // Try each statement form in order
-    if let Ok(r) = use_stmt(input) {
-        return Ok(r);
+    // Try each statement parser in order
+    for parser in STMT_PARSERS {
+        if let Ok(r) = parser(input) {
+            return Ok(r);
+        }
     }
-    if let Ok(r) = unit_module_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = my_decl(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = constant_decl(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = class_decl(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = role_decl(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = grammar_decl(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = subset_decl(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = enum_decl(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = has_decl(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = does_decl(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = proto_decl(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = sub_decl(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = method_decl(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = token_decl(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = say_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = print_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = note_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = if_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = unless_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = with_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = labeled_loop_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = for_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = while_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = until_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = loop_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = repeat_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = given_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = when_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = default_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = return_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = last_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = next_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = redo_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = die_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = take_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = catch_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = control_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = phaser_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = subtest_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = react_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = whenever_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = package_decl(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = known_call_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = assign_stmt(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = block_stmt(input) {
-        return Ok(r);
-    }
+
+    // Fall back to expression statement
     expr_stmt(input)
 }
 
