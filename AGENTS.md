@@ -26,6 +26,8 @@ The parser is currently nom-based (`parser_nom/`) and is used unconditionally.
 
 `parse_dispatch.rs` provides `parse_source()` used by parsing call sites and currently delegates directly to `parser_nom::parse_program()`.
 
+Parser implementation details (dispatch order, precedence, extension checklist) are documented in `docs/parser-overview.md`.
+
 This is a **hybrid** architecture: the bytecode VM handles primitive operations (arithmetic, comparisons, loops, jumps) natively, but delegates complex operations (user-defined function calls, method dispatch, regex, class instantiation) back to the tree-walking `Interpreter` (`runtime/`). The VM holds an embedded `Interpreter` and calls into it for anything beyond simple bytecode.
 
 ### Core data types
