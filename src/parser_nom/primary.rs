@@ -559,6 +559,7 @@ fn whatever(input: &str) -> PResult<'_, Expr> {
 /// Parse keywords that are values: True, False, Nil, Any, Inf, NaN, etc.
 fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     // Try each keyword, ensuring it's not followed by alphanumeric (word boundary)
+    // Also reject if followed by `(` to prevent treating e() as a constant
     let try_kw = |kw: &str, val: Value| -> PResult<'_, Expr> {
         let (rest, _) = parse_tag(input, kw)?;
         // Check word boundary
@@ -566,6 +567,10 @@ fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             && (c.is_alphanumeric() || c == '_' || c == '-')
         {
             return Err(PError::expected("word boundary"));
+        }
+        // Reject if followed by `(` - that's a function call, not a constant
+        if rest.starts_with('(') {
+            return Err(PError::expected("not a function call"));
         }
         Ok((rest, Expr::Literal(val)))
     };
