@@ -650,6 +650,72 @@ fn is_keyword(name: &str) -> bool {
     )
 }
 
+/// Check if a name is a listop (can take args without parens).
+fn is_listop(name: &str) -> bool {
+    matches!(
+        name,
+        "shift"
+            | "unshift"
+            | "push"
+            | "pop"
+            | "grep"
+            | "map"
+            | "sort"
+            | "first"
+            | "any"
+            | "all"
+            | "none"
+            | "one"
+            | "print"
+            | "say"
+            | "put"
+            | "note"
+            | "return"
+            | "die"
+            | "fail"
+            | "warn"
+            | "take"
+            | "emit"
+            | "split"
+            | "join"
+            | "reverse"
+            | "min"
+            | "max"
+            | "sum"
+            | "pick"
+            | "roll"
+    )
+}
+
+/// Check if input starts with a statement modifier keyword.
+fn is_stmt_modifier_ahead(input: &str) -> bool {
+    for kw in &["if", "unless", "for", "while", "until", "given", "when"] {
+        if input.starts_with(kw)
+            && !input
+                .as_bytes()
+                .get(kw.len())
+                .is_some_and(|&c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-')
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Parse a single listop argument (stops before statement modifiers, semicolon, closing brackets).
+fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
+    // Try to parse a primary expression (variable, literal, call, etc.)
+    // but stop if we hit a statement modifier
+    if is_stmt_modifier_ahead(input) {
+        return Err(PError::expected("listop argument"));
+    }
+
+    // Parse a single term (no binary operators to avoid consuming too much)
+    // We use primary instead of expression to avoid consuming binary operators
+    // This means shift @a + 1 will be parsed as (shift @a) + 1, not shift(@a + 1)
+    primary(input)
+}
+
 pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     let (rest, name) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
     let name = name.to_string();
@@ -844,6 +910,30 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         }
         // Block without trailing comma — return as separate expressions
         // Fall through to BareWord
+    }
+
+    // Check for listop: bareword followed by space and argument (but not statement modifier)
+    // e.g., shift @a, push @a, 42, etc.
+    if is_listop(&name)
+        && !r.is_empty()
+        && !r.starts_with(';')
+        && !r.starts_with('}')
+        && !r.starts_with(')')
+        && !r.starts_with(',')
+    {
+        // Check if next token is a statement modifier keyword
+        if !is_stmt_modifier_ahead(r) {
+            // Try to parse an argument
+            if let Ok((r2, arg)) = parse_listop_arg(r) {
+                return Ok((
+                    r2,
+                    Expr::Call {
+                        name,
+                        args: vec![arg],
+                    },
+                ));
+            }
+        }
     }
 
     // Method-like: .new, .elems etc. is handled at expression level
