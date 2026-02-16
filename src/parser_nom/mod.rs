@@ -7,6 +7,7 @@ use std::sync::OnceLock;
 
 use crate::ast::Stmt;
 use crate::value::RuntimeError;
+use crate::value::RuntimeErrorCode;
 
 static PARSE_MEMO_ENABLED: OnceLock<bool> = OnceLock::new();
 
@@ -81,7 +82,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                         "parse error: unparsed input at line {}, column {}: {:?}",
                         line_num, col_num, context
                     ),
-                    "PARSE_UNPARSED",
+                    RuntimeErrorCode::ParseUnparsed,
                     line_num,
                     col_num,
                 ))
@@ -100,7 +101,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                             "parse error at line {}, column {}: {} — near: {:?}",
                             line_num, col_num, e, context
                         ),
-                        "PARSE_EXPECTED",
+                        RuntimeErrorCode::ParseExpected,
                         line_num,
                         col_num,
                     ))
@@ -110,14 +111,14 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                             "parse error at line {}, column {}: {}",
                             line_num, col_num, e
                         ),
-                        "PARSE_EXPECTED",
+                        RuntimeErrorCode::ParseExpected,
                         line_num,
                         col_num,
                     ))
                 }
             } else {
                 let mut err = RuntimeError::new(format!("parse error: {}", e));
-                err.code = Some("PARSE_GENERIC".to_string());
+                err.code = Some(RuntimeErrorCode::ParseGeneric);
                 Err(err)
             }
         }
@@ -148,13 +149,14 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
 #[cfg(test)]
 mod tests {
     use super::parse_program;
+    use crate::value::RuntimeErrorCode;
 
     #[test]
     fn parse_program_reports_line_and_column_for_unparsed_input() {
         let err = parse_program("}").unwrap_err();
         assert!(err.message.contains("line 1, column 1"));
         assert!(err.message.contains("unparsed input"));
-        assert_eq!(err.code.as_deref(), Some("PARSE_UNPARSED"));
+        assert!(matches!(err.code, Some(RuntimeErrorCode::ParseUnparsed)));
         assert_eq!(err.line, Some(1));
         assert_eq!(err.column, Some(1));
     }
@@ -165,7 +167,7 @@ mod tests {
         assert!(err.message.contains("line 2"));
         assert!(err.message.contains("column"));
         assert!(err.message.contains("parse error"));
-        assert_eq!(err.code.as_deref(), Some("PARSE_EXPECTED"));
+        assert!(matches!(err.code, Some(RuntimeErrorCode::ParseExpected)));
         assert_eq!(err.line, Some(2));
     }
 

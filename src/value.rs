@@ -645,10 +645,28 @@ impl Value {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeErrorCode {
+    ParseUnparsed,
+    ParseExpected,
+    ParseGeneric,
+}
+
+impl std::fmt::Display for RuntimeErrorCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            RuntimeErrorCode::ParseUnparsed => "PARSE_UNPARSED",
+            RuntimeErrorCode::ParseExpected => "PARSE_EXPECTED",
+            RuntimeErrorCode::ParseGeneric => "PARSE_GENERIC",
+        };
+        write!(f, "{}", name)
+    }
+}
+
 #[derive(Debug)]
 pub struct RuntimeError {
     pub message: String,
-    pub code: Option<String>,
+    pub code: Option<RuntimeErrorCode>,
     pub line: Option<usize>,
     pub column: Option<usize>,
     pub return_value: Option<Value>,
@@ -679,13 +697,13 @@ impl RuntimeError {
 
     pub(crate) fn with_location(
         message: impl Into<String>,
-        code: impl Into<String>,
+        code: RuntimeErrorCode,
         line: usize,
         column: usize,
     ) -> Self {
         Self {
             message: message.into(),
-            code: Some(code.into()),
+            code: Some(code),
             line: Some(line),
             column: Some(column),
             return_value: None,
