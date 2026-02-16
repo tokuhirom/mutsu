@@ -77,7 +77,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 let (line_num, col_num) = line_col_at_offset(source, near_offset);
                 let context: String = rest_trimmed.chars().take(60).collect();
                 Err(RuntimeError::new(format!(
-                    "parse error: unparsed input at line {}, column {}: {:?}",
+                    "[PARSE_UNPARSED] parse error: unparsed input at line {}, column {}: {:?}",
                     line_num, col_num, context
                 )))
             } else {
@@ -91,17 +91,20 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 let (line_num, col_num) = line_col_at_offset(source, near_offset);
                 if let Some(context) = near_snippet(tail, 60) {
                     Err(RuntimeError::new(format!(
-                        "parse error at line {}, column {}: {} — near: {:?}",
+                        "[PARSE_EXPECTED] parse error at line {}, column {}: {} — near: {:?}",
                         line_num, col_num, e, context
                     )))
                 } else {
                     Err(RuntimeError::new(format!(
-                        "parse error at line {}, column {}: {}",
+                        "[PARSE_EXPECTED] parse error at line {}, column {}: {}",
                         line_num, col_num, e
                     )))
                 }
             } else {
-                Err(RuntimeError::new(format!("parse error: {}", e)))
+                Err(RuntimeError::new(format!(
+                    "[PARSE_GENERIC] parse error: {}",
+                    e
+                )))
             }
         }
     };
@@ -137,6 +140,7 @@ mod tests {
         let err = parse_program("}").unwrap_err();
         assert!(err.message.contains("line 1, column 1"));
         assert!(err.message.contains("unparsed input"));
+        assert!(err.message.contains("[PARSE_UNPARSED]"));
     }
 
     #[test]
@@ -145,6 +149,7 @@ mod tests {
         assert!(err.message.contains("line 2"));
         assert!(err.message.contains("column"));
         assert!(err.message.contains("parse error"));
+        assert!(err.message.contains("[PARSE_EXPECTED]"));
     }
 
     #[test]
