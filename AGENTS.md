@@ -35,6 +35,7 @@ This is a **hybrid** architecture: the bytecode VM handles primitive operations 
 - **Value** (`value.rs`): Single enum with ~25 variants covering all Raku runtime types (Int, Num, Str, Bool, Rat, Complex, Array, Hash, Set, Bag, Mix, Pair, Range variants, Sub, Instance, Junction, etc.)
 - **AST** (`ast.rs`): `Expr` (~50 variants) and `Stmt` (~30 variants)
 - **TokenKind** (`token_kind.rs`): Shared operator/token enum used by parser/AST/compiler/runtime expression handling
+- **RuntimeError** (`value.rs`): Runtime/parse error carrier; parse failures now use structured metadata (`code`, `line`, `column`) in addition to `message`
 - **OpCode** (`opcode.rs`): ~100 bytecode instructions, including compound loop ops
 
 ### Method dispatch (two-tier)
@@ -57,6 +58,13 @@ Flow: `call_method_with_values()` tries `native_method_*arg()` first; if `None`,
 - `roast-whitelist.txt`: Tests that pass completely; `make roast` runs only these
 - `TODO_roast/`: Per-file pass/fail tracking (split by synopsis number, e.g. `TODO_roast/S02.md`)
 - TAP protocol implemented in `runtime/test_functions.rs`
+
+### Parser error metadata
+
+- `parser_nom::parse_program()` maps parse failures to `RuntimeError` with structured metadata:
+  - `code`: `RuntimeErrorCode::{ParseUnparsed, ParseExpected, ParseGeneric}`
+  - `line`, `column`: 1-based source location where available
+- CLI output (`main.rs`) prints this metadata as a separate line (`metadata: code=..., line=..., column=...`) to make failures easier to inspect and machine-process.
 
 ## Working agreements
 
