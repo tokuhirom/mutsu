@@ -3,17 +3,30 @@ mod helpers;
 mod parse_result;
 mod primary;
 mod stmt;
+use std::sync::OnceLock;
 
 use crate::ast::Stmt;
 use crate::value::RuntimeError;
+
+static PARSE_MEMO_ENABLED: OnceLock<bool> = OnceLock::new();
+
+pub(super) fn parse_memo_enabled() -> bool {
+    *PARSE_MEMO_ENABLED.get_or_init(|| {
+        std::env::var("MUTSU_PARSE_MEMO")
+            .map(|v| v != "0")
+            .unwrap_or(true)
+    })
+}
 
 /// Parse a full program using the nom-based parser.
 /// Returns `(statements, Option<finish_content>)`.
 #[allow(clippy::result_large_err)]
 pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
-    expr::reset_expression_memo();
-    primary::reset_primary_memo();
-    stmt::reset_statement_memo();
+    if parse_memo_enabled() {
+        expr::reset_expression_memo();
+        primary::reset_primary_memo();
+        stmt::reset_statement_memo();
+    }
     // Split off =finish content before parsing
     let (source, finish_content) = if let Some(idx) = input.find("\n=finish") {
         let content = &input[idx + "\n=finish".len()..];

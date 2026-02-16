@@ -79,6 +79,9 @@ fn statement_memo_key(input: &str) -> (usize, usize) {
 }
 
 fn statement_memo_get(input: &str) -> Option<PResult<'_, Stmt>> {
+    if !super::parse_memo_enabled() {
+        return None;
+    }
     let key = statement_memo_key(input);
     let hit = STMT_MEMO.with(|memo| memo.borrow().get(&key).cloned());
     if let Some(entry) = hit {
@@ -93,6 +96,9 @@ fn statement_memo_get(input: &str) -> Option<PResult<'_, Stmt>> {
 }
 
 fn statement_memo_store(input: &str, result: &PResult<'_, Stmt>) {
+    if !super::parse_memo_enabled() {
+        return;
+    }
     let key = statement_memo_key(input);
     let entry = match result {
         Ok((rest, stmt)) => StmtMemoEntry::Ok {
@@ -108,6 +114,9 @@ fn statement_memo_store(input: &str, result: &PResult<'_, Stmt>) {
 }
 
 pub(super) fn reset_statement_memo() {
+    if !super::parse_memo_enabled() {
+        return;
+    }
     STMT_MEMO.with(|memo| memo.borrow_mut().clear());
     STMT_MEMO_STATS.with(|stats| *stats.borrow_mut() = StmtMemoStats::default());
 }

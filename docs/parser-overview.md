@@ -87,4 +87,8 @@ When adding/changing grammar:
 
 - Parsing is currently single-backend (`parser_nom`) and always selected.
 - Raku slang switching (main/regex/quote/pod contexts) is only partially modeled; be cautious with context-sensitive constructs.
-- Packrat features (memoization cache and furthest-failure error aggregation) are not yet implemented.
+- Packrat-inspired features are partial: selective memoization exists for `statement`/`expression`/`primary`, and furthest-failure aggregation currently focuses on statement-level alternatives.
+
+## Runtime knobs
+
+- `MUTSU_PARSE_MEMO=0` disables parser memoization caches (useful for A/B debugging and perf comparison).

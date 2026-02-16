@@ -23,6 +23,9 @@ fn primary_memo_key(input: &str) -> (usize, usize) {
 }
 
 fn primary_memo_get(input: &str) -> Option<PResult<'_, Expr>> {
+    if !super::parse_memo_enabled() {
+        return None;
+    }
     let key = primary_memo_key(input);
     let entry = PRIMARY_MEMO.with(|memo| memo.borrow().get(&key).cloned())?;
     Some(match entry {
@@ -32,6 +35,9 @@ fn primary_memo_get(input: &str) -> Option<PResult<'_, Expr>> {
 }
 
 fn primary_memo_store(input: &str, result: &PResult<'_, Expr>) {
+    if !super::parse_memo_enabled() {
+        return;
+    }
     let key = primary_memo_key(input);
     let entry = match result {
         Ok((rest, expr)) => PrimaryMemoEntry::Ok {
@@ -46,6 +52,9 @@ fn primary_memo_store(input: &str, result: &PResult<'_, Expr>) {
 }
 
 pub(super) fn reset_primary_memo() {
+    if !super::parse_memo_enabled() {
+        return;
+    }
     PRIMARY_MEMO.with(|memo| memo.borrow_mut().clear());
 }
 
