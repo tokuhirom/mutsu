@@ -7,6 +7,7 @@ This document records concrete parser improvement opportunities found by reviewi
 - The parser works and current targeted tests pass.
 - There is still substantial maintainability debt, mostly from parser size and repeated branch-style matching.
 - The biggest risk is regression from changes in large files with long ordered dispatch chains.
+- Packrat-specific concerns (memoization and furthest-error handling) are not yet implemented in a systematic way.
 
 ## High-priority opportunities
 
@@ -34,24 +35,15 @@ Refactor into focused modules while preserving public entry points:
 - `expr/binary.rs`, `expr/unary.rs`, `expr/postfix.rs`, `expr/comparison.rs`
 - `primary/literal.rs`, `primary/quote.rs`, `primary/var.rs`, `primary/collection.rs`
 
-## 2) Replace statement `if let Ok(...)` chain with typed dispatch table
+## 2) Typed statement dispatch table (status update)
 
-`statement()` currently tries many parsers in sequence via repetitive branch calls.
+This has been implemented (statement parser dispatch table exists now).
 
 ### Why this matters
 
 - Ordering bugs are easy to introduce accidentally.
 - Adding new statements is noisy and error-prone.
 - Hard to inspect and test ordering as data.
-
-### Recommendation
-
-Represent statement parse order as typed static data:
-
-- `type StmtParser = fn(&str) -> PResult<'_, Stmt>;`
-- `const STMT_DISPATCH: &[StmtParser] = &[...]`
-
-Then `statement()` iterates this table.
 
 ### Acceptance criteria
 
@@ -74,7 +66,41 @@ Good progress already exists (`ComparisonOp`, `CompoundAssignOp`, etc.), but cov
 
 ## Medium-priority opportunities
 
-## 4) Introduce parser context object
+## 4) Packrat-style memoization for backtracking hotspots
+
+Current parser logic is recursive-descent with frequent alternative attempts, but there is no parse-result memoization cache.
+
+### Why this matters
+
+- Repeated parsing of the same `(rule, offset)` can create avoidable overhead.
+- As grammar coverage grows, backtracking cost can grow non-linearly on difficult inputs.
+
+### Recommendation
+
+- Add opt-in memoization for selected high-traffic rules first:
+  - `statement()`
+  - `expression()`
+  - `primary()`
+- Cache key shape: `(rule_id, byte_offset)`.
+- Cache value shape: success/failure plus resulting offset and error metadata.
+- Gate behind feature flag or runtime switch initially; measure before enabling by default.
+
+## 5) Packrat-style furthest-error reporting
+
+Current error handling is mostly local `expected(...)` messages plus top-level remaining-input snippet.
+
+### Why this matters
+
+- In PEG/Packrat-style parsing, best diagnostics usually come from the furthest failure point.
+- Without furthest-position tracking, users often see generic or misleading early-branch errors.
+
+### Recommendation
+
+- Track furthest failure offset across alternates.
+- Aggregate expected token categories at that offset.
+- Emit diagnostics from furthest failure, not first failure.
+
+## 6) Introduce parser context object
 
 Current parser functions pass raw `&str` repeatedly and recompute context.
 
@@ -88,7 +114,7 @@ Introduce lightweight `ParseCtx` for:
 
 This does not require changing external parse API initially.
 
-## 5) Improve parse error diagnostics consistency
+## 7) Improve parse error diagnostics consistency
 
 Top-level errors include a useful snippet, but deeper failures are still generic.
 
@@ -98,7 +124,7 @@ Top-level errors include a useful snippet, but deeper failures are still generic
 - Normalize snippet length and escaping.
 - Include nearest grammar layer (`statement`, `expression`, `primary`) in messages.
 
-## 6) Expand parser-focused regression tests
+## 8) Expand parser-focused regression tests
 
 There are unit tests, but some high-risk grammar edges remain underrepresented.
 
@@ -111,25 +137,26 @@ There are unit tests, but some high-risk grammar edges remain underrepresented.
 
 ## Low-priority opportunities
 
-## 7) Parser benchmark harness
+## 9) Parser benchmark harness
 
 Add a lightweight benchmark command (or criterion target) for:
 
 - parse throughput on representative roast/local test files
 - before/after comparison for refactors
 
-## 8) Property/fuzz testing for parser robustness
+## 10) Property/fuzz testing for parser robustness
 
 Use fuzz/property tests against parser entry points for panic/regression detection.
 
 ## Suggested execution order
 
 1. File split (`stmt` first, then `expr`, then `primary`)
-2. Typed statement dispatch table
-3. Finish operator table normalization
-4. Error diagnostics normalization
-5. Regression test matrix expansion
-6. Optional perf/fuzz work
+2. Finish operator table normalization
+3. Add furthest-error tracking
+4. Add selective memoization (with benchmarks)
+5. Error diagnostics normalization
+6. Regression test matrix expansion
+7. Optional perf/fuzz work
 
 ## Notes
 

@@ -53,20 +53,27 @@ Prefer helper functions for recurring patterns:
 - Type and factor remaining repeated operator checks in `expr.rs`.
 - Keep precedence layering unchanged.
 
-### Milestone 2: Statement dispatch cleanup
+### Milestone 2: Packrat-oriented error strategy
 
-- Replace long `if let Ok(...)` chain in `statement()` with a typed dispatch table.
-- Preserve current dispatch order exactly.
+- Track and report **furthest failure position** across alternatives.
+- Aggregate expected-token categories at furthest point for clearer diagnostics.
+- Keep top-level `RuntimeError` format stable while improving message quality.
 
-### Milestone 3: Error/context improvements
+### Milestone 3: Packrat-oriented memoization strategy
 
-- Standardize parse error context generation.
-- Keep existing user-visible messages unless intentionally changed.
+- Introduce opt-in memoization for high-backtracking entry points (initially `statement`, `expression`, `primary`).
+- Start with `(rule_id, input_offset)` cache keys and validate memory/latency tradeoffs.
+- Keep default parser behavior unchanged unless perf data shows clear benefit.
 
 ### Milestone 4: Test expansion
 
 - Add targeted parser unit tests for each extracted helper.
 - Add prove tests only for user-visible behavior.
+
+### Milestone 5: Error/context improvements
+
+- Standardize parse error context generation.
+- Keep existing user-visible messages unless intentionally changed.
 
 ## Refactor checklist
 
@@ -77,6 +84,12 @@ When making parser refactors:
 3. Run `cargo test parser_nom::`.
 4. Run full `cargo test` before merge.
 5. Update `docs/parser-overview.md` if structure changed.
+
+For Packrat-oriented work specifically:
+
+6. Measure parse time before/after on representative inputs.
+7. Validate memoization cache hit/miss ratio and peak memory.
+8. Add tests for furthest-error reporting correctness.
 
 ## Out of scope (for now)
 
