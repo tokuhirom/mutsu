@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, IsTerminal, Read};
 
 use mutsu::{Interpreter, RuntimeError};
 
@@ -30,16 +30,24 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     let mut dump_ast = false;
+    let mut repl_flag = false;
     let mut filtered_args: Vec<String> = Vec::new();
     for arg in &args[1..] {
         if arg == "--dump-ast" {
             dump_ast = true;
+        } else if arg == "--repl" {
+            repl_flag = true;
         } else if arg.starts_with("--parser=") {
             eprintln!("--parser option is no longer supported");
             std::process::exit(1);
         } else {
             filtered_args.push(arg.clone());
         }
+    }
+
+    if repl_flag || (filtered_args.is_empty() && io::stdin().is_terminal()) {
+        mutsu::repl::run_repl();
+        return;
     }
 
     let (input, program_name) = if !filtered_args.is_empty() && filtered_args[0] == "-e" {

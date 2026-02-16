@@ -5,6 +5,7 @@ mod interpreter;
 mod opcode;
 mod parse_dispatch;
 mod parser_nom;
+pub mod repl;
 mod runtime;
 mod token_kind;
 mod trace;
