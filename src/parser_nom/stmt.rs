@@ -2496,6 +2496,25 @@ fn with_stmt(input: &str) -> PResult<'_, Stmt> {
 /// Statement parser function type.
 type StmtParser = fn(&str) -> PResult<'_, Stmt>;
 
+fn error_score(err: &PError, input_len: usize) -> usize {
+    err.consumed_from(input_len).unwrap_or(0)
+}
+
+fn update_best_error(best: &mut Option<(usize, PError)>, candidate: PError, input_len: usize) {
+    let candidate_score = error_score(&candidate, input_len);
+    match best {
+        None => *best = Some((candidate_score, candidate)),
+        Some((best_score, best_err)) => {
+            if candidate_score > *best_score
+                || (candidate_score == *best_score
+                    && candidate.message.len() > best_err.message.len())
+            {
+                *best = Some((candidate_score, candidate));
+            }
+        }
+    }
+}
+
 /// Dispatch table for statement parsers.
 /// Each parser is tried in order until one succeeds.
 /// Order is critical — do not reorder without careful consideration.
@@ -2550,16 +2569,27 @@ const STMT_PARSERS: &[StmtParser] = &[
 
 fn statement(input: &str) -> PResult<'_, Stmt> {
     let (input, _) = ws(input)?;
+    let input_len = input.len();
+    let mut best_error: Option<(usize, PError)> = None;
 
     // Try each statement parser in order
     for parser in STMT_PARSERS {
-        if let Ok(r) = parser(input) {
-            return Ok(r);
+        match parser(input) {
+            Ok(r) => return Ok(r),
+            Err(err) => update_best_error(&mut best_error, err, input_len),
         }
     }
 
     // Fall back to expression statement
-    expr_stmt(input)
+    match expr_stmt(input) {
+        Ok(r) => Ok(r),
+        Err(err) => {
+            update_best_error(&mut best_error, err, input_len);
+            Err(best_error
+                .map(|(_, err)| err)
+                .unwrap_or_else(|| PError::expected_at("statement", input)))
+        }
+    }
 }
 
 /// Parse a full program (sequence of statements).

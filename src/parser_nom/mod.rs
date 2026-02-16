@@ -40,6 +40,26 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
             }
             Ok((stmts, finish_content))
         }
-        Err(e) => Err(RuntimeError::new(format!("parse error: {}", e))),
+        Err(e) => {
+            if let Some(consumed) = e.consumed_from(source.len()) {
+                let line_num = source[..consumed].matches('\n').count() + 1;
+                let context_start = &source[consumed..];
+                let context_trimmed = context_start.trim_start();
+                if !context_trimmed.is_empty() {
+                    let context: String = context_trimmed.chars().take(60).collect();
+                    Err(RuntimeError::new(format!(
+                        "parse error at line {}: {} — near: {:?}",
+                        line_num, e, context
+                    )))
+                } else {
+                    Err(RuntimeError::new(format!(
+                        "parse error at line {}: {}",
+                        line_num, e
+                    )))
+                }
+            } else {
+                Err(RuntimeError::new(format!("parse error: {}", e)))
+            }
+        }
     }
 }
