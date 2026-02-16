@@ -81,6 +81,8 @@ impl ConcatOp {
 enum AdditiveOp {
     Add,
     Sub,
+    BitOr,
+    BitXor,
 }
 
 impl AdditiveOp {
@@ -88,6 +90,8 @@ impl AdditiveOp {
         match self {
             AdditiveOp::Add => TokenKind::Plus,
             AdditiveOp::Sub => TokenKind::Minus,
+            AdditiveOp::BitOr => TokenKind::BitOr,
+            AdditiveOp::BitXor => TokenKind::BitXor,
         }
     }
 }
@@ -102,6 +106,9 @@ enum MultiplicativeOp {
     IntMod,
     Gcd,
     Lcm,
+    BitAnd,
+    BitShiftLeft,
+    BitShiftRight,
 }
 
 impl MultiplicativeOp {
@@ -115,6 +122,9 @@ impl MultiplicativeOp {
             MultiplicativeOp::IntMod => TokenKind::Ident("mod".to_string()),
             MultiplicativeOp::Gcd => TokenKind::Ident("gcd".to_string()),
             MultiplicativeOp::Lcm => TokenKind::Ident("lcm".to_string()),
+            MultiplicativeOp::BitAnd => TokenKind::BitAnd,
+            MultiplicativeOp::BitShiftLeft => TokenKind::BitShiftLeft,
+            MultiplicativeOp::BitShiftRight => TokenKind::BitShiftRight,
         }
     }
 }
@@ -130,7 +140,11 @@ fn parse_concat_op(r: &str) -> Option<(ConcatOp, usize)> {
 }
 
 fn parse_additive_op(r: &str) -> Option<(AdditiveOp, usize)> {
-    if r.starts_with('+') && !r.starts_with("++") && !r.starts_with("+=") {
+    if r.starts_with("+|") {
+        Some((AdditiveOp::BitOr, 2))
+    } else if r.starts_with("+^") {
+        Some((AdditiveOp::BitXor, 2))
+    } else if r.starts_with('+') && !r.starts_with("++") && !r.starts_with("+=") {
         Some((AdditiveOp::Add, 1))
     } else if r.starts_with('-')
         && !r.starts_with("--")
@@ -144,7 +158,13 @@ fn parse_additive_op(r: &str) -> Option<(AdditiveOp, usize)> {
 }
 
 fn parse_multiplicative_op(r: &str) -> Option<(MultiplicativeOp, usize)> {
-    if r.starts_with('*') && !r.starts_with("**") && !r.starts_with("*=") {
+    if r.starts_with("+&") {
+        Some((MultiplicativeOp::BitAnd, 2))
+    } else if r.starts_with("+<") {
+        Some((MultiplicativeOp::BitShiftLeft, 2))
+    } else if r.starts_with("+>") {
+        Some((MultiplicativeOp::BitShiftRight, 2))
+    } else if r.starts_with('*') && !r.starts_with("**") && !r.starts_with("*=") {
         Some((MultiplicativeOp::Mul, 1))
     } else if r.starts_with('/') && !r.starts_with("//") {
         Some((MultiplicativeOp::Div, 1))
