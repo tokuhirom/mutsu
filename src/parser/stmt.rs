@@ -712,6 +712,14 @@ impl Parser {
                     else_branch: vec![Stmt::Die(Expr::Literal(Value::Str("Died".to_string())))],
                 });
             }
+            // Handle bare `die` / `die;` with no argument
+            if self.check(&TokenKind::Semicolon)
+                || self.check(&TokenKind::Eof)
+                || self.check(&TokenKind::RBrace)
+            {
+                self.match_kind(TokenKind::Semicolon);
+                return Ok(Stmt::Die(Expr::Literal(Value::Str("Died".to_string()))));
+            }
             let expr = self.parse_expr()?;
             // Check for postfix if/unless after the die expression
             if self.match_ident("if") {

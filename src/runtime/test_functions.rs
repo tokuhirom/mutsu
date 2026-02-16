@@ -428,13 +428,28 @@ impl Interpreter {
             }
             _ => Ok(Value::Nil),
         };
+        // Normalize type-object representation: "(Exception)" -> "Exception"
+        let expected_normalized = expected
+            .strip_prefix('(')
+            .and_then(|s| s.strip_suffix(')'))
+            .unwrap_or(&expected);
         let ok = match result {
             Ok(_) => false,
             Err(err) => {
-                if expected.is_empty() {
+                if expected_normalized.is_empty() || expected_normalized == "Exception" {
+                    // Any exception matches the base Exception type
                     true
+                } else if expected_normalized == "X::Comp"
+                    || expected_normalized == "X::Comp::Group"
+                {
+                    // X::Comp is a base class for all compile-time errors
+                    // X::Syntax::*, X::Undeclared, etc. are all X::Comp
+                    err.message.contains("X::Syntax")
+                        || err.message.contains("X::Comp")
+                        || err.message.contains("X::Undeclared")
+                        || err.message.contains("X::Obsolete")
                 } else {
-                    err.message.contains(&expected)
+                    err.message.contains(expected_normalized)
                 }
             }
         };

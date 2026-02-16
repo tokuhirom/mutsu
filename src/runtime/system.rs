@@ -41,6 +41,9 @@ impl Interpreter {
                 break;
             }
         }
+        if let Some(err) = lexer.errors.first() {
+            return Err(RuntimeError::new(err));
+        }
         let mut parser = Parser::new(tokens);
         match parser.parse_program() {
             Ok(stmts) => self.eval_block_value(&stmts),

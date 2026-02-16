@@ -2,19 +2,29 @@ use std::env;
 use std::fs;
 use std::io::{self, Read};
 
-use mutsu::Interpreter;
+use mutsu::{Interpreter, ParserBackend};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
 
     let mut dump_ast = false;
     let mut dump_tokens = false;
+    let mut parser_backend = ParserBackend::RecursiveDescent;
     let mut filtered_args: Vec<String> = Vec::new();
     for arg in &args[1..] {
         if arg == "--dump-ast" {
             dump_ast = true;
         } else if arg == "--dump-tokens" {
             dump_tokens = true;
+        } else if let Some(val) = arg.strip_prefix("--parser=") {
+            match val {
+                "nom" => parser_backend = ParserBackend::Nom,
+                "rd" => parser_backend = ParserBackend::RecursiveDescent,
+                _ => {
+                    eprintln!("Unknown parser backend: {}. Use 'rd' or 'nom'.", val);
+                    std::process::exit(1);
+                }
+            }
         } else {
             filtered_args.push(arg.clone());
         }
@@ -47,7 +57,7 @@ fn main() {
     }
 
     if dump_ast {
-        match mutsu::dump_ast(&input) {
+        match mutsu::dump_ast(&input, parser_backend) {
             Ok(ast) => println!("{}", ast),
             Err(err) => {
                 eprintln!("Parse error: {}", err.message);
@@ -59,6 +69,7 @@ fn main() {
 
     let mut interpreter = Interpreter::new();
     interpreter.set_program_path(&program_name);
+    interpreter.set_parser_backend(parser_backend);
     match interpreter.run(&input) {
         Ok(output) => print!("{}", output),
         Err(err) => {

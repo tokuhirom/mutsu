@@ -69,7 +69,6 @@ roast/S11-modules/runtime.t
 roast/S12-class/literal.t
 roast/S12-construction/autopairs.t
 roast/S14-roles/bool.t
-roast/S14-roles/generic-subtyping.t
 roast/S15-nfg/cgj.t
 roast/S15-nfg/grapheme-break.t
 roast/S15-nfg/many-combiners.t

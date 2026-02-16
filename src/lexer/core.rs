@@ -10,6 +10,8 @@ pub(crate) struct Lexer {
     /// False when the last token was an operator or opening delimiter,
     /// meaning the next `/` should be treated as a regex delimiter.
     pub(super) last_was_term: bool,
+    /// Compile-time errors detected during lexing (e.g. malformed embedded comments).
+    pub(crate) errors: Vec<String>,
 }
 
 impl Lexer {
@@ -20,6 +22,7 @@ impl Lexer {
             line: 1,
             finish_content: None,
             last_was_term: false,
+            errors: Vec::new(),
         }
     }
 
@@ -255,6 +258,54 @@ impl Lexer {
                     }
                     continue;
                 }
+                if word == "=comment"
+                    || word.starts_with("=for")
+                    || word.starts_with("=head")
+                    || word.starts_with("=item")
+                    || word.starts_with("=para")
+                {
+                    // Single paragraph Pod: skip to end of current line,
+                    // then skip continuation lines (non-blank lines that start with whitespace)
+                    // Skip to end of =comment line
+                    while i < self.src.len() && self.src[i] != '\n' {
+                        i += 1;
+                    }
+                    if i < self.src.len() {
+                        i += 1; // skip the newline
+                        self.line += 1;
+                    }
+                    // Skip continuation lines: lines that are non-empty and
+                    // either start with whitespace or are non-blank content
+                    // A blank line or a Pod directive terminates the paragraph
+                    while i < self.src.len() {
+                        // Check if this line is blank
+                        let line_start = i;
+                        let mut is_blank = true;
+                        let mut j = i;
+                        while j < self.src.len() && self.src[j] != '\n' {
+                            if !self.src[j].is_whitespace() {
+                                is_blank = false;
+                            }
+                            j += 1;
+                        }
+                        if is_blank {
+                            // Blank line terminates the paragraph
+                            break;
+                        }
+                        // Check if this line starts with = (new Pod directive)
+                        if self.src[line_start] == '=' && line_start > 0 {
+                            break;
+                        }
+                        // This is a continuation line, skip it
+                        i = j;
+                        if i < self.src.len() {
+                            i += 1; // skip newline
+                            self.line += 1;
+                        }
+                    }
+                    self.pos = i;
+                    continue;
+                }
                 if word == "=finish" {
                     // Skip to end of the =finish line
                     while i < self.src.len() && self.src[i] != '\n' {
@@ -280,10 +331,23 @@ impl Lexer {
                         && let Some(close) = Self::matching_bracket(open)
                     {
                         self.pos += 1;
-                        self.skip_bracketed_comment(open, close);
+                        // Count consecutive open brackets for multi-char delimiters
+                        let mut delim_len = 1usize;
+                        while self.peek() == Some(open) {
+                            self.pos += 1;
+                            delim_len += 1;
+                        }
+                        self.skip_bracketed_comment_multi(open, close, delim_len);
                         continue;
                     }
-                    // Not a valid embedded comment, treat as regular comment
+                    // Not a valid embedded comment — report error if followed by whitespace or unspace
+                    if let Some(c) = self.peek()
+                        && (c == '\\' || c.is_whitespace())
+                    {
+                        self.errors.push(
+                            "X::Syntax::Comment::Embedded: Opening bracket is required for #` comment".to_string(),
+                        );
+                    }
                     self.pos -= 1; // back to after #
                 }
                 // Regular single-line comment
@@ -349,17 +413,49 @@ impl Lexer {
         }
     }
 
+    #[allow(dead_code)]
     pub(super) fn skip_bracketed_comment(&mut self, open: char, close: char) {
+        self.skip_bracketed_comment_multi(open, close, 1);
+    }
+
+    pub(super) fn skip_bracketed_comment_multi(
+        &mut self,
+        open: char,
+        close: char,
+        delim_len: usize,
+    ) {
         let mut depth = 1usize;
         while self.pos < self.src.len() && depth > 0 {
             let c = self.src[self.pos];
             if c == '\n' {
                 self.line += 1;
+                self.pos += 1;
+                continue;
             }
             if c == open {
-                depth += 1;
+                // Count consecutive open brackets
+                let mut count = 0;
+                let _start = self.pos;
+                while self.pos < self.src.len() && self.src[self.pos] == open {
+                    count += 1;
+                    self.pos += 1;
+                }
+                if count == delim_len {
+                    depth += 1;
+                }
+                // Don't advance again - already advanced in the counting loop
+                continue;
             } else if c == close {
-                depth -= 1;
+                // Count consecutive close brackets
+                let mut count = 0;
+                while self.pos < self.src.len() && self.src[self.pos] == close {
+                    count += 1;
+                    self.pos += 1;
+                }
+                if count >= delim_len {
+                    depth -= 1;
+                }
+                continue;
             }
             self.pos += 1;
         }

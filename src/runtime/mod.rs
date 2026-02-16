@@ -13,9 +13,11 @@ use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use crate::ParserBackend;
 use crate::ast::{ExpectedMatcher, Expr, FunctionDef, ParamDef, PhaserKind, Stmt};
 use crate::lexer::{Lexer, TokenKind};
 use crate::opcode::{CompiledCode, OpCode};
+use crate::parse_dispatch;
 use crate::parser::Parser;
 use crate::value::{JunctionKind, LazyList, RuntimeError, Value, make_rat, next_instance_id};
 use num_traits::Signed;
@@ -196,6 +198,7 @@ pub struct Interpreter {
     end_phasers: Vec<(Vec<Stmt>, HashMap<String, Value>)>,
     chroot_root: Option<PathBuf>,
     loaded_modules: HashSet<String>,
+    parser_backend: ParserBackend,
 }
 
 pub(crate) struct SubtestContext {
@@ -403,6 +406,7 @@ impl Interpreter {
             end_phasers: Vec::new(),
             chroot_root: None,
             loaded_modules: HashSet::new(),
+            parser_backend: ParserBackend::default(),
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -426,6 +430,10 @@ impl Interpreter {
         self.env.insert("@*ARGS".to_string(), Value::Array(args));
     }
 
+    pub fn set_parser_backend(&mut self, backend: ParserBackend) {
+        self.parser_backend = backend;
+    }
+
     pub(crate) fn add_lib_path(&mut self, path: String) {
         if !path.is_empty() {
             self.lib_paths.push(path);
@@ -434,7 +442,13 @@ impl Interpreter {
 
     pub(crate) fn use_module(&mut self, module: &str) -> Result<(), RuntimeError> {
         self.loaded_modules.insert(module.to_string());
-        if module == "Test" || module.starts_with("Test::") {
+        if module == "Test"
+            || module.starts_with("Test::")
+            || matches!(
+                module,
+                "strict" | "warnings" | "MONKEY-SEE-NO-EVAL" | "MONKEY-TYPING" | "nqp" | "MONKEY"
+            )
+        {
             return Ok(());
         }
         self.load_module(module)

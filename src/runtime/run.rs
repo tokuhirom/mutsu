@@ -70,6 +70,9 @@ impl Interpreter {
             .unwrap_or_else(|| "<unknown>".to_string());
         self.env.insert("?FILE".to_string(), Value::Str(file_name));
         self.env.insert("?LINE".to_string(), Value::Int(1));
+        if let Some(err) = lexer.errors.first() {
+            return Err(RuntimeError::new(err));
+        }
         let mut parser = Parser::new(tokens);
         let stmts = parser.parse_program()?;
         let (enter_ph, leave_ph, body_main) = self.split_block_phasers(&stmts);
@@ -215,18 +218,7 @@ impl Interpreter {
         let code =
             code.ok_or_else(|| RuntimeError::new(format!("Module not found: {}", module)))?;
         let preprocessed = Self::preprocess_roast_directives(&code);
-        let mut lexer = Lexer::new(&preprocessed);
-        let mut tokens = Vec::new();
-        loop {
-            let token = lexer.next_token();
-            let end = matches!(token.kind, TokenKind::Eof);
-            tokens.push(token);
-            if end {
-                break;
-            }
-        }
-        let mut parser = Parser::new(tokens);
-        let stmts = parser.parse_program()?;
+        let (stmts, _) = parse_dispatch::parse_source(&preprocessed, self.parser_backend)?;
         self.run_block(&stmts)?;
         Ok(())
     }

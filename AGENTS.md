@@ -22,6 +22,12 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 
 Source → **Lexer** (`lexer.rs`) → **Parser** (`parser.rs`) → **Compiler** (`compiler.rs`) → **VM** (`vm.rs`) → Output
 
+Two parser backends are available, selectable at runtime via `--parser=rd` (default) or `--parser=nom`:
+- **RecursiveDescent** (`parser/`): Current production parser using a separate lexer + recursive descent.
+- **Nom** (`parser_nom/`): Experimental PEG parser built with nom 7. Currently a skeleton supporting only `say <literal>`.
+
+The parser backend is dispatched through `parse_dispatch.rs`, which provides `parse_source()` used by all parsing call sites.
+
 This is a **hybrid** architecture: the bytecode VM handles primitive operations (arithmetic, comparisons, loops, jumps) natively, but delegates complex operations (user-defined function calls, method dispatch, regex, class instantiation) back to the tree-walking `Interpreter` (`runtime/`). The VM holds an embedded `Interpreter` and calls into it for anything beyond simple bytecode.
 
 ### Core data types
@@ -135,6 +141,8 @@ make roast 2>&1 | grep -E "(not ok|FAILED|Failed|Wstat)" | head -20
 - Preferred approaches in order:
   1. **Token dump**: `./target/debug/mutsu --dump-tokens <file>` or `--dump-tokens -e '<code>'`
   2. **AST dump**: `./target/debug/mutsu --dump-ast <file>` or `--dump-ast -e '<code>'`
+  2b. **AST compare**: `./scripts/compare-ast.sh 'say 42'` or `./scripts/compare-ast.sh <file>` — shows raku parse tree plus both rd and nom ASTs side by side.
+  2c. **Parser selection**: `./target/debug/mutsu --parser=nom -e '<code>'` to test the nom parser backend.
   3. **Trace logs**: `MUTSU_TRACE=1 ./target/debug/mutsu <file>` (filter: `MUTSU_TRACE=eval` or `MUTSU_TRACE=parse,vm`)
   4. **Focused unit tests**: `#[test]` in the relevant module, run with `cargo test <name>`
   5. **Read the code**: Trace logic by reading, not running

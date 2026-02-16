@@ -141,6 +141,16 @@ impl Lexer {
                             }
                         }
 
+                        // Check for q# or qq# — # may not be used as a quote delimiter
+                        {
+                            let check_pos = if is_qq { save_pos + 1 } else { save_pos };
+                            if self.src.get(check_pos) == Some(&'#') {
+                                self.errors.push(
+                                    "X::Comp: # may not be used as a quote delimiter".to_string(),
+                                );
+                            }
+                        }
+
                         // Not a special form, restore and read as identifier
                         self.pos = save_pos;
                         self.line = save_line;
