@@ -952,7 +952,7 @@ fn regex_lit(input: &str) -> PResult<'_, Expr> {
         } else {
             &r[end..]
         };
-        return Ok((rest, Expr::Literal(Value::Str(pattern.to_string()))));
+        return Ok((rest, Expr::Literal(Value::Regex(pattern.to_string()))));
     }
 
     // m/pattern/ or m{pattern} or m[pattern]
@@ -989,7 +989,7 @@ fn regex_lit(input: &str) -> PResult<'_, Expr> {
         } else {
             &r[end..]
         };
-        return Ok((rest, Expr::Literal(Value::Str(pattern.to_string()))));
+        return Ok((rest, Expr::Literal(Value::Regex(pattern.to_string()))));
     }
 
     // Bare /pattern/
@@ -1010,7 +1010,7 @@ fn regex_lit(input: &str) -> PResult<'_, Expr> {
         if end > 0 && end < bytes.len() {
             let pattern = &r[..end];
             let rest = &r[end + 1..];
-            return Ok((rest, Expr::Literal(Value::Str(pattern.to_string()))));
+            return Ok((rest, Expr::Literal(Value::Regex(pattern.to_string()))));
         }
     }
 
