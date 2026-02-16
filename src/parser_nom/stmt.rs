@@ -216,6 +216,15 @@ fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
     Ok((rest, args))
 }
 
+/// Parse statement call args without treating leading `(` as function call parens.
+/// Used when there was whitespace between function name and args (listop form).
+fn parse_stmt_call_args_no_paren(input: &str) -> PResult<'_, Vec<CallArg>> {
+    if input.starts_with(';') || input.is_empty() || input.starts_with('}') {
+        return Ok((input, Vec::new()));
+    }
+    parse_remaining_call_args(input)
+}
+
 /// Parse remaining comma-separated call args.
 fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
     let mut args = Vec::new();
@@ -2049,6 +2058,7 @@ fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
     if !is_known_call(&name) {
         return Err(PError::expected("known function call"));
     }
+    let had_ws = rest.starts_with(' ') || rest.starts_with('\t') || rest.starts_with('\n');
     let (rest, _) = ws(rest)?;
 
     // Special handling for proceed/succeed with no args
@@ -2061,7 +2071,13 @@ fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
         return Ok((rest, Stmt::Succeed));
     }
 
-    let (rest, args) = parse_stmt_call_args(rest)?;
+    // In Raku, `foo(args)` (no space) = paren call, but `foo (expr)` (space) = listop call.
+    // When there was whitespace before `(`, treat `(` as expression grouping, not call parens.
+    let (rest, args) = if had_ws {
+        parse_stmt_call_args_no_paren(rest)?
+    } else {
+        parse_stmt_call_args(rest)?
+    };
     let stmt = Stmt::Call { name, args };
     parse_statement_modifier(rest, stmt)
 }

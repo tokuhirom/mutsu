@@ -726,6 +726,28 @@ impl VM {
                 *ip += 1;
             }
 
+            OpCode::BoolBitOr => {
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = Value::Bool(left.truthy() | right.truthy());
+                self.stack.push(result);
+                *ip += 1;
+            }
+            OpCode::BoolBitAnd => {
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = Value::Bool(left.truthy() & right.truthy());
+                self.stack.push(result);
+                *ip += 1;
+            }
+            OpCode::BoolBitXor => {
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let result = Value::Bool(left.truthy() ^ right.truthy());
+                self.stack.push(result);
+                *ip += 1;
+            }
+
             // -- Set operations (native) --
             OpCode::SetElem => {
                 let right = self.stack.pop().unwrap();

@@ -1337,6 +1337,9 @@ impl Compiler {
             // Bitwise
             TokenKind::BitAnd => Some(OpCode::BitAnd),
             TokenKind::BitOr => Some(OpCode::BitOr),
+            TokenKind::Ident(name) if name == "?|" => Some(OpCode::BoolBitOr),
+            TokenKind::Ident(name) if name == "?&" => Some(OpCode::BoolBitAnd),
+            TokenKind::Ident(name) if name == "?^" => Some(OpCode::BoolBitXor),
             TokenKind::BitXor => Some(OpCode::BitXor),
             TokenKind::BitShiftLeft => Some(OpCode::BitShiftLeft),
             TokenKind::BitShiftRight => Some(OpCode::BitShiftRight),

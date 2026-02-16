@@ -188,15 +188,46 @@ fn or_or_expr(input: &str) -> PResult<'_, Expr> {
 
 /// &&
 fn and_and_expr(input: &str) -> PResult<'_, Expr> {
-    let (mut rest, mut left) = comparison_expr(input)?;
+    let (mut rest, mut left) = junctive_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
         if let Some(stripped) = r.strip_prefix("&&") {
             let (r, _) = ws(stripped)?;
-            let (r, right) = comparison_expr(r)?;
+            let (r, right) = junctive_expr(r)?;
             left = Expr::Binary {
                 left: Box::new(left),
                 op: TokenKind::AndAnd,
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        break;
+    }
+    Ok((rest, left))
+}
+
+/// Boolean bitwise: ?| ?& ?^
+fn junctive_expr(input: &str) -> PResult<'_, Expr> {
+    let (mut rest, mut left) = comparison_expr(input)?;
+    loop {
+        let (r, _) = ws(rest)?;
+        let (op, len) = if r.starts_with("?|") {
+            (Some(TokenKind::Ident("?|".to_string())), 2)
+        } else if r.starts_with("?&") {
+            (Some(TokenKind::Ident("?&".to_string())), 2)
+        } else if r.starts_with("?^") {
+            (Some(TokenKind::Ident("?^".to_string())), 2)
+        } else {
+            (None, 0)
+        };
+        if let Some(op) = op {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = comparison_expr(r)?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op,
                 right: Box::new(right),
             };
             rest = r;
@@ -249,6 +280,12 @@ fn comparison_expr(input: &str) -> PResult<'_, Expr> {
         (Some(TokenKind::Ident("leg".to_string())), 3)
     } else if r.starts_with("cmp") && !is_ident_char(r.as_bytes().get(3).copied()) {
         (Some(TokenKind::Ident("cmp".to_string())), 3)
+    } else if r.starts_with("eqv") && !is_ident_char(r.as_bytes().get(3).copied()) {
+        (Some(TokenKind::Ident("eqv".to_string())), 3)
+    } else if r.starts_with("before") && !is_ident_char(r.as_bytes().get(6).copied()) {
+        (Some(TokenKind::Ident("before".to_string())), 6)
+    } else if r.starts_with("after") && !is_ident_char(r.as_bytes().get(5).copied()) {
+        (Some(TokenKind::Ident("after".to_string())), 5)
     } else {
         (None, 0)
     };
@@ -332,6 +369,12 @@ fn parse_comparison_op(r: &str) -> (Option<TokenKind>, usize) {
         (Some(TokenKind::Ident("leg".to_string())), 3)
     } else if r.starts_with("cmp") && !is_ident_char(r.as_bytes().get(3).copied()) {
         (Some(TokenKind::Ident("cmp".to_string())), 3)
+    } else if r.starts_with("eqv") && !is_ident_char(r.as_bytes().get(3).copied()) {
+        (Some(TokenKind::Ident("eqv".to_string())), 3)
+    } else if r.starts_with("before") && !is_ident_char(r.as_bytes().get(6).copied()) {
+        (Some(TokenKind::Ident("before".to_string())), 6)
+    } else if r.starts_with("after") && !is_ident_char(r.as_bytes().get(5).copied()) {
+        (Some(TokenKind::Ident("after".to_string())), 5)
     } else {
         (None, 0)
     }
@@ -339,12 +382,12 @@ fn parse_comparison_op(r: &str) -> (Option<TokenKind>, usize) {
 
 /// Range: ..  ..^  ^..  ^..^
 fn range_expr(input: &str) -> PResult<'_, Expr> {
-    let (rest, left) = concat_expr(input)?;
+    let (rest, left) = structural_expr(input)?;
     let (r, _) = ws(rest)?;
 
     if let Some(stripped) = r.strip_prefix("^..^") {
         let (r, _) = ws(stripped)?;
-        let (r, right) = concat_expr(r)?;
+        let (r, right) = structural_expr(r)?;
         return Ok((
             r,
             Expr::Binary {
@@ -356,7 +399,7 @@ fn range_expr(input: &str) -> PResult<'_, Expr> {
     }
     if let Some(stripped) = r.strip_prefix("^..") {
         let (r, _) = ws(stripped)?;
-        let (r, right) = concat_expr(r)?;
+        let (r, right) = structural_expr(r)?;
         return Ok((
             r,
             Expr::Binary {
@@ -368,7 +411,7 @@ fn range_expr(input: &str) -> PResult<'_, Expr> {
     }
     if let Some(stripped) = r.strip_prefix("..^") {
         let (r, _) = ws(stripped)?;
-        let (r, right) = concat_expr(r)?;
+        let (r, right) = structural_expr(r)?;
         return Ok((
             r,
             Expr::Binary {
@@ -381,7 +424,7 @@ fn range_expr(input: &str) -> PResult<'_, Expr> {
     if r.starts_with("..") && !r.starts_with("...") {
         let r = &r[2..];
         let (r, _) = ws(r)?;
-        let (r, right) = concat_expr(r)?;
+        let (r, right) = structural_expr(r)?;
         return Ok((
             r,
             Expr::Binary {
@@ -390,6 +433,40 @@ fn range_expr(input: &str) -> PResult<'_, Expr> {
                 right: Box::new(right),
             },
         ));
+    }
+    Ok((rest, left))
+}
+
+/// Structural infix: but, does
+fn structural_expr(input: &str) -> PResult<'_, Expr> {
+    let (mut rest, mut left) = concat_expr(input)?;
+    loop {
+        let (r, _) = ws(rest)?;
+        if r.starts_with("but") && !is_ident_char(r.as_bytes().get(3).copied()) {
+            let r = &r[3..];
+            let (r, _) = ws(r)?;
+            let (r, right) = concat_expr(r)?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: TokenKind::Ident("but".to_string()),
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        if r.starts_with("does") && !is_ident_char(r.as_bytes().get(4).copied()) {
+            let r = &r[4..];
+            let (r, _) = ws(r)?;
+            let (r, right) = concat_expr(r)?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: TokenKind::Ident("does".to_string()),
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        break;
     }
     Ok((rest, left))
 }
@@ -596,8 +673,13 @@ fn power_expr(input: &str) -> PResult<'_, Expr> {
 
 /// Prefix unary: !, ?, +, -, ~, so, not, ++, --
 fn prefix_expr(input: &str) -> PResult<'_, Expr> {
-    if input.starts_with('!') && !input.starts_with("!!") && !input.starts_with("!~~") {
+    if input.starts_with('!')
+        && !input.starts_with("!!")
+        && !input.starts_with("!~~")
+        && !input.starts_with("!%%")
+    {
         let r = &input[1..];
+        let (r, _) = ws(r)?;
         let (r, expr) = prefix_expr(r)?;
         return Ok((
             r,
@@ -607,8 +689,14 @@ fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    if input.starts_with('?') && !input.starts_with("??") {
+    if input.starts_with('?')
+        && !input.starts_with("??")
+        && !input.starts_with("?|")
+        && !input.starts_with("?&")
+        && !input.starts_with("?^")
+    {
         let r = &input[1..];
+        let (r, _) = ws(r)?;
         let (r, expr) = prefix_expr(r)?;
         return Ok((
             r,
@@ -650,12 +738,12 @@ fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    // Unary minus: only if followed by non-space primary (e.g., -42, -$x)
+    // Unary minus: only if followed by non-space primary (e.g., -42, -$x, -Inf)
     if input.starts_with('-')
         && !input.starts_with("--")
         && !input.starts_with("->")
         && let Some(&c) = input.as_bytes().get(1)
-        && (c == b'$' || c == b'@' || c == b'(' || c.is_ascii_digit())
+        && (c == b'$' || c == b'@' || c == b'(' || c.is_ascii_digit() || c.is_ascii_alphabetic())
     {
         let r = &input[1..];
         let (r, expr) = prefix_expr(r)?;
@@ -671,7 +759,7 @@ fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if input.starts_with('+')
         && !input.starts_with("++")
         && let Some(&c) = input.as_bytes().get(1)
-        && (c == b'$' || c == b'@' || c == b'(' || c.is_ascii_digit())
+        && (c == b'$' || c == b'@' || c == b'(' || c.is_ascii_digit() || c.is_ascii_alphabetic())
     {
         let r = &input[1..];
         let (r, expr) = prefix_expr(r)?;
@@ -687,7 +775,13 @@ fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if input.starts_with('~')
         && !input.starts_with("~~")
         && let Some(&c) = input.as_bytes().get(1)
-        && (c == b'$' || c == b'@' || c == b'(' || c == b'"' || c == b'\'' || c.is_ascii_digit())
+        && (c == b'$'
+            || c == b'@'
+            || c == b'('
+            || c == b'"'
+            || c == b'\''
+            || c.is_ascii_digit()
+            || c.is_ascii_alphabetic())
     {
         let r = &input[1..];
         let (r, expr) = prefix_expr(r)?;
@@ -801,13 +895,21 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
             continue;
         }
 
-        // Hash indexing with angle brackets: %hash<key> or $hash<key>
-        if rest.starts_with('<') && !rest.starts_with("<=") && !rest.starts_with("<<") {
-            // Only for hash/var targets
-            if matches!(&expr, Expr::HashVar(_) | Expr::Var(_)) {
-                let r = &rest[1..];
-                if let Some(end) = r.find('>') {
-                    let key = &r[..end];
+        // Hash indexing with angle brackets: %hash<key>, $hash<key>, @a[0]<key>, etc.
+        // Only match when content is a simple word key (alphanumeric, no operators)
+        if rest.starts_with('<')
+            && !rest.starts_with("<=")
+            && !rest.starts_with("<<")
+            && !rest.starts_with("<=>")
+        {
+            let r = &rest[1..];
+            if let Some(end) = r.find('>') {
+                let key = &r[..end];
+                if !key.is_empty()
+                    && key
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+                {
                     let r = &r[end + 1..];
                     expr = Expr::Index {
                         target: Box::new(expr),
@@ -819,8 +921,10 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
             }
         }
 
-        // Hash indexing with braces: %hash{"key"} or %hash{$var}
-        if rest.starts_with('{') && matches!(&expr, Expr::HashVar(_) | Expr::Var(_)) {
+        // Hash indexing with braces: %hash{"key"}, %hash{$var}, @a[0]{"key"}, etc.
+        if rest.starts_with('{')
+            && matches!(&expr, Expr::HashVar(_) | Expr::Var(_) | Expr::Index { .. })
+        {
             let r = &rest[1..];
             let (r, _) = ws(r)?;
             let (r, index) = expression(r)?;

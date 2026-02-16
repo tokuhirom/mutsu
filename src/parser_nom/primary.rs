@@ -75,6 +75,92 @@ fn decimal(input: &str) -> PResult<'_, Expr> {
     Ok((rest, Expr::Literal(Value::Num(n))))
 }
 
+/// Read a bracketed string with nesting support (e.g., `{...{...}...}`)
+fn read_bracketed(input: &str, open: char, close: char) -> PResult<'_, &str> {
+    if !input.starts_with(open) {
+        return Err(PError::expected(&format!("'{}'", open)));
+    }
+    let mut rest = &input[open.len_utf8()..];
+    let start = rest;
+    let mut depth = 1u32;
+    loop {
+        if rest.is_empty() {
+            return Err(PError::expected(&format!("closing '{}'", close)));
+        }
+        let ch = rest.chars().next().unwrap();
+        if ch == '\\' && rest.len() > 1 {
+            rest = &rest[2..]; // skip escape
+            continue;
+        }
+        if ch == open {
+            depth += 1;
+        } else if ch == close {
+            depth -= 1;
+            if depth == 0 {
+                let content = &start[..start.len() - rest.len()];
+                return Ok((&rest[close.len_utf8()..], content));
+            }
+        }
+        rest = &rest[ch.len_utf8()..];
+    }
+}
+
+/// Parse q{...}, q[...], q(...), q<...>, q/.../ quoting forms.
+fn q_string(input: &str) -> PResult<'_, Expr> {
+    if !input.starts_with('q') {
+        return Err(PError::expected("q string"));
+    }
+    let after_q = &input[1..];
+    // Check for qq forms
+    let (after_prefix, is_qq) = if let Some(after_qq) = after_q.strip_prefix('q') {
+        if after_qq.starts_with('{')
+            || after_qq.starts_with('[')
+            || after_qq.starts_with('(')
+            || after_qq.starts_with('<')
+            || after_qq.starts_with('/')
+        {
+            (after_qq, true)
+        } else {
+            // Check for q:to heredoc or q with adverbs — not handled here
+            (after_q, false)
+        }
+    } else {
+        (after_q, false)
+    };
+    // Must be followed by a delimiter
+    let (open, close) = match after_prefix.chars().next() {
+        Some('{') => ('{', '}'),
+        Some('[') => ('[', ']'),
+        Some('(') => ('(', ')'),
+        Some('<') => ('<', '>'),
+        Some('/') => {
+            // q/.../ — find closing /
+            let rest = &after_prefix[1..];
+            let end = rest
+                .find('/')
+                .ok_or_else(|| PError::expected("closing /"))?;
+            let content = &rest[..end];
+            let rest = &rest[end + 1..];
+            let s = if is_qq {
+                // qq/.../  — would need interpolation, for now treat as plain
+                content.to_string()
+            } else {
+                content.replace("\\'", "'").replace("\\\\", "\\")
+            };
+            return Ok((rest, Expr::Literal(Value::Str(s))));
+        }
+        _ => return Err(PError::expected("q string delimiter")),
+    };
+    let (rest, content) = read_bracketed(after_prefix, open, close)?;
+    let s = if is_qq {
+        // qq{...} — would need interpolation, for now treat as plain
+        content.to_string()
+    } else {
+        content.replace("\\'", "'").replace("\\\\", "\\")
+    };
+    Ok((rest, Expr::Literal(Value::Str(s))))
+}
+
 /// Parse a single-quoted string literal.
 fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '\'')?;
@@ -266,6 +352,10 @@ fn parse_var_name_from_str(input: &str) -> (&str, String) {
 /// Parse a $variable reference.
 fn scalar_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '$')?;
+    // Handle $(expr) — scalar context / itemization
+    if input.starts_with('(') {
+        return paren_expr(input);
+    }
     // Handle $_ special variable
     if input.starts_with('_') && (input.len() == 1 || !input.as_bytes()[1].is_ascii_alphanumeric())
     {
@@ -334,8 +424,19 @@ fn hash_var(input: &str) -> PResult<'_, Expr> {
 /// Parse a &code variable reference.
 fn code_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '&')?;
-    let (rest, name) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
-    Ok((rest, Expr::CodeVar(name.to_string())))
+    // Handle twigils: &?BLOCK, &?ROUTINE
+    let (rest, twigil) = if let Some(stripped) = input.strip_prefix('?') {
+        (stripped, "?")
+    } else {
+        (input, "")
+    };
+    let (rest, name) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+    let full_name = if twigil.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}{}", twigil, name)
+    };
+    Ok((rest, Expr::CodeVar(full_name)))
 }
 
 /// Parse a parenthesized expression or list.
@@ -593,6 +694,21 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 let (r, body) = parse_block_body(r)?;
                 return Ok((r, Expr::Gather(body)));
             }
+        }
+        "die" | "fail" => {
+            let (r, _) = ws(rest)?;
+            // die/fail with no argument
+            if r.starts_with(';') || r.is_empty() || r.starts_with('}') || r.starts_with(')') {
+                return Ok((r, Expr::Call { name, args: vec![] }));
+            }
+            let (r, arg) = expression(r)?;
+            return Ok((
+                r,
+                Expr::Call {
+                    name,
+                    args: vec![arg],
+                },
+            ));
         }
         "quietly" => {
             let (r, _) = ws(rest)?;
@@ -863,7 +979,7 @@ fn version_lit(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("version number"));
     }
     let (rest, version) = take_while1(rest, |c: char| {
-        c.is_ascii_digit() || c == '.' || c == '*' || c == '+'
+        c.is_ascii_digit() || c == '.' || c == '*' || c == '+' || c == '-'
     })?;
     let full = format!("v{}", version);
     Ok((rest, Expr::Literal(Value::Str(full))))
@@ -996,6 +1112,9 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         return Ok(r);
     }
     if let Ok(r) = double_quoted_string(input) {
+        return Ok(r);
+    }
+    if let Ok(r) = q_string(input) {
         return Ok(r);
     }
     if let Ok(r) = regex_lit(input) {
