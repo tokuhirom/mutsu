@@ -266,13 +266,16 @@ fn stmt_list(input: &str) -> PResult<'_, Vec<Stmt>> {
                 let consumed = input.len() - r.len();
                 let line_num = input[..consumed].matches('\n').count() + 1;
                 let context: String = r.chars().take(80).collect();
-                return Err(PError::expected(&format!(
-                    "statement at line {} (after {} stmts): {} — near: {:?}",
-                    line_num,
-                    stmts.len(),
-                    e.message,
-                    context
-                )));
+                return Err(PError {
+                    message: format!(
+                        "expected statement at line {} (after {} stmts): {} — near: {:?}",
+                        line_num,
+                        stmts.len(),
+                        e.message,
+                        context
+                    ),
+                    remaining_len: Some(r.len()),
+                });
             }
         }
     }

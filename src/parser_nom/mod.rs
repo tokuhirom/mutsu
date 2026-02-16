@@ -18,6 +18,27 @@ pub(super) fn parse_memo_enabled() -> bool {
     })
 }
 
+fn line_col_at_offset(source: &str, offset: usize) -> (usize, usize) {
+    let offset = offset.min(source.len());
+    let prefix = &source[..offset];
+    let line = prefix.matches('\n').count() + 1;
+    let col = prefix
+        .rsplit('\n')
+        .next()
+        .map(|segment| segment.chars().count() + 1)
+        .unwrap_or(1);
+    (line, col)
+}
+
+fn near_snippet(input: &str, max_chars: usize) -> Option<String> {
+    let trimmed = input.trim_start();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.chars().take(max_chars).collect())
+    }
+}
+
 /// Parse a full program using the nom-based parser.
 /// Returns `(statements, Option<finish_content>)`.
 #[allow(clippy::result_large_err)]
@@ -47,13 +68,12 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
         Ok((rest, stmts)) => {
             let rest_trimmed = rest.trim();
             if !rest_trimmed.is_empty() {
-                // Show context around where parsing stopped
                 let consumed = source.len() - rest.len();
-                let line_num = source[..consumed].matches('\n').count() + 1;
+                let (line_num, col_num) = line_col_at_offset(source, consumed);
                 let context: String = rest_trimmed.chars().take(60).collect();
                 Err(RuntimeError::new(format!(
-                    "parse error: unparsed input at line {}: {:?}",
-                    line_num, context
+                    "parse error: unparsed input at line {}, column {}: {:?}",
+                    line_num, col_num, context
                 )))
             } else {
                 Ok((stmts, finish_content))
@@ -61,19 +81,16 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
         }
         Err(e) => {
             if let Some(consumed) = e.consumed_from(source.len()) {
-                let line_num = source[..consumed].matches('\n').count() + 1;
-                let context_start = &source[consumed..];
-                let context_trimmed = context_start.trim_start();
-                if !context_trimmed.is_empty() {
-                    let context: String = context_trimmed.chars().take(60).collect();
+                let (line_num, col_num) = line_col_at_offset(source, consumed);
+                if let Some(context) = near_snippet(&source[consumed..], 60) {
                     Err(RuntimeError::new(format!(
-                        "parse error at line {}: {} — near: {:?}",
-                        line_num, e, context
+                        "parse error at line {}, column {}: {} — near: {:?}",
+                        line_num, col_num, e, context
                     )))
                 } else {
                     Err(RuntimeError::new(format!(
-                        "parse error at line {}: {}",
-                        line_num, e
+                        "parse error at line {}, column {}: {}",
+                        line_num, col_num, e
                     )))
                 }
             } else {
@@ -102,4 +119,24 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_program;
+
+    #[test]
+    fn parse_program_reports_line_and_column_for_unparsed_input() {
+        let err = parse_program("}").unwrap_err();
+        assert!(err.message.contains("line 1, column 1"));
+        assert!(err.message.contains("unparsed input"));
+    }
+
+    #[test]
+    fn parse_program_reports_line_and_column_for_parse_error() {
+        let err = parse_program("say 1;\nok(,)").unwrap_err();
+        assert!(err.message.contains("line 2"));
+        assert!(err.message.contains("column"));
+        assert!(err.message.contains("parse error"));
+    }
 }
