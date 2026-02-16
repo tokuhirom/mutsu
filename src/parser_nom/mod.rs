@@ -30,6 +30,10 @@ fn line_col_at_offset(source: &str, offset: usize) -> (usize, usize) {
     (line, col)
 }
 
+fn leading_ws_bytes(input: &str) -> usize {
+    input.len().saturating_sub(input.trim_start().len())
+}
+
 fn near_snippet(input: &str, max_chars: usize) -> Option<String> {
     let trimmed = input.trim_start();
     if trimmed.is_empty() {
@@ -69,7 +73,8 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
             let rest_trimmed = rest.trim();
             if !rest_trimmed.is_empty() {
                 let consumed = source.len() - rest.len();
-                let (line_num, col_num) = line_col_at_offset(source, consumed);
+                let near_offset = consumed + leading_ws_bytes(rest);
+                let (line_num, col_num) = line_col_at_offset(source, near_offset);
                 let context: String = rest_trimmed.chars().take(60).collect();
                 Err(RuntimeError::new(format!(
                     "parse error: unparsed input at line {}, column {}: {:?}",
@@ -81,8 +86,10 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
         }
         Err(e) => {
             if let Some(consumed) = e.consumed_from(source.len()) {
-                let (line_num, col_num) = line_col_at_offset(source, consumed);
-                if let Some(context) = near_snippet(&source[consumed..], 60) {
+                let tail = &source[consumed..];
+                let near_offset = consumed + leading_ws_bytes(tail);
+                let (line_num, col_num) = line_col_at_offset(source, near_offset);
+                if let Some(context) = near_snippet(tail, 60) {
                     Err(RuntimeError::new(format!(
                         "parse error at line {}, column {}: {} — near: {:?}",
                         line_num, col_num, e, context
@@ -138,5 +145,11 @@ mod tests {
         assert!(err.message.contains("line 2"));
         assert!(err.message.contains("column"));
         assert!(err.message.contains("parse error"));
+    }
+
+    #[test]
+    fn parse_program_unparsed_column_skips_leading_whitespace() {
+        let err = parse_program("say 1;\n   }").unwrap_err();
+        assert!(err.message.contains("line 2, column 4"));
     }
 }
