@@ -44,6 +44,31 @@ fn near_snippet(input: &str, max_chars: usize) -> Option<String> {
     }
 }
 
+fn parse_error_hint(message: &str) -> Option<&'static str> {
+    if message.contains("method name") {
+        Some("check method-call syntax after '.' (for example: '$obj.method').")
+    } else if message.contains("identifier after '::'") {
+        Some("qualified names require an identifier after each '::'.")
+    } else if message.contains("after ','") {
+        Some("a comma usually requires another expression or argument after it.")
+    } else if message.contains("after comparison operator")
+        || message.contains("after additive operator")
+        || message.contains("after multiplicative operator")
+    {
+        Some("binary operators require a right-hand expression.")
+    } else {
+        None
+    }
+}
+
+fn with_parse_hint(message: String) -> String {
+    if let Some(hint) = parse_error_hint(&message) {
+        format!("{} — hint: {}", message, hint)
+    } else {
+        message
+    }
+}
+
 /// Parse a full program using the nom-based parser.
 /// Returns `(statements, Option<finish_content>)`.
 #[allow(clippy::result_large_err)]
@@ -96,28 +121,30 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 let near_offset = consumed + leading_ws_bytes(tail);
                 let (line_num, col_num) = line_col_at_offset(source, near_offset);
                 if let Some(context) = near_snippet(tail, 60) {
+                    let message = with_parse_hint(format!(
+                        "parse error at line {}, column {}: {} — near: {:?}",
+                        line_num, col_num, e, context
+                    ));
                     Err(RuntimeError::with_location(
-                        format!(
-                            "parse error at line {}, column {}: {} — near: {:?}",
-                            line_num, col_num, e, context
-                        ),
+                        message,
                         RuntimeErrorCode::ParseExpected,
                         line_num,
                         col_num,
                     ))
                 } else {
+                    let message = with_parse_hint(format!(
+                        "parse error at line {}, column {}: {}",
+                        line_num, col_num, e
+                    ));
                     Err(RuntimeError::with_location(
-                        format!(
-                            "parse error at line {}, column {}: {}",
-                            line_num, col_num, e
-                        ),
+                        message,
                         RuntimeErrorCode::ParseExpected,
                         line_num,
                         col_num,
                     ))
                 }
             } else {
-                let mut err = RuntimeError::new(format!("parse error: {}", e));
+                let mut err = RuntimeError::new(with_parse_hint(format!("parse error: {}", e)));
                 err.code = Some(RuntimeErrorCode::ParseGeneric);
                 Err(err)
             }
@@ -175,5 +202,12 @@ mod tests {
     fn parse_program_unparsed_column_skips_leading_whitespace() {
         let err = parse_program("say 1;\n   }").unwrap_err();
         assert!(err.message.contains("line 2, column 4"));
+    }
+
+    #[test]
+    fn parse_program_includes_hint_for_common_method_error() {
+        let err = parse_program("$x.").unwrap_err();
+        assert!(err.message.contains("hint:"));
+        assert!(err.message.contains("method-call syntax"));
     }
 }
