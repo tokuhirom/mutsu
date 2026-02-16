@@ -87,3 +87,4 @@ When adding/changing grammar:
 
 - Parsing is currently single-backend (`parser_nom`) and always selected.
 - Raku slang switching (main/regex/quote/pod contexts) is only partially modeled; be cautious with context-sensitive constructs.
+- Packrat features (memoization cache and furthest-failure error aggregation) are not yet implemented.
