@@ -1,6 +1,6 @@
 use super::parse_result::{PResult, parse_char, parse_tag, take_while1};
 
-use crate::ast::Expr;
+use crate::ast::{Expr, Stmt};
 use crate::lexer::TokenKind;
 use crate::value::Value;
 
@@ -9,7 +9,65 @@ use super::primary::{parse_call_arg_list, primary};
 
 /// Parse an expression (full precedence).
 pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
-    ternary(input)
+    let (rest, mut expr) = ternary(input)?;
+    // Handle => (fat arrow / pair constructor) - lower precedence than ternary
+    let (r, _) = ws(rest)?;
+    if r.starts_with("=>") && !r.starts_with("==>") {
+        let r = &r[2..];
+        let (r, _) = ws(r)?;
+        let (r, value) = or_expr(r)?;
+        // Auto-quote bareword on LHS of => to a string literal
+        let left = match expr {
+            Expr::BareWord(ref name) => Expr::Literal(Value::Str(name.clone())),
+            _ => expr,
+        };
+        return Ok((
+            r,
+            Expr::Binary {
+                left: Box::new(left),
+                op: TokenKind::FatArrow,
+                right: Box::new(value),
+            },
+        ));
+    }
+    // Wrap WhateverCode expressions in a lambda
+    if contains_whatever(&expr) {
+        let body_expr = replace_whatever(&expr);
+        expr = Expr::Lambda {
+            param: "_".to_string(),
+            body: vec![Stmt::Expr(body_expr)],
+        };
+    }
+    Ok((rest, expr))
+}
+
+fn is_whatever(expr: &Expr) -> bool {
+    matches!(expr, Expr::Literal(Value::Num(f)) if f.is_infinite() && f.is_sign_positive())
+}
+
+fn contains_whatever(expr: &Expr) -> bool {
+    match expr {
+        e if is_whatever(e) => true,
+        Expr::Binary { left, right, .. } => contains_whatever(left) || contains_whatever(right),
+        Expr::Unary { expr, .. } => contains_whatever(expr),
+        _ => false,
+    }
+}
+
+fn replace_whatever(expr: &Expr) -> Expr {
+    match expr {
+        e if is_whatever(e) => Expr::Var("_".to_string()),
+        Expr::Binary { left, op, right } => Expr::Binary {
+            left: Box::new(replace_whatever(left)),
+            op: op.clone(),
+            right: Box::new(replace_whatever(right)),
+        },
+        Expr::Unary { op, expr } => Expr::Unary {
+            op: op.clone(),
+            expr: Box::new(replace_whatever(expr)),
+        },
+        _ => expr.clone(),
+    }
 }
 
 /// Ternary: expr ?? expr !! expr
@@ -615,6 +673,39 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
                     };
                     rest = r;
                     continue;
+                }
+                // Check for colon-arg syntax: .method: arg, arg2
+                let (r2, _) = ws(r)?;
+                if r2.starts_with(':') && !r2.starts_with("::") {
+                    let r3 = &r2[1..];
+                    let (r3, _) = ws(r3)?;
+                    // Parse the arguments after colon
+                    if let Ok((r3, first_arg)) = expression(r3) {
+                        let mut args = vec![first_arg];
+                        let mut r_inner = r3;
+                        loop {
+                            let (r4, _) = ws(r_inner)?;
+                            if !r4.starts_with(',') {
+                                break;
+                            }
+                            let r4 = &r4[1..];
+                            let (r4, _) = ws(r4)?;
+                            if let Ok((r4, next)) = expression(r4) {
+                                args.push(next);
+                                r_inner = r4;
+                            } else {
+                                break;
+                            }
+                        }
+                        expr = Expr::MethodCall {
+                            target: Box::new(expr),
+                            name,
+                            args,
+                            modifier,
+                        };
+                        rest = r_inner;
+                        continue;
+                    }
                 }
                 // No-arg method call
                 expr = Expr::MethodCall {

@@ -508,6 +508,71 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     let (rest, name) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
     let name = name.to_string();
 
+    // Handle special expression keywords before qualified name resolution
+    match name.as_str() {
+        "try" => {
+            let (r, _) = ws(rest)?;
+            if r.starts_with('{') {
+                let (r, body) = parse_block_body(r)?;
+                return Ok((r, Expr::Try { body, catch: None }));
+            }
+        }
+        "do" => {
+            let (r, _) = ws(rest)?;
+            if r.starts_with('{') {
+                let (r, body) = parse_block_body(r)?;
+                return Ok((r, Expr::DoBlock { body, label: None }));
+            }
+        }
+        "sub" => {
+            let (r, _) = ws(rest)?;
+            if r.starts_with('{') {
+                let (r, body) = parse_block_body(r)?;
+                return Ok((r, Expr::AnonSub(body)));
+            }
+            // sub with params: sub ($x, $y) { ... }
+            if r.starts_with('(') {
+                // Parse param list, then block
+                if let Ok((r2, params_body)) = parse_anon_sub_with_params(r) {
+                    return Ok((r2, params_body));
+                }
+            }
+        }
+        "gather" => {
+            let (r, _) = ws(rest)?;
+            if r.starts_with('{') {
+                let (r, body) = parse_block_body(r)?;
+                return Ok((r, Expr::Gather(body)));
+            }
+        }
+        "quietly" => {
+            let (r, _) = ws(rest)?;
+            // quietly expr — wrap in a Call
+            let (r, expr) = expression(r)?;
+            return Ok((
+                r,
+                Expr::Call {
+                    name: "quietly".to_string(),
+                    args: vec![expr],
+                },
+            ));
+        }
+        "start" => {
+            let (r, _) = ws(rest)?;
+            if r.starts_with('{') {
+                let (r, body) = parse_block_body(r)?;
+                return Ok((
+                    r,
+                    Expr::Call {
+                        name: "start".to_string(),
+                        args: vec![Expr::AnonSub(body)],
+                    },
+                ));
+            }
+        }
+        _ => {}
+    }
+
     // Check for :: qualified name (e.g. Foo::Bar)
     let (rest, name) = {
         let mut full_name = name;
@@ -539,6 +604,54 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 
     // Method-like: .new, .elems etc. is handled at expression level
     Ok((rest, Expr::BareWord(name)))
+}
+
+/// Parse a block body: { stmts }
+fn parse_block_body(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>> {
+    let (r, _) = parse_char(input, '{')?;
+    let (r, stmts) = super::stmt::stmt_list_pub(r)?;
+    let (r, _) = ws_inner(r);
+    let (r, _) = parse_char(r, '}')?;
+    Ok((r, stmts))
+}
+
+/// Parse anonymous sub with params: sub ($x, $y) { ... }
+fn parse_anon_sub_with_params(input: &str) -> PResult<'_, Expr> {
+    let (mut r, _) = parse_char(input, '(')?;
+    let mut params = Vec::new();
+    loop {
+        let (r2, _) = ws(r)?;
+        if r2.starts_with(')') {
+            r = r2;
+            break;
+        }
+        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
+            let (r3, name) = super::stmt::var_name_pub(r2)?;
+            params.push(name);
+            let (r3, _) = ws(r3)?;
+            if let Some(stripped) = r3.strip_prefix(',') {
+                r = stripped;
+            } else {
+                r = r3;
+            }
+        } else {
+            r = r2;
+            break;
+        }
+    }
+    parse_anon_sub_rest(r, params)
+}
+
+fn parse_anon_sub_rest(input: &str, params: Vec<String>) -> PResult<'_, Expr> {
+    let (r, _) = ws(input)?;
+    let (r, _) = parse_char(r, ')')?;
+    let (r, _) = ws(r)?;
+    let (r, body) = parse_block_body(r)?;
+    if params.is_empty() {
+        Ok((r, Expr::AnonSub(body)))
+    } else {
+        Ok((r, Expr::AnonSubParams { params, body }))
+    }
 }
 
 /// Parse comma-separated call arguments inside parens.
@@ -704,6 +817,79 @@ fn topic_method_call(input: &str) -> PResult<'_, Expr> {
 }
 
 /// Parse a primary expression (atomic value).
+/// Known reduction operators (must be listed to distinguish from array literals).
+const REDUCTION_OPS: &[&str] = &[
+    "+", "-", "*", "/", "~", "||", "&&", "//", "%%", "**", "+&", "+|", "+^", "?&", "?|", "?^",
+    "==", "!=", "<", ">", "<=", ">=", "<=>", "===", "eq", "ne", "lt", "gt", "le", "ge", "leg",
+    "cmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",",
+];
+
+/// Parse a reduction operator: [+], [*], [~], [min], [max], [gcd], [lcm], [||], [&&], etc.
+fn reduction_op(input: &str) -> PResult<'_, Expr> {
+    if !input.starts_with('[') {
+        return Err(PError::expected("reduction operator"));
+    }
+    let r = &input[1..];
+    // Find the closing ]
+    let end = r
+        .find(']')
+        .ok_or_else(|| PError::expected("']' closing reduction"))?;
+    let op = &r[..end];
+    if op.is_empty() {
+        return Err(PError::expected("operator in reduction"));
+    }
+    // Only accept known operators to avoid confusion with array literals
+    if !REDUCTION_OPS.contains(&op) {
+        return Err(PError::expected("known reduction operator"));
+    }
+    let r = &r[end + 1..];
+    // Must be followed by whitespace and an expression (not just `]`)
+    if r.is_empty() || r.starts_with(';') || r.starts_with('}') || r.starts_with(')') {
+        return Err(PError::expected("expression after reduction operator"));
+    }
+    let (r, _) = ws(r)?;
+    // Parse comma-separated list as the operand
+    let (r, first) = expression(r)?;
+    let mut items = vec![first];
+    let mut rest = r;
+    loop {
+        let (r, _) = ws_inner(rest);
+        if !r.starts_with(',') {
+            break;
+        }
+        let r = &r[1..];
+        let (r, _) = ws_inner(r);
+        // Stop at end-of-input, semicolon, closing brackets, or statement modifiers
+        if r.is_empty()
+            || r.starts_with(';')
+            || r.starts_with('}')
+            || r.starts_with(')')
+            || r.starts_with(']')
+        {
+            rest = r;
+            break;
+        }
+        if let Ok((r, next)) = expression(r) {
+            items.push(next);
+            rest = r;
+        } else {
+            break;
+        }
+    }
+    let expr = if items.len() == 1 {
+        items.remove(0)
+    } else {
+        Expr::ArrayLiteral(items)
+    };
+    Ok((
+        rest,
+        Expr::Reduction {
+            op: op.to_string(),
+            expr: Box::new(expr),
+        },
+    ))
+}
+
 pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
     if let Ok(r) = decimal(input) {
         return Ok(r);
@@ -744,6 +930,9 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
     if let Ok(r) = paren_expr(input) {
         return Ok(r);
     }
+    if let Ok(r) = reduction_op(input) {
+        return Ok(r);
+    }
     if let Ok(r) = array_literal(input) {
         return Ok(r);
     }
@@ -753,7 +942,105 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
     if let Ok(r) = whatever(input) {
         return Ok(r);
     }
+    if let Ok(r) = block_or_hash_expr(input) {
+        return Ok(r);
+    }
     identifier_or_call(input)
+}
+
+/// Parse a block `{ stmts }` as AnonSub or `{}` / `{ key => val, ... }` as Hash.
+fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
+    if !input.starts_with('{') {
+        return Err(PError::expected("block or hash"));
+    }
+    let r = &input[1..];
+    let (r, _) = ws_inner(r);
+
+    // Empty hash: {}
+    if let Some(rest) = r.strip_prefix('}') {
+        return Ok((rest, Expr::Hash(Vec::new())));
+    }
+
+    // Try to detect if this is a hash literal: { key => val, ... }
+    // Heuristic: if after ws we see `ident =>` or `"str" =>` or `'str' =>`, it's a hash
+    if is_hash_literal_start(r) {
+        return parse_hash_literal_body(r);
+    }
+
+    // Otherwise parse as a block (anonymous sub)
+    let (r, stmts) = super::stmt::stmt_list_pub(r)?;
+    let (r, _) = ws_inner(r);
+    if !r.starts_with('}') {
+        return Err(PError::expected("'}'"));
+    }
+    let r = &r[1..];
+    Ok((r, Expr::AnonSub(stmts)))
+}
+
+/// Simple whitespace consumer that doesn't use PResult (infallible).
+fn ws_inner(input: &str) -> (&str, ()) {
+    match super::helpers::ws(input) {
+        Ok((r, _)) => (r, ()),
+        Err(_) => (input, ()),
+    }
+}
+
+/// Check if the input looks like a hash literal start.
+fn is_hash_literal_start(input: &str) -> bool {
+    // ident => or "str" => or 'str' =>
+    if let Ok((r, _)) = super::stmt::ident_pub(input) {
+        let (r, _) = ws_inner(r);
+        if r.starts_with("=>") {
+            return true;
+        }
+    }
+    // Quoted key => val
+    if (input.starts_with('"') || input.starts_with('\''))
+        && let Ok((r, _)) = single_quoted_string(input).or_else(|_| double_quoted_string(input))
+    {
+        let (r, _) = ws_inner(r);
+        if r.starts_with("=>") {
+            return true;
+        }
+    }
+    false
+}
+
+/// Parse hash literal body: key => val, key => val, ... }
+fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
+    let mut pairs = Vec::new();
+    let mut rest = input;
+    loop {
+        let (r, _) = ws_inner(rest);
+        if let Some(rest) = r.strip_prefix('}') {
+            return Ok((rest, Expr::Hash(pairs)));
+        }
+        // Parse key as identifier or string
+        let (r, key) = if let Ok((r, name)) = super::stmt::ident_pub(r) {
+            (r, name)
+        } else if let Ok((r, Expr::Literal(Value::Str(s)))) =
+            single_quoted_string(r).or_else(|_| double_quoted_string(r))
+        {
+            (r, s)
+        } else {
+            return Err(PError::expected("hash key"));
+        };
+        let (r, _) = ws_inner(r);
+        // Expect =>
+        if !r.starts_with("=>") {
+            return Err(PError::expected("'=>' in hash literal"));
+        }
+        let r = &r[2..];
+        let (r, _) = ws_inner(r);
+        let (r, val) = super::expr::expression(r)?;
+        pairs.push((key, Some(val)));
+        let (r, _) = ws_inner(r);
+        if let Some(stripped) = r.strip_prefix(',') {
+            rest = stripped;
+        } else {
+            rest = r;
+        }
+    }
 }
 
 #[cfg(test)]

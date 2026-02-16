@@ -26,7 +26,20 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
     };
 
     match stmt::program(source) {
-        Ok((_rest, stmts)) => Ok((stmts, finish_content)),
+        Ok((rest, stmts)) => {
+            let rest_trimmed = rest.trim();
+            if !rest_trimmed.is_empty() {
+                // Show context around where parsing stopped
+                let consumed = source.len() - rest.len();
+                let line_num = source[..consumed].matches('\n').count() + 1;
+                let context: String = rest_trimmed.chars().take(60).collect();
+                return Err(RuntimeError::new(format!(
+                    "parse error: unparsed input at line {}: {:?}",
+                    line_num, context
+                )));
+            }
+            Ok((stmts, finish_content))
+        }
         Err(e) => Err(RuntimeError::new(format!("parse error: {}", e))),
     }
 }

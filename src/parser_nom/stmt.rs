@@ -91,6 +91,21 @@ fn block(input: &str) -> PResult<'_, Vec<Stmt>> {
     Ok((input, stmts))
 }
 
+/// Public accessor for stmt_list (used by primary.rs for block expressions).
+pub(super) fn stmt_list_pub(input: &str) -> PResult<'_, Vec<Stmt>> {
+    stmt_list(input)
+}
+
+/// Public accessor for ident (used by primary.rs for hash literal detection).
+pub(super) fn ident_pub(input: &str) -> PResult<'_, String> {
+    ident(input)
+}
+
+/// Public accessor for var_name (used by primary.rs for anon sub params).
+pub(super) fn var_name_pub(input: &str) -> PResult<'_, String> {
+    var_name(input)
+}
+
 /// Parse a list of statements (inside a block or at program level).
 fn stmt_list(input: &str) -> PResult<'_, Vec<Stmt>> {
     let mut stmts = Vec::new();
@@ -104,9 +119,24 @@ fn stmt_list(input: &str) -> PResult<'_, Vec<Stmt>> {
         if r.is_empty() || r.starts_with('}') {
             return Ok((r, stmts));
         }
-        let (r, stmt) = statement(r)?;
-        stmts.push(stmt);
-        rest = r;
+        match statement(r) {
+            Ok((r, stmt)) => {
+                stmts.push(stmt);
+                rest = r;
+            }
+            Err(e) => {
+                let consumed = input.len() - r.len();
+                let line_num = input[..consumed].matches('\n').count() + 1;
+                let context: String = r.chars().take(80).collect();
+                return Err(PError::expected(&format!(
+                    "statement at line {} (after {} stmts): {} — near: {:?}",
+                    line_num,
+                    stmts.len(),
+                    e.message,
+                    context
+                )));
+            }
+        }
     }
 }
 
@@ -709,16 +739,92 @@ fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Parse `for` loop.
-fn for_stmt(input: &str) -> PResult<'_, Stmt> {
-    let rest = keyword("for", input).ok_or_else(|| PError::expected("for statement"))?;
-    let (rest, _) = ws1(rest)?;
-    let (rest, iterable) = parse_comma_or_expr(rest)?;
+/// Parse a labeled loop: LABEL: for/while/until/loop/repeat ...
+fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
+    // Label must be all uppercase or mixed case identifier followed by ':'
+    let (rest, label) = ident(input)?;
+    // Labels are typically ALL CAPS like FOO, DONE, OUT, IN
+    // but we need to check it's followed by : and then a loop keyword
+    let (rest, _) = ws(rest)?;
+    if !rest.starts_with(':') || rest.starts_with("::") {
+        return Err(PError::expected("labeled loop"));
+    }
+    let rest = &rest[1..]; // consume ':'
     let (rest, _) = ws(rest)?;
 
-    // Optional -> $param
-    let (rest, param, params) = if let Some(stripped) = rest.strip_prefix("->") {
+    // Check which loop keyword follows
+    if let Some(r) = keyword("for", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, iterable) = parse_comma_or_expr(r)?;
+        let (r, _) = ws(r)?;
+        let (r, (param, params)) = parse_for_params(r)?;
+        let (r, _) = ws(r)?;
+        let (r, body) = block(r)?;
+        return Ok((
+            r,
+            Stmt::For {
+                iterable,
+                param,
+                params,
+                body,
+                label: Some(label),
+            },
+        ));
+    }
+    if let Some(r) = keyword("while", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, cond) = expression(r)?;
+        let (r, _) = ws(r)?;
+        let (r, body) = block(r)?;
+        return Ok((
+            r,
+            Stmt::While {
+                cond,
+                body,
+                label: Some(label),
+            },
+        ));
+    }
+    if let Some(r) = keyword("until", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, cond) = expression(r)?;
+        let (r, _) = ws(r)?;
+        let (r, body) = block(r)?;
+        return Ok((
+            r,
+            Stmt::While {
+                cond: Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(cond),
+                },
+                body,
+                label: Some(label),
+            },
+        ));
+    }
+    if let Some(r) = keyword("loop", rest) {
+        let (r, _) = ws(r)?;
+        let (r, body) = block(r)?;
+        return Ok((
+            r,
+            Stmt::Loop {
+                init: None,
+                cond: None,
+                step: None,
+                body,
+                repeat: false,
+                label: Some(label),
+            },
+        ));
+    }
+
+    Err(PError::expected("labeled loop"))
+}
+
+/// Parse for loop parameters: -> $param or -> $a, $b
+fn parse_for_params(input: &str) -> PResult<'_, (Option<String>, Vec<String>)> {
+    if let Some(stripped) = input.strip_prefix("->") {
         let (r, _) = ws(stripped)?;
-        // Parse param(s)
         let (r, first) = parse_pointy_param(r)?;
         let (r, _) = ws(r)?;
         if r.starts_with(',') {
@@ -736,14 +842,21 @@ fn for_stmt(input: &str) -> PResult<'_, Stmt> {
                 }
                 r = r2;
             }
-            (r, None, params)
+            Ok((r, (None, params)))
         } else {
-            (r, Some(first), Vec::new())
+            Ok((r, (Some(first), Vec::new())))
         }
     } else {
-        (rest, None, Vec::new())
-    };
+        Ok((input, (None, Vec::new())))
+    }
+}
 
+fn for_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("for", input).ok_or_else(|| PError::expected("for statement"))?;
+    let (rest, _) = ws1(rest)?;
+    let (rest, iterable) = parse_comma_or_expr(rest)?;
+    let (rest, _) = ws(rest)?;
+    let (rest, (param, params)) = parse_for_params(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
     Ok((
@@ -2230,6 +2343,9 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
         return Ok(r);
     }
     if let Ok(r) = with_stmt(input) {
+        return Ok(r);
+    }
+    if let Ok(r) = labeled_loop_stmt(input) {
         return Ok(r);
     }
     if let Ok(r) = for_stmt(input) {
