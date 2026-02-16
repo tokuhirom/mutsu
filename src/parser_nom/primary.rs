@@ -1,5 +1,6 @@
 use super::parse_result::{
-    PError, PResult, parse_char, parse_tag, take_while_opt, take_while1, update_best_error,
+    PError, PResult, merge_expected_messages, parse_char, parse_tag, take_while_opt, take_while1,
+    update_best_error,
 };
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -848,10 +849,14 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
             // sub with params: sub ($x, $y) { ... }
             if r.starts_with('(') {
-                // Parse param list, then block
-                if let Ok((r2, params_body)) = parse_anon_sub_with_params(r) {
-                    return Ok((r2, params_body));
-                }
+                let (r2, params_body) = parse_anon_sub_with_params(r).map_err(|err| PError {
+                    message: merge_expected_messages(
+                        "expected anonymous sub parameter list/body",
+                        &err.message,
+                    ),
+                    remaining_len: err.remaining_len.or(Some(r.len())),
+                })?;
+                return Ok((r2, params_body));
             }
         }
         "gather" => {
@@ -944,7 +949,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 full_name.push_str(part);
                 r = rest2;
             } else {
-                break;
+                return Err(PError::expected_at("identifier after '::'", after));
             }
         }
         (r, full_name)
@@ -1005,15 +1010,20 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         // Check if next token is a statement modifier keyword
         if !is_stmt_modifier_ahead(r) {
             // Try to parse an argument
-            if let Ok((r2, arg)) = parse_listop_arg(r) {
-                return Ok((
-                    r2,
-                    Expr::Call {
-                        name,
-                        args: vec![arg],
-                    },
-                ));
-            }
+            let (r2, arg) = parse_listop_arg(r).map_err(|err| PError {
+                message: merge_expected_messages(
+                    "expected listop argument expression",
+                    &err.message,
+                ),
+                remaining_len: err.remaining_len.or(Some(r.len())),
+            })?;
+            return Ok((
+                r2,
+                Expr::Call {
+                    name,
+                    args: vec![arg],
+                },
+            ));
         }
     }
 
@@ -1301,7 +1311,10 @@ fn reduction_op(input: &str) -> PResult<'_, Expr> {
             items.push(next);
             rest = r;
         } else {
-            break;
+            return Err(PError::expected_at(
+                "expression after ',' in reduction list",
+                r,
+            ));
         }
     }
     let expr = if items.len() == 1 {
@@ -1567,5 +1580,29 @@ mod tests {
     fn primary_aggregates_furthest_expected_messages() {
         let err = primary("@").unwrap_err();
         assert_eq!(err.message, "expected at least one matching character");
+    }
+
+    #[test]
+    fn primary_reports_invalid_qualified_identifier_tail() {
+        let err = primary("Foo::").unwrap_err();
+        assert!(err.message.contains("identifier after '::'"));
+    }
+
+    #[test]
+    fn primary_reports_missing_listop_argument() {
+        let err = primary("shift :").unwrap_err();
+        assert!(err.message.contains("listop argument expression"));
+    }
+
+    #[test]
+    fn primary_reports_invalid_reduction_list_item() {
+        let err = primary("[+] 1, :").unwrap_err();
+        assert!(err.message.contains("reduction list"));
+    }
+
+    #[test]
+    fn primary_reports_invalid_anon_sub_params() {
+        let err = primary("sub ($x,)").unwrap_err();
+        assert!(err.message.contains("anonymous sub parameter list/body"));
     }
 }
