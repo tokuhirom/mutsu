@@ -22,11 +22,13 @@ pub(super) fn parse_memo_enabled() -> bool {
 /// Returns `(statements, Option<finish_content>)`.
 #[allow(clippy::result_large_err)]
 pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
-    if parse_memo_enabled() {
+    let memo_enabled = parse_memo_enabled();
+    if memo_enabled {
         expr::reset_expression_memo();
         primary::reset_primary_memo();
         stmt::reset_statement_memo();
     }
+    crate::trace::trace_log!("parse", "parser_nom start memo={}", memo_enabled);
     // Split off =finish content before parsing
     let (source, finish_content) = if let Some(idx) = input.find("\n=finish") {
         let content = &input[idx + "\n=finish".len()..];
@@ -41,7 +43,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
         (input, None)
     };
 
-    match stmt::program(source) {
+    let result = match stmt::program(source) {
         Ok((rest, stmts)) => {
             let rest_trimmed = rest.trim();
             if !rest_trimmed.is_empty() {
@@ -49,12 +51,13 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 let consumed = source.len() - rest.len();
                 let line_num = source[..consumed].matches('\n').count() + 1;
                 let context: String = rest_trimmed.chars().take(60).collect();
-                return Err(RuntimeError::new(format!(
+                Err(RuntimeError::new(format!(
                     "parse error: unparsed input at line {}: {:?}",
                     line_num, context
-                )));
+                )))
+            } else {
+                Ok((stmts, finish_content))
             }
-            Ok((stmts, finish_content))
         }
         Err(e) => {
             if let Some(consumed) = e.consumed_from(source.len()) {
@@ -77,5 +80,26 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 Err(RuntimeError::new(format!("parse error: {}", e)))
             }
         }
+    };
+
+    if memo_enabled && crate::trace::is_enabled("parse") {
+        let (stmt_hits, stmt_misses, stmt_stores) = stmt::statement_memo_stats();
+        let (expr_hits, expr_misses, expr_stores) = expr::expression_memo_stats();
+        let (primary_hits, primary_misses, primary_stores) = primary::primary_memo_stats();
+        crate::trace::trace_log!(
+            "parse",
+            "memo stats stmt[h/m/s]={}/{}/{} expr[h/m/s]={}/{}/{} primary[h/m/s]={}/{}/{}",
+            stmt_hits,
+            stmt_misses,
+            stmt_stores,
+            expr_hits,
+            expr_misses,
+            expr_stores,
+            primary_hits,
+            primary_misses,
+            primary_stores
+        );
     }
+
+    result
 }

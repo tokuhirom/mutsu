@@ -121,9 +121,11 @@ pub(super) fn reset_statement_memo() {
     STMT_MEMO_STATS.with(|stats| *stats.borrow_mut() = StmtMemoStats::default());
 }
 
-#[cfg(test)]
-fn statement_memo_stats() -> StmtMemoStats {
-    STMT_MEMO_STATS.with(|stats| *stats.borrow())
+pub(super) fn statement_memo_stats() -> (usize, usize, usize) {
+    STMT_MEMO_STATS.with(|stats| {
+        let s = *stats.borrow();
+        (s.hits, s.misses, s.stores)
+    })
 }
 
 fn parse_compound_assign_op(input: &str) -> Option<(&str, CompoundAssignOp)> {
@@ -2834,15 +2836,15 @@ mod tests {
         reset_statement_memo();
         let input = "say 42";
         let _ = statement_pub(input).unwrap();
-        let s1 = statement_memo_stats();
-        assert_eq!(s1.hits, 0);
-        assert!(s1.misses >= 1);
-        assert!(s1.stores >= 1);
+        let (hits1, misses1, stores1) = statement_memo_stats();
+        assert_eq!(hits1, 0);
+        assert!(misses1 >= 1);
+        assert!(stores1 >= 1);
 
         let _ = statement_pub(input).unwrap();
-        let s2 = statement_memo_stats();
-        assert!(s2.hits >= 1);
-        assert!(s2.stores >= s1.stores);
+        let (hits2, _misses2, stores2) = statement_memo_stats();
+        assert!(hits2 >= 1);
+        assert!(stores2 >= stores1);
     }
 
     #[test]

@@ -14,8 +14,16 @@ enum PrimaryMemoEntry {
     Err(PError),
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+struct PrimaryMemoStats {
+    hits: usize,
+    misses: usize,
+    stores: usize,
+}
+
 thread_local! {
     static PRIMARY_MEMO: RefCell<HashMap<(usize, usize), PrimaryMemoEntry>> = RefCell::new(HashMap::new());
+    static PRIMARY_MEMO_STATS: RefCell<PrimaryMemoStats> = RefCell::new(PrimaryMemoStats::default());
 }
 
 fn primary_memo_key(input: &str) -> (usize, usize) {
@@ -27,11 +35,16 @@ fn primary_memo_get(input: &str) -> Option<PResult<'_, Expr>> {
         return None;
     }
     let key = primary_memo_key(input);
-    let entry = PRIMARY_MEMO.with(|memo| memo.borrow().get(&key).cloned())?;
-    Some(match entry {
-        PrimaryMemoEntry::Ok { consumed, expr } => Ok((&input[consumed..], *expr)),
-        PrimaryMemoEntry::Err(err) => Err(err),
-    })
+    let entry = PRIMARY_MEMO.with(|memo| memo.borrow().get(&key).cloned());
+    if let Some(entry) = entry {
+        PRIMARY_MEMO_STATS.with(|stats| stats.borrow_mut().hits += 1);
+        return Some(match entry {
+            PrimaryMemoEntry::Ok { consumed, expr } => Ok((&input[consumed..], *expr)),
+            PrimaryMemoEntry::Err(err) => Err(err),
+        });
+    }
+    PRIMARY_MEMO_STATS.with(|stats| stats.borrow_mut().misses += 1);
+    None
 }
 
 fn primary_memo_store(input: &str, result: &PResult<'_, Expr>) {
@@ -49,6 +62,7 @@ fn primary_memo_store(input: &str, result: &PResult<'_, Expr>) {
     PRIMARY_MEMO.with(|memo| {
         memo.borrow_mut().insert(key, entry);
     });
+    PRIMARY_MEMO_STATS.with(|stats| stats.borrow_mut().stores += 1);
 }
 
 pub(super) fn reset_primary_memo() {
@@ -56,6 +70,14 @@ pub(super) fn reset_primary_memo() {
         return;
     }
     PRIMARY_MEMO.with(|memo| memo.borrow_mut().clear());
+    PRIMARY_MEMO_STATS.with(|stats| *stats.borrow_mut() = PrimaryMemoStats::default());
+}
+
+pub(super) fn primary_memo_stats() -> (usize, usize, usize) {
+    PRIMARY_MEMO_STATS.with(|stats| {
+        let s = *stats.borrow();
+        (s.hits, s.misses, s.stores)
+    })
 }
 
 /// Parse an integer literal (including underscore separators).

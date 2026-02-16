@@ -92,3 +92,4 @@ When adding/changing grammar:
 ## Runtime knobs
 
 - `MUTSU_PARSE_MEMO=0` disables parser memoization caches (useful for A/B debugging and perf comparison).
+- `MUTSU_TRACE=parse` prints parser startup and memo stats (`statement`/`expression`/`primary` hit/miss/store counts).
