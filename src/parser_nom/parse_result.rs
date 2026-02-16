@@ -29,6 +29,58 @@ impl PError {
     }
 }
 
+pub(super) fn error_score(err: &PError, input_len: usize) -> usize {
+    err.consumed_from(input_len).unwrap_or(0)
+}
+
+fn expected_message_key(message: &str) -> &str {
+    message.strip_prefix("expected ").unwrap_or(message)
+}
+
+pub(super) fn merge_expected_messages(existing: &str, incoming: &str) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let mut push_unique = |text: &str| {
+        let normalized = expected_message_key(text).trim();
+        if normalized.is_empty() {
+            return;
+        }
+        if !parts.iter().any(|p| p == normalized) {
+            parts.push(normalized.to_string());
+        }
+    };
+
+    for item in existing.split(" or ") {
+        push_unique(item);
+    }
+    for item in incoming.split(" or ") {
+        push_unique(item);
+    }
+
+    if parts.is_empty() {
+        "expected parseable input".to_string()
+    } else {
+        format!("expected {}", parts.join(" or "))
+    }
+}
+
+pub(super) fn update_best_error(
+    best: &mut Option<(usize, PError)>,
+    candidate: PError,
+    input_len: usize,
+) {
+    let candidate_score = error_score(&candidate, input_len);
+    match best {
+        None => *best = Some((candidate_score, candidate)),
+        Some((best_score, best_err)) => {
+            if candidate_score > *best_score {
+                *best = Some((candidate_score, candidate));
+            } else if candidate_score == *best_score {
+                best_err.message = merge_expected_messages(&best_err.message, &candidate.message);
+            }
+        }
+    }
+}
+
 impl std::fmt::Display for PError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.message)

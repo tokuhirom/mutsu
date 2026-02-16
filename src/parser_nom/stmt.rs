@@ -1,4 +1,6 @@
-use super::parse_result::{PError, PResult, opt_char, parse_char, take_while_opt, take_while1};
+use super::parse_result::{
+    PError, PResult, opt_char, parse_char, take_while_opt, take_while1, update_best_error,
+};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -2570,54 +2572,6 @@ fn with_stmt(input: &str) -> PResult<'_, Stmt> {
 /// Statement parser function type.
 type StmtParser = fn(&str) -> PResult<'_, Stmt>;
 
-fn error_score(err: &PError, input_len: usize) -> usize {
-    err.consumed_from(input_len).unwrap_or(0)
-}
-
-fn expected_message_key(message: &str) -> &str {
-    message.strip_prefix("expected ").unwrap_or(message)
-}
-
-fn merge_expected_messages(existing: &str, incoming: &str) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    let mut push_unique = |text: &str| {
-        let normalized = expected_message_key(text).trim();
-        if normalized.is_empty() {
-            return;
-        }
-        if !parts.iter().any(|p| p == normalized) {
-            parts.push(normalized.to_string());
-        }
-    };
-
-    for item in existing.split(" or ") {
-        push_unique(item);
-    }
-    for item in incoming.split(" or ") {
-        push_unique(item);
-    }
-
-    if parts.is_empty() {
-        "expected parseable statement".to_string()
-    } else {
-        format!("expected {}", parts.join(" or "))
-    }
-}
-
-fn update_best_error(best: &mut Option<(usize, PError)>, candidate: PError, input_len: usize) {
-    let candidate_score = error_score(&candidate, input_len);
-    match best {
-        None => *best = Some((candidate_score, candidate)),
-        Some((best_score, best_err)) => {
-            if candidate_score > *best_score {
-                *best = Some((candidate_score, candidate));
-            } else if candidate_score == *best_score {
-                best_err.message = merge_expected_messages(&best_err.message, &candidate.message);
-            }
-        }
-    }
-}
-
 /// Dispatch table for statement parsers.
 /// Each parser is tried in order until one succeeds.
 /// Order is critical — do not reorder without careful consideration.
@@ -2849,13 +2803,17 @@ mod tests {
 
     #[test]
     fn merge_expected_messages_deduplicates() {
-        let merged = merge_expected_messages("expected foo", "expected foo or bar");
+        let merged = super::super::parse_result::merge_expected_messages(
+            "expected foo",
+            "expected foo or bar",
+        );
         assert_eq!(merged, "expected foo or bar");
     }
 
     #[test]
     fn merge_expected_messages_strips_prefix_consistently() {
-        let merged = merge_expected_messages("expected alpha or beta", "gamma");
+        let merged =
+            super::super::parse_result::merge_expected_messages("expected alpha or beta", "gamma");
         assert_eq!(merged, "expected alpha or beta or gamma");
     }
 }

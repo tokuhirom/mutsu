@@ -1,4 +1,6 @@
-use super::parse_result::{PError, PResult, parse_char, parse_tag, take_while_opt, take_while1};
+use super::parse_result::{
+    PError, PResult, parse_char, parse_tag, take_while_opt, take_while1, update_best_error,
+};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -1321,67 +1323,47 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         return cached;
     }
     let result = (|| {
-        if let Ok(r) = decimal(input) {
-            return Ok(r);
+        let input_len = input.len();
+        let mut best_error: Option<(usize, PError)> = None;
+        macro_rules! try_primary {
+            ($expr:expr) => {
+                match $expr {
+                    Ok(r) => return Ok(r),
+                    Err(err) => update_best_error(&mut best_error, err, input_len),
+                }
+            };
         }
-        if let Ok(r) = integer(input) {
-            return Ok(r);
+
+        try_primary!(decimal(input));
+        try_primary!(integer(input));
+        try_primary!(single_quoted_string(input));
+        try_primary!(double_quoted_string(input));
+        try_primary!(q_string(input));
+        try_primary!(regex_lit(input));
+        try_primary!(version_lit(input));
+        try_primary!(keyword_literal(input));
+        try_primary!(topic_method_call(input));
+        try_primary!(scalar_var(input));
+        try_primary!(array_var(input));
+        try_primary!(hash_var(input));
+        try_primary!(code_var(input));
+        try_primary!(paren_expr(input));
+        try_primary!(reduction_op(input));
+        try_primary!(array_literal(input));
+        try_primary!(angle_list(input));
+        try_primary!(whatever(input));
+        try_primary!(arrow_lambda(input));
+        try_primary!(block_or_hash_expr(input));
+
+        match identifier_or_call(input) {
+            Ok(r) => Ok(r),
+            Err(err) => {
+                update_best_error(&mut best_error, err, input_len);
+                Err(best_error
+                    .map(|(_, err)| err)
+                    .unwrap_or_else(|| PError::expected_at("primary expression", input)))
+            }
         }
-        if let Ok(r) = single_quoted_string(input) {
-            return Ok(r);
-        }
-        if let Ok(r) = double_quoted_string(input) {
-            return Ok(r);
-        }
-        if let Ok(r) = q_string(input) {
-            return Ok(r);
-        }
-        if let Ok(r) = regex_lit(input) {
-            return Ok(r);
-        }
-        if let Ok(r) = version_lit(input) {
-            return Ok(r);
-        }
-        if let Ok(r) = keyword_literal(input) {
-            return Ok(r);
-        }
-        if let Ok(r) = topic_method_call(input) {
-            return Ok(r);
-        }
-        if let Ok(r) = scalar_var(input) {
-            return Ok(r);
-        }
-        if let Ok(r) = array_var(input) {
-            return Ok(r);
-        }
-        if let Ok(r) = hash_var(input) {
-            return Ok(r);
-        }
-        if let Ok(r) = code_var(input) {
-            return Ok(r);
-        }
-        if let Ok(r) = paren_expr(input) {
-            return Ok(r);
-        }
-        if let Ok(r) = reduction_op(input) {
-            return Ok(r);
-        }
-        if let Ok(r) = array_literal(input) {
-            return Ok(r);
-        }
-        if let Ok(r) = angle_list(input) {
-            return Ok(r);
-        }
-        if let Ok(r) = whatever(input) {
-            return Ok(r);
-        }
-        if let Ok(r) = arrow_lambda(input) {
-            return Ok(r);
-        }
-        if let Ok(r) = block_or_hash_expr(input) {
-            return Ok(r);
-        }
-        identifier_or_call(input)
     })();
     primary_memo_store(input, &result);
     result
@@ -1579,5 +1561,11 @@ mod tests {
         let (rest2, expr2) = primary("42").unwrap();
         assert_eq!(rest2, "");
         assert!(matches!(expr2, Expr::Literal(Value::Int(42))));
+    }
+
+    #[test]
+    fn primary_aggregates_furthest_expected_messages() {
+        let err = primary("@").unwrap_err();
+        assert_eq!(err.message, "expected at least one matching character");
     }
 }
