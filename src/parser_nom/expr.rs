@@ -450,6 +450,13 @@ fn parse_word_logical_op(input: &str) -> Option<(LogicalOp, usize)> {
     }
 }
 
+fn enrich_expected_error(err: PError, context: &str, remaining_len_fallback: usize) -> PError {
+    PError {
+        message: merge_expected_messages(context, &err.message),
+        remaining_len: err.remaining_len.or(Some(remaining_len_fallback)),
+    }
+}
+
 /// Parse an expression (full precedence).
 pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
     if let Some(cached) = expression_memo_get(input) {
@@ -526,11 +533,17 @@ fn ternary(input: &str) -> PResult<'_, Expr> {
     let (input, _) = ws(input)?;
     if let Ok((input, _)) = parse_tag(input, "??") {
         let (input, _) = ws(input)?;
-        let (input, then_expr) = expression(input)?;
+        let (input, then_expr) = expression(input).map_err(|err| {
+            enrich_expected_error(err, "expected then-expression after '??'", input.len())
+        })?;
         let (input, _) = ws(input)?;
-        let (input, _) = parse_tag(input, "!!")?;
+        let (input, _) = parse_tag(input, "!!").map_err(|err| {
+            enrich_expected_error(err, "expected '!!' in ternary expression", input.len())
+        })?;
         let (input, _) = ws(input)?;
-        let (input, else_expr) = expression(input)?;
+        let (input, else_expr) = expression(input).map_err(|err| {
+            enrich_expected_error(err, "expected else-expression after '!!'", input.len())
+        })?;
         return Ok((
             input,
             Expr::Ternary {
@@ -551,7 +564,9 @@ fn or_expr(input: &str) -> PResult<'_, Expr> {
         if let Some((op @ LogicalOp::Or, len)) = parse_word_logical_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = and_expr(r)?;
+            let (r, right) = and_expr(r).map_err(|err| {
+                enrich_expected_error(err, "expected expression after 'or'", r.len())
+            })?;
             left = Expr::Binary {
                 left: Box::new(left),
                 op: op.token_kind(),
@@ -572,7 +587,9 @@ fn and_expr(input: &str) -> PResult<'_, Expr> {
         if let Some((op @ LogicalOp::And, len)) = parse_word_logical_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = not_expr(r)?;
+            let (r, right) = not_expr(r).map_err(|err| {
+                enrich_expected_error(err, "expected expression after 'and'", r.len())
+            })?;
             left = Expr::Binary {
                 left: Box::new(left),
                 op: op.token_kind(),
@@ -617,7 +634,9 @@ fn or_or_expr(input: &str) -> PResult<'_, Expr> {
         if let Some((op, len)) = parse_or_or_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = and_and_expr(r)?;
+            let (r, right) = and_and_expr(r).map_err(|err| {
+                enrich_expected_error(err, "expected expression after logical operator", r.len())
+            })?;
             left = Expr::Binary {
                 left: Box::new(left),
                 op: op.token_kind(),
@@ -639,7 +658,9 @@ fn and_and_expr(input: &str) -> PResult<'_, Expr> {
         if let Some((op, len)) = parse_and_and_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = junctive_expr(r)?;
+            let (r, right) = junctive_expr(r).map_err(|err| {
+                enrich_expected_error(err, "expected expression after '&&'", r.len())
+            })?;
             left = Expr::Binary {
                 left: Box::new(left),
                 op: op.token_kind(),
@@ -661,7 +682,9 @@ fn junctive_expr(input: &str) -> PResult<'_, Expr> {
         if let Some((op, len)) = parse_junctive_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = comparison_expr(r)?;
+            let (r, right) = comparison_expr(r).map_err(|err| {
+                enrich_expected_error(err, "expected expression after junctive operator", r.len())
+            })?;
             left = Expr::Binary {
                 left: Box::new(left),
                 op: op.token_kind(),
@@ -795,7 +818,9 @@ fn range_expr(input: &str) -> PResult<'_, Expr> {
 
     if let Some(stripped) = r.strip_prefix("^..^") {
         let (r, _) = ws(stripped)?;
-        let (r, right) = structural_expr(r)?;
+        let (r, right) = structural_expr(r).map_err(|err| {
+            enrich_expected_error(err, "expected range RHS after '^..^'", r.len())
+        })?;
         return Ok((
             r,
             Expr::Binary {
@@ -807,7 +832,8 @@ fn range_expr(input: &str) -> PResult<'_, Expr> {
     }
     if let Some(stripped) = r.strip_prefix("^..") {
         let (r, _) = ws(stripped)?;
-        let (r, right) = structural_expr(r)?;
+        let (r, right) = structural_expr(r)
+            .map_err(|err| enrich_expected_error(err, "expected range RHS after '^..'", r.len()))?;
         return Ok((
             r,
             Expr::Binary {
@@ -819,7 +845,8 @@ fn range_expr(input: &str) -> PResult<'_, Expr> {
     }
     if let Some(stripped) = r.strip_prefix("..^") {
         let (r, _) = ws(stripped)?;
-        let (r, right) = structural_expr(r)?;
+        let (r, right) = structural_expr(r)
+            .map_err(|err| enrich_expected_error(err, "expected range RHS after '..^'", r.len()))?;
         return Ok((
             r,
             Expr::Binary {
@@ -832,7 +859,8 @@ fn range_expr(input: &str) -> PResult<'_, Expr> {
     if r.starts_with("..") && !r.starts_with("...") {
         let r = &r[2..];
         let (r, _) = ws(r)?;
-        let (r, right) = structural_expr(r)?;
+        let (r, right) = structural_expr(r)
+            .map_err(|err| enrich_expected_error(err, "expected range RHS after '..'", r.len()))?;
         return Ok((
             r,
             Expr::Binary {
@@ -853,7 +881,9 @@ fn structural_expr(input: &str) -> PResult<'_, Expr> {
         if r.starts_with("but") && !is_ident_char(r.as_bytes().get(3).copied()) {
             let r = &r[3..];
             let (r, _) = ws(r)?;
-            let (r, right) = concat_expr(r)?;
+            let (r, right) = concat_expr(r).map_err(|err| {
+                enrich_expected_error(err, "expected expression after 'but'", r.len())
+            })?;
             left = Expr::Binary {
                 left: Box::new(left),
                 op: TokenKind::Ident("but".to_string()),
@@ -865,7 +895,9 @@ fn structural_expr(input: &str) -> PResult<'_, Expr> {
         if r.starts_with("does") && !is_ident_char(r.as_bytes().get(4).copied()) {
             let r = &r[4..];
             let (r, _) = ws(r)?;
-            let (r, right) = concat_expr(r)?;
+            let (r, right) = concat_expr(r).map_err(|err| {
+                enrich_expected_error(err, "expected expression after 'does'", r.len())
+            })?;
             left = Expr::Binary {
                 left: Box::new(left),
                 op: TokenKind::Ident("does".to_string()),
@@ -887,7 +919,13 @@ fn concat_expr(input: &str) -> PResult<'_, Expr> {
         if let Some((op, len)) = parse_concat_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = additive_expr(r)?;
+            let (r, right) = additive_expr(r).map_err(|err| {
+                enrich_expected_error(
+                    err,
+                    "expected expression after concatenation operator",
+                    r.len(),
+                )
+            })?;
             left = Expr::Binary {
                 left: Box::new(left),
                 op: op.token_kind(),
@@ -909,7 +947,9 @@ fn additive_expr(input: &str) -> PResult<'_, Expr> {
         if let Some((op, len)) = parse_additive_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = multiplicative_expr(r)?;
+            let (r, right) = multiplicative_expr(r).map_err(|err| {
+                enrich_expected_error(err, "expected expression after additive operator", r.len())
+            })?;
             left = Expr::Binary {
                 left: Box::new(left),
                 op: op.token_kind(),
@@ -931,7 +971,13 @@ fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
         if let Some((op, len)) = parse_multiplicative_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = power_expr(r)?;
+            let (r, right) = power_expr(r).map_err(|err| {
+                enrich_expected_error(
+                    err,
+                    "expected expression after multiplicative operator",
+                    r.len(),
+                )
+            })?;
             left = Expr::Binary {
                 left: Box::new(left),
                 op: op.token_kind(),
@@ -951,7 +997,9 @@ fn power_expr(input: &str) -> PResult<'_, Expr> {
     let (r, _) = ws(rest)?;
     if let Some(stripped) = r.strip_prefix("**") {
         let (r, _) = ws(stripped)?;
-        let (r, exp) = power_expr(r)?; // right-associative
+        let (r, exp) = power_expr(r).map_err(|err| {
+            enrich_expected_error(err, "expected exponent expression after '**'", r.len())
+        })?; // right-associative
         return Ok((
             r,
             Expr::Binary {
@@ -1389,6 +1437,27 @@ mod tests {
     fn chained_comparison_requires_rhs_expression() {
         let err = expression("1 < 2 <").unwrap_err();
         assert!(err.message.contains("chained comparison operator"));
+    }
+
+    #[test]
+    fn range_requires_rhs_expression() {
+        let err = expression("1 ..").unwrap_err();
+        assert!(err.message.contains("range RHS"));
+    }
+
+    #[test]
+    fn ternary_requires_then_and_else_expression() {
+        let err_then = expression("$x ??").unwrap_err();
+        assert!(err_then.message.contains("then-expression"));
+
+        let err_else = expression("$x ?? 1 !!").unwrap_err();
+        assert!(err_else.message.contains("else-expression"));
+    }
+
+    #[test]
+    fn additive_requires_rhs_expression() {
+        let err = expression("1 +").unwrap_err();
+        assert!(err.message.contains("additive operator"));
     }
 
     #[test]
