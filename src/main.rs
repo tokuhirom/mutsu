@@ -2,7 +2,29 @@ use std::env;
 use std::fs;
 use std::io::{self, Read};
 
-use mutsu::Interpreter;
+use mutsu::{Interpreter, RuntimeError};
+
+fn print_error(prefix: &str, err: &RuntimeError) {
+    eprintln!("{}: {}", prefix, err.message);
+    let mut meta = Vec::new();
+    if let Some(code) = err.code {
+        meta.push(format!("code={}", code));
+        if code.is_parse() {
+            meta.push("kind=parse".to_string());
+        }
+    }
+    match (err.line, err.column) {
+        (Some(line), Some(column)) => meta.push(format!("line={}, column={}", line, column)),
+        (Some(line), None) => meta.push(format!("line={}", line)),
+        _ => {}
+    }
+    if !meta.is_empty() {
+        eprintln!("{} metadata: {}", prefix, meta.join(", "));
+    }
+    if let Some(hint) = &err.hint {
+        eprintln!("{} hint: {}", prefix, hint);
+    }
+}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -45,7 +67,7 @@ fn main() {
         match mutsu::dump_ast(&input) {
             Ok(ast) => println!("{}", ast),
             Err(err) => {
-                eprintln!("Parse error: {}", err.message);
+                print_error("Parse error", &err);
                 std::process::exit(1);
             }
         }
@@ -57,7 +79,7 @@ fn main() {
     match interpreter.run(&input) {
         Ok(output) => print!("{}", output),
         Err(err) => {
-            eprintln!("Runtime error: {}", err.message);
+            print_error("Runtime error", &err);
             let output_buf = interpreter.output();
             if !output_buf.is_empty() {
                 eprintln!("--- buffered TAP output ---");

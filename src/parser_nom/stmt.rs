@@ -1,4 +1,9 @@
-use super::parse_result::{PError, PResult, opt_char, parse_char, take_while_opt, take_while1};
+use super::parse_result::{
+    PError, PResult, merge_expected_messages, opt_char, parse_char, take_while_opt, take_while1,
+    update_best_error,
+};
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 use crate::ast::{AssignOp, CallArg, Expr, ParamDef, PhaserKind, Stmt};
 use crate::token_kind::TokenKind;
@@ -54,6 +59,78 @@ const COMPOUND_ASSIGN_OPS: &[CompoundAssignOp] = &[
     CompoundAssignOp::Mul,
 ];
 
+#[derive(Debug, Clone)]
+enum StmtMemoEntry {
+    Ok { consumed: usize, stmt: Box<Stmt> },
+    Err(PError),
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct StmtMemoStats {
+    hits: usize,
+    misses: usize,
+    stores: usize,
+}
+
+thread_local! {
+    static STMT_MEMO: RefCell<HashMap<(usize, usize), StmtMemoEntry>> = RefCell::new(HashMap::new());
+    static STMT_MEMO_STATS: RefCell<StmtMemoStats> = RefCell::new(StmtMemoStats::default());
+}
+
+fn statement_memo_key(input: &str) -> (usize, usize) {
+    (input.as_ptr() as usize, input.len())
+}
+
+fn statement_memo_get(input: &str) -> Option<PResult<'_, Stmt>> {
+    if !super::parse_memo_enabled() {
+        return None;
+    }
+    let key = statement_memo_key(input);
+    let hit = STMT_MEMO.with(|memo| memo.borrow().get(&key).cloned());
+    if let Some(entry) = hit {
+        STMT_MEMO_STATS.with(|stats| stats.borrow_mut().hits += 1);
+        return Some(match entry {
+            StmtMemoEntry::Ok { consumed, stmt } => Ok((&input[consumed..], *stmt)),
+            StmtMemoEntry::Err(err) => Err(err),
+        });
+    }
+    STMT_MEMO_STATS.with(|stats| stats.borrow_mut().misses += 1);
+    None
+}
+
+fn statement_memo_store(input: &str, result: &PResult<'_, Stmt>) {
+    if !super::parse_memo_enabled() {
+        return;
+    }
+    let key = statement_memo_key(input);
+    let entry = match result {
+        Ok((rest, stmt)) => StmtMemoEntry::Ok {
+            consumed: input.len().saturating_sub(rest.len()),
+            stmt: Box::new(stmt.clone()),
+        },
+        Err(err) => StmtMemoEntry::Err(err.clone()),
+    };
+    STMT_MEMO.with(|memo| {
+        memo.borrow_mut().insert(key, entry);
+    });
+    STMT_MEMO_STATS.with(|stats| stats.borrow_mut().stores += 1);
+}
+
+pub(super) fn reset_statement_memo() {
+    if !super::parse_memo_enabled() {
+        return;
+    }
+    STMT_MEMO.with(|memo| memo.borrow_mut().clear());
+    STMT_MEMO_STATS.with(|stats| *stats.borrow_mut() = StmtMemoStats::default());
+}
+
+pub(super) fn statement_memo_stats() -> (usize, usize, usize) {
+    STMT_MEMO_STATS.with(|stats| {
+        let s = *stats.borrow();
+        (s.hits, s.misses, s.stores)
+    })
+}
+
 fn parse_compound_assign_op(input: &str) -> Option<(&str, CompoundAssignOp)> {
     for op in COMPOUND_ASSIGN_OPS {
         if let Some(stripped) = input.strip_prefix(op.symbol()) {
@@ -97,7 +174,7 @@ fn qualified_ident(input: &str) -> PResult<'_, String> {
             full.push_str(&part);
             rest = r2;
         } else {
-            break;
+            return Err(PError::expected_at("identifier after '::'", r));
         }
     }
     Ok((rest, full))
@@ -189,13 +266,16 @@ fn stmt_list(input: &str) -> PResult<'_, Vec<Stmt>> {
                 let consumed = input.len() - r.len();
                 let line_num = input[..consumed].matches('\n').count() + 1;
                 let context: String = r.chars().take(80).collect();
-                return Err(PError::expected(&format!(
-                    "statement at line {} (after {} stmts): {} — near: {:?}",
-                    line_num,
-                    stmts.len(),
-                    e.message,
-                    context
-                )));
+                return Err(PError {
+                    message: format!(
+                        "expected statement at line {} (after {} stmts): {} — near: {:?}",
+                        line_num,
+                        stmts.len(),
+                        e.message,
+                        context
+                    ),
+                    remaining_len: Some(r.len()),
+                });
             }
         }
     }
@@ -227,7 +307,10 @@ fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
             let (r, _) = parse_char(r, ')')?;
             return Ok((r, args));
         }
-        let (r, first_arg) = parse_single_call_arg(r)?;
+        let (r, first_arg) = parse_single_call_arg(r).map_err(|err| PError {
+            message: merge_expected_messages("expected first call argument", &err.message),
+            remaining_len: err.remaining_len.or(Some(r.len())),
+        })?;
         args.push(first_arg);
         let mut r = r;
         loop {
@@ -239,7 +322,13 @@ fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
                 if r2.starts_with(',') {
                     let (r2, _) = parse_char(r2, ',')?;
                     let (r2, _) = ws(r2)?;
-                    let (r2, more) = parse_remaining_call_args(r2)?;
+                    let (r2, more) = parse_remaining_call_args(r2).map_err(|err| PError {
+                        message: merge_expected_messages(
+                            "expected call arguments after closing paren",
+                            &err.message,
+                        ),
+                        remaining_len: err.remaining_len.or(Some(r2.len())),
+                    })?;
                     args.extend(more);
                     return Ok((r2, args));
                 }
@@ -255,7 +344,10 @@ fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
                 let (r2, _) = parse_char(r2, ')')?;
                 return Ok((r2, args));
             }
-            let (r2, arg) = parse_single_call_arg(r2)?;
+            let (r2, arg) = parse_single_call_arg(r2).map_err(|err| PError {
+                message: merge_expected_messages("expected call argument after ','", &err.message),
+                remaining_len: err.remaining_len.or(Some(r2.len())),
+            })?;
             args.push(arg);
             r = r2;
         }
@@ -284,7 +376,10 @@ fn parse_stmt_call_args_no_paren(input: &str) -> PResult<'_, Vec<CallArg>> {
 /// Parse remaining comma-separated call args.
 fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
     let mut args = Vec::new();
-    let (mut rest, first) = parse_single_call_arg(input)?;
+    let (mut rest, first) = parse_single_call_arg(input).map_err(|err| PError {
+        message: merge_expected_messages("expected first call argument", &err.message),
+        remaining_len: err.remaining_len.or(Some(input.len())),
+    })?;
     args.push(first);
     loop {
         let (r, _) = ws(rest)?;
@@ -297,7 +392,10 @@ fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
         if r.starts_with(';') || r.is_empty() || r.starts_with('}') || r.starts_with(')') {
             return Ok((r, args));
         }
-        let (r, arg) = parse_single_call_arg(r)?;
+        let (r, arg) = parse_single_call_arg(r).map_err(|err| PError {
+            message: merge_expected_messages("expected call argument after ','", &err.message),
+            remaining_len: err.remaining_len.or(Some(r.len())),
+        })?;
         args.push(arg);
         rest = r;
     }
@@ -332,7 +430,13 @@ fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                 if r.starts_with('(') {
                     let (r, _) = parse_char(r, '(')?;
                     let (r, _) = ws(r)?;
-                    let (r, val) = expression(r)?;
+                    let (r, val) = expression(r).map_err(|err| PError {
+                        message: merge_expected_messages(
+                            "expected named argument value",
+                            &err.message,
+                        ),
+                        remaining_len: err.remaining_len.or(Some(r.len())),
+                    })?;
                     let (r, _) = ws(r)?;
                     let (r, _) = parse_char(r, ')')?;
                     return Ok((
@@ -349,7 +453,13 @@ fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                     let (r, _) = ws(r)?;
                     let mut items = Vec::new();
                     if !r.starts_with(']') {
-                        let (r2, first) = expression(r)?;
+                        let (r2, first) = expression(r).map_err(|err| PError {
+                            message: merge_expected_messages(
+                                "expected first list item in named argument",
+                                &err.message,
+                            ),
+                            remaining_len: err.remaining_len.or(Some(r.len())),
+                        })?;
                         items.push(first);
                         let mut r = r2;
                         loop {
@@ -366,7 +476,13 @@ fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                             }
                             let (r2, _) = parse_char(r2, ',')?;
                             let (r2, _) = ws(r2)?;
-                            let (r2, next) = expression(r2)?;
+                            let (r2, next) = expression(r2).map_err(|err| PError {
+                                message: merge_expected_messages(
+                                    "expected list item after ',' in named argument",
+                                    &err.message,
+                                ),
+                                remaining_len: err.remaining_len.or(Some(r2.len())),
+                            })?;
                             items.push(next);
                             r = r2;
                         }
@@ -392,7 +508,10 @@ fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
         let (r2, _) = ws(r)?;
         if let Some(stripped) = r2.strip_prefix("=>") {
             let (r2, _) = ws(stripped)?;
-            let (r2, val) = expression(r2)?;
+            let (r2, val) = expression(r2).map_err(|err| PError {
+                message: merge_expected_messages("expected fat-arrow argument value", &err.message),
+                remaining_len: err.remaining_len.or(Some(r2.len())),
+            })?;
             return Ok((
                 r2,
                 CallArg::Named {
@@ -404,7 +523,10 @@ fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
     }
 
     // Positional argument
-    let (rest, expr) = expression(input)?;
+    let (rest, expr) = expression(input).map_err(|err| PError {
+        message: merge_expected_messages("expected positional argument expression", &err.message),
+        remaining_len: err.remaining_len.or(Some(input.len())),
+    })?;
     Ok((rest, CallArg::Positional(expr)))
 }
 
@@ -1965,7 +2087,13 @@ fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     // Try statement modifiers
     if let Some(r) = keyword("if", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = expression(r).map_err(|err| PError {
+            message: merge_expected_messages(
+                "expected condition expression after 'if'",
+                &err.message,
+            ),
+            remaining_len: err.remaining_len.or(Some(r.len())),
+        })?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
         return Ok((
@@ -1979,7 +2107,13 @@ fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     }
     if let Some(r) = keyword("unless", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = expression(r).map_err(|err| PError {
+            message: merge_expected_messages(
+                "expected condition expression after 'unless'",
+                &err.message,
+            ),
+            remaining_len: err.remaining_len.or(Some(r.len())),
+        })?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
         return Ok((
@@ -1996,7 +2130,13 @@ fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     }
     if let Some(r) = keyword("for", rest) {
         let (r, _) = ws1(r)?;
-        let (r, iterable) = expression(r)?;
+        let (r, iterable) = expression(r).map_err(|err| PError {
+            message: merge_expected_messages(
+                "expected iterable expression after 'for'",
+                &err.message,
+            ),
+            remaining_len: err.remaining_len.or(Some(r.len())),
+        })?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
         return Ok((
@@ -2012,7 +2152,13 @@ fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     }
     if let Some(r) = keyword("while", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = expression(r).map_err(|err| PError {
+            message: merge_expected_messages(
+                "expected condition expression after 'while'",
+                &err.message,
+            ),
+            remaining_len: err.remaining_len.or(Some(r.len())),
+        })?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
         return Ok((
@@ -2026,7 +2172,13 @@ fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     }
     if let Some(r) = keyword("until", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = expression(r).map_err(|err| PError {
+            message: merge_expected_messages(
+                "expected condition expression after 'until'",
+                &err.message,
+            ),
+            remaining_len: err.remaining_len.or(Some(r.len())),
+        })?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
         return Ok((
@@ -2043,7 +2195,13 @@ fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     }
     if let Some(r) = keyword("given", rest) {
         let (r, _) = ws1(r)?;
-        let (r, topic) = expression(r)?;
+        let (r, topic) = expression(r).map_err(|err| PError {
+            message: merge_expected_messages(
+                "expected topic expression after 'given'",
+                &err.message,
+            ),
+            remaining_len: err.remaining_len.or(Some(r.len())),
+        })?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
         return Ok((
@@ -2133,9 +2291,15 @@ fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
     // In Raku, `foo(args)` (no space) = paren call, but `foo (expr)` (space) = listop call.
     // When there was whitespace before `(`, treat `(` as expression grouping, not call parens.
     let (rest, args) = if had_ws {
-        parse_stmt_call_args_no_paren(rest)?
+        parse_stmt_call_args_no_paren(rest).map_err(|err| PError {
+            message: merge_expected_messages("expected known call arguments", &err.message),
+            remaining_len: err.remaining_len.or(Some(rest.len())),
+        })?
     } else {
-        parse_stmt_call_args(rest)?
+        parse_stmt_call_args(rest).map_err(|err| PError {
+            message: merge_expected_messages("expected known call arguments", &err.message),
+            remaining_len: err.remaining_len.or(Some(rest.len())),
+        })?
     };
     let stmt = Stmt::Call { name, args };
     parse_statement_modifier(rest, stmt)
@@ -2160,7 +2324,13 @@ fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
 
     if let Some((stripped, op)) = parse_compound_assign_op(rest) {
         let (rest, _) = ws(stripped)?;
-        let (rest, rhs) = parse_assign_expr_or_comma(rest)?;
+        let (rest, rhs) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
+            message: merge_expected_messages(
+                "expected right-hand expression after compound assignment",
+                &err.message,
+            ),
+            remaining_len: err.remaining_len.or(Some(rest.len())),
+        })?;
         let expr = Expr::Binary {
             left: Box::new(Expr::Var(name.clone())),
             op: op.token_kind(),
@@ -2179,12 +2349,19 @@ fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         let (stripped, _) = ws(stripped)?;
         let (r, method_name) = take_while1(stripped, |c: char| {
             c.is_alphanumeric() || c == '_' || c == '-'
+        })
+        .map_err(|err| PError {
+            message: merge_expected_messages("expected method name after '.='", &err.message),
+            remaining_len: err.remaining_len.or(Some(stripped.len())),
         })?;
         let method_name = method_name.to_string();
         let (r, args) = if r.starts_with('(') {
             let (r, _) = parse_char(r, '(')?;
             let (r, _) = ws(r)?;
-            let (r, a) = super::primary::parse_call_arg_list(r)?;
+            let (r, a) = super::primary::parse_call_arg_list(r).map_err(|err| PError {
+                message: merge_expected_messages("expected method call arguments", &err.message),
+                remaining_len: err.remaining_len.or(Some(r.len())),
+            })?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ')')?;
             (r, a)
@@ -2216,7 +2393,13 @@ fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
-        let (rest, expr) = parse_assign_expr_or_comma(rest)?;
+        let (rest, expr) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
+            message: merge_expected_messages(
+                "expected right-hand expression after '='",
+                &err.message,
+            ),
+            remaining_len: err.remaining_len.or(Some(rest.len())),
+        })?;
         let stmt = Stmt::Assign {
             name,
             expr,
@@ -2227,7 +2410,13 @@ fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     // Binding
     if let Some(stripped) = rest.strip_prefix(":=") {
         let (rest, _) = ws(stripped)?;
-        let (rest, expr) = parse_comma_or_expr(rest)?;
+        let (rest, expr) = parse_comma_or_expr(rest).map_err(|err| PError {
+            message: merge_expected_messages(
+                "expected right-hand expression after ':='",
+                &err.message,
+            ),
+            remaining_len: err.remaining_len.or(Some(rest.len())),
+        })?;
         let stmt = Stmt::Assign {
             name,
             expr,
@@ -2247,14 +2436,23 @@ fn block_stmt(input: &str) -> PResult<'_, Stmt> {
 
 /// Parse an expression statement (fallback).
 fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
-    let (rest, expr) = expression(input)?;
+    let (rest, expr) = expression(input).map_err(|err| PError {
+        message: merge_expected_messages("expected expression statement", &err.message),
+        remaining_len: err.remaining_len.or(Some(input.len())),
+    })?;
 
     // Check for index assignment after expression
     let (rest, _) = ws(rest)?;
     if matches!(expr, Expr::Index { .. }) && rest.starts_with('=') && !rest.starts_with("==") {
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
-        let (rest, value) = parse_comma_or_expr(rest)?;
+        let (rest, value) = parse_comma_or_expr(rest).map_err(|err| PError {
+            message: merge_expected_messages(
+                "expected assigned expression after index assignment",
+                &err.message,
+            ),
+            remaining_len: err.remaining_len.or(Some(rest.len())),
+        })?;
         let (rest, _) = ws(rest)?;
         let (rest, _) = opt_char(rest, ';');
         if let Expr::Index { target, index } = expr {
@@ -2550,16 +2748,40 @@ const STMT_PARSERS: &[StmtParser] = &[
 
 fn statement(input: &str) -> PResult<'_, Stmt> {
     let (input, _) = ws(input)?;
+    if let Some(cached) = statement_memo_get(input) {
+        return cached;
+    }
+    let input_len = input.len();
+    let mut best_error: Option<(usize, PError)> = None;
+    let mut early_success: Option<(&str, Stmt)> = None;
 
     // Try each statement parser in order
     for parser in STMT_PARSERS {
-        if let Ok(r) = parser(input) {
-            return Ok(r);
+        match parser(input) {
+            Ok(r) => {
+                early_success = Some(r);
+                break;
+            }
+            Err(err) => update_best_error(&mut best_error, err, input_len),
         }
     }
 
-    // Fall back to expression statement
-    expr_stmt(input)
+    let result = if let Some(r) = early_success {
+        Ok(r)
+    } else {
+        // Fall back to expression statement
+        match expr_stmt(input) {
+            Ok(r) => Ok(r),
+            Err(err) => {
+                update_best_error(&mut best_error, err, input_len);
+                Err(best_error
+                    .map(|(_, err)| err)
+                    .unwrap_or_else(|| PError::expected_at("statement", input)))
+            }
+        }
+    };
+    statement_memo_store(input, &result);
+    result
 }
 
 /// Parse a full program (sequence of statements).
@@ -2683,5 +2905,80 @@ mod tests {
         } else {
             panic!("Expected VarDecl, got {:?}", stmts[0]);
         }
+    }
+
+    #[test]
+    fn statement_memo_hits_on_reparse() {
+        reset_statement_memo();
+        let input = "say 42";
+        let _ = statement_pub(input).unwrap();
+        let (hits1, misses1, stores1) = statement_memo_stats();
+        assert_eq!(hits1, 0);
+        assert!(misses1 >= 1);
+        assert!(stores1 >= 1);
+
+        let _ = statement_pub(input).unwrap();
+        let (hits2, _misses2, stores2) = statement_memo_stats();
+        assert!(hits2 >= 1);
+        assert!(stores2 >= stores1);
+    }
+
+    #[test]
+    fn merge_expected_messages_deduplicates() {
+        let merged = super::super::parse_result::merge_expected_messages(
+            "expected foo",
+            "expected foo or bar",
+        );
+        assert_eq!(merged, "expected foo or bar");
+    }
+
+    #[test]
+    fn merge_expected_messages_strips_prefix_consistently() {
+        let merged =
+            super::super::parse_result::merge_expected_messages("expected alpha or beta", "gamma");
+        assert_eq!(merged, "expected alpha or beta or gamma");
+    }
+
+    #[test]
+    fn statement_modifier_reports_missing_condition() {
+        let base = Stmt::Expr(Expr::Literal(Value::Int(1)));
+        let err = parse_statement_modifier(" if ", base).unwrap_err();
+        assert!(err.message.contains("after 'if'"));
+    }
+
+    #[test]
+    fn assign_stmt_reports_missing_rhs_for_compound_assign() {
+        let err = assign_stmt("$x +=").unwrap_err();
+        assert!(err.message.contains("compound assignment"));
+    }
+
+    #[test]
+    fn assign_stmt_reports_missing_method_name_for_mutating_call() {
+        let err = assign_stmt("$x .=").unwrap_err();
+        assert!(err.message.contains("method name after '.='"));
+    }
+
+    #[test]
+    fn known_call_stmt_reports_argument_parse_context() {
+        let err = known_call_stmt("ok ,").unwrap_err();
+        assert!(err.message.contains("known call arguments"));
+    }
+
+    #[test]
+    fn known_call_stmt_reports_missing_comma_argument() {
+        let err = known_call_stmt("ok(,)").unwrap_err();
+        assert!(err.message.contains("known call arguments"));
+    }
+
+    #[test]
+    fn known_call_stmt_reports_missing_named_argument_value() {
+        let err = known_call_stmt("ok :foo()").unwrap_err();
+        assert!(err.message.contains("named argument value"));
+    }
+
+    #[test]
+    fn qualified_ident_requires_segment_after_double_colon() {
+        let err = qualified_ident("Foo::").unwrap_err();
+        assert!(err.message.contains("identifier after '::'"));
     }
 }

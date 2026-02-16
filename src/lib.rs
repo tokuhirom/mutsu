@@ -12,7 +12,7 @@ mod value;
 mod vm;
 
 pub use interpreter::Interpreter;
-pub use value::{RuntimeError, Value};
+pub use value::{RuntimeError, RuntimeErrorCode, Value};
 
 /// Parse source code and return a pretty-printed AST string.
 #[allow(clippy::result_large_err)]

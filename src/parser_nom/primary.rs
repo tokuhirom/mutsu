@@ -1,10 +1,87 @@
-use super::parse_result::{PError, PResult, parse_char, parse_tag, take_while_opt, take_while1};
+use super::parse_result::{
+    PError, PResult, merge_expected_messages, parse_char, parse_tag, take_while_opt, take_while1,
+    update_best_error,
+};
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 use crate::ast::Expr;
 use crate::value::Value;
 
 use super::expr::expression;
 use super::helpers::ws;
+
+#[derive(Debug, Clone)]
+enum PrimaryMemoEntry {
+    Ok { consumed: usize, expr: Box<Expr> },
+    Err(PError),
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct PrimaryMemoStats {
+    hits: usize,
+    misses: usize,
+    stores: usize,
+}
+
+thread_local! {
+    static PRIMARY_MEMO: RefCell<HashMap<(usize, usize), PrimaryMemoEntry>> = RefCell::new(HashMap::new());
+    static PRIMARY_MEMO_STATS: RefCell<PrimaryMemoStats> = RefCell::new(PrimaryMemoStats::default());
+}
+
+fn primary_memo_key(input: &str) -> (usize, usize) {
+    (input.as_ptr() as usize, input.len())
+}
+
+fn primary_memo_get(input: &str) -> Option<PResult<'_, Expr>> {
+    if !super::parse_memo_enabled() {
+        return None;
+    }
+    let key = primary_memo_key(input);
+    let entry = PRIMARY_MEMO.with(|memo| memo.borrow().get(&key).cloned());
+    if let Some(entry) = entry {
+        PRIMARY_MEMO_STATS.with(|stats| stats.borrow_mut().hits += 1);
+        return Some(match entry {
+            PrimaryMemoEntry::Ok { consumed, expr } => Ok((&input[consumed..], *expr)),
+            PrimaryMemoEntry::Err(err) => Err(err),
+        });
+    }
+    PRIMARY_MEMO_STATS.with(|stats| stats.borrow_mut().misses += 1);
+    None
+}
+
+fn primary_memo_store(input: &str, result: &PResult<'_, Expr>) {
+    if !super::parse_memo_enabled() {
+        return;
+    }
+    let key = primary_memo_key(input);
+    let entry = match result {
+        Ok((rest, expr)) => PrimaryMemoEntry::Ok {
+            consumed: input.len().saturating_sub(rest.len()),
+            expr: Box::new(expr.clone()),
+        },
+        Err(err) => PrimaryMemoEntry::Err(err.clone()),
+    };
+    PRIMARY_MEMO.with(|memo| {
+        memo.borrow_mut().insert(key, entry);
+    });
+    PRIMARY_MEMO_STATS.with(|stats| stats.borrow_mut().stores += 1);
+}
+
+pub(super) fn reset_primary_memo() {
+    if !super::parse_memo_enabled() {
+        return;
+    }
+    PRIMARY_MEMO.with(|memo| memo.borrow_mut().clear());
+    PRIMARY_MEMO_STATS.with(|stats| *stats.borrow_mut() = PrimaryMemoStats::default());
+}
+
+pub(super) fn primary_memo_stats() -> (usize, usize, usize) {
+    PRIMARY_MEMO_STATS.with(|stats| {
+        let s = *stats.borrow();
+        (s.hits, s.misses, s.stores)
+    })
+}
 
 /// Parse an integer literal (including underscore separators).
 fn integer(input: &str) -> PResult<'_, Expr> {
@@ -772,10 +849,14 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
             // sub with params: sub ($x, $y) { ... }
             if r.starts_with('(') {
-                // Parse param list, then block
-                if let Ok((r2, params_body)) = parse_anon_sub_with_params(r) {
-                    return Ok((r2, params_body));
-                }
+                let (r2, params_body) = parse_anon_sub_with_params(r).map_err(|err| PError {
+                    message: merge_expected_messages(
+                        "expected anonymous sub parameter list/body",
+                        &err.message,
+                    ),
+                    remaining_len: err.remaining_len.or(Some(r.len())),
+                })?;
+                return Ok((r2, params_body));
             }
         }
         "gather" => {
@@ -868,7 +949,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 full_name.push_str(part);
                 r = rest2;
             } else {
-                break;
+                return Err(PError::expected_at("identifier after '::'", after));
             }
         }
         (r, full_name)
@@ -929,15 +1010,20 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         // Check if next token is a statement modifier keyword
         if !is_stmt_modifier_ahead(r) {
             // Try to parse an argument
-            if let Ok((r2, arg)) = parse_listop_arg(r) {
-                return Ok((
-                    r2,
-                    Expr::Call {
-                        name,
-                        args: vec![arg],
-                    },
-                ));
-            }
+            let (r2, arg) = parse_listop_arg(r).map_err(|err| PError {
+                message: merge_expected_messages(
+                    "expected listop argument expression",
+                    &err.message,
+                ),
+                remaining_len: err.remaining_len.or(Some(r.len())),
+            })?;
+            return Ok((
+                r2,
+                Expr::Call {
+                    name,
+                    args: vec![arg],
+                },
+            ));
         }
     }
 
@@ -1225,7 +1311,10 @@ fn reduction_op(input: &str) -> PResult<'_, Expr> {
             items.push(next);
             rest = r;
         } else {
-            break;
+            return Err(PError::expected_at(
+                "expression after ',' in reduction list",
+                r,
+            ));
         }
     }
     let expr = if items.len() == 1 {
@@ -1243,67 +1332,54 @@ fn reduction_op(input: &str) -> PResult<'_, Expr> {
 }
 
 pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
-    if let Ok(r) = decimal(input) {
-        return Ok(r);
+    if let Some(cached) = primary_memo_get(input) {
+        return cached;
     }
-    if let Ok(r) = integer(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = single_quoted_string(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = double_quoted_string(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = q_string(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = regex_lit(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = version_lit(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = keyword_literal(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = topic_method_call(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = scalar_var(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = array_var(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = hash_var(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = code_var(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = paren_expr(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = reduction_op(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = array_literal(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = angle_list(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = whatever(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = arrow_lambda(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = block_or_hash_expr(input) {
-        return Ok(r);
-    }
-    identifier_or_call(input)
+    let result = (|| {
+        let input_len = input.len();
+        let mut best_error: Option<(usize, PError)> = None;
+        macro_rules! try_primary {
+            ($expr:expr) => {
+                match $expr {
+                    Ok(r) => return Ok(r),
+                    Err(err) => update_best_error(&mut best_error, err, input_len),
+                }
+            };
+        }
+
+        try_primary!(decimal(input));
+        try_primary!(integer(input));
+        try_primary!(single_quoted_string(input));
+        try_primary!(double_quoted_string(input));
+        try_primary!(q_string(input));
+        try_primary!(regex_lit(input));
+        try_primary!(version_lit(input));
+        try_primary!(keyword_literal(input));
+        try_primary!(topic_method_call(input));
+        try_primary!(scalar_var(input));
+        try_primary!(array_var(input));
+        try_primary!(hash_var(input));
+        try_primary!(code_var(input));
+        try_primary!(paren_expr(input));
+        try_primary!(reduction_op(input));
+        try_primary!(array_literal(input));
+        try_primary!(angle_list(input));
+        try_primary!(whatever(input));
+        try_primary!(arrow_lambda(input));
+        try_primary!(block_or_hash_expr(input));
+
+        match identifier_or_call(input) {
+            Ok(r) => Ok(r),
+            Err(err) => {
+                update_best_error(&mut best_error, err, input_len);
+                Err(best_error
+                    .map(|(_, err)| err)
+                    .unwrap_or_else(|| PError::expected_at("primary expression", input)))
+            }
+        }
+    })();
+    primary_memo_store(input, &result);
+    result
 }
 
 /// Parse `-> $param { body }` or `-> $a, $b { body }` arrow lambda.
@@ -1487,5 +1563,46 @@ mod tests {
         let (rest, expr) = primary("\"hello $x world\"").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::StringInterpolation(_)));
+    }
+
+    #[test]
+    fn primary_memo_reuses_result() {
+        reset_primary_memo();
+        let (rest, expr) = primary("42").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Literal(Value::Int(42))));
+        let (rest2, expr2) = primary("42").unwrap();
+        assert_eq!(rest2, "");
+        assert!(matches!(expr2, Expr::Literal(Value::Int(42))));
+    }
+
+    #[test]
+    fn primary_aggregates_furthest_expected_messages() {
+        let err = primary("@").unwrap_err();
+        assert_eq!(err.message, "expected at least one matching character");
+    }
+
+    #[test]
+    fn primary_reports_invalid_qualified_identifier_tail() {
+        let err = primary("Foo::").unwrap_err();
+        assert!(err.message.contains("identifier after '::'"));
+    }
+
+    #[test]
+    fn primary_reports_missing_listop_argument() {
+        let err = primary("shift :").unwrap_err();
+        assert!(err.message.contains("listop argument expression"));
+    }
+
+    #[test]
+    fn primary_reports_invalid_reduction_list_item() {
+        let err = primary("[+] 1, :").unwrap_err();
+        assert!(err.message.contains("reduction list"));
+    }
+
+    #[test]
+    fn primary_reports_invalid_anon_sub_params() {
+        let err = primary("sub ($x,)").unwrap_err();
+        assert!(err.message.contains("anonymous sub parameter list/body"));
     }
 }

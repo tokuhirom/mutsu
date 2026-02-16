@@ -68,8 +68,12 @@ In `src/parser_nom/expr.rs`, `expression()` starts at ternary/fat-arrow level an
 ## Error behavior
 
 - Internal parser functions return `PResult<'a, T> = Result<(&'a str, T), PError>`.
-- Top-level `parse_program()` converts parse failures to `RuntimeError` with a compact context snippet and line estimate.
+- Top-level `parse_program()` converts parse failures to `RuntimeError` with structured metadata:
+  - `code`: `RuntimeErrorCode::{ParseUnparsed, ParseExpected, ParseGeneric}`
+  - `line`, `column`: 1-based location for the furthest/near parse position
+  - `message`: human-readable summary including a compact `near` snippet
 - Unparsed remainder at end of parse is treated as an error.
+- `near` snippets and reported columns are aligned (leading whitespace is skipped consistently).
 
 ## Change checklist (recommended)
 
@@ -87,4 +91,16 @@ When adding/changing grammar:
 
 - Parsing is currently single-backend (`parser_nom`) and always selected.
 - Raku slang switching (main/regex/quote/pod contexts) is only partially modeled; be cautious with context-sensitive constructs.
-- Packrat features (memoization cache and furthest-failure error aggregation) are not yet implemented.
+- Packrat-inspired features are partial: selective memoization exists for `statement`/`expression`/`primary`, and furthest-failure aggregation currently focuses on statement-level alternatives.
+
+## Runtime knobs
+
+- `MUTSU_PARSE_MEMO=0` disables parser memoization caches (useful for A/B debugging and perf comparison).
+- `MUTSU_TRACE=parse` prints parser startup and memo stats (`statement`/`expression`/`primary` hit/miss/store counts).
+
+## CLI diagnostics
+
+- `src/main.rs` prints parser/runtime errors via a shared formatter.
+- When present, structured metadata is emitted as:
+  - `metadata: code=PARSE_..., kind=parse, line=N, column=M`
+- This keeps human-readable error text while giving stable fields for tooling.

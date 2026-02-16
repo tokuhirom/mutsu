@@ -46,6 +46,14 @@ Prefer helper functions for recurring patterns:
 - keyword-with-boundary checks
 - delimited argument list parsing
 
+### C. Parse diagnostics as structured data
+
+Keep parse diagnostics both human-readable and machine-friendly:
+
+- Use `RuntimeErrorCode` (`ParseUnparsed`, `ParseExpected`, `ParseGeneric`) instead of raw tag strings.
+- Populate `RuntimeError { code, line, column }` at parser boundary (`parser_nom::parse_program`).
+- Keep `message` useful for humans (`near` snippet, line/column text), but do not rely on message parsing in tooling.
+
 ## Next milestones
 
 ### Milestone 1: Expression parser completion
@@ -55,13 +63,14 @@ Prefer helper functions for recurring patterns:
 
 ### Milestone 2: Packrat-oriented error strategy
 
-- Track and report **furthest failure position** across alternatives.
-- Aggregate expected-token categories at furthest point for clearer diagnostics.
-- Keep top-level `RuntimeError` format stable while improving message quality.
+- [x] Track and report **furthest failure position** across alternatives.
+- [x] Aggregate expected-token categories at furthest point for clearer diagnostics.
+- [x] Surface parse errors with structured metadata (`code`, `line`, `column`) plus readable messages.
+- [ ] Expand furthest-error aggregation to remaining niche branches where fallback still masks specific failure causes.
 
 ### Milestone 3: Packrat-oriented memoization strategy
 
-- Introduce opt-in memoization for high-backtracking entry points (initially `statement`, `expression`, `primary`).
+- [x] Introduce opt-in memoization for high-backtracking entry points (`statement`, `expression`, `primary`).
 - Start with `(rule_id, input_offset)` cache keys and validate memory/latency tradeoffs.
 - Keep default parser behavior unchanged unless perf data shows clear benefit.
 
@@ -72,8 +81,10 @@ Prefer helper functions for recurring patterns:
 
 ### Milestone 5: Error/context improvements
 
-- Standardize parse error context generation.
-- Keep existing user-visible messages unless intentionally changed.
+- [x] Standardize parse error context generation.
+- [x] Align `near` snippet trimming with reported column.
+- [x] Expose parse metadata in CLI output (`code`, `line`, `column`).
+- [ ] Add a compact user-facing “hint” layer for common parser mistakes (without losing raw expected messages).
 
 ## Refactor checklist
 

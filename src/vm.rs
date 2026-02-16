@@ -1415,6 +1415,10 @@ impl VM {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
                 return Err(RuntimeError {
                     message: String::new(),
+                    code: None,
+                    line: None,
+                    column: None,
+                    hint: None,
                     return_value: Some(val),
                     is_last: false,
                     is_next: false,
