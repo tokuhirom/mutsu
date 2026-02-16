@@ -110,19 +110,6 @@ impl Interpreter {
         Ok(self.output.clone())
     }
 
-    pub fn debug_tokens(&self, input: &str) -> Vec<String> {
-        let mut lexer = Lexer::new(input);
-        let mut tokens = Vec::new();
-        loop {
-            let token = lexer.next_token();
-            tokens.push(format!("{:?}", token.kind));
-            if matches!(token.kind, TokenKind::Eof) {
-                break;
-            }
-        }
-        tokens
-    }
-
     pub(super) fn run_block(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
         let (enter_ph, leave_ph, body_main) = self.split_block_phasers(stmts);
         self.run_block_raw(&enter_ph)?;

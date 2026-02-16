@@ -1,16 +1,7 @@
-mod core;
-mod heredoc;
-mod regex;
-mod string;
-#[cfg(test)]
-mod tests;
-mod tokenize;
-
 use crate::value::VersionPart;
 use num_bigint::BigInt as NumBigInt;
 
-pub(crate) use self::core::Lexer;
-
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum DStrPart {
     Lit(String),
@@ -18,6 +9,7 @@ pub(crate) enum DStrPart {
     Block(String),
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum TokenKind {
     Number(i64),
@@ -31,7 +23,6 @@ pub(crate) enum TokenKind {
         pattern: String,
         replacement: String,
     },
-    /// Quote-word list: < word1 word2 ... >
     QWords(Vec<String>),
     Ident(String),
     Var(String),
@@ -109,18 +100,18 @@ pub(crate) enum TokenKind {
     BitShiftLeft,
     BitShiftRight,
     LtEqGt,
-    SetUnion,          // (|) ∪
-    SetIntersect,      // (&) ∩
-    SetDiff,           // (-)
-    SetSymDiff,        // (^)
-    SetElem,           // (elem) ∈
-    SetCont,           // (cont)
-    SetSubset,         // (<=) ⊆
-    SetSuperset,       // (>=) ⊇
-    SetStrictSubset,   // (<) ⊂
-    SetStrictSuperset, // (>) ⊃
-    HyperLeft,         // << or «
-    HyperRight,        // >> or »
+    SetUnion,
+    SetIntersect,
+    SetDiff,
+    SetSymDiff,
+    SetElem,
+    SetCont,
+    SetSubset,
+    SetSuperset,
+    SetStrictSubset,
+    SetStrictSuperset,
+    HyperLeft,
+    HyperRight,
     VersionLiteral {
         parts: Vec<VersionPart>,
         plus: bool,
@@ -130,20 +121,10 @@ pub(crate) enum TokenKind {
     Eof,
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct Token {
-    pub(crate) kind: TokenKind,
-    #[allow(dead_code)]
-    pub(crate) line: usize,
-}
-
-/// Look up a Unicode character by name, with fallback for control characters and aliases.
 pub(crate) fn lookup_unicode_char_by_name(name: &str) -> Option<char> {
-    // Try the unicode_names2 crate first (covers most named characters)
     if let Some(c) = unicode_names2::character(name) {
         return Some(c);
     }
-    // Fallback: control characters and common aliases (case-insensitive)
     let upper = name.to_uppercase();
     match upper.as_str() {
         "NULL" | "NUL" => Some('\u{0000}'),

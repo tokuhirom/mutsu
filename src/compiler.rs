@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::ast::{AssignOp, CallArg, Expr, PhaserKind, Stmt};
-use crate::lexer::TokenKind;
 use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
+use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 pub(crate) struct Compiler {

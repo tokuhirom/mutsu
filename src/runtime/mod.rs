@@ -14,7 +14,6 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::ast::{ExpectedMatcher, Expr, FunctionDef, ParamDef, PhaserKind, Stmt};
-use crate::lexer::{Lexer, TokenKind};
 use crate::opcode::{CompiledCode, OpCode};
 use crate::parse_dispatch;
 use crate::value::{JunctionKind, LazyList, RuntimeError, Value, make_rat, next_instance_id};

@@ -1,7 +1,7 @@
 use super::parse_result::{PResult, parse_char, parse_tag, take_while1};
 
 use crate::ast::{Expr, Stmt};
-use crate::lexer::TokenKind;
+use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 use super::helpers::ws;

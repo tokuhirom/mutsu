@@ -1,5 +1,5 @@
 use super::*;
-use crate::lexer::TokenKind;
+use crate::token_kind::TokenKind;
 
 impl Interpreter {
     pub(crate) fn eval_call_on_value(

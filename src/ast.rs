@@ -1,4 +1,4 @@
-use crate::lexer::TokenKind;
+use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 #[derive(Debug, Clone)]

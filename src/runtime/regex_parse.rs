@@ -105,7 +105,8 @@ impl Interpreter {
                                 let parts: Vec<&str> = name.split(',').map(|s| s.trim()).collect();
                                 let mut resolved: Vec<char> = Vec::new();
                                 for part in &parts {
-                                    if let Some(c) = crate::lexer::lookup_unicode_char_by_name(part)
+                                    if let Some(c) =
+                                        crate::token_kind::lookup_unicode_char_by_name(part)
                                     {
                                         resolved.push(c);
                                     }
@@ -138,7 +139,9 @@ impl Interpreter {
                                     name.push(ch);
                                     chars.next();
                                 }
-                                if let Some(c) = crate::lexer::lookup_unicode_char_by_name(&name) {
+                                if let Some(c) =
+                                    crate::token_kind::lookup_unicode_char_by_name(&name)
+                                {
                                     RegexAtom::CharClass(CharClass {
                                         negated: true,
                                         items: vec![ClassItem::Char(c)],
@@ -454,7 +457,9 @@ impl Interpreter {
                             // Handle comma-separated names: \c[NAME1, NAME2]
                             for part in name.split(',') {
                                 let part = part.trim();
-                                if let Some(ch) = crate::lexer::lookup_unicode_char_by_name(part) {
+                                if let Some(ch) =
+                                    crate::token_kind::lookup_unicode_char_by_name(part)
+                                {
                                     items.push(ClassItem::Char(ch));
                                     has_items = true;
                                 }
