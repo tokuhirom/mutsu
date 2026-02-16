@@ -529,7 +529,7 @@ fn my_decl(input: &str) -> PResult<'_, Stmt> {
         eprintln!("my_decl: taking assignment branch");
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
-        let (rest, expr) = parse_comma_or_expr(rest)?;
+        let (rest, expr) = parse_assign_expr_or_comma(rest)?;
         let stmt = Stmt::VarDecl {
             name,
             expr,
@@ -540,7 +540,7 @@ fn my_decl(input: &str) -> PResult<'_, Stmt> {
     // Binding :=
     if let Some(stripped) = rest.strip_prefix(":=") {
         let (rest, _) = ws(stripped)?;
-        let (rest, expr) = parse_comma_or_expr(rest)?;
+        let (rest, expr) = parse_assign_expr_or_comma(rest)?;
         let stmt = Stmt::VarDecl {
             name,
             expr,
@@ -565,6 +565,108 @@ fn my_decl(input: &str) -> PResult<'_, Stmt> {
             type_constraint,
         },
     ))
+}
+
+/// Try to parse a chained assignment expression ($var op= expr), falling back to parse_comma_or_expr.
+/// This handles cases like `$a += $b += 1` and `$x = $y = $z`.
+fn parse_assign_expr_or_comma(input: &str) -> PResult<'_, Expr> {
+    // Try to parse a chained assignment: $var op= ...
+    if let Ok((rest, assign_expr)) = try_parse_assign_expr(input) {
+        // After a chained assign, check for comma list at this level
+        let (r, _) = ws(rest)?;
+        if r.starts_with(',') && !r.starts_with(",,") {
+            let (r, _) = parse_char(r, ',')?;
+            let (r, _) = ws(r)?;
+            if r.starts_with(';') || r.is_empty() || r.starts_with('}') {
+                return Ok((r, Expr::ArrayLiteral(vec![assign_expr])));
+            }
+            let mut items = vec![assign_expr];
+            let (mut r, second) = expression(r)?;
+            items.push(second);
+            loop {
+                let (r2, _) = ws(r)?;
+                if !r2.starts_with(',') {
+                    return Ok((r2, Expr::ArrayLiteral(items)));
+                }
+                let (r2, _) = parse_char(r2, ',')?;
+                let (r2, _) = ws(r2)?;
+                if r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') {
+                    return Ok((r2, Expr::ArrayLiteral(items)));
+                }
+                let (r2, next) = expression(r2)?;
+                items.push(next);
+                r = r2;
+            }
+        }
+        return Ok((rest, assign_expr));
+    }
+    parse_comma_or_expr(input)
+}
+
+/// Try to parse a single assignment expression: $var op= expr or $var = expr.
+/// Returns the expression as Expr::AssignExpr.
+fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr> {
+    let sigil = input.as_bytes().first().copied().unwrap_or(0);
+    if sigil != b'$' && sigil != b'@' && sigil != b'%' {
+        return Err(PError::expected("assignment expression"));
+    }
+    let (r, var) = var_name(input)?;
+    let (r2, _) = ws(r)?;
+    let compound_ops: &[(&str, TokenKind)] = &[
+        ("//=", TokenKind::SlashSlash),
+        ("||=", TokenKind::OrOr),
+        ("&&=", TokenKind::AndAnd),
+        ("+=", TokenKind::Plus),
+        ("-=", TokenKind::Minus),
+        ("~=", TokenKind::Tilde),
+        ("*=", TokenKind::Star),
+    ];
+    let prefix = match sigil {
+        b'@' => "@",
+        b'%' => "%",
+        _ => "",
+    };
+    // Check compound assignment ops
+    for &(op_str, ref op_kind) in compound_ops {
+        if let Some(stripped) = r2.strip_prefix(op_str) {
+            let (rest, _) = ws(stripped)?;
+            // RHS: try chained assign, else single expression
+            let (rest, rhs) = match try_parse_assign_expr(rest) {
+                Ok(r) => r,
+                Err(_) => expression(rest)?,
+            };
+            let name = format!("{}{}", prefix, var);
+            return Ok((
+                rest,
+                Expr::AssignExpr {
+                    name,
+                    expr: Box::new(Expr::Binary {
+                        left: Box::new(Expr::Var(var.to_string())),
+                        op: op_kind.clone(),
+                        right: Box::new(rhs),
+                    }),
+                },
+            ));
+        }
+    }
+    // Check simple chained assignment: $var = ...
+    if r2.starts_with('=') && !r2.starts_with("==") && !r2.starts_with("=>") {
+        let r3 = &r2[1..];
+        let (rest, _) = ws(r3)?;
+        let (rest, rhs) = match try_parse_assign_expr(rest) {
+            Ok(r) => r,
+            Err(_) => expression(rest)?,
+        };
+        let name = format!("{}{}", prefix, var);
+        return Ok((
+            rest,
+            Expr::AssignExpr {
+                name,
+                expr: Box::new(rhs),
+            },
+        ));
+    }
+    Err(PError::expected("assignment expression"))
 }
 
 /// Parse a comma expression (may produce a list).
@@ -1190,6 +1292,38 @@ fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     let mut named = false;
     let mut slurpy = false;
     let mut type_constraint = None;
+
+    // Capture-all: (|) or (|$c)
+    if let Some(stripped) = rest.strip_prefix('|') {
+        let (r, _) = ws(stripped)?;
+        // Optional capture variable name
+        if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') {
+            let (r, name) = var_name(r)?;
+            return Ok((
+                r,
+                ParamDef {
+                    name,
+                    named: false,
+                    slurpy: true,
+                    default: None,
+                    type_constraint: None,
+                    literal_value: None,
+                },
+            ));
+        }
+        // Bare |
+        return Ok((
+            r,
+            ParamDef {
+                name: "_capture".to_string(),
+                named: false,
+                slurpy: true,
+                default: None,
+                type_constraint: None,
+                literal_value: None,
+            },
+        ));
+    }
 
     // Slurpy: *@arr or *%hash
     if rest.starts_with('*')
@@ -1949,70 +2083,37 @@ fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     let name = format!("{}{}", prefix, var);
     let (rest, _) = ws(rest)?;
 
-    // Compound assignment: +=, -=, ~=, *=
-    if let Some(stripped) = rest.strip_prefix("+=") {
-        let (rest, _) = ws(stripped)?;
-        let (rest, rhs) = parse_comma_or_expr(rest)?;
-        let expr = Expr::Binary {
-            left: Box::new(Expr::Var(name.clone())),
-            op: TokenKind::Plus,
-            right: Box::new(rhs),
-        };
-        let stmt = Stmt::Assign {
-            name,
-            expr,
-            op: AssignOp::Assign,
-        };
-        return parse_statement_modifier(rest, stmt);
-    }
-    if let Some(stripped) = rest.strip_prefix("-=") {
-        let (rest, _) = ws(stripped)?;
-        let (rest, rhs) = parse_comma_or_expr(rest)?;
-        let expr = Expr::Binary {
-            left: Box::new(Expr::Var(name.clone())),
-            op: TokenKind::Minus,
-            right: Box::new(rhs),
-        };
-        let stmt = Stmt::Assign {
-            name,
-            expr,
-            op: AssignOp::Assign,
-        };
-        return parse_statement_modifier(rest, stmt);
-    }
-    if let Some(stripped) = rest.strip_prefix("~=") {
-        let (rest, _) = ws(stripped)?;
-        let (rest, rhs) = parse_comma_or_expr(rest)?;
-        let expr = Expr::Binary {
-            left: Box::new(Expr::Var(name.clone())),
-            op: TokenKind::Tilde,
-            right: Box::new(rhs),
-        };
-        let stmt = Stmt::Assign {
-            name,
-            expr,
-            op: AssignOp::Assign,
-        };
-        return parse_statement_modifier(rest, stmt);
-    }
-    if let Some(stripped) = rest.strip_prefix("*=") {
-        let (rest, _) = ws(stripped)?;
-        let (rest, rhs) = parse_comma_or_expr(rest)?;
-        let expr = Expr::Binary {
-            left: Box::new(Expr::Var(name.clone())),
-            op: TokenKind::Star,
-            right: Box::new(rhs),
-        };
-        let stmt = Stmt::Assign {
-            name,
-            expr,
-            op: AssignOp::Assign,
-        };
-        return parse_statement_modifier(rest, stmt);
+    // Compound assignment: +=, -=, ~=, *=, //=, ||=, &&=
+    let compound_ops: &[(&str, TokenKind)] = &[
+        ("+=", TokenKind::Plus),
+        ("-=", TokenKind::Minus),
+        ("~=", TokenKind::Tilde),
+        ("*=", TokenKind::Star),
+        ("//=", TokenKind::SlashSlash),
+        ("||=", TokenKind::OrOr),
+        ("&&=", TokenKind::AndAnd),
+    ];
+    for &(op_str, ref op_kind) in compound_ops {
+        if let Some(stripped) = rest.strip_prefix(op_str) {
+            let (rest, _) = ws(stripped)?;
+            let (rest, rhs) = parse_assign_expr_or_comma(rest)?;
+            let expr = Expr::Binary {
+                left: Box::new(Expr::Var(name.clone())),
+                op: op_kind.clone(),
+                right: Box::new(rhs),
+            };
+            let stmt = Stmt::Assign {
+                name,
+                expr,
+                op: AssignOp::Assign,
+            };
+            return parse_statement_modifier(rest, stmt);
+        }
     }
 
-    // Mutating method call: $x.=method or $x.=method(args)
+    // Mutating method call: $x.=method or $x .= method(args)
     if let Some(stripped) = rest.strip_prefix(".=") {
+        let (stripped, _) = ws(stripped)?;
         let (r, method_name) = take_while1(stripped, |c: char| {
             c.is_alphanumeric() || c == '_' || c == '-'
         })?;
@@ -2052,7 +2153,7 @@ fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
-        let (rest, expr) = parse_comma_or_expr(rest)?;
+        let (rest, expr) = parse_assign_expr_or_comma(rest)?;
         let stmt = Stmt::Assign {
             name,
             expr,
@@ -2202,11 +2303,12 @@ fn package_decl(input: &str) -> PResult<'_, Stmt> {
 fn proto_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("proto", input).ok_or_else(|| PError::expected("proto declaration"))?;
     let (rest, _) = ws1(rest)?;
-    // proto token | proto rule | proto sub
+    // proto token | proto rule | proto sub | proto method
     let _is_token = keyword("token", rest).is_some() || keyword("rule", rest).is_some();
     let rest = keyword("token", rest)
         .or_else(|| keyword("rule", rest))
         .or_else(|| keyword("sub", rest))
+        .or_else(|| keyword("method", rest))
         .unwrap_or(rest);
     let (rest, _) = ws1(rest)?;
     let (rest, name) = ident(rest)?;

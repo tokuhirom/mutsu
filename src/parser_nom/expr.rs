@@ -257,17 +257,84 @@ fn comparison_expr(input: &str) -> PResult<'_, Expr> {
         let r = &r[len..];
         let (r, _) = ws(r)?;
         let (r, right) = range_expr(r)?;
-        return Ok((
-            r,
-            Expr::Binary {
-                left: Box::new(left),
-                op,
-                right: Box::new(right),
-            },
-        ));
+        let mut result = Expr::Binary {
+            left: Box::new(left),
+            op,
+            right: Box::new(right.clone()),
+        };
+        // Chained comparisons: 2 < $_ < 4 → (2 < $_) && ($_ < 4)
+        let mut prev_right = right;
+        let mut r = r;
+        loop {
+            let (r2, _) = ws(r)?;
+            let (chain_op, chain_len) = parse_comparison_op(r2);
+            if let Some(cop) = chain_op {
+                let r2 = &r2[chain_len..];
+                let (r2, _) = ws(r2)?;
+                let (r2, next_right) = range_expr(r2)?;
+                let next_cmp = Expr::Binary {
+                    left: Box::new(prev_right),
+                    op: cop,
+                    right: Box::new(next_right.clone()),
+                };
+                result = Expr::Binary {
+                    left: Box::new(result),
+                    op: TokenKind::AndAnd,
+                    right: Box::new(next_cmp),
+                };
+                prev_right = next_right;
+                r = r2;
+            } else {
+                break;
+            }
+        }
+        return Ok((r, result));
     }
 
     Ok((rest, left))
+}
+
+/// Extract a comparison operator from the start of the input, returning the op and its length.
+fn parse_comparison_op(r: &str) -> (Option<TokenKind>, usize) {
+    if r.starts_with("===") {
+        (Some(TokenKind::EqEqEq), 3)
+    } else if r.starts_with("==") && !r.starts_with("===") {
+        (Some(TokenKind::EqEq), 2)
+    } else if r.starts_with("!=") {
+        (Some(TokenKind::BangEq), 2)
+    } else if r.starts_with("!~~") {
+        (Some(TokenKind::BangTilde), 3)
+    } else if r.starts_with("~~") {
+        (Some(TokenKind::SmartMatch), 2)
+    } else if r.starts_with("<=>") {
+        (Some(TokenKind::LtEqGt), 3)
+    } else if r.starts_with("<=") && !r.starts_with("<=>") {
+        (Some(TokenKind::Lte), 2)
+    } else if r.starts_with(">=") {
+        (Some(TokenKind::Gte), 2)
+    } else if r.starts_with('<') && !r.starts_with("<<") && !r.starts_with("<=") {
+        (Some(TokenKind::Lt), 1)
+    } else if r.starts_with('>') && !r.starts_with(">>") && !r.starts_with(">=") {
+        (Some(TokenKind::Gt), 1)
+    } else if r.starts_with("eq") && !is_ident_char(r.as_bytes().get(2).copied()) {
+        (Some(TokenKind::Ident("eq".to_string())), 2)
+    } else if r.starts_with("ne") && !is_ident_char(r.as_bytes().get(2).copied()) {
+        (Some(TokenKind::Ident("ne".to_string())), 2)
+    } else if r.starts_with("lt") && !is_ident_char(r.as_bytes().get(2).copied()) {
+        (Some(TokenKind::Ident("lt".to_string())), 2)
+    } else if r.starts_with("gt") && !is_ident_char(r.as_bytes().get(2).copied()) {
+        (Some(TokenKind::Ident("gt".to_string())), 2)
+    } else if r.starts_with("le") && !is_ident_char(r.as_bytes().get(2).copied()) {
+        (Some(TokenKind::Ident("le".to_string())), 2)
+    } else if r.starts_with("ge") && !is_ident_char(r.as_bytes().get(2).copied()) {
+        (Some(TokenKind::Ident("ge".to_string())), 2)
+    } else if r.starts_with("leg") && !is_ident_char(r.as_bytes().get(3).copied()) {
+        (Some(TokenKind::Ident("leg".to_string())), 3)
+    } else if r.starts_with("cmp") && !is_ident_char(r.as_bytes().get(3).copied()) {
+        (Some(TokenKind::Ident("cmp".to_string())), 3)
+    } else {
+        (None, 0)
+    }
 }
 
 /// Range: ..  ..^  ^..  ^..^
@@ -604,7 +671,7 @@ fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if input.starts_with('+')
         && !input.starts_with("++")
         && let Some(&c) = input.as_bytes().get(1)
-        && (c == b'$' || c == b'@' || c == b'(')
+        && (c == b'$' || c == b'@' || c == b'(' || c.is_ascii_digit())
     {
         let r = &input[1..];
         let (r, expr) = prefix_expr(r)?;
@@ -620,7 +687,7 @@ fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if input.starts_with('~')
         && !input.starts_with("~~")
         && let Some(&c) = input.as_bytes().get(1)
-        && (c == b'$' || c == b'@' || c == b'(' || c == b'"' || c == b'\'')
+        && (c == b'$' || c == b'@' || c == b'(' || c == b'"' || c == b'\'' || c.is_ascii_digit())
     {
         let r = &input[1..];
         let (r, expr) = prefix_expr(r)?;

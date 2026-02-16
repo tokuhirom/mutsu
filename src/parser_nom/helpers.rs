@@ -3,10 +3,12 @@ use super::parse_result::{PError, PResult, take_while_opt, take_while1};
 /// Skip whitespace, line comments (`#` to end of line), and Pod blocks.
 pub(super) fn ws(input: &str) -> PResult<'_, ()> {
     let mut rest = input;
+    let mut at_line_start = true; // conservatively true for start of input
     loop {
         // Try whitespace
         let (r, matched) = take_while_opt(rest, |c| c.is_whitespace());
         if !matched.is_empty() {
+            at_line_start = matched.contains('\n');
             rest = r;
             continue;
         }
@@ -14,11 +16,13 @@ pub(super) fn ws(input: &str) -> PResult<'_, ()> {
         if r.starts_with('#') {
             let end = r.find('\n').unwrap_or(r.len());
             rest = &r[end..];
+            at_line_start = true;
             continue;
         }
-        // Try pod block
-        if let Ok((r, _)) = pod_block(r) {
+        // Pod blocks only appear at the start of a line
+        if at_line_start && let Ok((r, _)) = pod_block(r) {
             rest = r;
+            at_line_start = true;
             continue;
         }
         break;
@@ -41,6 +45,19 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
 
     // Read the directive keyword
     let (rest, keyword) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '-')?;
+
+    // Only match known pod directives
+    const POD_KEYWORDS: &[&str] = &[
+        "begin", "end", "for", "head", "head1", "head2", "head3", "head4", "item", "comment",
+        "finish", "pod", "config", "table", "TITLE", "SUBTITLE", "para", "code", "input", "output",
+        "defn", "nested", "data",
+    ];
+    if !POD_KEYWORDS
+        .iter()
+        .any(|&k| keyword == k || keyword.starts_with("head"))
+    {
+        return Err(PError::expected("known pod directive"));
+    }
 
     if keyword == "begin" {
         // =begin IDENTIFIER ... =end IDENTIFIER

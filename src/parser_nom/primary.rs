@@ -504,6 +504,51 @@ fn keyword_literal(input: &str) -> PResult<'_, Expr> {
 
 /// Parse a bare identifier that could be a type name or function call.
 /// Returns Expr::Call for function calls, Expr::BareWord for type names.
+/// Check if a name is a Raku keyword (not a function call).
+fn is_keyword(name: &str) -> bool {
+    matches!(
+        name,
+        "if" | "unless"
+            | "for"
+            | "while"
+            | "until"
+            | "given"
+            | "when"
+            | "loop"
+            | "repeat"
+            | "try"
+            | "do"
+            | "gather"
+            | "sub"
+            | "my"
+            | "our"
+            | "has"
+            | "class"
+            | "role"
+            | "module"
+            | "use"
+            | "need"
+            | "import"
+            | "require"
+            | "return"
+            | "last"
+            | "next"
+            | "redo"
+            | "die"
+            | "say"
+            | "print"
+            | "put"
+            | "note"
+            | "with"
+            | "without"
+            | "supply"
+            | "react"
+            | "whenever"
+            | "start"
+            | "quietly"
+    )
+}
+
 pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     let (rest, name) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
     let name = name.to_string();
@@ -604,6 +649,39 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
         return Ok((rest, Expr::Call { name, args }));
+    }
+
+    // Bareword followed by block { ... } and comma — function call with block arg
+    // e.g., map { $_ * 2 }, @arr  or  grep { $_ > 0 }, @arr
+    let (r, _) = ws(rest)?;
+    if r.starts_with('{')
+        && !is_keyword(&name)
+        && let Ok((r2, block_body)) = parse_block_body(r)
+    {
+        let (r3, _) = ws(r2)?;
+        if let Some(r3) = r3.strip_prefix(',') {
+            // Consume comma and remaining args
+            let (r3, _) = ws(r3)?;
+            let mut args = vec![Expr::AnonSub(block_body)];
+            let (mut r3, first_arg) = expression(r3)?;
+            args.push(first_arg);
+            loop {
+                let (r4, _) = ws(r3)?;
+                if !r4.starts_with(',') {
+                    return Ok((r4, Expr::Call { name, args }));
+                }
+                let r4 = &r4[1..];
+                let (r4, _) = ws(r4)?;
+                if r4.starts_with(';') || r4.is_empty() || r4.starts_with('}') {
+                    return Ok((r4, Expr::Call { name, args }));
+                }
+                let (r4, next_arg) = expression(r4)?;
+                args.push(next_arg);
+                r3 = r4;
+            }
+        }
+        // Block without trailing comma — return as separate expressions
+        // Fall through to BareWord
     }
 
     // Method-like: .new, .elems etc. is handled at expression level
@@ -715,14 +793,27 @@ fn regex_lit(input: &str) -> PResult<'_, Expr> {
         return Ok((rest, Expr::Literal(Value::Str(pattern.to_string()))));
     }
 
-    // m/pattern/
-    if let Some(stripped) = input.strip_prefix("m/") {
-        let r = stripped;
+    // m/pattern/ or m{pattern} or m[pattern]
+    if input.starts_with("m/") || input.starts_with("m{") || input.starts_with("m[") {
+        let close_delim = match input.as_bytes()[1] {
+            b'/' => b'/',
+            b'{' => b'}',
+            b'[' => b']',
+            _ => unreachable!(),
+        };
+        let r = &input[2..];
         let mut end = 0;
         let bytes = r.as_bytes();
+        let mut depth = 1u32;
         while end < bytes.len() {
-            if bytes[end] == b'/' {
-                break;
+            if bytes[end] == close_delim {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+            if close_delim != b'/' && bytes[end] == input.as_bytes()[1] {
+                depth += 1;
             }
             if bytes[end] == b'\\' && end + 1 < bytes.len() {
                 end += 2;
