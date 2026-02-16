@@ -1,4 +1,6 @@
 use super::parse_result::{PError, PResult, opt_char, parse_char, take_while_opt, take_while1};
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 use crate::ast::{AssignOp, CallArg, Expr, ParamDef, PhaserKind, Stmt};
 use crate::token_kind::TokenKind;
@@ -53,6 +55,67 @@ const COMPOUND_ASSIGN_OPS: &[CompoundAssignOp] = &[
     CompoundAssignOp::Concat,
     CompoundAssignOp::Mul,
 ];
+
+#[derive(Debug, Clone)]
+enum StmtMemoEntry {
+    Ok { consumed: usize, stmt: Box<Stmt> },
+    Err(PError),
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct StmtMemoStats {
+    hits: usize,
+    misses: usize,
+    stores: usize,
+}
+
+thread_local! {
+    static STMT_MEMO: RefCell<HashMap<(usize, usize), StmtMemoEntry>> = RefCell::new(HashMap::new());
+    static STMT_MEMO_STATS: RefCell<StmtMemoStats> = RefCell::new(StmtMemoStats::default());
+}
+
+fn statement_memo_key(input: &str) -> (usize, usize) {
+    (input.as_ptr() as usize, input.len())
+}
+
+fn statement_memo_get(input: &str) -> Option<PResult<'_, Stmt>> {
+    let key = statement_memo_key(input);
+    let hit = STMT_MEMO.with(|memo| memo.borrow().get(&key).cloned());
+    if let Some(entry) = hit {
+        STMT_MEMO_STATS.with(|stats| stats.borrow_mut().hits += 1);
+        return Some(match entry {
+            StmtMemoEntry::Ok { consumed, stmt } => Ok((&input[consumed..], *stmt)),
+            StmtMemoEntry::Err(err) => Err(err),
+        });
+    }
+    STMT_MEMO_STATS.with(|stats| stats.borrow_mut().misses += 1);
+    None
+}
+
+fn statement_memo_store(input: &str, result: &PResult<'_, Stmt>) {
+    let key = statement_memo_key(input);
+    let entry = match result {
+        Ok((rest, stmt)) => StmtMemoEntry::Ok {
+            consumed: input.len().saturating_sub(rest.len()),
+            stmt: Box::new(stmt.clone()),
+        },
+        Err(err) => StmtMemoEntry::Err(err.clone()),
+    };
+    STMT_MEMO.with(|memo| {
+        memo.borrow_mut().insert(key, entry);
+    });
+    STMT_MEMO_STATS.with(|stats| stats.borrow_mut().stores += 1);
+}
+
+pub(super) fn reset_statement_memo() {
+    STMT_MEMO.with(|memo| memo.borrow_mut().clear());
+    STMT_MEMO_STATS.with(|stats| *stats.borrow_mut() = StmtMemoStats::default());
+}
+
+#[cfg(test)]
+fn statement_memo_stats() -> StmtMemoStats {
+    STMT_MEMO_STATS.with(|stats| *stats.borrow())
+}
 
 fn parse_compound_assign_op(input: &str) -> Option<(&str, CompoundAssignOp)> {
     for op in COMPOUND_ASSIGN_OPS {
@@ -2569,27 +2632,40 @@ const STMT_PARSERS: &[StmtParser] = &[
 
 fn statement(input: &str) -> PResult<'_, Stmt> {
     let (input, _) = ws(input)?;
+    if let Some(cached) = statement_memo_get(input) {
+        return cached;
+    }
     let input_len = input.len();
     let mut best_error: Option<(usize, PError)> = None;
+    let mut early_success: Option<(&str, Stmt)> = None;
 
     // Try each statement parser in order
     for parser in STMT_PARSERS {
         match parser(input) {
-            Ok(r) => return Ok(r),
+            Ok(r) => {
+                early_success = Some(r);
+                break;
+            }
             Err(err) => update_best_error(&mut best_error, err, input_len),
         }
     }
 
-    // Fall back to expression statement
-    match expr_stmt(input) {
-        Ok(r) => Ok(r),
-        Err(err) => {
-            update_best_error(&mut best_error, err, input_len);
-            Err(best_error
-                .map(|(_, err)| err)
-                .unwrap_or_else(|| PError::expected_at("statement", input)))
+    let result = if let Some(r) = early_success {
+        Ok(r)
+    } else {
+        // Fall back to expression statement
+        match expr_stmt(input) {
+            Ok(r) => Ok(r),
+            Err(err) => {
+                update_best_error(&mut best_error, err, input_len);
+                Err(best_error
+                    .map(|(_, err)| err)
+                    .unwrap_or_else(|| PError::expected_at("statement", input)))
+            }
         }
-    }
+    };
+    statement_memo_store(input, &result);
+    result
 }
 
 /// Parse a full program (sequence of statements).
@@ -2713,5 +2789,21 @@ mod tests {
         } else {
             panic!("Expected VarDecl, got {:?}", stmts[0]);
         }
+    }
+
+    #[test]
+    fn statement_memo_hits_on_reparse() {
+        reset_statement_memo();
+        let input = "say 42";
+        let _ = statement_pub(input).unwrap();
+        let s1 = statement_memo_stats();
+        assert_eq!(s1.hits, 0);
+        assert!(s1.misses >= 1);
+        assert!(s1.stores >= 1);
+
+        let _ = statement_pub(input).unwrap();
+        let s2 = statement_memo_stats();
+        assert!(s2.hits >= 1);
+        assert!(s2.stores >= s1.stores);
     }
 }
