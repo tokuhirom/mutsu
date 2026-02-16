@@ -174,7 +174,7 @@ fn qualified_ident(input: &str) -> PResult<'_, String> {
             full.push_str(&part);
             rest = r2;
         } else {
-            break;
+            return Err(PError::expected_at("identifier after '::'", r));
         }
     }
     Ok((rest, full))
@@ -2971,5 +2971,11 @@ mod tests {
     fn known_call_stmt_reports_missing_named_argument_value() {
         let err = known_call_stmt("ok :foo()").unwrap_err();
         assert!(err.message.contains("named argument value"));
+    }
+
+    #[test]
+    fn qualified_ident_requires_segment_after_double_colon() {
+        let err = qualified_ident("Foo::").unwrap_err();
+        assert!(err.message.contains("identifier after '::'"));
     }
 }
