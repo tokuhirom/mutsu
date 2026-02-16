@@ -523,6 +523,10 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 let (r, body) = parse_block_body(r)?;
                 return Ok((r, Expr::DoBlock { body, label: None }));
             }
+            // do if/unless/given/for/while — wrap the control flow statement
+            if let Ok((r, stmt)) = super::stmt::statement_pub(r) {
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            }
         }
         "sub" => {
             let (r, _) = ws(rest)?;

@@ -106,6 +106,11 @@ pub(super) fn var_name_pub(input: &str) -> PResult<'_, String> {
     var_name(input)
 }
 
+/// Public accessor for statement (used by primary.rs for do-statement expressions).
+pub(super) fn statement_pub(input: &str) -> PResult<'_, Stmt> {
+    statement(input)
+}
+
 /// Parse a list of statements (inside a block or at program level).
 fn stmt_list(input: &str) -> PResult<'_, Vec<Stmt>> {
     let mut stmts = Vec::new();
