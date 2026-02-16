@@ -41,7 +41,6 @@ roast/S03-smartmatch/any-sub.t
 roast/S03-smartmatch/any-callable.t
 roast/S03-smartmatch/any-str.t
 roast/S04-exceptions/control_across_runloop.t
-roast/S04-statement-modifiers/until.t
 roast/S04-statement-modifiers/values_in_bool_context.t
 roast/S04-statement-modifiers/while.t
 roast/S04-statement-parsing/hash.t
