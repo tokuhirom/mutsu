@@ -20,8 +20,16 @@ pub(super) fn ws(input: &str) -> IResult<&str, ()> {
 /// Handles `=begin ... =end`, `=for ...`, `=head ...`, `=item ...`, `=comment ...`, etc.
 fn pod_block(input: &str) -> IResult<&str, &str> {
     // Must start at beginning of line (or at start of input)
-    // Pod directives start with `=`
+    // Pod directives start with `=` followed by an alphabetic character
     let (input, _) = tag("=")(input)?;
+
+    // Pod keywords must start with a letter (not a digit or symbol)
+    if input.is_empty() || !input.as_bytes()[0].is_ascii_alphabetic() {
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Tag,
+        )));
+    }
 
     // Read the directive keyword
     let (input, keyword) = take_while1(|c: char| c.is_alphanumeric() || c == '-')(input)?;

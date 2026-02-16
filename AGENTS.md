@@ -24,7 +24,7 @@ Source → **Lexer** (`lexer.rs`) → **Parser** (`parser.rs`) → **Compiler** 
 
 Two parser backends are available, selectable at runtime via `--parser=rd` (default) or `--parser=nom`:
 - **RecursiveDescent** (`parser/`): Current production parser using a separate lexer + recursive descent.
-- **Nom** (`parser_nom/`): Experimental PEG parser built with nom 7. Currently a skeleton supporting only `say <literal>`.
+- **Nom** (`parser_nom/`): Experimental PEG parser built with nom 7. Covers statements, expressions, and control flow.
 
 The parser backend is dispatched through `parse_dispatch.rs`, which provides `parse_source()` used by all parsing call sites.
 
@@ -148,6 +148,18 @@ make roast 2>&1 | grep -E "(not ok|FAILED|Failed|Wstat)" | head -20
   5. **Read the code**: Trace logic by reading, not running
   6. **Debugger**: `rust-gdb ./target/debug/mutsu`
 - If you must add debug prints, add ALL of them in one pass. Always remove before committing.
+
+## Raku's context-dependent parsing (slangs)
+
+Raku's grammar is not a single monolithic grammar — it switches between sub-languages ("slangs") depending on context:
+- **Main** slang: statements, expressions, operators
+- **Regex** slang: inside `/ /`, `rx/ /`, `m/ /`, grammar tokens/rules
+- **Quote** slang: inside `" "`, `' '`, `q/ /`, `qq/ /`, heredocs
+- **Pod** slang: documentation blocks (`=begin`, `=for`, `=head`, etc.)
+
+Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang but addition in Main slang). Raku's official grammar (`Raku::Grammar`) handles this via slang switching at parse time.
+
+**Implication for mutsu**: nom is a single-grammar parser combinator framework and does not natively support slang switching. As we add `grammar`/`token`/`rule` support (which let users define custom grammars), we may need to move away from nom toward a hand-written recursive descent parser that can switch parsing modes contextually — similar to how the existing RD parser works. Keep the nom parser modular so that individual sub-parsers (regex, quote, etc.) can be extracted and reused in a future architecture.
 
 ## Conventions
 

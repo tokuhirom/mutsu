@@ -103,6 +103,9 @@ fn stmt_list(input: &str) -> IResult<&str, Vec<Stmt>> {
     let mut rest = input;
     loop {
         let (r, _) = ws(rest)?;
+        // Consume any standalone semicolons
+        let r = consume_semicolons(r);
+        let (r, _) = ws(r)?;
         // End of block or input
         if r.is_empty() || r.starts_with('}') {
             return Ok((r, stmts));
@@ -111,6 +114,18 @@ fn stmt_list(input: &str) -> IResult<&str, Vec<Stmt>> {
         stmts.push(stmt);
         rest = r;
     }
+}
+
+/// Consume zero or more semicolons.
+fn consume_semicolons(mut input: &str) -> &str {
+    while input.starts_with(';') {
+        input = &input[1..];
+        // Also consume whitespace after semicolons
+        if let Ok((r, _)) = ws(input) {
+            input = r;
+        }
+    }
+    input
 }
 
 /// Parse call arguments for statement-level function calls.
@@ -493,6 +508,8 @@ fn my_decl(input: &str) -> IResult<&str, Stmt> {
 
     // Assignment
     if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {
+        #[cfg(test)]
+        eprintln!("my_decl: taking assignment branch");
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
         let (rest, expr) = parse_comma_or_expr(rest)?;
@@ -1708,11 +1725,19 @@ fn subset_decl(input: &str) -> IResult<&str, Stmt> {
 /// Parse statement modifier (postfix if/unless/for/while/until/given/when).
 fn parse_statement_modifier(input: &str, stmt: Stmt) -> IResult<&str, Stmt> {
     let (rest, _) = ws(input)?;
-    let (rest, _) = opt(char(';'))(rest)?;
+
+    // If there's a semicolon, the statement is terminated — no modifiers
+    if let Some(stripped) = rest.strip_prefix(';') {
+        return Ok((stripped, stmt));
+    }
+
+    // If at end of input or block, return as-is
+    if rest.is_empty() || rest.starts_with('}') {
+        return Ok((rest, stmt));
+    }
 
     // Try statement modifiers
-    let (rest2, _) = ws(rest)?;
-    if let Some(r) = keyword("if", rest2) {
+    if let Some(r) = keyword("if", rest) {
         let (r, _) = ws1(r)?;
         let (r, cond) = expression(r)?;
         let (r, _) = ws(r)?;
@@ -1726,7 +1751,7 @@ fn parse_statement_modifier(input: &str, stmt: Stmt) -> IResult<&str, Stmt> {
             },
         ));
     }
-    if let Some(r) = keyword("unless", rest2) {
+    if let Some(r) = keyword("unless", rest) {
         let (r, _) = ws1(r)?;
         let (r, cond) = expression(r)?;
         let (r, _) = ws(r)?;
@@ -1743,7 +1768,7 @@ fn parse_statement_modifier(input: &str, stmt: Stmt) -> IResult<&str, Stmt> {
             },
         ));
     }
-    if let Some(r) = keyword("for", rest2) {
+    if let Some(r) = keyword("for", rest) {
         let (r, _) = ws1(r)?;
         let (r, iterable) = expression(r)?;
         let (r, _) = ws(r)?;
@@ -1759,7 +1784,7 @@ fn parse_statement_modifier(input: &str, stmt: Stmt) -> IResult<&str, Stmt> {
             },
         ));
     }
-    if let Some(r) = keyword("while", rest2) {
+    if let Some(r) = keyword("while", rest) {
         let (r, _) = ws1(r)?;
         let (r, cond) = expression(r)?;
         let (r, _) = ws(r)?;
@@ -1773,7 +1798,7 @@ fn parse_statement_modifier(input: &str, stmt: Stmt) -> IResult<&str, Stmt> {
             },
         ));
     }
-    if let Some(r) = keyword("until", rest2) {
+    if let Some(r) = keyword("until", rest) {
         let (r, _) = ws1(r)?;
         let (r, cond) = expression(r)?;
         let (r, _) = ws(r)?;
@@ -1790,7 +1815,7 @@ fn parse_statement_modifier(input: &str, stmt: Stmt) -> IResult<&str, Stmt> {
             },
         ));
     }
-    if let Some(r) = keyword("given", rest2) {
+    if let Some(r) = keyword("given", rest) {
         let (r, _) = ws1(r)?;
         let (r, topic) = expression(r)?;
         let (r, _) = ws(r)?;
@@ -1966,6 +1991,42 @@ fn assign_stmt(input: &str) -> IResult<&str, Stmt> {
             op: AssignOp::Assign,
         };
         return parse_statement_modifier(rest, stmt);
+    }
+
+    // Mutating method call: $x.=method or $x.=method(args)
+    if let Some(stripped) = rest.strip_prefix(".=") {
+        let (r, method_name) =
+            take_while1(|c: char| c.is_alphanumeric() || c == '_' || c == '-')(stripped)?;
+        let method_name = method_name.to_string();
+        let (r, args) = if r.starts_with('(') {
+            let (r, _) = char('(')(r)?;
+            let (r, _) = ws(r)?;
+            let (r, a) = super::primary::parse_call_arg_list(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = char(')')(r)?;
+            (r, a)
+        } else {
+            (r, Vec::new())
+        };
+        let var_expr = if sigil == b'@' {
+            Expr::ArrayVar(var.clone())
+        } else if sigil == b'%' {
+            Expr::HashVar(var.clone())
+        } else {
+            Expr::Var(var.clone())
+        };
+        let expr = Expr::MethodCall {
+            target: Box::new(var_expr),
+            name: method_name,
+            args,
+            modifier: None,
+        };
+        let stmt = Stmt::Assign {
+            name,
+            expr,
+            op: AssignOp::Assign,
+        };
+        return parse_statement_modifier(r, stmt);
     }
 
     // Simple assignment
@@ -2465,5 +2526,22 @@ mod tests {
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
         assert!(matches!(&stmts[0], Stmt::ClassDecl { name, .. } if name == "Foo"));
+    }
+
+    #[test]
+    fn parse_my_no_space() {
+        let (rest, stmts) = program("my $a=0; say $a").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 2, "stmts: {:?}", stmts);
+        if let Stmt::VarDecl { name, expr, .. } = &stmts[0] {
+            assert_eq!(name, "a");
+            assert!(
+                matches!(expr, Expr::Literal(Value::Int(0))),
+                "Expected Int(0), got {:?}",
+                expr
+            );
+        } else {
+            panic!("Expected VarDecl, got {:?}", stmts[0]);
+        }
     }
 }

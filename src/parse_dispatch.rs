@@ -42,6 +42,5 @@ fn parse_rd(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
 
 #[allow(clippy::result_large_err)]
 fn parse_nom(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
-    let stmts = parser_nom::parse_program(input)?;
-    Ok((stmts, None))
+    parser_nom::parse_program(input)
 }

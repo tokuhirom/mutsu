@@ -558,52 +558,153 @@ pub(super) fn parse_call_arg_list(input: &str) -> IResult<&str, Vec<Expr>> {
     }
 }
 
-/// Parse a `regex` / `rx` literal: rx/ ... / or / ... /
-#[allow(dead_code)]
-fn regex_literal(input: &str) -> IResult<&str, Expr> {
-    let (input, _) = alt((tag("rx/"), tag("rx!")))(input)?;
-    let delim = if !input.is_empty() && &input[..0] == "!" {
-        '!'
-    } else {
-        '/'
-    };
-    // Actually, we consumed rx/ or rx!, so the delimiter was already consumed
-    // We need to find the closing delimiter
-    let close = if delim == '!' { '!' } else { '/' };
-    // Hmm, let me redo: tag("rx/") consumes "rx/", so closing is "/"
-    // tag("rx!") consumes "rx!", so closing is "!"
-    let _ = close;
-    // Find the matching close delimiter (simple, no escaping for now)
-    // Actually the delimiter was part of the tag, so:
-    let input = if let Some(stripped) = input.strip_prefix('/') {
-        stripped
-    } else {
-        input
-    };
-    // The opening delimiter was already consumed as part of tag("rx/")
-    // so we need to scan for the closing /
-    // Wait, tag("rx/") matches "rx/" exactly, so after this, rest starts with the pattern
-    // Actually I need to reconsider. tag("rx/") means "rx" followed by "/".
-    // So after consuming, `input` is the regex body. We need to find the next unescaped /
-    let mut end = 0;
-    let bytes = input.as_bytes();
-    while end < bytes.len() {
-        if bytes[end] == b'/' {
-            break;
-        }
-        if bytes[end] == b'\\' && end + 1 < bytes.len() {
-            end += 2;
+/// Parse a regex literal: /pattern/ or rx/pattern/ or m/pattern/
+fn regex_lit(input: &str) -> IResult<&str, Expr> {
+    // rx/pattern/ or rx{pattern}
+    if let Ok((rest, _)) = tag::<&str, &str, nom::error::Error<&str>>("rx")(input) {
+        let close_delim = if rest.starts_with('/') {
+            '/'
+        } else if rest.starts_with('{') {
+            '}'
         } else {
-            end += 1;
+            return Err(nom::Err::Error(nom::error::Error::new(
+                input,
+                nom::error::ErrorKind::Tag,
+            )));
+        };
+        let r = &rest[1..];
+        let mut end = 0;
+        let bytes = r.as_bytes();
+        while end < bytes.len() {
+            if bytes[end] == close_delim as u8 {
+                break;
+            }
+            if bytes[end] == b'\\' && end + 1 < bytes.len() {
+                end += 2;
+            } else {
+                end += 1;
+            }
+        }
+        let pattern = &r[..end];
+        let rest = if end < r.len() {
+            &r[end + 1..]
+        } else {
+            &r[end..]
+        };
+        return Ok((rest, Expr::Literal(Value::Str(pattern.to_string()))));
+    }
+
+    // m/pattern/
+    if let Some(stripped) = input.strip_prefix("m/") {
+        let r = stripped;
+        let mut end = 0;
+        let bytes = r.as_bytes();
+        while end < bytes.len() {
+            if bytes[end] == b'/' {
+                break;
+            }
+            if bytes[end] == b'\\' && end + 1 < bytes.len() {
+                end += 2;
+            } else {
+                end += 1;
+            }
+        }
+        let pattern = &r[..end];
+        let rest = if end < r.len() {
+            &r[end + 1..]
+        } else {
+            &r[end..]
+        };
+        return Ok((rest, Expr::Literal(Value::Str(pattern.to_string()))));
+    }
+
+    // Bare /pattern/
+    if input.starts_with('/') && !input.starts_with("//") {
+        let r = &input[1..];
+        let mut end = 0;
+        let bytes = r.as_bytes();
+        while end < bytes.len() {
+            if bytes[end] == b'/' {
+                break;
+            }
+            if bytes[end] == b'\\' && end + 1 < bytes.len() {
+                end += 2;
+            } else {
+                end += 1;
+            }
+        }
+        if end > 0 && end < bytes.len() {
+            let pattern = &r[..end];
+            let rest = &r[end + 1..];
+            return Ok((rest, Expr::Literal(Value::Str(pattern.to_string()))));
         }
     }
-    let pattern = &input[..end];
-    let rest = if end < input.len() {
-        &input[end + 1..]
+
+    Err(nom::Err::Error(nom::error::Error::new(
+        input,
+        nom::error::ErrorKind::Tag,
+    )))
+}
+
+/// Parse a version literal: v5.26.1
+fn version_lit(input: &str) -> IResult<&str, Expr> {
+    let (rest, _) = char('v')(input)?;
+    // Must start with a digit
+    if rest.is_empty() || !rest.as_bytes()[0].is_ascii_digit() {
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Tag,
+        )));
+    }
+    let (rest, version) =
+        take_while1(|c: char| c.is_ascii_digit() || c == '.' || c == '*' || c == '+')(rest)?;
+    let full = format!("v{}", version);
+    Ok((rest, Expr::Literal(Value::Str(full))))
+}
+
+/// Parse a topicalized method call: .say, .uc, .defined, etc.
+fn topic_method_call(input: &str) -> IResult<&str, Expr> {
+    if !input.starts_with('.') || input.starts_with("..") {
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Tag,
+        )));
+    }
+    let r = &input[1..];
+    let (r, modifier) = if let Some(stripped) = r.strip_prefix('^') {
+        (stripped, Some('^'))
+    } else if let Some(stripped) = r.strip_prefix('?') {
+        (stripped, Some('?'))
     } else {
-        &input[end..]
+        (r, None)
     };
-    Ok((rest, Expr::Literal(Value::Str(pattern.to_string()))))
+    let (rest, name) = take_while1(|c: char| c.is_alphanumeric() || c == '_' || c == '-')(r)?;
+    let name = name.to_string();
+    if rest.starts_with('(') {
+        let (rest, _) = char('(')(rest)?;
+        let (rest, _) = ws(rest)?;
+        let (rest, args) = parse_call_arg_list(rest)?;
+        let (rest, _) = ws(rest)?;
+        let (rest, _) = char(')')(rest)?;
+        return Ok((
+            rest,
+            Expr::MethodCall {
+                target: Box::new(Expr::Var("_".to_string())),
+                name,
+                args,
+                modifier,
+            },
+        ));
+    }
+    Ok((
+        rest,
+        Expr::MethodCall {
+            target: Box::new(Expr::Var("_".to_string())),
+            name,
+            args: Vec::new(),
+            modifier,
+        },
+    ))
 }
 
 /// Parse a primary expression (atomic value).
@@ -613,7 +714,10 @@ pub(super) fn primary(input: &str) -> IResult<&str, Expr> {
         integer,
         single_quoted_string,
         double_quoted_string,
+        regex_lit,
+        version_lit,
         keyword_literal,
+        topic_method_call,
         scalar_var,
         array_var,
         hash_var,

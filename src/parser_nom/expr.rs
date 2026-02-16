@@ -586,13 +586,14 @@ fn postfix_expr(input: &str) -> IResult<&str, Expr> {
     loop {
         // Method call: .method or .method(args) or .method: args
         // Also handles modifiers: .?method, .!method
+        // Also handles: .^method (meta-method)
         if rest.starts_with('.') && !rest.starts_with("..") {
             let r = &rest[1..];
             // Check for modifier
             let (r, modifier) = if let Some(stripped) = r.strip_prefix('?') {
                 (stripped, Some('?'))
-            } else if let Some(stripped) = r.strip_prefix('!') {
-                (stripped, Some('!'))
+            } else if let Some(stripped) = r.strip_prefix('^') {
+                (stripped, Some('^'))
             } else {
                 (r, None)
             };
