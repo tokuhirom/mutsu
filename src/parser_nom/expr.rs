@@ -1059,33 +1059,28 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
                 if r2.starts_with(':') && !r2.starts_with("::") {
                     let r3 = &r2[1..];
                     let (r3, _) = ws(r3)?;
-                    // Parse the arguments after colon
-                    if let Ok((r3, first_arg)) = expression(r3) {
-                        let mut args = vec![first_arg];
-                        let mut r_inner = r3;
-                        loop {
-                            let (r4, _) = ws(r_inner)?;
-                            if !r4.starts_with(',') {
-                                break;
-                            }
-                            let r4 = &r4[1..];
-                            let (r4, _) = ws(r4)?;
-                            if let Ok((r4, next)) = expression(r4) {
-                                args.push(next);
-                                r_inner = r4;
-                            } else {
-                                break;
-                            }
+                    let (r3, first_arg) = expression(r3)?;
+                    let mut args = vec![first_arg];
+                    let mut r_inner = r3;
+                    loop {
+                        let (r4, _) = ws(r_inner)?;
+                        if !r4.starts_with(',') {
+                            break;
                         }
-                        expr = Expr::MethodCall {
-                            target: Box::new(expr),
-                            name,
-                            args,
-                            modifier,
-                        };
-                        rest = r_inner;
-                        continue;
+                        let r4 = &r4[1..];
+                        let (r4, _) = ws(r4)?;
+                        let (r4, next) = expression(r4)?;
+                        args.push(next);
+                        r_inner = r4;
                     }
+                    expr = Expr::MethodCall {
+                        target: Box::new(expr),
+                        name,
+                        args,
+                        modifier,
+                    };
+                    rest = r_inner;
+                    continue;
                 }
                 // No-arg method call
                 expr = Expr::MethodCall {
@@ -1097,6 +1092,7 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
                 rest = r;
                 continue;
             }
+            return Err(PError::expected_at("method name", r));
         }
 
         // CallOn: $var(args) — invoke a callable stored in a variable
@@ -1359,5 +1355,17 @@ mod tests {
         let (rest2, expr2) = expression("1 + 2").unwrap();
         assert_eq!(rest2, "");
         assert!(matches!(expr2, Expr::Binary { .. }));
+    }
+
+    #[test]
+    fn parse_postfix_method_requires_name() {
+        let err = expression("$x.").unwrap_err();
+        assert!(err.message.contains("method name"));
+    }
+
+    #[test]
+    fn parse_postfix_colon_args_require_expression() {
+        let err = expression("$x.foo:").unwrap_err();
+        assert!(err.message.contains("expected"));
     }
 }
