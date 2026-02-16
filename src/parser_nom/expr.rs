@@ -1138,22 +1138,24 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
             && !rest.starts_with("<=>")
         {
             let r = &rest[1..];
-            if let Some(end) = r.find('>') {
-                let key = &r[..end];
-                if !key.is_empty()
-                    && key
-                        .chars()
-                        .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
-                {
-                    let r = &r[end + 1..];
-                    expr = Expr::Index {
-                        target: Box::new(expr),
-                        index: Box::new(Expr::Literal(Value::Str(key.to_string()))),
-                    };
-                    rest = r;
-                    continue;
-                }
+            let Some(end) = r.find('>') else {
+                return Err(PError::expected_at("closing '>'", r));
+            };
+            let key = &r[..end];
+            if key.is_empty()
+                || !key
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+            {
+                return Err(PError::expected_at("angle index key", r));
             }
+            let r = &r[end + 1..];
+            expr = Expr::Index {
+                target: Box::new(expr),
+                index: Box::new(Expr::Literal(Value::Str(key.to_string()))),
+            };
+            rest = r;
+            continue;
         }
 
         // Hash indexing with braces: %hash{"key"}, %hash{$var}, @a[0]{"key"}, etc.
@@ -1367,5 +1369,17 @@ mod tests {
     fn parse_postfix_colon_args_require_expression() {
         let err = expression("$x.foo:").unwrap_err();
         assert!(err.message.contains("expected"));
+    }
+
+    #[test]
+    fn parse_postfix_angle_index_requires_closing() {
+        let err = expression("$x<foo").unwrap_err();
+        assert!(err.message.contains("closing '>'"));
+    }
+
+    #[test]
+    fn parse_postfix_angle_index_requires_key() {
+        let err = expression("$x<>").unwrap_err();
+        assert!(err.message.contains("angle index key"));
     }
 }
