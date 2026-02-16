@@ -304,7 +304,10 @@ fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
             let (r, _) = parse_char(r, ')')?;
             return Ok((r, args));
         }
-        let (r, first_arg) = parse_single_call_arg(r)?;
+        let (r, first_arg) = parse_single_call_arg(r).map_err(|err| PError {
+            message: merge_expected_messages("expected first call argument", &err.message),
+            remaining_len: err.remaining_len.or(Some(r.len())),
+        })?;
         args.push(first_arg);
         let mut r = r;
         loop {
@@ -316,7 +319,13 @@ fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
                 if r2.starts_with(',') {
                     let (r2, _) = parse_char(r2, ',')?;
                     let (r2, _) = ws(r2)?;
-                    let (r2, more) = parse_remaining_call_args(r2)?;
+                    let (r2, more) = parse_remaining_call_args(r2).map_err(|err| PError {
+                        message: merge_expected_messages(
+                            "expected call arguments after closing paren",
+                            &err.message,
+                        ),
+                        remaining_len: err.remaining_len.or(Some(r2.len())),
+                    })?;
                     args.extend(more);
                     return Ok((r2, args));
                 }
@@ -332,7 +341,10 @@ fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
                 let (r2, _) = parse_char(r2, ')')?;
                 return Ok((r2, args));
             }
-            let (r2, arg) = parse_single_call_arg(r2)?;
+            let (r2, arg) = parse_single_call_arg(r2).map_err(|err| PError {
+                message: merge_expected_messages("expected call argument after ','", &err.message),
+                remaining_len: err.remaining_len.or(Some(r2.len())),
+            })?;
             args.push(arg);
             r = r2;
         }
@@ -361,7 +373,10 @@ fn parse_stmt_call_args_no_paren(input: &str) -> PResult<'_, Vec<CallArg>> {
 /// Parse remaining comma-separated call args.
 fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
     let mut args = Vec::new();
-    let (mut rest, first) = parse_single_call_arg(input)?;
+    let (mut rest, first) = parse_single_call_arg(input).map_err(|err| PError {
+        message: merge_expected_messages("expected first call argument", &err.message),
+        remaining_len: err.remaining_len.or(Some(input.len())),
+    })?;
     args.push(first);
     loop {
         let (r, _) = ws(rest)?;
@@ -374,7 +389,10 @@ fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
         if r.starts_with(';') || r.is_empty() || r.starts_with('}') || r.starts_with(')') {
             return Ok((r, args));
         }
-        let (r, arg) = parse_single_call_arg(r)?;
+        let (r, arg) = parse_single_call_arg(r).map_err(|err| PError {
+            message: merge_expected_messages("expected call argument after ','", &err.message),
+            remaining_len: err.remaining_len.or(Some(r.len())),
+        })?;
         args.push(arg);
         rest = r;
     }
@@ -409,7 +427,13 @@ fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                 if r.starts_with('(') {
                     let (r, _) = parse_char(r, '(')?;
                     let (r, _) = ws(r)?;
-                    let (r, val) = expression(r)?;
+                    let (r, val) = expression(r).map_err(|err| PError {
+                        message: merge_expected_messages(
+                            "expected named argument value",
+                            &err.message,
+                        ),
+                        remaining_len: err.remaining_len.or(Some(r.len())),
+                    })?;
                     let (r, _) = ws(r)?;
                     let (r, _) = parse_char(r, ')')?;
                     return Ok((
@@ -426,7 +450,13 @@ fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                     let (r, _) = ws(r)?;
                     let mut items = Vec::new();
                     if !r.starts_with(']') {
-                        let (r2, first) = expression(r)?;
+                        let (r2, first) = expression(r).map_err(|err| PError {
+                            message: merge_expected_messages(
+                                "expected first list item in named argument",
+                                &err.message,
+                            ),
+                            remaining_len: err.remaining_len.or(Some(r.len())),
+                        })?;
                         items.push(first);
                         let mut r = r2;
                         loop {
@@ -443,7 +473,13 @@ fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                             }
                             let (r2, _) = parse_char(r2, ',')?;
                             let (r2, _) = ws(r2)?;
-                            let (r2, next) = expression(r2)?;
+                            let (r2, next) = expression(r2).map_err(|err| PError {
+                                message: merge_expected_messages(
+                                    "expected list item after ',' in named argument",
+                                    &err.message,
+                                ),
+                                remaining_len: err.remaining_len.or(Some(r2.len())),
+                            })?;
                             items.push(next);
                             r = r2;
                         }
@@ -469,7 +505,10 @@ fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
         let (r2, _) = ws(r)?;
         if let Some(stripped) = r2.strip_prefix("=>") {
             let (r2, _) = ws(stripped)?;
-            let (r2, val) = expression(r2)?;
+            let (r2, val) = expression(r2).map_err(|err| PError {
+                message: merge_expected_messages("expected fat-arrow argument value", &err.message),
+                remaining_len: err.remaining_len.or(Some(r2.len())),
+            })?;
             return Ok((
                 r2,
                 CallArg::Named {
@@ -481,7 +520,10 @@ fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
     }
 
     // Positional argument
-    let (rest, expr) = expression(input)?;
+    let (rest, expr) = expression(input).map_err(|err| PError {
+        message: merge_expected_messages("expected positional argument expression", &err.message),
+        remaining_len: err.remaining_len.or(Some(input.len())),
+    })?;
     Ok((rest, CallArg::Positional(expr)))
 }
 
@@ -2917,5 +2959,17 @@ mod tests {
     fn known_call_stmt_reports_argument_parse_context() {
         let err = known_call_stmt("ok ,").unwrap_err();
         assert!(err.message.contains("known call arguments"));
+    }
+
+    #[test]
+    fn known_call_stmt_reports_missing_comma_argument() {
+        let err = known_call_stmt("ok(,)").unwrap_err();
+        assert!(err.message.contains("known call arguments"));
+    }
+
+    #[test]
+    fn known_call_stmt_reports_missing_named_argument_value() {
+        let err = known_call_stmt("ok :foo()").unwrap_err();
+        assert!(err.message.contains("named argument value"));
     }
 }
