@@ -216,6 +216,44 @@ impl PostfixUpdateOp {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LogicalOp {
+    Or,        // or (word)
+    And,       // and (word)
+    OrOr,      // ||
+    AndAnd,    // &&
+    DefinedOr, // //
+}
+
+impl LogicalOp {
+    fn token_kind(self) -> TokenKind {
+        match self {
+            LogicalOp::Or => TokenKind::OrWord,
+            LogicalOp::And => TokenKind::AndAnd,
+            LogicalOp::OrOr => TokenKind::OrOr,
+            LogicalOp::AndAnd => TokenKind::AndAnd,
+            LogicalOp::DefinedOr => TokenKind::SlashSlash,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JunctiveOp {
+    Or,  // ?|
+    And, // ?&
+    Xor, // ?^
+}
+
+impl JunctiveOp {
+    fn token_kind(self) -> TokenKind {
+        match self {
+            JunctiveOp::Or => TokenKind::Ident("?|".to_string()),
+            JunctiveOp::And => TokenKind::Ident("?&".to_string()),
+            JunctiveOp::Xor => TokenKind::Ident("?^".to_string()),
+        }
+    }
+}
+
 fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize)> {
     if input.starts_with('!')
         && !input.starts_with("!!")
@@ -271,6 +309,46 @@ fn parse_postfix_update_op(input: &str) -> Option<(PostfixUpdateOp, usize)> {
         Some((PostfixUpdateOp::Inc, 2))
     } else if input.starts_with("--") {
         Some((PostfixUpdateOp::Dec, 2))
+    } else {
+        None
+    }
+}
+
+fn parse_junctive_op(input: &str) -> Option<(JunctiveOp, usize)> {
+    if input.starts_with("?|") {
+        Some((JunctiveOp::Or, 2))
+    } else if input.starts_with("?&") {
+        Some((JunctiveOp::And, 2))
+    } else if input.starts_with("?^") {
+        Some((JunctiveOp::Xor, 2))
+    } else {
+        None
+    }
+}
+
+fn parse_or_or_op(input: &str) -> Option<(LogicalOp, usize)> {
+    if input.starts_with("||") {
+        Some((LogicalOp::OrOr, 2))
+    } else if input.starts_with("//") && !input.starts_with("///") {
+        Some((LogicalOp::DefinedOr, 2))
+    } else {
+        None
+    }
+}
+
+fn parse_and_and_op(input: &str) -> Option<(LogicalOp, usize)> {
+    if input.starts_with("&&") {
+        Some((LogicalOp::AndAnd, 2))
+    } else {
+        None
+    }
+}
+
+fn parse_word_logical_op(input: &str) -> Option<(LogicalOp, usize)> {
+    if input.starts_with("or") && !is_ident_char(input.as_bytes().get(2).copied()) {
+        Some((LogicalOp::Or, 2))
+    } else if input.starts_with("and") && !is_ident_char(input.as_bytes().get(3).copied()) {
+        Some((LogicalOp::And, 3))
     } else {
         None
     }
@@ -367,14 +445,13 @@ fn or_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = and_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
-        // `or`
-        if r.starts_with("or") && !is_ident_char(r.as_bytes().get(2).copied()) {
-            let r = &r[2..];
+        if let Some((op @ LogicalOp::Or, len)) = parse_word_logical_op(r) {
+            let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = and_expr(r)?;
             left = Expr::Binary {
                 left: Box::new(left),
-                op: TokenKind::OrWord,
+                op: op.token_kind(),
                 right: Box::new(right),
             };
             rest = r;
@@ -389,13 +466,13 @@ fn and_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = not_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
-        if r.starts_with("and") && !is_ident_char(r.as_bytes().get(3).copied()) {
-            let r = &r[3..];
+        if let Some((op @ LogicalOp::And, len)) = parse_word_logical_op(r) {
+            let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = not_expr(r)?;
             left = Expr::Binary {
                 left: Box::new(left),
-                op: TokenKind::AndAnd,
+                op: op.token_kind(),
                 right: Box::new(right),
             };
             rest = r;
@@ -434,24 +511,13 @@ fn or_or_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = and_and_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
-        if let Some(stripped) = r.strip_prefix("||") {
-            let (r, _) = ws(stripped)?;
-            let (r, right) = and_and_expr(r)?;
-            left = Expr::Binary {
-                left: Box::new(left),
-                op: TokenKind::OrOr,
-                right: Box::new(right),
-            };
-            rest = r;
-            continue;
-        }
-        if r.starts_with("//") && !r.starts_with("///") {
-            let r = &r[2..];
+        if let Some((op, len)) = parse_or_or_op(r) {
+            let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = and_and_expr(r)?;
             left = Expr::Binary {
                 left: Box::new(left),
-                op: TokenKind::SlashSlash,
+                op: op.token_kind(),
                 right: Box::new(right),
             };
             rest = r;
@@ -467,12 +533,13 @@ fn and_and_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = junctive_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
-        if let Some(stripped) = r.strip_prefix("&&") {
-            let (r, _) = ws(stripped)?;
+        if let Some((op, len)) = parse_and_and_op(r) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
             let (r, right) = junctive_expr(r)?;
             left = Expr::Binary {
                 left: Box::new(left),
-                op: TokenKind::AndAnd,
+                op: op.token_kind(),
                 right: Box::new(right),
             };
             rest = r;
@@ -488,22 +555,13 @@ fn junctive_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = comparison_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
-        let (op, len) = if r.starts_with("?|") {
-            (Some(TokenKind::Ident("?|".to_string())), 2)
-        } else if r.starts_with("?&") {
-            (Some(TokenKind::Ident("?&".to_string())), 2)
-        } else if r.starts_with("?^") {
-            (Some(TokenKind::Ident("?^".to_string())), 2)
-        } else {
-            (None, 0)
-        };
-        if let Some(op) = op {
+        if let Some((op, len)) = parse_junctive_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = comparison_expr(r)?;
             left = Expr::Binary {
                 left: Box::new(left),
-                op,
+                op: op.token_kind(),
                 right: Box::new(right),
             };
             rest = r;
@@ -1069,5 +1127,110 @@ mod tests {
         let (rest, expr) = expression("$x ?? 1 !! 2").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::Ternary { .. }));
+    }
+
+    #[test]
+    fn parse_junctive_op_all() {
+        assert_eq!(parse_junctive_op("?|"), Some((JunctiveOp::Or, 2)));
+        assert_eq!(parse_junctive_op("?&"), Some((JunctiveOp::And, 2)));
+        assert_eq!(parse_junctive_op("?^"), Some((JunctiveOp::Xor, 2)));
+        assert_eq!(parse_junctive_op("?"), None);
+        assert_eq!(parse_junctive_op("??"), None);
+    }
+
+    #[test]
+    fn parse_or_or_op_all() {
+        assert_eq!(parse_or_or_op("||"), Some((LogicalOp::OrOr, 2)));
+        assert_eq!(parse_or_or_op("//"), Some((LogicalOp::DefinedOr, 2)));
+        assert_eq!(parse_or_or_op("///"), None);
+        assert_eq!(parse_or_or_op("|"), None);
+    }
+
+    #[test]
+    fn parse_and_and_op_all() {
+        assert_eq!(parse_and_and_op("&&"), Some((LogicalOp::AndAnd, 2)));
+        assert_eq!(parse_and_and_op("&"), None);
+    }
+
+    #[test]
+    fn parse_word_logical_op_all() {
+        assert_eq!(parse_word_logical_op("or "), Some((LogicalOp::Or, 2)));
+        assert_eq!(parse_word_logical_op("and "), Some((LogicalOp::And, 3)));
+        assert_eq!(parse_word_logical_op("or_foo"), None);
+        assert_eq!(parse_word_logical_op("and_bar"), None);
+        assert_eq!(parse_word_logical_op("oracle"), None);
+    }
+
+    #[test]
+    fn parse_logical_operators_in_expr() {
+        // Test word forms
+        let (rest, expr) = expression("1 or 2").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Binary {
+                op: TokenKind::OrWord,
+                ..
+            }
+        ));
+
+        let (rest, expr) = expression("1 and 2").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Binary {
+                op: TokenKind::AndAnd,
+                ..
+            }
+        ));
+
+        // Test symbolic forms
+        let (rest, expr) = expression("1 || 2").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Binary {
+                op: TokenKind::OrOr,
+                ..
+            }
+        ));
+
+        let (rest, expr) = expression("1 && 2").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Binary {
+                op: TokenKind::AndAnd,
+                ..
+            }
+        ));
+
+        let (rest, expr) = expression("1 // 2").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Binary {
+                op: TokenKind::SlashSlash,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parse_junctive_operators_in_expr() {
+        let inputs = [("1 ?| 2", "?|"), ("1 ?& 2", "?&"), ("1 ?^ 2", "?^")];
+
+        for (input, expected_op) in inputs {
+            let (rest, expr) = expression(input).unwrap();
+            assert_eq!(rest, "");
+            if let Expr::Binary { op, .. } = expr {
+                match op {
+                    TokenKind::Ident(s) => assert_eq!(s, expected_op),
+                    _ => panic!("Expected Ident token for {}", expected_op),
+                }
+            } else {
+                panic!("Expected Binary expression");
+            }
+        }
     }
 }
