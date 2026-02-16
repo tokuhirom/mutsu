@@ -1,10 +1,53 @@
 use super::parse_result::{PError, PResult, parse_char, parse_tag, take_while_opt, take_while1};
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 use crate::ast::Expr;
 use crate::value::Value;
 
 use super::expr::expression;
 use super::helpers::ws;
+
+#[derive(Debug, Clone)]
+enum PrimaryMemoEntry {
+    Ok { consumed: usize, expr: Box<Expr> },
+    Err(PError),
+}
+
+thread_local! {
+    static PRIMARY_MEMO: RefCell<HashMap<(usize, usize), PrimaryMemoEntry>> = RefCell::new(HashMap::new());
+}
+
+fn primary_memo_key(input: &str) -> (usize, usize) {
+    (input.as_ptr() as usize, input.len())
+}
+
+fn primary_memo_get(input: &str) -> Option<PResult<'_, Expr>> {
+    let key = primary_memo_key(input);
+    let entry = PRIMARY_MEMO.with(|memo| memo.borrow().get(&key).cloned())?;
+    Some(match entry {
+        PrimaryMemoEntry::Ok { consumed, expr } => Ok((&input[consumed..], *expr)),
+        PrimaryMemoEntry::Err(err) => Err(err),
+    })
+}
+
+fn primary_memo_store(input: &str, result: &PResult<'_, Expr>) {
+    let key = primary_memo_key(input);
+    let entry = match result {
+        Ok((rest, expr)) => PrimaryMemoEntry::Ok {
+            consumed: input.len().saturating_sub(rest.len()),
+            expr: Box::new(expr.clone()),
+        },
+        Err(err) => PrimaryMemoEntry::Err(err.clone()),
+    };
+    PRIMARY_MEMO.with(|memo| {
+        memo.borrow_mut().insert(key, entry);
+    });
+}
+
+pub(super) fn reset_primary_memo() {
+    PRIMARY_MEMO.with(|memo| memo.borrow_mut().clear());
+}
 
 /// Parse an integer literal (including underscore separators).
 fn integer(input: &str) -> PResult<'_, Expr> {
@@ -1243,67 +1286,74 @@ fn reduction_op(input: &str) -> PResult<'_, Expr> {
 }
 
 pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
-    if let Ok(r) = decimal(input) {
-        return Ok(r);
+    if let Some(cached) = primary_memo_get(input) {
+        return cached;
     }
-    if let Ok(r) = integer(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = single_quoted_string(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = double_quoted_string(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = q_string(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = regex_lit(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = version_lit(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = keyword_literal(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = topic_method_call(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = scalar_var(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = array_var(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = hash_var(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = code_var(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = paren_expr(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = reduction_op(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = array_literal(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = angle_list(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = whatever(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = arrow_lambda(input) {
-        return Ok(r);
-    }
-    if let Ok(r) = block_or_hash_expr(input) {
-        return Ok(r);
-    }
-    identifier_or_call(input)
+    let result = (|| {
+        if let Ok(r) = decimal(input) {
+            return Ok(r);
+        }
+        if let Ok(r) = integer(input) {
+            return Ok(r);
+        }
+        if let Ok(r) = single_quoted_string(input) {
+            return Ok(r);
+        }
+        if let Ok(r) = double_quoted_string(input) {
+            return Ok(r);
+        }
+        if let Ok(r) = q_string(input) {
+            return Ok(r);
+        }
+        if let Ok(r) = regex_lit(input) {
+            return Ok(r);
+        }
+        if let Ok(r) = version_lit(input) {
+            return Ok(r);
+        }
+        if let Ok(r) = keyword_literal(input) {
+            return Ok(r);
+        }
+        if let Ok(r) = topic_method_call(input) {
+            return Ok(r);
+        }
+        if let Ok(r) = scalar_var(input) {
+            return Ok(r);
+        }
+        if let Ok(r) = array_var(input) {
+            return Ok(r);
+        }
+        if let Ok(r) = hash_var(input) {
+            return Ok(r);
+        }
+        if let Ok(r) = code_var(input) {
+            return Ok(r);
+        }
+        if let Ok(r) = paren_expr(input) {
+            return Ok(r);
+        }
+        if let Ok(r) = reduction_op(input) {
+            return Ok(r);
+        }
+        if let Ok(r) = array_literal(input) {
+            return Ok(r);
+        }
+        if let Ok(r) = angle_list(input) {
+            return Ok(r);
+        }
+        if let Ok(r) = whatever(input) {
+            return Ok(r);
+        }
+        if let Ok(r) = arrow_lambda(input) {
+            return Ok(r);
+        }
+        if let Ok(r) = block_or_hash_expr(input) {
+            return Ok(r);
+        }
+        identifier_or_call(input)
+    })();
+    primary_memo_store(input, &result);
+    result
 }
 
 /// Parse `-> $param { body }` or `-> $a, $b { body }` arrow lambda.
@@ -1487,5 +1537,16 @@ mod tests {
         let (rest, expr) = primary("\"hello $x world\"").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::StringInterpolation(_)));
+    }
+
+    #[test]
+    fn primary_memo_reuses_result() {
+        reset_primary_memo();
+        let (rest, expr) = primary("42").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Literal(Value::Int(42))));
+        let (rest2, expr2) = primary("42").unwrap();
+        assert_eq!(rest2, "");
+        assert!(matches!(expr2, Expr::Literal(Value::Int(42))));
     }
 }
