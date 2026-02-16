@@ -76,10 +76,15 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 let near_offset = consumed + leading_ws_bytes(rest);
                 let (line_num, col_num) = line_col_at_offset(source, near_offset);
                 let context: String = rest_trimmed.chars().take(60).collect();
-                Err(RuntimeError::new(format!(
-                    "[PARSE_UNPARSED] parse error: unparsed input at line {}, column {}: {:?}",
-                    line_num, col_num, context
-                )))
+                Err(RuntimeError::with_location(
+                    format!(
+                        "parse error: unparsed input at line {}, column {}: {:?}",
+                        line_num, col_num, context
+                    ),
+                    "PARSE_UNPARSED",
+                    line_num,
+                    col_num,
+                ))
             } else {
                 Ok((stmts, finish_content))
             }
@@ -90,21 +95,30 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 let near_offset = consumed + leading_ws_bytes(tail);
                 let (line_num, col_num) = line_col_at_offset(source, near_offset);
                 if let Some(context) = near_snippet(tail, 60) {
-                    Err(RuntimeError::new(format!(
-                        "[PARSE_EXPECTED] parse error at line {}, column {}: {} — near: {:?}",
-                        line_num, col_num, e, context
-                    )))
+                    Err(RuntimeError::with_location(
+                        format!(
+                            "parse error at line {}, column {}: {} — near: {:?}",
+                            line_num, col_num, e, context
+                        ),
+                        "PARSE_EXPECTED",
+                        line_num,
+                        col_num,
+                    ))
                 } else {
-                    Err(RuntimeError::new(format!(
-                        "[PARSE_EXPECTED] parse error at line {}, column {}: {}",
-                        line_num, col_num, e
-                    )))
+                    Err(RuntimeError::with_location(
+                        format!(
+                            "parse error at line {}, column {}: {}",
+                            line_num, col_num, e
+                        ),
+                        "PARSE_EXPECTED",
+                        line_num,
+                        col_num,
+                    ))
                 }
             } else {
-                Err(RuntimeError::new(format!(
-                    "[PARSE_GENERIC] parse error: {}",
-                    e
-                )))
+                let mut err = RuntimeError::new(format!("parse error: {}", e));
+                err.code = Some("PARSE_GENERIC".to_string());
+                Err(err)
             }
         }
     };
@@ -140,7 +154,9 @@ mod tests {
         let err = parse_program("}").unwrap_err();
         assert!(err.message.contains("line 1, column 1"));
         assert!(err.message.contains("unparsed input"));
-        assert!(err.message.contains("[PARSE_UNPARSED]"));
+        assert_eq!(err.code.as_deref(), Some("PARSE_UNPARSED"));
+        assert_eq!(err.line, Some(1));
+        assert_eq!(err.column, Some(1));
     }
 
     #[test]
@@ -149,7 +165,8 @@ mod tests {
         assert!(err.message.contains("line 2"));
         assert!(err.message.contains("column"));
         assert!(err.message.contains("parse error"));
-        assert!(err.message.contains("[PARSE_EXPECTED]"));
+        assert_eq!(err.code.as_deref(), Some("PARSE_EXPECTED"));
+        assert_eq!(err.line, Some(2));
     }
 
     #[test]
