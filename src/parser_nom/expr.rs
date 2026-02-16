@@ -62,6 +62,220 @@ impl ComparisonOp {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConcatOp {
+    Concat,
+    Repeat,
+}
+
+impl ConcatOp {
+    fn token_kind(self) -> TokenKind {
+        match self {
+            ConcatOp::Concat => TokenKind::Tilde,
+            ConcatOp::Repeat => TokenKind::Ident("x".to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AdditiveOp {
+    Add,
+    Sub,
+}
+
+impl AdditiveOp {
+    fn token_kind(self) -> TokenKind {
+        match self {
+            AdditiveOp::Add => TokenKind::Plus,
+            AdditiveOp::Sub => TokenKind::Minus,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MultiplicativeOp {
+    Mul,
+    Div,
+    Mod,
+    DivisibleBy,
+    IntDiv,
+    IntMod,
+    Gcd,
+    Lcm,
+}
+
+impl MultiplicativeOp {
+    fn token_kind(self) -> TokenKind {
+        match self {
+            MultiplicativeOp::Mul => TokenKind::Star,
+            MultiplicativeOp::Div => TokenKind::Slash,
+            MultiplicativeOp::Mod => TokenKind::Percent,
+            MultiplicativeOp::DivisibleBy => TokenKind::PercentPercent,
+            MultiplicativeOp::IntDiv => TokenKind::Ident("div".to_string()),
+            MultiplicativeOp::IntMod => TokenKind::Ident("mod".to_string()),
+            MultiplicativeOp::Gcd => TokenKind::Ident("gcd".to_string()),
+            MultiplicativeOp::Lcm => TokenKind::Ident("lcm".to_string()),
+        }
+    }
+}
+
+fn parse_concat_op(r: &str) -> Option<(ConcatOp, usize)> {
+    if r.starts_with('~') && !r.starts_with("~~") && !r.starts_with("~=") {
+        Some((ConcatOp::Concat, 1))
+    } else if r.starts_with('x') && !is_ident_char(r.as_bytes().get(1).copied()) {
+        Some((ConcatOp::Repeat, 1))
+    } else {
+        None
+    }
+}
+
+fn parse_additive_op(r: &str) -> Option<(AdditiveOp, usize)> {
+    if r.starts_with('+') && !r.starts_with("++") && !r.starts_with("+=") {
+        Some((AdditiveOp::Add, 1))
+    } else if r.starts_with('-')
+        && !r.starts_with("--")
+        && !r.starts_with("-=")
+        && !r.starts_with("->")
+    {
+        Some((AdditiveOp::Sub, 1))
+    } else {
+        None
+    }
+}
+
+fn parse_multiplicative_op(r: &str) -> Option<(MultiplicativeOp, usize)> {
+    if r.starts_with('*') && !r.starts_with("**") && !r.starts_with("*=") {
+        Some((MultiplicativeOp::Mul, 1))
+    } else if r.starts_with('/') && !r.starts_with("//") {
+        Some((MultiplicativeOp::Div, 1))
+    } else if r.starts_with('%')
+        && !r.starts_with("%%")
+        && !is_ident_char(r.as_bytes().get(1).copied())
+    {
+        Some((MultiplicativeOp::Mod, 1))
+    } else if r.starts_with("%%") {
+        Some((MultiplicativeOp::DivisibleBy, 2))
+    } else if r.starts_with("div") && !is_ident_char(r.as_bytes().get(3).copied()) {
+        Some((MultiplicativeOp::IntDiv, 3))
+    } else if r.starts_with("mod") && !is_ident_char(r.as_bytes().get(3).copied()) {
+        Some((MultiplicativeOp::IntMod, 3))
+    } else if r.starts_with("gcd") && !is_ident_char(r.as_bytes().get(3).copied()) {
+        Some((MultiplicativeOp::Gcd, 3))
+    } else if r.starts_with("lcm") && !is_ident_char(r.as_bytes().get(3).copied()) {
+        Some((MultiplicativeOp::Lcm, 3))
+    } else {
+        None
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrefixUnaryOp {
+    Not,
+    Boolify,
+    PreInc,
+    PreDec,
+    Negate,
+    Positive,
+    Stringify,
+}
+
+impl PrefixUnaryOp {
+    fn token_kind(self) -> TokenKind {
+        match self {
+            PrefixUnaryOp::Not => TokenKind::Bang,
+            PrefixUnaryOp::Boolify => TokenKind::Question,
+            PrefixUnaryOp::PreInc => TokenKind::PlusPlus,
+            PrefixUnaryOp::PreDec => TokenKind::MinusMinus,
+            PrefixUnaryOp::Negate => TokenKind::Minus,
+            PrefixUnaryOp::Positive => TokenKind::Plus,
+            PrefixUnaryOp::Stringify => TokenKind::Tilde,
+        }
+    }
+
+    fn consumes_ws(self) -> bool {
+        matches!(self, PrefixUnaryOp::Not | PrefixUnaryOp::Boolify)
+    }
+
+    fn parses_postfix_target(self) -> bool {
+        matches!(self, PrefixUnaryOp::PreInc | PrefixUnaryOp::PreDec)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PostfixUpdateOp {
+    Inc,
+    Dec,
+}
+
+impl PostfixUpdateOp {
+    fn token_kind(self) -> TokenKind {
+        match self {
+            PostfixUpdateOp::Inc => TokenKind::PlusPlus,
+            PostfixUpdateOp::Dec => TokenKind::MinusMinus,
+        }
+    }
+}
+
+fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize)> {
+    if input.starts_with('!')
+        && !input.starts_with("!!")
+        && !input.starts_with("!~~")
+        && !input.starts_with("!%%")
+    {
+        Some((PrefixUnaryOp::Not, 1))
+    } else if input.starts_with('?')
+        && !input.starts_with("??")
+        && !input.starts_with("?|")
+        && !input.starts_with("?&")
+        && !input.starts_with("?^")
+    {
+        Some((PrefixUnaryOp::Boolify, 1))
+    } else if input.starts_with("so") && !is_ident_char(input.as_bytes().get(2).copied()) {
+        Some((PrefixUnaryOp::Boolify, 2))
+    } else if input.starts_with("++") {
+        Some((PrefixUnaryOp::PreInc, 2))
+    } else if input.starts_with("--") {
+        Some((PrefixUnaryOp::PreDec, 2))
+    } else if input.starts_with('-')
+        && !input.starts_with("--")
+        && !input.starts_with("->")
+        && let Some(&c) = input.as_bytes().get(1)
+        && (c == b'$' || c == b'@' || c == b'(' || c.is_ascii_digit() || c.is_ascii_alphabetic())
+    {
+        Some((PrefixUnaryOp::Negate, 1))
+    } else if input.starts_with('+')
+        && !input.starts_with("++")
+        && let Some(&c) = input.as_bytes().get(1)
+        && (c == b'$' || c == b'@' || c == b'(' || c.is_ascii_digit() || c.is_ascii_alphabetic())
+    {
+        Some((PrefixUnaryOp::Positive, 1))
+    } else if input.starts_with('~')
+        && !input.starts_with("~~")
+        && let Some(&c) = input.as_bytes().get(1)
+        && (c == b'$'
+            || c == b'@'
+            || c == b'('
+            || c == b'"'
+            || c == b'\''
+            || c.is_ascii_digit()
+            || c.is_ascii_alphabetic())
+    {
+        Some((PrefixUnaryOp::Stringify, 1))
+    } else {
+        None
+    }
+}
+
+fn parse_postfix_update_op(input: &str) -> Option<(PostfixUpdateOp, usize)> {
+    if input.starts_with("++") {
+        Some((PostfixUpdateOp::Inc, 2))
+    } else if input.starts_with("--") {
+        Some((PostfixUpdateOp::Dec, 2))
+    } else {
+        None
+    }
+}
+
 /// Parse an expression (full precedence).
 pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
     let (rest, mut expr) = ternary(input)?;
@@ -491,26 +705,13 @@ fn concat_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = additive_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
-        if r.starts_with('~') && !r.starts_with("~~") && !r.starts_with("~=") {
-            let r = &r[1..];
+        if let Some((op, len)) = parse_concat_op(r) {
+            let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = additive_expr(r)?;
             left = Expr::Binary {
                 left: Box::new(left),
-                op: TokenKind::Tilde,
-                right: Box::new(right),
-            };
-            rest = r;
-            continue;
-        }
-        // `x` (string replicate)
-        if r.starts_with('x') && !is_ident_char(r.as_bytes().get(1).copied()) {
-            let r = &r[1..];
-            let (r, _) = ws(r)?;
-            let (r, right) = additive_expr(r)?;
-            left = Expr::Binary {
-                left: Box::new(left),
-                op: TokenKind::Ident("x".to_string()),
+                op: op.token_kind(),
                 right: Box::new(right),
             };
             rest = r;
@@ -526,29 +727,13 @@ fn additive_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = multiplicative_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
-        if r.starts_with('+') && !r.starts_with("++") && !r.starts_with("+=") {
-            let r = &r[1..];
+        if let Some((op, len)) = parse_additive_op(r) {
+            let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = multiplicative_expr(r)?;
             left = Expr::Binary {
                 left: Box::new(left),
-                op: TokenKind::Plus,
-                right: Box::new(right),
-            };
-            rest = r;
-            continue;
-        }
-        if r.starts_with('-')
-            && !r.starts_with("--")
-            && !r.starts_with("-=")
-            && !r.starts_with("->")
-        {
-            let r = &r[1..];
-            let (r, _) = ws(r)?;
-            let (r, right) = multiplicative_expr(r)?;
-            left = Expr::Binary {
-                left: Box::new(left),
-                op: TokenKind::Minus,
+                op: op.token_kind(),
                 right: Box::new(right),
             };
             rest = r;
@@ -564,99 +749,13 @@ fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = power_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
-        if r.starts_with('*') && !r.starts_with("**") && !r.starts_with("*=") {
-            let r = &r[1..];
+        if let Some((op, len)) = parse_multiplicative_op(r) {
+            let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = power_expr(r)?;
             left = Expr::Binary {
                 left: Box::new(left),
-                op: TokenKind::Star,
-                right: Box::new(right),
-            };
-            rest = r;
-            continue;
-        }
-        if r.starts_with('/') && !r.starts_with("//") {
-            let r = &r[1..];
-            let (r, _) = ws(r)?;
-            let (r, right) = power_expr(r)?;
-            left = Expr::Binary {
-                left: Box::new(left),
-                op: TokenKind::Slash,
-                right: Box::new(right),
-            };
-            rest = r;
-            continue;
-        }
-        if r.starts_with('%')
-            && !r.starts_with("%%")
-            && !is_ident_char(r.as_bytes().get(1).copied())
-        {
-            let r = &r[1..];
-            let (r, _) = ws(r)?;
-            let (r, right) = power_expr(r)?;
-            left = Expr::Binary {
-                left: Box::new(left),
-                op: TokenKind::Percent,
-                right: Box::new(right),
-            };
-            rest = r;
-            continue;
-        }
-        if let Some(stripped) = r.strip_prefix("%%") {
-            let (r, _) = ws(stripped)?;
-            let (r, right) = power_expr(r)?;
-            left = Expr::Binary {
-                left: Box::new(left),
-                op: TokenKind::PercentPercent,
-                right: Box::new(right),
-            };
-            rest = r;
-            continue;
-        }
-        if r.starts_with("div") && !is_ident_char(r.as_bytes().get(3).copied()) {
-            let r = &r[3..];
-            let (r, _) = ws(r)?;
-            let (r, right) = power_expr(r)?;
-            left = Expr::Binary {
-                left: Box::new(left),
-                op: TokenKind::Ident("div".to_string()),
-                right: Box::new(right),
-            };
-            rest = r;
-            continue;
-        }
-        if r.starts_with("mod") && !is_ident_char(r.as_bytes().get(3).copied()) {
-            let r = &r[3..];
-            let (r, _) = ws(r)?;
-            let (r, right) = power_expr(r)?;
-            left = Expr::Binary {
-                left: Box::new(left),
-                op: TokenKind::Ident("mod".to_string()),
-                right: Box::new(right),
-            };
-            rest = r;
-            continue;
-        }
-        if r.starts_with("gcd") && !is_ident_char(r.as_bytes().get(3).copied()) {
-            let r = &r[3..];
-            let (r, _) = ws(r)?;
-            let (r, right) = power_expr(r)?;
-            left = Expr::Binary {
-                left: Box::new(left),
-                op: TokenKind::Ident("gcd".to_string()),
-                right: Box::new(right),
-            };
-            rest = r;
-            continue;
-        }
-        if r.starts_with("lcm") && !is_ident_char(r.as_bytes().get(3).copied()) {
-            let r = &r[3..];
-            let (r, _) = ws(r)?;
-            let (r, right) = power_expr(r)?;
-            left = Expr::Binary {
-                left: Box::new(left),
-                op: TokenKind::Ident("lcm".to_string()),
+                op: op.token_kind(),
                 right: Box::new(right),
             };
             rest = r;
@@ -688,122 +787,21 @@ fn power_expr(input: &str) -> PResult<'_, Expr> {
 
 /// Prefix unary: !, ?, +, -, ~, so, not, ++, --
 fn prefix_expr(input: &str) -> PResult<'_, Expr> {
-    if input.starts_with('!')
-        && !input.starts_with("!!")
-        && !input.starts_with("!~~")
-        && !input.starts_with("!%%")
-    {
-        let r = &input[1..];
-        let (r, _) = ws(r)?;
-        let (r, expr) = prefix_expr(r)?;
+    if let Some((op, len)) = parse_prefix_unary_op(input) {
+        let mut rest = &input[len..];
+        if op.consumes_ws() {
+            let (r, _) = ws(rest)?;
+            rest = r;
+        }
+        let (rest, expr) = if op.parses_postfix_target() {
+            postfix_expr(rest)?
+        } else {
+            prefix_expr(rest)?
+        };
         return Ok((
-            r,
+            rest,
             Expr::Unary {
-                op: TokenKind::Bang,
-                expr: Box::new(expr),
-            },
-        ));
-    }
-    if input.starts_with('?')
-        && !input.starts_with("??")
-        && !input.starts_with("?|")
-        && !input.starts_with("?&")
-        && !input.starts_with("?^")
-    {
-        let r = &input[1..];
-        let (r, _) = ws(r)?;
-        let (r, expr) = prefix_expr(r)?;
-        return Ok((
-            r,
-            Expr::Unary {
-                op: TokenKind::Question,
-                expr: Box::new(expr),
-            },
-        ));
-    }
-    if input.starts_with("so") && !is_ident_char(input.as_bytes().get(2).copied()) {
-        let r = &input[2..];
-        let (r, _) = ws(r)?;
-        let (r, expr) = prefix_expr(r)?;
-        return Ok((
-            r,
-            Expr::Unary {
-                op: TokenKind::Question,
-                expr: Box::new(expr),
-            },
-        ));
-    }
-    if let Some(stripped) = input.strip_prefix("++") {
-        let (r, expr) = postfix_expr(stripped)?;
-        return Ok((
-            r,
-            Expr::Unary {
-                op: TokenKind::PlusPlus,
-                expr: Box::new(expr),
-            },
-        ));
-    }
-    if let Some(stripped) = input.strip_prefix("--") {
-        let (r, expr) = postfix_expr(stripped)?;
-        return Ok((
-            r,
-            Expr::Unary {
-                op: TokenKind::MinusMinus,
-                expr: Box::new(expr),
-            },
-        ));
-    }
-    // Unary minus: only if followed by non-space primary (e.g., -42, -$x, -Inf)
-    if input.starts_with('-')
-        && !input.starts_with("--")
-        && !input.starts_with("->")
-        && let Some(&c) = input.as_bytes().get(1)
-        && (c == b'$' || c == b'@' || c == b'(' || c.is_ascii_digit() || c.is_ascii_alphabetic())
-    {
-        let r = &input[1..];
-        let (r, expr) = prefix_expr(r)?;
-        return Ok((
-            r,
-            Expr::Unary {
-                op: TokenKind::Minus,
-                expr: Box::new(expr),
-            },
-        ));
-    }
-    // Unary + (numeric coercion)
-    if input.starts_with('+')
-        && !input.starts_with("++")
-        && let Some(&c) = input.as_bytes().get(1)
-        && (c == b'$' || c == b'@' || c == b'(' || c.is_ascii_digit() || c.is_ascii_alphabetic())
-    {
-        let r = &input[1..];
-        let (r, expr) = prefix_expr(r)?;
-        return Ok((
-            r,
-            Expr::Unary {
-                op: TokenKind::Plus,
-                expr: Box::new(expr),
-            },
-        ));
-    }
-    // Unary ~ (string coercion)
-    if input.starts_with('~')
-        && !input.starts_with("~~")
-        && let Some(&c) = input.as_bytes().get(1)
-        && (c == b'$'
-            || c == b'@'
-            || c == b'('
-            || c == b'"'
-            || c == b'\''
-            || c.is_ascii_digit()
-            || c.is_ascii_alphabetic())
-    {
-        let r = &input[1..];
-        let (r, expr) = prefix_expr(r)?;
-        return Ok((
-            r,
-            Expr::Unary {
-                op: TokenKind::Tilde,
+                op: op.token_kind(),
                 expr: Box::new(expr),
             },
         ));
@@ -1006,18 +1004,10 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
         }
 
         // Postfix ++ and --
-        if let Some(stripped) = rest.strip_prefix("++") {
-            rest = stripped;
+        if let Some((op, len)) = parse_postfix_update_op(rest) {
+            rest = &rest[len..];
             expr = Expr::PostfixOp {
-                op: TokenKind::PlusPlus,
-                expr: Box::new(expr),
-            };
-            continue;
-        }
-        if let Some(stripped) = rest.strip_prefix("--") {
-            rest = stripped;
-            expr = Expr::PostfixOp {
-                op: TokenKind::MinusMinus,
+                op: op.token_kind(),
                 expr: Box::new(expr),
             };
             continue;

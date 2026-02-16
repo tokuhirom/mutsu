@@ -2,6 +2,8 @@
 
 This document summarizes the current hand-written parser so contributors (and AI agents) can make focused changes without re-reading the entire implementation.
 
+For ongoing refactoring policy and roadmap, see `docs/parser-improvement-plan.md`.
+
 ## Scope and entry points
 
 - Runtime entry: `src/parse_dispatch.rs` -> `parse_source()`
