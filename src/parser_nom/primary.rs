@@ -670,9 +670,28 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 return Ok((r, Expr::DoBlock { body, label: None }));
             }
             // do if/unless/given/for/while — wrap the control flow statement
-            if let Ok((r, stmt)) = super::stmt::statement_pub(r) {
-                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            {
+                let is_ctrl = |s: &str| {
+                    for kw in &["if", "unless", "given", "for", "while", "until"] {
+                        if s.starts_with(kw)
+                            && !s.as_bytes().get(kw.len()).is_some_and(|&c| {
+                                c.is_ascii_alphanumeric() || c == b'_' || c == b'-'
+                            })
+                        {
+                            return true;
+                        }
+                    }
+                    false
+                };
+                if is_ctrl(r)
+                    && let Ok((r, stmt)) = super::stmt::statement_pub(r)
+                {
+                    return Ok((r, Expr::DoStmt(Box::new(stmt))));
+                }
             }
+            // do EXPR — just evaluate the expression
+            let (r, expr) = expression(r)?;
+            return Ok((r, expr));
         }
         "sub" => {
             let (r, _) = ws(rest)?;
@@ -734,6 +753,33 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     },
                 ));
             }
+        }
+        "last" => {
+            return Ok((
+                rest,
+                Expr::ControlFlow {
+                    kind: crate::ast::ControlFlowKind::Last,
+                    label: None,
+                },
+            ));
+        }
+        "next" => {
+            return Ok((
+                rest,
+                Expr::ControlFlow {
+                    kind: crate::ast::ControlFlowKind::Next,
+                    label: None,
+                },
+            ));
+        }
+        "redo" => {
+            return Ok((
+                rest,
+                Expr::ControlFlow {
+                    kind: crate::ast::ControlFlowKind::Redo,
+                    label: None,
+                },
+            ));
         }
         _ => {}
     }
@@ -1156,10 +1202,48 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
     if let Ok(r) = whatever(input) {
         return Ok(r);
     }
+    if let Ok(r) = arrow_lambda(input) {
+        return Ok(r);
+    }
     if let Ok(r) = block_or_hash_expr(input) {
         return Ok(r);
     }
     identifier_or_call(input)
+}
+
+/// Parse `-> $param { body }` or `-> $a, $b { body }` arrow lambda.
+fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
+    if !input.starts_with("->") {
+        return Err(PError::expected("arrow lambda"));
+    }
+    let r = &input[2..];
+    let (r, _) = ws(r)?;
+    // Parse params
+    let (r, first) = super::stmt::parse_pointy_param_pub(r)?;
+    let (r, _) = ws(r)?;
+    if r.starts_with(',') {
+        // Multi-param: -> $a, $b { body }
+        let mut params = vec![first];
+        let mut r = r;
+        loop {
+            let (r2, _) = parse_char(r, ',')?;
+            let (r2, _) = ws(r2)?;
+            let (r2, next) = super::stmt::parse_pointy_param_pub(r2)?;
+            params.push(next);
+            let (r2, _) = ws(r2)?;
+            if !r2.starts_with(',') {
+                r = r2;
+                break;
+            }
+            r = r2;
+        }
+        let (r, body) = parse_block_body(r)?;
+        Ok((r, Expr::AnonSubParams { params, body }))
+    } else {
+        // Single param: -> $n { body }
+        let (r, body) = parse_block_body(r)?;
+        Ok((r, Expr::Lambda { param: first, body }))
+    }
 }
 
 /// Parse a block `{ stmts }` as AnonSub or `{}` / `{ key => val, ... }` as Hash.

@@ -987,6 +987,10 @@ fn for_stmt(input: &str) -> PResult<'_, Stmt> {
     ))
 }
 
+pub(super) fn parse_pointy_param_pub(input: &str) -> PResult<'_, String> {
+    parse_pointy_param(input)
+}
+
 fn parse_pointy_param(input: &str) -> PResult<'_, String> {
     // Optional type constraint before the variable
     let rest = input;
@@ -1654,22 +1658,33 @@ fn return_stmt(input: &str) -> PResult<'_, Stmt> {
 fn last_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("last", input).ok_or_else(|| PError::expected("last statement"))?;
     let (rest, _) = ws(rest)?;
-    let (rest, _) = opt_char(rest, ';');
-    Ok((rest, Stmt::Last(None)))
+    // Check for label: last LABEL
+    if rest.starts_with(|c: char| c.is_ascii_uppercase())
+        && let Ok((r, label)) = ident(rest)
+        && label.chars().all(|c| c.is_ascii_uppercase() || c == '_')
+    {
+        return parse_statement_modifier(r, Stmt::Last(Some(label)));
+    }
+    parse_statement_modifier(rest, Stmt::Last(None))
 }
 
 fn next_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("next", input).ok_or_else(|| PError::expected("next statement"))?;
     let (rest, _) = ws(rest)?;
-    let (rest, _) = opt_char(rest, ';');
-    Ok((rest, Stmt::Next(None)))
+    // Check for label: next LABEL
+    if rest.starts_with(|c: char| c.is_ascii_uppercase())
+        && let Ok((r, label)) = ident(rest)
+        && label.chars().all(|c| c.is_ascii_uppercase() || c == '_')
+    {
+        return parse_statement_modifier(r, Stmt::Next(Some(label)));
+    }
+    parse_statement_modifier(rest, Stmt::Next(None))
 }
 
 fn redo_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("redo", input).ok_or_else(|| PError::expected("redo statement"))?;
     let (rest, _) = ws(rest)?;
-    let (rest, _) = opt_char(rest, ';');
-    Ok((rest, Stmt::Redo(None)))
+    parse_statement_modifier(rest, Stmt::Redo(None))
 }
 
 /// Parse `die` statement.

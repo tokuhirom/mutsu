@@ -140,15 +140,22 @@ fn and_expr(input: &str) -> PResult<'_, Expr> {
 fn not_expr(input: &str) -> PResult<'_, Expr> {
     if input.starts_with("not") && !is_ident_char(input.as_bytes().get(3).copied()) {
         let r = &input[3..];
-        let (r, _) = ws(r)?;
-        let (r, expr) = not_expr(r)?;
-        return Ok((
-            r,
-            Expr::Unary {
-                op: TokenKind::Bang,
-                expr: Box::new(expr),
-            },
-        ));
+        // When `not(` — no space before paren — parens delimit the argument,
+        // and the result participates in the full expression (handled in prefix_expr).
+        if r.starts_with('(') {
+            // Fall through to or_or_expr which will eventually call prefix_expr
+            // where not(...) is handled as a tight binding.
+        } else {
+            let (r, _) = ws(r)?;
+            let (r, expr) = not_expr(r)?;
+            return Ok((
+                r,
+                Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(expr),
+                },
+            ));
+        }
     }
     or_or_expr(input)
 }
@@ -793,6 +800,38 @@ fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // not(expr) — tight-binding form: not followed by ( without space
+    if input.starts_with("not(") {
+        let r = &input[3..];
+        let (r, _) = parse_char(r, '(')?;
+        let (r, _) = ws(r)?;
+        let (r, expr) = expression(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ')')?;
+        return Ok((
+            r,
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(expr),
+            },
+        ));
+    }
+    // so(expr) — tight-binding form: so followed by ( without space
+    if input.starts_with("so(") {
+        let r = &input[2..];
+        let (r, _) = parse_char(r, '(')?;
+        let (r, _) = ws(r)?;
+        let (r, expr) = expression(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ')')?;
+        return Ok((
+            r,
+            Expr::Unary {
+                op: TokenKind::Question,
+                expr: Box::new(expr),
+            },
+        ));
+    }
     postfix_expr(input)
 }
 
@@ -878,6 +917,26 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
                 rest = r;
                 continue;
             }
+        }
+
+        // CallOn: $var(args) — invoke a callable stored in a variable
+        if rest.starts_with('(')
+            && matches!(
+                &expr,
+                Expr::Var(_) | Expr::CodeVar(_) | Expr::MethodCall { .. }
+            )
+        {
+            let (r, _) = parse_char(rest, '(')?;
+            let (r, _) = ws(r)?;
+            let (r, args) = parse_call_arg_list(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ')')?;
+            expr = Expr::CallOn {
+                target: Box::new(expr),
+                args,
+            };
+            rest = r;
+            continue;
         }
 
         // Array indexing: [expr]
