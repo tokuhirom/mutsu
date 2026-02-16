@@ -1,45 +1,52 @@
-use nom::IResult;
-use nom::branch::alt;
-use nom::bytes::complete::{tag, take_while1};
-use nom::character::complete::{multispace1, not_line_ending};
-use nom::combinator::value;
-use nom::multi::many0;
-use nom::sequence::preceded;
+use super::parse_result::{PError, PResult, take_while_opt, take_while1};
 
 /// Skip whitespace, line comments (`#` to end of line), and Pod blocks.
-pub(super) fn ws(input: &str) -> IResult<&str, ()> {
-    let (input, _) = many0(alt((
-        value((), multispace1),
-        value((), preceded(tag("#"), not_line_ending)),
-        value((), pod_block),
-    )))(input)?;
-    Ok((input, ()))
+pub(super) fn ws(input: &str) -> PResult<'_, ()> {
+    let mut rest = input;
+    loop {
+        // Try whitespace
+        let (r, matched) = take_while_opt(rest, |c| c.is_whitespace());
+        if !matched.is_empty() {
+            rest = r;
+            continue;
+        }
+        // Try line comment
+        if r.starts_with('#') {
+            let end = r.find('\n').unwrap_or(r.len());
+            rest = &r[end..];
+            continue;
+        }
+        // Try pod block
+        if let Ok((r, _)) = pod_block(r) {
+            rest = r;
+            continue;
+        }
+        break;
+    }
+    Ok((rest, ()))
 }
 
 /// Parse and skip a Pod block.
 /// Handles `=begin ... =end`, `=for ...`, `=head ...`, `=item ...`, `=comment ...`, etc.
-fn pod_block(input: &str) -> IResult<&str, &str> {
-    // Must start at beginning of line (or at start of input)
-    // Pod directives start with `=` followed by an alphabetic character
-    let (input, _) = tag("=")(input)?;
+fn pod_block(input: &str) -> PResult<'_, &str> {
+    // Must start with `=`
+    let rest = input
+        .strip_prefix('=')
+        .ok_or_else(|| PError::expected("="))?;
 
-    // Pod keywords must start with a letter (not a digit or symbol)
-    if input.is_empty() || !input.as_bytes()[0].is_ascii_alphabetic() {
-        return Err(nom::Err::Error(nom::error::Error::new(
-            input,
-            nom::error::ErrorKind::Tag,
-        )));
+    // Pod keywords must start with a letter
+    if rest.is_empty() || !rest.as_bytes()[0].is_ascii_alphabetic() {
+        return Err(PError::expected("pod directive"));
     }
 
     // Read the directive keyword
-    let (input, keyword) = take_while1(|c: char| c.is_alphanumeric() || c == '-')(input)?;
+    let (rest, keyword) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '-')?;
 
     if keyword == "begin" {
         // =begin IDENTIFIER ... =end IDENTIFIER
         // Skip the rest of the =begin line
-        let (input, _) = not_line_ending(input)?;
-        // Find matching =end
-        let rest = input;
+        let end = rest.find('\n').unwrap_or(rest.len());
+        let rest = &rest[end..];
         if rest.is_empty() {
             return Ok((rest, ""));
         }
@@ -54,8 +61,8 @@ fn pod_block(input: &str) -> IResult<&str, &str> {
         }
     } else {
         // =for, =head1, =item, =comment, etc. — skip to end of paragraph (blank line)
-        let (input, _) = not_line_ending(input)?;
-        let mut rest = input;
+        let end = rest.find('\n').unwrap_or(rest.len());
+        let mut rest = &rest[end..];
         loop {
             if rest.is_empty() {
                 break;
@@ -83,13 +90,12 @@ fn pod_block(input: &str) -> IResult<&str, &str> {
 }
 
 /// Require at least one whitespace character (or comment).
-pub(super) fn ws1(input: &str) -> IResult<&str, ()> {
-    let (input, _) = alt((
-        value((), multispace1),
-        value((), preceded(tag("#"), not_line_ending)),
-    ))(input)?;
-    let (input, _) = ws(input)?;
-    Ok((input, ()))
+pub(super) fn ws1(input: &str) -> PResult<'_, ()> {
+    let (rest, _) = ws(input)?;
+    if rest.len() == input.len() {
+        return Err(PError::expected("whitespace"));
+    }
+    Ok((rest, ()))
 }
 
 #[cfg(test)]

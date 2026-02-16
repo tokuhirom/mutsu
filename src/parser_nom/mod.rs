@@ -1,5 +1,6 @@
 mod expr;
 mod helpers;
+mod parse_result;
 mod primary;
 mod stmt;
 
@@ -26,6 +27,6 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
 
     match stmt::program(source) {
         Ok((_rest, stmts)) => Ok((stmts, finish_content)),
-        Err(e) => Err(RuntimeError::new(format!("nom parse error: {}", e))),
+        Err(e) => Err(RuntimeError::new(format!("parse error: {}", e))),
     }
 }

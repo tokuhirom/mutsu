@@ -1,7 +1,4 @@
-use nom::IResult;
-use nom::bytes::complete::take_while1;
-use nom::character::complete::char;
-use nom::combinator::opt;
+use super::parse_result::{PError, PResult, opt_char, parse_char, take_while_opt, take_while1};
 
 use crate::ast::{AssignOp, CallArg, Expr, ParamDef, PhaserKind, Stmt};
 use crate::lexer::TokenKind;
@@ -28,13 +25,13 @@ fn keyword<'a>(kw: &str, input: &'a str) -> Option<&'a str> {
 }
 
 /// Parse an identifier (alphanumeric, _, -).
-fn ident(input: &str) -> IResult<&str, String> {
-    let (rest, name) = take_while1(|c: char| c.is_alphanumeric() || c == '_' || c == '-')(input)?;
+fn ident(input: &str) -> PResult<'_, String> {
+    let (rest, name) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
     Ok((rest, name.to_string()))
 }
 
 /// Parse a qualified identifier (Foo::Bar::Baz).
-fn qualified_ident(input: &str) -> IResult<&str, String> {
+fn qualified_ident(input: &str) -> PResult<'_, String> {
     let (mut rest, name) = ident(input)?;
     let mut full = name;
     while rest.starts_with("::") {
@@ -51,7 +48,7 @@ fn qualified_ident(input: &str) -> IResult<&str, String> {
 }
 
 /// Parse a variable name ($x, @arr, %hash) and return just the name part.
-fn var_name(input: &str) -> IResult<&str, String> {
+fn var_name(input: &str) -> PResult<'_, String> {
     if input.starts_with('$') || input.starts_with('@') || input.starts_with('%') {
         let r = &input[1..];
         // Handle twigils
@@ -73,7 +70,7 @@ fn var_name(input: &str) -> IResult<&str, String> {
         {
             return Ok((&r[1..], "_".to_string()));
         }
-        let (rest, name) = take_while1(|c: char| c.is_alphanumeric() || c == '_' || c == '-')(r)?;
+        let (rest, name) = take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
         let full = if twigil.is_empty() {
             name.to_string()
         } else {
@@ -81,24 +78,21 @@ fn var_name(input: &str) -> IResult<&str, String> {
         };
         Ok((rest, full))
     } else {
-        Err(nom::Err::Error(nom::error::Error::new(
-            input,
-            nom::error::ErrorKind::Tag,
-        )))
+        Err(PError::expected("variable name"))
     }
 }
 
 /// Parse a block: { stmts }
-fn block(input: &str) -> IResult<&str, Vec<Stmt>> {
-    let (input, _) = char('{')(input)?;
+fn block(input: &str) -> PResult<'_, Vec<Stmt>> {
+    let (input, _) = parse_char(input, '{')?;
     let (input, stmts) = stmt_list(input)?;
     let (input, _) = ws(input)?;
-    let (input, _) = char('}')(input)?;
+    let (input, _) = parse_char(input, '}')?;
     Ok((input, stmts))
 }
 
 /// Parse a list of statements (inside a block or at program level).
-fn stmt_list(input: &str) -> IResult<&str, Vec<Stmt>> {
+fn stmt_list(input: &str) -> PResult<'_, Vec<Stmt>> {
     let mut stmts = Vec::new();
     let mut rest = input;
     loop {
@@ -130,16 +124,16 @@ fn consume_semicolons(mut input: &str) -> &str {
 
 /// Parse call arguments for statement-level function calls.
 /// Handles positional args, named args (fat arrow and colon pairs).
-fn parse_stmt_call_args(input: &str) -> IResult<&str, Vec<CallArg>> {
+fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
     let mut args = Vec::new();
     let rest = input;
 
     // Check for parens-style call
     if rest.starts_with('(') {
-        let (r, _) = char('(')(rest)?;
+        let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
         if r.starts_with(')') {
-            let (r, _) = char(')')(r)?;
+            let (r, _) = parse_char(r, ')')?;
             return Ok((r, args));
         }
         let (r, first_arg) = parse_single_call_arg(r)?;
@@ -148,11 +142,11 @@ fn parse_stmt_call_args(input: &str) -> IResult<&str, Vec<CallArg>> {
         loop {
             let (r2, _) = ws(r)?;
             if r2.starts_with(')') {
-                let (r2, _) = char(')')(r2)?;
+                let (r2, _) = parse_char(r2, ')')?;
                 // Check for additional args after closing paren
                 let (r2, _) = ws(r2)?;
                 if r2.starts_with(',') {
-                    let (r2, _) = char(',')(r2)?;
+                    let (r2, _) = parse_char(r2, ',')?;
                     let (r2, _) = ws(r2)?;
                     let (r2, more) = parse_remaining_call_args(r2)?;
                     args.extend(more);
@@ -162,15 +156,12 @@ fn parse_stmt_call_args(input: &str) -> IResult<&str, Vec<CallArg>> {
             }
             if !r2.starts_with(',') {
                 // Try closing paren
-                return Err(nom::Err::Error(nom::error::Error::new(
-                    r2,
-                    nom::error::ErrorKind::Tag,
-                )));
+                return Err(PError::expected("',' or ')'"));
             }
-            let (r2, _) = char(',')(r2)?;
+            let (r2, _) = parse_char(r2, ',')?;
             let (r2, _) = ws(r2)?;
             if r2.starts_with(')') {
-                let (r2, _) = char(')')(r2)?;
+                let (r2, _) = parse_char(r2, ')')?;
                 return Ok((r2, args));
             }
             let (r2, arg) = parse_single_call_arg(r2)?;
@@ -191,7 +182,7 @@ fn parse_stmt_call_args(input: &str) -> IResult<&str, Vec<CallArg>> {
 }
 
 /// Parse remaining comma-separated call args.
-fn parse_remaining_call_args(input: &str) -> IResult<&str, Vec<CallArg>> {
+fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
     let mut args = Vec::new();
     let (mut rest, first) = parse_single_call_arg(input)?;
     args.push(first);
@@ -200,7 +191,7 @@ fn parse_remaining_call_args(input: &str) -> IResult<&str, Vec<CallArg>> {
         if !r.starts_with(',') {
             return Ok((r, args));
         }
-        let (r, _) = char(',')(r)?;
+        let (r, _) = parse_char(r, ',')?;
         let (r, _) = ws(r)?;
         // Check for end
         if r.starts_with(';') || r.is_empty() || r.starts_with('}') || r.starts_with(')') {
@@ -213,7 +204,7 @@ fn parse_remaining_call_args(input: &str) -> IResult<&str, Vec<CallArg>> {
 }
 
 /// Parse a single call argument (named or positional).
-fn parse_single_call_arg(input: &str) -> IResult<&str, CallArg> {
+fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
     // Colon pair: :name(expr) or :name or :!name or :name[...]
     if input.starts_with(':') && !input.starts_with("::") {
         let r = &input[1..];
@@ -239,11 +230,11 @@ fn parse_single_call_arg(input: &str) -> IResult<&str, CallArg> {
             } else {
                 // :name(expr)
                 if r.starts_with('(') {
-                    let (r, _) = char('(')(r)?;
+                    let (r, _) = parse_char(r, '(')?;
                     let (r, _) = ws(r)?;
                     let (r, val) = expression(r)?;
                     let (r, _) = ws(r)?;
-                    let (r, _) = char(')')(r)?;
+                    let (r, _) = parse_char(r, ')')?;
                     return Ok((
                         r,
                         CallArg::Named {
@@ -254,7 +245,7 @@ fn parse_single_call_arg(input: &str) -> IResult<&str, CallArg> {
                 }
                 // :name[items]
                 if r.starts_with('[') {
-                    let (r, _) = char('[')(r)?;
+                    let (r, _) = parse_char(r, '[')?;
                     let (r, _) = ws(r)?;
                     let mut items = Vec::new();
                     if !r.starts_with(']') {
@@ -264,7 +255,7 @@ fn parse_single_call_arg(input: &str) -> IResult<&str, CallArg> {
                         loop {
                             let (r2, _) = ws(r)?;
                             if r2.starts_with(']') {
-                                let (r2, _) = char(']')(r2)?;
+                                let (r2, _) = parse_char(r2, ']')?;
                                 return Ok((
                                     r2,
                                     CallArg::Named {
@@ -273,14 +264,14 @@ fn parse_single_call_arg(input: &str) -> IResult<&str, CallArg> {
                                     },
                                 ));
                             }
-                            let (r2, _) = char(',')(r2)?;
+                            let (r2, _) = parse_char(r2, ',')?;
                             let (r2, _) = ws(r2)?;
                             let (r2, next) = expression(r2)?;
                             items.push(next);
                             r = r2;
                         }
                     }
-                    let (r, _) = char(']')(r)?;
+                    let (r, _) = parse_char(r, ']')?;
                     return Ok((
                         r,
                         CallArg::Named {
@@ -318,19 +309,18 @@ fn parse_single_call_arg(input: &str) -> IResult<&str, CallArg> {
 }
 
 /// Parse a `use` statement.
-fn use_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("use", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn use_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("use", input).ok_or_else(|| PError::expected("use statement"))?;
     let (rest, _) = ws1(rest)?;
 
     // Handle `use v6`, `use v6.d`, etc.
     if rest.starts_with('v') {
-        let (r, _) =
-            take_while1(|c: char| c.is_alphanumeric() || c == '.' || c == '*' || c == '+')(rest)?;
+        let (r, _) = take_while1(rest, |c: char| {
+            c.is_alphanumeric() || c == '.' || c == '*' || c == '+'
+        })?;
         let (r, _) = ws(r)?;
-        let _ = opt(char(';'))(r)?;
-        let (r, _) = opt(char(';'))(r)?;
+        let _ = opt_char(r, ';');
+        let (r, _) = opt_char(r, ';');
         return Ok((
             r,
             Stmt::Use {
@@ -355,15 +345,13 @@ fn use_stmt(input: &str) -> IResult<&str, Stmt> {
         (r, Some(expr))
     };
     let (rest, _) = ws(rest)?;
-    let (rest, _) = opt(char(';'))(rest)?;
+    let (rest, _) = opt_char(rest, ';');
     Ok((rest, Stmt::Use { module, arg }))
 }
 
 /// Parse a `say` statement.
-fn say_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("say", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn say_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("say", input).ok_or_else(|| PError::expected("say statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, args) = parse_expr_list(rest)?;
     let stmt = Stmt::Say(args);
@@ -371,10 +359,8 @@ fn say_stmt(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse a `print` statement.
-fn print_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("print", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn print_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("print", input).ok_or_else(|| PError::expected("print statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, args) = parse_expr_list(rest)?;
     let stmt = Stmt::Print(args);
@@ -382,10 +368,8 @@ fn print_stmt(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse a `note` statement.
-fn note_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("note", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn note_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("note", input).ok_or_else(|| PError::expected("note statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, args) = parse_expr_list(rest)?;
     let stmt = Stmt::Note(args);
@@ -393,7 +377,7 @@ fn note_stmt(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse a comma-separated expression list.
-fn parse_expr_list(input: &str) -> IResult<&str, Vec<Expr>> {
+fn parse_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
     let (input, first) = expression(input)?;
     let mut items = vec![first];
     let mut rest = input;
@@ -402,7 +386,7 @@ fn parse_expr_list(input: &str) -> IResult<&str, Vec<Expr>> {
         if !r.starts_with(',') {
             return Ok((r, items));
         }
-        let (r, _) = char(',')(r)?;
+        let (r, _) = parse_char(r, ',')?;
         let (r, _) = ws(r)?;
         // Check for end of list
         if r.starts_with(';') || r.is_empty() || r.starts_with('}') || r.starts_with(')') {
@@ -428,12 +412,10 @@ fn is_stmt_modifier_keyword(input: &str) -> bool {
 }
 
 /// Parse `my` variable declaration.
-fn my_decl(input: &str) -> IResult<&str, Stmt> {
+fn my_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("my", input)
         .or_else(|| keyword("our", input))
-        .ok_or_else(|| {
-            nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-        })?;
+        .ok_or_else(|| PError::expected("my/our declaration"))?;
     let (rest, _) = ws1(rest)?;
 
     // my enum Foo <...>
@@ -532,7 +514,7 @@ fn my_decl(input: &str) -> IResult<&str, Stmt> {
         return parse_statement_modifier(rest, stmt);
     }
 
-    let (rest, _) = opt(char(';'))(rest)?;
+    let (rest, _) = opt_char(rest, ';');
     let expr = if is_array {
         Expr::Literal(Value::Array(Vec::new()))
     } else if is_hash {
@@ -551,11 +533,11 @@ fn my_decl(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse a comma expression (may produce a list).
-fn parse_comma_or_expr(input: &str) -> IResult<&str, Expr> {
+fn parse_comma_or_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, first) = expression(input)?;
     let (r, _) = ws(rest)?;
     if r.starts_with(',') && !r.starts_with(",,") {
-        let (r, _) = char(',')(r)?;
+        let (r, _) = parse_char(r, ',')?;
         let (r, _) = ws(r)?;
         if r.starts_with(';') || r.is_empty() || r.starts_with('}') {
             return Ok((r, Expr::ArrayLiteral(vec![first])));
@@ -568,7 +550,7 @@ fn parse_comma_or_expr(input: &str) -> IResult<&str, Expr> {
             if !r2.starts_with(',') {
                 return Ok((r2, Expr::ArrayLiteral(items)));
             }
-            let (r2, _) = char(',')(r2)?;
+            let (r2, _) = parse_char(r2, ',')?;
             let (r2, _) = ws(r2)?;
             if r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') {
                 return Ok((r2, Expr::ArrayLiteral(items)));
@@ -582,8 +564,8 @@ fn parse_comma_or_expr(input: &str) -> IResult<&str, Expr> {
 }
 
 /// Parse destructuring: ($a, $b, $c) = expr
-fn parse_destructuring_decl(input: &str) -> IResult<&str, Stmt> {
-    let (rest, _) = char('(')(input)?;
+fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
+    let (rest, _) = parse_char(input, '(')?;
     let (rest, _) = ws(rest)?;
     let mut names = Vec::new();
     let mut r = rest;
@@ -603,20 +585,17 @@ fn parse_destructuring_decl(input: &str) -> IResult<&str, Stmt> {
             names.push(format!("{}{}", prefix, n));
             let (r2, _) = ws(r2)?;
             if r2.starts_with(',') {
-                let (r2, _) = char(',')(r2)?;
+                let (r2, _) = parse_char(r2, ',')?;
                 let (r2, _) = ws(r2)?;
                 r = r2;
             } else {
                 r = r2;
             }
         } else {
-            return Err(nom::Err::Error(nom::error::Error::new(
-                r,
-                nom::error::ErrorKind::Tag,
-            )));
+            return Err(PError::expected("variable sigil ($, @, %, &)"));
         }
     }
-    let (rest, _) = char(')')(r)?;
+    let (rest, _) = parse_char(r, ')')?;
     let (rest, _) = ws(rest)?;
     if rest.starts_with('=') || rest.starts_with(":=") {
         let rest = if let Some(stripped) = rest.strip_prefix(":=") {
@@ -627,7 +606,7 @@ fn parse_destructuring_decl(input: &str) -> IResult<&str, Stmt> {
         let (rest, _) = ws(rest)?;
         let (rest, rhs) = parse_comma_or_expr(rest)?;
         let (rest, _) = ws(rest)?;
-        let (rest, _) = opt(char(';'))(rest)?;
+        let (rest, _) = opt_char(rest, ';');
         // Desugar into block
         let tmp_name = "@__destructure_tmp__".to_string();
         let array_bare = "__destructure_tmp__".to_string();
@@ -650,7 +629,7 @@ fn parse_destructuring_decl(input: &str) -> IResult<&str, Stmt> {
     }
     // No assignment
     let (rest, _) = ws(rest)?;
-    let (rest, _) = opt(char(';'))(rest)?;
+    let (rest, _) = opt_char(rest, ';');
     let mut stmts = Vec::new();
     for name in &names {
         stmts.push(Stmt::VarDecl {
@@ -663,10 +642,8 @@ fn parse_destructuring_decl(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse an `if`/`elsif`/`else` chain.
-fn if_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("if", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn if_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("if", input).ok_or_else(|| PError::expected("if statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, cond) = expression(rest)?;
     let (rest, _) = ws(rest)?;
@@ -686,7 +663,7 @@ fn if_stmt(input: &str) -> IResult<&str, Stmt> {
     ))
 }
 
-fn parse_elsif_chain(input: &str) -> IResult<&str, Vec<Stmt>> {
+fn parse_elsif_chain(input: &str) -> PResult<'_, Vec<Stmt>> {
     if let Some(r) = keyword("elsif", input) {
         let (r, _) = ws1(r)?;
         let (r, cond) = expression(r)?;
@@ -712,10 +689,8 @@ fn parse_elsif_chain(input: &str) -> IResult<&str, Vec<Stmt>> {
 }
 
 /// Parse `unless` statement.
-fn unless_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("unless", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("unless", input).ok_or_else(|| PError::expected("unless statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, cond) = expression(rest)?;
     let (rest, _) = ws(rest)?;
@@ -734,10 +709,8 @@ fn unless_stmt(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse `for` loop.
-fn for_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("for", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn for_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("for", input).ok_or_else(|| PError::expected("for statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, iterable) = parse_comma_or_expr(rest)?;
     let (rest, _) = ws(rest)?;
@@ -752,7 +725,7 @@ fn for_stmt(input: &str) -> IResult<&str, Stmt> {
             let mut params = vec![first];
             let mut r = r;
             loop {
-                let (r2, _) = char(',')(r)?;
+                let (r2, _) = parse_char(r, ',')?;
                 let (r2, _) = ws(r2)?;
                 let (r2, next) = parse_pointy_param(r2)?;
                 params.push(next);
@@ -785,7 +758,7 @@ fn for_stmt(input: &str) -> IResult<&str, Stmt> {
     ))
 }
 
-fn parse_pointy_param(input: &str) -> IResult<&str, String> {
+fn parse_pointy_param(input: &str) -> PResult<'_, String> {
     // Optional type constraint before the variable
     let rest = input;
     let rest = if let Ok((r, _tc)) = ident(rest) {
@@ -803,10 +776,8 @@ fn parse_pointy_param(input: &str) -> IResult<&str, String> {
 }
 
 /// Parse `while` loop.
-fn while_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("while", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn while_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("while", input).ok_or_else(|| PError::expected("while statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, cond) = expression(rest)?;
     let (rest, _) = ws(rest)?;
@@ -822,10 +793,8 @@ fn while_stmt(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse `until` loop.
-fn until_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("until", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn until_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("until", input).ok_or_else(|| PError::expected("until statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, cond) = expression(rest)?;
     let (rest, _) = ws(rest)?;
@@ -844,13 +813,11 @@ fn until_stmt(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse C-style `loop` or infinite loop.
-fn loop_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("loop", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("loop", input).ok_or_else(|| PError::expected("loop statement"))?;
     let (rest, _) = ws(rest)?;
     if rest.starts_with('(') {
-        let (rest, _) = char('(')(rest)?;
+        let (rest, _) = parse_char(rest, '(')?;
         let (rest, _) = ws(rest)?;
         // init
         let (rest, init) = if rest.starts_with(';') {
@@ -868,7 +835,7 @@ fn loop_stmt(input: &str) -> IResult<&str, Stmt> {
         } else {
             let (r, e) = expression(rest)?;
             let (r, _) = ws(r)?;
-            let (r, _) = char(';')(r)?;
+            let (r, _) = parse_char(r, ';')?;
             (r, Some(e))
         };
         let (rest, _) = ws(rest)?;
@@ -880,7 +847,7 @@ fn loop_stmt(input: &str) -> IResult<&str, Stmt> {
             (r, Some(e))
         };
         let (rest, _) = ws(rest)?;
-        let (rest, _) = char(')')(rest)?;
+        let (rest, _) = parse_char(rest, ')')?;
         let (rest, _) = ws(rest)?;
         let (rest, body) = block(rest)?;
         return Ok((
@@ -912,10 +879,8 @@ fn loop_stmt(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse `repeat while/until` loop.
-fn repeat_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("repeat", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("repeat", input).ok_or_else(|| PError::expected("repeat statement"))?;
     let (rest, _) = ws(rest)?;
 
     // repeat while/until COND { BODY }
@@ -925,7 +890,7 @@ fn repeat_stmt(input: &str) -> IResult<&str, Stmt> {
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         let (r, _) = ws(r)?;
-        let (r, _) = opt(char(';'))(r)?;
+        let (r, _) = opt_char(r, ';');
         return Ok((
             r,
             Stmt::Loop {
@@ -944,7 +909,7 @@ fn repeat_stmt(input: &str) -> IResult<&str, Stmt> {
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         let (r, _) = ws(r)?;
-        let (r, _) = opt(char(';'))(r)?;
+        let (r, _) = opt_char(r, ';');
         return Ok((
             r,
             Stmt::Loop {
@@ -968,7 +933,7 @@ fn repeat_stmt(input: &str) -> IResult<&str, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, cond) = expression(r)?;
         let (r, _) = ws(r)?;
-        let (r, _) = opt(char(';'))(r)?;
+        let (r, _) = opt_char(r, ';');
         return Ok((
             r,
             Stmt::Loop {
@@ -985,7 +950,7 @@ fn repeat_stmt(input: &str) -> IResult<&str, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, cond) = expression(r)?;
         let (r, _) = ws(r)?;
-        let (r, _) = opt(char(';'))(r)?;
+        let (r, _) = opt_char(r, ';');
         return Ok((
             r,
             Stmt::Loop {
@@ -1001,17 +966,12 @@ fn repeat_stmt(input: &str) -> IResult<&str, Stmt> {
             },
         ));
     }
-    Err(nom::Err::Error(nom::error::Error::new(
-        rest,
-        nom::error::ErrorKind::Tag,
-    )))
+    Err(PError::expected("while or until after repeat"))
 }
 
 /// Parse `given`/`when`/`default`.
-fn given_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("given", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn given_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("given", input).ok_or_else(|| PError::expected("given statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, topic) = expression(rest)?;
     let (rest, _) = ws(rest)?;
@@ -1019,10 +979,8 @@ fn given_stmt(input: &str) -> IResult<&str, Stmt> {
     Ok((rest, Stmt::Given { topic, body }))
 }
 
-fn when_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("when", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn when_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("when", input).ok_or_else(|| PError::expected("when statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, cond) = expression(rest)?;
     let (rest, _) = ws(rest)?;
@@ -1030,43 +988,39 @@ fn when_stmt(input: &str) -> IResult<&str, Stmt> {
     Ok((rest, Stmt::When { cond, body }))
 }
 
-fn default_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("default", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn default_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("default", input).ok_or_else(|| PError::expected("default statement"))?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
     Ok((rest, Stmt::Default(body)))
 }
 
 /// Parse `sub` declaration.
-fn sub_decl(input: &str) -> IResult<&str, Stmt> {
+fn sub_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, multi) = if let Some(r) = keyword("multi", input) {
         let (r, _) = ws1(r)?;
         let r = keyword("sub", r).unwrap_or(r);
         let (r, _) = ws(r)?;
         (r, true)
     } else {
-        let r = keyword("sub", input).ok_or_else(|| {
-            nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-        })?;
+        let r = keyword("sub", input).ok_or_else(|| PError::expected("sub declaration"))?;
         let (r, _) = ws1(r)?;
         (r, false)
     };
     sub_decl_body(rest, multi)
 }
 
-fn sub_decl_body(input: &str, multi: bool) -> IResult<&str, Stmt> {
+fn sub_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
     let (rest, name) = ident(input)?;
     let (rest, _) = ws(rest)?;
 
     // Parse params
     let (rest, (params, param_defs)) = if rest.starts_with('(') {
-        let (r, _) = char('(')(rest)?;
+        let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
         let (r, pd) = parse_param_list(r)?;
         let (r, _) = ws(r)?;
-        let (r, _) = char(')')(r)?;
+        let (r, _) = parse_char(r, ')')?;
         let names: Vec<String> = pd.iter().map(|p| p.name.clone()).collect();
         (r, (names, pd))
     } else {
@@ -1088,7 +1042,7 @@ fn sub_decl_body(input: &str, multi: bool) -> IResult<&str, Stmt> {
 }
 
 /// Parse parameter list inside parens.
-fn parse_param_list(input: &str) -> IResult<&str, Vec<ParamDef>> {
+fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
     let mut params = Vec::new();
     let mut rest = input;
     if rest.starts_with(')') {
@@ -1102,7 +1056,7 @@ fn parse_param_list(input: &str) -> IResult<&str, Vec<ParamDef>> {
         if !r.starts_with(',') {
             return Ok((r, params));
         }
-        let (r, _) = char(',')(r)?;
+        let (r, _) = parse_char(r, ',')?;
         let (r, _) = ws(r)?;
         if r.starts_with(')') {
             return Ok((r, params));
@@ -1113,7 +1067,7 @@ fn parse_param_list(input: &str) -> IResult<&str, Vec<ParamDef>> {
     }
 }
 
-fn parse_single_param(input: &str) -> IResult<&str, ParamDef> {
+fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     let mut rest = input;
     let mut named = false;
     let mut slurpy = false;
@@ -1196,34 +1150,30 @@ fn parse_single_param(input: &str) -> IResult<&str, ParamDef> {
 }
 
 /// Parse `method` declaration.
-fn method_decl(input: &str) -> IResult<&str, Stmt> {
+fn method_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, multi) = if let Some(r) = keyword("multi", input) {
         let (r, _) = ws1(r)?;
-        let r = keyword("method", r).ok_or_else(|| {
-            nom::Err::Error(nom::error::Error::new(r, nom::error::ErrorKind::Tag))
-        })?;
+        let r = keyword("method", r).ok_or_else(|| PError::expected("method declaration"))?;
         let (r, _) = ws1(r)?;
         (r, true)
     } else {
-        let r = keyword("method", input).ok_or_else(|| {
-            nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-        })?;
+        let r = keyword("method", input).ok_or_else(|| PError::expected("method declaration"))?;
         let (r, _) = ws1(r)?;
         (r, false)
     };
     method_decl_body(rest, multi)
 }
 
-fn method_decl_body(input: &str, multi: bool) -> IResult<&str, Stmt> {
+fn method_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
     let (rest, name) = ident(input)?;
     let (rest, _) = ws(rest)?;
 
     let (rest, (params, param_defs)) = if rest.starts_with('(') {
-        let (r, _) = char('(')(rest)?;
+        let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
         let (r, pd) = parse_param_list(r)?;
         let (r, _) = ws(r)?;
-        let (r, _) = char(')')(r)?;
+        let (r, _) = parse_char(r, ')')?;
         let names: Vec<String> = pd.iter().map(|p| p.name.clone()).collect();
         (r, (names, pd))
     } else {
@@ -1245,10 +1195,8 @@ fn method_decl_body(input: &str, multi: bool) -> IResult<&str, Stmt> {
 }
 
 /// Parse `class` declaration.
-fn class_decl(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("class", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn class_decl(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("class", input).ok_or_else(|| PError::expected("class declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
@@ -1285,10 +1233,8 @@ fn class_decl(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse `role` declaration.
-fn role_decl(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("role", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn role_decl(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("role", input).ok_or_else(|| PError::expected("role declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
@@ -1297,10 +1243,8 @@ fn role_decl(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse `has` attribute declaration.
-fn has_decl(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("has", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn has_decl(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("has", input).ok_or_else(|| PError::expected("has declaration"))?;
     let (rest, _) = ws1(rest)?;
 
     // Optional type constraint
@@ -1319,10 +1263,7 @@ fn has_decl(input: &str) -> IResult<&str, Stmt> {
     let (rest, _) = if sigil == b'$' || sigil == b'@' || sigil == b'%' {
         (&rest[1..], ())
     } else {
-        return Err(nom::Err::Error(nom::error::Error::new(
-            rest,
-            nom::error::ErrorKind::Tag,
-        )));
+        return Err(PError::expected("sigil ($, @, %)"));
     };
 
     // Check for public accessor marker '.'
@@ -1334,7 +1275,7 @@ fn has_decl(input: &str) -> IResult<&str, Stmt> {
         (rest, false)
     };
 
-    let (rest, name) = take_while1(|c: char| c.is_alphanumeric() || c == '_' || c == '-')(rest)?;
+    let (rest, name) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
     let name = name.to_string();
     let (rest, _) = ws(rest)?;
 
@@ -1359,7 +1300,7 @@ fn has_decl(input: &str) -> IResult<&str, Stmt> {
     };
 
     let (rest, _) = ws(rest)?;
-    let (rest, _) = opt(char(';'))(rest)?;
+    let (rest, _) = opt_char(rest, ';');
     Ok((
         rest,
         Stmt::HasDecl {
@@ -1371,37 +1312,35 @@ fn has_decl(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse `enum` declaration.
-fn enum_decl(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("enum", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn enum_decl(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("enum", input).ok_or_else(|| PError::expected("enum declaration"))?;
     let (rest, _) = ws1(rest)?;
     parse_enum_decl_body(rest)
 }
 
-fn parse_enum_decl_body(input: &str) -> IResult<&str, Stmt> {
+fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
     let (rest, name) = ident(input)?;
     let (rest, _) = ws(rest)?;
 
     // Enum variants in <> or ()
     let (rest, variants) = if rest.starts_with('<') {
-        let (r, _) = char('<')(rest)?;
+        let (r, _) = parse_char(rest, '<')?;
         let mut variants = Vec::new();
         let mut r = r;
         loop {
-            let (r2, _) = nom::bytes::complete::take_while(|c: char| c == ' ' || c == '\t')(r)?;
+            let (r2, _) = take_while_opt(r, |c: char| c == ' ' || c == '\t');
             if let Some(r2) = r2.strip_prefix('>') {
                 r = r2;
                 break;
             }
             let (r2, word) =
-                take_while1(|c: char| c != '>' && c != ' ' && c != '\t' && c != '\n')(r2)?;
+                take_while1(r2, |c: char| c != '>' && c != ' ' && c != '\t' && c != '\n')?;
             variants.push((word.to_string(), None));
             r = r2;
         }
         (r, variants)
     } else if rest.starts_with('(') {
-        let (r, _) = char('(')(rest)?;
+        let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
         let mut variants = Vec::new();
         let mut r = r;
@@ -1432,64 +1371,54 @@ fn parse_enum_decl_body(input: &str) -> IResult<&str, Stmt> {
     };
 
     let (rest, _) = ws(rest)?;
-    let (rest, _) = opt(char(';'))(rest)?;
+    let (rest, _) = opt_char(rest, ';');
     Ok((rest, Stmt::EnumDecl { name, variants }))
 }
 
 /// Parse `return` statement.
-fn return_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("return", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn return_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("return", input).ok_or_else(|| PError::expected("return statement"))?;
     let (rest, _) = ws(rest)?;
     if rest.starts_with(';') || rest.is_empty() || rest.starts_with('}') {
-        let (rest, _) = opt(char(';'))(rest)?;
+        let (rest, _) = opt_char(rest, ';');
         return Ok((rest, Stmt::Return(Expr::Literal(Value::Nil))));
     }
     let (rest, expr) = expression(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, _) = opt(char(';'))(rest)?;
+    let (rest, _) = opt_char(rest, ';');
     Ok((rest, Stmt::Return(expr)))
 }
 
 /// Parse `last` / `next` / `redo`.
-fn last_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("last", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn last_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("last", input).ok_or_else(|| PError::expected("last statement"))?;
     let (rest, _) = ws(rest)?;
-    let (rest, _) = opt(char(';'))(rest)?;
+    let (rest, _) = opt_char(rest, ';');
     Ok((rest, Stmt::Last(None)))
 }
 
-fn next_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("next", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn next_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("next", input).ok_or_else(|| PError::expected("next statement"))?;
     let (rest, _) = ws(rest)?;
-    let (rest, _) = opt(char(';'))(rest)?;
+    let (rest, _) = opt_char(rest, ';');
     Ok((rest, Stmt::Next(None)))
 }
 
-fn redo_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("redo", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn redo_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("redo", input).ok_or_else(|| PError::expected("redo statement"))?;
     let (rest, _) = ws(rest)?;
-    let (rest, _) = opt(char(';'))(rest)?;
+    let (rest, _) = opt_char(rest, ';');
     Ok((rest, Stmt::Redo(None)))
 }
 
 /// Parse `die` statement.
-fn die_stmt(input: &str) -> IResult<&str, Stmt> {
+fn die_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("die", input)
         .or_else(|| keyword("fail", input))
-        .ok_or_else(|| {
-            nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-        })?;
+        .ok_or_else(|| PError::expected("die/fail statement"))?;
     let (rest, _) = ws(rest)?;
     if rest.starts_with(';') || rest.is_empty() || rest.starts_with('}') {
-        let (rest, _) = opt(char(';'))(rest)?;
+        let (rest, _) = opt_char(rest, ';');
         return Ok((
             rest,
             Stmt::Die(Expr::Literal(Value::Str("Died".to_string()))),
@@ -1501,38 +1430,32 @@ fn die_stmt(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse `take` statement.
-fn take_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("take", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn take_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("take", input).ok_or_else(|| PError::expected("take statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, expr) = expression(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, _) = opt(char(';'))(rest)?;
+    let (rest, _) = opt_char(rest, ';');
     Ok((rest, Stmt::Take(expr)))
 }
 
 /// Parse CATCH/CONTROL blocks.
-fn catch_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("CATCH", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn catch_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("CATCH", input).ok_or_else(|| PError::expected("CATCH block"))?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
     Ok((rest, Stmt::Catch(body)))
 }
 
-fn control_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("CONTROL", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn control_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("CONTROL", input).ok_or_else(|| PError::expected("CONTROL block"))?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
     Ok((rest, Stmt::Control(body)))
 }
 
 /// Parse phasers: BEGIN, END, etc.
-fn phaser_stmt(input: &str) -> IResult<&str, Stmt> {
+fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, kind) = if let Some(r) = keyword("BEGIN", input) {
         (r, PhaserKind::Begin)
     } else if let Some(r) = keyword("CHECK", input) {
@@ -1552,10 +1475,7 @@ fn phaser_stmt(input: &str) -> IResult<&str, Stmt> {
     } else if let Some(r) = keyword("LAST", input) {
         (r, PhaserKind::Last)
     } else {
-        return Err(nom::Err::Error(nom::error::Error::new(
-            input,
-            nom::error::ErrorKind::Tag,
-        )));
+        return Err(PError::expected("phaser keyword"));
     };
     let (rest, _) = ws(rest)?;
     let (rest, body) = if rest.starts_with('{') {
@@ -1568,31 +1488,24 @@ fn phaser_stmt(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse `does` declaration.
-fn does_decl(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("does", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn does_decl(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("does", input).ok_or_else(|| PError::expected("does declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = ident(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, _) = opt(char(';'))(rest)?;
+    let (rest, _) = opt_char(rest, ';');
     Ok((rest, Stmt::DoesDecl { name }))
 }
 
 /// Parse `subtest` declaration.
-fn subtest_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("subtest", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn subtest_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("subtest", input).ok_or_else(|| PError::expected("subtest statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = expression(rest)?;
     let (rest, _) = ws(rest)?;
     // Expect =>
     if !rest.starts_with("=>") {
-        return Err(nom::Err::Error(nom::error::Error::new(
-            rest,
-            nom::error::ErrorKind::Tag,
-        )));
+        return Err(PError::expected("'=>' in subtest"));
     }
     let rest = &rest[2..];
     let (rest, _) = ws(rest)?;
@@ -1605,25 +1518,21 @@ fn subtest_stmt(input: &str) -> IResult<&str, Stmt> {
     };
     let (rest, body) = block(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, _) = opt(char(';'))(rest)?;
+    let (rest, _) = opt_char(rest, ';');
     Ok((rest, Stmt::Subtest { name, body }))
 }
 
 /// Parse `react` block.
-fn react_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("react", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn react_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("react", input).ok_or_else(|| PError::expected("react block"))?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
     Ok((rest, Stmt::React { body }))
 }
 
 /// Parse `whenever` block.
-fn whenever_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("whenever", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn whenever_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("whenever", input).ok_or_else(|| PError::expected("whenever block"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, supply) = expression(rest)?;
     let (rest, _) = ws(rest)?;
@@ -1647,10 +1556,9 @@ fn whenever_stmt(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse `constant` declaration.
-fn constant_decl(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("constant", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn constant_decl(input: &str) -> PResult<'_, Stmt> {
+    let rest =
+        keyword("constant", input).ok_or_else(|| PError::expected("constant declaration"))?;
     let (rest, _) = ws1(rest)?;
     // The name can be $var or bare identifier
     let (rest, name) = if rest.starts_with('$') {
@@ -1669,7 +1577,7 @@ fn constant_decl(input: &str) -> IResult<&str, Stmt> {
         let (rest, _) = ws(rest)?;
         let (rest, expr) = parse_comma_or_expr(rest)?;
         let (rest, _) = ws(rest)?;
-        let (rest, _) = opt(char(';'))(rest)?;
+        let (rest, _) = opt_char(rest, ';');
         return Ok((
             rest,
             Stmt::VarDecl {
@@ -1679,7 +1587,7 @@ fn constant_decl(input: &str) -> IResult<&str, Stmt> {
             },
         ));
     }
-    let (rest, _) = opt(char(';'))(rest)?;
+    let (rest, _) = opt_char(rest, ';');
     Ok((
         rest,
         Stmt::VarDecl {
@@ -1691,10 +1599,8 @@ fn constant_decl(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse `subset` declaration.
-fn subset_decl(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("subset", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn subset_decl(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("subset", input).ok_or_else(|| PError::expected("subset declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = ident(rest)?;
     let (rest, _) = ws(rest)?;
@@ -1706,12 +1612,12 @@ fn subset_decl(input: &str) -> IResult<&str, Stmt> {
     } else {
         (rest, "Any".to_string())
     };
-    let rest = keyword("where", rest)
-        .ok_or_else(|| nom::Err::Error(nom::error::Error::new(rest, nom::error::ErrorKind::Tag)))?;
+    let rest =
+        keyword("where", rest).ok_or_else(|| PError::expected("'where' in subset declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, predicate) = expression(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, _) = opt(char(';'))(rest)?;
+    let (rest, _) = opt_char(rest, ';');
     Ok((
         rest,
         Stmt::SubsetDecl {
@@ -1723,7 +1629,7 @@ fn subset_decl(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse statement modifier (postfix if/unless/for/while/until/given/when).
-fn parse_statement_modifier(input: &str, stmt: Stmt) -> IResult<&str, Stmt> {
+fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     let (rest, _) = ws(input)?;
 
     // If there's a semicolon, the statement is terminated — no modifiers
@@ -1741,7 +1647,7 @@ fn parse_statement_modifier(input: &str, stmt: Stmt) -> IResult<&str, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, cond) = expression(r)?;
         let (r, _) = ws(r)?;
-        let (r, _) = opt(char(';'))(r)?;
+        let (r, _) = opt_char(r, ';');
         return Ok((
             r,
             Stmt::If {
@@ -1755,7 +1661,7 @@ fn parse_statement_modifier(input: &str, stmt: Stmt) -> IResult<&str, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, cond) = expression(r)?;
         let (r, _) = ws(r)?;
-        let (r, _) = opt(char(';'))(r)?;
+        let (r, _) = opt_char(r, ';');
         return Ok((
             r,
             Stmt::If {
@@ -1772,7 +1678,7 @@ fn parse_statement_modifier(input: &str, stmt: Stmt) -> IResult<&str, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, iterable) = expression(r)?;
         let (r, _) = ws(r)?;
-        let (r, _) = opt(char(';'))(r)?;
+        let (r, _) = opt_char(r, ';');
         return Ok((
             r,
             Stmt::For {
@@ -1788,7 +1694,7 @@ fn parse_statement_modifier(input: &str, stmt: Stmt) -> IResult<&str, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, cond) = expression(r)?;
         let (r, _) = ws(r)?;
-        let (r, _) = opt(char(';'))(r)?;
+        let (r, _) = opt_char(r, ';');
         return Ok((
             r,
             Stmt::While {
@@ -1802,7 +1708,7 @@ fn parse_statement_modifier(input: &str, stmt: Stmt) -> IResult<&str, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, cond) = expression(r)?;
         let (r, _) = ws(r)?;
-        let (r, _) = opt(char(';'))(r)?;
+        let (r, _) = opt_char(r, ';');
         return Ok((
             r,
             Stmt::While {
@@ -1819,7 +1725,7 @@ fn parse_statement_modifier(input: &str, stmt: Stmt) -> IResult<&str, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, topic) = expression(r)?;
         let (r, _) = ws(r)?;
-        let (r, _) = opt(char(';'))(r)?;
+        let (r, _) = opt_char(r, ';');
         return Ok((
             r,
             Stmt::Given {
@@ -1886,23 +1792,20 @@ fn is_known_call(name: &str) -> bool {
 }
 
 /// Parse a known function call as statement.
-fn known_call_stmt(input: &str) -> IResult<&str, Stmt> {
+fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, name) = ident(input)?;
     if !is_known_call(&name) {
-        return Err(nom::Err::Error(nom::error::Error::new(
-            input,
-            nom::error::ErrorKind::Tag,
-        )));
+        return Err(PError::expected("known function call"));
     }
     let (rest, _) = ws(rest)?;
 
     // Special handling for proceed/succeed with no args
     if name == "proceed" {
-        let (rest, _) = opt(char(';'))(rest)?;
+        let (rest, _) = opt_char(rest, ';');
         return Ok((rest, Stmt::Proceed));
     }
     if name == "succeed" {
-        let (rest, _) = opt(char(';'))(rest)?;
+        let (rest, _) = opt_char(rest, ';');
         return Ok((rest, Stmt::Succeed));
     }
 
@@ -1912,13 +1815,10 @@ fn known_call_stmt(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse assignment statement: $x = expr, @arr = expr, etc.
-fn assign_stmt(input: &str) -> IResult<&str, Stmt> {
+fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     let sigil = input.as_bytes().first().copied().unwrap_or(0);
     if sigil != b'$' && sigil != b'@' && sigil != b'%' {
-        return Err(nom::Err::Error(nom::error::Error::new(
-            input,
-            nom::error::ErrorKind::Tag,
-        )));
+        return Err(PError::expected("assignment"));
     }
 
     let prefix = match sigil {
@@ -1995,15 +1895,16 @@ fn assign_stmt(input: &str) -> IResult<&str, Stmt> {
 
     // Mutating method call: $x.=method or $x.=method(args)
     if let Some(stripped) = rest.strip_prefix(".=") {
-        let (r, method_name) =
-            take_while1(|c: char| c.is_alphanumeric() || c == '_' || c == '-')(stripped)?;
+        let (r, method_name) = take_while1(stripped, |c: char| {
+            c.is_alphanumeric() || c == '_' || c == '-'
+        })?;
         let method_name = method_name.to_string();
         let (r, args) = if r.starts_with('(') {
-            let (r, _) = char('(')(r)?;
+            let (r, _) = parse_char(r, '(')?;
             let (r, _) = ws(r)?;
             let (r, a) = super::primary::parse_call_arg_list(r)?;
             let (r, _) = ws(r)?;
-            let (r, _) = char(')')(r)?;
+            let (r, _) = parse_char(r, ')')?;
             (r, a)
         } else {
             (r, Vec::new())
@@ -2053,20 +1954,17 @@ fn assign_stmt(input: &str) -> IResult<&str, Stmt> {
         return parse_statement_modifier(rest, stmt);
     }
 
-    Err(nom::Err::Error(nom::error::Error::new(
-        input,
-        nom::error::ErrorKind::Tag,
-    )))
+    Err(PError::expected("assignment"))
 }
 
 /// Parse a block statement: { ... }
-fn block_stmt(input: &str) -> IResult<&str, Stmt> {
+fn block_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, body) = block(input)?;
     Ok((rest, Stmt::Block(body)))
 }
 
 /// Parse an expression statement (fallback).
-fn expr_stmt(input: &str) -> IResult<&str, Stmt> {
+fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, expr) = expression(input)?;
 
     // Check for index assignment after expression
@@ -2076,7 +1974,7 @@ fn expr_stmt(input: &str) -> IResult<&str, Stmt> {
         let (rest, _) = ws(rest)?;
         let (rest, value) = parse_comma_or_expr(rest)?;
         let (rest, _) = ws(rest)?;
-        let (rest, _) = opt(char(';'))(rest)?;
+        let (rest, _) = opt_char(rest, ';');
         if let Expr::Index { target, index } = expr {
             return Ok((
                 rest,
@@ -2094,24 +1992,22 @@ fn expr_stmt(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse a `token` or `rule` declaration.
-fn token_decl(input: &str) -> IResult<&str, Stmt> {
+fn token_decl(input: &str) -> PResult<'_, Stmt> {
     let is_rule = keyword("rule", input).is_some();
     let rest = keyword("token", input)
         .or_else(|| keyword("rule", input))
-        .ok_or_else(|| {
-            nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-        })?;
+        .ok_or_else(|| PError::expected("token/rule declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = ident(rest)?;
     let (rest, _) = ws(rest)?;
 
     // Optional params
     let (rest, (params, param_defs)) = if rest.starts_with('(') {
-        let (r, _) = char('(')(rest)?;
+        let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
         let (r, pd) = parse_param_list(r)?;
         let (r, _) = ws(r)?;
-        let (r, _) = char(')')(r)?;
+        let (r, _) = parse_char(r, ')')?;
         let names: Vec<String> = pd.iter().map(|p| p.name.clone()).collect();
         (r, (names, pd))
     } else {
@@ -2147,10 +2043,8 @@ fn token_decl(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse `grammar` declaration.
-fn grammar_decl(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("grammar", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("grammar", input).ok_or_else(|| PError::expected("grammar declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
@@ -2159,17 +2053,14 @@ fn grammar_decl(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse `unit module` statement.
-fn unit_module_stmt(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("unit", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("unit", input).ok_or_else(|| PError::expected("unit statement"))?;
     let (rest, _) = ws1(rest)?;
-    let rest = keyword("module", rest)
-        .ok_or_else(|| nom::Err::Error(nom::error::Error::new(rest, nom::error::ErrorKind::Tag)))?;
+    let rest = keyword("module", rest).ok_or_else(|| PError::expected("'module' after 'unit'"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, _) = opt(char(';'))(rest)?;
+    let (rest, _) = opt_char(rest, ';');
     Ok((
         rest,
         Stmt::Package {
@@ -2180,10 +2071,8 @@ fn unit_module_stmt(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse `package` declaration.
-fn package_decl(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("package", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn package_decl(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("package", input).ok_or_else(|| PError::expected("package declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
@@ -2192,10 +2081,8 @@ fn package_decl(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse `proto` declaration.
-fn proto_decl(input: &str) -> IResult<&str, Stmt> {
-    let rest = keyword("proto", input).ok_or_else(|| {
-        nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-    })?;
+fn proto_decl(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("proto", input).ok_or_else(|| PError::expected("proto declaration"))?;
     let (rest, _) = ws1(rest)?;
     // proto token | proto rule | proto sub
     let _is_token = keyword("token", rest).is_some() || keyword("rule", rest).is_some();
@@ -2207,11 +2094,11 @@ fn proto_decl(input: &str) -> IResult<&str, Stmt> {
     let (rest, name) = ident(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, param_defs) = if rest.starts_with('(') {
-        let (r, _) = char('(')(rest)?;
+        let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
         let (r, pd) = parse_param_list(r)?;
         let (r, _) = ws(r)?;
-        let (r, _) = char(')')(r)?;
+        let (r, _) = parse_char(r, ')')?;
         (r, pd)
     } else {
         (rest, Vec::new())
@@ -2230,7 +2117,7 @@ fn proto_decl(input: &str) -> IResult<&str, Stmt> {
             },
         ));
     }
-    let (rest, _) = opt(char(';'))(rest)?;
+    let (rest, _) = opt_char(rest, ';');
     Ok((
         rest,
         Stmt::ProtoDecl {
@@ -2242,13 +2129,11 @@ fn proto_decl(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse `with`/`without` statement.
-fn with_stmt(input: &str) -> IResult<&str, Stmt> {
+fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     let is_without = keyword("without", input).is_some();
     let rest = keyword("with", input)
         .or_else(|| keyword("without", input))
-        .ok_or_else(|| {
-            nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag))
-        })?;
+        .ok_or_else(|| PError::expected("with/without statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, cond) = expression(rest)?;
     let (rest, _) = ws(rest)?;
@@ -2280,7 +2165,7 @@ fn with_stmt(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse a single statement.
-fn statement(input: &str) -> IResult<&str, Stmt> {
+fn statement(input: &str) -> PResult<'_, Stmt> {
     let (input, _) = ws(input)?;
 
     // Try each statement form in order
@@ -2423,7 +2308,7 @@ fn statement(input: &str) -> IResult<&str, Stmt> {
 }
 
 /// Parse a full program (sequence of statements).
-pub(super) fn program(input: &str) -> IResult<&str, Vec<Stmt>> {
+pub(super) fn program(input: &str) -> PResult<'_, Vec<Stmt>> {
     // Strip BOM if present
     let input = if let Some(stripped) = input.strip_prefix('\u{FEFF}') {
         stripped

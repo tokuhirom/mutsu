@@ -1,6 +1,4 @@
-use nom::IResult;
-use nom::bytes::complete::tag;
-use nom::character::complete::char;
+use super::parse_result::{PResult, parse_char, parse_tag, take_while1};
 
 use crate::ast::Expr;
 use crate::lexer::TokenKind;
@@ -10,19 +8,19 @@ use super::helpers::ws;
 use super::primary::{parse_call_arg_list, primary};
 
 /// Parse an expression (full precedence).
-pub(super) fn expression(input: &str) -> IResult<&str, Expr> {
+pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
     ternary(input)
 }
 
 /// Ternary: expr ?? expr !! expr
-fn ternary(input: &str) -> IResult<&str, Expr> {
+fn ternary(input: &str) -> PResult<'_, Expr> {
     let (input, cond) = or_expr(input)?;
     let (input, _) = ws(input)?;
-    if let Ok((input, _)) = tag::<&str, &str, nom::error::Error<&str>>("??")(input) {
+    if let Ok((input, _)) = parse_tag(input, "??") {
         let (input, _) = ws(input)?;
         let (input, then_expr) = expression(input)?;
         let (input, _) = ws(input)?;
-        let (input, _) = tag("!!")(input)?;
+        let (input, _) = parse_tag(input, "!!")?;
         let (input, _) = ws(input)?;
         let (input, else_expr) = expression(input)?;
         return Ok((
@@ -38,7 +36,7 @@ fn ternary(input: &str) -> IResult<&str, Expr> {
 }
 
 /// Low-precedence: or / and / not
-fn or_expr(input: &str) -> IResult<&str, Expr> {
+fn or_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = and_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
@@ -60,7 +58,7 @@ fn or_expr(input: &str) -> IResult<&str, Expr> {
     Ok((rest, left))
 }
 
-fn and_expr(input: &str) -> IResult<&str, Expr> {
+fn and_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = not_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
@@ -81,7 +79,7 @@ fn and_expr(input: &str) -> IResult<&str, Expr> {
     Ok((rest, left))
 }
 
-fn not_expr(input: &str) -> IResult<&str, Expr> {
+fn not_expr(input: &str) -> PResult<'_, Expr> {
     if input.starts_with("not") && !is_ident_char(input.as_bytes().get(3).copied()) {
         let r = &input[3..];
         let (r, _) = ws(r)?;
@@ -98,7 +96,7 @@ fn not_expr(input: &str) -> IResult<&str, Expr> {
 }
 
 /// || and //
-fn or_or_expr(input: &str) -> IResult<&str, Expr> {
+fn or_or_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = and_and_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
@@ -131,7 +129,7 @@ fn or_or_expr(input: &str) -> IResult<&str, Expr> {
 }
 
 /// &&
-fn and_and_expr(input: &str) -> IResult<&str, Expr> {
+fn and_and_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = comparison_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
@@ -152,7 +150,7 @@ fn and_and_expr(input: &str) -> IResult<&str, Expr> {
 }
 
 /// Comparison: ==, !=, <, >, <=, >=, eq, ne, lt, gt, le, ge, ~~, !~~, ===, <=>
-fn comparison_expr(input: &str) -> IResult<&str, Expr> {
+fn comparison_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, left) = range_expr(input)?;
     let (r, _) = ws(rest)?;
 
@@ -215,7 +213,7 @@ fn comparison_expr(input: &str) -> IResult<&str, Expr> {
 }
 
 /// Range: ..  ..^  ^..  ^..^
-fn range_expr(input: &str) -> IResult<&str, Expr> {
+fn range_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, left) = concat_expr(input)?;
     let (r, _) = ws(rest)?;
 
@@ -272,7 +270,7 @@ fn range_expr(input: &str) -> IResult<&str, Expr> {
 }
 
 /// String concatenation: ~
-fn concat_expr(input: &str) -> IResult<&str, Expr> {
+fn concat_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = additive_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
@@ -307,7 +305,7 @@ fn concat_expr(input: &str) -> IResult<&str, Expr> {
 }
 
 /// Addition/subtraction: + -
-fn additive_expr(input: &str) -> IResult<&str, Expr> {
+fn additive_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = multiplicative_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
@@ -345,7 +343,7 @@ fn additive_expr(input: &str) -> IResult<&str, Expr> {
 }
 
 /// Multiplication/division: * / % div mod gcd lcm
-fn multiplicative_expr(input: &str) -> IResult<&str, Expr> {
+fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = power_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
@@ -453,7 +451,7 @@ fn multiplicative_expr(input: &str) -> IResult<&str, Expr> {
 }
 
 /// Exponentiation: **
-fn power_expr(input: &str) -> IResult<&str, Expr> {
+fn power_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, base) = prefix_expr(input)?;
     let (r, _) = ws(rest)?;
     if let Some(stripped) = r.strip_prefix("**") {
@@ -472,7 +470,7 @@ fn power_expr(input: &str) -> IResult<&str, Expr> {
 }
 
 /// Prefix unary: !, ?, +, -, ~, so, not, ++, --
-fn prefix_expr(input: &str) -> IResult<&str, Expr> {
+fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if input.starts_with('!') && !input.starts_with("!!") && !input.starts_with("!~~") {
         let r = &input[1..];
         let (r, expr) = prefix_expr(r)?;
@@ -580,7 +578,7 @@ fn prefix_expr(input: &str) -> IResult<&str, Expr> {
 }
 
 /// Postfix: method calls (.method), indexing ([]), ++, --
-fn postfix_expr(input: &str) -> IResult<&str, Expr> {
+fn postfix_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut expr) = primary(input)?;
 
     loop {
@@ -599,18 +597,16 @@ fn postfix_expr(input: &str) -> IResult<&str, Expr> {
             };
             // Parse method name
             if let Ok((r, name)) =
-                nom::bytes::complete::take_while1::<_, &str, nom::error::Error<&str>>(|c: char| {
-                    c.is_alphanumeric() || c == '_' || c == '-'
-                })(r)
+                take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
             {
                 let name = name.to_string();
                 // Check for args in parens
                 if r.starts_with('(') {
-                    let (r, _) = char('(')(r)?;
+                    let (r, _) = parse_char(r, '(')?;
                     let (r, _) = ws(r)?;
                     let (r, args) = parse_call_arg_list(r)?;
                     let (r, _) = ws(r)?;
-                    let (r, _) = char(')')(r)?;
+                    let (r, _) = parse_char(r, ')')?;
                     expr = Expr::MethodCall {
                         target: Box::new(expr),
                         name,
@@ -638,7 +634,7 @@ fn postfix_expr(input: &str) -> IResult<&str, Expr> {
             let (r, _) = ws(r)?;
             let (r, index) = expression(r)?;
             let (r, _) = ws(r)?;
-            let (r, _) = char(']')(r)?;
+            let (r, _) = parse_char(r, ']')?;
             expr = Expr::Index {
                 target: Box::new(expr),
                 index: Box::new(index),
@@ -671,7 +667,7 @@ fn postfix_expr(input: &str) -> IResult<&str, Expr> {
             let (r, _) = ws(r)?;
             let (r, index) = expression(r)?;
             let (r, _) = ws(r)?;
-            let (r, _) = char('}')(r)?;
+            let (r, _) = parse_char(r, '}')?;
             expr = Expr::Index {
                 target: Box::new(expr),
                 index: Box::new(index),

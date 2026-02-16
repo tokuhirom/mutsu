@@ -1,10 +1,4 @@
-use nom::IResult;
-use nom::branch::alt;
-use nom::bytes::complete::{tag, take_while, take_while1};
-use nom::character::complete::char;
-use nom::combinator::{opt, recognize};
-use nom::multi::separated_list0;
-use nom::sequence::{delimited, pair};
+use super::parse_result::{PError, PResult, parse_char, parse_tag, take_while_opt, take_while1};
 
 use crate::ast::Expr;
 use crate::value::Value;
@@ -13,35 +7,32 @@ use super::expr::expression;
 use super::helpers::ws;
 
 /// Parse an integer literal (including underscore separators).
-fn integer(input: &str) -> IResult<&str, Expr> {
+fn integer(input: &str) -> PResult<'_, Expr> {
     // Hex: 0x...
-    if let Ok((rest, _)) = tag::<&str, &str, nom::error::Error<&str>>("0x")(input) {
-        let (rest, digits) = take_while1(|c: char| c.is_ascii_hexdigit() || c == '_')(rest)?;
+    if let Ok((rest, _)) = parse_tag(input, "0x") {
+        let (rest, digits) = take_while1(rest, |c: char| c.is_ascii_hexdigit() || c == '_')?;
         let clean: String = digits.chars().filter(|c| *c != '_').collect();
         let n = i64::from_str_radix(&clean, 16).unwrap_or(0);
         return Ok((rest, Expr::Literal(Value::Int(n))));
     }
     // Octal: 0o...
-    if let Ok((rest, _)) = tag::<&str, &str, nom::error::Error<&str>>("0o")(input) {
-        let (rest, digits) = take_while1(|c: char| matches!(c, '0'..='7' | '_'))(rest)?;
+    if let Ok((rest, _)) = parse_tag(input, "0o") {
+        let (rest, digits) = take_while1(rest, |c: char| matches!(c, '0'..='7' | '_'))?;
         let clean: String = digits.chars().filter(|c| *c != '_').collect();
         let n = i64::from_str_radix(&clean, 8).unwrap_or(0);
         return Ok((rest, Expr::Literal(Value::Int(n))));
     }
     // Binary: 0b...
-    if let Ok((rest, _)) = tag::<&str, &str, nom::error::Error<&str>>("0b")(input) {
-        let (rest, digits) = take_while1(|c: char| c == '0' || c == '1' || c == '_')(rest)?;
+    if let Ok((rest, _)) = parse_tag(input, "0b") {
+        let (rest, digits) = take_while1(rest, |c: char| c == '0' || c == '1' || c == '_')?;
         let clean: String = digits.chars().filter(|c| *c != '_').collect();
         let n = i64::from_str_radix(&clean, 2).unwrap_or(0);
         return Ok((rest, Expr::Literal(Value::Int(n))));
     }
-    let (rest, digits) = take_while1(|c: char| c.is_ascii_digit() || c == '_')(input)?;
+    let (rest, digits) = take_while1(input, |c: char| c.is_ascii_digit() || c == '_')?;
     // Don't consume if next char is '.' followed by digit (that's a decimal)
     if rest.starts_with('.') && rest.len() > 1 && rest.as_bytes()[1].is_ascii_digit() {
-        return Err(nom::Err::Error(nom::error::Error::new(
-            input,
-            nom::error::ErrorKind::Tag,
-        )));
+        return Err(PError::expected("integer (not decimal)"));
     }
     let clean: String = digits.chars().filter(|c| *c != '_').collect();
     let n: i64 = clean.parse().unwrap_or(0);
@@ -49,22 +40,31 @@ fn integer(input: &str) -> IResult<&str, Expr> {
 }
 
 /// Parse a decimal number literal.
-fn decimal(input: &str) -> IResult<&str, Expr> {
-    let (rest, num_str) = recognize(pair(
-        take_while1(|c: char| c.is_ascii_digit() || c == '_'),
-        pair(
-            char('.'),
-            take_while1(|c: char| c.is_ascii_digit() || c == '_'),
-        ),
-    ))(input)?;
+fn decimal(input: &str) -> PResult<'_, Expr> {
+    let start = input;
+    let (rest, _) = take_while1(input, |c: char| c.is_ascii_digit() || c == '_')?;
+    let (rest, _) = parse_char(rest, '.')?;
+    let (rest, _) = take_while1(rest, |c: char| c.is_ascii_digit() || c == '_')?;
+    let num_str = &start[..start.len() - rest.len()];
+
     // Check for scientific notation
-    let (rest, exp_part) = opt(recognize(pair(
-        alt((char('e'), char('E'))),
-        recognize(pair(
-            opt(alt((char('+'), char('-')))),
-            take_while1(|c: char| c.is_ascii_digit()),
-        )),
-    )))(rest)?;
+    let (rest, exp_part) = if rest.starts_with('e') || rest.starts_with('E') {
+        let exp_start = rest;
+        let r = &rest[1..];
+        let r = if r.starts_with('+') || r.starts_with('-') {
+            &r[1..]
+        } else {
+            r
+        };
+        if let Ok((r, _)) = take_while1(r, |c: char| c.is_ascii_digit()) {
+            (r, Some(&exp_start[..exp_start.len() - r.len()]))
+        } else {
+            (rest, None)
+        }
+    } else {
+        (rest, None)
+    };
+
     let full = if let Some(exp) = exp_part {
         format!("{}{}", num_str, exp)
     } else {
@@ -76,32 +76,38 @@ fn decimal(input: &str) -> IResult<&str, Expr> {
 }
 
 /// Parse a single-quoted string literal.
-fn single_quoted_string(input: &str) -> IResult<&str, Expr> {
-    let (input, content) = delimited(
-        char('\''),
-        recognize(nom::multi::many0(alt((
-            recognize(pair(char('\\'), nom::character::complete::anychar)),
-            recognize(take_while1(|c: char| c != '\'' && c != '\\')),
-        )))),
-        char('\''),
-    )(input)?;
-    let s = content.replace("\\'", "'").replace("\\\\", "\\");
-    Ok((input, Expr::Literal(Value::Str(s))))
+fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
+    let (input, _) = parse_char(input, '\'')?;
+    let start = input;
+    let mut rest = input;
+    loop {
+        if rest.is_empty() {
+            return Err(PError::expected("closing '"));
+        }
+        if let Some(after_quote) = rest.strip_prefix('\'') {
+            let content = &start[..start.len() - rest.len()];
+            let s = content.replace("\\'", "'").replace("\\\\", "\\");
+            return Ok((after_quote, Expr::Literal(Value::Str(s))));
+        }
+        if rest.starts_with('\\') && rest.len() > 1 {
+            rest = &rest[2..];
+        } else {
+            let ch = rest.chars().next().unwrap();
+            rest = &rest[ch.len_utf8()..];
+        }
+    }
 }
 
 /// Parse a double-quoted string with interpolation support.
-fn double_quoted_string(input: &str) -> IResult<&str, Expr> {
-    let (input, _) = char('"')(input)?;
+fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
+    let (input, _) = parse_char(input, '"')?;
     let mut parts: Vec<Expr> = Vec::new();
     let mut current = String::new();
     let mut rest = input;
 
     loop {
         if rest.is_empty() {
-            return Err(nom::Err::Error(nom::error::Error::new(
-                rest,
-                nom::error::ErrorKind::Tag,
-            )));
+            return Err(PError::expected("closing \""));
         }
         if rest.starts_with('"') {
             rest = &rest[1..];
@@ -258,8 +264,8 @@ fn parse_var_name_from_str(input: &str) -> (&str, String) {
 }
 
 /// Parse a $variable reference.
-fn scalar_var(input: &str) -> IResult<&str, Expr> {
-    let (input, _) = char('$')(input)?;
+fn scalar_var(input: &str) -> PResult<'_, Expr> {
+    let (input, _) = parse_char(input, '$')?;
     // Handle $_ special variable
     if input.starts_with('_') && (input.len() == 1 || !input.as_bytes()[1].is_ascii_alphanumeric())
     {
@@ -279,7 +285,7 @@ fn scalar_var(input: &str) -> IResult<&str, Expr> {
     } else {
         (input, "")
     };
-    let (rest, name) = take_while1(|c: char| c.is_alphanumeric() || c == '_' || c == '-')(rest)?;
+    let (rest, name) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
     let full_name = if twigil.is_empty() {
         name.to_string()
     } else {
@@ -289,15 +295,15 @@ fn scalar_var(input: &str) -> IResult<&str, Expr> {
 }
 
 /// Parse an @array variable reference.
-fn array_var(input: &str) -> IResult<&str, Expr> {
-    let (input, _) = char('@')(input)?;
+fn array_var(input: &str) -> PResult<'_, Expr> {
+    let (input, _) = parse_char(input, '@')?;
     // Handle twigils
     let (rest, twigil) = if input.starts_with('*') || input.starts_with('!') {
         (&input[1..], &input[..1])
     } else {
         (input, "")
     };
-    let (rest, name) = take_while1(|c: char| c.is_alphanumeric() || c == '_' || c == '-')(rest)?;
+    let (rest, name) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
     let full_name = if twigil.is_empty() {
         name.to_string()
     } else {
@@ -307,8 +313,8 @@ fn array_var(input: &str) -> IResult<&str, Expr> {
 }
 
 /// Parse a %hash variable reference.
-fn hash_var(input: &str) -> IResult<&str, Expr> {
-    let (input, _) = char('%')(input)?;
+fn hash_var(input: &str) -> PResult<'_, Expr> {
+    let (input, _) = parse_char(input, '%')?;
     // Handle twigils
     let (rest, twigil) = if input.starts_with('*') || input.starts_with('!') {
         (&input[1..], &input[..1])
@@ -316,7 +322,7 @@ fn hash_var(input: &str) -> IResult<&str, Expr> {
         (input, "")
     };
     // Special: %*ENV
-    let (rest, name) = take_while1(|c: char| c.is_alphanumeric() || c == '_' || c == '-')(rest)?;
+    let (rest, name) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
     let full_name = if twigil.is_empty() {
         name.to_string()
     } else {
@@ -326,43 +332,43 @@ fn hash_var(input: &str) -> IResult<&str, Expr> {
 }
 
 /// Parse a &code variable reference.
-fn code_var(input: &str) -> IResult<&str, Expr> {
-    let (input, _) = char('&')(input)?;
-    let (rest, name) = take_while1(|c: char| c.is_alphanumeric() || c == '_' || c == '-')(input)?;
+fn code_var(input: &str) -> PResult<'_, Expr> {
+    let (input, _) = parse_char(input, '&')?;
+    let (rest, name) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
     Ok((rest, Expr::CodeVar(name.to_string())))
 }
 
 /// Parse a parenthesized expression or list.
-fn paren_expr(input: &str) -> IResult<&str, Expr> {
-    let (input, _) = char('(')(input)?;
+fn paren_expr(input: &str) -> PResult<'_, Expr> {
+    let (input, _) = parse_char(input, '(')?;
     let (input, _) = ws(input)?;
-    if let Ok((input, _)) = char::<&str, nom::error::Error<&str>>(')')(input) {
+    if let Ok((input, _)) = parse_char(input, ')') {
         // Empty parens = empty list
         return Ok((input, Expr::ArrayLiteral(Vec::new())));
     }
     let (input, first) = expression(input)?;
     let (input, _) = ws(input)?;
-    if let Ok((input, _)) = char::<&str, nom::error::Error<&str>>(')')(input) {
+    if let Ok((input, _)) = parse_char(input, ')') {
         return Ok((input, first));
     }
     // Comma-separated list
-    let (input, _) = char(',')(input)?;
+    let (input, _) = parse_char(input, ',')?;
     let (input, _) = ws(input)?;
     let mut items = vec![first];
     // Handle trailing comma before close paren
-    if let Ok((input, _)) = char::<&str, nom::error::Error<&str>>(')')(input) {
+    if let Ok((input, _)) = parse_char(input, ')') {
         return Ok((input, Expr::ArrayLiteral(items)));
     }
     let (mut input_rest, second) = expression(input)?;
     items.push(second);
     loop {
         let (input, _) = ws(input_rest)?;
-        if let Ok((input, _)) = char::<&str, nom::error::Error<&str>>(')')(input) {
+        if let Ok((input, _)) = parse_char(input, ')') {
             return Ok((input, Expr::ArrayLiteral(items)));
         }
-        let (input, _) = char(',')(input)?;
+        let (input, _) = parse_char(input, ',')?;
         let (input, _) = ws(input)?;
-        if let Ok((input, _)) = char::<&str, nom::error::Error<&str>>(')')(input) {
+        if let Ok((input, _)) = parse_char(input, ')') {
             return Ok((input, Expr::ArrayLiteral(items)));
         }
         let (input, next) = expression(input)?;
@@ -372,45 +378,56 @@ fn paren_expr(input: &str) -> IResult<&str, Expr> {
 }
 
 /// Parse an array literal [...].
-fn array_literal(input: &str) -> IResult<&str, Expr> {
-    let (input, _) = char('[')(input)?;
+fn array_literal(input: &str) -> PResult<'_, Expr> {
+    let (input, _) = parse_char(input, '[')?;
     let (input, _) = ws(input)?;
-    let (input, items) = separated_list0(delimited(ws, char(','), ws), expression)(input)?;
-    let (input, _) = ws(input)?;
-    let (input, _) = opt(char(','))(input)?;
-    let (input, _) = ws(input)?;
-    let (input, _) = char(']')(input)?;
-    Ok((input, Expr::ArrayLiteral(items)))
+    let mut items = Vec::new();
+    if let Ok((input, _)) = parse_char(input, ']') {
+        return Ok((input, Expr::ArrayLiteral(items)));
+    }
+    let (mut rest, first) = expression(input)?;
+    items.push(first);
+    loop {
+        let (r, _) = ws(rest)?;
+        if let Ok((r, _)) = parse_char(r, ',') {
+            let (r, _) = ws(r)?;
+            if let Ok((r, _)) = parse_char(r, ']') {
+                return Ok((r, Expr::ArrayLiteral(items)));
+            }
+            let (r, next) = expression(r)?;
+            items.push(next);
+            rest = r;
+        } else {
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ']')?;
+            return Ok((r, Expr::ArrayLiteral(items)));
+        }
+    }
 }
 
 /// Parse a < > quote-word list.
-fn angle_list(input: &str) -> IResult<&str, Expr> {
-    let (input, _) = char('<')(input)?;
+fn angle_list(input: &str) -> PResult<'_, Expr> {
+    let (input, _) = parse_char(input, '<')?;
     // Make sure it's not <= or <=> etc.
     if input.starts_with('=') || input.starts_with('-') {
-        return Err(nom::Err::Error(nom::error::Error::new(
-            input,
-            nom::error::ErrorKind::Tag,
-        )));
+        return Err(PError::expected("angle list"));
     }
     let mut words = Vec::new();
     let mut rest = input;
     loop {
         // Skip whitespace
-        let (r, _) = take_while(|c: char| c == ' ' || c == '\t')(rest)?;
+        let (r, _) = take_while_opt(rest, |c: char| c == ' ' || c == '\t');
         rest = r;
         if rest.starts_with('>') {
             rest = &rest[1..];
             break;
         }
         if rest.is_empty() {
-            return Err(nom::Err::Error(nom::error::Error::new(
-                rest,
-                nom::error::ErrorKind::Tag,
-            )));
+            return Err(PError::expected("closing >"));
         }
-        let (r, word) =
-            take_while1(|c: char| c != '>' && c != ' ' && c != '\t' && c != '\n')(rest)?;
+        let (r, word) = take_while1(rest, |c: char| {
+            c != '>' && c != ' ' && c != '\t' && c != '\n'
+        })?;
         words.push(word.to_string());
         rest = r;
     }
@@ -429,31 +446,25 @@ fn angle_list(input: &str) -> IResult<&str, Expr> {
 }
 
 /// Parse `Whatever` or `*` as Whatever.
-fn whatever(input: &str) -> IResult<&str, Expr> {
-    let (input, _) = char('*')(input)?;
+fn whatever(input: &str) -> PResult<'_, Expr> {
+    let (input, _) = parse_char(input, '*')?;
     // Make sure it's not ** (power op)
     if input.starts_with('*') {
-        return Err(nom::Err::Error(nom::error::Error::new(
-            input,
-            nom::error::ErrorKind::Tag,
-        )));
+        return Err(PError::expected("whatever (not **)"));
     }
     Ok((input, Expr::Literal(Value::Num(f64::INFINITY))))
 }
 
 /// Parse keywords that are values: True, False, Nil, Any, Inf, NaN, etc.
-fn keyword_literal(input: &str) -> IResult<&str, Expr> {
+fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     // Try each keyword, ensuring it's not followed by alphanumeric (word boundary)
-    let try_kw = |kw: &str, val: Value| -> IResult<&str, Expr> {
-        let (rest, _) = tag(kw)(input)?;
+    let try_kw = |kw: &str, val: Value| -> PResult<'_, Expr> {
+        let (rest, _) = parse_tag(input, kw)?;
         // Check word boundary
         if let Some(c) = rest.chars().next()
             && (c.is_alphanumeric() || c == '_' || c == '-')
         {
-            return Err(nom::Err::Error(nom::error::Error::new(
-                input,
-                nom::error::ErrorKind::Tag,
-            )));
+            return Err(PError::expected("word boundary"));
         }
         Ok((rest, Expr::Literal(val)))
     };
@@ -488,16 +499,13 @@ fn keyword_literal(input: &str) -> IResult<&str, Expr> {
     if let Ok(r) = try_kw("e", Value::Num(std::f64::consts::E)) {
         return Ok(r);
     }
-    Err(nom::Err::Error(nom::error::Error::new(
-        input,
-        nom::error::ErrorKind::Tag,
-    )))
+    Err(PError::expected("keyword literal"))
 }
 
 /// Parse a bare identifier that could be a type name or function call.
 /// Returns Expr::Call for function calls, Expr::BareWord for type names.
-pub(super) fn identifier_or_call(input: &str) -> IResult<&str, Expr> {
-    let (rest, name) = take_while1(|c: char| c.is_alphanumeric() || c == '_' || c == '-')(input)?;
+pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
+    let (rest, name) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
     let name = name.to_string();
 
     // Check for :: qualified name (e.g. Foo::Bar)
@@ -506,9 +514,8 @@ pub(super) fn identifier_or_call(input: &str) -> IResult<&str, Expr> {
         let mut r = rest;
         while r.starts_with("::") {
             let after = &r[2..];
-            if let Ok((rest2, part)) = take_while1::<_, &str, nom::error::Error<&str>>(|c: char| {
-                c.is_alphanumeric() || c == '_' || c == '-'
-            })(after)
+            if let Ok((rest2, part)) =
+                take_while1(after, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
             {
                 full_name.push_str("::");
                 full_name.push_str(part);
@@ -522,11 +529,11 @@ pub(super) fn identifier_or_call(input: &str) -> IResult<&str, Expr> {
 
     // Check if followed by `(` for function call
     if rest.starts_with('(') {
-        let (rest, _) = char('(')(rest)?;
+        let (rest, _) = parse_char(rest, '(')?;
         let (rest, _) = ws(rest)?;
         let (rest, args) = parse_call_arg_list(rest)?;
         let (rest, _) = ws(rest)?;
-        let (rest, _) = char(')')(rest)?;
+        let (rest, _) = parse_char(rest, ')')?;
         return Ok((rest, Expr::Call { name, args }));
     }
 
@@ -535,7 +542,7 @@ pub(super) fn identifier_or_call(input: &str) -> IResult<&str, Expr> {
 }
 
 /// Parse comma-separated call arguments inside parens.
-pub(super) fn parse_call_arg_list(input: &str) -> IResult<&str, Vec<Expr>> {
+pub(super) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Expr>> {
     if input.starts_with(')') {
         return Ok((input, Vec::new()));
     }
@@ -547,7 +554,7 @@ pub(super) fn parse_call_arg_list(input: &str) -> IResult<&str, Vec<Expr>> {
         if !r.starts_with(',') {
             return Ok((r, args));
         }
-        let (r, _) = char(',')(r)?;
+        let (r, _) = parse_char(r, ',')?;
         let (r, _) = ws(r)?;
         if r.starts_with(')') {
             return Ok((r, args));
@@ -559,18 +566,15 @@ pub(super) fn parse_call_arg_list(input: &str) -> IResult<&str, Vec<Expr>> {
 }
 
 /// Parse a regex literal: /pattern/ or rx/pattern/ or m/pattern/
-fn regex_lit(input: &str) -> IResult<&str, Expr> {
+fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // rx/pattern/ or rx{pattern}
-    if let Ok((rest, _)) = tag::<&str, &str, nom::error::Error<&str>>("rx")(input) {
+    if let Ok((rest, _)) = parse_tag(input, "rx") {
         let close_delim = if rest.starts_with('/') {
             '/'
         } else if rest.starts_with('{') {
             '}'
         } else {
-            return Err(nom::Err::Error(nom::error::Error::new(
-                input,
-                nom::error::ErrorKind::Tag,
-            )));
+            return Err(PError::expected("regex delimiter"));
         };
         let r = &rest[1..];
         let mut end = 0;
@@ -640,35 +644,27 @@ fn regex_lit(input: &str) -> IResult<&str, Expr> {
         }
     }
 
-    Err(nom::Err::Error(nom::error::Error::new(
-        input,
-        nom::error::ErrorKind::Tag,
-    )))
+    Err(PError::expected("regex literal"))
 }
 
 /// Parse a version literal: v5.26.1
-fn version_lit(input: &str) -> IResult<&str, Expr> {
-    let (rest, _) = char('v')(input)?;
+fn version_lit(input: &str) -> PResult<'_, Expr> {
+    let (rest, _) = parse_char(input, 'v')?;
     // Must start with a digit
     if rest.is_empty() || !rest.as_bytes()[0].is_ascii_digit() {
-        return Err(nom::Err::Error(nom::error::Error::new(
-            input,
-            nom::error::ErrorKind::Tag,
-        )));
+        return Err(PError::expected("version number"));
     }
-    let (rest, version) =
-        take_while1(|c: char| c.is_ascii_digit() || c == '.' || c == '*' || c == '+')(rest)?;
+    let (rest, version) = take_while1(rest, |c: char| {
+        c.is_ascii_digit() || c == '.' || c == '*' || c == '+'
+    })?;
     let full = format!("v{}", version);
     Ok((rest, Expr::Literal(Value::Str(full))))
 }
 
 /// Parse a topicalized method call: .say, .uc, .defined, etc.
-fn topic_method_call(input: &str) -> IResult<&str, Expr> {
+fn topic_method_call(input: &str) -> PResult<'_, Expr> {
     if !input.starts_with('.') || input.starts_with("..") {
-        return Err(nom::Err::Error(nom::error::Error::new(
-            input,
-            nom::error::ErrorKind::Tag,
-        )));
+        return Err(PError::expected("topic method call"));
     }
     let r = &input[1..];
     let (r, modifier) = if let Some(stripped) = r.strip_prefix('^') {
@@ -678,14 +674,14 @@ fn topic_method_call(input: &str) -> IResult<&str, Expr> {
     } else {
         (r, None)
     };
-    let (rest, name) = take_while1(|c: char| c.is_alphanumeric() || c == '_' || c == '-')(r)?;
+    let (rest, name) = take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
     let name = name.to_string();
     if rest.starts_with('(') {
-        let (rest, _) = char('(')(rest)?;
+        let (rest, _) = parse_char(rest, '(')?;
         let (rest, _) = ws(rest)?;
         let (rest, args) = parse_call_arg_list(rest)?;
         let (rest, _) = ws(rest)?;
-        let (rest, _) = char(')')(rest)?;
+        let (rest, _) = parse_char(rest, ')')?;
         return Ok((
             rest,
             Expr::MethodCall {
@@ -708,26 +704,56 @@ fn topic_method_call(input: &str) -> IResult<&str, Expr> {
 }
 
 /// Parse a primary expression (atomic value).
-pub(super) fn primary(input: &str) -> IResult<&str, Expr> {
-    alt((
-        decimal,
-        integer,
-        single_quoted_string,
-        double_quoted_string,
-        regex_lit,
-        version_lit,
-        keyword_literal,
-        topic_method_call,
-        scalar_var,
-        array_var,
-        hash_var,
-        code_var,
-        paren_expr,
-        array_literal,
-        angle_list,
-        whatever,
-        identifier_or_call,
-    ))(input)
+pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
+    if let Ok(r) = decimal(input) {
+        return Ok(r);
+    }
+    if let Ok(r) = integer(input) {
+        return Ok(r);
+    }
+    if let Ok(r) = single_quoted_string(input) {
+        return Ok(r);
+    }
+    if let Ok(r) = double_quoted_string(input) {
+        return Ok(r);
+    }
+    if let Ok(r) = regex_lit(input) {
+        return Ok(r);
+    }
+    if let Ok(r) = version_lit(input) {
+        return Ok(r);
+    }
+    if let Ok(r) = keyword_literal(input) {
+        return Ok(r);
+    }
+    if let Ok(r) = topic_method_call(input) {
+        return Ok(r);
+    }
+    if let Ok(r) = scalar_var(input) {
+        return Ok(r);
+    }
+    if let Ok(r) = array_var(input) {
+        return Ok(r);
+    }
+    if let Ok(r) = hash_var(input) {
+        return Ok(r);
+    }
+    if let Ok(r) = code_var(input) {
+        return Ok(r);
+    }
+    if let Ok(r) = paren_expr(input) {
+        return Ok(r);
+    }
+    if let Ok(r) = array_literal(input) {
+        return Ok(r);
+    }
+    if let Ok(r) = angle_list(input) {
+        return Ok(r);
+    }
+    if let Ok(r) = whatever(input) {
+        return Ok(r);
+    }
+    identifier_or_call(input)
 }
 
 #[cfg(test)]
