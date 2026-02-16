@@ -663,6 +663,17 @@ impl std::fmt::Display for RuntimeErrorCode {
     }
 }
 
+impl RuntimeErrorCode {
+    pub fn is_parse(self) -> bool {
+        matches!(
+            self,
+            RuntimeErrorCode::ParseUnparsed
+                | RuntimeErrorCode::ParseExpected
+                | RuntimeErrorCode::ParseGeneric
+        )
+    }
+}
+
 #[derive(Debug)]
 pub struct RuntimeError {
     pub message: String,
@@ -794,5 +805,30 @@ impl RuntimeError {
             is_succeed: true,
             label: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RuntimeErrorCode;
+
+    #[test]
+    fn runtime_error_code_display_names_are_stable() {
+        assert_eq!(
+            RuntimeErrorCode::ParseUnparsed.to_string(),
+            "PARSE_UNPARSED"
+        );
+        assert_eq!(
+            RuntimeErrorCode::ParseExpected.to_string(),
+            "PARSE_EXPECTED"
+        );
+        assert_eq!(RuntimeErrorCode::ParseGeneric.to_string(), "PARSE_GENERIC");
+    }
+
+    #[test]
+    fn runtime_error_code_parse_classification() {
+        assert!(RuntimeErrorCode::ParseUnparsed.is_parse());
+        assert!(RuntimeErrorCode::ParseExpected.is_parse());
+        assert!(RuntimeErrorCode::ParseGeneric.is_parse());
     }
 }

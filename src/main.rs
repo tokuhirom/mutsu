@@ -6,17 +6,20 @@ use mutsu::{Interpreter, RuntimeError};
 
 fn print_error(prefix: &str, err: &RuntimeError) {
     eprintln!("{}: {}", prefix, err.message);
-    if let Some(code) = &err.code {
-        eprintln!("{} code: {}", prefix, code);
+    let mut meta = Vec::new();
+    if let Some(code) = err.code {
+        meta.push(format!("code={}", code));
+        if code.is_parse() {
+            meta.push("kind=parse".to_string());
+        }
     }
     match (err.line, err.column) {
-        (Some(line), Some(column)) => {
-            eprintln!("{} location: line {}, column {}", prefix, line, column);
-        }
-        (Some(line), None) => {
-            eprintln!("{} location: line {}", prefix, line);
-        }
+        (Some(line), Some(column)) => meta.push(format!("line={}, column={}", line, column)),
+        (Some(line), None) => meta.push(format!("line={}", line)),
         _ => {}
+    }
+    if !meta.is_empty() {
+        eprintln!("{} metadata: {}", prefix, meta.join(", "));
     }
 }
 
