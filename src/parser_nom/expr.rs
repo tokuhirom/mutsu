@@ -7,6 +7,61 @@ use crate::value::Value;
 use super::helpers::ws;
 use super::primary::{parse_call_arg_list, primary};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComparisonOp {
+    StrictEq,
+    NumEq,
+    NotDivisibleBy,
+    NumNe,
+    SmartNotMatch,
+    SmartMatch,
+    Spaceship,
+    NumLe,
+    NumGe,
+    NumLt,
+    NumGt,
+    StrEq,
+    StrNe,
+    StrLt,
+    StrGt,
+    StrLe,
+    StrGe,
+    Leg,
+    Cmp,
+    Eqv,
+    Before,
+    After,
+}
+
+impl ComparisonOp {
+    fn token_kind(self) -> TokenKind {
+        match self {
+            ComparisonOp::StrictEq => TokenKind::EqEqEq,
+            ComparisonOp::NumEq => TokenKind::EqEq,
+            ComparisonOp::NotDivisibleBy => TokenKind::BangPercentPercent,
+            ComparisonOp::NumNe => TokenKind::BangEq,
+            ComparisonOp::SmartNotMatch => TokenKind::BangTilde,
+            ComparisonOp::SmartMatch => TokenKind::SmartMatch,
+            ComparisonOp::Spaceship => TokenKind::LtEqGt,
+            ComparisonOp::NumLe => TokenKind::Lte,
+            ComparisonOp::NumGe => TokenKind::Gte,
+            ComparisonOp::NumLt => TokenKind::Lt,
+            ComparisonOp::NumGt => TokenKind::Gt,
+            ComparisonOp::StrEq => TokenKind::Ident("eq".to_string()),
+            ComparisonOp::StrNe => TokenKind::Ident("ne".to_string()),
+            ComparisonOp::StrLt => TokenKind::Ident("lt".to_string()),
+            ComparisonOp::StrGt => TokenKind::Ident("gt".to_string()),
+            ComparisonOp::StrLe => TokenKind::Ident("le".to_string()),
+            ComparisonOp::StrGe => TokenKind::Ident("ge".to_string()),
+            ComparisonOp::Leg => TokenKind::Ident("leg".to_string()),
+            ComparisonOp::Cmp => TokenKind::Ident("cmp".to_string()),
+            ComparisonOp::Eqv => TokenKind::Ident("eqv".to_string()),
+            ComparisonOp::Before => TokenKind::Ident("before".to_string()),
+            ComparisonOp::After => TokenKind::Ident("after".to_string()),
+        }
+    }
+}
+
 /// Parse an expression (full precedence).
 pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
     let (rest, mut expr) = ternary(input)?;
@@ -249,63 +304,13 @@ fn junctive_expr(input: &str) -> PResult<'_, Expr> {
 fn comparison_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, left) = range_expr(input)?;
     let (r, _) = ws(rest)?;
-
-    // Try multi-char operators first
-    let (op, len): (Option<TokenKind>, usize) = if r.starts_with("===") {
-        (Some(TokenKind::EqEqEq), 3)
-    } else if r.starts_with("==") && !r.starts_with("===") {
-        (Some(TokenKind::EqEq), 2)
-    } else if r.starts_with("!%%") {
-        (Some(TokenKind::BangPercentPercent), 3)
-    } else if r.starts_with("!=") {
-        (Some(TokenKind::BangEq), 2)
-    } else if r.starts_with("!~~") {
-        (Some(TokenKind::BangTilde), 3)
-    } else if r.starts_with("~~") {
-        (Some(TokenKind::SmartMatch), 2)
-    } else if r.starts_with("<=>") {
-        (Some(TokenKind::LtEqGt), 3)
-    } else if r.starts_with("<=") && !r.starts_with("<=>") {
-        (Some(TokenKind::Lte), 2)
-    } else if r.starts_with(">=") {
-        (Some(TokenKind::Gte), 2)
-    } else if r.starts_with('<') && !r.starts_with("<<") && !r.starts_with("<=") {
-        (Some(TokenKind::Lt), 1)
-    } else if r.starts_with('>') && !r.starts_with(">>") && !r.starts_with(">=") {
-        (Some(TokenKind::Gt), 1)
-    } else if r.starts_with("eq") && !is_ident_char(r.as_bytes().get(2).copied()) {
-        (Some(TokenKind::Ident("eq".to_string())), 2)
-    } else if r.starts_with("ne") && !is_ident_char(r.as_bytes().get(2).copied()) {
-        (Some(TokenKind::Ident("ne".to_string())), 2)
-    } else if r.starts_with("lt") && !is_ident_char(r.as_bytes().get(2).copied()) {
-        (Some(TokenKind::Ident("lt".to_string())), 2)
-    } else if r.starts_with("gt") && !is_ident_char(r.as_bytes().get(2).copied()) {
-        (Some(TokenKind::Ident("gt".to_string())), 2)
-    } else if r.starts_with("le") && !is_ident_char(r.as_bytes().get(2).copied()) {
-        (Some(TokenKind::Ident("le".to_string())), 2)
-    } else if r.starts_with("ge") && !is_ident_char(r.as_bytes().get(2).copied()) {
-        (Some(TokenKind::Ident("ge".to_string())), 2)
-    } else if r.starts_with("leg") && !is_ident_char(r.as_bytes().get(3).copied()) {
-        (Some(TokenKind::Ident("leg".to_string())), 3)
-    } else if r.starts_with("cmp") && !is_ident_char(r.as_bytes().get(3).copied()) {
-        (Some(TokenKind::Ident("cmp".to_string())), 3)
-    } else if r.starts_with("eqv") && !is_ident_char(r.as_bytes().get(3).copied()) {
-        (Some(TokenKind::Ident("eqv".to_string())), 3)
-    } else if r.starts_with("before") && !is_ident_char(r.as_bytes().get(6).copied()) {
-        (Some(TokenKind::Ident("before".to_string())), 6)
-    } else if r.starts_with("after") && !is_ident_char(r.as_bytes().get(5).copied()) {
-        (Some(TokenKind::Ident("after".to_string())), 5)
-    } else {
-        (None, 0)
-    };
-
-    if let Some(op) = op {
+    if let Some((op, len)) = parse_comparison_op(r) {
         let r = &r[len..];
         let (r, _) = ws(r)?;
         let (r, right) = range_expr(r)?;
         let mut result = Expr::Binary {
             left: Box::new(left),
-            op,
+            op: op.token_kind(),
             right: Box::new(right.clone()),
         };
         // Chained comparisons: 2 < $_ < 4 → (2 < $_) && ($_ < 4)
@@ -313,14 +318,13 @@ fn comparison_expr(input: &str) -> PResult<'_, Expr> {
         let mut r = r;
         loop {
             let (r2, _) = ws(r)?;
-            let (chain_op, chain_len) = parse_comparison_op(r2);
-            if let Some(cop) = chain_op {
+            if let Some((cop, chain_len)) = parse_comparison_op(r2) {
                 let r2 = &r2[chain_len..];
                 let (r2, _) = ws(r2)?;
                 let (r2, next_right) = range_expr(r2)?;
                 let next_cmp = Expr::Binary {
                     left: Box::new(prev_right),
-                    op: cop,
+                    op: cop.token_kind(),
                     right: Box::new(next_right.clone()),
                 };
                 result = Expr::Binary {
@@ -341,53 +345,53 @@ fn comparison_expr(input: &str) -> PResult<'_, Expr> {
 }
 
 /// Extract a comparison operator from the start of the input, returning the op and its length.
-fn parse_comparison_op(r: &str) -> (Option<TokenKind>, usize) {
+fn parse_comparison_op(r: &str) -> Option<(ComparisonOp, usize)> {
     if r.starts_with("===") {
-        (Some(TokenKind::EqEqEq), 3)
+        Some((ComparisonOp::StrictEq, 3))
     } else if r.starts_with("==") && !r.starts_with("===") {
-        (Some(TokenKind::EqEq), 2)
+        Some((ComparisonOp::NumEq, 2))
     } else if r.starts_with("!%%") {
-        (Some(TokenKind::BangPercentPercent), 3)
+        Some((ComparisonOp::NotDivisibleBy, 3))
     } else if r.starts_with("!=") {
-        (Some(TokenKind::BangEq), 2)
+        Some((ComparisonOp::NumNe, 2))
     } else if r.starts_with("!~~") {
-        (Some(TokenKind::BangTilde), 3)
+        Some((ComparisonOp::SmartNotMatch, 3))
     } else if r.starts_with("~~") {
-        (Some(TokenKind::SmartMatch), 2)
+        Some((ComparisonOp::SmartMatch, 2))
     } else if r.starts_with("<=>") {
-        (Some(TokenKind::LtEqGt), 3)
+        Some((ComparisonOp::Spaceship, 3))
     } else if r.starts_with("<=") && !r.starts_with("<=>") {
-        (Some(TokenKind::Lte), 2)
+        Some((ComparisonOp::NumLe, 2))
     } else if r.starts_with(">=") {
-        (Some(TokenKind::Gte), 2)
+        Some((ComparisonOp::NumGe, 2))
     } else if r.starts_with('<') && !r.starts_with("<<") && !r.starts_with("<=") {
-        (Some(TokenKind::Lt), 1)
+        Some((ComparisonOp::NumLt, 1))
     } else if r.starts_with('>') && !r.starts_with(">>") && !r.starts_with(">=") {
-        (Some(TokenKind::Gt), 1)
+        Some((ComparisonOp::NumGt, 1))
     } else if r.starts_with("eq") && !is_ident_char(r.as_bytes().get(2).copied()) {
-        (Some(TokenKind::Ident("eq".to_string())), 2)
+        Some((ComparisonOp::StrEq, 2))
     } else if r.starts_with("ne") && !is_ident_char(r.as_bytes().get(2).copied()) {
-        (Some(TokenKind::Ident("ne".to_string())), 2)
+        Some((ComparisonOp::StrNe, 2))
     } else if r.starts_with("lt") && !is_ident_char(r.as_bytes().get(2).copied()) {
-        (Some(TokenKind::Ident("lt".to_string())), 2)
+        Some((ComparisonOp::StrLt, 2))
     } else if r.starts_with("gt") && !is_ident_char(r.as_bytes().get(2).copied()) {
-        (Some(TokenKind::Ident("gt".to_string())), 2)
+        Some((ComparisonOp::StrGt, 2))
     } else if r.starts_with("le") && !is_ident_char(r.as_bytes().get(2).copied()) {
-        (Some(TokenKind::Ident("le".to_string())), 2)
+        Some((ComparisonOp::StrLe, 2))
     } else if r.starts_with("ge") && !is_ident_char(r.as_bytes().get(2).copied()) {
-        (Some(TokenKind::Ident("ge".to_string())), 2)
+        Some((ComparisonOp::StrGe, 2))
     } else if r.starts_with("leg") && !is_ident_char(r.as_bytes().get(3).copied()) {
-        (Some(TokenKind::Ident("leg".to_string())), 3)
+        Some((ComparisonOp::Leg, 3))
     } else if r.starts_with("cmp") && !is_ident_char(r.as_bytes().get(3).copied()) {
-        (Some(TokenKind::Ident("cmp".to_string())), 3)
+        Some((ComparisonOp::Cmp, 3))
     } else if r.starts_with("eqv") && !is_ident_char(r.as_bytes().get(3).copied()) {
-        (Some(TokenKind::Ident("eqv".to_string())), 3)
+        Some((ComparisonOp::Eqv, 3))
     } else if r.starts_with("before") && !is_ident_char(r.as_bytes().get(6).copied()) {
-        (Some(TokenKind::Ident("before".to_string())), 6)
+        Some((ComparisonOp::Before, 6))
     } else if r.starts_with("after") && !is_ident_char(r.as_bytes().get(5).copied()) {
-        (Some(TokenKind::Ident("after".to_string())), 5)
+        Some((ComparisonOp::After, 5))
     } else {
-        (None, 0)
+        None
     }
 }
 

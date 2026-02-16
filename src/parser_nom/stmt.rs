@@ -7,6 +7,62 @@ use crate::value::Value;
 use super::expr::expression;
 use super::helpers::{ws, ws1};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CompoundAssignOp {
+    DefinedOr,
+    LogicalOr,
+    LogicalAnd,
+    Add,
+    Sub,
+    Concat,
+    Mul,
+}
+
+impl CompoundAssignOp {
+    fn symbol(self) -> &'static str {
+        match self {
+            CompoundAssignOp::DefinedOr => "//=",
+            CompoundAssignOp::LogicalOr => "||=",
+            CompoundAssignOp::LogicalAnd => "&&=",
+            CompoundAssignOp::Add => "+=",
+            CompoundAssignOp::Sub => "-=",
+            CompoundAssignOp::Concat => "~=",
+            CompoundAssignOp::Mul => "*=",
+        }
+    }
+
+    fn token_kind(self) -> TokenKind {
+        match self {
+            CompoundAssignOp::DefinedOr => TokenKind::SlashSlash,
+            CompoundAssignOp::LogicalOr => TokenKind::OrOr,
+            CompoundAssignOp::LogicalAnd => TokenKind::AndAnd,
+            CompoundAssignOp::Add => TokenKind::Plus,
+            CompoundAssignOp::Sub => TokenKind::Minus,
+            CompoundAssignOp::Concat => TokenKind::Tilde,
+            CompoundAssignOp::Mul => TokenKind::Star,
+        }
+    }
+}
+
+const COMPOUND_ASSIGN_OPS: &[CompoundAssignOp] = &[
+    CompoundAssignOp::DefinedOr,
+    CompoundAssignOp::LogicalOr,
+    CompoundAssignOp::LogicalAnd,
+    CompoundAssignOp::Add,
+    CompoundAssignOp::Sub,
+    CompoundAssignOp::Concat,
+    CompoundAssignOp::Mul,
+];
+
+fn parse_compound_assign_op(input: &str) -> Option<(&str, CompoundAssignOp)> {
+    for op in COMPOUND_ASSIGN_OPS {
+        if let Some(stripped) = input.strip_prefix(op.symbol()) {
+            return Some((stripped, *op));
+        }
+    }
+    None
+}
+
 /// Check if a byte is a valid identifier continuation character.
 fn is_ident_char(b: Option<u8>) -> bool {
     match b {
@@ -621,42 +677,30 @@ fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr> {
     }
     let (r, var) = var_name(input)?;
     let (r2, _) = ws(r)?;
-    let compound_ops: &[(&str, TokenKind)] = &[
-        ("//=", TokenKind::SlashSlash),
-        ("||=", TokenKind::OrOr),
-        ("&&=", TokenKind::AndAnd),
-        ("+=", TokenKind::Plus),
-        ("-=", TokenKind::Minus),
-        ("~=", TokenKind::Tilde),
-        ("*=", TokenKind::Star),
-    ];
     let prefix = match sigil {
         b'@' => "@",
         b'%' => "%",
         _ => "",
     };
-    // Check compound assignment ops
-    for &(op_str, ref op_kind) in compound_ops {
-        if let Some(stripped) = r2.strip_prefix(op_str) {
-            let (rest, _) = ws(stripped)?;
-            // RHS: try chained assign, else single expression
-            let (rest, rhs) = match try_parse_assign_expr(rest) {
-                Ok(r) => r,
-                Err(_) => expression(rest)?,
-            };
-            let name = format!("{}{}", prefix, var);
-            return Ok((
-                rest,
-                Expr::AssignExpr {
-                    name,
-                    expr: Box::new(Expr::Binary {
-                        left: Box::new(Expr::Var(var.to_string())),
-                        op: op_kind.clone(),
-                        right: Box::new(rhs),
-                    }),
-                },
-            ));
-        }
+    if let Some((stripped, op)) = parse_compound_assign_op(r2) {
+        let (rest, _) = ws(stripped)?;
+        // RHS: try chained assign, else single expression
+        let (rest, rhs) = match try_parse_assign_expr(rest) {
+            Ok(r) => r,
+            Err(_) => expression(rest)?,
+        };
+        let name = format!("{}{}", prefix, var);
+        return Ok((
+            rest,
+            Expr::AssignExpr {
+                name,
+                expr: Box::new(Expr::Binary {
+                    left: Box::new(Expr::Var(var.to_string())),
+                    op: op.token_kind(),
+                    right: Box::new(rhs),
+                }),
+            },
+        ));
     }
     // Check simple chained assignment: $var = ...
     if r2.starts_with('=') && !r2.starts_with("==") && !r2.starts_with("=>") {
@@ -2114,32 +2158,20 @@ fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     let name = format!("{}{}", prefix, var);
     let (rest, _) = ws(rest)?;
 
-    // Compound assignment: +=, -=, ~=, *=, //=, ||=, &&=
-    let compound_ops: &[(&str, TokenKind)] = &[
-        ("+=", TokenKind::Plus),
-        ("-=", TokenKind::Minus),
-        ("~=", TokenKind::Tilde),
-        ("*=", TokenKind::Star),
-        ("//=", TokenKind::SlashSlash),
-        ("||=", TokenKind::OrOr),
-        ("&&=", TokenKind::AndAnd),
-    ];
-    for &(op_str, ref op_kind) in compound_ops {
-        if let Some(stripped) = rest.strip_prefix(op_str) {
-            let (rest, _) = ws(stripped)?;
-            let (rest, rhs) = parse_assign_expr_or_comma(rest)?;
-            let expr = Expr::Binary {
-                left: Box::new(Expr::Var(name.clone())),
-                op: op_kind.clone(),
-                right: Box::new(rhs),
-            };
-            let stmt = Stmt::Assign {
-                name,
-                expr,
-                op: AssignOp::Assign,
-            };
-            return parse_statement_modifier(rest, stmt);
-        }
+    if let Some((stripped, op)) = parse_compound_assign_op(rest) {
+        let (rest, _) = ws(stripped)?;
+        let (rest, rhs) = parse_assign_expr_or_comma(rest)?;
+        let expr = Expr::Binary {
+            left: Box::new(Expr::Var(name.clone())),
+            op: op.token_kind(),
+            right: Box::new(rhs),
+        };
+        let stmt = Stmt::Assign {
+            name,
+            expr,
+            op: AssignOp::Assign,
+        };
+        return parse_statement_modifier(rest, stmt);
     }
 
     // Mutating method call: $x.=method or $x .= method(args)
