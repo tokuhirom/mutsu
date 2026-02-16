@@ -2,6 +2,8 @@
 
 This document defines the ongoing parser refactoring policy and next steps.
 
+Detailed opportunity audit: `docs/parser-opportunities-audit.md`.
+
 ## Goals
 
 - Improve change safety for parser work.
