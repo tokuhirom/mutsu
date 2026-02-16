@@ -907,8 +907,23 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
         // Method call: .method or .method(args) or .method: args
         // Also handles modifiers: .?method, .!method
         // Also handles: .^method (meta-method)
+        // Also handles call-on: .(args)
         if rest.starts_with('.') && !rest.starts_with("..") {
             let r = &rest[1..];
+            // Check for call-on syntax: .(args)
+            if r.starts_with('(') {
+                let (r, _) = parse_char(r, '(')?;
+                let (r, _) = ws(r)?;
+                let (r, args) = parse_call_arg_list(r)?;
+                let (r, _) = ws(r)?;
+                let (r, _) = parse_char(r, ')')?;
+                expr = Expr::CallOn {
+                    target: Box::new(expr),
+                    args,
+                };
+                rest = r;
+                continue;
+            }
             // Check for modifier
             let (r, modifier) = if let Some(stripped) = r.strip_prefix('?') {
                 (stripped, Some('?'))
