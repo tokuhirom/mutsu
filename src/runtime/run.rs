@@ -49,32 +49,38 @@ impl Interpreter {
         }
         self.collect_doc_comments(&preprocessed);
         self.loose_ok = false;
-        let mut lexer = Lexer::new(&preprocessed);
-        let mut tokens = Vec::new();
-        loop {
-            let token = lexer.next_token();
-            let end = matches!(token.kind, TokenKind::Eof);
-            tokens.push(token);
-            if end {
-                break;
-            }
-        }
-        // Store $=finish content if the source contains =finish
-        if let Some(content) = lexer.finish_content() {
-            self.env
-                .insert("=finish".to_string(), Value::Str(content.to_string()));
-        }
         let file_name = self
             .program_path
             .clone()
             .unwrap_or_else(|| "<unknown>".to_string());
         self.env.insert("?FILE".to_string(), Value::Str(file_name));
         self.env.insert("?LINE".to_string(), Value::Int(1));
-        if let Some(err) = lexer.errors.first() {
-            return Err(RuntimeError::new(err));
-        }
-        let mut parser = Parser::new(tokens);
-        let stmts = parser.parse_program()?;
+        let stmts = if self.parser_backend == ParserBackend::Nom {
+            let (stmts, _) =
+                crate::parse_dispatch::parse_source(&preprocessed, self.parser_backend)?;
+            stmts
+        } else {
+            let mut lexer = Lexer::new(&preprocessed);
+            let mut tokens = Vec::new();
+            loop {
+                let token = lexer.next_token();
+                let end = matches!(token.kind, TokenKind::Eof);
+                tokens.push(token);
+                if end {
+                    break;
+                }
+            }
+            // Store $=finish content if the source contains =finish
+            if let Some(content) = lexer.finish_content() {
+                self.env
+                    .insert("=finish".to_string(), Value::Str(content.to_string()));
+            }
+            if let Some(err) = lexer.errors.first() {
+                return Err(RuntimeError::new(err));
+            }
+            let mut parser = Parser::new(tokens);
+            parser.parse_program()?
+        };
         let (enter_ph, leave_ph, body_main) = self.split_block_phasers(&stmts);
         self.run_block_raw(&enter_ph)?;
         let compiler = crate::compiler::Compiler::new();
