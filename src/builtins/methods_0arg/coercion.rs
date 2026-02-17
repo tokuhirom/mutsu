@@ -92,13 +92,33 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => Some(Ok(Value::Slip(vec![target.clone()]))),
         },
         "list" | "Array" => match target {
-            Value::Range(a, b) => Some(Ok(Value::Array((*a..=*b).map(Value::Int).collect()))),
-            Value::RangeExcl(a, b) => Some(Ok(Value::Array((*a..*b).map(Value::Int).collect()))),
+            Value::Range(a, b) => {
+                if *b == i64::MAX || *a == i64::MIN {
+                    Some(Ok(target.clone()))
+                } else {
+                    Some(Ok(Value::Array((*a..=*b).map(Value::Int).collect())))
+                }
+            }
+            Value::RangeExcl(a, b) => {
+                if *b == i64::MAX || *a == i64::MIN {
+                    Some(Ok(target.clone()))
+                } else {
+                    Some(Ok(Value::Array((*a..*b).map(Value::Int).collect())))
+                }
+            }
             Value::RangeExclStart(a, b) => {
-                Some(Ok(Value::Array((a + 1..=*b).map(Value::Int).collect())))
+                if *b == i64::MAX || *a == i64::MIN {
+                    Some(Ok(target.clone()))
+                } else {
+                    Some(Ok(Value::Array((a + 1..=*b).map(Value::Int).collect())))
+                }
             }
             Value::RangeExclBoth(a, b) => {
-                Some(Ok(Value::Array((a + 1..*b).map(Value::Int).collect())))
+                if *b == i64::MAX || *a == i64::MIN {
+                    Some(Ok(target.clone()))
+                } else {
+                    Some(Ok(Value::Array((a + 1..*b).map(Value::Int).collect())))
+                }
             }
             Value::Array(_) => Some(Ok(target.clone())),
             _ => Some(Ok(Value::Array(vec![target.clone()]))),

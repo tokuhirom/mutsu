@@ -2,6 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::value::{JunctionKind, Value};
 
+/// Maximum number of elements when expanding an infinite range to a list.
+const MAX_RANGE_EXPAND: i64 = 1_000_000;
+
 pub(crate) fn make_order(ord: std::cmp::Ordering) -> Value {
     match ord {
         std::cmp::Ordering::Less => Value::Enum {
@@ -86,9 +89,13 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
     match value {
         Value::Array(_) => value,
         Value::Nil => Value::Array(Vec::new()),
+        Value::Range(a, b) if b == i64::MAX || a == i64::MIN => value,
         Value::Range(a, b) => Value::Array((a..=b).map(Value::Int).collect()),
+        Value::RangeExcl(a, b) if b == i64::MAX || a == i64::MIN => value,
         Value::RangeExcl(a, b) => Value::Array((a..b).map(Value::Int).collect()),
+        Value::RangeExclStart(a, b) if b == i64::MAX || a == i64::MIN => value,
         Value::RangeExclStart(a, b) => Value::Array((a + 1..=b).map(Value::Int).collect()),
+        Value::RangeExclBoth(a, b) if b == i64::MAX || a == i64::MIN => value,
         Value::RangeExclBoth(a, b) => Value::Array((a + 1..b).map(Value::Int).collect()),
         Value::Slip(items) => Value::Array(items),
         other => Value::Array(vec![other]),
@@ -230,10 +237,24 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             .iter()
             .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
             .collect(),
-        Value::Range(a, b) => (*a..=*b).map(Value::Int).collect(),
-        Value::RangeExcl(a, b) => (*a..*b).map(Value::Int).collect(),
-        Value::RangeExclStart(a, b) => (*a + 1..=*b).map(Value::Int).collect(),
-        Value::RangeExclBoth(a, b) => (*a + 1..*b).map(Value::Int).collect(),
+        Value::Range(a, b) => {
+            let end = (*b).min(*a + MAX_RANGE_EXPAND);
+            (*a..=end).map(Value::Int).collect()
+        }
+        Value::RangeExcl(a, b) => {
+            let end = (*b).min(*a + MAX_RANGE_EXPAND);
+            (*a..end).map(Value::Int).collect()
+        }
+        Value::RangeExclStart(a, b) => {
+            let start = *a + 1;
+            let end = (*b).min(start + MAX_RANGE_EXPAND);
+            (start..=end).map(Value::Int).collect()
+        }
+        Value::RangeExclBoth(a, b) => {
+            let start = *a + 1;
+            let end = (*b).min(start + MAX_RANGE_EXPAND);
+            (start..end).map(Value::Int).collect()
+        }
         Value::Set(items) => items.iter().map(|s| Value::Str(s.clone())).collect(),
         Value::Bag(items) => items
             .iter()

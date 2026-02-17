@@ -224,10 +224,24 @@ impl Interpreter {
                 .iter()
                 .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
                 .collect(),
-            Value::Range(a, b) => (*a..=*b).map(Value::Int).collect(),
-            Value::RangeExcl(a, b) => (*a..*b).map(Value::Int).collect(),
-            Value::RangeExclStart(a, b) => (*a + 1..=*b).map(Value::Int).collect(),
-            Value::RangeExclBoth(a, b) => (*a + 1..*b).map(Value::Int).collect(),
+            Value::Range(a, b) => {
+                let end = (*b).min(*a + 1_000_000);
+                (*a..=end).map(Value::Int).collect()
+            }
+            Value::RangeExcl(a, b) => {
+                let end = (*b).min(*a + 1_000_000);
+                (*a..end).map(Value::Int).collect()
+            }
+            Value::RangeExclStart(a, b) => {
+                let start = *a + 1;
+                let end = (*b).min(start + 1_000_000);
+                (start..=end).map(Value::Int).collect()
+            }
+            Value::RangeExclBoth(a, b) => {
+                let start = *a + 1;
+                let end = (*b).min(start + 1_000_000);
+                (start..end).map(Value::Int).collect()
+            }
             Value::Set(items) => items.iter().map(|s| Value::Str(s.clone())).collect(),
             Value::Bag(items) => items
                 .iter()

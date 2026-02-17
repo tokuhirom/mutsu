@@ -63,6 +63,52 @@ impl VM {
             (Value::Bag(b), idx) => Value::Int(*b.get(&idx.to_string_value()).unwrap_or(&0)),
             (Value::Mix(m), Value::Str(key)) => Value::Num(*m.get(&key).unwrap_or(&0.0)),
             (Value::Mix(m), idx) => Value::Num(*m.get(&idx.to_string_value()).unwrap_or(&0.0)),
+            // Range indexing (supports infinite ranges)
+            (ref range, Value::Int(i)) if range.is_range() => {
+                let (start, _end, _excl_start, _excl_end) = range_params(range);
+                if i < 0 {
+                    Value::Nil
+                } else {
+                    Value::Int(start + i)
+                }
+            }
+            (ref range, Value::RangeExcl(a, b)) if range.is_range() => {
+                let (start, end, _excl_start, excl_end) = range_params(range);
+                let actual_end = if excl_end { end - 1 } else { end };
+                let mut result = Vec::new();
+                for i in a..b {
+                    let val = start + i;
+                    if val > actual_end {
+                        break;
+                    }
+                    result.push(Value::Int(val));
+                }
+                Value::Array(result)
+            }
+            (ref range, Value::Range(a, b)) if range.is_range() => {
+                let (start, end, _excl_start, excl_end) = range_params(range);
+                let actual_end = if excl_end { end - 1 } else { end };
+                let mut result = Vec::new();
+                for i in a..=b {
+                    let val = start + i;
+                    if val > actual_end {
+                        break;
+                    }
+                    result.push(Value::Int(val));
+                }
+                Value::Array(result)
+            }
+            (ref range, Value::Array(indices)) if range.is_range() => {
+                let (start, _end, _excl_start, _excl_end) = range_params(range);
+                let result: Vec<Value> = indices
+                    .iter()
+                    .map(|idx| match idx {
+                        Value::Int(i) => Value::Int(start + i),
+                        _ => Value::Nil,
+                    })
+                    .collect();
+                Value::Array(result)
+            }
             _ => Value::Nil,
         };
         self.stack.push(result);
@@ -272,5 +318,16 @@ impl VM {
         };
         self.locals[idx] = val.clone();
         self.interpreter.env_mut().insert(name.clone(), val);
+    }
+}
+
+/// Extract (start, end, excl_start, excl_end) from a Range value.
+fn range_params(v: &Value) -> (i64, i64, bool, bool) {
+    match v {
+        Value::Range(a, b) => (*a, *b, false, false),
+        Value::RangeExcl(a, b) => (*a, *b, false, true),
+        Value::RangeExclStart(a, b) => (*a + 1, *b, true, false),
+        Value::RangeExclBoth(a, b) => (*a + 1, *b, true, true),
+        _ => (0, 0, false, false),
     }
 }
