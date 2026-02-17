@@ -13,6 +13,7 @@ roast/S02-literals/hex_chars.t
 roast/S02-literals/pair-boolean.t
 roast/S02-literals/version.t
 roast/S02-magicals/78258.t
+roast/S02-magicals/args.t
 roast/S02-magicals/block.t
 roast/S02-magicals/DISTRO.t
 roast/S02-magicals/file_line.t
@@ -35,10 +36,12 @@ roast/S03-operators/list-quote-junction.t
 roast/S03-operators/not.t
 roast/S03-operators/so.t
 roast/S03-operators/spaceship-and-containers.t
+roast/S03-operators/subscript-vs-lt.t
 roast/S03-smartmatch/any-any.t
 roast/S03-smartmatch/any-bool.t
 roast/S03-smartmatch/any-sub.t
 roast/S03-smartmatch/any-callable.t
+roast/S03-smartmatch/any-method.t
 roast/S03-smartmatch/any-str.t
 roast/S04-exceptions/control_across_runloop.t
 roast/S04-statement-modifiers/values_in_bool_context.t
@@ -139,6 +142,7 @@ roast/S24-testing/14-like-unlike.t
 roast/S24-testing/6-done_testing.t
 roast/S24-testing/7-bail_out.t
 roast/S29-any/cmp.t
+roast/S29-context/exit-in-if.t
 roast/S32-array/bool.t
 roast/S32-io/chdir-process.t
 roast/S32-io/null-char.t
@@ -154,4 +158,5 @@ roast/S32-str/tc.t
 roast/S32-str/trim.t
 roast/S32-str/uc.t
 roast/S32-trig/e.t
+roast/S32-trig/pi.t
 roast/S32-trig/simple.t
