@@ -99,13 +99,38 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             ))),
             _ => None,
         },
-        "antipairs" | "invert" => match target {
+        "antipairs" => match target {
             Value::Hash(items) => Some(Ok(Value::Array(
                 items
                     .iter()
                     .map(|(k, v)| Value::Pair(v.to_string_value(), Box::new(Value::Str(k.clone()))))
                     .collect(),
             ))),
+            _ => None,
+        },
+        "invert" => match target {
+            Value::Hash(items) => {
+                let mut result = Vec::new();
+                for (k, v) in items {
+                    match v {
+                        Value::Array(arr) => {
+                            for item in arr {
+                                result.push(Value::Pair(
+                                    item.to_string_value(),
+                                    Box::new(Value::Str(k.clone())),
+                                ));
+                            }
+                        }
+                        _ => {
+                            result.push(Value::Pair(
+                                v.to_string_value(),
+                                Box::new(Value::Str(k.clone())),
+                            ));
+                        }
+                    }
+                }
+                Some(Ok(Value::Array(result)))
+            }
             _ => None,
         },
         "total" => match target {

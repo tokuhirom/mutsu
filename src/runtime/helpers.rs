@@ -1,5 +1,10 @@
 use crate::ast::{Expr, Stmt};
 
+/// Scan a statement list for placeholder variables (names starting with `^`,
+/// e.g. `$^a`, `$^b`) and return their sorted, deduplicated names.
+///
+/// This is used to detect implicit block parameters so that constructs like
+/// `{ $^a + $^b }` can automatically introduce `$^a` and `$^b` as parameters.
 pub(crate) fn collect_placeholders(stmts: &[Stmt]) -> Vec<String> {
     let mut names = Vec::new();
     for stmt in stmts {
@@ -10,6 +15,8 @@ pub(crate) fn collect_placeholders(stmts: &[Stmt]) -> Vec<String> {
     names
 }
 
+/// Recursively walk a single statement, collecting placeholder variable names
+/// into `out`. Dispatches into sub-statements and contained expressions.
 fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
     match stmt {
         Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Take(e) => collect_ph_expr(e, out),
@@ -95,6 +102,9 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
     }
 }
 
+/// Recursively walk a single expression, collecting placeholder variable names
+/// (variables whose name starts with `^`) into `out`. Traverses all nested
+/// sub-expressions and any embedded statement bodies (blocks, lambdas, try, etc.).
 fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
     match expr {
         Expr::Var(name) if name.starts_with('^') => {
