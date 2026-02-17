@@ -55,6 +55,11 @@ impl Interpreter {
                     self.smart_match(&Value::Nil, val)
                 }
             }
+            // Scalar ~~ Hash: check key existence
+            (_, Value::Hash(map)) => {
+                let key = left.to_string_value();
+                map.contains_key(&key)
+            }
             // When RHS is a type/Package, check type membership
             (_, Value::Package(type_name)) => {
                 // A Package on the LHS is a type object - only matches the same type
@@ -108,9 +113,12 @@ impl Interpreter {
             (Value::Instance { id: id_a, .. }, Value::Instance { id: id_b, .. }) => id_a == id_b,
             // When RHS is a Bool, result is that Bool
             (_, Value::Bool(b)) => *b,
-            // Default: non-matching types don't match
+            // Instance identity
             (Value::Instance { .. }, _) | (_, Value::Instance { .. }) => false,
-            _ => true,
+            // Range ~~ Range: LHS is subset of RHS
+            (Value::Range(la, lb), Value::Range(ra, rb)) => la >= ra && lb <= rb,
+            // Default: compare equality
+            _ => left.to_string_value() == right.to_string_value(),
         }
     }
 

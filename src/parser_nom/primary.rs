@@ -2381,6 +2381,35 @@ fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // :name<value> (angle-bracket colonpair, equivalent to :name("value"))
+    if rest.starts_with('<') && !rest.starts_with("<<") && !rest.starts_with("<=") {
+        let inner = &rest[1..];
+        if let Some(close) = inner.find('>') {
+            let content = &inner[..close];
+            let r = &inner[close + 1..];
+            let words: Vec<&str> = content.split_whitespace().collect();
+            if !words.is_empty() {
+                let val_expr = if words.len() == 1 {
+                    Expr::Literal(Value::Str(words[0].to_string()))
+                } else {
+                    Expr::ArrayLiteral(
+                        words
+                            .into_iter()
+                            .map(|w| Expr::Literal(Value::Str(w.to_string())))
+                            .collect(),
+                    )
+                };
+                return Ok((
+                    r,
+                    Expr::Binary {
+                        left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
+                        op: crate::token_kind::TokenKind::FatArrow,
+                        right: Box::new(val_expr),
+                    },
+                ));
+            }
+        }
+    }
     // :name (boolean true)
     Ok((
         rest,

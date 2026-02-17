@@ -85,11 +85,13 @@ for f in "${TEST_FILES[@]}"; do
 
   OK_COUNT=$(echo "$OUTPUT" | grep -cE '^ok [0-9]' || true)
   NOT_OK_COUNT=$(echo "$OUTPUT" | grep -E '^not ok [0-9]' | grep -cvE '# TODO' || true)
+  TODO_COUNT=$(echo "$OUTPUT" | grep -cE '^not ok [0-9]+.*# TODO' || true)
 
   TOTAL_SUBTESTS=$((TOTAL_SUBTESTS + PLAN))
   PASSED_SUBTESTS=$((PASSED_SUBTESTS + OK_COUNT))
 
-  if [ "$NOT_OK_COUNT" -eq 0 ] && [ "$EXIT_CODE" -eq 0 ] && [ "$OK_COUNT" -eq "$PLAN" ]; then
+  EFFECTIVE_OK=$((OK_COUNT + TODO_COUNT))
+  if [ "$NOT_OK_COUNT" -eq 0 ] && [ "$EXIT_CODE" -eq 0 ] && [ "$EFFECTIVE_OK" -eq "$PLAN" ]; then
     PASS=$((PASS + 1))
     echo "$f" >> "$OUTDIR/roast-pass.txt"
   else
