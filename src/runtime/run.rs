@@ -38,16 +38,31 @@ impl Interpreter {
 
         for line in input.lines() {
             let trimmed = line.trim_start();
+            // #?rakudo.jvm skip — JVM-specific skip: skip the following { } block.
+            // Only skip if followed by a brace block (no count prefix like "35 skip").
+            // Lines like "#?rakudo.jvm 35 skip '...'" are count-based and should be
+            // ignored (the N lines following are not in a block).
             if !skipping_block
                 && trimmed.starts_with("#?rakudo")
                 && trimmed.contains("skip")
                 && trimmed.contains(".jvm")
             {
-                skipping_block = true;
-                started_block = false;
-                brace_depth = 0;
-                output.push('\n');
-                continue;
+                // Check if this is a block-skip (no number prefix) vs line-count skip
+                let after_prefix = trimmed
+                    .trim_start_matches("#?rakudo.jvm")
+                    .trim_start_matches("#?rakudo")
+                    .trim_start();
+                let is_count_skip = after_prefix
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_digit());
+                if !is_count_skip {
+                    skipping_block = true;
+                    started_block = false;
+                    brace_depth = 0;
+                    output.push('\n');
+                    continue;
+                }
             }
 
             if !skipping_block {

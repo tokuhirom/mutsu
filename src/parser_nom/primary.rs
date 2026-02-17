@@ -1726,9 +1726,25 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         return Ok((rest, Expr::Call { name, args }));
     }
 
+    // Bareword followed by => — Pair constructor (higher precedence than operators)
+    // e.g., b => "foo" should parse as Pair even in `%a ~~ b => "foo"`
+    let (r, _) = ws(rest)?;
+    if r.starts_with("=>") && !r.starts_with("==>") {
+        let r2 = &r[2..];
+        let (r2, _) = ws(r2)?;
+        let (r2, value) = super::expr::or_expr_pub(r2)?;
+        return Ok((
+            r2,
+            Expr::Binary {
+                left: Box::new(Expr::Literal(Value::Str(name))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(value),
+            },
+        ));
+    }
+
     // Bareword followed by block { ... } and comma — function call with block arg
     // e.g., map { $_ * 2 }, @arr  or  grep { $_ > 0 }, @arr
-    let (r, _) = ws(rest)?;
     if r.starts_with('{')
         && !is_keyword(&name)
         && let Ok((r2, block_body)) = parse_block_body(r)

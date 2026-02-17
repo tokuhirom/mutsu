@@ -698,6 +698,10 @@ fn ternary(input: &str) -> PResult<'_, Expr> {
 }
 
 /// Low-precedence: or / orelse
+pub(super) fn or_expr_pub(input: &str) -> PResult<'_, Expr> {
+    or_expr(input)
+}
+
 fn or_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = and_expr(input)?;
     loop {

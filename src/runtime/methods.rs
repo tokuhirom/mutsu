@@ -608,6 +608,22 @@ impl Interpreter {
         if method == "grep" {
             return match target {
                 Value::Array(items) => self.eval_grep_over_items(args.first().cloned(), items),
+                Value::Range(a, b) => {
+                    let items: Vec<Value> = (a..=b).map(Value::Int).collect();
+                    self.eval_grep_over_items(args.first().cloned(), items)
+                }
+                Value::RangeExcl(a, b) => {
+                    let items: Vec<Value> = (a..b).map(Value::Int).collect();
+                    self.eval_grep_over_items(args.first().cloned(), items)
+                }
+                Value::RangeExclStart(a, b) => {
+                    let items: Vec<Value> = (a + 1..=b).map(Value::Int).collect();
+                    self.eval_grep_over_items(args.first().cloned(), items)
+                }
+                Value::RangeExclBoth(a, b) => {
+                    let items: Vec<Value> = (a + 1..b).map(Value::Int).collect();
+                    self.eval_grep_over_items(args.first().cloned(), items)
+                }
                 other => Ok(other),
             };
         }

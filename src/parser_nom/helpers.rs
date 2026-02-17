@@ -12,8 +12,13 @@ pub(super) fn ws(input: &str) -> PResult<'_, ()> {
             rest = r;
             continue;
         }
-        // Try line comment
+        // Try embedded comment #`[...] or line comment
         if r.starts_with('#') {
+            if let Some(after) = skip_embedded_comment(r) {
+                rest = after;
+                at_line_start = false;
+                continue;
+            }
             let end = r.find('\n').unwrap_or(r.len());
             rest = &r[end..];
             at_line_start = true;
@@ -103,6 +108,102 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
             }
         }
         Ok((rest, ""))
+    }
+}
+
+/// Skip an embedded comment `#`<bracket>...<close>`.
+/// Returns the remaining input after the comment, or None if not an embedded comment.
+fn skip_embedded_comment(input: &str) -> Option<&str> {
+    // Must start with #`
+    let after_hash_backtick = input.strip_prefix("#`")?;
+    if after_hash_backtick.is_empty() {
+        return None;
+    }
+    // The next character(s) must be an opening bracket (no space allowed)
+    let mut chars = after_hash_backtick.chars();
+    let open_char = chars.next()?;
+    let close_char = matching_bracket(open_char)?;
+
+    // Count how many consecutive identical open brackets
+    let mut count = 1usize;
+    let mut rest = chars.as_str();
+    while rest.starts_with(open_char) {
+        count += 1;
+        rest = &rest[open_char.len_utf8()..];
+    }
+
+    // Build the closing sequence
+    let close_seq: String = std::iter::repeat_n(close_char, count).collect();
+
+    // Find the closing sequence (brackets may nest if count == 1)
+    let open_seq: String = std::iter::repeat_n(open_char, count).collect();
+    if count == 1 {
+        // Track nesting depth for single-char brackets
+        let mut depth = 1i32;
+        let mut scan = rest;
+        while !scan.is_empty() {
+            let c = scan.chars().next().unwrap();
+            if c == open_char {
+                depth += 1;
+            } else if c == close_char {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&scan[close_char.len_utf8()..]);
+                }
+            }
+            scan = &scan[c.len_utf8()..];
+        }
+        None
+    } else {
+        // Multi-char delimiters: count nesting of same-length bracket pairs
+        let mut depth = 1i32;
+        let mut scan = rest;
+        while !scan.is_empty() {
+            if scan.starts_with(&close_seq[..]) {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&scan[close_seq.len()..]);
+                }
+                scan = &scan[close_seq.len()..];
+            } else if scan.starts_with(&open_seq[..]) {
+                depth += 1;
+                scan = &scan[open_seq.len()..];
+            } else {
+                let c = scan.chars().next().unwrap();
+                scan = &scan[c.len_utf8()..];
+            }
+        }
+        None
+    }
+}
+
+/// Return the matching closing bracket for an opening bracket.
+fn matching_bracket(c: char) -> Option<char> {
+    match c {
+        '(' => Some(')'),
+        '[' => Some(']'),
+        '{' => Some('}'),
+        '<' => Some('>'),
+        '\u{00AB}' => Some('\u{00BB}'), // « »
+        '\u{2018}' => Some('\u{2019}'), // ' '
+        '\u{201C}' => Some('\u{201D}'), // " "
+        '\u{300C}' => Some('\u{300D}'), // 「 」
+        '\u{300E}' => Some('\u{300F}'), // 『 』
+        '\u{FF08}' => Some('\u{FF09}'), // （ ）
+        '\u{300A}' => Some('\u{300B}'), // 《 》
+        '\u{3008}' => Some('\u{3009}'), // 〈 〉
+        '\u{169B}' => Some('\u{169C}'), // ᚛ ᚜
+        '\u{2045}' => Some('\u{2046}'), // ⁅ ⁆
+        '\u{207D}' => Some('\u{207E}'), // ⁽ ⁾
+        '\u{2768}' => Some('\u{2769}'), // ❨ ❩
+        '\u{276E}' => Some('\u{276F}'), // ❮ ❯
+        '\u{2770}' => Some('\u{2771}'), // ❰ ❱
+        '\u{2772}' => Some('\u{2773}'), // ❲ ❳
+        '\u{27E6}' => Some('\u{27E7}'), // ⟦ ⟧
+        '\u{2985}' => Some('\u{2986}'), // ⦅ ⦆
+        '\u{2993}' => Some('\u{2994}'), // ⦓ ⦔
+        '\u{2995}' => Some('\u{2996}'), // ⦕ ⦖
+        _ => None,
     }
 }
 

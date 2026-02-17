@@ -46,6 +46,15 @@ impl Interpreter {
                 self.env.insert("/".to_string(), Value::Nil);
                 false
             }
+            // Hash ~~ Pair: check that key exists in hash and value smartmatches
+            (Value::Hash(map), Value::Pair(key, val)) => {
+                if let Some(hash_val) = map.get(key.as_str()) {
+                    self.smart_match(hash_val, val)
+                } else {
+                    // Key not in hash: check if the pair value matches Nil/Any
+                    self.smart_match(&Value::Nil, val)
+                }
+            }
             // When RHS is a type/Package, check type membership
             (_, Value::Package(type_name)) => {
                 // A Package on the LHS is a type object - only matches the same type
@@ -59,6 +68,34 @@ impl Interpreter {
             // When RHS is NaN, check if LHS is also NaN
             (_, Value::Num(b)) if b.is_nan() => Self::value_is_nan(left),
             (Value::Num(a), _) if a.is_nan() => Self::value_is_nan(right),
+            // Complex comparison (NaN-aware: any NaN component means NaN smartmatch)
+            (Value::Complex(ar, ai), Value::Complex(br, bi)) => {
+                let a_nan = ar.is_nan() || ai.is_nan();
+                let b_nan = br.is_nan() || bi.is_nan();
+                if a_nan && b_nan {
+                    true
+                } else if a_nan || b_nan {
+                    false
+                } else {
+                    ar == br && ai == bi
+                }
+            }
+            (Value::Int(a), Value::Complex(br, bi)) => (*a as f64) == *br && *bi == 0.0,
+            (Value::Complex(ar, ai), Value::Int(b)) => *ar == (*b as f64) && *ai == 0.0,
+            (Value::Num(a), Value::Complex(br, bi)) => {
+                if a.is_nan() && (br.is_nan() || bi.is_nan()) {
+                    true
+                } else {
+                    *a == *br && *bi == 0.0
+                }
+            }
+            (Value::Complex(ar, ai), Value::Num(b)) => {
+                if b.is_nan() && (ar.is_nan() || ai.is_nan()) {
+                    true
+                } else {
+                    *ar == *b && *ai == 0.0
+                }
+            }
             (Value::Int(a), Value::Int(b)) => a == b,
             (Value::Num(a), Value::Num(b)) => a == b,
             (Value::Int(a), Value::Num(b)) => (*a as f64) == *b,

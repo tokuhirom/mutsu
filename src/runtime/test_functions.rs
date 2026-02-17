@@ -334,7 +334,11 @@ impl Interpreter {
 
     fn test_fn_isa_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let value = Self::positional_value_required(args, 0, "isa-ok expects value")?;
-        let type_name = Self::positional_string(args, 1);
+        // Extract type name from Package value or string
+        let type_name = match Self::positional_value(args, 1) {
+            Some(Value::Package(name)) => name.clone(),
+            _ => Self::positional_string(args, 1),
+        };
         let desc = Self::positional_string(args, 2);
         let todo = Self::named_bool(args, "todo");
         let ok = match type_name.as_str() {

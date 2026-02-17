@@ -6,6 +6,7 @@ roast/integration/substr-after-match-in-gather-in-for.t
 roast/integration/topic_in_double_loop.t
 roast/MISC/bug-coverage-stress.t
 roast/S01-perl-5-integration/isms.t
+roast/S01-perl-5-integration/subs.t
 roast/S02-lexical-conventions/bom.t
 roast/S02-lexical-conventions/finish-pod.t
 roast/S02-lexical-conventions/pod-in-multi-line-exprs.t
@@ -21,6 +22,7 @@ roast/S02-magicals/GROUP.t
 roast/S02-magicals/pid.t
 roast/S02-magicals/USER.t
 roast/S02-one-pass-parsing/less-than.t
+roast/S02-one-pass-parsing/misc.t
 roast/S02-types/fatrat.t
 roast/S02-types/nan.t
 roast/S02-types/parsing-bool.t
@@ -39,9 +41,12 @@ roast/S03-smartmatch/any-any.t
 roast/S03-smartmatch/any-bool.t
 roast/S03-smartmatch/any-sub.t
 roast/S03-smartmatch/any-callable.t
+roast/S03-smartmatch/any-complex.t
+roast/S03-smartmatch/any-hash-pair.t
 roast/S03-smartmatch/any-method.t
 roast/S03-smartmatch/any-str.t
 roast/S04-exceptions/control_across_runloop.t
+roast/S04-statement-modifiers/until.t
 roast/S04-statement-modifiers/values_in_bool_context.t
 roast/S04-statement-modifiers/while.t
 roast/S04-statement-parsing/hash.t
@@ -53,6 +58,8 @@ roast/S04-statements/until.t
 roast/S05-grammar/namespace-6e.t
 roast/S05-mass/named-chars.t
 roast/S05-mass/properties-block.t
+roast/S05-mass/properties-derived.t
+roast/S05-mass/properties-script.t
 roast/S05-mass/properties-contributory.t
 roast/S05-metachars/newline.t
 roast/S05-metasyntax/delimiters.t
@@ -63,7 +70,9 @@ roast/S06-signature/passing-hashes.t
 roast/S06-signature/scalar-type.t
 roast/S06-traits/is-readonly.t
 roast/S06-traits/native-is-copy.t
+roast/S11-modules/versioning.t
 roast/S12-class/literal.t
+roast/S12-methods/typed-attributes.t
 roast/S12-construction/autopairs.t
 roast/S14-roles/bool.t
 roast/S15-nfg/cgj.t
@@ -124,13 +133,19 @@ roast/S15-normalization/nfkd-sanity.t
 roast/S16-filehandles/misc.t
 roast/S16-io/cwd.t
 roast/S17-channel/subscription-drain-in-react.t
+roast/S17-procasync/many-processes-no-close-stdin.t
+roast/S17-procasync/no-runaway-file-limit.t
 roast/S17-procasync/windows-arg-quoting.t
 roast/S17-supply/watch-path.t
 roast/S19-command-line-options/03-dash-p.t
 roast/S24-testing/0-compile.t
 roast/S24-testing/11-plan-skip-all.t
+roast/S24-testing/11-plan-skip-all-subtests.t
+roast/S24-testing/13-cmp-ok.t
 roast/S24-testing/6-done_testing.t
 roast/S24-testing/7-bail_out.t
+roast/S24-testing/8-die_on_fail.t
+roast/S28-named-variables/slangs.t
 roast/S29-any/cmp.t
 roast/S29-context/exit-in-if.t
 roast/S32-array/bool.t
