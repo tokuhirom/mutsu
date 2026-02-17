@@ -565,7 +565,7 @@ fn parse_word_logical_op(input: &str) -> Option<(LogicalOp, usize)> {
 
 fn enrich_expected_error(err: PError, context: &str, remaining_len_fallback: usize) -> PError {
     PError {
-        message: merge_expected_messages(context, &err.message),
+        messages: merge_expected_messages(context, &err.messages),
         remaining_len: err.remaining_len.or(Some(remaining_len_fallback)),
     }
 }
@@ -1116,15 +1116,12 @@ fn comparison_expr(input: &str) -> PResult<'_, Expr> {
     if let Some((op, len)) = parse_comparison_op(r) {
         let r = &r[len..];
         let (r, _) = ws(r)?;
-        let (r, mut right) = junctive_expr(r).map_err(|err| {
-            let message = merge_expected_messages(
+        let (r, mut right) = junctive_expr(r).map_err(|err| PError {
+            messages: merge_expected_messages(
                 "expected expression after comparison operator",
-                &err.message,
-            );
-            PError {
-                message,
-                remaining_len: err.remaining_len.or(Some(r.len())),
-            }
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(r.len())),
         })?;
         // For smartmatch (~~ / !~~), transform WhateverCode on the RHS into a Lambda
         if matches!(op, ComparisonOp::SmartMatch | ComparisonOp::SmartNotMatch)
@@ -1149,15 +1146,12 @@ fn comparison_expr(input: &str) -> PResult<'_, Expr> {
             if let Some((cop, chain_len)) = parse_comparison_op(r2) {
                 let r2 = &r2[chain_len..];
                 let (r2, _) = ws(r2)?;
-                let (r2, next_right) = junctive_expr(r2).map_err(|err| {
-                    let message = merge_expected_messages(
+                let (r2, next_right) = junctive_expr(r2).map_err(|err| PError {
+                    messages: merge_expected_messages(
                         "expected expression after chained comparison operator",
-                        &err.message,
-                    );
-                    PError {
-                        message,
-                        remaining_len: err.remaining_len.or(Some(r2.len())),
-                    }
+                        &err.messages,
+                    ),
+                    remaining_len: err.remaining_len.or(Some(r2.len())),
                 })?;
                 let next_cmp = Expr::Binary {
                     left: Box::new(prev_right),
@@ -2107,57 +2101,60 @@ mod tests {
     #[test]
     fn comparison_requires_rhs_expression() {
         let err = expression("1 <").unwrap_err();
-        assert!(err.message.contains("expression after comparison operator"));
+        assert!(
+            err.message()
+                .contains("expression after comparison operator")
+        );
     }
 
     #[test]
     fn chained_comparison_requires_rhs_expression() {
         let err = expression("1 < 2 <").unwrap_err();
-        assert!(err.message.contains("chained comparison operator"));
+        assert!(err.message().contains("chained comparison operator"));
     }
 
     #[test]
     fn range_requires_rhs_expression() {
         let err = expression("1 ..").unwrap_err();
-        assert!(err.message.contains("range RHS"));
+        assert!(err.message().contains("range RHS"));
     }
 
     #[test]
     fn ternary_requires_then_and_else_expression() {
         let err_then = expression("$x ??").unwrap_err();
-        assert!(err_then.message.contains("then-expression"));
+        assert!(err_then.message().contains("then-expression"));
 
         let err_else = expression("$x ?? 1 !!").unwrap_err();
-        assert!(err_else.message.contains("else-expression"));
+        assert!(err_else.message().contains("else-expression"));
     }
 
     #[test]
     fn additive_requires_rhs_expression() {
         let err = expression("1 +").unwrap_err();
-        assert!(err.message.contains("additive operator"));
+        assert!(err.message().contains("additive operator"));
     }
 
     #[test]
     fn parse_postfix_method_requires_name() {
         let err = expression("$x.").unwrap_err();
-        assert!(err.message.contains("method name"));
+        assert!(err.message().contains("method name"));
     }
 
     #[test]
     fn parse_postfix_colon_args_require_expression() {
         let err = expression("$x.foo:").unwrap_err();
-        assert!(err.message.contains("expected"));
+        assert!(err.message().contains("expected"));
     }
 
     #[test]
     fn parse_postfix_angle_index_requires_closing() {
         let err = expression("$x<foo").unwrap_err();
-        assert!(err.message.contains("closing '>'"));
+        assert!(err.message().contains("closing '>'"));
     }
 
     #[test]
     fn parse_postfix_angle_index_requires_key() {
         let err = expression("$x<>").unwrap_err();
-        assert!(err.message.contains("angle index key"));
+        assert!(err.message().contains("angle index key"));
     }
 }

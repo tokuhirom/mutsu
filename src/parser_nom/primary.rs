@@ -1385,7 +1385,7 @@ fn is_stmt_modifier_ahead(input: &str) -> bool {
 /// Stops at statement modifiers, semicolons, and closing brackets.
 fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
     let (r, first) = expression(input).map_err(|err| PError {
-        message: merge_expected_messages("expected listop argument expression", &err.message),
+        messages: merge_expected_messages("expected listop argument expression", &err.messages),
         remaining_len: err.remaining_len.or(Some(input.len())),
     })?;
     let mut args = vec![first];
@@ -1407,9 +1407,9 @@ fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
             break;
         }
         let (r2, arg) = expression(r2).map_err(|err| PError {
-            message: merge_expected_messages(
+            messages: merge_expected_messages(
                 "expected listop argument expression after ','",
-                &err.message,
+                &err.messages,
             ),
             remaining_len: err.remaining_len.or(Some(r2.len())),
         })?;
@@ -1611,9 +1611,9 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // sub with params: sub ($x, $y) { ... }
             if r.starts_with('(') {
                 let (r2, params_body) = parse_anon_sub_with_params(r).map_err(|err| PError {
-                    message: merge_expected_messages(
+                    messages: merge_expected_messages(
                         "expected anonymous sub parameter list/body",
-                        &err.message,
+                        &err.messages,
                     ),
                     remaining_len: err.remaining_len.or(Some(r.len())),
                 })?;
@@ -1776,9 +1776,9 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
             // Try to parse an argument
             let (r2, arg) = parse_listop_arg(r).map_err(|err| PError {
-                message: merge_expected_messages(
+                messages: merge_expected_messages(
                     "expected listop argument expression",
-                    &err.message,
+                    &err.messages,
                 ),
                 remaining_len: err.remaining_len.or(Some(r.len())),
             })?;
@@ -2628,30 +2628,30 @@ mod tests {
     #[test]
     fn primary_aggregates_furthest_expected_messages() {
         let err = primary("@").unwrap_err();
-        assert_eq!(err.message, "expected at least one matching character");
+        assert_eq!(err.message(), "expected at least one matching character");
     }
 
     #[test]
     fn primary_reports_invalid_qualified_identifier_tail() {
         let err = primary("Foo::").unwrap_err();
-        assert!(err.message.contains("identifier after '::'"));
+        assert!(err.message().contains("identifier after '::'"));
     }
 
     #[test]
     fn primary_reports_missing_listop_argument() {
         let err = primary("shift :").unwrap_err();
-        assert!(err.message.contains("listop argument expression"));
+        assert!(err.message().contains("listop argument expression"));
     }
 
     #[test]
     fn primary_reports_invalid_reduction_list_item() {
         let err = primary("[+] 1, :").unwrap_err();
-        assert!(err.message.contains("reduction list"));
+        assert!(err.message().contains("reduction list"));
     }
 
     #[test]
     fn primary_reports_invalid_anon_sub_params() {
         let err = primary("sub ($x,)").unwrap_err();
-        assert!(err.message.contains("anonymous sub parameter list/body"));
+        assert!(err.message().contains("anonymous sub parameter list/body"));
     }
 }

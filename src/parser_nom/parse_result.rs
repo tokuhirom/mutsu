@@ -4,23 +4,39 @@ pub(super) type PResult<'a, T> = Result<(&'a str, T), PError>;
 
 #[derive(Debug, Clone)]
 pub(super) struct PError {
-    pub message: String,
+    /// Expected-alternative descriptions (without "expected " prefix).
+    /// Display joins them as "expected A or B or C".
+    pub messages: Vec<String>,
     pub remaining_len: Option<usize>,
 }
 
 impl PError {
     pub fn expected(what: &str) -> Self {
         PError {
-            message: format!("expected {}", what),
+            messages: vec![what.to_string()],
             remaining_len: None,
         }
     }
 
     pub fn expected_at(what: &str, input: &str) -> Self {
         PError {
-            message: format!("expected {}", what),
+            messages: vec![what.to_string()],
             remaining_len: Some(input.len()),
         }
+    }
+
+    /// Build a PError from a pre-formatted full message (no "expected " prefix added by Display).
+    pub fn raw(message: String, remaining_len: Option<usize>) -> Self {
+        PError {
+            messages: vec![message],
+            remaining_len,
+        }
+    }
+
+    /// Get the formatted message string (used by tests).
+    #[allow(dead_code)]
+    pub fn message(&self) -> String {
+        format!("{}", self)
     }
 
     pub fn consumed_from(&self, total_len: usize) -> Option<usize> {
@@ -33,34 +49,24 @@ pub(super) fn error_score(err: &PError, input_len: usize) -> usize {
     err.consumed_from(input_len).unwrap_or(0)
 }
 
-fn expected_message_key(message: &str) -> &str {
-    message.strip_prefix("expected ").unwrap_or(message)
+fn strip_expected_prefix(s: &str) -> &str {
+    s.strip_prefix("expected ").unwrap_or(s)
 }
 
-pub(super) fn merge_expected_messages(existing: &str, incoming: &str) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    let mut push_unique = |text: &str| {
-        let normalized = expected_message_key(text).trim();
-        if normalized.is_empty() {
-            return;
+/// Merge a context description with existing message parts.
+/// `context` may optionally have an "expected " prefix (which is stripped).
+pub(super) fn merge_expected_messages(context: &str, existing: &[String]) -> Vec<String> {
+    let key = strip_expected_prefix(context).trim();
+    let mut result: Vec<String> = Vec::with_capacity(1 + existing.len());
+    if !key.is_empty() {
+        result.push(key.to_string());
+    }
+    for msg in existing {
+        if !result.iter().any(|p| p == msg) {
+            result.push(msg.clone());
         }
-        if !parts.iter().any(|p| p == normalized) {
-            parts.push(normalized.to_string());
-        }
-    };
-
-    for item in existing.split(" or ") {
-        push_unique(item);
     }
-    for item in incoming.split(" or ") {
-        push_unique(item);
-    }
-
-    if parts.is_empty() {
-        "expected parseable input".to_string()
-    } else {
-        format!("expected {}", parts.join(" or "))
-    }
+    result
 }
 
 pub(super) fn update_best_error(
@@ -75,7 +81,12 @@ pub(super) fn update_best_error(
             if candidate_score > *best_score {
                 *best = Some((candidate_score, candidate));
             } else if candidate_score == *best_score {
-                best_err.message = merge_expected_messages(&best_err.message, &candidate.message);
+                // Merge message lists directly — no split/join overhead
+                for msg in candidate.messages {
+                    if !best_err.messages.iter().any(|p| p == &msg) {
+                        best_err.messages.push(msg);
+                    }
+                }
             }
         }
     }
@@ -83,7 +94,11 @@ pub(super) fn update_best_error(
 
 impl std::fmt::Display for PError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.message)
+        if self.messages.is_empty() {
+            write!(f, "expected parseable input")
+        } else {
+            write!(f, "expected {}", self.messages.join(" or "))
+        }
     }
 }
 
