@@ -1424,6 +1424,68 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 
     // Handle special expression keywords before qualified name resolution
     match name.as_str() {
+        "infix" | "prefix" | "postfix" => {
+            // infix:<OP>(args) — operator reference
+            if rest.starts_with(":<") || rest.starts_with(":<<") {
+                let r = &rest[1..]; // skip ':'
+                let (delim_start, delim_end) = if r.starts_with("<<") {
+                    ("<<", ">>")
+                } else {
+                    ("<", ">")
+                };
+                let r = &r[delim_start.len()..];
+                if let Some(end_pos) = r.find(delim_end) {
+                    let op_name = &r[..end_pos];
+                    let r = &r[end_pos + delim_end.len()..];
+                    let full_name = format!("{}:<{}>", name, op_name);
+                    // Check if followed by (args)
+                    let (r, _) = ws(r)?;
+                    if let Some(r) = r.strip_prefix('(') {
+                        let (r, _) = ws(r)?;
+                        if let Some(r) = r.strip_prefix(')') {
+                            return Ok((
+                                r,
+                                Expr::Call {
+                                    name: full_name,
+                                    args: vec![],
+                                },
+                            ));
+                        }
+                        let (r, first) = expression(r)?;
+                        let mut args = vec![first];
+                        let mut r = r;
+                        loop {
+                            let (r2, _) = ws(r)?;
+                            if let Some(r2) = r2.strip_prefix(')') {
+                                r = r2;
+                                break;
+                            }
+                            if let Some(r2) = r2.strip_prefix(',') {
+                                let (r2, _) = ws(r2)?;
+                                if let Some(r2) = r2.strip_prefix(')') {
+                                    r = r2;
+                                    break;
+                                }
+                                let (r2, arg) = expression(r2)?;
+                                args.push(arg);
+                                r = r2;
+                            } else {
+                                r = r2;
+                                break;
+                            }
+                        }
+                        return Ok((
+                            r,
+                            Expr::Call {
+                                name: full_name,
+                                args,
+                            },
+                        ));
+                    }
+                    return Ok((r, Expr::BareWord(full_name)));
+                }
+            }
+        }
         "try" => {
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {

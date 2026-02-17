@@ -6,7 +6,7 @@
 - [ ] roast/S02-magicals/progname.t
 - [ ] roast/S02-types/nan.t
 - [ ] roast/S03-metaops/infix.t
-- [ ] roast/S03-operators/boolean-bitwise.t
+- [x] roast/S03-operators/boolean-bitwise.t
 - [x] roast/S03-operators/gcd.t
 - [x] roast/S03-operators/so.t
 - [x] roast/S03-smartmatch/any-callable.t
