@@ -179,27 +179,33 @@ impl Interpreter {
                 Ok(super::make_order(ord))
             }
             "gcd" => {
-                let (mut a, mut b) = (to_int(left).abs(), to_int(right).abs());
-                while b != 0 {
-                    let t = b;
-                    b = a % b;
+                use num_bigint::BigInt;
+                use num_traits::Zero;
+                let mut a: BigInt = left.to_bigint().abs();
+                let mut b: BigInt = right.to_bigint().abs();
+                while !b.is_zero() {
+                    let t = b.clone();
+                    b = &a % &b;
                     a = t;
                 }
-                Ok(Value::Int(a))
+                Ok(Value::from_bigint(a))
             }
             "lcm" => {
-                let (a, b) = (to_int(left).abs(), to_int(right).abs());
-                if a == 0 && b == 0 {
+                use num_bigint::BigInt;
+                use num_traits::Zero;
+                let a: BigInt = left.to_bigint().abs();
+                let b: BigInt = right.to_bigint().abs();
+                if a.is_zero() && b.is_zero() {
                     Ok(Value::Int(0))
                 } else {
-                    let mut ga = a;
-                    let mut gb = b;
-                    while gb != 0 {
-                        let t = gb;
-                        gb = ga % gb;
+                    let mut ga = a.clone();
+                    let mut gb = b.clone();
+                    while !gb.is_zero() {
+                        let t = gb.clone();
+                        gb = &ga % &gb;
                         ga = t;
                     }
-                    Ok(Value::Int((a / ga).wrapping_mul(b)))
+                    Ok(Value::from_bigint((&a / &ga) * &b))
                 }
             }
             _ => Err(RuntimeError::new(format!(

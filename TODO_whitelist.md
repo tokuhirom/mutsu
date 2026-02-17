@@ -7,7 +7,7 @@
 - [ ] roast/S02-types/nan.t
 - [ ] roast/S03-metaops/infix.t
 - [ ] roast/S03-operators/boolean-bitwise.t
-- [ ] roast/S03-operators/gcd.t
+- [x] roast/S03-operators/gcd.t
 - [ ] roast/S03-operators/so.t
 - [ ] roast/S03-smartmatch/any-callable.t
 - [ ] roast/S04-statement-modifiers/while.t

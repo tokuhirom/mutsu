@@ -113,28 +113,36 @@ pub(super) fn primary_memo_stats() -> (usize, usize, usize) {
     })
 }
 
+/// Parse an integer string with given radix, using BigInt for overflow.
+fn parse_int_radix(clean: &str, radix: u32) -> Expr {
+    if let Ok(n) = i64::from_str_radix(clean, radix) {
+        Expr::Literal(Value::Int(n))
+    } else if let Some(n) = num_bigint::BigInt::parse_bytes(clean.as_bytes(), radix) {
+        Expr::Literal(Value::BigInt(n))
+    } else {
+        Expr::Literal(Value::Int(0))
+    }
+}
+
 /// Parse an integer literal (including underscore separators).
 fn integer(input: &str) -> PResult<'_, Expr> {
     // Hex: 0x...
     if let Ok((rest, _)) = parse_tag(input, "0x") {
         let (rest, digits) = take_while1(rest, |c: char| c.is_ascii_hexdigit() || c == '_')?;
         let clean: String = digits.chars().filter(|c| *c != '_').collect();
-        let n = i64::from_str_radix(&clean, 16).unwrap_or(0);
-        return Ok((rest, Expr::Literal(Value::Int(n))));
+        return Ok((rest, parse_int_radix(&clean, 16)));
     }
     // Octal: 0o...
     if let Ok((rest, _)) = parse_tag(input, "0o") {
         let (rest, digits) = take_while1(rest, |c: char| matches!(c, '0'..='7' | '_'))?;
         let clean: String = digits.chars().filter(|c| *c != '_').collect();
-        let n = i64::from_str_radix(&clean, 8).unwrap_or(0);
-        return Ok((rest, Expr::Literal(Value::Int(n))));
+        return Ok((rest, parse_int_radix(&clean, 8)));
     }
     // Binary: 0b...
     if let Ok((rest, _)) = parse_tag(input, "0b") {
         let (rest, digits) = take_while1(rest, |c: char| c == '0' || c == '1' || c == '_')?;
         let clean: String = digits.chars().filter(|c| *c != '_').collect();
-        let n = i64::from_str_radix(&clean, 2).unwrap_or(0);
-        return Ok((rest, Expr::Literal(Value::Int(n))));
+        return Ok((rest, parse_int_radix(&clean, 2)));
     }
     let (rest, digits) = take_while1(input, |c: char| c.is_ascii_digit() || c == '_')?;
     // Don't consume if next char is '.' followed by digit (that's a decimal)
@@ -142,12 +150,19 @@ fn integer(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("integer (not decimal)"));
     }
     let clean: String = digits.chars().filter(|c| *c != '_').collect();
-    let n: i64 = clean.parse().unwrap_or(0);
     // Check for imaginary suffix: 4i
     if rest.starts_with('i') && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_') {
+        let n: i64 = clean.parse().unwrap_or(0);
         return Ok((&rest[1..], Expr::Literal(Value::Complex(0.0, n as f64))));
     }
-    Ok((rest, Expr::Literal(Value::Int(n))))
+    // Try i64 first, fall back to BigInt for large integers
+    if let Ok(n) = clean.parse::<i64>() {
+        Ok((rest, Expr::Literal(Value::Int(n))))
+    } else if let Ok(n) = clean.parse::<num_bigint::BigInt>() {
+        Ok((rest, Expr::Literal(Value::BigInt(n))))
+    } else {
+        Ok((rest, Expr::Literal(Value::Int(0))))
+    }
 }
 
 /// Parse a decimal number literal.
