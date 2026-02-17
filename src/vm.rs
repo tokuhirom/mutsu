@@ -767,12 +767,32 @@ impl VM {
             OpCode::IntDiv => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let result = match (left, right) {
-                    (Value::Int(a), Value::Int(b)) if b != 0 => Value::Int(a.div_euclid(b)),
+                let result = match (&left, &right) {
+                    (Value::Int(a), Value::Int(b)) if *b != 0 => Value::Int(a.div_euclid(*b)),
                     (Value::Int(_), Value::Int(_)) => {
                         return Err(RuntimeError::new("Division by zero"));
                     }
-                    _ => return Err(RuntimeError::new("div expects Int")),
+                    (Value::BigInt(a), Value::BigInt(b))
+                        if *b != num_bigint::BigInt::from(0i64) =>
+                    {
+                        Value::from_bigint(num_integer::Integer::div_floor(a, b))
+                    }
+                    (Value::BigInt(a), Value::Int(b)) if *b != 0 => {
+                        let bb = num_bigint::BigInt::from(*b);
+                        Value::from_bigint(num_integer::Integer::div_floor(a, &bb))
+                    }
+                    (Value::Int(a), Value::BigInt(b)) if *b != num_bigint::BigInt::from(0i64) => {
+                        let aa = num_bigint::BigInt::from(*a);
+                        Value::from_bigint(num_integer::Integer::div_floor(&aa, b))
+                    }
+                    _ => {
+                        let a = runtime::to_int(&left);
+                        let b = runtime::to_int(&right);
+                        if b == 0 {
+                            return Err(RuntimeError::new("Division by zero"));
+                        }
+                        Value::Int(a.div_euclid(b))
+                    }
                 };
                 self.stack.push(result);
                 *ip += 1;
@@ -780,12 +800,19 @@ impl VM {
             OpCode::IntMod => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let result = match (left, right) {
-                    (Value::Int(a), Value::Int(b)) if b != 0 => Value::Int(a.rem_euclid(b)),
+                let result = match (&left, &right) {
+                    (Value::Int(a), Value::Int(b)) if *b != 0 => Value::Int(a.rem_euclid(*b)),
                     (Value::Int(_), Value::Int(_)) => {
                         return Err(RuntimeError::new("Modulo by zero"));
                     }
-                    _ => return Err(RuntimeError::new("mod expects Int")),
+                    _ => {
+                        let a = runtime::to_int(&left);
+                        let b = runtime::to_int(&right);
+                        if b == 0 {
+                            return Err(RuntimeError::new("Modulo by zero"));
+                        }
+                        Value::Int(a.rem_euclid(b))
+                    }
                 };
                 self.stack.push(result);
                 *ip += 1;
