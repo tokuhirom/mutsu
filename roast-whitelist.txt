@@ -152,12 +152,14 @@ roast/S28-named-variables/slangs.t
 roast/S29-any/cmp.t
 roast/S29-context/exit-in-if.t
 roast/S32-array/bool.t
+roast/S32-hash/antipairs.t
 roast/S32-hash/invert.t
 roast/S32-io/other.t
 roast/S32-scalar/defined.t
 roast/S32-str/append.t
 roast/S32-str/bool.t
 roast/S32-str/chop.t
+roast/S32-str/length.t
 roast/S32-str/lc.t
 roast/S32-str/tclc.t
 roast/S32-str/tc.t
