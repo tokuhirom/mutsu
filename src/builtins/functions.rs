@@ -237,6 +237,10 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             };
             Some(Ok(Value::Num(result)))
         }
+        "cis" => {
+            let x = runtime::to_float_value(arg).unwrap_or(f64::NAN);
+            Some(Ok(Value::Complex(x.cos(), x.sin())))
+        }
         "truncate" => {
             if let Some(num) = runtime::to_float_value(arg) {
                 if num.is_nan() || num.is_infinite() {
@@ -374,6 +378,14 @@ fn native_function_2arg(
             let s = arg1.to_string_value();
             let needle = arg2.to_string_value();
             Some(Ok(match s.find(&needle) {
+                Some(pos) => Value::Int(s[..pos].chars().count() as i64),
+                None => Value::Nil,
+            }))
+        }
+        "rindex" => {
+            let s = arg1.to_string_value();
+            let needle = arg2.to_string_value();
+            Some(Ok(match s.rfind(&needle) {
                 Some(pos) => Value::Int(s[..pos].chars().count() as i64),
                 None => Value::Nil,
             }))

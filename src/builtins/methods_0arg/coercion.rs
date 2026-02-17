@@ -91,6 +91,18 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             _ => None,
         },
+        "cis" => match target {
+            Value::Int(i) => {
+                let x = *i as f64;
+                Some(Ok(Value::Complex(x.cos(), x.sin())))
+            }
+            Value::Num(f) => Some(Ok(Value::Complex(f.cos(), f.sin()))),
+            Value::Rat(n, d) if *d != 0 => {
+                let x = *n as f64 / *d as f64;
+                Some(Ok(Value::Complex(x.cos(), x.sin())))
+            }
+            _ => None,
+        },
         "Complex" => match target {
             Value::Complex(_, _) => Some(Ok(target.clone())),
             Value::Int(i) => Some(Ok(Value::Complex(*i as f64, 0.0))),
