@@ -220,6 +220,10 @@ fn parse_concat_op(r: &str) -> Option<(ConcatOp, usize)> {
 }
 
 fn parse_additive_op(r: &str) -> Option<(AdditiveOp, usize)> {
+    // Unicode: − (U+2212 MINUS SIGN) subtraction
+    if r.starts_with('\u{2212}') {
+        return Some((AdditiveOp::Sub, '\u{2212}'.len_utf8()));
+    }
     if r.starts_with("+|") {
         Some((AdditiveOp::BitOr, 2))
     } else if r.starts_with("+^") {
@@ -238,6 +242,14 @@ fn parse_additive_op(r: &str) -> Option<(AdditiveOp, usize)> {
 }
 
 fn parse_multiplicative_op(r: &str) -> Option<(MultiplicativeOp, usize)> {
+    // Unicode: × (U+00D7) multiplication
+    if r.starts_with('\u{00D7}') {
+        return Some((MultiplicativeOp::Mul, '\u{00D7}'.len_utf8()));
+    }
+    // Unicode: ÷ (U+00F7) division
+    if r.starts_with('\u{00F7}') {
+        return Some((MultiplicativeOp::Div, '\u{00F7}'.len_utf8()));
+    }
     if r.starts_with("+&") {
         Some((MultiplicativeOp::BitAnd, 2))
     } else if r.starts_with("+<") {
@@ -1135,6 +1147,23 @@ fn comparison_expr(input: &str) -> PResult<'_, Expr> {
 
 /// Extract a comparison operator from the start of the input, returning the op and its length.
 fn parse_comparison_op(r: &str) -> Option<(ComparisonOp, usize)> {
+    // Unicode comparison operators
+    if r.starts_with('\u{2A75}') {
+        // ⩵ (U+2A75) — numeric equality (alias for ==)
+        return Some((ComparisonOp::NumEq, '\u{2A75}'.len_utf8()));
+    } else if r.starts_with('\u{2A76}') {
+        // ⩶ (U+2A76) — value identity (alias for ===)
+        return Some((ComparisonOp::StrictEq, '\u{2A76}'.len_utf8()));
+    } else if r.starts_with('\u{2260}') {
+        // ≠ (U+2260) — numeric inequality (alias for !=)
+        return Some((ComparisonOp::NumNe, '\u{2260}'.len_utf8()));
+    } else if r.starts_with('\u{2264}') {
+        // ≤ (U+2264) — numeric less-than-or-equal (alias for <=)
+        return Some((ComparisonOp::NumLe, '\u{2264}'.len_utf8()));
+    } else if r.starts_with('\u{2265}') {
+        // ≥ (U+2265) — numeric greater-than-or-equal (alias for >=)
+        return Some((ComparisonOp::NumGe, '\u{2265}'.len_utf8()));
+    }
     if r.starts_with("===") {
         Some((ComparisonOp::StrictEq, 3))
     } else if r.starts_with("==") && !r.starts_with("===") {
