@@ -3,7 +3,7 @@
 ## Infix Operators
 
 - [x] `xx` — list repetition (Replication level)
-- [ ] `o` / `∘` — function composition (Concatenation level)
+- [x] `o` / `∘` — function composition (Concatenation level)
 - [x] `min` — infix min (Tight OR level)
 - [x] `max` — infix max (Tight OR level)
 - [ ] `ff` — flipflop (Conditional level)
@@ -67,7 +67,7 @@
 - [x] `tr///` / `TR///` — transliteration
 - [x] `!!!` — fatal stub operator
 - [x] `???` — admonitory stub operator
-- [ ] `sink` — sink statement prefix
+- [x] `sink` — sink statement prefix
 
 ## Phasers
 

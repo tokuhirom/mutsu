@@ -159,6 +159,7 @@ impl Interpreter {
             "symlink" => self.builtin_symlink(&args),
             // I/O functions
             "print" | "say" | "note" | "warn" => self.builtin_print(name, &args),
+            "sink" => Ok(Value::Nil), // sink evaluates args (already done) and returns Nil
             "prompt" => self.builtin_prompt(&args),
             "get" => self.builtin_get(&args),
             "lines" => self.builtin_lines(&args),
@@ -386,6 +387,7 @@ impl Interpreter {
                 | "note"
                 | "die"
                 | "warn"
+                | "sink"
                 | "exit"
                 | "abs"
                 | "sqrt"

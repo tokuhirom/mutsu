@@ -1018,6 +1018,7 @@ fn is_keyword(name: &str) -> bool {
             | "whenever"
             | "start"
             | "quietly"
+            | "sink"
     )
 }
 
@@ -1187,14 +1188,14 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
-        "quietly" => {
+        "quietly" | "sink" => {
             let (r, _) = ws(rest)?;
-            // quietly expr — wrap in a Call
+            // quietly/sink expr — wrap in a Call
             let (r, expr) = expression(r)?;
             return Ok((
                 r,
                 Expr::Call {
-                    name: "quietly".to_string(),
+                    name: name.clone(),
                     args: vec![expr],
                 },
             ));

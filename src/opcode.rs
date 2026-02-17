@@ -89,6 +89,7 @@ pub(crate) enum OpCode {
     // -- Repetition --
     StringRepeat,
     ListRepeat,
+    FunctionCompose,
 
     // -- Mixin --
     ButMixin,

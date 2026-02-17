@@ -143,6 +143,7 @@ enum ConcatOp {
     Concat,
     Repeat,
     ListRepeat,
+    Compose,
 }
 
 impl ConcatOp {
@@ -151,6 +152,7 @@ impl ConcatOp {
             ConcatOp::Concat => TokenKind::Tilde,
             ConcatOp::Repeat => TokenKind::Ident("x".to_string()),
             ConcatOp::ListRepeat => TokenKind::Ident("xx".to_string()),
+            ConcatOp::Compose => TokenKind::Ident("o".to_string()),
         }
     }
 }
@@ -214,6 +216,11 @@ fn parse_concat_op(r: &str) -> Option<(ConcatOp, usize)> {
         Some((ConcatOp::ListRepeat, 2))
     } else if r.starts_with('x') && !is_ident_char(r.as_bytes().get(1).copied()) {
         Some((ConcatOp::Repeat, 1))
+    } else if r.starts_with('o') && !is_ident_char(r.as_bytes().get(1).copied()) {
+        Some((ConcatOp::Compose, 1))
+    } else if r.starts_with('\u{2218}') {
+        // ∘ (U+2218 RING OPERATOR) — function composition
+        Some((ConcatOp::Compose, '\u{2218}'.len_utf8()))
     } else {
         None
     }
