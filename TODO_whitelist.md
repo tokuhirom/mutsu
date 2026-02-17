@@ -34,4 +34,4 @@
 - [x] roast/S32-str/chop.t
 - [x] roast/S32-str/trim.t
 - [x] roast/integration/advent2012-day16.t
-- [ ] roast/MISC/bug-coverage-stress.t
+- [x] roast/MISC/bug-coverage-stress.t
