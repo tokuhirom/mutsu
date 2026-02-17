@@ -77,6 +77,7 @@ roast/S12-methods/typed-attributes.t
 roast/S12-construction/autopairs.t
 roast/S14-roles/bool.t
 roast/S15-nfg/cgj.t
+roast/S15-nfg/emoji-test.t
 roast/S15-nfg/grapheme-break.t
 roast/S15-nfg/many-combiners.t
 roast/S15-nfg/mass-roundtrip-nfc.t
