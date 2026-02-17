@@ -28,6 +28,22 @@ fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
     }
 }
 
+fn value_to_f64(v: &Value) -> f64 {
+    match v {
+        Value::Int(n) => *n as f64,
+        Value::Num(n) => *n,
+        Value::Rat(n, d) => {
+            if *d != 0 {
+                *n as f64 / *d as f64
+            } else {
+                0.0
+            }
+        }
+        Value::Str(s) => s.parse::<f64>().unwrap_or(0.0),
+        _ => 0.0,
+    }
+}
+
 /// Expand a tr/// character spec, supporting `a..z` ranges.
 fn expand_tr_spec(spec: &str) -> Vec<char> {
     let chars: Vec<char> = spec.chars().collect();
@@ -408,6 +424,38 @@ impl VM {
                     Interpreter::compare(l, r, |o| o >= 0)
                 })?;
                 self.stack.push(result);
+                *ip += 1;
+            }
+
+            OpCode::ApproxEq => {
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let tolerance = self
+                    .interpreter
+                    .env()
+                    .get("*TOLERANCE")
+                    .and_then(|v| match v {
+                        Value::Num(n) => Some(*n),
+                        _ => None,
+                    })
+                    .unwrap_or(1e-15);
+                let a = value_to_f64(&left);
+                let b = value_to_f64(&right);
+                let max_abs = a.abs().max(b.abs());
+                let result = if max_abs == 0.0 {
+                    true
+                } else {
+                    (a - b).abs() / max_abs <= tolerance
+                };
+                self.stack.push(Value::Bool(result));
+                *ip += 1;
+            }
+
+            OpCode::ContainerEq => {
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                // Container identity: for our purposes, same as ===
+                self.stack.push(Value::Bool(left == right));
                 *ip += 1;
             }
 

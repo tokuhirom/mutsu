@@ -1398,6 +1398,8 @@ impl Compiler {
             // Identity/value equality
             TokenKind::EqEqEq => Some(OpCode::StrictEq),
             TokenKind::Ident(name) if name == "eqv" => Some(OpCode::Eqv),
+            TokenKind::Ident(name) if name == "=~=" => Some(OpCode::ApproxEq),
+            TokenKind::Ident(name) if name == "=:=" => Some(OpCode::ContainerEq),
             // Divisibility
             TokenKind::PercentPercent => Some(OpCode::DivisibleBy),
             TokenKind::BangPercentPercent => Some(OpCode::NotDivisibleBy),

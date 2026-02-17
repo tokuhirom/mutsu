@@ -107,6 +107,8 @@ enum ComparisonOp {
     Eqv,
     Before,
     After,
+    ApproxEq,
+    ContainerEq,
 }
 
 impl ComparisonOp {
@@ -134,6 +136,8 @@ impl ComparisonOp {
             ComparisonOp::Eqv => TokenKind::Ident("eqv".to_string()),
             ComparisonOp::Before => TokenKind::Ident("before".to_string()),
             ComparisonOp::After => TokenKind::Ident("after".to_string()),
+            ComparisonOp::ApproxEq => TokenKind::Ident("=~=".to_string()),
+            ComparisonOp::ContainerEq => TokenKind::Ident("=:=".to_string()),
         }
     }
 }
@@ -1177,6 +1181,16 @@ fn parse_comparison_op(r: &str) -> Option<(ComparisonOp, usize)> {
     } else if r.starts_with('\u{2265}') {
         // ≥ (U+2265) — numeric greater-than-or-equal (alias for >=)
         return Some((ComparisonOp::NumGe, '\u{2265}'.len_utf8()));
+    }
+    // ≅ (U+2245) — approximately equal
+    if r.starts_with('\u{2245}') {
+        return Some((ComparisonOp::ApproxEq, '\u{2245}'.len_utf8()));
+    }
+    if r.starts_with("=~=") {
+        return Some((ComparisonOp::ApproxEq, 3));
+    }
+    if r.starts_with("=:=") {
+        return Some((ComparisonOp::ContainerEq, 3));
     }
     if r.starts_with("===") {
         Some((ComparisonOp::StrictEq, 3))

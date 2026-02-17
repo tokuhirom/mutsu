@@ -45,6 +45,8 @@ pub(crate) enum OpCode {
     NumLe,
     NumGt,
     NumGe,
+    ApproxEq,
+    ContainerEq,
 
     // -- String comparison --
     StrEq,

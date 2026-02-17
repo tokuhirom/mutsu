@@ -20,8 +20,8 @@
 - [ ] `==>` — rightward feed operator (Sequencer level)
 - [ ] `<==` — leftward feed operator (Sequencer level)
 - [ ] `minmax` — range from min to max (List Infix level)
-- [ ] `=~=` / `≅` — approximately equal (Chaining level)
-- [ ] `=:=` — container identity (Chaining level)
+- [x] `=~=` / `≅` — approximately equal (Chaining level)
+- [x] `=:=` — container identity (Chaining level)
 - [ ] `unicmp` — Unicode comparison (Structural level)
 - [ ] `coll` — collation-aware comparison (Structural level)
 - [ ] `~&` — string buffer bitwise AND (Multiplicative level)
@@ -71,14 +71,14 @@
 
 ## Phasers
 
-- [ ] `CHECK` — end of compile time
-- [ ] `INIT` — start of runtime
-- [ ] `KEEP` — block exit on success
-- [ ] `UNDO` — block exit on failure
-- [ ] `PRE` — precondition check
-- [ ] `POST` — postcondition check
-- [ ] `QUIT` — exception in supply/react
-- [ ] `CLOSE` — supply close
+- [x] `CHECK` — end of compile time
+- [x] `INIT` — start of runtime
+- [x] `KEEP` — block exit on success
+- [x] `UNDO` — block exit on failure
+- [x] `PRE` — precondition check (parsed, no-op)
+- [x] `POST` — postcondition check (parsed, no-op)
+- [x] `QUIT` — exception in supply/react (parsed, no-op)
+- [x] `CLOSE` — supply close (parsed, no-op)
 
 ## Meta-operators
 
