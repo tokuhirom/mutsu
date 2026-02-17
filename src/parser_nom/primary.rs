@@ -28,6 +28,8 @@ struct PrimaryMemoStats {
 thread_local! {
     static PRIMARY_MEMO: RefCell<HashMap<(usize, usize), PrimaryMemoEntry>> = RefCell::new(HashMap::new());
     static PRIMARY_MEMO_STATS: RefCell<PrimaryMemoStats> = RefCell::new(PrimaryMemoStats::default());
+    /// Original source pointer and length, set at parse_program start for $?LINE computation.
+    static ORIGINAL_SOURCE: RefCell<(usize, usize)> = const { RefCell::new((0, 0)) };
 }
 
 fn primary_memo_key(input: &str) -> (usize, usize) {
@@ -67,6 +69,33 @@ fn primary_memo_store(input: &str, result: &PResult<'_, Expr>) {
         memo.borrow_mut().insert(key, entry);
     });
     PRIMARY_MEMO_STATS.with(|stats| stats.borrow_mut().stores += 1);
+}
+
+/// Set the original source for $?LINE computation.
+pub(super) fn set_original_source(source: &str) {
+    ORIGINAL_SOURCE.with(|s| {
+        *s.borrow_mut() = (source.as_ptr() as usize, source.len());
+    });
+}
+
+/// Compute the 1-based line number of `input` within the original source.
+fn current_line_number(input: &str) -> i64 {
+    ORIGINAL_SOURCE.with(|s| {
+        let (src_ptr, src_len) = *s.borrow();
+        if src_ptr == 0 {
+            return 1;
+        }
+        let input_ptr = input.as_ptr() as usize;
+        if input_ptr < src_ptr || input_ptr > src_ptr + src_len {
+            return 1;
+        }
+        let offset = input_ptr - src_ptr;
+        // SAFETY: offset is within the original source bounds
+        let src_slice = unsafe {
+            std::str::from_utf8_unchecked(std::slice::from_raw_parts(src_ptr as *const u8, offset))
+        };
+        (src_slice.matches('\n').count() + 1) as i64
+    })
 }
 
 pub(super) fn reset_primary_memo() {
@@ -697,6 +726,11 @@ fn scalar_var(input: &str) -> PResult<'_, Expr> {
     } else {
         format!("{}{}", twigil, name)
     };
+    // $?LINE is a compile-time constant: replace with the current line number
+    if full_name == "?LINE" {
+        let line = current_line_number(input);
+        return Ok((rest, Expr::Literal(Value::Int(line))));
+    }
     Ok((rest, Expr::Var(full_name)))
 }
 

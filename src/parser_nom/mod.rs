@@ -79,6 +79,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
         stmt::reset_statement_memo();
     }
     crate::trace::trace_log!("parse", "parser_nom start memo={}", memo_enabled);
+    primary::set_original_source(input);
     // Split off =finish content before parsing
     let (source, finish_content) = if let Some(idx) = input.find("\n=finish") {
         let content = &input[idx + "\n=finish".len()..];

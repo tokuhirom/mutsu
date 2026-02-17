@@ -2,7 +2,7 @@
 - [x] roast/S02-literals/version.t
 - [ ] roast/S02-magicals/block.t
 - [x] roast/S02-magicals/DISTRO.t
-- [ ] roast/S02-magicals/file_line.t
+- [x] roast/S02-magicals/file_line.t
 - [ ] roast/S02-magicals/progname.t
 - [ ] roast/S02-types/nan.t
 - [ ] roast/S03-metaops/infix.t
