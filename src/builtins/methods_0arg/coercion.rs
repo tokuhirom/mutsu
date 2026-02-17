@@ -72,6 +72,25 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Complex(r, i) => Some(Ok(Value::Array(vec![Value::Num(*r), Value::Num(*i)]))),
             _ => None,
         },
+        "polar" => match target {
+            Value::Complex(r, i) => {
+                let mag = (r * r + i * i).sqrt();
+                let angle = i.atan2(*r);
+                Some(Ok(Value::Array(vec![Value::Num(mag), Value::Num(angle)])))
+            }
+            Value::Int(i) => {
+                let f = *i as f64;
+                let mag = f.abs();
+                let angle = if f < 0.0 { std::f64::consts::PI } else { 0.0 };
+                Some(Ok(Value::Array(vec![Value::Num(mag), Value::Num(angle)])))
+            }
+            Value::Num(f) => {
+                let mag = f.abs();
+                let angle = if *f < 0.0 { std::f64::consts::PI } else { 0.0 };
+                Some(Ok(Value::Array(vec![Value::Num(mag), Value::Num(angle)])))
+            }
+            _ => None,
+        },
         "Complex" => match target {
             Value::Complex(_, _) => Some(Ok(target.clone())),
             Value::Int(i) => Some(Ok(Value::Complex(*i as f64, 0.0))),
