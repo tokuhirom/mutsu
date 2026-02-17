@@ -401,7 +401,11 @@ impl VM {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
                 let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-                    if matches!(l, Value::Nil) || matches!(r, Value::Nil) {
+                    // Use float comparison when types differ or involve Rat/Num
+                    let needs_float = !std::mem::discriminant(&l).eq(&std::mem::discriminant(&r))
+                        || matches!(l, Value::Nil)
+                        || matches!(l, Value::Rat(_, _));
+                    if needs_float {
                         Ok(Value::Bool(
                             runtime::to_float_value(&l) == runtime::to_float_value(&r),
                         ))
@@ -1471,9 +1475,31 @@ impl VM {
                 let val = self.stack.pop().unwrap();
                 let result = match val {
                     Value::Int(i) => Value::Int(i),
+                    Value::Num(f) => Value::Num(f),
                     Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
                     Value::Array(items) => Value::Int(items.len() as i64),
-                    Value::Str(s) => Value::Int(s.parse::<i64>().unwrap_or(0)),
+                    Value::Rat(n, d) => {
+                        if d == 0 {
+                            if n > 0 {
+                                Value::Num(f64::INFINITY)
+                            } else if n < 0 {
+                                Value::Num(f64::NEG_INFINITY)
+                            } else {
+                                Value::Num(f64::NAN)
+                            }
+                        } else {
+                            Value::Rat(n, d)
+                        }
+                    }
+                    Value::Str(s) => {
+                        if let Ok(i) = s.parse::<i64>() {
+                            Value::Int(i)
+                        } else if let Ok(f) = s.parse::<f64>() {
+                            Value::Num(f)
+                        } else {
+                            Value::Int(0)
+                        }
+                    }
                     Value::Enum { value, .. } => Value::Int(value),
                     _ => Value::Int(0),
                 };

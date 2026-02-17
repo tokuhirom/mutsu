@@ -329,15 +329,23 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
         Value::Rat(n, d) => {
             if *d != 0 {
                 Some(*n as f64 / *d as f64)
+            } else if *n > 0 {
+                Some(f64::INFINITY)
+            } else if *n < 0 {
+                Some(f64::NEG_INFINITY)
             } else {
-                None
+                Some(f64::NAN)
             }
         }
         Value::FatRat(n, d) => {
             if *d != 0 {
                 Some(*n as f64 / *d as f64)
+            } else if *n > 0 {
+                Some(f64::INFINITY)
+            } else if *n < 0 {
+                Some(f64::NEG_INFINITY)
             } else {
-                None
+                Some(f64::NAN)
             }
         }
         Value::Complex(r, i) => {

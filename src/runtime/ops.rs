@@ -61,9 +61,11 @@ impl Interpreter {
             "/" => {
                 if let (Value::Int(a), Value::Int(b)) = (left, right) {
                     if *b == 0 {
-                        return Err(RuntimeError::new("Division by zero"));
+                        // Rat with zero denominator (numifies to Inf/-Inf/NaN)
+                        Ok(Value::Rat(*a, 0))
+                    } else {
+                        Ok(crate::value::make_rat(*a, *b))
                     }
-                    Ok(Value::Int(a / b))
                 } else {
                     Ok(Value::Num(to_num(left) / to_num(right)))
                 }
