@@ -1376,6 +1376,8 @@ impl Compiler {
             TokenKind::Ident(name) if name == "mod" => Some(OpCode::IntMod),
             TokenKind::Ident(name) if name == "gcd" => Some(OpCode::Gcd),
             TokenKind::Ident(name) if name == "lcm" => Some(OpCode::Lcm),
+            TokenKind::Ident(name) if name == "min" => Some(OpCode::InfixMin),
+            TokenKind::Ident(name) if name == "max" => Some(OpCode::InfixMax),
             // Repetition
             TokenKind::Ident(name) if name == "x" => Some(OpCode::StringRepeat),
             TokenKind::Ident(name) if name == "but" => Some(OpCode::ButMixin),

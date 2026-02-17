@@ -21,6 +21,14 @@ enum CompoundAssignOp {
     Sub,
     Concat,
     Mul,
+    Div,
+    Mod,
+    Power,
+    Repeat,
+    ListRepeat,
+    BitOr,
+    BitAnd,
+    BitXor,
 }
 
 impl CompoundAssignOp {
@@ -33,6 +41,14 @@ impl CompoundAssignOp {
             CompoundAssignOp::Sub => "-=",
             CompoundAssignOp::Concat => "~=",
             CompoundAssignOp::Mul => "*=",
+            CompoundAssignOp::Div => "/=",
+            CompoundAssignOp::Mod => "%=",
+            CompoundAssignOp::Power => "**=",
+            CompoundAssignOp::Repeat => "x=",
+            CompoundAssignOp::ListRepeat => "xx=",
+            CompoundAssignOp::BitOr => "+|=",
+            CompoundAssignOp::BitAnd => "+&=",
+            CompoundAssignOp::BitXor => "+^=",
         }
     }
 
@@ -45,6 +61,14 @@ impl CompoundAssignOp {
             CompoundAssignOp::Sub => TokenKind::Minus,
             CompoundAssignOp::Concat => TokenKind::Tilde,
             CompoundAssignOp::Mul => TokenKind::Star,
+            CompoundAssignOp::Div => TokenKind::Slash,
+            CompoundAssignOp::Mod => TokenKind::Percent,
+            CompoundAssignOp::Power => TokenKind::StarStar,
+            CompoundAssignOp::Repeat => TokenKind::Ident("x".to_string()),
+            CompoundAssignOp::ListRepeat => TokenKind::Ident("xx".to_string()),
+            CompoundAssignOp::BitOr => TokenKind::BitOr,
+            CompoundAssignOp::BitAnd => TokenKind::BitAnd,
+            CompoundAssignOp::BitXor => TokenKind::BitXor,
         }
     }
 }
@@ -53,10 +77,18 @@ const COMPOUND_ASSIGN_OPS: &[CompoundAssignOp] = &[
     CompoundAssignOp::DefinedOr,
     CompoundAssignOp::LogicalOr,
     CompoundAssignOp::LogicalAnd,
+    CompoundAssignOp::Power, // **= before *= to match longest first
     CompoundAssignOp::Add,
     CompoundAssignOp::Sub,
     CompoundAssignOp::Concat,
     CompoundAssignOp::Mul,
+    CompoundAssignOp::Div,
+    CompoundAssignOp::Mod,
+    CompoundAssignOp::ListRepeat, // xx= before x= to match longest first
+    CompoundAssignOp::Repeat,
+    CompoundAssignOp::BitOr,
+    CompoundAssignOp::BitAnd,
+    CompoundAssignOp::BitXor,
 ];
 
 #[derive(Debug, Clone)]

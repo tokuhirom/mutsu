@@ -142,6 +142,7 @@ impl ComparisonOp {
 enum ConcatOp {
     Concat,
     Repeat,
+    ListRepeat,
 }
 
 impl ConcatOp {
@@ -149,6 +150,7 @@ impl ConcatOp {
         match self {
             ConcatOp::Concat => TokenKind::Tilde,
             ConcatOp::Repeat => TokenKind::Ident("x".to_string()),
+            ConcatOp::ListRepeat => TokenKind::Ident("xx".to_string()),
         }
     }
 }
@@ -208,6 +210,8 @@ impl MultiplicativeOp {
 fn parse_concat_op(r: &str) -> Option<(ConcatOp, usize)> {
     if r.starts_with('~') && !r.starts_with("~~") && !r.starts_with("~=") {
         Some((ConcatOp::Concat, 1))
+    } else if r.starts_with("xx") && !is_ident_char(r.as_bytes().get(2).copied()) {
+        Some((ConcatOp::ListRepeat, 2))
     } else if r.starts_with('x') && !is_ident_char(r.as_bytes().get(1).copied()) {
         Some((ConcatOp::Repeat, 1))
     } else {
@@ -314,11 +318,16 @@ impl PostfixUpdateOp {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LogicalOp {
-    Or,        // or (word)
-    And,       // and (word)
-    OrOr,      // ||
-    AndAnd,    // &&
-    DefinedOr, // //
+    Or,         // or (word)
+    And,        // and (word)
+    OrOr,       // ||
+    AndAnd,     // &&
+    DefinedOr,  // //
+    AndThen,    // andthen
+    NotAndThen, // notandthen
+    OrElse,     // orelse
+    Min,        // min (infix)
+    Max,        // max (infix)
 }
 
 impl LogicalOp {
@@ -329,6 +338,11 @@ impl LogicalOp {
             LogicalOp::OrOr => TokenKind::OrOr,
             LogicalOp::AndAnd => TokenKind::AndAnd,
             LogicalOp::DefinedOr => TokenKind::SlashSlash,
+            LogicalOp::AndThen => TokenKind::AndThen,
+            LogicalOp::NotAndThen => TokenKind::NotAndThen,
+            LogicalOp::OrElse => TokenKind::OrElse,
+            LogicalOp::Min => TokenKind::Ident("min".to_string()),
+            LogicalOp::Max => TokenKind::Ident("max".to_string()),
         }
     }
 }
@@ -474,6 +488,10 @@ fn parse_or_or_op(input: &str) -> Option<(LogicalOp, usize)> {
         Some((LogicalOp::OrOr, 2))
     } else if input.starts_with("//") && !input.starts_with("///") {
         Some((LogicalOp::DefinedOr, 2))
+    } else if input.starts_with("min") && !is_ident_char(input.as_bytes().get(3).copied()) {
+        Some((LogicalOp::Min, 3))
+    } else if input.starts_with("max") && !is_ident_char(input.as_bytes().get(3).copied()) {
+        Some((LogicalOp::Max, 3))
     } else {
         None
     }
@@ -488,8 +506,14 @@ fn parse_and_and_op(input: &str) -> Option<(LogicalOp, usize)> {
 }
 
 fn parse_word_logical_op(input: &str) -> Option<(LogicalOp, usize)> {
-    if input.starts_with("or") && !is_ident_char(input.as_bytes().get(2).copied()) {
+    if input.starts_with("orelse") && !is_ident_char(input.as_bytes().get(6).copied()) {
+        Some((LogicalOp::OrElse, 6))
+    } else if input.starts_with("or") && !is_ident_char(input.as_bytes().get(2).copied()) {
         Some((LogicalOp::Or, 2))
+    } else if input.starts_with("andthen") && !is_ident_char(input.as_bytes().get(7).copied()) {
+        Some((LogicalOp::AndThen, 7))
+    } else if input.starts_with("notandthen") && !is_ident_char(input.as_bytes().get(10).copied()) {
+        Some((LogicalOp::NotAndThen, 10))
     } else if input.starts_with("and") && !is_ident_char(input.as_bytes().get(3).copied()) {
         Some((LogicalOp::And, 3))
     } else {
@@ -625,16 +649,16 @@ fn ternary(input: &str) -> PResult<'_, Expr> {
     Ok((input, cond))
 }
 
-/// Low-precedence: or / and / not
+/// Low-precedence: or / orelse
 fn or_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = and_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
-        if let Some((op @ LogicalOp::Or, len)) = parse_word_logical_op(r) {
+        if let Some((op @ (LogicalOp::Or | LogicalOp::OrElse), len)) = parse_word_logical_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = and_expr(r).map_err(|err| {
-                enrich_expected_error(err, "expected expression after 'or'", r.len())
+                enrich_expected_error(err, "expected expression after 'or'/'orelse'", r.len())
             })?;
             left = Expr::Binary {
                 left: Box::new(left),
@@ -649,15 +673,22 @@ fn or_expr(input: &str) -> PResult<'_, Expr> {
     Ok((rest, left))
 }
 
+/// Low-precedence: and / andthen / notandthen
 fn and_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = not_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
-        if let Some((op @ LogicalOp::And, len)) = parse_word_logical_op(r) {
+        if let Some((op @ (LogicalOp::And | LogicalOp::AndThen | LogicalOp::NotAndThen), len)) =
+            parse_word_logical_op(r)
+        {
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = not_expr(r).map_err(|err| {
-                enrich_expected_error(err, "expected expression after 'and'", r.len())
+                enrich_expected_error(
+                    err,
+                    "expected expression after 'and'/'andthen'/'notandthen'",
+                    r.len(),
+                )
             })?;
             left = Expr::Binary {
                 left: Box::new(left),
@@ -840,7 +871,7 @@ fn or_expr_no_seq(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = and_expr_no_seq(input)?;
     loop {
         let (r, _) = ws(rest)?;
-        if let Some((op @ LogicalOp::Or, len)) = parse_word_logical_op(r) {
+        if let Some((op @ (LogicalOp::Or | LogicalOp::OrElse), len)) = parse_word_logical_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = and_expr_no_seq(r)?;
@@ -861,7 +892,9 @@ fn and_expr_no_seq(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = not_expr_no_seq(input)?;
     loop {
         let (r, _) = ws(rest)?;
-        if let Some((op @ LogicalOp::And, len)) = parse_word_logical_op(r) {
+        if let Some((op @ (LogicalOp::And | LogicalOp::AndThen | LogicalOp::NotAndThen), len)) =
+            parse_word_logical_op(r)
+        {
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = not_expr_no_seq(r)?;

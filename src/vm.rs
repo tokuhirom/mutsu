@@ -14,6 +14,20 @@ mod vm_data_ops;
 mod vm_helpers;
 mod vm_var_ops;
 
+fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
+    match (left, right) {
+        (Value::Int(a), Value::Int(b)) => a.cmp(b),
+        (Value::Num(a), Value::Num(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
+        (Value::Int(a), Value::Num(b)) => (*a as f64)
+            .partial_cmp(b)
+            .unwrap_or(std::cmp::Ordering::Equal),
+        (Value::Num(a), Value::Int(b)) => a
+            .partial_cmp(&(*b as f64))
+            .unwrap_or(std::cmp::Ordering::Equal),
+        _ => left.to_string_value().cmp(&right.to_string_value()),
+    }
+}
+
 pub(crate) struct VM {
     interpreter: Interpreter,
     stack: Vec<Value>,
@@ -639,6 +653,21 @@ impl VM {
                     Value::from_bigint(&a / &g * &b)
                 };
                 self.stack.push(result);
+                *ip += 1;
+            }
+
+            OpCode::InfixMin => {
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let ord = cmp_values(&left, &right);
+                self.stack.push(if ord.is_le() { left } else { right });
+                *ip += 1;
+            }
+            OpCode::InfixMax => {
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let ord = cmp_values(&left, &right);
+                self.stack.push(if ord.is_ge() { left } else { right });
                 *ip += 1;
             }
 

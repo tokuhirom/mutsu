@@ -81,6 +81,8 @@ pub(crate) enum OpCode {
     IntMod,
     Gcd,
     Lcm,
+    InfixMin,
+    InfixMax,
 
     // -- Repetition --
     StringRepeat,
