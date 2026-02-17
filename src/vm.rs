@@ -890,6 +890,24 @@ impl VM {
                 *ip += 1;
             }
 
+            // -- Type check --
+            OpCode::Isa => {
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let type_name = right.to_string_value();
+                let result = left.isa_check(&type_name);
+                self.stack.push(Value::Bool(result));
+                *ip += 1;
+            }
+            OpCode::Does => {
+                let right = self.stack.pop().unwrap();
+                let left = self.stack.pop().unwrap();
+                let role_name = right.to_string_value();
+                let result = left.does_check(&role_name);
+                self.stack.push(Value::Bool(result));
+                *ip += 1;
+            }
+
             // -- Pair (native) --
             OpCode::MakePair => {
                 let right = self.stack.pop().unwrap();

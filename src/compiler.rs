@@ -1441,6 +1441,8 @@ impl Compiler {
             // Repetition
             TokenKind::Ident(name) if name == "x" => Some(OpCode::StringRepeat),
             TokenKind::Ident(name) if name == "but" => Some(OpCode::ButMixin),
+            TokenKind::Ident(name) if name == "isa" => Some(OpCode::Isa),
+            TokenKind::Ident(name) if name == "does" => Some(OpCode::Does),
             TokenKind::Ident(name) if name == "xx" => Some(OpCode::ListRepeat),
             TokenKind::Ident(name) if name == "o" => Some(OpCode::FunctionCompose),
             // Pair

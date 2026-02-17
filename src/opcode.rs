@@ -96,6 +96,9 @@ pub(crate) enum OpCode {
 
     // -- Mixin --
     ButMixin,
+    // -- Type check --
+    Isa,
+    Does,
 
     // -- Pair --
     MakePair,

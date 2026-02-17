@@ -441,6 +441,86 @@ impl Value {
         }
     }
 
+    /// Check if this value is an instance of the given type name (Raku `isa` operator).
+    pub(crate) fn isa_check(&self, type_name: &str) -> bool {
+        let my_type = match self {
+            Value::Int(_) | Value::BigInt(_) => "Int",
+            Value::Num(_) => "Num",
+            Value::Str(_) => "Str",
+            Value::Bool(_) => "Bool",
+            Value::Rat(_, _) => "Rat",
+            Value::FatRat(_, _) => "FatRat",
+            Value::Complex(_, _) => "Complex",
+            Value::Array(_) | Value::LazyList(_) => "Array",
+            Value::Hash(_) => "Hash",
+            Value::Set(_) => "Set",
+            Value::Bag(_) => "Bag",
+            Value::Mix(_) => "Mix",
+            Value::Pair(_, _) => "Pair",
+            Value::Range(_, _)
+            | Value::RangeExcl(_, _)
+            | Value::RangeExclStart(_, _)
+            | Value::RangeExclBoth(_, _) => "Range",
+            Value::Nil => "Nil",
+            Value::Instance { class_name, .. } => class_name.as_str(),
+            Value::Package(name) => name.as_str(),
+            Value::Enum { enum_type, .. } => enum_type.as_str(),
+            Value::Sub { .. } | Value::Routine { .. } => "Sub",
+            Value::Regex(_) => "Regex",
+            Value::Junction { .. } => "Junction",
+            Value::Version { .. } => "Version",
+            Value::Slip(_) => "Slip",
+            Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
+        };
+        if my_type == type_name {
+            return true;
+        }
+        // Check type hierarchy
+        match type_name {
+            "Any" => true,
+            "Mu" => true,
+            "Cool" => matches!(
+                self,
+                Value::Int(_)
+                    | Value::BigInt(_)
+                    | Value::Num(_)
+                    | Value::Str(_)
+                    | Value::Bool(_)
+                    | Value::Rat(_, _)
+                    | Value::FatRat(_, _)
+                    | Value::Complex(_, _)
+                    | Value::Array(_)
+                    | Value::Hash(_)
+            ),
+            "Numeric" => matches!(
+                self,
+                Value::Int(_)
+                    | Value::BigInt(_)
+                    | Value::Num(_)
+                    | Value::Rat(_, _)
+                    | Value::FatRat(_, _)
+                    | Value::Complex(_, _)
+            ),
+            "Real" => matches!(
+                self,
+                Value::Int(_)
+                    | Value::BigInt(_)
+                    | Value::Num(_)
+                    | Value::Rat(_, _)
+                    | Value::FatRat(_, _)
+            ),
+            "Int" => matches!(self, Value::Bool(_)),
+            "Stringy" => matches!(self, Value::Str(_)),
+            _ => false,
+        }
+    }
+
+    /// Check if this value does (composes) the given role name.
+    pub(crate) fn does_check(&self, role_name: &str) -> bool {
+        // For now, delegate to isa_check since we don't track roles separately
+        self.isa_check(role_name)
+    }
+
     pub(crate) fn to_string_value(&self) -> String {
         match self {
             Value::Int(i) => i.to_string(),

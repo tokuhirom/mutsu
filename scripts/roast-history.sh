@@ -84,7 +84,7 @@ for f in "${TEST_FILES[@]}"; do
   fi
 
   OK_COUNT=$(echo "$OUTPUT" | grep -cE '^ok [0-9]' || true)
-  NOT_OK_COUNT=$(echo "$OUTPUT" | grep -cE '^not ok [0-9]' || true)
+  NOT_OK_COUNT=$(echo "$OUTPUT" | grep -E '^not ok [0-9]' | grep -cvE '# TODO' || true)
 
   TOTAL_SUBTESTS=$((TOTAL_SUBTESTS + PLAN))
   PASSED_SUBTESTS=$((PASSED_SUBTESTS + OK_COUNT))

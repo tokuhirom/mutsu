@@ -99,6 +99,58 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "chars" => Some(Ok(Value::Int(
             target.to_string_value().graphemes(true).count() as i64,
         ))),
+        "ord" => {
+            let s = target.to_string_value();
+            if let Some(ch) = s.chars().next() {
+                Some(Ok(Value::Int(ch as u32 as i64)))
+            } else {
+                Some(Ok(Value::Nil))
+            }
+        }
+        "ords" => {
+            let s = target.to_string_value();
+            let ords: Vec<Value> = s.chars().map(|c| Value::Int(c as u32 as i64)).collect();
+            Some(Ok(Value::Array(ords)))
+        }
+        "chr" => {
+            let code = match target {
+                Value::Int(i) => *i,
+                Value::Num(f) => *f as i64,
+                _ => {
+                    let s = target.to_string_value();
+                    s.parse::<i64>().unwrap_or(0)
+                }
+            };
+            if let Some(ch) = char::from_u32(code as u32) {
+                Some(Ok(Value::Str(ch.to_string())))
+            } else {
+                Some(Err(RuntimeError::new(format!(
+                    "chr({}) does not map to a valid Unicode character",
+                    code
+                ))))
+            }
+        }
+        "chrs" => {
+            // .chrs on a list/array of ints or a range
+            let val_to_i64 = |v: &Value| -> i64 {
+                match v {
+                    Value::Int(i) => *i,
+                    Value::Num(f) => *f as i64,
+                    _ => v.to_string_value().parse::<i64>().unwrap_or(0),
+                }
+            };
+            let items: Vec<i64> = match target {
+                Value::Array(items) => items.iter().map(&val_to_i64).collect(),
+                Value::Range(a, b) => (*a..=*b).collect(),
+                Value::RangeExcl(a, b) => (*a..*b).collect(),
+                _ => vec![val_to_i64(target)],
+            };
+            let s: String = items
+                .iter()
+                .filter_map(|&code| char::from_u32(code as u32))
+                .collect();
+            Some(Ok(Value::Str(s)))
+        }
         "elems" => {
             let result = match target {
                 Value::Array(items) => Value::Int(items.len() as i64),

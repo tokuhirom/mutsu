@@ -161,4 +161,5 @@ roast/S32-str/trim.t
 roast/S32-str/uc.t
 roast/S32-trig/e.t
 roast/S32-trig/pi.t
+roast/S32-num/abs.t
 roast/S32-trig/simple.t

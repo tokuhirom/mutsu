@@ -92,13 +92,25 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             arg.to_string_value().graphemes(true).count() as i64,
         ))),
         "chr" => {
-            if let Value::Int(i) = arg
-                && *i >= 0
-                && let Some(ch) = std::char::from_u32(*i as u32)
-            {
-                return Some(Ok(Value::Str(ch.to_string())));
+            let code = match arg {
+                Value::Int(i) => *i,
+                Value::Num(f) => *f as i64,
+                _ => arg.to_string_value().parse::<i64>().unwrap_or(-1),
+            };
+            if !(0..=0x10FFFF).contains(&code) {
+                return Some(Err(RuntimeError::new(format!(
+                    "chr({}) out of range. bg: Expected 0..1114111",
+                    code
+                ))));
             }
-            Some(Ok(Value::Str(String::new())))
+            if let Some(ch) = std::char::from_u32(code as u32) {
+                Some(Ok(Value::Str(ch.to_string())))
+            } else {
+                Some(Err(RuntimeError::new(format!(
+                    "chr({}) does not map to a valid Unicode character",
+                    code
+                ))))
+            }
         }
         "ord" => {
             if let Some(ch) = arg.to_string_value().chars().next() {
@@ -122,6 +134,16 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
         "abs" => Some(Ok(match arg {
             Value::Int(i) => Value::Int(i.abs()),
             Value::Num(f) => Value::Num(f.abs()),
+            Value::Rat(n, d) => Value::Rat(n.abs(), *d),
+            Value::Str(s) => {
+                if let Ok(i) = s.parse::<i64>() {
+                    Value::Int(i.abs())
+                } else if let Ok(f) = s.parse::<f64>() {
+                    Value::Num(f.abs())
+                } else {
+                    Value::Int(0)
+                }
+            }
             _ => Value::Int(0),
         })),
         "sqrt" => Some(Ok(match arg {
@@ -431,30 +453,26 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
         }
         "chrs" => {
             let mut result = String::new();
+            let push_chr = |result: &mut String, v: &Value| {
+                let code = match v {
+                    Value::Int(i) => *i,
+                    Value::Num(f) => *f as i64,
+                    _ => v.to_string_value().parse::<i64>().unwrap_or(-1),
+                };
+                if code >= 0
+                    && let Some(ch) = std::char::from_u32(code as u32)
+                {
+                    result.push(ch);
+                }
+            };
             for arg in args {
                 match arg {
-                    Value::Int(i) => {
-                        if *i >= 0
-                            && let Some(ch) = std::char::from_u32(*i as u32)
-                        {
-                            result.push(ch);
-                            continue;
-                        }
-                        result.push_str(&arg.to_string_value());
-                    }
                     Value::Array(items) => {
                         for item in items {
-                            if let Value::Int(i) = item
-                                && *i >= 0
-                                && let Some(ch) = std::char::from_u32(*i as u32)
-                            {
-                                result.push(ch);
-                                continue;
-                            }
-                            result.push_str(&item.to_string_value());
+                            push_chr(&mut result, item);
                         }
                     }
-                    _ => result.push_str(&arg.to_string_value()),
+                    _ => push_chr(&mut result, arg),
                 }
             }
             Some(Ok(Value::Str(result)))
