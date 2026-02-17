@@ -361,6 +361,17 @@ impl VM {
                 *ip += 1;
             }
 
+            OpCode::MakeSlip => {
+                let val = self.stack.pop().unwrap();
+                let items = match val {
+                    Value::Array(items) => items,
+                    Value::Slip(items) => items,
+                    other => vec![other],
+                };
+                self.stack.push(Value::Slip(items));
+                *ip += 1;
+            }
+
             // -- Logic / coercion --
             OpCode::Not => {
                 let val = self.stack.pop().unwrap();

@@ -754,6 +754,10 @@ impl Compiler {
                     self.compile_expr(expr);
                     self.code.emit(OpCode::BoolBitNeg);
                 }
+                TokenKind::Pipe => {
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::MakeSlip);
+                }
                 _ => {
                     panic!("unsupported unary operator in compiler: {:?}", op);
                 }

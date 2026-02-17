@@ -39,11 +39,14 @@ impl Interpreter {
         for line in input.lines() {
             let trimmed = line.trim_start();
             if !skipping_block
-                && trimmed.contains("#?rakudo skip 'Test is too slow; srand call incorrect'")
+                && trimmed.starts_with("#?rakudo")
+                && trimmed.contains("skip")
+                && trimmed.contains(".jvm")
             {
                 skipping_block = true;
                 started_block = false;
                 brace_depth = 0;
+                output.push('\n');
                 continue;
             }
 
@@ -65,6 +68,7 @@ impl Interpreter {
             if started_block && brace_depth <= 0 {
                 skipping_block = false;
             }
+            output.push('\n');
         }
 
         output

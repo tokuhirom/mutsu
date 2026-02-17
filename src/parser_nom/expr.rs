@@ -1688,6 +1688,21 @@ fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // |@array or |%hash or |$scalar — slip/flatten prefix
+    if input.starts_with('|')
+        && let Some(&c) = input.as_bytes().get(1)
+        && (c == b'@' || c == b'%' || c == b'$')
+    {
+        let rest = &input[1..];
+        let (rest, expr) = postfix_expr(rest)?;
+        return Ok((
+            rest,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                expr: Box::new(expr),
+            },
+        ));
+    }
     postfix_expr(input)
 }
 
