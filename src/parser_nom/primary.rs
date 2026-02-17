@@ -1877,6 +1877,32 @@ pub(super) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Expr>> {
 }
 
 /// Parse a regex literal: /pattern/ or rx/pattern/ or m/pattern/
+/// Scan `input` for content delimited by `close_ch`, handling backslash escapes
+/// and paired-delimiter nesting. Returns `(content, rest_after_close)` or None.
+fn scan_to_delim(
+    input: &str,
+    open_ch: char,
+    close_ch: char,
+    is_paired: bool,
+) -> Option<(&str, &str)> {
+    let mut depth = 1u32;
+    let mut chars = input.char_indices();
+    while let Some((i, c)) = chars.next() {
+        if c == close_ch {
+            depth -= 1;
+            if depth == 0 {
+                return Some((&input[..i], &input[i + c.len_utf8()..]));
+            }
+        } else if is_paired && c == open_ch {
+            depth += 1;
+        } else if c == '\\' {
+            // skip next char
+            chars.next();
+        }
+    }
+    None
+}
+
 fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // rx/pattern/ or rx{pattern}
     if let Ok((rest, _)) = parse_tag(input, "rx") {
@@ -1949,49 +1975,38 @@ fn regex_lit(input: &str) -> PResult<'_, Expr> {
         ));
     }
 
-    // s/pattern/replacement/
-    if let Some(r) = input.strip_prefix("s/") {
-        let mut end = 0;
-        let bytes = r.as_bytes();
-        while end < bytes.len() {
-            if bytes[end] == b'/' {
-                break;
-            }
-            if bytes[end] == b'\\' && end + 1 < bytes.len() {
-                end += 2;
-            } else {
-                end += 1;
-            }
-        }
-        let pattern = &r[..end];
-        if end < bytes.len() {
-            let r = &r[end + 1..]; // skip closing /
-            // Now parse replacement until next /
-            let mut rend = 0;
-            let rbytes = r.as_bytes();
-            while rend < rbytes.len() {
-                if rbytes[rend] == b'/' {
-                    break;
-                }
-                if rbytes[rend] == b'\\' && rend + 1 < rbytes.len() {
-                    rend += 2;
-                } else {
-                    rend += 1;
-                }
-            }
-            let replacement = &r[..rend];
-            let rest = if rend < rbytes.len() {
-                &r[rend + 1..]
-            } else {
-                &r[rend..]
+    // s with arbitrary delimiter: s/pattern/replacement/, s^pattern^replacement^, etc.
+    if let Some(after_s) = input.strip_prefix('s')
+        && let Some(open_ch) = after_s.chars().next()
+    {
+        let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
+        if is_delim {
+            let (close_ch, is_paired) = match open_ch {
+                '{' => ('}', true),
+                '[' => (']', true),
+                '(' => (')', true),
+                '<' => ('>', true),
+                other => (other, false),
             };
-            return Ok((
-                rest,
-                Expr::Subst {
-                    pattern: pattern.to_string(),
-                    replacement: replacement.to_string(),
-                },
-            ));
+            let r = &after_s[open_ch.len_utf8()..];
+            if let Some((pattern, after_pat)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
+                // For paired delimiters, skip optional whitespace and opening delimiter
+                let r2 = if is_paired {
+                    let (r2, _) = ws(after_pat)?;
+                    r2.strip_prefix(open_ch).unwrap_or(r2)
+                } else {
+                    after_pat
+                };
+                if let Some((replacement, rest)) = scan_to_delim(r2, open_ch, close_ch, is_paired) {
+                    return Ok((
+                        rest,
+                        Expr::Subst {
+                            pattern: pattern.to_string(),
+                            replacement: replacement.to_string(),
+                        },
+                    ));
+                }
+            }
         }
     }
 
@@ -2089,40 +2104,24 @@ fn regex_lit(input: &str) -> PResult<'_, Expr> {
     }
 
     // m/pattern/ or m{pattern} or m[pattern]
-    if input.starts_with("m/") || input.starts_with("m{") || input.starts_with("m[") {
-        let close_delim = match input.as_bytes()[1] {
-            b'/' => b'/',
-            b'{' => b'}',
-            b'[' => b']',
-            _ => unreachable!(),
-        };
-        let r = &input[2..];
-        let mut end = 0;
-        let bytes = r.as_bytes();
-        let mut depth = 1u32;
-        while end < bytes.len() {
-            if bytes[end] == close_delim {
-                depth -= 1;
-                if depth == 0 {
-                    break;
-                }
-            }
-            if close_delim != b'/' && bytes[end] == input.as_bytes()[1] {
-                depth += 1;
-            }
-            if bytes[end] == b'\\' && end + 1 < bytes.len() {
-                end += 2;
-            } else {
-                end += 1;
+    // m with arbitrary delimiter: m/.../, m{...}, m[...], m^...^, m!...!, etc.
+    if let Some(after_m) = input.strip_prefix('m')
+        && let Some(open_ch) = after_m.chars().next()
+    {
+        let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
+        if is_delim {
+            let (close_ch, is_paired) = match open_ch {
+                '{' => ('}', true),
+                '[' => (']', true),
+                '(' => (')', true),
+                '<' => ('>', true),
+                other => (other, false),
+            };
+            let r = &after_m[open_ch.len_utf8()..];
+            if let Some((pattern, rest)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
+                return Ok((rest, Expr::Literal(Value::Regex(pattern.to_string()))));
             }
         }
-        let pattern = &r[..end];
-        let rest = if end < r.len() {
-            &r[end + 1..]
-        } else {
-            &r[end..]
-        };
-        return Ok((rest, Expr::Literal(Value::Regex(pattern.to_string()))));
     }
 
     // Bare /pattern/

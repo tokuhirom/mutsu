@@ -14,7 +14,7 @@
 - [ ] roast/S04-statements/do.t
 - [x] roast/S04-statements/unless.t
 - [x] roast/S05-metachars/newline.t
-- [ ] roast/S05-metasyntax/delimiters.t
+- [x] roast/S05-metasyntax/delimiters.t
 - [x] roast/S06-other/main-eval.t
 - [x] roast/S06-traits/native-is-copy.t
 - [ ] roast/S11-modules/rakulib.t
