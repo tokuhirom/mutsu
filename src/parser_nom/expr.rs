@@ -422,6 +422,53 @@ fn parse_junctive_op(input: &str) -> Option<(JunctiveOp, usize)> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum JunctionInfixOp {
+    Any, // |
+    All, // &
+    One, // ^
+}
+
+impl JunctionInfixOp {
+    fn token_kind(self) -> TokenKind {
+        match self {
+            JunctionInfixOp::Any => TokenKind::Pipe,
+            JunctionInfixOp::All => TokenKind::Ampersand,
+            JunctionInfixOp::One => TokenKind::Caret,
+        }
+    }
+}
+
+fn parse_junction_infix_op(input: &str) -> Option<(JunctionInfixOp, usize)> {
+    // | but not || or |=
+    if input.starts_with('|') && !input.starts_with("||") && !input.starts_with("|=") {
+        Some((JunctionInfixOp::Any, 1))
+    // & but not && or &=
+    } else if input.starts_with('&') && !input.starts_with("&&") && !input.starts_with("&=") {
+        // Make sure it's not a sigil (e.g. &func)
+        if let Some(&c) = input.as_bytes().get(1)
+            && (c.is_ascii_alphabetic() || c == b'_')
+        {
+            return None;
+        }
+        Some((JunctionInfixOp::All, 1))
+    // ^ but not ^.. or ^^ or ^=
+    } else if input.starts_with('^')
+        && !input.starts_with("^.")
+        && !input.starts_with("^^")
+        && !input.starts_with("^=")
+    {
+        if let Some(&c) = input.as_bytes().get(1)
+            && (c.is_ascii_alphanumeric() || c == b'$' || c == b'@' || c == b'(')
+        {
+            return None;
+        }
+        Some((JunctionInfixOp::One, 1))
+    } else {
+        None
+    }
+}
+
 fn parse_or_or_op(input: &str) -> Option<(LogicalOp, usize)> {
     if input.starts_with("||") {
         Some((LogicalOp::OrOr, 2))
@@ -505,8 +552,15 @@ fn is_whatever(expr: &Expr) -> bool {
 fn contains_whatever(expr: &Expr) -> bool {
     match expr {
         e if is_whatever(e) => true,
+        // Don't treat * inside sequence operators (..., ...^) as WhateverCode
+        Expr::Binary {
+            op: TokenKind::DotDotDot | TokenKind::DotDotDotCaret,
+            ..
+        } => false,
         Expr::Binary { left, right, .. } => contains_whatever(left) || contains_whatever(right),
         Expr::Unary { expr, .. } => contains_whatever(expr),
+        Expr::MethodCall { target, .. } => contains_whatever(target),
+        Expr::Index { target, index } => contains_whatever(target) || contains_whatever(index),
         _ => false,
     }
 }
@@ -522,6 +576,21 @@ fn replace_whatever(expr: &Expr) -> Expr {
         Expr::Unary { op, expr } => Expr::Unary {
             op: op.clone(),
             expr: Box::new(replace_whatever(expr)),
+        },
+        Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier,
+        } => Expr::MethodCall {
+            target: Box::new(replace_whatever(target)),
+            name: name.clone(),
+            args: args.clone(),
+            modifier: *modifier,
+        },
+        Expr::Index { target, index } => Expr::Index {
+            target: Box::new(replace_whatever(target)),
+            index: Box::new(replace_whatever(index)),
         },
         _ => expr.clone(),
     }
@@ -652,13 +721,13 @@ fn or_or_expr(input: &str) -> PResult<'_, Expr> {
 
 /// &&
 fn and_and_expr(input: &str) -> PResult<'_, Expr> {
-    let (mut rest, mut left) = junctive_expr(input)?;
+    let (mut rest, mut left) = comparison_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
         if let Some((op, len)) = parse_and_and_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = junctive_expr(r).map_err(|err| {
+            let (r, right) = comparison_expr(r).map_err(|err| {
                 enrich_expected_error(err, "expected expression after '&&'", r.len())
             })?;
             left = Expr::Binary {
@@ -674,16 +743,31 @@ fn and_and_expr(input: &str) -> PResult<'_, Expr> {
     Ok((rest, left))
 }
 
-/// Boolean bitwise: ?| ?& ?^
+/// Boolean bitwise / junction: ?| ?& ?^ | & ^
 fn junctive_expr(input: &str) -> PResult<'_, Expr> {
-    let (mut rest, mut left) = comparison_expr(input)?;
+    let (mut rest, mut left) = sequence_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
         if let Some((op, len)) = parse_junctive_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = comparison_expr(r).map_err(|err| {
+            let (r, right) = sequence_expr(r).map_err(|err| {
                 enrich_expected_error(err, "expected expression after junctive operator", r.len())
+            })?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: op.token_kind(),
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        // Junction infix operators: |, &, ^
+        if let Some((op, len)) = parse_junction_infix_op(r) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = sequence_expr(r).map_err(|err| {
+                enrich_expected_error(err, "expected expression after junction operator", r.len())
             })?;
             left = Expr::Binary {
                 left: Box::new(left),
@@ -698,14 +782,260 @@ fn junctive_expr(input: &str) -> PResult<'_, Expr> {
     Ok((rest, left))
 }
 
-/// Comparison: ==, !=, <, >, <=, >=, eq, ne, lt, gt, le, ge, ~~, !~~, ===, <=>
-fn comparison_expr(input: &str) -> PResult<'_, Expr> {
-    let (rest, left) = range_expr(input)?;
+/// Expression without sequence operator (for use in comma contexts where ... is list-infix)
+pub(super) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {
+    // Same as expression but skip memo and don't include sequence
+    let (rest, mut expr) = ternary_no_seq(input)?;
+    let (r, _) = ws(rest)?;
+    if r.starts_with("=>") && !r.starts_with("==>") {
+        let r = &r[2..];
+        let (r, _) = ws(r)?;
+        let (r, value) = or_expr(r)?;
+        let left = match expr {
+            Expr::BareWord(ref name) => Expr::Literal(Value::Str(name.clone())),
+            _ => expr,
+        };
+        return Ok((
+            r,
+            Expr::Binary {
+                left: Box::new(left),
+                op: TokenKind::FatArrow,
+                right: Box::new(value),
+            },
+        ));
+    }
+    if contains_whatever(&expr) {
+        let body_expr = replace_whatever(&expr);
+        expr = Expr::Lambda {
+            param: "_".to_string(),
+            body: vec![Stmt::Expr(body_expr)],
+        };
+    }
+    Ok((rest, expr))
+}
+
+fn ternary_no_seq(input: &str) -> PResult<'_, Expr> {
+    let (input, cond) = or_expr_no_seq(input)?;
+    let (input, _) = ws(input)?;
+    if let Ok((input, _)) = parse_tag(input, "??") {
+        let (input, _) = ws(input)?;
+        let (input, then_expr) = expression_no_sequence(input)?;
+        let (input, _) = ws(input)?;
+        let (input, _) = parse_tag(input, "!!")?;
+        let (input, _) = ws(input)?;
+        let (input, else_expr) = expression_no_sequence(input)?;
+        return Ok((
+            input,
+            Expr::Ternary {
+                cond: Box::new(cond),
+                then_expr: Box::new(then_expr),
+                else_expr: Box::new(else_expr),
+            },
+        ));
+    }
+    Ok((input, cond))
+}
+
+fn or_expr_no_seq(input: &str) -> PResult<'_, Expr> {
+    let (mut rest, mut left) = and_expr_no_seq(input)?;
+    loop {
+        let (r, _) = ws(rest)?;
+        if let Some((op @ LogicalOp::Or, len)) = parse_word_logical_op(r) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = and_expr_no_seq(r)?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: op.token_kind(),
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        break;
+    }
+    Ok((rest, left))
+}
+
+fn and_expr_no_seq(input: &str) -> PResult<'_, Expr> {
+    let (mut rest, mut left) = not_expr_no_seq(input)?;
+    loop {
+        let (r, _) = ws(rest)?;
+        if let Some((op @ LogicalOp::And, len)) = parse_word_logical_op(r) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = not_expr_no_seq(r)?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: op.token_kind(),
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        break;
+    }
+    Ok((rest, left))
+}
+
+fn not_expr_no_seq(input: &str) -> PResult<'_, Expr> {
+    if input.starts_with("not")
+        && !is_ident_char(input.as_bytes().get(3).copied())
+        && !input[3..].starts_with('(')
+    {
+        let r = &input[3..];
+        let (r, _) = ws(r)?;
+        let (r, expr) = not_expr_no_seq(r)?;
+        return Ok((
+            r,
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(expr),
+            },
+        ));
+    }
+    or_or_expr_no_seq(input)
+}
+
+fn or_or_expr_no_seq(input: &str) -> PResult<'_, Expr> {
+    let (mut rest, mut left) = and_and_expr_no_seq(input)?;
+    loop {
+        let (r, _) = ws(rest)?;
+        if let Some((op, len)) = parse_or_or_op(r) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = and_and_expr_no_seq(r)?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: op.token_kind(),
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        break;
+    }
+    Ok((rest, left))
+}
+
+fn and_and_expr_no_seq(input: &str) -> PResult<'_, Expr> {
+    let (mut rest, mut left) = comparison_expr_no_seq(input)?;
+    loop {
+        let (r, _) = ws(rest)?;
+        if let Some((op, len)) = parse_and_and_op(r) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = comparison_expr_no_seq(r)?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: op.token_kind(),
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        break;
+    }
+    Ok((rest, left))
+}
+
+fn comparison_expr_no_seq(input: &str) -> PResult<'_, Expr> {
+    let (rest, left) = junctive_expr_no_seq(input)?;
     let (r, _) = ws(rest)?;
     if let Some((op, len)) = parse_comparison_op(r) {
         let r = &r[len..];
         let (r, _) = ws(r)?;
+        let (r, right) = junctive_expr_no_seq(r)?;
+        return Ok((
+            r,
+            Expr::Binary {
+                left: Box::new(left),
+                op: op.token_kind(),
+                right: Box::new(right),
+            },
+        ));
+    }
+    Ok((rest, left))
+}
+
+fn junctive_expr_no_seq(input: &str) -> PResult<'_, Expr> {
+    // Same as junctive_expr but skip sequence, go directly to range
+    let (mut rest, mut left) = range_expr(input)?;
+    loop {
+        let (r, _) = ws(rest)?;
+        if let Some((op, len)) = parse_junctive_op(r) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = range_expr(r)?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: op.token_kind(),
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        if let Some((op, len)) = parse_junction_infix_op(r) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = range_expr(r)?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: op.token_kind(),
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        break;
+    }
+    Ok((rest, left))
+}
+
+/// Sequence: ... and ...^
+fn sequence_expr(input: &str) -> PResult<'_, Expr> {
+    let (rest, left) = range_expr(input)?;
+    let (r, _) = ws(rest)?;
+    if let Some(r) = r.strip_prefix("...^") {
+        let (r, _) = ws(r)?;
         let (r, right) = range_expr(r).map_err(|err| {
+            enrich_expected_error(err, "expected expression after '...^'", r.len())
+        })?;
+        return Ok((
+            r,
+            Expr::Binary {
+                left: Box::new(left),
+                op: TokenKind::DotDotDotCaret,
+                right: Box::new(right),
+            },
+        ));
+    }
+    if r.starts_with("...") && !r.starts_with("....") {
+        let r = &r[3..];
+        let (r, _) = ws(r)?;
+        let (r, right) = range_expr(r).map_err(|err| {
+            enrich_expected_error(err, "expected expression after '...'", r.len())
+        })?;
+        return Ok((
+            r,
+            Expr::Binary {
+                left: Box::new(left),
+                op: TokenKind::DotDotDot,
+                right: Box::new(right),
+            },
+        ));
+    }
+    Ok((rest, left))
+}
+
+/// Comparison: ==, !=, <, >, <=, >=, eq, ne, lt, gt, le, ge, ~~, !~~, ===, <=>
+fn comparison_expr(input: &str) -> PResult<'_, Expr> {
+    let (rest, left) = junctive_expr(input)?;
+    let (r, _) = ws(rest)?;
+    if let Some((op, len)) = parse_comparison_op(r) {
+        let r = &r[len..];
+        let (r, _) = ws(r)?;
+        let (r, mut right) = junctive_expr(r).map_err(|err| {
             let message = merge_expected_messages(
                 "expected expression after comparison operator",
                 &err.message,
@@ -715,6 +1045,16 @@ fn comparison_expr(input: &str) -> PResult<'_, Expr> {
                 remaining_len: err.remaining_len.or(Some(r.len())),
             }
         })?;
+        // For smartmatch (~~ / !~~), transform WhateverCode on the RHS into a Lambda
+        if matches!(op, ComparisonOp::SmartMatch | ComparisonOp::SmartNotMatch)
+            && contains_whatever(&right)
+        {
+            let body_expr = replace_whatever(&right);
+            right = Expr::Lambda {
+                param: "_".to_string(),
+                body: vec![Stmt::Expr(body_expr)],
+            };
+        }
         let mut result = Expr::Binary {
             left: Box::new(left),
             op: op.token_kind(),
@@ -728,7 +1068,7 @@ fn comparison_expr(input: &str) -> PResult<'_, Expr> {
             if let Some((cop, chain_len)) = parse_comparison_op(r2) {
                 let r2 = &r2[chain_len..];
                 let (r2, _) = ws(r2)?;
-                let (r2, next_right) = range_expr(r2).map_err(|err| {
+                let (r2, next_right) = junctive_expr(r2).map_err(|err| {
                     let message = merge_expected_messages(
                         "expected expression after chained comparison operator",
                         &err.message,
@@ -873,7 +1213,67 @@ fn range_expr(input: &str) -> PResult<'_, Expr> {
     Ok((rest, left))
 }
 
-/// Structural infix: but, does
+/// Parse meta operator: R-, X+, Zcmp, etc.
+fn parse_meta_op(input: &str) -> Option<(&str, &str, usize)> {
+    let meta = if input.starts_with('R') {
+        "R"
+    } else if input.starts_with('X') {
+        "X"
+    } else if input.starts_with('Z') {
+        "Z"
+    } else {
+        return None;
+    };
+    let r = &input[1..];
+    // Try symbolic operators first (multi-char then single-char)
+    let ops: &[&str] = &[
+        "**", "==", "!=", "<=", ">=", "~~", "%%", "//", "~", "+", "-", "*", "/", "%", "<", ">",
+    ];
+    for op in ops {
+        if r.starts_with(op) {
+            // Make sure it's not an identifier continuation for single-char alpha ops
+            return Some((meta, op, 1 + op.len()));
+        }
+    }
+    // Try word operators: cmp, min, max, eq, ne, lt, gt, le, ge, leg
+    let word_ops: &[&str] = &[
+        "cmp", "min", "max", "eq", "ne", "lt", "gt", "le", "ge", "leg",
+    ];
+    for op in word_ops {
+        if r.starts_with(op) && !is_ident_char(r.as_bytes().get(op.len()).copied()) {
+            return Some((meta, op, 1 + op.len()));
+        }
+    }
+    None
+}
+
+fn parse_set_op(input: &str) -> Option<(TokenKind, usize)> {
+    if input.starts_with("(|)") {
+        Some((TokenKind::SetUnion, 3))
+    } else if input.starts_with("(&)") {
+        Some((TokenKind::SetIntersect, 3))
+    } else if input.starts_with("(-)") {
+        Some((TokenKind::SetDiff, 3))
+    } else if input.starts_with("(^)") {
+        Some((TokenKind::SetSymDiff, 3))
+    } else if input.starts_with("(<=)") {
+        Some((TokenKind::SetSubset, 4))
+    } else if input.starts_with("(>=)") {
+        Some((TokenKind::SetSuperset, 4))
+    } else if input.starts_with("(<)") {
+        Some((TokenKind::SetStrictSubset, 3))
+    } else if input.starts_with("(>)") {
+        Some((TokenKind::SetStrictSuperset, 3))
+    } else if input.starts_with("(elem)") {
+        Some((TokenKind::SetElem, 6))
+    } else if input.starts_with("(cont)") {
+        Some((TokenKind::SetCont, 6))
+    } else {
+        None
+    }
+}
+
+/// Structural infix: but, does, set operators
 fn structural_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = concat_expr(input)?;
     loop {
@@ -906,9 +1306,76 @@ fn structural_expr(input: &str) -> PResult<'_, Expr> {
             rest = r;
             continue;
         }
+        // Set operators: (|), (&), (-), (^), (<=), (>=), (<), (>), (elem), (cont)
+        if let Some((tok, len)) = parse_set_op(r) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = concat_expr(r).map_err(|err| {
+                enrich_expected_error(err, "expected expression after set operator", r.len())
+            })?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: tok,
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        // Meta operators: R-, X+, Zcmp, etc.
+        if let Some((meta, op, len)) = parse_meta_op(r) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = concat_expr(r).map_err(|err| {
+                enrich_expected_error(err, "expected expression after meta operator", r.len())
+            })?;
+            left = Expr::MetaOp {
+                meta: meta.to_string(),
+                op: op.to_string(),
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
         break;
     }
     Ok((rest, left))
+}
+
+/// Parse hyper operator: >>op<<, >>op>>, <<op<<, <<op>>
+/// The operator between the chevrons is short (1-4 chars), so we only search a small window.
+fn parse_hyper_op(input: &str) -> Option<(String, bool, bool, usize)> {
+    // >>op<< or >>op>>
+    if let Some(r) = input.strip_prefix(">>") {
+        let search_limit = r.len().min(8);
+        let search = &r[..search_limit];
+        let op_end = search.find("<<").or_else(|| search.find(">>"));
+        if let Some(end) = op_end {
+            let op = &r[..end];
+            if !op.is_empty() {
+                let right_marker = &r[end..end + 2];
+                let dwim_left = false;
+                let dwim_right = right_marker == ">>";
+                return Some((op.to_string(), dwim_left, dwim_right, 2 + end + 2));
+            }
+        }
+    }
+    // <<op<< or <<op>>
+    if let Some(r) = input.strip_prefix("<<") {
+        let search_limit = r.len().min(8);
+        let search = &r[..search_limit];
+        let op_end = search.find("<<").or_else(|| search.find(">>"));
+        if let Some(end) = op_end {
+            let op = &r[..end];
+            if !op.is_empty() {
+                let right_marker = &r[end..end + 2];
+                let dwim_left = true;
+                let dwim_right = right_marker == ">>";
+                return Some((op.to_string(), dwim_left, dwim_right, 2 + end + 2));
+            }
+        }
+    }
+    None
 }
 
 /// String concatenation: ~
@@ -916,6 +1383,23 @@ fn concat_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = additive_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
+        // Hyper operators: >>op<<, >>op>>, <<op<<, <<op>>
+        if let Some((op, dwim_left, dwim_right, len)) = parse_hyper_op(r) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = additive_expr(r).map_err(|err| {
+                enrich_expected_error(err, "expected expression after hyper operator", r.len())
+            })?;
+            left = Expr::HyperOp {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+                dwim_left,
+                dwim_right,
+            };
+            rest = r;
+            continue;
+        }
         if let Some((op, len)) = parse_concat_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
@@ -1065,6 +1549,37 @@ fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // lazy prefix (treated as no-op): lazy expr
+    if input.starts_with("lazy") && !is_ident_char(input.as_bytes().get(4).copied()) {
+        let r = &input[4..];
+        let (r, _) = ws(r)?;
+        let (r, expr) = prefix_expr(r)?;
+        return Ok((r, expr));
+    }
+    // eager prefix (treated as no-op): eager expr
+    if input.starts_with("eager") && !is_ident_char(input.as_bytes().get(5).copied()) {
+        let r = &input[5..];
+        let (r, _) = ws(r)?;
+        let (r, expr) = prefix_expr(r)?;
+        return Ok((r, expr));
+    }
+    // ^expr — upto operator: ^5 means 0..^5
+    if input.starts_with('^')
+        && !input.starts_with("^..")
+        && let Some(&c) = input.as_bytes().get(1)
+        && (c == b'$' || c == b'(' || c.is_ascii_digit())
+    {
+        let rest = &input[1..];
+        let (rest, expr) = postfix_expr(rest)?;
+        return Ok((
+            rest,
+            Expr::Binary {
+                left: Box::new(Expr::Literal(Value::Int(0))),
+                op: TokenKind::DotDotCaret,
+                right: Box::new(expr),
+            },
+        ));
+    }
     postfix_expr(input)
 }
 
@@ -1079,6 +1594,19 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
         // Also handles call-on: .(args)
         if rest.starts_with('.') && !rest.starts_with("..") {
             let r = &rest[1..];
+            // Check for .[index] syntax: object.[expr]
+            if let Some(r) = r.strip_prefix('[') {
+                let (r, _) = ws(r)?;
+                let (r, index) = expression(r)?;
+                let (r, _) = ws(r)?;
+                let (r, _) = parse_char(r, ']')?;
+                expr = Expr::Index {
+                    target: Box::new(expr),
+                    index: Box::new(index),
+                };
+                rest = r;
+                continue;
+            }
             // Check for call-on syntax: .(args)
             if r.starts_with('(') {
                 let (r, _) = parse_char(r, '(')?;
@@ -1093,11 +1621,15 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
                 rest = r;
                 continue;
             }
-            // Check for modifier
+            // Check for modifier: .?method, .^method, .+method, .*method
             let (r, modifier) = if let Some(stripped) = r.strip_prefix('?') {
                 (stripped, Some('?'))
             } else if let Some(stripped) = r.strip_prefix('^') {
                 (stripped, Some('^'))
+            } else if let Some(stripped) = r.strip_prefix('+') {
+                (stripped, Some('+'))
+            } else if r.starts_with('*') && !r.starts_with("**") {
+                (&r[1..], Some('*'))
             } else {
                 (r, None)
             };
@@ -1218,6 +1750,16 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
                 return Err(PError::expected_at("angle index key", r));
             }
             let r = &r[end + 1..];
+            // Check for :exists / :delete adverbs
+            if r.starts_with(":exists") && !is_ident_char(r.as_bytes().get(7).copied()) {
+                let r = &r[7..];
+                expr = Expr::Exists(Box::new(Expr::Index {
+                    target: Box::new(expr),
+                    index: Box::new(Expr::Literal(Value::Str(key.to_string()))),
+                }));
+                rest = r;
+                continue;
+            }
             expr = Expr::Index {
                 target: Box::new(expr),
                 index: Box::new(Expr::Literal(Value::Str(key.to_string()))),

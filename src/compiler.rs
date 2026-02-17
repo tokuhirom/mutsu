@@ -980,9 +980,28 @@ impl Compiler {
             }
             // Indexing
             Expr::Index { target, index } => {
-                self.compile_expr(target);
-                self.compile_expr(index);
-                self.code.emit(OpCode::Index);
+                // Special case: %*ENV<key> compiles to GetEnvIndex
+                if let Expr::HashVar(name) = target.as_ref() {
+                    if name == "*ENV" {
+                        if let Expr::Literal(Value::Str(key)) = index.as_ref() {
+                            let key_idx = self.code.add_constant(Value::Str(key.clone()));
+                            self.code.emit(OpCode::GetEnvIndex(key_idx));
+                        } else {
+                            // Dynamic key - compile as runtime hash + index
+                            self.compile_expr(target);
+                            self.compile_expr(index);
+                            self.code.emit(OpCode::Index);
+                        }
+                    } else {
+                        self.compile_expr(target);
+                        self.compile_expr(index);
+                        self.code.emit(OpCode::Index);
+                    }
+                } else {
+                    self.compile_expr(target);
+                    self.compile_expr(index);
+                    self.code.emit(OpCode::Index);
+                }
             }
             // String interpolation
             Expr::StringInterpolation(parts) => {
@@ -1078,6 +1097,15 @@ impl Compiler {
                 Expr::EnvIndex(key) => {
                     let key_idx = self.code.add_constant(Value::Str(key.clone()));
                     self.code.emit(OpCode::ExistsEnvIndex(key_idx));
+                }
+                Expr::Index { target, index } if matches!(target.as_ref(), Expr::HashVar(name) if name == "*ENV") => {
+                    if let Expr::Literal(Value::Str(key)) = index.as_ref() {
+                        let key_idx = self.code.add_constant(Value::Str(key.clone()));
+                        self.code.emit(OpCode::ExistsEnvIndex(key_idx));
+                    } else {
+                        self.compile_expr(inner);
+                        self.code.emit(OpCode::ExistsExpr);
+                    }
                 }
                 _ => {
                     self.compile_expr(inner);
@@ -1186,6 +1214,18 @@ impl Compiler {
                         self.compile_stmt(s);
                     }
                     self.code.patch_body_end(given_idx);
+                }
+                Stmt::Assign { name, expr, .. } => {
+                    // do $var = expr → returns the assigned value
+                    self.compile_expr(expr);
+                    // Duplicate the value so we can assign AND return it
+                    self.code.emit(OpCode::Dup);
+                    if let Some(&slot) = self.local_map.get(name.as_str()) {
+                        self.code.emit(OpCode::SetLocal(slot));
+                    } else {
+                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        self.code.emit(OpCode::SetGlobal(name_idx));
+                    }
                 }
                 _ => {
                     self.compile_stmt(stmt);

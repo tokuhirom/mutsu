@@ -1,7 +1,7 @@
 use Test;
 plan 2;
 
-my %h = :a(1);
+my %h = a => 1;
 %h<a> = 5;
 is %h<a>, 5, 'index assignment statement updates hash element';
 

@@ -311,7 +311,13 @@ impl Interpreter {
                     positional_idx += 1;
                 }
                 if !pd.name.is_empty() {
-                    self.env.insert(pd.name.clone(), Value::Array(items));
+                    // Store with @ prefix so @args lookup works
+                    let key = if pd.name.starts_with('@') || pd.name.starts_with('%') {
+                        pd.name.clone()
+                    } else {
+                        format!("@{}", pd.name)
+                    };
+                    self.env.insert(key, Value::Array(items));
                 }
             } else if pd.named {
                 // Named params not supported with pre-evaluated values, use default

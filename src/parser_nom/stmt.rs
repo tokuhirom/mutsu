@@ -182,7 +182,11 @@ fn qualified_ident(input: &str) -> PResult<'_, String> {
 
 /// Parse a variable name ($x, @arr, %hash) and return just the name part.
 fn var_name(input: &str) -> PResult<'_, String> {
-    if input.starts_with('$') || input.starts_with('@') || input.starts_with('%') {
+    if input.starts_with('$')
+        || input.starts_with('@')
+        || input.starts_with('%')
+        || input.starts_with('&')
+    {
         let r = &input[1..];
         // Handle twigils
         let (r, twigil) =
@@ -589,6 +593,15 @@ fn print_stmt(input: &str) -> PResult<'_, Stmt> {
     parse_statement_modifier(rest, stmt)
 }
 
+/// Parse a `put` statement.
+fn put_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("put", input).ok_or_else(|| PError::expected("put statement"))?;
+    let (rest, _) = ws1(rest)?;
+    let (rest, args) = parse_expr_list(rest)?;
+    let stmt = Stmt::Say(args);
+    parse_statement_modifier(rest, stmt)
+}
+
 /// Parse a `note` statement.
 fn note_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("note", input).ok_or_else(|| PError::expected("note statement"))?;
@@ -860,11 +873,13 @@ fn parse_comma_or_expr(input: &str) -> PResult<'_, Expr> {
         loop {
             let (r2, _) = ws(r)?;
             if !r2.starts_with(',') {
+                let items = lift_meta_ops_in_list(items);
                 return Ok((r2, Expr::ArrayLiteral(items)));
             }
             let (r2, _) = parse_char(r2, ',')?;
             let (r2, _) = ws(r2)?;
             if r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') {
+                let items = lift_meta_ops_in_list(items);
                 return Ok((r2, Expr::ArrayLiteral(items)));
             }
             let (r2, next) = expression(r2)?;
@@ -873,6 +888,38 @@ fn parse_comma_or_expr(input: &str) -> PResult<'_, Expr> {
         }
     }
     Ok((rest, first))
+}
+
+/// In a comma-separated list, if an item is a MetaOp (X+, Z-, etc.), merge
+/// all preceding items into its left operand. This gives meta-ops effective
+/// list-infix precedence: `1, 2 X+ 10` → `MetaOp(X, +, [1,2], 10)`.
+fn lift_meta_ops_in_list(items: Vec<Expr>) -> Vec<Expr> {
+    // Find the first MetaOp in the list
+    let meta_idx = items.iter().position(|e| matches!(e, Expr::MetaOp { .. }));
+    if let Some(idx) = meta_idx
+        && idx > 0
+        && let Expr::MetaOp {
+            meta,
+            op,
+            left,
+            right,
+        } = &items[idx]
+    {
+        // Merge preceding items + meta's original left into a single list
+        let mut seeds: Vec<Expr> = items[..idx].to_vec();
+        seeds.push(*left.clone());
+        let new_left = Expr::ArrayLiteral(seeds);
+        let new_meta = Expr::MetaOp {
+            meta: meta.clone(),
+            op: op.clone(),
+            left: Box::new(new_left),
+            right: right.clone(),
+        };
+        let mut result = vec![new_meta];
+        result.extend(items[idx + 1..].to_vec());
+        return result;
+    }
+    items
 }
 
 /// Parse destructuring: ($a, $b, $c) = expr
@@ -1534,6 +1581,28 @@ fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         }
     }
 
+    // Handle literal value parameters: multi sub foo(0) { ... }
+    if rest.starts_with(|c: char| c.is_ascii_digit())
+        || (rest.starts_with('"') || rest.starts_with('\''))
+    {
+        let (rest, lit_expr) = expression(rest)?;
+        let literal_value = match &lit_expr {
+            Expr::Literal(v) => Some(v.clone()),
+            _ => None,
+        };
+        return Ok((
+            rest,
+            ParamDef {
+                name: "__literal__".to_string(),
+                named: false,
+                slurpy: false,
+                default: None,
+                type_constraint,
+                literal_value,
+            },
+        ));
+    }
+
     let (rest, name) = var_name(rest)?;
     let (rest, _) = ws(rest)?;
 
@@ -1850,6 +1919,13 @@ fn next_stmt(input: &str) -> PResult<'_, Stmt> {
 fn redo_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("redo", input).ok_or_else(|| PError::expected("redo statement"))?;
     let (rest, _) = ws(rest)?;
+    // Check for label: redo LABEL
+    if rest.starts_with(|c: char| c.is_ascii_uppercase())
+        && let Ok((r, label)) = ident(rest)
+        && label.chars().all(|c| c.is_ascii_uppercase() || c == '_')
+    {
+        return parse_statement_modifier(r, Stmt::Redo(Some(label)));
+    }
     parse_statement_modifier(rest, Stmt::Redo(None))
 }
 
@@ -2308,19 +2384,62 @@ fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
 /// Parse assignment statement: $x = expr, @arr = expr, etc.
 fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     let sigil = input.as_bytes().first().copied().unwrap_or(0);
-    if sigil != b'$' && sigil != b'@' && sigil != b'%' {
+    if sigil != b'$' && sigil != b'@' && sigil != b'%' && sigil != b'&' {
         return Err(PError::expected("assignment"));
     }
 
     let prefix = match sigil {
         b'@' => "@",
         b'%' => "%",
+        b'&' => "&",
         _ => "",
     };
 
     let (rest, var) = var_name(input)?;
     let name = format!("{}{}", prefix, var);
     let (rest, _) = ws(rest)?;
+
+    // Meta-op assignment: @a [X+]= @b → @a = @a X+ @b
+    if let Some(rest_after_bracket) = rest.strip_prefix('[')
+        && let Some(bracket_end) = rest_after_bracket.find(']')
+    {
+        let meta_op_str = &rest_after_bracket[..bracket_end];
+        let after_bracket = &rest_after_bracket[bracket_end + 1..];
+        if after_bracket.starts_with('=') && !after_bracket.starts_with("==") {
+            let after_eq = &after_bracket[1..];
+            let (after_eq, _) = ws(after_eq)?;
+            let (rest, rhs) = parse_assign_expr_or_comma(after_eq)?;
+            let var_expr = if sigil == b'@' {
+                Expr::ArrayVar(var.clone())
+            } else if sigil == b'%' {
+                Expr::HashVar(var.clone())
+            } else {
+                Expr::Var(name.clone())
+            };
+            // Determine meta and op
+            let (meta, op) = if let Some(op_str) = meta_op_str.strip_prefix('R') {
+                ("R", op_str)
+            } else if let Some(op_str) = meta_op_str.strip_prefix('X') {
+                ("X", op_str)
+            } else if let Some(op_str) = meta_op_str.strip_prefix('Z') {
+                ("Z", op_str)
+            } else {
+                return Err(PError::expected("meta operator (R/X/Z) in [op]="));
+            };
+            let expr = Expr::MetaOp {
+                meta: meta.to_string(),
+                op: op.to_string(),
+                left: Box::new(var_expr),
+                right: Box::new(rhs),
+            };
+            let stmt = Stmt::Assign {
+                name,
+                expr,
+                op: AssignOp::Assign,
+            };
+            return parse_statement_modifier(rest, stmt);
+        }
+    }
 
     if let Some((stripped, op)) = parse_compound_assign_op(rest) {
         let (rest, _) = ws(stripped)?;
@@ -2680,12 +2799,52 @@ fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         cond
     };
 
+    // Parse orwith / else chains
+    let (rest, _) = ws(rest)?;
+    let (rest, else_branch) = if keyword("orwith", rest).is_some() {
+        let r = keyword("orwith", rest).unwrap();
+        let (r, _) = ws1(r)?;
+        let (r, orwith_cond) = expression(r)?;
+        let (r, _) = ws(r)?;
+        let (r, orwith_body) = block(r)?;
+        let orwith_cond = Expr::MethodCall {
+            target: Box::new(orwith_cond),
+            name: "defined".to_string(),
+            args: Vec::new(),
+            modifier: None,
+        };
+        let (r, _) = ws(r)?;
+        let (r, orwith_else) = if keyword("else", r).is_some() {
+            let r2 = keyword("else", r).unwrap();
+            let (r2, _) = ws(r2)?;
+            let (r2, else_body) = block(r2)?;
+            (r2, else_body)
+        } else {
+            (r, Vec::new())
+        };
+        (
+            r,
+            vec![Stmt::If {
+                cond: orwith_cond,
+                then_branch: orwith_body,
+                else_branch: orwith_else,
+            }],
+        )
+    } else if keyword("else", rest).is_some() {
+        let r = keyword("else", rest).unwrap();
+        let (r, _) = ws(r)?;
+        let (r, else_body) = block(r)?;
+        (r, else_body)
+    } else {
+        (rest, Vec::new())
+    };
+
     Ok((
         rest,
         Stmt::If {
             cond,
             then_branch: body,
-            else_branch: Vec::new(),
+            else_branch,
         },
     ))
 }
@@ -2714,6 +2873,7 @@ const STMT_PARSERS: &[StmtParser] = &[
     method_decl,
     token_decl,
     say_stmt,
+    put_stmt,
     print_stmt,
     note_stmt,
     if_stmt,

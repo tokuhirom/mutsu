@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use crate::ast::Expr;
 use crate::value::Value;
 
-use super::expr::expression;
+use super::expr::{expression, expression_no_sequence};
 use super::helpers::ws;
 
 #[derive(Debug, Clone)]
@@ -113,6 +113,10 @@ fn integer(input: &str) -> PResult<'_, Expr> {
     }
     let clean: String = digits.chars().filter(|c| *c != '_').collect();
     let n: i64 = clean.parse().unwrap_or(0);
+    // Check for imaginary suffix: 4i
+    if rest.starts_with('i') && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_') {
+        return Ok((&rest[1..], Expr::Literal(Value::Complex(0.0, n as f64))));
+    }
     Ok((rest, Expr::Literal(Value::Int(n))))
 }
 
@@ -149,6 +153,10 @@ fn decimal(input: &str) -> PResult<'_, Expr> {
     };
     let clean: String = full.chars().filter(|c| *c != '_').collect();
     let n: f64 = clean.parse().unwrap_or(0.0);
+    // Check for imaginary suffix
+    if rest.starts_with('i') && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_') {
+        return Ok((&rest[1..], Expr::Literal(Value::Complex(0.0, n))));
+    }
     Ok((rest, Expr::Literal(Value::Num(n))))
 }
 
@@ -188,6 +196,58 @@ fn q_string(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("q string"));
     }
     let after_q = &input[1..];
+
+    // q:to/DELIM/ or qq:to/DELIM/ heredoc
+    if after_q.starts_with(":to/") || after_q.starts_with("q:to/") {
+        let (r, _is_qq) = if let Some(stripped) = after_q.strip_prefix("q:to/") {
+            (stripped, true)
+        } else if let Some(stripped) = after_q.strip_prefix(":to/") {
+            (stripped, false)
+        } else {
+            unreachable!()
+        };
+        // Find the delimiter name (e.g. END)
+        let delim_end = r
+            .find('/')
+            .ok_or_else(|| PError::expected("closing / for heredoc delimiter"))?;
+        let delimiter = &r[..delim_end];
+        let r = &r[delim_end + 1..];
+        // Expect ; and then newline
+        let r = r.strip_prefix(';').unwrap_or(r);
+        let r = r.strip_prefix('\n').unwrap_or(r);
+        // Find the terminator line
+        let mut content_end = None;
+        let mut search_pos = 0;
+        while search_pos <= r.len() {
+            // Check if this line starts with the delimiter
+            if r[search_pos..].starts_with(delimiter) {
+                let after_delim = &r[search_pos + delimiter.len()..];
+                if after_delim.is_empty()
+                    || after_delim.starts_with('\n')
+                    || after_delim.starts_with('\r')
+                    || after_delim.starts_with(';')
+                {
+                    content_end = Some(search_pos);
+                    break;
+                }
+            }
+            // Find next line
+            if let Some(nl) = r[search_pos..].find('\n') {
+                search_pos += nl + 1;
+            } else {
+                break;
+            }
+        }
+        if let Some(end) = content_end {
+            let content = &r[..end];
+            let rest = &r[end + delimiter.len()..];
+            // Skip optional ; and newline after delimiter
+            let rest = rest.strip_prefix('\n').unwrap_or(rest);
+            return Ok((rest, Expr::Literal(Value::Str(content.to_string()))));
+        }
+        return Err(PError::expected("heredoc terminator"));
+    }
+
     // Check for qq forms
     let (after_prefix, is_qq) = if let Some(after_qq) = after_q.strip_prefix('q') {
         if after_qq.starts_with('{')
@@ -198,7 +258,6 @@ fn q_string(input: &str) -> PResult<'_, Expr> {
         {
             (after_qq, true)
         } else {
-            // Check for q:to heredoc or q with adverbs — not handled here
             (after_q, false)
         }
     } else {
@@ -218,27 +277,95 @@ fn q_string(input: &str) -> PResult<'_, Expr> {
                 .ok_or_else(|| PError::expected("closing /"))?;
             let content = &rest[..end];
             let rest = &rest[end + 1..];
-            let s = if is_qq {
-                // qq/.../  — would need interpolation, for now treat as plain
-                content.to_string()
-            } else {
-                content.replace("\\'", "'").replace("\\\\", "\\")
-            };
+            if is_qq {
+                return Ok((rest, interpolate_string_content(content)));
+            }
+            let s = content.replace("\\'", "'").replace("\\\\", "\\");
             return Ok((rest, Expr::Literal(Value::Str(s))));
         }
         _ => return Err(PError::expected("q string delimiter")),
     };
     let (rest, content) = read_bracketed(after_prefix, open, close)?;
-    let s = if is_qq {
-        // qq{...} — would need interpolation, for now treat as plain
-        content.to_string()
-    } else {
-        content.replace("\\'", "'").replace("\\\\", "\\")
-    };
+    if is_qq {
+        return Ok((rest, interpolate_string_content(content)));
+    }
+    let s = content.replace("\\'", "'").replace("\\\\", "\\");
     Ok((rest, Expr::Literal(Value::Str(s))))
 }
 
 /// Parse a single-quoted string literal.
+/// Interpolate variables in string content (used by qq// etc.)
+fn interpolate_string_content(content: &str) -> Expr {
+    let mut parts: Vec<Expr> = Vec::new();
+    let mut current = String::new();
+    let mut rest = content;
+
+    while !rest.is_empty() {
+        if rest.starts_with('\\') && rest.len() > 1 {
+            let c = rest.as_bytes()[1] as char;
+            match c {
+                'n' => current.push('\n'),
+                't' => current.push('\t'),
+                'r' => current.push('\r'),
+                '0' => current.push('\0'),
+                '\\' => current.push('\\'),
+                '$' => current.push('$'),
+                '@' => current.push('@'),
+                _ => {
+                    current.push('\\');
+                    current.push(c);
+                }
+            }
+            rest = &rest[2..];
+            continue;
+        }
+        if rest.starts_with('$') && rest.len() > 1 {
+            let next = rest.as_bytes()[1] as char;
+            if next.is_alphabetic() || next == '_' || next == '*' || next == '?' || next == '!' {
+                if !current.is_empty() {
+                    parts.push(Expr::Literal(Value::Str(std::mem::take(&mut current))));
+                }
+                let var_rest = &rest[1..];
+                let (var_rest, var_name) = parse_var_name_from_str(var_rest);
+                parts.push(Expr::Var(var_name));
+                rest = var_rest;
+                continue;
+            }
+        }
+        if rest.starts_with('@') && rest.len() > 1 {
+            let next = rest.as_bytes()[1] as char;
+            if next.is_alphabetic() || next == '_' {
+                if !current.is_empty() {
+                    parts.push(Expr::Literal(Value::Str(std::mem::take(&mut current))));
+                }
+                let var_rest = &rest[1..];
+                let end = var_rest
+                    .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                    .unwrap_or(var_rest.len());
+                let name = &var_rest[..end];
+                parts.push(Expr::ArrayVar(name.to_string()));
+                rest = &var_rest[end..];
+                continue;
+            }
+        }
+        let ch = rest.chars().next().unwrap();
+        current.push(ch);
+        rest = &rest[ch.len_utf8()..];
+    }
+
+    if parts.is_empty() {
+        Expr::Literal(Value::Str(current))
+    } else {
+        if !current.is_empty() {
+            parts.push(Expr::Literal(Value::Str(current)));
+        }
+        if parts.len() == 1 && matches!(&parts[0], Expr::Literal(Value::Str(_))) {
+            return parts.into_iter().next().unwrap();
+        }
+        Expr::StringInterpolation(parts)
+    }
+}
+
 fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '\'')?;
     let start = input;
@@ -442,23 +569,67 @@ fn scalar_var(input: &str) -> PResult<'_, Expr> {
     if let Some(stripped) = input.strip_prefix('/') {
         return Ok((stripped, Expr::Var("/".to_string())));
     }
-    // Handle twigils: $*FOO, $?FILE, $!attr
+    // Handle $! (exception variable) — bare $! without name after it
+    if let Some(after) = input.strip_prefix('!') {
+        // If next char is alphanumeric or _, it's a twigil (e.g. $!attr)
+        // If not, it's the bare $! variable
+        let is_twigil = !after.is_empty()
+            && (after.as_bytes()[0].is_ascii_alphanumeric() || after.as_bytes()[0] == b'_');
+        if !is_twigil {
+            return Ok((after, Expr::Var("!".to_string())));
+        }
+    }
+    // Handle $<name> (named capture variable)
+    if let Some(after_lt) = input.strip_prefix('<')
+        && let Ok((after_name, name)) = take_while1(after_lt, |c: char| {
+            c.is_alphanumeric() || c == '_' || c == '-'
+        })
+        && let Some(after_gt) = after_name.strip_prefix('>')
+    {
+        return Ok((after_gt, Expr::CaptureVar(name.to_string())));
+    }
+    // Handle twigils: $*FOO, $?FILE, $!attr, $.attr
     let (rest, twigil) = if input.starts_with('*')
         || input.starts_with('?')
         || input.starts_with('!')
         || input.starts_with('^')
+        || (input.starts_with('.') && input.len() > 1 && input.as_bytes()[1].is_ascii_alphabetic())
     {
         (&input[1..], &input[..1])
     } else {
         (input, "")
     };
-    let (rest, name) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+    let (rest, name) = parse_ident_with_hyphens(rest)?;
     let full_name = if twigil.is_empty() {
         name.to_string()
     } else {
         format!("{}{}", twigil, name)
     };
     Ok((rest, Expr::Var(full_name)))
+}
+
+/// Parse identifier allowing kebab-case hyphens (e.g., `my-var`).
+/// A hyphen is only part of the name if followed by an alphanumeric character,
+/// so `$pd--` parses as `$pd` + postfix `--`.
+fn parse_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, &'a str> {
+    let (rest, _first) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_')?;
+    let mut end = input.len() - rest.len();
+    let bytes = input.as_bytes();
+    loop {
+        if end < bytes.len()
+            && bytes[end] == b'-'
+            && end + 1 < bytes.len()
+            && (bytes[end + 1].is_ascii_alphanumeric() || bytes[end + 1] == b'_')
+        {
+            end += 1;
+            while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
+                end += 1;
+            }
+        } else {
+            break;
+        }
+    }
+    Ok((&input[end..], &input[..end]))
 }
 
 /// Parse an @array variable reference.
@@ -470,7 +641,7 @@ fn array_var(input: &str) -> PResult<'_, Expr> {
     } else {
         (input, "")
     };
-    let (rest, name) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+    let (rest, name) = parse_ident_with_hyphens(rest)?;
     let full_name = if twigil.is_empty() {
         name.to_string()
     } else {
@@ -489,7 +660,7 @@ fn hash_var(input: &str) -> PResult<'_, Expr> {
         (input, "")
     };
     // Special: %*ENV
-    let (rest, name) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+    let (rest, name) = parse_ident_with_hyphens(rest)?;
     let full_name = if twigil.is_empty() {
         name.to_string()
     } else {
@@ -507,7 +678,7 @@ fn code_var(input: &str) -> PResult<'_, Expr> {
     } else {
         (input, "")
     };
-    let (rest, name) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+    let (rest, name) = parse_ident_with_hyphens(rest)?;
     let full_name = if twigil.is_empty() {
         name.to_string()
     } else {
@@ -524,12 +695,44 @@ fn paren_expr(input: &str) -> PResult<'_, Expr> {
         // Empty parens = empty list
         return Ok((input, Expr::ArrayLiteral(Vec::new())));
     }
-    let (input, first) = expression(input)?;
+    // Try assignment expression: ($var = expr)
+    let (input, first) = if let Ok((r, var_expr)) = expression_no_sequence(input) {
+        let (r2, _) = ws(r)?;
+        if matches!(&var_expr, Expr::Var(_))
+            && r2.starts_with('=')
+            && !r2.starts_with("==")
+            && !r2.starts_with("=>")
+        {
+            let r2 = &r2[1..];
+            let (r2, _) = ws(r2)?;
+            let (r2, rhs) = expression(r2)?;
+            if let Expr::Var(name) = &var_expr {
+                (
+                    r2,
+                    Expr::AssignExpr {
+                        name: name.clone(),
+                        expr: Box::new(rhs),
+                    },
+                )
+            } else {
+                unreachable!()
+            }
+        } else {
+            (r, var_expr)
+        }
+    } else {
+        expression_no_sequence(input)?
+    };
     let (input, _) = ws(input)?;
+    // Check for sequence operator after single item: (1 ... 5)
+    if let Some(seq) = try_parse_sequence_in_paren(input, std::slice::from_ref(&first)) {
+        return seq;
+    }
     if let Ok((input, _)) = parse_char(input, ')') {
         return Ok((input, first));
     }
-    // Comma-separated list
+    // Comma-separated list with sequence operator detection
+    // Use expression_no_sequence so that `...` is not consumed as part of an item
     let (input, _) = parse_char(input, ',')?;
     let (input, _) = ws(input)?;
     let mut items = vec![first];
@@ -537,22 +740,101 @@ fn paren_expr(input: &str) -> PResult<'_, Expr> {
     if let Ok((input, _)) = parse_char(input, ')') {
         return Ok((input, Expr::ArrayLiteral(items)));
     }
-    let (mut input_rest, second) = expression(input)?;
+    // Check for sequence operator right after first comma
+    if let Some(seq) = try_parse_sequence_in_paren(input, &items) {
+        return seq;
+    }
+    let (mut input_rest, second) = expression_no_sequence(input)?;
     items.push(second);
     loop {
         let (input, _) = ws(input_rest)?;
         if let Ok((input, _)) = parse_char(input, ')') {
             return Ok((input, Expr::ArrayLiteral(items)));
         }
+        // Check for sequence operator before comma
+        if let Some(seq) = try_parse_sequence_in_paren(input, &items) {
+            return seq;
+        }
         let (input, _) = parse_char(input, ',')?;
         let (input, _) = ws(input)?;
         if let Ok((input, _)) = parse_char(input, ')') {
             return Ok((input, Expr::ArrayLiteral(items)));
         }
-        let (input, next) = expression(input)?;
+        // Check for sequence operator after comma
+        if let Some(seq) = try_parse_sequence_in_paren(input, &items) {
+            return seq;
+        }
+        let (input, next) = expression_no_sequence(input)?;
         items.push(next);
         input_rest = input;
     }
+}
+
+/// Try to parse a sequence operator (...) inside a paren expression.
+/// If the input starts with ... or ...^, treat all collected items as seeds.
+fn try_parse_sequence_in_paren<'a>(input: &'a str, seeds: &[Expr]) -> Option<PResult<'a, Expr>> {
+    let (is_excl, rest) = if let Some(stripped) = input.strip_prefix("...^") {
+        (true, stripped)
+    } else if input.starts_with("...") && !input.starts_with("....") {
+        (false, &input[3..])
+    } else {
+        return None;
+    };
+    // Parse the endpoint expression
+    let result = (|| {
+        let (rest, _) = ws(rest)?;
+        // Special case: bare * means infinite sequence (Whatever/Inf)
+        let (rest, endpoint) = if rest.starts_with('*')
+            && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
+        {
+            (&rest[1..], Expr::Literal(Value::Num(f64::INFINITY)))
+        } else {
+            super::expr::expression_no_sequence(rest)?
+        };
+        // There may be more comma items after the endpoint
+        let (rest, _) = ws(rest)?;
+        let mut extra_items = Vec::new();
+        let mut r = rest;
+        while r.starts_with(',') {
+            let (r2, _) = parse_char(r, ',')?;
+            let (r2, _) = ws(r2)?;
+            if r2.starts_with(')') {
+                r = r2;
+                break;
+            }
+            let (r2, item) = super::expr::expression(r2)?;
+            extra_items.push(item);
+            let (r2, _) = ws(r2)?;
+            r = r2;
+        }
+        let (r, _) = parse_char(r, ')')?;
+
+        let op = if is_excl {
+            crate::token_kind::TokenKind::DotDotDotCaret
+        } else {
+            crate::token_kind::TokenKind::DotDotDot
+        };
+        let left = if seeds.len() == 1 {
+            seeds[0].clone()
+        } else {
+            Expr::ArrayLiteral(seeds.to_vec())
+        };
+        // If there are extra items after the endpoint, pack endpoint + extras as Array right
+        let right_expr = if extra_items.is_empty() {
+            endpoint
+        } else {
+            let mut items = vec![endpoint];
+            items.extend(extra_items);
+            Expr::ArrayLiteral(items)
+        };
+        let seq = Expr::Binary {
+            left: Box::new(left),
+            op,
+            right: Box::new(right_expr),
+        };
+        Ok((r, seq))
+    })();
+    Some(result)
 }
 
 /// Parse an array literal [...].
@@ -785,6 +1067,19 @@ fn is_stmt_modifier_ahead(input: &str) -> bool {
 }
 
 /// Parse a single listop argument (stops before statement modifiers, semicolon, closing brackets).
+/// Listops that take a block/closure as the first argument followed by a list.
+fn is_block_first_listop(name: &str) -> bool {
+    matches!(name, "map" | "grep" | "sort" | "first")
+}
+
+/// Check if an expression is a block-like form (closure, pointed block, etc.)
+fn is_block_expr(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::AnonSubParams { .. } | Expr::Lambda { .. } | Expr::Block { .. }
+    )
+}
+
 fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
     // Try to parse a primary expression (variable, literal, call, etc.)
     // but stop if we hit a statement modifier
@@ -836,6 +1131,10 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 {
                     return Ok((r, Expr::DoStmt(Box::new(stmt))));
                 }
+            }
+            // do STMT — wrap an assignment or other statement
+            if let Ok((r, stmt)) = super::stmt::statement_pub(r) {
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
             }
             // do EXPR — just evaluate the expression
             let (r, expr) = expression(r)?;
@@ -1017,13 +1316,22 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 ),
                 remaining_len: err.remaining_len.or(Some(r.len())),
             })?;
-            return Ok((
-                r2,
-                Expr::Call {
-                    name,
-                    args: vec![arg],
-                },
-            ));
+            // For block-first listops (map, grep, sort, first), if the first arg is
+            // a block/pointed-block and followed by comma, parse remaining args
+            let mut args = vec![arg.clone()];
+            let mut rest_after = r2;
+            if is_block_first_listop(&name) && is_block_expr(&arg) {
+                let (r3, _) = ws(rest_after)?;
+                if let Some(r3) = r3.strip_prefix(',') {
+                    let (r3, _) = ws(r3)?;
+                    if !r3.starts_with(';') && !r3.starts_with('}') && !r3.starts_with(')') {
+                        let (r3, rest_arg) = parse_listop_arg(r3)?;
+                        args.push(rest_arg);
+                        rest_after = r3;
+                    }
+                }
+            }
+            return Ok((rest_after, Expr::Call { name, args }));
         }
     }
 
@@ -1136,6 +1444,52 @@ fn regex_lit(input: &str) -> PResult<'_, Expr> {
         return Ok((rest, Expr::Literal(Value::Regex(pattern.to_string()))));
     }
 
+    // s/pattern/replacement/
+    if let Some(r) = input.strip_prefix("s/") {
+        let mut end = 0;
+        let bytes = r.as_bytes();
+        while end < bytes.len() {
+            if bytes[end] == b'/' {
+                break;
+            }
+            if bytes[end] == b'\\' && end + 1 < bytes.len() {
+                end += 2;
+            } else {
+                end += 1;
+            }
+        }
+        let pattern = &r[..end];
+        if end < bytes.len() {
+            let r = &r[end + 1..]; // skip closing /
+            // Now parse replacement until next /
+            let mut rend = 0;
+            let rbytes = r.as_bytes();
+            while rend < rbytes.len() {
+                if rbytes[rend] == b'/' {
+                    break;
+                }
+                if rbytes[rend] == b'\\' && rend + 1 < rbytes.len() {
+                    rend += 2;
+                } else {
+                    rend += 1;
+                }
+            }
+            let replacement = &r[..rend];
+            let rest = if rend < rbytes.len() {
+                &r[rend + 1..]
+            } else {
+                &r[rend..]
+            };
+            return Ok((
+                rest,
+                Expr::Subst {
+                    pattern: pattern.to_string(),
+                    replacement: replacement.to_string(),
+                },
+            ));
+        }
+    }
+
     // m/pattern/ or m{pattern} or m[pattern]
     if input.starts_with("m/") || input.starts_with("m{") || input.starts_with("m[") {
         let close_delim = match input.as_bytes()[1] {
@@ -1200,6 +1554,7 @@ fn regex_lit(input: &str) -> PResult<'_, Expr> {
 
 /// Parse a version literal: v5.26.1
 fn version_lit(input: &str) -> PResult<'_, Expr> {
+    use crate::value::VersionPart;
     let (rest, _) = parse_char(input, 'v')?;
     // Must start with a digit
     if rest.is_empty() || !rest.as_bytes()[0].is_ascii_digit() {
@@ -1208,8 +1563,27 @@ fn version_lit(input: &str) -> PResult<'_, Expr> {
     let (rest, version) = take_while1(rest, |c: char| {
         c.is_ascii_digit() || c == '.' || c == '*' || c == '+' || c == '-'
     })?;
-    let full = format!("v{}", version);
-    Ok((rest, Expr::Literal(Value::Str(full))))
+    // Don't consume trailing '.' — it's likely a method call (e.g. v1.2.3.WHAT)
+    let (version, rest) = if let Some(stripped) = version.strip_suffix('.') {
+        (stripped, &input[1 + version.len() - 1..])
+    } else {
+        (version, rest)
+    };
+    // Check for + or - suffix
+    let version_str = version.trim_end_matches(['+', '-']);
+    let plus = version.ends_with('+');
+    let minus = version.ends_with('-');
+    let parts: Vec<VersionPart> = version_str
+        .split('.')
+        .map(|s| {
+            if s == "*" {
+                VersionPart::Whatever
+            } else {
+                VersionPart::Num(s.parse::<i64>().unwrap_or(0))
+            }
+        })
+        .collect();
+    Ok((rest, Expr::Literal(Value::Version { parts, plus, minus })))
 }
 
 /// Parse a topicalized method call: .say, .uc, .defined, etc.
@@ -1218,6 +1592,21 @@ fn topic_method_call(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("topic method call"));
     }
     let r = &input[1..];
+    // .() — invoke topic as callable
+    if r.starts_with('(') {
+        let (r, _) = parse_char(r, '(')?;
+        let (r, _) = ws(r)?;
+        let (r, args) = parse_call_arg_list(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ')')?;
+        return Ok((
+            r,
+            Expr::CallOn {
+                target: Box::new(Expr::Var("_".to_string())),
+                args,
+            },
+        ));
+    }
     let (r, modifier) = if let Some(stripped) = r.strip_prefix('^') {
         (stripped, Some('^'))
     } else if let Some(stripped) = r.strip_prefix('?') {

@@ -59,6 +59,19 @@ impl VM {
             Some("?") => {
                 self.stack.push(call_result.unwrap_or(Value::Nil));
             }
+            Some("+") => {
+                // .+method: must succeed, wraps result in a list
+                let val = call_result?;
+                self.stack.push(Value::Array(vec![val]));
+                self.sync_locals_from_env(code);
+            }
+            Some("*") => {
+                // .*method: wraps in list if found, empty list if not
+                match call_result {
+                    Ok(val) => self.stack.push(Value::Array(vec![val])),
+                    Err(_) => self.stack.push(Value::Array(vec![])),
+                }
+            }
             _ => {
                 self.stack.push(call_result?);
                 self.sync_locals_from_env(code);
@@ -98,6 +111,15 @@ impl VM {
             Some("?") => {
                 self.stack.push(call_result.unwrap_or(Value::Nil));
             }
+            Some("+") => {
+                let val = call_result?;
+                self.stack.push(Value::Array(vec![val]));
+                self.sync_locals_from_env(code);
+            }
+            Some("*") => match call_result {
+                Ok(val) => self.stack.push(Value::Array(vec![val])),
+                Err(_) => self.stack.push(Value::Array(vec![])),
+            },
             _ => {
                 self.stack.push(call_result?);
                 self.sync_locals_from_env(code);

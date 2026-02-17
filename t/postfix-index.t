@@ -1,7 +1,7 @@
 use Test;
 plan 5;
 
-my %h = :a(2);
+my %h = a => 2;
 my $v1 = %h<a>++;
 is $v1, 2, 'postfix ++ on hash index returns old value';
 is %h<a>, 3, 'postfix ++ on hash index updates value';

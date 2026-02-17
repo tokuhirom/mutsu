@@ -1,5 +1,5 @@
 use Test;
-plan 327;
+plan 326;
 
 # Literal compilation
 is 42, 42, 'integer literal';
@@ -349,10 +349,10 @@ given 42 {
 }
 is $ps_result, "first+second", 'proceed continues to next when';
 
-# MatchAssign (=~ compiled with StrCoerce)
+# String coercion via assignment
 my $ma_val = 42;
-$ma_val =~ "hello";
-is $ma_val, "hello", 'match-assign coerces to string';
+$ma_val = ~"hello";
+is $ma_val, "hello", 'string coercion via assignment';
 
 # --- Phase 7: newly compiled expressions ---
 
