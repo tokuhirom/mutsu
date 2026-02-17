@@ -329,6 +329,21 @@ pub(crate) fn native_method_1arg(
                 Some(Ok(Value::Complex(result_r, result_i)))
             }
         }
+        "atan2" => {
+            let y = match target {
+                Value::Int(i) => *i as f64,
+                Value::Num(f) => *f,
+                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                _ => return None,
+            };
+            let x = match arg {
+                Value::Int(i) => *i as f64,
+                Value::Num(f) => *f,
+                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                _ => return None,
+            };
+            Some(Ok(Value::Num(y.atan2(x))))
+        }
         _ => None,
     }
 }

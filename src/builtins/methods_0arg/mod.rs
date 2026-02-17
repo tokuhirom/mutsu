@@ -527,6 +527,41 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             _ => Some(Ok(Value::Num(f64::NAN))),
         },
+        "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sec" | "cosec" | "cotan" | "asec"
+        | "acosec" | "acotan" | "sinh" | "cosh" | "tanh" | "sech" | "cosech" | "cotanh"
+        | "asinh" | "acosh" | "atanh" => {
+            let x = match target {
+                Value::Int(i) => *i as f64,
+                Value::Num(f) => *f,
+                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                _ => return Some(Ok(Value::Num(f64::NAN))),
+            };
+            let result = match method {
+                "sin" => x.sin(),
+                "cos" => x.cos(),
+                "tan" => x.tan(),
+                "asin" => x.asin(),
+                "acos" => x.acos(),
+                "atan" => x.atan(),
+                "sec" => 1.0 / x.cos(),
+                "cosec" => 1.0 / x.sin(),
+                "cotan" => 1.0 / x.tan(),
+                "asec" => (1.0 / x).acos(),
+                "acosec" => (1.0 / x).asin(),
+                "acotan" => (1.0 / x).atan(),
+                "sinh" => x.sinh(),
+                "cosh" => x.cosh(),
+                "tanh" => x.tanh(),
+                "sech" => 1.0 / x.cosh(),
+                "cosech" => 1.0 / x.sinh(),
+                "cotanh" => 1.0 / x.tanh(),
+                "asinh" => x.asinh(),
+                "acosh" => x.acosh(),
+                "atanh" => x.atanh(),
+                _ => f64::NAN,
+            };
+            Some(Ok(Value::Num(result)))
+        }
         "Rat" => match target {
             Value::Rat(_, _) => Some(Ok(target.clone())),
             Value::Int(i) => Some(Ok(make_rat(*i, 1))),
