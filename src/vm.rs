@@ -28,6 +28,56 @@ fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
     }
 }
 
+/// Expand a tr/// character spec, supporting `a..z` ranges.
+fn expand_tr_spec(spec: &str) -> Vec<char> {
+    let chars: Vec<char> = spec.chars().collect();
+    let mut result = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if i + 2 < chars.len() && chars[i + 1] == '.' && i + 3 <= chars.len() {
+            // Check for `a..z` pattern (two dots)
+            if i + 3 < chars.len() && chars[i + 2] == '.' {
+                // `a..z` range
+                let start = chars[i] as u32;
+                let end = chars[i + 3] as u32;
+                if start <= end {
+                    for c in start..=end {
+                        if let Some(ch) = char::from_u32(c) {
+                            result.push(ch);
+                        }
+                    }
+                }
+                i += 4;
+                continue;
+            }
+        }
+        result.push(chars[i]);
+        i += 1;
+    }
+    result
+}
+
+/// Perform transliteration: replace each char in `from` with corresponding char in `to`.
+fn transliterate_str(text: &str, from_spec: &str, to_spec: &str) -> String {
+    let from_chars = expand_tr_spec(from_spec);
+    let to_chars = expand_tr_spec(to_spec);
+    text.chars()
+        .map(|c| {
+            if let Some(pos) = from_chars.iter().position(|&fc| fc == c) {
+                if pos < to_chars.len() {
+                    to_chars[pos]
+                } else if !to_chars.is_empty() {
+                    *to_chars.last().unwrap()
+                } else {
+                    c
+                }
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
 pub(crate) struct VM {
     interpreter: Interpreter,
     stack: Vec<Value>,
@@ -1591,6 +1641,25 @@ impl VM {
                 } else {
                     self.stack.push(Value::Str(text));
                 }
+                *ip += 1;
+            }
+
+            // -- Transliteration (tr///) --
+            OpCode::Transliterate { from_idx, to_idx } => {
+                let from = Self::const_str(code, *from_idx).to_string();
+                let to = Self::const_str(code, *to_idx).to_string();
+                let target = self
+                    .interpreter
+                    .env()
+                    .get("_")
+                    .cloned()
+                    .unwrap_or(Value::Nil);
+                let text = target.to_string_value();
+                let result = transliterate_str(&text, &from, &to);
+                self.interpreter
+                    .env_mut()
+                    .insert("_".to_string(), Value::Str(result.clone()));
+                self.stack.push(Value::Str(result));
                 *ip += 1;
             }
 

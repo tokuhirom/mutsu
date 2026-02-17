@@ -32,15 +32,15 @@
 
 ## Unicode Operator Variants
 
-- [ ] `≠` — numeric inequality (alias for `!=`)
-- [ ] `≤` — numeric less-than-or-equal (alias for `<=`)
-- [ ] `≥` — numeric greater-than-or-equal (alias for `>=`)
-- [ ] `⩵` — numeric equality (alias for `==`)
-- [ ] `⩶` — value identity (alias for `===`)
-- [ ] `×` — multiplication (alias for `*`)
-- [ ] `÷` — division (alias for `/`)
-- [ ] `−` — subtraction (alias for `-`)
-- [ ] `∅` — empty set
+- [x] `≠` — numeric inequality (alias for `!=`)
+- [x] `≤` — numeric less-than-or-equal (alias for `<=`)
+- [x] `≥` — numeric greater-than-or-equal (alias for `>=`)
+- [x] `⩵` — numeric equality (alias for `==`)
+- [x] `⩶` — value identity (alias for `===`)
+- [x] `×` — multiplication (alias for `*`)
+- [x] `÷` — division (alias for `/`)
+- [x] `−` — subtraction (alias for `-`)
+- [x] `∅` — empty set
 
 ## Prefix Operators
 
@@ -64,7 +64,7 @@
 ## Grammar Constructs
 
 - [ ] `S///` — non-destructive substitution
-- [ ] `tr///` / `TR///` — transliteration
+- [x] `tr///` / `TR///` — transliteration
 - [ ] `!!!` — fatal stub operator
 - [ ] `???` — admonitory stub operator
 - [ ] `sink` — sink statement prefix

@@ -1138,6 +1138,12 @@ impl Compiler {
                     replacement_idx,
                 });
             }
+            // tr/// transliteration
+            Expr::Transliterate { from, to } => {
+                let from_idx = self.code.add_constant(Value::Str(from.clone()));
+                let to_idx = self.code.add_constant(Value::Str(to.clone()));
+                self.code.emit(OpCode::Transliterate { from_idx, to_idx });
+            }
             // HyperOp (>>op<<): compile sub-expressions, delegate operation
             Expr::HyperOp {
                 op,

@@ -317,6 +317,12 @@ pub(crate) enum OpCode {
         replacement_idx: u32,
     },
 
+    // -- Transliteration (tr///) --
+    Transliterate {
+        from_idx: u32,
+        to_idx: u32,
+    },
+
     // -- Take (gather/take) --
     Take,
 

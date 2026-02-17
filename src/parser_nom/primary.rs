@@ -1497,6 +1497,54 @@ fn regex_lit(input: &str) -> PResult<'_, Expr> {
         }
     }
 
+    // tr/from/to/ or TR/from/to/
+    if let Some(r) = input
+        .strip_prefix("tr/")
+        .or_else(|| input.strip_prefix("TR/"))
+    {
+        let mut end = 0;
+        let bytes = r.as_bytes();
+        while end < bytes.len() {
+            if bytes[end] == b'/' {
+                break;
+            }
+            if bytes[end] == b'\\' && end + 1 < bytes.len() {
+                end += 2;
+            } else {
+                end += 1;
+            }
+        }
+        let from = &r[..end];
+        if end < bytes.len() {
+            let r = &r[end + 1..]; // skip middle /
+            let mut rend = 0;
+            let rbytes = r.as_bytes();
+            while rend < rbytes.len() {
+                if rbytes[rend] == b'/' {
+                    break;
+                }
+                if rbytes[rend] == b'\\' && rend + 1 < rbytes.len() {
+                    rend += 2;
+                } else {
+                    rend += 1;
+                }
+            }
+            let to = &r[..rend];
+            let rest = if rend < rbytes.len() {
+                &r[rend + 1..]
+            } else {
+                &r[rend..]
+            };
+            return Ok((
+                rest,
+                Expr::Transliterate {
+                    from: from.to_string(),
+                    to: to.to_string(),
+                },
+            ));
+        }
+    }
+
     // m/pattern/ or m{pattern} or m[pattern]
     if input.starts_with("m/") || input.starts_with("m{") || input.starts_with("m[") {
         let close_delim = match input.as_bytes()[1] {
