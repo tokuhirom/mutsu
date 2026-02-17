@@ -149,10 +149,25 @@ impl Interpreter {
             (_, Value::Bool(b)) => *b,
             // Instance identity
             (Value::Instance { .. }, _) | (_, Value::Instance { .. }) => false,
-            // Range ~~ Range: LHS is subset of RHS
-            (Value::Range(la, lb), Value::Range(ra, rb)) => la >= ra && lb <= rb,
+            // Range ~~ Range: LHS is subset of RHS (all range variants)
+            (l, r) if l.is_range() && r.is_range() => {
+                let (l_min, l_max) = Self::range_effective_bounds(l);
+                let (r_min, r_max) = Self::range_effective_bounds(r);
+                l_min >= r_min && l_max <= r_max
+            }
             // Default: compare equality
             _ => left.to_string_value() == right.to_string_value(),
+        }
+    }
+
+    /// Get effective inclusive bounds of a range (accounting for exclusivity).
+    fn range_effective_bounds(v: &Value) -> (i64, i64) {
+        match v {
+            Value::Range(a, b) => (*a, *b),
+            Value::RangeExcl(a, b) => (*a, *b - 1),
+            Value::RangeExclStart(a, b) => (*a + 1, *b),
+            Value::RangeExclBoth(a, b) => (*a + 1, *b - 1),
+            _ => (0, 0),
         }
     }
 

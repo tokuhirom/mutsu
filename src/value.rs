@@ -401,6 +401,16 @@ impl Value {
         }
     }
 
+    pub(crate) fn is_range(&self) -> bool {
+        matches!(
+            self,
+            Value::Range(_, _)
+                | Value::RangeExcl(_, _)
+                | Value::RangeExclStart(_, _)
+                | Value::RangeExclBoth(_, _)
+        )
+    }
+
     pub(crate) fn truthy(&self) -> bool {
         match self {
             Value::Bool(b) => *b,

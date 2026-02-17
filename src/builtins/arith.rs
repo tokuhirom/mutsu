@@ -139,10 +139,13 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
             (Value::Rat(_, _), _) | (_, Value::Rat(_, _)) | (Value::Int(_), Value::Int(_)) => {
                 let (an, ad) = runtime::to_rat_parts(&l).unwrap_or((0, 1));
                 let (bn, bd) = runtime::to_rat_parts(&r).unwrap_or((0, 1));
-                if bn == 0 {
-                    return Err(RuntimeError::new("Division by zero"));
+                let new_d = ad * bn;
+                if new_d == 0 {
+                    // Rat with zero denominator: Raku allows this (numifies to Inf/-Inf/NaN)
+                    Value::Rat(an * bd, 0)
+                } else {
+                    make_rat(an * bd, new_d)
                 }
-                make_rat(an * bd, ad * bn)
             }
             (Value::Num(a), Value::Num(b)) => Value::Num(a / b),
             (Value::Int(a), Value::Num(b)) => Value::Num(*a as f64 / b),
