@@ -806,6 +806,19 @@ fn scalar_var(input: &str) -> PResult<'_, Expr> {
         let full_name = format!("={}", name);
         return Ok((rest, Expr::Var(full_name)));
     }
+    // Handle bare $ (anonymous state variable)
+    // If next char is not a valid identifier start, twigil, or special char, it's an anonymous var
+    let next_is_ident_or_twigil = !input.is_empty()
+        && (input.as_bytes()[0].is_ascii_alphanumeric()
+            || input.as_bytes()[0] == b'_'
+            || input.as_bytes()[0] == b'*'
+            || input.as_bytes()[0] == b'?'
+            || input.as_bytes()[0] == b'!'
+            || input.as_bytes()[0] == b'^'
+            || input.as_bytes()[0] == b'.');
+    if !next_is_ident_or_twigil {
+        return Ok((input, Expr::Var("__ANON_STATE__".to_string())));
+    }
     // Handle twigils: $*FOO, $?FILE, $!attr, $.attr
     let (rest, twigil) = if input.starts_with('*')
         || input.starts_with('?')

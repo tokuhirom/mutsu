@@ -10,7 +10,7 @@
 - [x] roast/S03-operators/gcd.t
 - [x] roast/S03-operators/so.t
 - [x] roast/S03-smartmatch/any-callable.t
-- [ ] roast/S04-statement-modifiers/while.t
+- [x] roast/S04-statement-modifiers/while.t
 - [ ] roast/S04-statements/do.t
 - [x] roast/S04-statements/unless.t
 - [x] roast/S05-metachars/newline.t
