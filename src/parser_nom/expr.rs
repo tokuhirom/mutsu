@@ -612,15 +612,21 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
 }
 
 fn is_whatever(expr: &Expr) -> bool {
-    matches!(expr, Expr::Literal(Value::Num(f)) if f.is_infinite() && f.is_sign_positive())
+    matches!(expr, Expr::Whatever)
 }
 
 fn contains_whatever(expr: &Expr) -> bool {
     match expr {
         e if is_whatever(e) => true,
-        // Don't treat * inside sequence operators (..., ...^) as WhateverCode
+        // Don't treat * inside range/sequence operators as WhateverCode
         Expr::Binary {
-            op: TokenKind::DotDotDot | TokenKind::DotDotDotCaret,
+            op:
+                TokenKind::DotDot
+                | TokenKind::DotDotCaret
+                | TokenKind::CaretDotDot
+                | TokenKind::CaretDotDotCaret
+                | TokenKind::DotDotDot
+                | TokenKind::DotDotDotCaret,
             ..
         } => false,
         Expr::Binary { left, right, .. } => contains_whatever(left) || contains_whatever(right),
@@ -1893,6 +1899,18 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
             expr = Expr::PostfixOp {
                 op: op.token_kind(),
                 expr: Box::new(expr),
+            };
+            continue;
+        }
+
+        // Postfix i (imaginary number): (expr)i → Complex(0, expr)
+        if rest.starts_with('i') && !is_ident_char(rest.as_bytes().get(1).copied()) {
+            rest = &rest[1..];
+            expr = Expr::MethodCall {
+                target: Box::new(expr),
+                name: "i".to_string(),
+                args: vec![],
+                modifier: None,
             };
             continue;
         }

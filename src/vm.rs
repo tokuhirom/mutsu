@@ -1258,6 +1258,12 @@ impl VM {
                 let left = self.stack.pop().unwrap();
                 let result = match (&left, &right) {
                     (Value::Int(a), Value::Int(b)) => Value::Range(*a, *b),
+                    (Value::Int(a), Value::Num(b)) if b.is_infinite() && b.is_sign_positive() => {
+                        Value::Range(*a, i64::MAX)
+                    }
+                    (Value::Num(a), Value::Int(b)) if a.is_infinite() && a.is_sign_negative() => {
+                        Value::Range(i64::MIN, *b)
+                    }
                     (Value::Str(a), Value::Str(b)) if a.len() == 1 && b.len() == 1 => {
                         let start = a.chars().next().unwrap();
                         let end = b.chars().next().unwrap();

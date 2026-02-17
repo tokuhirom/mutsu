@@ -247,13 +247,22 @@ fn var_name(input: &str) -> PResult<'_, String> {
         {
             return Ok((&r[1..], "_".to_string()));
         }
-        let (rest, name) = take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
-        let full = if twigil.is_empty() {
-            name.to_string()
+        // Handle bare $ (anonymous variable) — no name after sigil
+        if let Ok((rest, name)) =
+            take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
+        {
+            let full = if twigil.is_empty() {
+                name.to_string()
+            } else {
+                format!("{}{}", twigil, name)
+            };
+            Ok((rest, full))
+        } else if input.starts_with('$') && twigil.is_empty() {
+            // Anonymous scalar variable: bare $
+            Ok((r, "__ANON_STATE__".to_string()))
         } else {
-            format!("{}{}", twigil, name)
-        };
-        Ok((rest, full))
+            Err(PError::expected("variable name"))
+        }
     } else {
         Err(PError::expected("variable name"))
     }
@@ -769,6 +778,12 @@ fn my_decl(input: &str) -> PResult<'_, Stmt> {
     if let Some(r) = keyword("method", rest) {
         let (r, _) = ws1(r)?;
         return method_decl_body(r, false);
+    }
+
+    // my class Name is Parent { ... }
+    if let Some(r) = keyword("class", rest) {
+        let (r, _) = ws1(r)?;
+        return class_decl_body(r);
     }
 
     // Optional type constraint: my Int $x
@@ -2017,7 +2032,12 @@ fn method_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
 fn class_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("class", input).ok_or_else(|| PError::expected("class declaration"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, name) = qualified_ident(rest)?;
+    class_decl_body(rest)
+}
+
+/// Parse the body of a class declaration (after `class` keyword and whitespace).
+fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
+    let (rest, name) = qualified_ident(input)?;
     let (rest, _) = ws(rest)?;
 
     // Parent classes: is Parent

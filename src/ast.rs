@@ -43,6 +43,7 @@ pub(crate) enum PhaserKind {
 #[allow(clippy::enum_variant_names, dead_code)]
 pub(crate) enum Expr {
     Literal(Value),
+    Whatever,
     BareWord(String),
     StringInterpolation(Vec<Expr>),
     Var(String),

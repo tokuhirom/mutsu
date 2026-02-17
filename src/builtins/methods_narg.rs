@@ -101,6 +101,14 @@ pub(crate) fn native_method_1arg(
                 };
                 Some(Ok(Value::Array(items[..n.min(items.len())].to_vec())))
             }
+            Value::Range(a, b) => {
+                let n = match arg {
+                    Value::Int(i) => *i as usize,
+                    _ => return None,
+                };
+                let items: Vec<Value> = (*a..=*b).take(n).map(Value::Int).collect();
+                Some(Ok(Value::Array(items)))
+            }
             _ => {
                 let n = match arg {
                     Value::Int(i) => *i as usize,

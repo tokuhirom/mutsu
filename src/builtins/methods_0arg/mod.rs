@@ -111,7 +111,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             };
             Some(Ok(result))
         }
-        "Complex-i" => {
+        "Complex-i" | "i" => {
             let imag = match target {
                 Value::Int(i) => *i as f64,
                 Value::Num(f) => *f,

@@ -522,6 +522,20 @@ fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
     }
 }
 
+/// Parse corner bracket string literal: ｢...｣ (no interpolation)
+fn corner_bracket_string(input: &str) -> PResult<'_, Expr> {
+    let rest = input
+        .strip_prefix('｢')
+        .ok_or_else(|| PError::expected("corner bracket string"))?;
+    if let Some(end) = rest.find('｣') {
+        let content = &rest[..end];
+        let after = &rest[end + '｣'.len_utf8()..];
+        Ok((after, Expr::Literal(Value::Str(content.to_string()))))
+    } else {
+        Err(PError::expected("closing ｣"))
+    }
+}
+
 /// Parse `\c[NAME, NAME, ...]` Unicode character name escape.
 /// Returns the resulting string and the remaining input after the `]`.
 /// `rest` should point right after `\c[`.
@@ -1023,7 +1037,7 @@ fn try_parse_sequence_in_paren<'a>(input: &'a str, seeds: &[Expr]) -> Option<PRe
         let (rest, endpoint) = if rest.starts_with('*')
             && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
         {
-            (&rest[1..], Expr::Literal(Value::Num(f64::INFINITY)))
+            (&rest[1..], Expr::Whatever)
         } else {
             super::expr::expression_no_sequence(rest)?
         };
@@ -1170,7 +1184,7 @@ fn whatever(input: &str) -> PResult<'_, Expr> {
     if input.starts_with('*') {
         return Err(PError::expected("whatever (not **)"));
     }
-    Ok((input, Expr::Literal(Value::Num(f64::INFINITY))))
+    Ok((input, Expr::Whatever))
 }
 
 /// Parse keywords that are values: True, False, Nil, Any, Inf, NaN, etc.
@@ -2397,6 +2411,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(single_quoted_string(input));
         try_primary!(double_quoted_string(input));
         try_primary!(q_string(input));
+        try_primary!(corner_bracket_string(input));
         try_primary!(regex_lit(input));
         try_primary!(version_lit(input));
         try_primary!(keyword_literal(input));

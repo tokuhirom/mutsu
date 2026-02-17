@@ -657,6 +657,10 @@ impl Compiler {
 
     fn compile_expr(&mut self, expr: &Expr) {
         match expr {
+            Expr::Whatever => {
+                let idx = self.code.add_constant(Value::Num(f64::INFINITY));
+                self.code.emit(OpCode::LoadConst(idx));
+            }
             Expr::Literal(v) => match v {
                 Value::Nil => {
                     self.code.emit(OpCode::LoadNil);
@@ -1270,6 +1274,12 @@ impl Compiler {
                 }
                 Stmt::Expr(inner_expr) => {
                     self.compile_expr(inner_expr);
+                }
+                Stmt::ClassDecl { name, .. } => {
+                    // Register the class and return the type object
+                    self.compile_stmt(stmt);
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::GetBareWord(name_idx));
                 }
                 _ => {
                     self.compile_stmt(stmt);

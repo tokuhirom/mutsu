@@ -4,7 +4,7 @@
 - [x] roast/S02-magicals/DISTRO.t
 - [x] roast/S02-magicals/file_line.t
 - [ ] roast/S02-magicals/progname.t
-- [ ] roast/S02-types/nan.t
+- [x] roast/S02-types/nan.t
 - [ ] roast/S03-metaops/infix.t
 - [x] roast/S03-operators/boolean-bitwise.t
 - [x] roast/S03-operators/gcd.t
