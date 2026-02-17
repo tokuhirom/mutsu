@@ -1,5 +1,5 @@
 use Test;
-plan 326;
+plan 327;
 
 # Literal compilation
 is 42, 42, 'integer literal';

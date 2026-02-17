@@ -416,7 +416,13 @@ fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize)> {
         && !input.starts_with("--")
         && !input.starts_with("->")
         && let Some(&c) = input.as_bytes().get(1)
-        && (c == b'$' || c == b'@' || c == b'(' || c.is_ascii_digit() || c.is_ascii_alphabetic())
+        && (c == b'$'
+            || c == b'@'
+            || c == b'('
+            || c == b'"'
+            || c == b'\''
+            || c.is_ascii_digit()
+            || c.is_ascii_alphabetic())
     {
         Some((PrefixUnaryOp::Negate, 1))
     } else if input.starts_with("+^") {
@@ -424,7 +430,13 @@ fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize)> {
     } else if input.starts_with('+')
         && !input.starts_with("++")
         && let Some(&c) = input.as_bytes().get(1)
-        && (c == b'$' || c == b'@' || c == b'(' || c.is_ascii_digit() || c.is_ascii_alphabetic())
+        && (c == b'$'
+            || c == b'@'
+            || c == b'('
+            || c == b'"'
+            || c == b'\''
+            || c.is_ascii_digit()
+            || c.is_ascii_alphabetic())
     {
         Some((PrefixUnaryOp::Positive, 1))
     } else if input.starts_with('~')

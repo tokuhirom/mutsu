@@ -1139,6 +1139,40 @@ fn is_listop(name: &str) -> bool {
             | "sum"
             | "pick"
             | "roll"
+    ) || is_expr_listop(name)
+}
+
+/// Functions that take multiple comma-separated expression arguments in listop style.
+/// These are parsed with full expression arguments (not just primaries).
+fn is_expr_listop(name: &str) -> bool {
+    matches!(
+        name,
+        "ok" | "nok"
+            | "is"
+            | "isnt"
+            | "is-deeply"
+            | "is-approx"
+            | "cmp-ok"
+            | "like"
+            | "unlike"
+            | "isa-ok"
+            | "does-ok"
+            | "can-ok"
+            | "lives-ok"
+            | "dies-ok"
+            | "eval-lives-ok"
+            | "eval-dies-ok"
+            | "throws-like"
+            | "pass"
+            | "flunk"
+            | "skip"
+            | "todo"
+            | "diag"
+            | "plan"
+            | "done-testing"
+            | "bail-out"
+            | "subtest"
+            | "use-ok"
     )
 }
 
@@ -1155,6 +1189,44 @@ fn is_stmt_modifier_ahead(input: &str) -> bool {
         }
     }
     false
+}
+
+/// Parse expression listop arguments: comma-separated full expressions.
+/// Stops at statement modifiers, semicolons, and closing brackets.
+fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
+    let (r, first) = expression(input).map_err(|err| PError {
+        message: merge_expected_messages("expected listop argument expression", &err.message),
+        remaining_len: err.remaining_len.or(Some(input.len())),
+    })?;
+    let mut args = vec![first];
+    let mut r = r;
+    loop {
+        let (r2, _) = ws(r)?;
+        if !r2.starts_with(',') || r2.starts_with(",,") {
+            break;
+        }
+        let r2 = &r2[1..];
+        let (r2, _) = ws(r2)?;
+        // Stop at terminators
+        if r2.is_empty()
+            || r2.starts_with(';')
+            || r2.starts_with('}')
+            || r2.starts_with(')')
+            || is_stmt_modifier_ahead(r2)
+        {
+            break;
+        }
+        let (r2, arg) = expression(r2).map_err(|err| PError {
+            message: merge_expected_messages(
+                "expected listop argument expression after ','",
+                &err.message,
+            ),
+            remaining_len: err.remaining_len.or(Some(r2.len())),
+        })?;
+        args.push(arg);
+        r = r2;
+    }
+    Ok((r, Expr::Call { name, args }))
 }
 
 /// Parse a single listop argument (stops before statement modifiers, semicolon, closing brackets).
@@ -1399,6 +1471,10 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     {
         // Check if next token is a statement modifier keyword
         if !is_stmt_modifier_ahead(r) {
+            // Expression listops (ok, is, diag, etc.) parse full expressions as args
+            if is_expr_listop(&name) {
+                return parse_expr_listop_args(r, name);
+            }
             // Try to parse an argument
             let (r2, arg) = parse_listop_arg(r).map_err(|err| PError {
                 message: merge_expected_messages(
