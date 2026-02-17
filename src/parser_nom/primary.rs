@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::ast::Expr;
+use crate::token_kind::lookup_unicode_char_by_name;
 use crate::value::Value;
 
 use super::expr::{expression, expression_no_sequence};
@@ -311,6 +312,16 @@ fn interpolate_string_content(content: &str) -> Expr {
                 '\\' => current.push('\\'),
                 '$' => current.push('$'),
                 '@' => current.push('@'),
+                'c' => {
+                    rest = &rest[2..];
+                    if rest.starts_with('[')
+                        && let Some((s, after)) = parse_backslash_c_bracket(&rest[1..])
+                    {
+                        current.push_str(&s);
+                        rest = after;
+                    }
+                    continue;
+                }
                 _ => {
                     current.push('\\');
                     current.push(c);
@@ -388,6 +399,45 @@ fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
     }
 }
 
+/// Parse `\c[NAME, NAME, ...]` Unicode character name escape.
+/// Returns the resulting string and the remaining input after the `]`.
+/// `rest` should point right after `\c[`.
+fn parse_backslash_c_bracket(rest: &str) -> Option<(String, &str)> {
+    let end = rest.find(']')?;
+    let names_str = &rest[..end];
+    let mut result = String::new();
+    for part in names_str.split(',') {
+        let name = part.trim();
+        if name.is_empty() {
+            continue;
+        }
+        // Try as Unicode character name
+        if let Some(c) = lookup_unicode_char_by_name(name) {
+            result.push(c);
+        } else {
+            // Try as hex codepoint (e.g. 0x0041)
+            let hex = name.strip_prefix("0x").or_else(|| name.strip_prefix("0X"));
+            if let Some(hex) = hex
+                && let Ok(n) = u32::from_str_radix(hex, 16)
+                && let Some(c) = char::from_u32(n)
+            {
+                result.push(c);
+                continue;
+            }
+            // Try as decimal codepoint
+            if let Ok(n) = name.parse::<u32>()
+                && let Some(c) = char::from_u32(n)
+            {
+                result.push(c);
+                continue;
+            }
+            // Unknown name - skip
+            return None;
+        }
+    }
+    Some((result, &rest[end + 1..]))
+}
+
 /// Parse a double-quoted string with interpolation support.
 fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '"')?;
@@ -438,6 +488,17 @@ fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
                             current.push(c);
                         }
                         rest = &rest[len..];
+                    }
+                    continue;
+                }
+                'c' => {
+                    // \c[NAME, NAME, ...] Unicode character name escape
+                    rest = &rest[2..];
+                    if rest.starts_with('[')
+                        && let Some((s, after)) = parse_backslash_c_bracket(&rest[1..])
+                    {
+                        current.push_str(&s);
+                        rest = after;
                     }
                     continue;
                 }

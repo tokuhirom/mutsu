@@ -206,7 +206,33 @@ impl VM {
             }
             OpCode::GetBareWord(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
-                let val = if let Some(v) = self.interpreter.env().get(name) {
+                // Resolve qualified type literals: Bool::True, Bool::False, Order::Less, etc.
+                let val = if name == "Bool::True" {
+                    Value::Bool(true)
+                } else if name == "Bool::False" {
+                    Value::Bool(false)
+                } else if name == "Order::Less" {
+                    Value::Enum {
+                        enum_type: "Order".to_string(),
+                        key: "Less".to_string(),
+                        value: -1,
+                        index: 0,
+                    }
+                } else if name == "Order::Same" {
+                    Value::Enum {
+                        enum_type: "Order".to_string(),
+                        key: "Same".to_string(),
+                        value: 0,
+                        index: 1,
+                    }
+                } else if name == "Order::More" {
+                    Value::Enum {
+                        enum_type: "Order".to_string(),
+                        key: "More".to_string(),
+                        value: 1,
+                        index: 2,
+                    }
+                } else if let Some(v) = self.interpreter.env().get(name) {
                     if matches!(v, Value::Enum { .. } | Value::Nil) {
                         v.clone()
                     } else if self.interpreter.has_class(name) || Self::is_builtin_type(name) {
