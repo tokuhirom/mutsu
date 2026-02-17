@@ -465,6 +465,26 @@ fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                 },
             ));
         }
+        // :$var / :@var / :%var (autopair from variable)
+        if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') {
+            let sigil = &r[..1];
+            let after_sigil = &r[1..];
+            if let Ok((rest, var_name)) = ident(after_sigil) {
+                let var_expr = match sigil {
+                    "$" => Expr::Var(var_name.clone()),
+                    "@" => Expr::ArrayVar(var_name.clone()),
+                    "%" => Expr::HashVar(var_name.clone()),
+                    _ => unreachable!(),
+                };
+                return Ok((
+                    rest,
+                    CallArg::Named {
+                        name: var_name,
+                        value: Some(var_expr),
+                    },
+                ));
+            }
+        }
         // :name followed by ( or [ or nothing
         if let Ok((r, name)) = ident(r) {
             // Check for statement modifier keywords - don't parse as named arg
@@ -807,6 +827,39 @@ fn my_decl(input: &str) -> PResult<'_, Stmt> {
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
         let (rest, expr) = parse_assign_expr_or_comma(rest)?;
+        let stmt = Stmt::VarDecl {
+            name,
+            expr,
+            type_constraint,
+        };
+        return parse_statement_modifier(rest, stmt);
+    }
+    // Method-call-assign .= in declaration: my Type $var .= method(args)
+    if let Some(stripped) = rest.strip_prefix(".=") {
+        let (rest, _) = ws(stripped)?;
+        // Parse method name
+        let (rest, method_name) =
+            take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+        let method_name = method_name.to_string();
+        // Parse optional args
+        let (rest, args) = if rest.starts_with('(') {
+            let (r, _) = parse_char(rest, '(')?;
+            let (r, _) = ws(r)?;
+            let (r, args) = super::primary::parse_call_arg_list(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ')')?;
+            (r, args)
+        } else {
+            (rest, Vec::new())
+        };
+        // Build: Type.method(args) — use the type constraint as the target
+        let target_name = type_constraint.clone().unwrap_or_else(|| name.clone());
+        let expr = Expr::MethodCall {
+            target: Box::new(Expr::BareWord(target_name)),
+            name: method_name,
+            args,
+            modifier: None,
+        };
         let stmt = Stmt::VarDecl {
             name,
             expr,

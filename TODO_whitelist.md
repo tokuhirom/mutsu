@@ -21,7 +21,7 @@
 - [ ] roast/S11-modules/re-export.t
 - [ ] roast/S11-modules/runtime.t
 - [ ] roast/S12-class/literal.t
-- [ ] roast/S12-construction/autopairs.t
+- [x] roast/S12-construction/autopairs.t
 - [ ] roast/S15-normalization/nfc-concat.t
 - [ ] roast/S16-io/say-and-ref.t
 - [ ] roast/S17-procasync/windows-arg-quoting.t

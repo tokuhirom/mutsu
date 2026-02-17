@@ -2304,6 +2304,78 @@ fn reduction_op(input: &str) -> PResult<'_, Expr> {
     ))
 }
 
+/// Parse colonpair expressions: :$var, :@var, :%var, :name(expr), :name, :!name
+fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
+    let r = input
+        .strip_prefix(':')
+        .filter(|r| !r.starts_with(':'))
+        .ok_or_else(|| PError::expected("colonpair"))?;
+    // :!name (negated boolean pair)
+    if let Some(after_bang) = r.strip_prefix('!') {
+        let (rest, name) = parse_ident_with_hyphens(after_bang)?;
+        return Ok((
+            rest,
+            Expr::Binary {
+                left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(Expr::Literal(Value::Bool(false))),
+            },
+        ));
+    }
+    // :$var / :@var / :%var (autopair from variable)
+    if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') {
+        let sigil = &r[..1];
+        let after_sigil = &r[1..];
+        let (rest, var_name) = parse_ident_with_hyphens(after_sigil)?;
+        let var_expr = match sigil {
+            "$" => Expr::Var(var_name.to_string()),
+            "@" => Expr::ArrayVar(var_name.to_string()),
+            "%" => Expr::HashVar(var_name.to_string()),
+            _ => unreachable!(),
+        };
+        return Ok((
+            rest,
+            Expr::Binary {
+                left: Box::new(Expr::Literal(Value::Str(var_name.to_string()))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(var_expr),
+            },
+        ));
+    }
+    // :name(expr) or :name (boolean true pair)
+    let (rest, name) = parse_ident_with_hyphens(r)?;
+    // Don't parse statement-modifier keywords as colonpairs
+    if matches!(
+        name,
+        "if" | "unless" | "for" | "while" | "until" | "given" | "when"
+    ) {
+        return Err(PError::expected("colonpair name"));
+    }
+    if let Some(after_paren) = rest.strip_prefix('(') {
+        let (r, _) = ws(after_paren)?;
+        let (r, val) = expression(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ')')?;
+        return Ok((
+            r,
+            Expr::Binary {
+                left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(val),
+            },
+        ));
+    }
+    // :name (boolean true)
+    Ok((
+        rest,
+        Expr::Binary {
+            left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
+            op: crate::token_kind::TokenKind::FatArrow,
+            right: Box::new(Expr::Literal(Value::Bool(true))),
+        },
+    ))
+}
+
 pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
     if let Some(cached) = primary_memo_get(input) {
         return cached;
@@ -2342,6 +2414,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(block_or_hash_expr(input));
         // ::Foo class literal (type object reference)
         try_primary!(class_literal(input));
+        try_primary!(colonpair_expr(input));
 
         match identifier_or_call(input) {
             Ok(r) => Ok(r),
