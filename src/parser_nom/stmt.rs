@@ -1813,12 +1813,22 @@ fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
     if rest.starts_with(')') {
         return Ok((rest, params));
     }
+    // Handle --> return type at the start (no params, just return type)
+    if let Some(stripped) = rest.strip_prefix("-->") {
+        let r = skip_return_type_annotation(stripped)?;
+        return Ok((r, params));
+    }
     let (r, p) = parse_single_param(rest)?;
     params.push(p);
     rest = r;
     loop {
         let (r, _) = ws(rest)?;
         if !r.starts_with(',') {
+            // Check for --> return type annotation at end of param list
+            if let Some(stripped) = r.strip_prefix("-->") {
+                let r = skip_return_type_annotation(stripped)?;
+                return Ok((r, params));
+            }
             return Ok((r, params));
         }
         let (r, _) = parse_char(r, ',')?;
@@ -1826,10 +1836,33 @@ fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
         if r.starts_with(')') {
             return Ok((r, params));
         }
+        // Handle --> return type after comma
+        if let Some(stripped) = r.strip_prefix("-->") {
+            let r = skip_return_type_annotation(stripped)?;
+            return Ok((r, params));
+        }
         let (r, p) = parse_single_param(r)?;
         params.push(p);
         rest = r;
     }
+}
+
+/// Skip a return type annotation (--> Type) in a signature.
+/// Consumes whitespace, a type name (possibly with :D/:U), and any trailing whitespace.
+fn skip_return_type_annotation(input: &str) -> Result<&str, PError> {
+    let (rest, _) = ws(input)?;
+    // Consume the type name (identifier, possibly with :: qualifications)
+    let mut rest = rest;
+    while !rest.is_empty() && !rest.starts_with(')') && !rest.starts_with(',') {
+        let ch = rest.chars().next().unwrap();
+        if ch.is_alphanumeric() || ch == ':' || ch == '_' || ch == '-' {
+            rest = &rest[ch.len_utf8()..];
+        } else {
+            break;
+        }
+    }
+    let (rest, _) = ws(rest)?;
+    Ok(rest)
 }
 
 fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
@@ -1889,6 +1922,12 @@ fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
 
     // Type constraint
     if let Ok((r, tc)) = ident(rest) {
+        // Skip type smileys :D, :U, :_
+        let r = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
+            &r[2..]
+        } else {
+            r
+        };
         let (r2, _) = ws(r)?;
         if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') || r2.starts_with(':')
         {
