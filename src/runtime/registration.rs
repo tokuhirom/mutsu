@@ -136,6 +136,7 @@ impl Interpreter {
                     name: attr_name,
                     is_public,
                     default,
+                    is_rw: _,
                 } => {
                     class_def
                         .attributes
@@ -207,6 +208,7 @@ impl Interpreter {
                     name: attr_name,
                     is_public,
                     default,
+                    is_rw: _,
                 } => {
                     role_def
                         .attributes

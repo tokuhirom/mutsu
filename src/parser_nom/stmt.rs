@@ -2171,7 +2171,20 @@ fn has_decl(input: &str) -> PResult<'_, Stmt> {
 
     let (rest, name) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
     let name = name.to_string();
-    let (rest, _) = ws(rest)?;
+    let (mut rest, _) = ws(rest)?;
+
+    // `is` traits (may have multiple: `is rw is required`)
+    // Traits come before default value: `has $.x is rw = 42`
+    let mut is_rw = false;
+    while let Some(r) = keyword("is", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, trait_name) = ident(r)?;
+        if trait_name == "rw" {
+            is_rw = true;
+        }
+        let (r, _) = ws(r)?;
+        rest = r;
+    }
 
     // Default value
     let (rest, default) = if rest.starts_with('=') && !rest.starts_with("==") {
@@ -2182,18 +2195,8 @@ fn has_decl(input: &str) -> PResult<'_, Stmt> {
     } else {
         (rest, None)
     };
-
-    // `is` traits
     let (rest, _) = ws(rest)?;
-    let rest = if let Some(r) = keyword("is", rest) {
-        let (r, _) = ws1(r)?;
-        let (r, _trait_name) = ident(r)?;
-        r
-    } else {
-        rest
-    };
 
-    let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
     Ok((
         rest,
@@ -2201,6 +2204,7 @@ fn has_decl(input: &str) -> PResult<'_, Stmt> {
             name,
             is_public,
             default,
+            is_rw,
         },
     ))
 }

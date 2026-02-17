@@ -306,6 +306,8 @@ pub(crate) enum Stmt {
         name: String,
         is_public: bool,
         default: Option<Expr>,
+        #[allow(dead_code)]
+        is_rw: bool,
     },
     MethodDecl {
         name: String,
