@@ -1,6 +1,35 @@
 use super::*;
+use crate::ast::Stmt;
 
 impl Interpreter {
+    /// If the first non-Use/non-Package statement is a `unit class Foo;` (ClassDecl with empty
+    /// body), merge all subsequent method/sub declarations into the class body.
+    fn merge_unit_class(stmts: Vec<Stmt>) -> Vec<Stmt> {
+        // Find the index of a ClassDecl with empty body
+        let class_idx = stmts
+            .iter()
+            .position(|s| matches!(s, Stmt::ClassDecl { body, .. } if body.is_empty()));
+        if let Some(idx) = class_idx {
+            let mut result: Vec<Stmt> = stmts[..idx].to_vec();
+            if let Stmt::ClassDecl {
+                name,
+                parents,
+                body: _,
+            } = &stmts[idx]
+            {
+                let body: Vec<Stmt> = stmts[idx + 1..].to_vec();
+                result.push(Stmt::ClassDecl {
+                    name: name.clone(),
+                    parents: parents.clone(),
+                    body,
+                });
+            }
+            result
+        } else {
+            stmts
+        }
+    }
+
     fn preprocess_roast_directives(input: &str) -> String {
         let mut output = String::new();
         let mut skipping_block = false;
@@ -190,6 +219,8 @@ impl Interpreter {
             code.ok_or_else(|| RuntimeError::new(format!("Module not found: {}", module)))?;
         let preprocessed = Self::preprocess_roast_directives(&code);
         let (stmts, _) = parse_dispatch::parse_source(&preprocessed)?;
+        // Handle `unit class Foo;` — merge remaining stmts into the class body
+        let stmts = Self::merge_unit_class(stmts);
         self.run_block(&stmts)?;
         Ok(())
     }

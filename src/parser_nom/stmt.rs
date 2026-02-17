@@ -3114,10 +3114,25 @@ fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, Stmt::Package { name, body }))
 }
 
-/// Parse `unit module` statement.
+/// Parse `unit module` or `unit class` statement.
 fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("unit", input).ok_or_else(|| PError::expected("unit statement"))?;
     let (rest, _) = ws1(rest)?;
+    // unit class Name;
+    if let Some(r) = keyword("class", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, name) = qualified_ident(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = opt_char(r, ';');
+        return Ok((
+            r,
+            Stmt::ClassDecl {
+                name,
+                parents: Vec::new(),
+                body: Vec::new(),
+            },
+        ));
+    }
     let rest = keyword("module", rest).ok_or_else(|| PError::expected("'module' after 'unit'"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;

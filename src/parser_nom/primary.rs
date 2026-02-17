@@ -1362,6 +1362,7 @@ fn is_expr_listop(name: &str) -> bool {
             | "bail-out"
             | "subtest"
             | "use-ok"
+            | "EVAL"
     )
 }
 
