@@ -738,6 +738,14 @@ impl Compiler {
                         self.code.emit(OpCode::LoadNil);
                     }
                 }
+                TokenKind::IntBitNeg => {
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::IntBitNeg);
+                }
+                TokenKind::BoolBitNeg => {
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::BoolBitNeg);
+                }
                 _ => {
                     panic!("unsupported unary operator in compiler: {:?}", op);
                 }
@@ -1134,6 +1142,18 @@ impl Compiler {
                 let pattern_idx = self.code.add_constant(Value::Str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::Str(replacement.clone()));
                 self.code.emit(OpCode::Subst {
+                    pattern_idx,
+                    replacement_idx,
+                });
+            }
+            // S/// non-destructive substitution
+            Expr::NonDestructiveSubst {
+                pattern,
+                replacement,
+            } => {
+                let pattern_idx = self.code.add_constant(Value::Str(pattern.clone()));
+                let replacement_idx = self.code.add_constant(Value::Str(replacement.clone()));
+                self.code.emit(OpCode::NonDestructiveSubst {
                     pattern_idx,
                     replacement_idx,
                 });

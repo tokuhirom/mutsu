@@ -28,6 +28,8 @@ pub(crate) enum OpCode {
     Mod,
     Pow,
     Negate,
+    IntBitNeg,  // +^ prefix: integer bitwise negation
+    BoolBitNeg, // ?^ prefix: boolean bitwise negation
 
     // -- Logic / coercion --
     Not,
@@ -313,6 +315,12 @@ pub(crate) enum OpCode {
 
     // -- Substitution (s///) --
     Subst {
+        pattern_idx: u32,
+        replacement_idx: u32,
+    },
+
+    // -- Non-destructive substitution (S///) --
+    NonDestructiveSubst {
         pattern_idx: u32,
         replacement_idx: u32,
     },

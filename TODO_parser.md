@@ -44,9 +44,9 @@
 
 ## Prefix Operators
 
-- [ ] `+^` — integer bitwise negation
+- [x] `+^` — integer bitwise negation
 - [ ] `~^` — string buffer bitwise negation
-- [ ] `?^` — boolean bitwise negation
+- [x] `?^` — boolean bitwise negation
 - [ ] `temp` — temporize variable (restore on scope exit)
 - [ ] `let` — conditional restoration (restore if block fails)
 
@@ -57,16 +57,16 @@
 - [x] `**=` — exponentiation assignment
 - [x] `x=` — string repetition assignment
 - [x] `xx=` — list repetition assignment
-- [ ] `min=` — min assignment
-- [ ] `max=` — max assignment
-- [ ] `.=` — mutating method call
+- [x] `min=` — min assignment
+- [x] `max=` — max assignment
+- [x] `.=` — mutating method call
 
 ## Grammar Constructs
 
-- [ ] `S///` — non-destructive substitution
+- [x] `S///` — non-destructive substitution
 - [x] `tr///` / `TR///` — transliteration
-- [ ] `!!!` — fatal stub operator
-- [ ] `???` — admonitory stub operator
+- [x] `!!!` — fatal stub operator
+- [x] `???` — admonitory stub operator
 - [ ] `sink` — sink statement prefix
 
 ## Phasers

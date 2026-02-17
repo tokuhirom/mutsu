@@ -1451,6 +1451,46 @@ fn regex_lit(input: &str) -> PResult<'_, Expr> {
         return Ok((rest, Expr::Literal(Value::Regex(pattern.to_string()))));
     }
 
+    // !!! — fatal stub operator
+    if let Some(r) = input.strip_prefix("!!!") {
+        let (r, _) = ws(r)?;
+        let (r, msg) = if r.starts_with(';') || r.is_empty() || r.starts_with('}') {
+            (
+                r,
+                Expr::Literal(Value::Str("Stub code executed".to_string())),
+            )
+        } else {
+            expression(r)?
+        };
+        return Ok((
+            r,
+            Expr::Call {
+                name: "die".to_string(),
+                args: vec![msg],
+            },
+        ));
+    }
+
+    // ??? — admonitory stub operator
+    if let Some(r) = input.strip_prefix("???") {
+        let (r, _) = ws(r)?;
+        let (r, msg) = if r.starts_with(';') || r.is_empty() || r.starts_with('}') {
+            (
+                r,
+                Expr::Literal(Value::Str("Stub code executed".to_string())),
+            )
+        } else {
+            expression(r)?
+        };
+        return Ok((
+            r,
+            Expr::Call {
+                name: "warn".to_string(),
+                args: vec![msg],
+            },
+        ));
+    }
+
     // s/pattern/replacement/
     if let Some(r) = input.strip_prefix("s/") {
         let mut end = 0;
@@ -1490,6 +1530,51 @@ fn regex_lit(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 rest,
                 Expr::Subst {
+                    pattern: pattern.to_string(),
+                    replacement: replacement.to_string(),
+                },
+            ));
+        }
+    }
+
+    // S/pattern/replacement/ — non-destructive substitution
+    if let Some(r) = input.strip_prefix("S/") {
+        let mut end = 0;
+        let bytes = r.as_bytes();
+        while end < bytes.len() {
+            if bytes[end] == b'/' {
+                break;
+            }
+            if bytes[end] == b'\\' && end + 1 < bytes.len() {
+                end += 2;
+            } else {
+                end += 1;
+            }
+        }
+        let pattern = &r[..end];
+        if end < bytes.len() {
+            let r = &r[end + 1..];
+            let mut rend = 0;
+            let rbytes = r.as_bytes();
+            while rend < rbytes.len() {
+                if rbytes[rend] == b'/' {
+                    break;
+                }
+                if rbytes[rend] == b'\\' && rend + 1 < rbytes.len() {
+                    rend += 2;
+                } else {
+                    rend += 1;
+                }
+            }
+            let replacement = &r[..rend];
+            let rest = if rend < rbytes.len() {
+                &r[rend + 1..]
+            } else {
+                &r[rend..]
+            };
+            return Ok((
+                rest,
+                Expr::NonDestructiveSubst {
                     pattern: pattern.to_string(),
                     replacement: replacement.to_string(),
                 },

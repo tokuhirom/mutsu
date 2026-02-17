@@ -158,7 +158,7 @@ impl Interpreter {
             "link" => self.builtin_link(&args),
             "symlink" => self.builtin_symlink(&args),
             // I/O functions
-            "print" | "say" | "note" => self.builtin_print(name, &args),
+            "print" | "say" | "note" | "warn" => self.builtin_print(name, &args),
             "prompt" => self.builtin_prompt(&args),
             "get" => self.builtin_get(&args),
             "lines" => self.builtin_lines(&args),

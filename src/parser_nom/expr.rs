@@ -289,6 +289,8 @@ enum PrefixUnaryOp {
     Negate,
     Positive,
     Stringify,
+    IntBitNeg,  // +^ integer bitwise negation
+    BoolBitNeg, // ?^ boolean bitwise negation
 }
 
 impl PrefixUnaryOp {
@@ -301,6 +303,8 @@ impl PrefixUnaryOp {
             PrefixUnaryOp::Negate => TokenKind::Minus,
             PrefixUnaryOp::Positive => TokenKind::Plus,
             PrefixUnaryOp::Stringify => TokenKind::Tilde,
+            PrefixUnaryOp::IntBitNeg => TokenKind::IntBitNeg,
+            PrefixUnaryOp::BoolBitNeg => TokenKind::BoolBitNeg,
         }
     }
 
@@ -383,11 +387,12 @@ fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize)> {
         && !input.starts_with("!%%")
     {
         Some((PrefixUnaryOp::Not, 1))
+    } else if input.starts_with("?^") {
+        Some((PrefixUnaryOp::BoolBitNeg, 2))
     } else if input.starts_with('?')
         && !input.starts_with("??")
         && !input.starts_with("?|")
         && !input.starts_with("?&")
-        && !input.starts_with("?^")
     {
         Some((PrefixUnaryOp::Boolify, 1))
     } else if input.starts_with("so") && !is_ident_char(input.as_bytes().get(2).copied()) {
@@ -403,6 +408,8 @@ fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize)> {
         && (c == b'$' || c == b'@' || c == b'(' || c.is_ascii_digit() || c.is_ascii_alphabetic())
     {
         Some((PrefixUnaryOp::Negate, 1))
+    } else if input.starts_with("+^") {
+        Some((PrefixUnaryOp::IntBitNeg, 2))
     } else if input.starts_with('+')
         && !input.starts_with("++")
         && let Some(&c) = input.as_bytes().get(1)

@@ -299,6 +299,26 @@ impl VM {
                 *ip += 1;
             }
 
+            OpCode::IntBitNeg => {
+                let val = self.stack.pop().unwrap();
+                match &val {
+                    Value::Int(n) => self.stack.push(Value::Int(!n)),
+                    _ => {
+                        use num_traits::ToPrimitive;
+                        let n = val.to_bigint();
+                        let i = n.to_i64().unwrap_or(0);
+                        self.stack.push(Value::Int(!i));
+                    }
+                }
+                *ip += 1;
+            }
+
+            OpCode::BoolBitNeg => {
+                let val = self.stack.pop().unwrap();
+                self.stack.push(Value::Bool(!val.truthy()));
+                *ip += 1;
+            }
+
             // -- Logic / coercion --
             OpCode::Not => {
                 let val = self.stack.pop().unwrap();
@@ -1638,6 +1658,36 @@ impl VM {
                         .env_mut()
                         .insert("_".to_string(), result.clone());
                     self.stack.push(result);
+                } else {
+                    self.stack.push(Value::Str(text));
+                }
+                *ip += 1;
+            }
+
+            // -- Non-destructive substitution (S///) --
+            OpCode::NonDestructiveSubst {
+                pattern_idx,
+                replacement_idx,
+            } => {
+                let pattern = Self::const_str(code, *pattern_idx).to_string();
+                let replacement = Self::const_str(code, *replacement_idx).to_string();
+                let target = self
+                    .interpreter
+                    .env()
+                    .get("_")
+                    .cloned()
+                    .unwrap_or(Value::Nil);
+                let text = target.to_string_value();
+                if let Some((start, end)) =
+                    self.interpreter.regex_find_first_bridge(&pattern, &text)
+                {
+                    let start_b = runtime::char_idx_to_byte(&text, start);
+                    let end_b = runtime::char_idx_to_byte(&text, end);
+                    let mut out = String::new();
+                    out.push_str(&text[..start_b]);
+                    out.push_str(&replacement);
+                    out.push_str(&text[end_b..]);
+                    self.stack.push(Value::Str(out));
                 } else {
                     self.stack.push(Value::Str(text));
                 }

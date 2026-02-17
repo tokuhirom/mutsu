@@ -97,6 +97,8 @@ pub(crate) enum TokenKind {
     BitAnd,
     BitOr,
     BitXor,
+    IntBitNeg,  // +^ prefix integer bitwise negation
+    BoolBitNeg, // ?^ prefix boolean bitwise negation
     BitShiftLeft,
     BitShiftRight,
     LtEqGt,

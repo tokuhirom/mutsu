@@ -47,6 +47,10 @@ pub(crate) enum Expr {
         pattern: String,
         replacement: String,
     },
+    NonDestructiveSubst {
+        pattern: String,
+        replacement: String,
+    },
     Transliterate {
         from: String,
         to: String,

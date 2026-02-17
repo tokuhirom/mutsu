@@ -29,6 +29,8 @@ enum CompoundAssignOp {
     BitOr,
     BitAnd,
     BitXor,
+    Min,
+    Max,
 }
 
 impl CompoundAssignOp {
@@ -49,6 +51,8 @@ impl CompoundAssignOp {
             CompoundAssignOp::BitOr => "+|=",
             CompoundAssignOp::BitAnd => "+&=",
             CompoundAssignOp::BitXor => "+^=",
+            CompoundAssignOp::Min => "min=",
+            CompoundAssignOp::Max => "max=",
         }
     }
 
@@ -69,6 +73,8 @@ impl CompoundAssignOp {
             CompoundAssignOp::BitOr => TokenKind::BitOr,
             CompoundAssignOp::BitAnd => TokenKind::BitAnd,
             CompoundAssignOp::BitXor => TokenKind::BitXor,
+            CompoundAssignOp::Min => TokenKind::Ident("min".to_string()),
+            CompoundAssignOp::Max => TokenKind::Ident("max".to_string()),
         }
     }
 }
@@ -89,6 +95,8 @@ const COMPOUND_ASSIGN_OPS: &[CompoundAssignOp] = &[
     CompoundAssignOp::BitOr,
     CompoundAssignOp::BitAnd,
     CompoundAssignOp::BitXor,
+    CompoundAssignOp::Min, // min= (word boundary checked in parse_compound_assign_op)
+    CompoundAssignOp::Max, // max= (word boundary checked in parse_compound_assign_op)
 ];
 
 #[derive(Debug, Clone)]
@@ -849,6 +857,56 @@ fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr> {
         b'%' => "%",
         _ => "",
     };
+    // .= mutating method call: $var .= method(args) => $var = $var.method(args)
+    if let Some(stripped) = r2.strip_prefix(".=") {
+        let (r, _) = ws(stripped)?;
+        // Parse method name
+        let (r, method_name) =
+            take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+        let (r, _) = ws(r)?;
+        // Parse optional args in parens
+        let (rest, args) = if r.starts_with('(') {
+            let (r, _) = parse_char(r, '(')?;
+            let (r, _) = ws(r)?;
+            if r.starts_with(')') {
+                let (r, _) = parse_char(r, ')')?;
+                (r, vec![])
+            } else {
+                let mut args = Vec::new();
+                let (mut r, first) = super::expr::expression_no_sequence(r)?;
+                args.push(first);
+                loop {
+                    let (r2, _) = ws(r)?;
+                    if !r2.starts_with(',') {
+                        r = r2;
+                        break;
+                    }
+                    let (r2, _) = ws(&r2[1..])?;
+                    let (r2, next) = super::expr::expression_no_sequence(r2)?;
+                    args.push(next);
+                    r = r2;
+                }
+                let (r, _) = ws(r)?;
+                let (r, _) = parse_char(r, ')')?;
+                (r, args)
+            }
+        } else {
+            (r, vec![])
+        };
+        let name = format!("{}{}", prefix, var);
+        return Ok((
+            rest,
+            Expr::AssignExpr {
+                name,
+                expr: Box::new(Expr::MethodCall {
+                    target: Box::new(Expr::Var(var.to_string())),
+                    name: method_name.to_string(),
+                    args,
+                    modifier: None,
+                }),
+            },
+        ));
+    }
     if let Some((stripped, op)) = parse_compound_assign_op(r2) {
         let (rest, _) = ws(stripped)?;
         // RHS: try chained assign, else single expression
