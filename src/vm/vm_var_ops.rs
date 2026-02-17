@@ -131,6 +131,7 @@ impl VM {
         let val = self.get_env_with_main_alias(name).unwrap_or(Value::Int(0));
         let new_val = match &val {
             Value::Int(i) => Value::Int(i + 1),
+            Value::Bool(_) => Value::Bool(true),
             Value::Rat(n, d) => make_rat(n + d, *d),
             _ => Value::Int(1),
         };
@@ -144,6 +145,7 @@ impl VM {
         let val = self.get_env_with_main_alias(name).unwrap_or(Value::Int(0));
         let new_val = match &val {
             Value::Int(i) => Value::Int(i - 1),
+            Value::Bool(_) => Value::Bool(false),
             Value::Rat(n, d) => make_rat(n - d, *d),
             _ => Value::Int(-1),
         };

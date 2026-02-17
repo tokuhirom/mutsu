@@ -349,6 +349,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Some(Ok(Value::Array(parts)))
         }
         "gist" | "raku" | "perl" => match target {
+            Value::Bool(b) => {
+                if method == "gist" {
+                    Some(Ok(Value::Str(
+                        if *b { "True" } else { "False" }.to_string(),
+                    )))
+                } else {
+                    Some(Ok(Value::Str(
+                        if *b { "Bool::True" } else { "Bool::False" }.to_string(),
+                    )))
+                }
+            }
             Value::Nil => Some(Ok(Value::Str("(Any)".to_string()))),
             Value::Rat(n, d) => {
                 if *d == 0 {
