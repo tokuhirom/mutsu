@@ -55,6 +55,28 @@ impl Interpreter {
                     self.smart_match(&Value::Nil, val)
                 }
             }
+            // Hash ~~ Hash: structural equality (eqv)
+            (Value::Hash(lmap), Value::Hash(rmap)) => {
+                if lmap.len() != rmap.len() {
+                    return false;
+                }
+                for (k, lv) in lmap {
+                    match rmap.get(k) {
+                        Some(rv) => {
+                            if !self.smart_match(lv, rv) {
+                                return false;
+                            }
+                        }
+                        None => return false,
+                    }
+                }
+                true
+            }
+            // Array ~~ Hash: check if any element exists as a key in the hash
+            (Value::Array(items), Value::Hash(map)) => items.iter().any(|item| {
+                let key = item.to_string_value();
+                map.contains_key(&key)
+            }),
             // Scalar ~~ Hash: check key existence
             (_, Value::Hash(map)) => {
                 let key = left.to_string_value();
