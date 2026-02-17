@@ -55,7 +55,7 @@ impl Interpreter {
                     .collect();
                 Value::Version { parts, plus, minus }
             }
-            // Version.new(*) - Whatever argument (Inf is how * is represented)
+            // Version.new(*) - Whatever argument (bare * evaluates to Num(Inf))
             Value::Num(f) if f.is_infinite() && f.is_sign_positive() => Value::Version {
                 parts: vec![VersionPart::Whatever],
                 plus: false,

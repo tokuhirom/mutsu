@@ -1,5 +1,5 @@
 - [x] roast/S02-lexical-conventions/finish-pod.t
-- [ ] roast/S02-literals/version.t
+- [x] roast/S02-literals/version.t
 - [ ] roast/S02-magicals/block.t
 - [ ] roast/S02-magicals/DISTRO.t
 - [ ] roast/S02-magicals/file_line.t

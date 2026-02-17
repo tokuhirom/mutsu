@@ -597,8 +597,8 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
-        // Wrap WhateverCode expressions in a lambda
-        if contains_whatever(&expr) {
+        // Wrap WhateverCode expressions in a lambda, but not bare * (Whatever)
+        if contains_whatever(&expr) && !is_whatever(&expr) {
             let body_expr = replace_whatever(&expr);
             expr = Expr::Lambda {
                 param: "_".to_string(),
