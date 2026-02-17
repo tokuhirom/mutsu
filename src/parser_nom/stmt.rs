@@ -2307,9 +2307,7 @@ fn take_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("take", input).ok_or_else(|| PError::expected("take statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, expr) = expression(rest)?;
-    let (rest, _) = ws(rest)?;
-    let (rest, _) = opt_char(rest, ';');
-    Ok((rest, Stmt::Take(expr)))
+    parse_statement_modifier(rest, Stmt::Take(expr))
 }
 
 /// Parse CATCH/CONTROL blocks.
