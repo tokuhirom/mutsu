@@ -1505,6 +1505,13 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 })),
             ));
         }
+        "my" | "our" => {
+            // my/our declaration in expression context
+            // e.g., (my $x = 5) or so my $x = 5
+            if let Ok((r, stmt)) = super::stmt::my_decl_pub(input) {
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            }
+        }
         "sub" => {
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {

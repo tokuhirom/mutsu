@@ -1257,6 +1257,17 @@ impl Compiler {
                         self.code.emit(OpCode::SetGlobal(name_idx));
                     }
                 }
+                Stmt::VarDecl { name, expr, .. } => {
+                    // my $x = expr in expression context → declare, assign, return value
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::Dup);
+                    if let Some(&slot) = self.local_map.get(name.as_str()) {
+                        self.code.emit(OpCode::SetLocal(slot));
+                    } else {
+                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        self.code.emit(OpCode::SetGlobal(name_idx));
+                    }
+                }
                 Stmt::Expr(inner_expr) => {
                     self.compile_expr(inner_expr);
                 }

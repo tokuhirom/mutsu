@@ -8,7 +8,7 @@
 - [ ] roast/S03-metaops/infix.t
 - [ ] roast/S03-operators/boolean-bitwise.t
 - [x] roast/S03-operators/gcd.t
-- [ ] roast/S03-operators/so.t
+- [x] roast/S03-operators/so.t
 - [x] roast/S03-smartmatch/any-callable.t
 - [ ] roast/S04-statement-modifiers/while.t
 - [ ] roast/S04-statements/do.t

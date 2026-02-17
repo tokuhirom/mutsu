@@ -288,6 +288,10 @@ pub(super) fn statement_pub(input: &str) -> PResult<'_, Stmt> {
     statement(input)
 }
 
+pub(super) fn my_decl_pub(input: &str) -> PResult<'_, Stmt> {
+    my_decl(input)
+}
+
 /// Parse a list of statements (inside a block or at program level).
 fn stmt_list(input: &str) -> PResult<'_, Vec<Stmt>> {
     let mut stmts = Vec::new();
