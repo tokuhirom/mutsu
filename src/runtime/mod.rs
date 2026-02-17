@@ -31,7 +31,6 @@ mod calls;
 mod class;
 mod dispatch;
 mod handle;
-mod helpers;
 mod io;
 mod methods;
 mod methods_mut;
@@ -49,6 +48,7 @@ mod sprintf;
 mod subtest;
 mod system;
 mod test_functions;
+mod test_util_functions;
 mod types;
 mod unicode;
 pub(crate) mod utils;
@@ -195,6 +195,8 @@ pub struct Interpreter {
     end_phasers: Vec<(Vec<Stmt>, HashMap<String, Value>)>,
     chroot_root: Option<PathBuf>,
     loaded_modules: HashSet<String>,
+    temp_files: Vec<PathBuf>,
+    temp_dirs: Vec<PathBuf>,
 }
 
 pub(crate) struct SubtestContext {
@@ -402,6 +404,8 @@ impl Interpreter {
             end_phasers: Vec::new(),
             chroot_root: None,
             loaded_modules: HashSet::new(),
+            temp_files: Vec::new(),
+            temp_dirs: Vec::new(),
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -480,8 +484,6 @@ impl TestState {
         }
     }
 }
-
-pub(super) use helpers::collect_placeholders;
 
 #[cfg(test)]
 mod tests {

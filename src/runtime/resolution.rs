@@ -185,14 +185,6 @@ impl Interpreter {
                     new_env.insert(param_name.clone(), value.clone());
                 }
             }
-            let placeholders = collect_placeholders(&body);
-            if !placeholders.is_empty() {
-                for (i, ph) in placeholders.iter().enumerate() {
-                    if let Some(val) = args.get(i) {
-                        new_env.insert(ph.clone(), val.clone());
-                    }
-                }
-            }
             // &?BLOCK: a self-referencing Sub with original params for recursion
             let block_self = Value::Sub {
                 package: package.clone(),
@@ -261,14 +253,7 @@ impl Interpreter {
             params, body, env, ..
         }) = func
         {
-            let placeholders = collect_placeholders(&body);
-            let arity = if !params.is_empty() {
-                params.len()
-            } else if !placeholders.is_empty() {
-                placeholders.len()
-            } else {
-                1
-            };
+            let arity = if !params.is_empty() { params.len() } else { 1 };
             let mut result = Vec::new();
             let mut i = 0usize;
             while i < list_items.len() {
@@ -284,19 +269,11 @@ impl Interpreter {
                     if let Some(p) = params.first() {
                         self.env.insert(p.clone(), item.clone());
                     }
-                    if let Some(ph) = placeholders.first() {
-                        self.env.insert(ph.clone(), item.clone());
-                    }
                     self.env.insert("_".to_string(), item);
                 } else {
                     for (idx, p) in params.iter().enumerate() {
                         if i + idx < list_items.len() {
                             self.env.insert(p.clone(), list_items[i + idx].clone());
-                        }
-                    }
-                    for (idx, ph) in placeholders.iter().enumerate() {
-                        if i + idx < list_items.len() {
-                            self.env.insert(ph.clone(), list_items[i + idx].clone());
                         }
                     }
                     self.env.insert("_".to_string(), list_items[i].clone());
@@ -338,7 +315,6 @@ impl Interpreter {
             params, body, env, ..
         }) = func
         {
-            let placeholders = collect_placeholders(&body);
             let mut result = Vec::new();
             for item in list_items {
                 let saved = self.env.clone();
@@ -347,9 +323,6 @@ impl Interpreter {
                 }
                 if let Some(p) = params.first() {
                     self.env.insert(p.clone(), item.clone());
-                }
-                if let Some(ph) = placeholders.first() {
-                    self.env.insert(ph.clone(), item.clone());
                 }
                 self.env.insert("_".to_string(), item.clone());
                 let val = self.eval_block_value(&body)?;

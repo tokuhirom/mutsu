@@ -31,15 +31,6 @@ impl Interpreter {
                     new_env.insert(pname.clone(), value.clone());
                 }
             }
-            // Bind placeholder variables ($^a, $^b, ...)
-            let placeholders = collect_placeholders(&body);
-            if !placeholders.is_empty() {
-                for (i, ph) in placeholders.iter().enumerate() {
-                    if let Some(val) = args.get(i) {
-                        new_env.insert(ph.clone(), val.clone());
-                    }
-                }
-            }
             // &?BLOCK: self-referencing Sub with original params for recursion
             let block_self = Value::Sub {
                 package: package.clone(),
@@ -204,11 +195,15 @@ impl Interpreter {
         {
             return self.call_infix_routine(op, args);
         }
-        if (self.loaded_modules.contains("Test")
-            || self.loaded_modules.iter().any(|m| m.starts_with("Test::")))
-            && let Some(result) = self.call_test_function(name, args)?
+        if self.loaded_modules.contains("Test")
+            || self.loaded_modules.iter().any(|m| m.starts_with("Test::"))
         {
-            return Ok(result);
+            if let Some(result) = self.call_test_function(name, args)? {
+                return Ok(result);
+            }
+            if let Some(result) = self.call_test_util_function(name, args)? {
+                return Ok(result);
+            }
         }
         if let Some(pattern) = self.eval_token_call_values(name, args)? {
             return Ok(Value::Regex(pattern));
@@ -474,10 +469,6 @@ impl Interpreter {
             }
             if let Some(p) = params.first() {
                 self.env.insert(p.clone(), item.clone());
-            }
-            let placeholders = collect_placeholders(body);
-            if let Some(ph) = placeholders.first() {
-                self.env.insert(ph.clone(), item.clone());
             }
             self.env.insert("_".to_string(), item.clone());
             let result = self.eval_block_value(body);

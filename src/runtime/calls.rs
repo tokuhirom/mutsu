@@ -6,6 +6,9 @@ impl Interpreter {
         if let Some(_result) = self.call_test_function(name, &args)? {
             return Ok(());
         }
+        if let Some(_result) = self.call_test_util_function(name, &args)? {
+            return Ok(());
+        }
 
         match name {
             "make" => {

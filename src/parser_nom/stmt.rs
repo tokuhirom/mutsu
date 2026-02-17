@@ -2786,6 +2786,12 @@ const KNOWN_CALLS: &[&str] = &[
     "warn",
     "EVAL",
     "EVALFILE",
+    // Test::Util functions
+    "make-temp-file",
+    "make-temp-path",
+    "make-temp-dir",
+    "is-eqv",
+    "group-of",
 ];
 
 /// Check if a name is a known statement-level function call.

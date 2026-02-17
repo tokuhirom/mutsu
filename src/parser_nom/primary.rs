@@ -5,7 +5,7 @@ use super::parse_result::{
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use crate::ast::Expr;
+use crate::ast::{Expr, make_anon_sub};
 use crate::token_kind::lookup_unicode_char_by_name;
 use crate::value::Value;
 
@@ -1641,7 +1641,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {
                 let (r, body) = parse_block_body(r)?;
-                return Ok((r, Expr::AnonSub(body)));
+                return Ok((r, make_anon_sub(body)));
             }
             // sub with params: sub ($x, $y) { ... }
             if r.starts_with('(') {
@@ -1697,7 +1697,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     r,
                     Expr::Call {
                         name: "start".to_string(),
-                        args: vec![Expr::AnonSub(body)],
+                        args: vec![make_anon_sub(body)],
                     },
                 ));
             }
@@ -1788,7 +1788,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         if let Some(r3) = r3.strip_prefix(',') {
             // Consume comma and remaining args
             let (r3, _) = ws(r3)?;
-            let mut args = vec![Expr::AnonSub(block_body)];
+            let mut args = vec![make_anon_sub(block_body)];
             let (mut r3, first_arg) = expression(r3)?;
             args.push(first_arg);
             loop {
@@ -1898,7 +1898,7 @@ fn parse_anon_sub_rest(input: &str, params: Vec<String>) -> PResult<'_, Expr> {
     let (r, _) = ws(r)?;
     let (r, body) = parse_block_body(r)?;
     if params.is_empty() {
-        Ok((r, Expr::AnonSub(body)))
+        Ok((r, make_anon_sub(body)))
     } else {
         Ok((r, Expr::AnonSubParams { params, body }))
     }
@@ -2572,7 +2572,7 @@ fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("'}'"));
     }
     let r = &r[1..];
-    Ok((r, Expr::AnonSub(stmts)))
+    Ok((r, make_anon_sub(stmts)))
 }
 
 /// Simple whitespace consumer that doesn't use PResult (infallible).

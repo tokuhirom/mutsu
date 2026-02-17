@@ -535,9 +535,7 @@ impl Interpreter {
                     params, body, env, ..
                 }) = args.first().cloned()
                 {
-                    let placeholders = collect_placeholders(&body);
-                    let is_key_extractor =
-                        placeholders.len() < 2 && params.len() <= 1 || placeholders.len() == 1;
+                    let is_key_extractor = params.len() <= 1;
                     if is_key_extractor {
                         items.sort_by(|a, b| {
                             let saved = self.env.clone();
@@ -567,12 +565,11 @@ impl Interpreter {
                             for (k, v) in &env {
                                 self.env.insert(k.clone(), v.clone());
                             }
-                            if let Some(p) = params.first() {
+                            if params.len() >= 2 {
+                                self.env.insert(params[0].clone(), a.clone());
+                                self.env.insert(params[1].clone(), b.clone());
+                            } else if let Some(p) = params.first() {
                                 self.env.insert(p.clone(), a.clone());
-                            }
-                            if placeholders.len() >= 2 {
-                                self.env.insert(placeholders[0].clone(), a.clone());
-                                self.env.insert(placeholders[1].clone(), b.clone());
                             }
                             self.env.insert("_".to_string(), a.clone());
                             let result = self.eval_block_value(&body).unwrap_or(Value::Int(0));

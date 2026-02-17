@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::{AssignOp, CallArg, Expr, PhaserKind, Stmt};
+use crate::ast::{AssignOp, CallArg, Expr, PhaserKind, Stmt, make_anon_sub};
 use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::token_kind::TokenKind;
 use crate::value::Value;
@@ -922,7 +922,7 @@ impl Compiler {
                 else if name == "indir" && args.len() >= 2 {
                     let mut rewritten_args = args.clone();
                     if let Expr::Block(body) = &rewritten_args[1] {
-                        rewritten_args[1] = Expr::AnonSub(body.clone());
+                        rewritten_args[1] = make_anon_sub(body.clone());
                     }
                     let arity = rewritten_args.len() as u32;
                     for arg in &rewritten_args {
@@ -1542,7 +1542,7 @@ impl Compiler {
                         && positional_index == 0
                     {
                         match expr {
-                            Expr::Block(body) => Expr::AnonSub(body.clone()),
+                            Expr::Block(body) => make_anon_sub(body.clone()),
                             _ => expr.clone(),
                         }
                     } else if name == "is_run" && positional_index == 1 {
@@ -1568,7 +1568,7 @@ impl Compiler {
                 .map(|(name, value)| {
                     let rewritten_value = value.as_ref().map(|v| {
                         if let Expr::Block(body) = v {
-                            Expr::AnonSub(body.clone())
+                            make_anon_sub(body.clone())
                         } else {
                             v.clone()
                         }

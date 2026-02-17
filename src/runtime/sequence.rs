@@ -267,15 +267,8 @@ impl Interpreter {
                     ..
                 } = closure_val
             {
-                // Determine arity from params or placeholders
-                let placeholders = collect_placeholders(body);
-                let arity = if !params.is_empty() {
-                    params.len()
-                } else if !placeholders.is_empty() {
-                    placeholders.len()
-                } else {
-                    1
-                };
+                // Determine arity from params
+                let arity = if !params.is_empty() { params.len() } else { 1 };
 
                 for (i, _) in seeds.iter().enumerate() {
                     let saved = self.env.clone();
@@ -298,13 +291,6 @@ impl Interpreter {
                     for (j, param) in params.iter().enumerate() {
                         if j < args.len() {
                             self.env.insert(param.clone(), args[j].clone());
-                        }
-                    }
-
-                    // Bind placeholders
-                    for (j, ph) in placeholders.iter().enumerate() {
-                        if j < args.len() {
-                            self.env.insert(ph.clone(), args[j].clone());
                         }
                     }
 
@@ -399,15 +385,8 @@ impl Interpreter {
                             self.env.insert(k.clone(), v.clone());
                         }
 
-                        // Determine arity from params or placeholders
-                        let placeholders = collect_placeholders(body);
-                        let arity = if !params.is_empty() {
-                            params.len()
-                        } else if !placeholders.is_empty() {
-                            placeholders.len()
-                        } else {
-                            1
-                        };
+                        // Determine arity from params
+                        let arity = if !params.is_empty() { params.len() } else { 1 };
 
                         // Collect the appropriate number of previous values
                         let result_len = result.len();
@@ -427,13 +406,6 @@ impl Interpreter {
                         for (i, param) in params.iter().enumerate() {
                             if i < args.len() {
                                 self.env.insert(param.clone(), args[i].clone());
-                            }
-                        }
-
-                        // Bind placeholders
-                        for (i, ph) in placeholders.iter().enumerate() {
-                            if i < args.len() {
-                                self.env.insert(ph.clone(), args[i].clone());
                             }
                         }
 
@@ -499,15 +471,8 @@ impl Interpreter {
                                 self.env.insert(k.clone(), v.clone());
                             }
 
-                            // Determine arity from params or placeholders
-                            let placeholders = collect_placeholders(body);
-                            let arity = if !params.is_empty() {
-                                params.len()
-                            } else if !placeholders.is_empty() {
-                                placeholders.len()
-                            } else {
-                                1
-                            };
+                            // Determine arity from params
+                            let arity = if !params.is_empty() { params.len() } else { 1 };
 
                             // Collect the appropriate number of values including the new one
                             let result_len = result.len();
@@ -530,13 +495,6 @@ impl Interpreter {
                             for (i, param) in params.iter().enumerate() {
                                 if i < args.len() {
                                     self.env.insert(param.clone(), args[i].clone());
-                                }
-                            }
-
-                            // Bind placeholders
-                            for (i, ph) in placeholders.iter().enumerate() {
-                                if i < args.len() {
-                                    self.env.insert(ph.clone(), args[i].clone());
                                 }
                             }
 
