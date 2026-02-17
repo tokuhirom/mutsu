@@ -590,7 +590,10 @@ fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
         }
     }
 
-    // Positional argument
+    // Positional argument — try assignment expression first ($x = expr)
+    if let Ok((rest, assign_expr)) = try_parse_assign_expr(input) {
+        return Ok((rest, CallArg::Positional(assign_expr)));
+    }
     let (rest, expr) = expression(input).map_err(|err| PError {
         message: merge_expected_messages("expected positional argument expression", &err.message),
         remaining_len: err.remaining_len.or(Some(input.len())),
