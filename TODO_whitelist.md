@@ -27,7 +27,7 @@
 - [ ] roast/S17-procasync/windows-arg-quoting.t
 - [ ] roast/S17-supply/watch-path.t
 - [ ] roast/S24-testing/14-like-unlike.t
-- [ ] roast/S24-testing/7-bail_out.t
+- [x] roast/S24-testing/7-bail_out.t
 - [ ] roast/S32-io/chdir-process.t
 - [ ] roast/S32-io/null-char.t
 - [ ] roast/S32-io/other-stress.t
