@@ -599,6 +599,39 @@ fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, module) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
 
+    // Skip adverbs/colonpairs on use (e.g. `use Foo :ALL`, `use Foo :tag1 :tag2`)
+    let mut rest = rest;
+    while rest.starts_with(':') && !rest.starts_with("::") {
+        let r = &rest[1..];
+        // :!name
+        let r = r.strip_prefix('!').unwrap_or(r);
+        if let Ok((r, _name)) = ident(r) {
+            // :name(expr)
+            let r = if let Some(inner) = r.strip_prefix('(') {
+                let mut depth = 1u32;
+                let mut rr = inner;
+                while depth > 0 && !rr.is_empty() {
+                    if rr.starts_with('(') {
+                        depth += 1;
+                    } else if rr.starts_with(')') {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    rr = &rr[rr.chars().next().unwrap().len_utf8()..];
+                }
+                rr.strip_prefix(')').unwrap_or(inner)
+            } else {
+                r
+            };
+            let (r, _) = ws(r)?;
+            rest = r;
+        } else {
+            break;
+        }
+    }
+
     // Optional argument
     let (rest, arg) = if rest.starts_with(';') || rest.is_empty() || rest.starts_with('}') {
         (rest, None)
@@ -1237,6 +1270,39 @@ fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         ));
     }
 
+    // Label before `do` block: `A: do { ... }`
+    if keyword("do", rest).is_some() {
+        // Parse the rest as a statement and wrap with label
+        // For now, just treat it as a labeled block by parsing `do { ... }`
+        let r = keyword("do", rest).unwrap();
+        let (r, _) = ws(r)?;
+        let (r, body) = block(r)?;
+        return Ok((
+            r,
+            Stmt::For {
+                iterable: Expr::ArrayLiteral(vec![Expr::Literal(crate::value::Value::Nil)]),
+                param: None,
+                params: Vec::new(),
+                body,
+                label: Some(label),
+            },
+        ));
+    }
+    // Label before bare block: `A: { ... }`
+    if rest.starts_with('{') {
+        let (r, body) = block(rest)?;
+        return Ok((
+            r,
+            Stmt::For {
+                iterable: Expr::ArrayLiteral(vec![Expr::Literal(crate::value::Value::Nil)]),
+                param: None,
+                params: Vec::new(),
+                body,
+                label: Some(label),
+            },
+        ));
+    }
+
     Err(PError::expected("labeled loop"))
 }
 
@@ -1564,6 +1630,9 @@ fn sub_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
     };
 
     let (rest, _) = ws(rest)?;
+    // Skip traits (is test-assertion, is export, returns ..., etc.)
+    let (rest, _) = skip_sub_traits(rest)?;
+    let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
     Ok((
         rest,
@@ -1575,6 +1644,58 @@ fn sub_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
             multi,
         },
     ))
+}
+
+/// Skip sub/method traits like `is test-assertion`, `is export`, `returns Str`, etc.
+fn skip_sub_traits(mut input: &str) -> PResult<'_, ()> {
+    loop {
+        let (r, _) = ws(input)?;
+        if r.starts_with('{') || r.is_empty() {
+            return Ok((r, ()));
+        }
+        if let Some(r) = keyword("is", r) {
+            let (r, _) = ws(r)?;
+            // Skip the trait name (may include hyphens like test-assertion)
+            let (r, _trait_name) =
+                take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+            // Skip optional parenthesized trait args: is export(:DEFAULT)
+            let r = if let Some(inner) = r.strip_prefix('(') {
+                let mut depth = 1u32;
+                let mut rr = inner;
+                while depth > 0 && !rr.is_empty() {
+                    if rr.starts_with('(') {
+                        depth += 1;
+                    } else if rr.starts_with(')') {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    rr = &rr[rr.chars().next().unwrap().len_utf8()..];
+                }
+                rr.strip_prefix(')').unwrap_or(inner)
+            } else {
+                r
+            };
+            input = r;
+            continue;
+        }
+        if let Some(r) = keyword("returns", r) {
+            let (r, _) = ws(r)?;
+            let (r, _type_name) =
+                take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == ':')?;
+            input = r;
+            continue;
+        }
+        if let Some(r) = r.strip_prefix("-->") {
+            let (r, _) = ws(r)?;
+            let (r, _type_name) =
+                take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == ':')?;
+            input = r;
+            continue;
+        }
+        return Ok((r, ()));
+    }
 }
 
 /// Parse parameter list inside parens.
@@ -1693,6 +1814,32 @@ fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         ));
     }
 
+    // Sigilless parameter: \name
+    if let Some(r) = rest.strip_prefix('\\') {
+        let (r, name) = ident(r)?;
+        let (r, _) = ws(r)?;
+        // Default value
+        let (r, default) = if r.starts_with('=') && !r.starts_with("==") {
+            let r = &r[1..];
+            let (r, _) = ws(r)?;
+            let (r, expr) = expression(r)?;
+            (r, Some(expr))
+        } else {
+            (r, None)
+        };
+        return Ok((
+            r,
+            ParamDef {
+                name,
+                named,
+                slurpy,
+                default,
+                type_constraint,
+                literal_value: None,
+            },
+        ));
+    }
+
     let (rest, name) = var_name(rest)?;
     let (rest, _) = ws(rest)?;
 
@@ -1770,7 +1917,7 @@ fn method_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
         (rest, (Vec::new(), Vec::new()))
     };
 
-    let (rest, _) = ws(rest)?;
+    let (rest, _) = skip_sub_traits(rest)?;
     let (rest, body) = block(rest)?;
     Ok((
         rest,
@@ -2308,13 +2455,34 @@ fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     }
     if let Some(r) = keyword("for", rest) {
         let (r, _) = ws1(r)?;
-        let (r, iterable) = expression(r).map_err(|err| PError {
+        let (r, first) = expression(r).map_err(|err| PError {
             message: merge_expected_messages(
                 "expected iterable expression after 'for'",
                 &err.message,
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
         })?;
+        // Parse comma-separated list for `for` modifier: `expr for 1, 2, 3`
+        let (r, iterable) = {
+            let mut items = vec![first];
+            let mut r = r;
+            loop {
+                let (r2, _) = ws(r)?;
+                if !r2.starts_with(',') {
+                    break;
+                }
+                let r2 = &r2[1..];
+                let (r2, _) = ws(r2)?;
+                let (r2, next) = expression(r2)?;
+                items.push(next);
+                r = r2;
+            }
+            if items.len() == 1 {
+                (r, items.into_iter().next().unwrap())
+            } else {
+                (r, Expr::ArrayLiteral(items))
+            }
+        };
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
         return Ok((

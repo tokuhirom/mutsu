@@ -160,6 +160,10 @@ impl Interpreter {
             // I/O functions
             "print" | "say" | "note" | "warn" => self.builtin_print(name, &args),
             "sink" => Ok(Value::Nil), // sink evaluates args (already done) and returns Nil
+            "quietly" => {
+                // quietly suppresses warnings and returns the result
+                Ok(args.into_iter().last().unwrap_or(Value::Nil))
+            }
             "prompt" => self.builtin_prompt(&args),
             "get" => self.builtin_get(&args),
             "lines" => self.builtin_lines(&args),
@@ -388,6 +392,7 @@ impl Interpreter {
                 | "die"
                 | "warn"
                 | "sink"
+                | "quietly"
                 | "exit"
                 | "abs"
                 | "sqrt"

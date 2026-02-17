@@ -906,6 +906,28 @@ fn angle_list(input: &str) -> PResult<'_, Expr> {
 }
 
 /// Parse `Whatever` or `*` as Whatever.
+/// Parse `::Foo` class literal (type object reference).
+fn class_literal(input: &str) -> PResult<'_, Expr> {
+    if !input.starts_with("::") {
+        return Err(PError::expected("class literal"));
+    }
+    let rest = &input[2..];
+    let (rest, name) = super::stmt::ident_pub(rest)?;
+    // Handle qualified names: ::Foo::Bar
+    let mut full_name = name;
+    let mut r = rest;
+    while r.starts_with("::") {
+        let r2 = &r[2..];
+        if let Ok((r2, part)) = super::stmt::ident_pub(r2) {
+            full_name = format!("{}::{}", full_name, part);
+            r = r2;
+        } else {
+            break;
+        }
+    }
+    Ok((r, Expr::BareWord(full_name)))
+}
+
 fn whatever(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '*')?;
     // Make sure it's not ** (power op)
@@ -1897,6 +1919,8 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(whatever(input));
         try_primary!(arrow_lambda(input));
         try_primary!(block_or_hash_expr(input));
+        // ::Foo class literal (type object reference)
+        try_primary!(class_literal(input));
 
         match identifier_or_call(input) {
             Ok(r) => Ok(r),
