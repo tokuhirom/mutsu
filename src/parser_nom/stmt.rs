@@ -1458,6 +1458,11 @@ pub(super) fn parse_pointy_param_pub(input: &str) -> PResult<'_, String> {
 }
 
 fn parse_pointy_param(input: &str) -> PResult<'_, String> {
+    // Sigilless parameter: \name
+    if let Some(r) = input.strip_prefix('\\') {
+        let (rest, name) = ident(r)?;
+        return Ok((rest, name));
+    }
     // Optional type constraint before the variable
     let rest = input;
     let rest = if let Ok((r, _tc)) = ident(rest) {
@@ -1839,6 +1844,7 @@ fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                     name,
                     named: false,
                     slurpy: true,
+                    sigilless: false,
                     default: None,
                     type_constraint: None,
                     literal_value: None,
@@ -1852,6 +1858,7 @@ fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 name: "_capture".to_string(),
                 named: false,
                 slurpy: true,
+                sigilless: false,
                 default: None,
                 type_constraint: None,
                 literal_value: None,
@@ -1904,6 +1911,7 @@ fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 name: "__literal__".to_string(),
                 named: false,
                 slurpy: false,
+                sigilless: false,
                 default: None,
                 type_constraint,
                 literal_value,
@@ -1930,6 +1938,7 @@ fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 name,
                 named,
                 slurpy,
+                sigilless: true,
                 default,
                 type_constraint,
                 literal_value: None,
@@ -1977,6 +1986,7 @@ fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             default,
             named,
             slurpy,
+            sigilless: false,
             type_constraint,
             literal_value: None,
         },
@@ -2775,7 +2785,24 @@ fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
 /// Parse assignment statement: $x = expr, @arr = expr, etc.
 fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     let sigil = input.as_bytes().first().copied().unwrap_or(0);
-    if sigil != b'$' && sigil != b'@' && sigil != b'%' && sigil != b'&' {
+    let is_sigiled = sigil == b'$' || sigil == b'@' || sigil == b'%' || sigil == b'&';
+
+    // Try bare identifier assignment for sigilless variables: a = expr
+    if !is_sigiled {
+        if let Ok((after_ident, bare_name)) = ident(input) {
+            let (after_ws, _) = ws(after_ident)?;
+            if after_ws.starts_with('=') && !after_ws.starts_with("==") {
+                let rest = &after_ws[1..];
+                let (rest, _) = ws(rest)?;
+                let (rest, expr) = parse_assign_expr_or_comma(rest)?;
+                let stmt = Stmt::Assign {
+                    name: bare_name,
+                    expr,
+                    op: AssignOp::Assign,
+                };
+                return parse_statement_modifier(rest, stmt);
+            }
+        }
         return Err(PError::expected("assignment"));
     }
 

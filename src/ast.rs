@@ -7,6 +7,8 @@ pub(crate) struct ParamDef {
     pub(crate) default: Option<Expr>,
     pub(crate) named: bool,
     pub(crate) slurpy: bool,
+    #[allow(dead_code)]
+    pub(crate) sigilless: bool,
     pub(crate) type_constraint: Option<String>,
     pub(crate) literal_value: Option<Value>,
 }
