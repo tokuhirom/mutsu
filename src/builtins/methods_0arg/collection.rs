@@ -99,6 +99,15 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             ))),
             _ => None,
         },
+        "antipairs" | "invert" => match target {
+            Value::Hash(items) => Some(Ok(Value::Array(
+                items
+                    .iter()
+                    .map(|(k, v)| Value::Pair(v.to_string_value(), Box::new(Value::Str(k.clone()))))
+                    .collect(),
+            ))),
+            _ => None,
+        },
         "total" => match target {
             Value::Set(s) => Some(Ok(Value::Int(s.len() as i64))),
             Value::Bag(b) => Some(Ok(Value::Int(b.values().sum::<i64>()))),

@@ -319,6 +319,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 .collect();
             Some(Ok(Value::Array(words)))
         }
+        "codes" => {
+            let s = target.to_string_value();
+            Some(Ok(Value::Int(s.chars().count() as i64)))
+        }
         "lines" => {
             let s = target.to_string_value();
             let lines: Vec<Value> = s.lines().map(|l| Value::Str(l.to_string())).collect();

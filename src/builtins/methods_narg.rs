@@ -329,6 +329,22 @@ pub(crate) fn native_method_1arg(
                 Some(Ok(Value::Complex(result_r, result_i)))
             }
         }
+        "unpolar" => {
+            // $magnitude.unpolar($angle) = $magnitude * cis($angle)
+            let mag = match target {
+                Value::Int(i) => *i as f64,
+                Value::Num(f) => *f,
+                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                _ => return None,
+            };
+            let angle = match arg {
+                Value::Int(i) => *i as f64,
+                Value::Num(f) => *f,
+                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                _ => return None,
+            };
+            Some(Ok(Value::Complex(mag * angle.cos(), mag * angle.sin())))
+        }
         "atan2" => {
             let y = match target {
                 Value::Int(i) => *i as f64,
