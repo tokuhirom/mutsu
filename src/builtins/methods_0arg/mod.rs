@@ -302,6 +302,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "sqrt" => match target {
             Value::Int(i) => Some(Ok(Value::Num((*i as f64).sqrt()))),
             Value::Num(f) => Some(Ok(Value::Num(f.sqrt()))),
+            Value::Rat(n, d) if *d != 0 => Some(Ok(Value::Num((*n as f64 / *d as f64).sqrt()))),
+            Value::Complex(r, i) => {
+                let mag = (r * r + i * i).sqrt();
+                let re = ((mag + r) / 2.0).sqrt();
+                let im = i.signum() * ((mag - r) / 2.0).sqrt();
+                Some(Ok(Value::Complex(re, im)))
+            }
             _ => None,
         },
         "words" => {
@@ -324,9 +331,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "trim-trailing" => Some(Ok(Value::Str(
             target.to_string_value().trim_end().to_string(),
         ))),
-        "flip" => Some(Ok(Value::Str(
-            target.to_string_value().chars().rev().collect(),
-        ))),
+        "flip" => {
+            let s = target.to_string_value();
+            let reversed: String = s.graphemes(true).rev().collect();
+            Some(Ok(Value::Str(reversed)))
+        }
         "so" => Some(Ok(Value::Bool(target.truthy()))),
         "not" => Some(Ok(Value::Bool(!target.truthy()))),
         "chomp" => Some(Ok(Value::Str(
@@ -477,11 +486,45 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "log" => match target {
             Value::Int(i) => Some(Ok(Value::Num((*i as f64).ln()))),
             Value::Num(f) => Some(Ok(Value::Num(f.ln()))),
+            Value::Rat(n, d) if *d != 0 => Some(Ok(Value::Num((*n as f64 / *d as f64).ln()))),
+            Value::Complex(r, i) => {
+                let mag = (r * r + i * i).sqrt().ln();
+                let arg = i.atan2(*r);
+                Some(Ok(Value::Complex(mag, arg)))
+            }
+            _ => Some(Ok(Value::Num(f64::NAN))),
+        },
+        "log2" => match target {
+            Value::Int(i) => Some(Ok(Value::Num((*i as f64).log2()))),
+            Value::Num(f) => Some(Ok(Value::Num(f.log2()))),
+            Value::Complex(r, i) => {
+                let mag = (r * r + i * i).sqrt().ln();
+                let arg = i.atan2(*r);
+                let ln2 = 2.0f64.ln();
+                Some(Ok(Value::Complex(mag / ln2, arg / ln2)))
+            }
+            _ => Some(Ok(Value::Num(f64::NAN))),
+        },
+        "log10" => match target {
+            Value::Int(i) => Some(Ok(Value::Num((*i as f64).log10()))),
+            Value::Num(f) => Some(Ok(Value::Num(f.log10()))),
+            Value::Complex(r, i) => {
+                let mag = (r * r + i * i).sqrt().ln();
+                let arg = i.atan2(*r);
+                let ln10 = 10.0f64.ln();
+                Some(Ok(Value::Complex(mag / ln10, arg / ln10)))
+            }
             _ => Some(Ok(Value::Num(f64::NAN))),
         },
         "exp" => match target {
             Value::Int(i) => Some(Ok(Value::Num((*i as f64).exp()))),
             Value::Num(f) => Some(Ok(Value::Num(f.exp()))),
+            Value::Rat(n, d) if *d != 0 => Some(Ok(Value::Num((*n as f64 / *d as f64).exp()))),
+            Value::Complex(r, i) => {
+                // exp(a+bi) = exp(a) * (cos(b) + i*sin(b))
+                let ea = r.exp();
+                Some(Ok(Value::Complex(ea * i.cos(), ea * i.sin())))
+            }
             _ => Some(Ok(Value::Num(f64::NAN))),
         },
         "Rat" => match target {

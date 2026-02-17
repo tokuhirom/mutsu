@@ -35,9 +35,41 @@ impl Interpreter {
         let mut skipping_block = false;
         let mut started_block = false;
         let mut brace_depth = 0i32;
+        let mut pending_todo: Option<String> = None;
 
         for line in input.lines() {
             let trimmed = line.trim_start();
+
+            // #?rakudo todo 'reason' — mark the next test as todo
+            if trimmed.starts_with("#?rakudo")
+                && !trimmed.contains(".jvm")
+                && trimmed.contains("todo")
+            {
+                // Extract the reason string if present
+                let after = trimmed.trim_start_matches("#?rakudo").trim_start();
+                let reason = if let Some(start) = after.find('\'') {
+                    if let Some(end) = after[start + 1..].find('\'') {
+                        &after[start + 1..start + 1 + end]
+                    } else {
+                        "todo"
+                    }
+                } else {
+                    "todo"
+                };
+                pending_todo = Some(reason.to_string());
+                output.push('\n');
+                continue;
+            }
+
+            // Emit pending todo before next non-comment, non-empty line
+            if let Some(ref reason) = pending_todo
+                && !trimmed.is_empty()
+                && !trimmed.starts_with('#')
+            {
+                output.push_str(&format!("todo '{}';\n", reason));
+                pending_todo = None;
+            }
+
             // #?rakudo.jvm skip — JVM-specific skip: skip the following { } block.
             // Only skip if followed by a brace block (no count prefix like "35 skip").
             // Lines like "#?rakudo.jvm 35 skip '...'" are count-based and should be

@@ -77,9 +77,11 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             arg.to_string_value().trim_start().to_string(),
         ))),
         "trim-trailing" => Some(Ok(Value::Str(arg.to_string_value().trim_end().to_string()))),
-        "flip" => Some(Ok(Value::Str(
-            arg.to_string_value().chars().rev().collect(),
-        ))),
+        "flip" => {
+            let s = arg.to_string_value();
+            let reversed: String = s.graphemes(true).rev().collect();
+            Some(Ok(Value::Str(reversed)))
+        }
         "words" => {
             let s = arg.to_string_value();
             let parts: Vec<Value> = s
@@ -149,6 +151,14 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
         "sqrt" => Some(Ok(match arg {
             Value::Int(i) => Value::Num((*i as f64).sqrt()),
             Value::Num(f) => Value::Num(f.sqrt()),
+            Value::Rat(n, d) if *d != 0 => Value::Num((*n as f64 / *d as f64).sqrt()),
+            Value::Complex(r, i) => {
+                // sqrt(a+bi) = sqrt((|z|+a)/2) + i*sign(b)*sqrt((|z|-a)/2)
+                let mag = (r * r + i * i).sqrt();
+                let re = ((mag + r) / 2.0).sqrt();
+                let im = i.signum() * ((mag - r) / 2.0).sqrt();
+                Value::Complex(re, im)
+            }
             _ => Value::Num(f64::NAN),
         })),
         "floor" => Some(Ok(match arg {
@@ -172,12 +182,48 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
         "exp" => Some(Ok(match arg {
             Value::Int(i) => Value::Num((*i as f64).exp()),
             Value::Num(f) => Value::Num(f.exp()),
+            Value::Rat(n, d) if *d != 0 => Value::Num((*n as f64 / *d as f64).exp()),
+            Value::Complex(r, i) => {
+                let ea = r.exp();
+                Value::Complex(ea * i.cos(), ea * i.sin())
+            }
             _ => Value::Num(f64::NAN),
         })),
-        "log" => {
-            let x = runtime::to_float_value(arg).unwrap_or(f64::NAN);
-            Some(Ok(Value::Num(x.ln())))
-        }
+        "log" => match arg {
+            Value::Complex(r, i) => {
+                let mag = (r * r + i * i).sqrt().ln();
+                let phase = i.atan2(*r);
+                Some(Ok(Value::Complex(mag, phase)))
+            }
+            _ => {
+                let x = runtime::to_float_value(arg).unwrap_or(f64::NAN);
+                Some(Ok(Value::Num(x.ln())))
+            }
+        },
+        "log2" => match arg {
+            Value::Complex(r, i) => {
+                let mag = (r * r + i * i).sqrt().ln();
+                let phase = i.atan2(*r);
+                let ln2 = 2.0f64.ln();
+                Some(Ok(Value::Complex(mag / ln2, phase / ln2)))
+            }
+            _ => {
+                let x = runtime::to_float_value(arg).unwrap_or(f64::NAN);
+                Some(Ok(Value::Num(x.log2())))
+            }
+        },
+        "log10" => match arg {
+            Value::Complex(r, i) => {
+                let mag = (r * r + i * i).sqrt().ln();
+                let phase = i.atan2(*r);
+                let ln10 = 10.0f64.ln();
+                Some(Ok(Value::Complex(mag / ln10, phase / ln10)))
+            }
+            _ => {
+                let x = runtime::to_float_value(arg).unwrap_or(f64::NAN);
+                Some(Ok(Value::Num(x.log10())))
+            }
+        },
         "sin" | "cos" | "tan" | "asin" | "acos" | "atan" => {
             let x = runtime::to_float_value(arg).unwrap_or(0.0);
             let result = match name {
@@ -356,6 +402,37 @@ fn native_function_2arg(
             } else {
                 Some(Ok(Value::Num(f64::NAN)))
             }
+        }
+        "exp" => {
+            // exp($x, $base) = $base ** $x
+            // Fast path for real args
+            if !matches!(arg1, Value::Complex(..)) && !matches!(arg2, Value::Complex(..)) {
+                let x = runtime::to_float_value(arg1).unwrap_or(f64::NAN);
+                let base = runtime::to_float_value(arg2).unwrap_or(f64::NAN);
+                return Some(Ok(Value::Num(base.powf(x))));
+            }
+            let (base_r, base_i) = match arg2 {
+                Value::Int(i) => (*i as f64, 0.0),
+                Value::Num(f) => (*f, 0.0),
+                Value::Rat(n, d) if *d != 0 => (*n as f64 / *d as f64, 0.0),
+                Value::Complex(r, i) => (*r, *i),
+                _ => return None,
+            };
+            let (exp_r, exp_i) = match arg1 {
+                Value::Int(i) => (*i as f64, 0.0),
+                Value::Num(f) => (*f, 0.0),
+                Value::Rat(n, d) if *d != 0 => (*n as f64 / *d as f64, 0.0),
+                Value::Complex(r, i) => (*r, *i),
+                _ => return None,
+            };
+            let ln_r = (base_r * base_r + base_i * base_i).sqrt().ln();
+            let ln_i = base_i.atan2(base_r);
+            let prod_r = exp_r * ln_r - exp_i * ln_i;
+            let prod_i = exp_r * ln_i + exp_i * ln_r;
+            let ea = prod_r.exp();
+            let result_r = ea * prod_i.cos();
+            let result_i = ea * prod_i.sin();
+            Some(Ok(Value::Complex(result_r, result_i)))
         }
         "round" => {
             let x = runtime::to_float_value(arg1)?;

@@ -300,9 +300,34 @@ impl Interpreter {
         }
         let got = Self::positional_value_required(args, 0, "is-approx expects got")?;
         let expected = Self::positional_value_required(args, 1, "is-approx expects expected")?;
-        let ok = match (super::to_float_value(got), super::to_float_value(expected)) {
-            (Some(g), Some(e)) => (g - e).abs() <= 1e-5,
-            _ => false,
+        let ok = match (got, expected) {
+            (Value::Complex(gr, gi), Value::Complex(er, ei)) => {
+                let dr = gr - er;
+                let di = gi - ei;
+                (dr * dr + di * di).sqrt() <= 1e-5
+            }
+            (Value::Complex(gr, gi), _) => {
+                if let Some(e) = super::to_float_value(expected) {
+                    let dr = gr - e;
+                    let di = *gi;
+                    (dr * dr + di * di).sqrt() <= 1e-5
+                } else {
+                    false
+                }
+            }
+            (_, Value::Complex(er, ei)) => {
+                if let Some(g) = super::to_float_value(got) {
+                    let dr = g - er;
+                    let di = *ei;
+                    (dr * dr + di * di).sqrt() <= 1e-5
+                } else {
+                    false
+                }
+            }
+            _ => match (super::to_float_value(got), super::to_float_value(expected)) {
+                (Some(g), Some(e)) => (g - e).abs() <= 1e-5,
+                _ => false,
+            },
         };
         self.test_ok(ok, &desc, todo)?;
         Ok(Value::Bool(ok))

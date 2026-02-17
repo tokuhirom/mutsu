@@ -294,6 +294,41 @@ pub(crate) fn native_method_1arg(
                 Some(Ok(Value::Num(f64::NAN)))
             }
         }
+        "exp" => {
+            // $x.exp($base) = $base ** $x
+            // Get base as real or complex
+            let (base_r, base_i) = match arg {
+                Value::Int(i) => (*i as f64, 0.0),
+                Value::Num(f) => (*f, 0.0),
+                Value::Rat(n, d) if *d != 0 => (*n as f64 / *d as f64, 0.0),
+                Value::Complex(r, i) => (*r, *i),
+                _ => return None,
+            };
+            // Get exponent as real or complex
+            let (exp_r, exp_i) = match target {
+                Value::Int(i) => (*i as f64, 0.0),
+                Value::Num(f) => (*f, 0.0),
+                Value::Rat(n, d) if *d != 0 => (*n as f64 / *d as f64, 0.0),
+                Value::Complex(r, i) => (*r, *i),
+                _ => return None,
+            };
+            // Compute base^exp via exp(exp * ln(base))
+            // ln(base) for complex: ln(|base|) + i*arg(base)
+            let ln_r = (base_r * base_r + base_i * base_i).sqrt().ln();
+            let ln_i = base_i.atan2(base_r);
+            // exp * ln(base): (exp_r + exp_i*i) * (ln_r + ln_i*i)
+            let prod_r = exp_r * ln_r - exp_i * ln_i;
+            let prod_i = exp_r * ln_i + exp_i * ln_r;
+            // exp(prod_r + prod_i*i)
+            let ea = prod_r.exp();
+            let result_r = ea * prod_i.cos();
+            let result_i = ea * prod_i.sin();
+            if result_i.abs() < 1e-15 && base_i == 0.0 && exp_i == 0.0 {
+                Some(Ok(Value::Num(result_r)))
+            } else {
+                Some(Ok(Value::Complex(result_r, result_i)))
+            }
+        }
         _ => None,
     }
 }

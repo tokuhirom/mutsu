@@ -84,9 +84,20 @@ impl Interpreter {
             }
             // When RHS is a type/Package, check type membership
             (_, Value::Package(type_name)) => {
-                // A Package on the LHS is a type object - only matches the same type
+                // A Package on the LHS is a type object - check type hierarchy
                 if let Value::Package(left_name) = left {
-                    return Self::type_matches(type_name, left_name);
+                    if Self::type_matches(type_name, left_name) {
+                        return true;
+                    }
+                    // Check if left_name is a subclass of type_name
+                    if let Some(class_def) = self.classes.get(left_name.as_str()) {
+                        for parent in class_def.parents.clone() {
+                            if Self::type_matches(type_name, &parent) {
+                                return true;
+                            }
+                        }
+                    }
+                    return false;
                 }
                 self.type_matches_value(type_name, left)
             }
