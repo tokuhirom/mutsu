@@ -213,16 +213,21 @@ fn q_string(input: &str) -> PResult<'_, Expr> {
             .ok_or_else(|| PError::expected("closing / for heredoc delimiter"))?;
         let delimiter = &r[..delim_end];
         let r = &r[delim_end + 1..];
-        // Expect ; and then newline
-        let r = r.strip_prefix(';').unwrap_or(r);
-        let r = r.strip_prefix('\n').unwrap_or(r);
-        // Find the terminator line
+        // In Raku, heredoc content starts on the NEXT line.
+        // The rest of the current line (after q:to/DELIM/) continues as normal code.
+        // Find the next newline to split current-line remainder from heredoc body.
+        let (rest_of_line, heredoc_start) = if let Some(nl) = r.find('\n') {
+            (&r[..nl], &r[nl + 1..])
+        } else {
+            // No newline after heredoc declaration — no heredoc body
+            return Err(PError::expected("heredoc body after newline"));
+        };
+        // Find the terminator line in the heredoc body
         let mut content_end = None;
         let mut search_pos = 0;
-        while search_pos <= r.len() {
-            // Check if this line starts with the delimiter
-            if r[search_pos..].starts_with(delimiter) {
-                let after_delim = &r[search_pos + delimiter.len()..];
+        while search_pos <= heredoc_start.len() {
+            if heredoc_start[search_pos..].starts_with(delimiter) {
+                let after_delim = &heredoc_start[search_pos + delimiter.len()..];
                 if after_delim.is_empty()
                     || after_delim.starts_with('\n')
                     || after_delim.starts_with('\r')
@@ -232,19 +237,39 @@ fn q_string(input: &str) -> PResult<'_, Expr> {
                     break;
                 }
             }
-            // Find next line
-            if let Some(nl) = r[search_pos..].find('\n') {
+            if let Some(nl) = heredoc_start[search_pos..].find('\n') {
                 search_pos += nl + 1;
             } else {
                 break;
             }
         }
         if let Some(end) = content_end {
-            let content = &r[..end];
-            let rest = &r[end + delimiter.len()..];
-            // Skip optional ; and newline after delimiter
-            let rest = rest.strip_prefix('\n').unwrap_or(rest);
-            return Ok((rest, Expr::Literal(Value::Str(content.to_string()))));
+            let content = &heredoc_start[..end];
+            let after_terminator = &heredoc_start[end + delimiter.len()..];
+            // Skip optional newline after terminator
+            let after_terminator = after_terminator
+                .strip_prefix('\n')
+                .unwrap_or(after_terminator);
+            // Return rest_of_line + after_terminator as remaining input
+            // so the caller can continue parsing the current line's arguments.
+            // We need to concatenate, but since we can't create new string slices
+            // from two disjoint parts, we check if rest_of_line is empty first.
+            if rest_of_line.trim().is_empty() || rest_of_line.trim() == ";" {
+                return Ok((
+                    after_terminator,
+                    Expr::Literal(Value::Str(content.to_string())),
+                ));
+            }
+            // rest_of_line has content (e.g. ", 'description';") — we need to
+            // return it as remaining input. Since we can't concatenate slices,
+            // we use the fact that rest_of_line and after_terminator are part of
+            // the same original string. Build a combined view by finding the
+            // rest_of_line followed by after_terminator.
+            // Strategy: create a new string and leak it to get a &'static str.
+            // This is acceptable since parser runs once per program.
+            let combined = format!("{}\n{}", rest_of_line, after_terminator);
+            let leaked: &'static str = Box::leak(combined.into_boxed_str());
+            return Ok((leaked, Expr::Literal(Value::Str(content.to_string()))));
         }
         return Err(PError::expected("heredoc terminator"));
     }
@@ -648,6 +673,12 @@ fn scalar_var(input: &str) -> PResult<'_, Expr> {
         && let Some(after_gt) = after_name.strip_prefix('>')
     {
         return Ok((after_gt, Expr::CaptureVar(name.to_string())));
+    }
+    // Handle $=finish and other Pod variables ($=pod, $=data, etc.)
+    if let Some(after_eq) = input.strip_prefix('=') {
+        let (rest, name) = parse_ident_with_hyphens(after_eq)?;
+        let full_name = format!("={}", name);
+        return Ok((rest, Expr::Var(full_name)));
     }
     // Handle twigils: $*FOO, $?FILE, $!attr, $.attr
     let (rest, twigil) = if input.starts_with('*')
