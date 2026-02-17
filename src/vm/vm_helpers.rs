@@ -88,6 +88,7 @@ impl VM {
                 | "Failure"
                 | "Exception"
                 | "Order"
+                | "Uni"
                 | "Version"
                 | "Nil"
                 | "Regex"
