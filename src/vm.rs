@@ -2014,6 +2014,14 @@ impl VM {
                 *ip += 1;
             }
 
+            OpCode::EvalAstExpr(stmt_idx) => {
+                let stmt = &code.stmt_pool[*stmt_idx as usize];
+                return Err(RuntimeError::new(format!(
+                    "Unsupported expression in compiled code: {:?}",
+                    stmt
+                )));
+            }
+
             OpCode::BlockScope {
                 enter_end,
                 body_end,

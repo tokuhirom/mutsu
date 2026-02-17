@@ -759,7 +759,13 @@ impl Compiler {
                     self.code.emit(OpCode::MakeSlip);
                 }
                 _ => {
-                    panic!("unsupported unary operator in compiler: {:?}", op);
+                    // Fallback: delegate to interpreter for unsupported prefix operators
+                    let prefix_expr = Expr::Unary {
+                        op: op.clone(),
+                        expr: expr.clone(),
+                    };
+                    let idx = self.code.add_stmt(Stmt::Expr(prefix_expr));
+                    self.code.emit(OpCode::EvalAstExpr(idx));
                 }
             },
             Expr::Binary { left, op, right } => {
@@ -836,7 +842,14 @@ impl Compiler {
                     self.compile_expr(right);
                     self.code.emit(opcode);
                 } else {
-                    panic!("unsupported binary operator in compiler: {:?}", op);
+                    // Fallback: delegate to interpreter for unsupported operators
+                    let expr = Expr::Binary {
+                        left: left.clone(),
+                        op: op.clone(),
+                        right: right.clone(),
+                    };
+                    let idx = self.code.add_stmt(Stmt::Expr(expr));
+                    self.code.emit(OpCode::EvalAstExpr(idx));
                 }
             }
             Expr::Ternary {

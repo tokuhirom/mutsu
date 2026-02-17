@@ -150,6 +150,33 @@ fn integer(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("integer (not decimal)"));
     }
     let clean: String = digits.chars().filter(|c| *c != '_').collect();
+    // Check for scientific notation on integer: 42e0 → Num(42.0)
+    if (rest.starts_with('e') || rest.starts_with('E'))
+        && rest.len() > 1
+        && (rest.as_bytes()[1].is_ascii_digit()
+            || ((rest.as_bytes()[1] == b'+' || rest.as_bytes()[1] == b'-')
+                && rest.len() > 2
+                && rest.as_bytes()[2].is_ascii_digit()))
+    {
+        let exp_start = rest;
+        let r = &rest[1..];
+        let r = if r.starts_with('+') || r.starts_with('-') {
+            &r[1..]
+        } else {
+            r
+        };
+        if let Ok((r, _)) = take_while1(r, |c: char| c.is_ascii_digit()) {
+            let exp_part = &exp_start[..exp_start.len() - r.len()];
+            let full = format!("{}{}", clean, exp_part);
+            let n: f64 = full.parse().unwrap_or(0.0);
+            // Check for imaginary suffix
+            if r.starts_with('i') && !r[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
+            {
+                return Ok((&r[1..], Expr::Literal(Value::Complex(0.0, n))));
+            }
+            return Ok((r, Expr::Literal(Value::Num(n))));
+        }
+    }
     // Check for imaginary suffix: 4i
     if rest.starts_with('i') && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_') {
         let n: i64 = clean.parse().unwrap_or(0);
@@ -514,7 +541,10 @@ fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
             return Ok((after_quote, Expr::Literal(Value::Str(s))));
         }
         if rest.starts_with('\\') && rest.len() > 1 {
-            rest = &rest[2..];
+            // Skip backslash + next character (which may be multi-byte)
+            let after_backslash = &rest[1..];
+            let next_ch = after_backslash.chars().next().unwrap();
+            rest = &after_backslash[next_ch.len_utf8()..];
         } else {
             let ch = rest.chars().next().unwrap();
             rest = &rest[ch.len_utf8()..];

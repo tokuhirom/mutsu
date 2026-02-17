@@ -101,13 +101,47 @@ impl Interpreter {
                     *ar == *b && *ai == 0.0
                 }
             }
+            (Value::Complex(ar, ai), Value::Rat(n, d)) => {
+                if *d != 0 {
+                    *ar == (*n as f64 / *d as f64) && *ai == 0.0
+                } else {
+                    false
+                }
+            }
+            (Value::Rat(n, d), Value::Complex(br, bi)) => {
+                if *d != 0 {
+                    (*n as f64 / *d as f64) == *br && *bi == 0.0
+                } else {
+                    false
+                }
+            }
             (Value::Int(a), Value::Int(b)) => a == b,
             (Value::Num(a), Value::Num(b)) => a == b,
             (Value::Int(a), Value::Num(b)) => (*a as f64) == *b,
             (Value::Num(a), Value::Int(b)) => *a == (*b as f64),
+            (Value::Rat(an, ad), Value::Rat(bn, bd)) => an * bd == bn * ad,
+            (Value::Int(a), Value::Rat(n, d)) => *a * d == *n,
+            (Value::Rat(n, d), Value::Int(b)) => *n == *b * d,
             (Value::Str(a), Value::Str(b)) => a == b,
-            (Value::Int(a), Value::Str(b)) => a.to_string() == *b,
-            (Value::Str(a), Value::Int(b)) => *a == b.to_string(),
+            // Str ~~ Numeric: numify LHS and compare
+            (Value::Str(a), Value::Int(b)) => a.trim().parse::<f64>() == Ok(*b as f64),
+            (Value::Str(a), Value::Num(b)) => a.trim().parse::<f64>().is_ok_and(|v| {
+                if v.is_nan() && b.is_nan() {
+                    true
+                } else {
+                    v == *b
+                }
+            }),
+            (Value::Str(a), Value::Rat(n, d)) => {
+                if *d != 0 {
+                    a.trim()
+                        .parse::<f64>()
+                        .is_ok_and(|v| v == *n as f64 / *d as f64)
+                } else {
+                    false
+                }
+            }
+            (Value::Int(a), Value::Str(b)) => b.trim().parse::<f64>() == Ok(*a as f64),
             (Value::Nil, Value::Str(s)) => s.is_empty(),
             // Instance identity: two instances match iff they have the same id
             (Value::Instance { id: id_a, .. }, Value::Instance { id: id_b, .. }) => id_a == id_b,

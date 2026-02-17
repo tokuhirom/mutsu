@@ -120,6 +120,7 @@ impl Interpreter {
         match value {
             Value::Num(f) => f.is_nan(),
             Value::Complex(r, i) => r.is_nan() || i.is_nan(),
+            Value::Str(s) => s.trim().eq_ignore_ascii_case("nan"),
             _ => false,
         }
     }

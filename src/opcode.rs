@@ -409,6 +409,11 @@ pub(crate) enum OpCode {
     /// Check that the value on top of stack matches the given type constraint.
     /// The u32 is a constant index for the type name string.
     TypeCheck(u32),
+
+    // -- Fallback to interpreter --
+    /// Evaluate an AST expression via the interpreter (for operators not yet compiled).
+    /// The u32 indexes into stmt_pool.
+    EvalAstExpr(u32),
 }
 
 /// A compiled chunk of bytecode.

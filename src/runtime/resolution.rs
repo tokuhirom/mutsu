@@ -238,7 +238,7 @@ impl Interpreter {
         Err(RuntimeError::new("Callable expected"))
     }
 
-    pub(super) fn eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
+    pub(crate) fn eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
         if body.is_empty() {
             return Ok(Value::Nil);
         }
