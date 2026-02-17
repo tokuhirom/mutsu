@@ -207,6 +207,38 @@ fn matching_bracket(c: char) -> Option<char> {
     }
 }
 
+/// Check if a byte is a valid identifier continuation character.
+pub(super) fn is_ident_char(b: Option<u8>) -> bool {
+    match b {
+        Some(c) => c.is_ascii_alphanumeric() || c == b'_' || c == b'-',
+        None => false,
+    }
+}
+
+/// Skip balanced parentheses starting from an opening `(`.
+/// Returns the remaining input after the closing `)`, or the original input if it
+/// doesn't start with `(`.
+pub(super) fn skip_balanced_parens(input: &str) -> &str {
+    if let Some(inner) = input.strip_prefix('(') {
+        let mut depth = 1u32;
+        let mut rr = inner;
+        while depth > 0 && !rr.is_empty() {
+            if rr.starts_with('(') {
+                depth += 1;
+            } else if rr.starts_with(')') {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+            rr = &rr[rr.chars().next().unwrap().len_utf8()..];
+        }
+        rr.strip_prefix(')').unwrap_or(inner)
+    } else {
+        input
+    }
+}
+
 /// Require at least one whitespace character (or comment).
 pub(super) fn ws1(input: &str) -> PResult<'_, ()> {
     let (rest, _) = ws(input)?;

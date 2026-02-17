@@ -1,0 +1,717 @@
+use super::super::parse_result::{
+    PError, PResult, merge_expected_messages, parse_char, parse_tag, take_while1,
+};
+
+use crate::ast::{Expr, make_anon_sub};
+use crate::value::Value;
+
+use super::super::expr::{expression, or_expr_pub};
+use super::super::helpers::ws;
+use super::misc::parse_block_body;
+use super::regex::parse_call_arg_list;
+
+/// Parse `::Foo` class literal (type object reference).
+pub(super) fn class_literal(input: &str) -> PResult<'_, Expr> {
+    if !input.starts_with("::") {
+        return Err(PError::expected("class literal"));
+    }
+    let rest = &input[2..];
+    let (rest, name) = super::super::stmt::ident_pub(rest)?;
+    // Handle qualified names: ::Foo::Bar
+    let mut full_name = name;
+    let mut r = rest;
+    while r.starts_with("::") {
+        let r2 = &r[2..];
+        if let Ok((r2, part)) = super::super::stmt::ident_pub(r2) {
+            full_name = format!("{}::{}", full_name, part);
+            r = r2;
+        } else {
+            break;
+        }
+    }
+    Ok((r, Expr::BareWord(full_name)))
+}
+
+pub(super) fn whatever(input: &str) -> PResult<'_, Expr> {
+    let (input, _) = parse_char(input, '*')?;
+    // Make sure it's not ** (power op)
+    if input.starts_with('*') {
+        return Err(PError::expected("whatever (not **)"));
+    }
+    Ok((input, Expr::Whatever))
+}
+
+/// Parse keywords that are values: True, False, Nil, Any, Inf, NaN, etc.
+pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
+    // Try each keyword, ensuring it's not followed by alphanumeric (word boundary)
+    // Also reject if followed by `(` to prevent treating e() as a constant
+    let try_kw = |kw: &str, val: Value| -> PResult<'_, Expr> {
+        let (rest, _) = parse_tag(input, kw)?;
+        // Check word boundary
+        if let Some(c) = rest.chars().next()
+            && (c.is_alphanumeric() || c == '_' || c == '-')
+        {
+            return Err(PError::expected("word boundary"));
+        }
+        // Reject if followed by `(` - that's a function call, not a constant
+        if rest.starts_with('(') {
+            return Err(PError::expected("not a function call"));
+        }
+        // Reject if followed by `=>` (pair key context)
+        let trimmed = rest.trim_start();
+        if trimmed.starts_with("=>") && !trimmed.starts_with("==>") {
+            return Err(PError::expected("not a pair key"));
+        }
+        Ok((rest, Expr::Literal(val)))
+    };
+
+    if let Ok(r) = try_kw("True", Value::Bool(true)) {
+        return Ok(r);
+    }
+    if let Ok(r) = try_kw("False", Value::Bool(false)) {
+        return Ok(r);
+    }
+    if let Ok(r) = try_kw("Nil", Value::Nil) {
+        return Ok(r);
+    }
+    if let Ok(r) = try_kw("Any", Value::Nil) {
+        return Ok(r);
+    }
+    // Unicode: ∅ (U+2205 EMPTY SET)
+    if input.starts_with('\u{2205}') {
+        return Ok((
+            &input['\u{2205}'.len_utf8()..],
+            Expr::Literal(Value::Set(std::collections::HashSet::new())),
+        ));
+    }
+    if let Ok(r) = try_kw("Inf", Value::Num(f64::INFINITY)) {
+        return Ok(r);
+    }
+    if let Ok(r) = try_kw("-Inf", Value::Num(f64::NEG_INFINITY)) {
+        return Ok(r);
+    }
+    if let Ok(r) = try_kw("NaN", Value::Num(f64::NAN)) {
+        return Ok(r);
+    }
+    if let Ok(r) = try_kw("pi", Value::Num(std::f64::consts::PI)) {
+        return Ok(r);
+    }
+    if let Ok(r) = try_kw("tau", Value::Num(std::f64::consts::TAU)) {
+        return Ok(r);
+    }
+    if let Ok(r) = try_kw("e", Value::Num(std::f64::consts::E)) {
+        return Ok(r);
+    }
+    Err(PError::expected("keyword literal"))
+}
+
+/// Check if a name is a Raku keyword (not a function call).
+pub(super) fn is_keyword(name: &str) -> bool {
+    matches!(
+        name,
+        "if" | "unless"
+            | "for"
+            | "while"
+            | "until"
+            | "given"
+            | "when"
+            | "loop"
+            | "repeat"
+            | "try"
+            | "do"
+            | "gather"
+            | "sub"
+            | "my"
+            | "our"
+            | "has"
+            | "class"
+            | "role"
+            | "module"
+            | "use"
+            | "need"
+            | "import"
+            | "require"
+            | "return"
+            | "last"
+            | "next"
+            | "redo"
+            | "die"
+            | "say"
+            | "print"
+            | "put"
+            | "note"
+            | "with"
+            | "without"
+            | "supply"
+            | "react"
+            | "whenever"
+            | "start"
+            | "quietly"
+            | "sink"
+    )
+}
+
+/// Check if a name is a listop (can take args without parens).
+pub(super) fn is_listop(name: &str) -> bool {
+    matches!(
+        name,
+        "shift"
+            | "unshift"
+            | "push"
+            | "pop"
+            | "grep"
+            | "map"
+            | "sort"
+            | "first"
+            | "any"
+            | "all"
+            | "none"
+            | "one"
+            | "print"
+            | "say"
+            | "put"
+            | "note"
+            | "return"
+            | "die"
+            | "fail"
+            | "warn"
+            | "take"
+            | "emit"
+            | "split"
+            | "join"
+            | "reverse"
+            | "min"
+            | "max"
+            | "sum"
+            | "pick"
+            | "roll"
+    ) || is_expr_listop(name)
+}
+
+/// Functions that take multiple comma-separated expression arguments in listop style.
+/// These are parsed with full expression arguments (not just primaries).
+pub(super) fn is_expr_listop(name: &str) -> bool {
+    matches!(
+        name,
+        "ok" | "nok"
+            | "is"
+            | "isnt"
+            | "is-deeply"
+            | "is-approx"
+            | "cmp-ok"
+            | "like"
+            | "unlike"
+            | "isa-ok"
+            | "does-ok"
+            | "can-ok"
+            | "lives-ok"
+            | "dies-ok"
+            | "eval-lives-ok"
+            | "eval-dies-ok"
+            | "throws-like"
+            | "pass"
+            | "flunk"
+            | "skip"
+            | "todo"
+            | "diag"
+            | "plan"
+            | "done-testing"
+            | "bail-out"
+            | "subtest"
+            | "use-ok"
+            | "EVAL"
+    )
+}
+
+/// Check if input starts with a statement modifier keyword.
+fn is_stmt_modifier_ahead(input: &str) -> bool {
+    for kw in &["if", "unless", "for", "while", "until", "given", "when"] {
+        if input.starts_with(kw)
+            && !input
+                .as_bytes()
+                .get(kw.len())
+                .is_some_and(|&c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-')
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Parse expression listop arguments: comma-separated full expressions.
+/// Stops at statement modifiers, semicolons, and closing brackets.
+fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
+    let (r, first) = expression(input).map_err(|err| PError {
+        messages: merge_expected_messages("expected listop argument expression", &err.messages),
+        remaining_len: err.remaining_len.or(Some(input.len())),
+    })?;
+    let mut args = vec![first];
+    let mut r = r;
+    loop {
+        let (r2, _) = ws(r)?;
+        if !r2.starts_with(',') || r2.starts_with(",,") {
+            break;
+        }
+        let r2 = &r2[1..];
+        let (r2, _) = ws(r2)?;
+        // Stop at terminators
+        if r2.is_empty()
+            || r2.starts_with(';')
+            || r2.starts_with('}')
+            || r2.starts_with(')')
+            || is_stmt_modifier_ahead(r2)
+        {
+            break;
+        }
+        let (r2, arg) = expression(r2).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected listop argument expression after ','",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(r2.len())),
+        })?;
+        args.push(arg);
+        r = r2;
+    }
+    Ok((r, Expr::Call { name, args }))
+}
+
+/// Listops that take a block/closure as the first argument followed by a list.
+fn is_block_first_listop(name: &str) -> bool {
+    matches!(name, "map" | "grep" | "sort" | "first")
+}
+
+/// Check if an expression is a block-like form (closure, pointed block, etc.)
+fn is_block_expr(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::AnonSubParams { .. } | Expr::Lambda { .. } | Expr::Block { .. }
+    )
+}
+
+fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
+    // Try to parse a primary expression (variable, literal, call, etc.)
+    // but stop if we hit a statement modifier
+    if is_stmt_modifier_ahead(input) {
+        return Err(PError::expected("listop argument"));
+    }
+
+    // Parse a single term (no binary operators to avoid consuming too much)
+    // We use primary instead of expression to avoid consuming binary operators
+    // This means shift @a + 1 will be parsed as (shift @a) + 1, not shift(@a + 1)
+    super::primary(input)
+}
+
+pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
+    let (rest, name) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+    let name = name.to_string();
+
+    // Handle special expression keywords before qualified name resolution
+    match name.as_str() {
+        "infix" | "prefix" | "postfix" => {
+            // infix:<OP>(args) — operator reference
+            if rest.starts_with(":<") || rest.starts_with(":<<") {
+                let r = &rest[1..]; // skip ':'
+                let (delim_start, delim_end) = if r.starts_with("<<") {
+                    ("<<", ">>")
+                } else {
+                    ("<", ">")
+                };
+                let r = &r[delim_start.len()..];
+                if let Some(end_pos) = r.find(delim_end) {
+                    let op_name = &r[..end_pos];
+                    let r = &r[end_pos + delim_end.len()..];
+                    let full_name = format!("{}:<{}>", name, op_name);
+                    // Check if followed by (args)
+                    let (r, _) = ws(r)?;
+                    if let Some(r) = r.strip_prefix('(') {
+                        let (r, _) = ws(r)?;
+                        if let Some(r) = r.strip_prefix(')') {
+                            return Ok((
+                                r,
+                                Expr::Call {
+                                    name: full_name,
+                                    args: vec![],
+                                },
+                            ));
+                        }
+                        let (r, first) = expression(r)?;
+                        let mut args = vec![first];
+                        let mut r = r;
+                        loop {
+                            let (r2, _) = ws(r)?;
+                            if let Some(r2) = r2.strip_prefix(')') {
+                                r = r2;
+                                break;
+                            }
+                            if let Some(r2) = r2.strip_prefix(',') {
+                                let (r2, _) = ws(r2)?;
+                                if let Some(r2) = r2.strip_prefix(')') {
+                                    r = r2;
+                                    break;
+                                }
+                                let (r2, arg) = expression(r2)?;
+                                args.push(arg);
+                                r = r2;
+                            } else {
+                                r = r2;
+                                break;
+                            }
+                        }
+                        return Ok((
+                            r,
+                            Expr::Call {
+                                name: full_name,
+                                args,
+                            },
+                        ));
+                    }
+                    return Ok((r, Expr::BareWord(full_name)));
+                }
+            }
+        }
+        "try" => {
+            let (r, _) = ws(rest)?;
+            if r.starts_with('{') {
+                let (r, body) = parse_block_body(r)?;
+                return Ok((r, Expr::Try { body, catch: None }));
+            }
+        }
+        "do" => {
+            let (r, _) = ws(rest)?;
+            if r.starts_with('{') {
+                let (r, body) = parse_block_body(r)?;
+                return Ok((r, Expr::DoBlock { body, label: None }));
+            }
+            // do if/unless/given/for/while — wrap the control flow statement
+            {
+                let is_ctrl = |s: &str| {
+                    for kw in &["if", "unless", "given", "for", "while", "until"] {
+                        if s.starts_with(kw)
+                            && !s.as_bytes().get(kw.len()).is_some_and(|&c| {
+                                c.is_ascii_alphanumeric() || c == b'_' || c == b'-'
+                            })
+                        {
+                            return true;
+                        }
+                    }
+                    false
+                };
+                if is_ctrl(r)
+                    && let Ok((r, stmt)) = super::super::stmt::statement_pub(r)
+                {
+                    return Ok((r, Expr::DoStmt(Box::new(stmt))));
+                }
+            }
+            // do STMT — wrap an assignment or other statement
+            if let Ok((r, stmt)) = super::super::stmt::statement_pub(r) {
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            }
+            // do EXPR — just evaluate the expression
+            let (r, expr) = expression(r)?;
+            return Ok((r, expr));
+        }
+        "if" => {
+            let (r, _) = ws(rest)?;
+            let (r, cond) = super::super::expr::expression(r)?;
+            let (r, _) = ws(r)?;
+            let (r, then_branch) = parse_block_body(r)?;
+            let (r, _) = ws(r)?;
+            // Check for else
+            let (r, else_branch) = if let Some(r2) = super::super::stmt::keyword("else", r) {
+                let (r2, _) = ws(r2)?;
+                let (r2, body) = parse_block_body(r2)?;
+                (r2, body)
+            } else {
+                (r, Vec::new())
+            };
+            return Ok((
+                r,
+                Expr::DoStmt(Box::new(crate::ast::Stmt::If {
+                    cond,
+                    then_branch,
+                    else_branch,
+                })),
+            ));
+        }
+        "unless" => {
+            let (r, _) = ws(rest)?;
+            let (r, cond) = super::super::expr::expression(r)?;
+            let (r, _) = ws(r)?;
+            let (r, body) = parse_block_body(r)?;
+            return Ok((
+                r,
+                Expr::DoStmt(Box::new(crate::ast::Stmt::If {
+                    cond: Expr::Unary {
+                        op: crate::token_kind::TokenKind::Bang,
+                        expr: Box::new(cond),
+                    },
+                    then_branch: body,
+                    else_branch: Vec::new(),
+                })),
+            ));
+        }
+        "my" | "our" => {
+            // my/our declaration in expression context
+            // e.g., (my $x = 5) or so my $x = 5
+            if let Ok((r, stmt)) = super::super::stmt::my_decl_pub(input) {
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            }
+        }
+        "sub" => {
+            let (r, _) = ws(rest)?;
+            if r.starts_with('{') {
+                let (r, body) = parse_block_body(r)?;
+                return Ok((r, make_anon_sub(body)));
+            }
+            // sub with params: sub ($x, $y) { ... }
+            if r.starts_with('(') {
+                let (r2, params_body) = parse_anon_sub_with_params(r).map_err(|err| PError {
+                    messages: merge_expected_messages(
+                        "expected anonymous sub parameter list/body",
+                        &err.messages,
+                    ),
+                    remaining_len: err.remaining_len.or(Some(r.len())),
+                })?;
+                return Ok((r2, params_body));
+            }
+        }
+        "gather" => {
+            let (r, _) = ws(rest)?;
+            if r.starts_with('{') {
+                let (r, body) = parse_block_body(r)?;
+                return Ok((r, Expr::Gather(body)));
+            }
+        }
+        "die" | "fail" => {
+            let (r, _) = ws(rest)?;
+            // die/fail with no argument
+            if r.starts_with(';') || r.is_empty() || r.starts_with('}') || r.starts_with(')') {
+                return Ok((r, Expr::Call { name, args: vec![] }));
+            }
+            let (r, arg) = expression(r)?;
+            return Ok((
+                r,
+                Expr::Call {
+                    name,
+                    args: vec![arg],
+                },
+            ));
+        }
+        "quietly" | "sink" => {
+            let (r, _) = ws(rest)?;
+            // quietly/sink expr — wrap in a Call
+            let (r, expr) = expression(r)?;
+            return Ok((
+                r,
+                Expr::Call {
+                    name: name.clone(),
+                    args: vec![expr],
+                },
+            ));
+        }
+        "start" => {
+            let (r, _) = ws(rest)?;
+            if r.starts_with('{') {
+                let (r, body) = parse_block_body(r)?;
+                return Ok((
+                    r,
+                    Expr::Call {
+                        name: "start".to_string(),
+                        args: vec![make_anon_sub(body)],
+                    },
+                ));
+            }
+        }
+        "last" => {
+            return Ok((
+                rest,
+                Expr::ControlFlow {
+                    kind: crate::ast::ControlFlowKind::Last,
+                    label: None,
+                },
+            ));
+        }
+        "next" => {
+            return Ok((
+                rest,
+                Expr::ControlFlow {
+                    kind: crate::ast::ControlFlowKind::Next,
+                    label: None,
+                },
+            ));
+        }
+        "redo" => {
+            return Ok((
+                rest,
+                Expr::ControlFlow {
+                    kind: crate::ast::ControlFlowKind::Redo,
+                    label: None,
+                },
+            ));
+        }
+        _ => {}
+    }
+
+    // Check for :: qualified name (e.g. Foo::Bar)
+    let (rest, name) = {
+        let mut full_name = name;
+        let mut r = rest;
+        while r.starts_with("::") {
+            let after = &r[2..];
+            if let Ok((rest2, part)) =
+                take_while1(after, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
+            {
+                full_name.push_str("::");
+                full_name.push_str(part);
+                r = rest2;
+            } else {
+                return Err(PError::expected_at("identifier after '::'", after));
+            }
+        }
+        (r, full_name)
+    };
+
+    // Check if followed by `(` for function call
+    if rest.starts_with('(') {
+        let (rest, _) = parse_char(rest, '(')?;
+        let (rest, _) = ws(rest)?;
+        let (rest, args) = parse_call_arg_list(rest)?;
+        let (rest, _) = ws(rest)?;
+        let (rest, _) = parse_char(rest, ')')?;
+        return Ok((rest, Expr::Call { name, args }));
+    }
+
+    // Bareword followed by => — Pair constructor (higher precedence than operators)
+    // e.g., b => "foo" should parse as Pair even in `%a ~~ b => "foo"`
+    let (r, _) = ws(rest)?;
+    if r.starts_with("=>") && !r.starts_with("==>") {
+        let r2 = &r[2..];
+        let (r2, _) = ws(r2)?;
+        let (r2, value) = or_expr_pub(r2)?;
+        return Ok((
+            r2,
+            Expr::Binary {
+                left: Box::new(Expr::Literal(Value::Str(name))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(value),
+            },
+        ));
+    }
+
+    // Bareword followed by block { ... } and comma — function call with block arg
+    // e.g., map { $_ * 2 }, @arr  or  grep { $_ > 0 }, @arr
+    if r.starts_with('{')
+        && !is_keyword(&name)
+        && let Ok((r2, block_body)) = parse_block_body(r)
+    {
+        let (r3, _) = ws(r2)?;
+        if let Some(r3) = r3.strip_prefix(',') {
+            // Consume comma and remaining args
+            let (r3, _) = ws(r3)?;
+            let mut args = vec![make_anon_sub(block_body)];
+            let (mut r3, first_arg) = expression(r3)?;
+            args.push(first_arg);
+            loop {
+                let (r4, _) = ws(r3)?;
+                if !r4.starts_with(',') {
+                    return Ok((r4, Expr::Call { name, args }));
+                }
+                let r4 = &r4[1..];
+                let (r4, _) = ws(r4)?;
+                if r4.starts_with(';') || r4.is_empty() || r4.starts_with('}') {
+                    return Ok((r4, Expr::Call { name, args }));
+                }
+                let (r4, next_arg) = expression(r4)?;
+                args.push(next_arg);
+                r3 = r4;
+            }
+        }
+        // Block without trailing comma — return as separate expressions
+        // Fall through to BareWord
+    }
+
+    // Check for listop: bareword followed by space and argument (but not statement modifier)
+    // e.g., shift @a, push @a, 42, etc.
+    if is_listop(&name)
+        && !r.is_empty()
+        && !r.starts_with(';')
+        && !r.starts_with('}')
+        && !r.starts_with(')')
+        && !r.starts_with(',')
+    {
+        // Check if next token is a statement modifier keyword
+        if !is_stmt_modifier_ahead(r) {
+            // Expression listops (ok, is, diag, etc.) parse full expressions as args
+            if is_expr_listop(&name) {
+                return parse_expr_listop_args(r, name);
+            }
+            // Try to parse an argument
+            let (r2, arg) = parse_listop_arg(r).map_err(|err| PError {
+                messages: merge_expected_messages(
+                    "expected listop argument expression",
+                    &err.messages,
+                ),
+                remaining_len: err.remaining_len.or(Some(r.len())),
+            })?;
+            // For block-first listops (map, grep, sort, first), if the first arg is
+            // a block/pointed-block and followed by comma, parse remaining args
+            let mut args = vec![arg.clone()];
+            let mut rest_after = r2;
+            if is_block_first_listop(&name) && is_block_expr(&arg) {
+                let (r3, _) = ws(rest_after)?;
+                if let Some(r3) = r3.strip_prefix(',') {
+                    let (r3, _) = ws(r3)?;
+                    if !r3.starts_with(';') && !r3.starts_with('}') && !r3.starts_with(')') {
+                        let (r3, rest_arg) = parse_listop_arg(r3)?;
+                        args.push(rest_arg);
+                        rest_after = r3;
+                    }
+                }
+            }
+            return Ok((rest_after, Expr::Call { name, args }));
+        }
+    }
+
+    // Method-like: .new, .elems etc. is handled at expression level
+    Ok((rest, Expr::BareWord(name)))
+}
+
+/// Parse anonymous sub with params: sub ($x, $y) { ... }
+pub(super) fn parse_anon_sub_with_params(input: &str) -> PResult<'_, Expr> {
+    let (mut r, _) = parse_char(input, '(')?;
+    let mut params = Vec::new();
+    loop {
+        let (r2, _) = ws(r)?;
+        if r2.starts_with(')') {
+            r = r2;
+            break;
+        }
+        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
+            let (r3, name) = super::super::stmt::var_name_pub(r2)?;
+            params.push(name);
+            let (r3, _) = ws(r3)?;
+            if let Some(stripped) = r3.strip_prefix(',') {
+                r = stripped;
+            } else {
+                r = r3;
+            }
+        } else {
+            r = r2;
+            break;
+        }
+    }
+    parse_anon_sub_rest(r, params)
+}
+
+fn parse_anon_sub_rest(input: &str, params: Vec<String>) -> PResult<'_, Expr> {
+    let (r, _) = ws(input)?;
+    let (r, _) = parse_char(r, ')')?;
+    let (r, _) = ws(r)?;
+    let (r, body) = parse_block_body(r)?;
+    if params.is_empty() {
+        Ok((r, make_anon_sub(body)))
+    } else {
+        Ok((r, Expr::AnonSubParams { params, body }))
+    }
+}

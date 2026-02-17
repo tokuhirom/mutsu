@@ -1,0 +1,186 @@
+use super::super::parse_result::{PResult, parse_char, take_while1};
+
+use crate::ast::Expr;
+use crate::value::Value;
+
+use super::container::paren_expr;
+use super::current_line_number;
+
+/// Parse a variable name from raw string (used in interpolation).
+pub(super) fn parse_var_name_from_str(input: &str) -> (&str, String) {
+    // Handle twigils: $*, $?, $!
+    let (rest, twigil) =
+        if input.starts_with('*') || input.starts_with('?') || input.starts_with('!') {
+            (&input[1..], &input[..1])
+        } else {
+            (input, "")
+        };
+    let end = rest
+        .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+        .unwrap_or(rest.len());
+    let name = &rest[..end];
+    let full_name = if twigil.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}{}", twigil, name)
+    };
+    (&rest[end..], full_name)
+}
+
+/// Parse a $variable reference.
+pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
+    let (input, _) = parse_char(input, '$')?;
+    // Handle $(expr) — scalar context / itemization
+    if input.starts_with('(') {
+        return paren_expr(input);
+    }
+    // Handle $_ special variable
+    if input.starts_with('_') && (input.len() == 1 || !input.as_bytes()[1].is_ascii_alphanumeric())
+    {
+        return Ok((&input[1..], Expr::Var("_".to_string())));
+    }
+    // Handle $/ (match variable)
+    if let Some(stripped) = input.strip_prefix('/') {
+        return Ok((stripped, Expr::Var("/".to_string())));
+    }
+    // Handle $! (exception variable) — bare $! without name after it
+    if let Some(after) = input.strip_prefix('!') {
+        // If next char is alphanumeric or _, it's a twigil (e.g. $!attr)
+        // If not, it's the bare $! variable
+        let is_twigil = !after.is_empty()
+            && (after.as_bytes()[0].is_ascii_alphanumeric() || after.as_bytes()[0] == b'_');
+        if !is_twigil {
+            return Ok((after, Expr::Var("!".to_string())));
+        }
+    }
+    // Handle $<name> (named capture variable)
+    if let Some(after_lt) = input.strip_prefix('<')
+        && let Ok((after_name, name)) = take_while1(after_lt, |c: char| {
+            c.is_alphanumeric() || c == '_' || c == '-'
+        })
+        && let Some(after_gt) = after_name.strip_prefix('>')
+    {
+        return Ok((after_gt, Expr::CaptureVar(name.to_string())));
+    }
+    // Handle $=finish and other Pod variables ($=pod, $=data, etc.)
+    if let Some(after_eq) = input.strip_prefix('=') {
+        let (rest, name) = parse_ident_with_hyphens(after_eq)?;
+        let full_name = format!("={}", name);
+        return Ok((rest, Expr::Var(full_name)));
+    }
+    // Handle bare $ (anonymous state variable)
+    // If next char is not a valid identifier start, twigil, or special char, it's an anonymous var
+    let next_is_ident_or_twigil = !input.is_empty()
+        && (input.as_bytes()[0].is_ascii_alphanumeric()
+            || input.as_bytes()[0] == b'_'
+            || input.as_bytes()[0] == b'*'
+            || input.as_bytes()[0] == b'?'
+            || input.as_bytes()[0] == b'!'
+            || input.as_bytes()[0] == b'^'
+            || input.as_bytes()[0] == b'.');
+    if !next_is_ident_or_twigil {
+        return Ok((input, Expr::Var("__ANON_STATE__".to_string())));
+    }
+    // Handle twigils: $*FOO, $?FILE, $!attr, $.attr
+    let (rest, twigil) = if input.starts_with('*')
+        || input.starts_with('?')
+        || input.starts_with('!')
+        || input.starts_with('^')
+        || (input.starts_with('.') && input.len() > 1 && input.as_bytes()[1].is_ascii_alphabetic())
+    {
+        (&input[1..], &input[..1])
+    } else {
+        (input, "")
+    };
+    let (rest, name) = parse_ident_with_hyphens(rest)?;
+    let full_name = if twigil.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}{}", twigil, name)
+    };
+    // $?LINE is a compile-time constant: replace with the current line number
+    if full_name == "?LINE" {
+        let line = current_line_number(input);
+        return Ok((rest, Expr::Literal(Value::Int(line))));
+    }
+    Ok((rest, Expr::Var(full_name)))
+}
+
+/// Parse identifier allowing kebab-case hyphens (e.g., `my-var`).
+/// A hyphen is only part of the name if followed by an alphanumeric character,
+/// so `$pd--` parses as `$pd` + postfix `--`.
+pub(super) fn parse_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, &'a str> {
+    let (rest, _first) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_')?;
+    let mut end = input.len() - rest.len();
+    let bytes = input.as_bytes();
+    loop {
+        if end < bytes.len()
+            && bytes[end] == b'-'
+            && end + 1 < bytes.len()
+            && (bytes[end + 1].is_ascii_alphabetic() || bytes[end + 1] == b'_')
+        {
+            end += 1;
+            while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
+                end += 1;
+            }
+        } else {
+            break;
+        }
+    }
+    Ok((&input[end..], &input[..end]))
+}
+
+/// Parse an @array variable reference.
+pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
+    let (input, _) = parse_char(input, '@')?;
+    // Handle twigils
+    let (rest, twigil) = if input.starts_with('*') || input.starts_with('!') {
+        (&input[1..], &input[..1])
+    } else {
+        (input, "")
+    };
+    let (rest, name) = parse_ident_with_hyphens(rest)?;
+    let full_name = if twigil.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}{}", twigil, name)
+    };
+    Ok((rest, Expr::ArrayVar(full_name)))
+}
+
+/// Parse a %hash variable reference.
+pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
+    let (input, _) = parse_char(input, '%')?;
+    // Handle twigils
+    let (rest, twigil) = if input.starts_with('*') || input.starts_with('!') {
+        (&input[1..], &input[..1])
+    } else {
+        (input, "")
+    };
+    // Special: %*ENV
+    let (rest, name) = parse_ident_with_hyphens(rest)?;
+    let full_name = if twigil.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}{}", twigil, name)
+    };
+    Ok((rest, Expr::HashVar(full_name)))
+}
+
+/// Parse a &code variable reference.
+pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
+    let (input, _) = parse_char(input, '&')?;
+    // Handle twigils: &?BLOCK, &?ROUTINE
+    let (rest, twigil) = if let Some(stripped) = input.strip_prefix('?') {
+        (stripped, "?")
+    } else {
+        (input, "")
+    };
+    let (rest, name) = parse_ident_with_hyphens(rest)?;
+    let full_name = if twigil.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}{}", twigil, name)
+    };
+    Ok((rest, Expr::CodeVar(full_name)))
+}

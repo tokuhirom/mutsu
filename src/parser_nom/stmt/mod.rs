@@ -1,0 +1,502 @@
+mod args;
+mod assign;
+mod class;
+mod control;
+mod decl;
+mod modifier;
+mod simple;
+mod sub;
+
+use super::memo::{MemoEntry, MemoStats, ParseMemo};
+use super::parse_result::{PError, PResult, parse_char, take_while1, update_best_error};
+use std::cell::RefCell;
+use std::collections::HashMap;
+
+use crate::ast::Stmt;
+
+use super::helpers::{is_ident_char, ws};
+
+// Re-export submodule items used across submodules
+use args::{parse_stmt_call_args, parse_stmt_call_args_no_paren};
+use assign::{assign_stmt, parse_assign_expr_or_comma, parse_comma_or_expr, try_parse_assign_expr};
+use class::class_decl_body;
+use modifier::{is_stmt_modifier_keyword, parse_statement_modifier};
+use sub::{method_decl_body, parse_param_list, sub_decl_body};
+
+thread_local! {
+    static STMT_MEMO_TLS: RefCell<HashMap<(usize, usize), MemoEntry<Stmt>>> = RefCell::new(HashMap::new());
+    static STMT_MEMO_STATS_TLS: RefCell<MemoStats> = RefCell::new(MemoStats::default());
+}
+
+static STMT_MEMO: ParseMemo<Stmt> = ParseMemo::new(&STMT_MEMO_TLS, &STMT_MEMO_STATS_TLS);
+
+pub(super) fn reset_statement_memo() {
+    STMT_MEMO.reset();
+}
+
+pub(super) fn statement_memo_stats() -> (usize, usize, usize) {
+    STMT_MEMO.stats()
+}
+
+/// Try to match a keyword at the start of input, ensuring word boundary.
+pub(super) fn keyword<'a>(kw: &str, input: &'a str) -> Option<&'a str> {
+    if input.starts_with(kw) && !is_ident_char(input.as_bytes().get(kw.len()).copied()) {
+        Some(&input[kw.len()..])
+    } else {
+        None
+    }
+}
+
+/// Parse an identifier (alphanumeric, _, -).
+fn ident(input: &str) -> PResult<'_, String> {
+    let (rest, name) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+    Ok((rest, name.to_string()))
+}
+
+/// Parse a qualified identifier (Foo::Bar::Baz).
+fn qualified_ident(input: &str) -> PResult<'_, String> {
+    let (mut rest, name) = ident(input)?;
+    let mut full = name;
+    while rest.starts_with("::") {
+        let r = &rest[2..];
+        if let Ok((r2, part)) = ident(r) {
+            full.push_str("::");
+            full.push_str(&part);
+            rest = r2;
+        } else {
+            return Err(PError::expected_at("identifier after '::'", r));
+        }
+    }
+    Ok((rest, full))
+}
+
+/// Parse a variable name ($x, @arr, %hash) and return just the name part.
+fn var_name(input: &str) -> PResult<'_, String> {
+    if input.starts_with('$')
+        || input.starts_with('@')
+        || input.starts_with('%')
+        || input.starts_with('&')
+    {
+        let r = &input[1..];
+        // Handle twigils
+        let (r, twigil) =
+            if r.starts_with('*') || r.starts_with('?') || r.starts_with('!') || r.starts_with('^')
+            {
+                (&r[1..], &r[..1])
+            } else {
+                (r, "")
+            };
+        // Handle $_ special
+        if input.starts_with('$')
+            && r.starts_with('_')
+            && (r.len() == 1
+                || !r
+                    .as_bytes()
+                    .get(1)
+                    .is_some_and(|c| c.is_ascii_alphanumeric()))
+        {
+            return Ok((&r[1..], "_".to_string()));
+        }
+        // Handle bare $ (anonymous variable) — no name after sigil
+        if let Ok((rest, name)) =
+            take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
+        {
+            let full = if twigil.is_empty() {
+                name.to_string()
+            } else {
+                format!("{}{}", twigil, name)
+            };
+            Ok((rest, full))
+        } else if input.starts_with('$') && twigil.is_empty() {
+            // Anonymous scalar variable: bare $
+            Ok((r, "__ANON_STATE__".to_string()))
+        } else {
+            Err(PError::expected("variable name"))
+        }
+    } else {
+        Err(PError::expected("variable name"))
+    }
+}
+
+/// Parse a block: { stmts }
+fn block(input: &str) -> PResult<'_, Vec<Stmt>> {
+    let (input, _) = parse_char(input, '{')?;
+    let (input, stmts) = stmt_list(input)?;
+    let (input, _) = ws(input)?;
+    let (input, _) = parse_char(input, '}')?;
+    Ok((input, stmts))
+}
+
+/// Public accessor for stmt_list (used by primary.rs for block expressions).
+pub(super) fn stmt_list_pub(input: &str) -> PResult<'_, Vec<Stmt>> {
+    stmt_list(input)
+}
+
+/// Public accessor for ident (used by primary.rs for hash literal detection).
+pub(super) fn ident_pub(input: &str) -> PResult<'_, String> {
+    ident(input)
+}
+
+/// Public accessor for var_name (used by primary.rs for anon sub params).
+pub(super) fn var_name_pub(input: &str) -> PResult<'_, String> {
+    var_name(input)
+}
+
+/// Public accessor for statement (used by primary.rs for do-statement expressions).
+pub(super) fn statement_pub(input: &str) -> PResult<'_, Stmt> {
+    statement(input)
+}
+
+pub(super) fn my_decl_pub(input: &str) -> PResult<'_, Stmt> {
+    decl::my_decl(input)
+}
+
+/// Parse a list of statements (inside a block or at program level).
+fn stmt_list(input: &str) -> PResult<'_, Vec<Stmt>> {
+    let mut stmts = Vec::new();
+    let mut rest = input;
+    loop {
+        let (r, _) = ws(rest)?;
+        // Consume any standalone semicolons
+        let r = consume_semicolons(r);
+        let (r, _) = ws(r)?;
+        // End of block or input
+        if r.is_empty() || r.starts_with('}') {
+            return Ok((r, stmts));
+        }
+        match statement(r) {
+            Ok((r, stmt)) => {
+                stmts.push(stmt);
+                rest = r;
+            }
+            Err(e) => {
+                let consumed = input.len() - r.len();
+                let line_num = input[..consumed].matches('\n').count() + 1;
+                let context: String = r.chars().take(80).collect();
+                return Err(PError::raw(
+                    format!(
+                        "expected statement at line {} (after {} stmts): {} — near: {:?}",
+                        line_num,
+                        stmts.len(),
+                        e,
+                        context
+                    ),
+                    Some(r.len()),
+                ));
+            }
+        }
+    }
+}
+
+/// Consume zero or more semicolons.
+fn consume_semicolons(mut input: &str) -> &str {
+    while input.starts_with(';') {
+        input = &input[1..];
+        // Also consume whitespace after semicolons
+        if let Ok((r, _)) = ws(input) {
+            input = r;
+        }
+    }
+    input
+}
+
+pub(super) fn parse_pointy_param_pub(input: &str) -> PResult<'_, String> {
+    control::parse_pointy_param(input)
+}
+
+/// Statement parser function type.
+type StmtParser = fn(&str) -> PResult<'_, Stmt>;
+
+/// Dispatch table for statement parsers.
+/// Each parser is tried in order until one succeeds.
+/// Order is critical — do not reorder without careful consideration.
+const STMT_PARSERS: &[StmtParser] = &[
+    decl::use_stmt,
+    class::unit_module_stmt,
+    decl::my_decl,
+    decl::constant_decl,
+    class::class_decl,
+    class::role_decl,
+    class::grammar_decl,
+    decl::subset_decl,
+    decl::enum_decl,
+    decl::has_decl,
+    class::does_decl,
+    class::proto_decl,
+    sub::sub_decl,
+    sub::method_decl,
+    class::token_decl,
+    simple::say_stmt,
+    simple::put_stmt,
+    simple::print_stmt,
+    simple::note_stmt,
+    control::if_stmt,
+    control::unless_stmt,
+    control::with_stmt,
+    control::labeled_loop_stmt,
+    control::for_stmt,
+    control::while_stmt,
+    control::until_stmt,
+    control::loop_stmt,
+    control::repeat_stmt,
+    control::given_stmt,
+    control::when_stmt,
+    control::default_stmt,
+    simple::return_stmt,
+    simple::last_stmt,
+    simple::next_stmt,
+    simple::redo_stmt,
+    simple::die_stmt,
+    simple::take_stmt,
+    simple::catch_stmt,
+    simple::control_stmt,
+    simple::phaser_stmt,
+    simple::subtest_stmt,
+    control::react_stmt,
+    control::whenever_stmt,
+    class::package_decl,
+    simple::known_call_stmt,
+    assign_stmt,
+    simple::block_stmt,
+];
+
+fn statement(input: &str) -> PResult<'_, Stmt> {
+    let (input, _) = ws(input)?;
+    if let Some(cached) = STMT_MEMO.get(input) {
+        return cached;
+    }
+    let input_len = input.len();
+    let mut best_error: Option<(usize, PError)> = None;
+    let mut early_success: Option<(&str, Stmt)> = None;
+
+    // Try each statement parser in order
+    for parser in STMT_PARSERS {
+        match parser(input) {
+            Ok(r) => {
+                early_success = Some(r);
+                break;
+            }
+            Err(err) => update_best_error(&mut best_error, err, input_len),
+        }
+    }
+
+    let result = if let Some(r) = early_success {
+        Ok(r)
+    } else {
+        // Fall back to expression statement
+        match simple::expr_stmt(input) {
+            Ok(r) => Ok(r),
+            Err(err) => {
+                update_best_error(&mut best_error, err, input_len);
+                Err(best_error
+                    .map(|(_, err)| err)
+                    .unwrap_or_else(|| PError::expected_at("statement", input)))
+            }
+        }
+    };
+    STMT_MEMO.store(input, &result);
+    result
+}
+
+/// Parse a full program (sequence of statements).
+pub(super) fn program(input: &str) -> PResult<'_, Vec<Stmt>> {
+    // Strip BOM if present
+    let input = if let Some(stripped) = input.strip_prefix('\u{FEFF}') {
+        stripped
+    } else {
+        input
+    };
+    stmt_list(input)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::{CallArg, Expr};
+    use crate::value::Value;
+
+    #[test]
+    fn parse_use_test() {
+        let (rest, stmts) = program("use Test;").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::Use { module, .. } if module == "Test"));
+    }
+
+    #[test]
+    fn parse_plan_call() {
+        let (rest, stmts) = program("plan 1;").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::Call { name, .. } if name == "plan"));
+    }
+
+    #[test]
+    fn parse_ok_call_with_named() {
+        let (rest, stmts) = program("ok 0, :todo(1);").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::Call { name, args } = &stmts[0] {
+            assert_eq!(name, "ok");
+            assert_eq!(args.len(), 2);
+            assert!(matches!(&args[1], CallArg::Named { name, .. } if name == "todo"));
+        } else {
+            panic!("Expected Call");
+        }
+    }
+
+    #[test]
+    fn parse_my_var_decl() {
+        let (rest, stmts) = program("my $x = '0';").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::VarDecl { name, .. } if name == "x"));
+    }
+
+    #[test]
+    fn parse_plan_skip_all() {
+        let (rest, stmts) = program("plan skip-all => \"msg\";").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::Call { name, args } = &stmts[0] {
+            assert_eq!(name, "plan");
+            assert!(matches!(&args[0], CallArg::Named { name, .. } if name == "skip-all"));
+        } else {
+            panic!("Expected Call");
+        }
+    }
+
+    #[test]
+    fn parse_basic_test_program() {
+        let input = "use Test;\nplan 1;\nok 1, 'test';";
+        let (rest, stmts) = program(input).unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 3);
+    }
+
+    #[test]
+    fn parse_if_else() {
+        let (rest, stmts) = program("if $x { say 1; } else { say 2; }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::If { .. }));
+    }
+
+    #[test]
+    fn parse_for_loop() {
+        let (rest, stmts) = program("for 1..10 -> $i { say $i; }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::For { .. }));
+    }
+
+    #[test]
+    fn parse_sub_decl() {
+        let (rest, stmts) = program("sub foo($x) { return $x; }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::SubDecl { name, .. } if name == "foo"));
+    }
+
+    #[test]
+    fn parse_class_decl() {
+        let (rest, stmts) = program("class Foo { has $.x; method bar { 42 } }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::ClassDecl { name, .. } if name == "Foo"));
+    }
+
+    #[test]
+    fn parse_my_no_space() {
+        let (rest, stmts) = program("my $a=0; say $a").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 2, "stmts: {:?}", stmts);
+        if let Stmt::VarDecl { name, expr, .. } = &stmts[0] {
+            assert_eq!(name, "a");
+            assert!(
+                matches!(expr, Expr::Literal(Value::Int(0))),
+                "Expected Int(0), got {:?}",
+                expr
+            );
+        } else {
+            panic!("Expected VarDecl, got {:?}", stmts[0]);
+        }
+    }
+
+    #[test]
+    fn statement_memo_hits_on_reparse() {
+        reset_statement_memo();
+        let input = "say 42";
+        let _ = statement_pub(input).unwrap();
+        let (hits1, misses1, stores1) = statement_memo_stats();
+        assert_eq!(hits1, 0);
+        assert!(misses1 >= 1);
+        assert!(stores1 >= 1);
+
+        let _ = statement_pub(input).unwrap();
+        let (hits2, _misses2, stores2) = statement_memo_stats();
+        assert!(hits2 >= 1);
+        assert!(stores2 >= stores1);
+    }
+
+    #[test]
+    fn merge_expected_messages_deduplicates() {
+        let merged = super::super::parse_result::merge_expected_messages(
+            "expected foo",
+            &["foo".to_string(), "bar".to_string()],
+        );
+        assert_eq!(merged, vec!["foo", "bar"]);
+    }
+
+    #[test]
+    fn merge_expected_messages_strips_prefix_consistently() {
+        let merged = super::super::parse_result::merge_expected_messages(
+            "expected alpha",
+            &["beta".to_string(), "gamma".to_string()],
+        );
+        assert_eq!(merged, vec!["alpha", "beta", "gamma"]);
+    }
+
+    #[test]
+    fn statement_modifier_reports_missing_condition() {
+        let base = Stmt::Expr(Expr::Literal(Value::Int(1)));
+        let err = parse_statement_modifier(" if ", base).unwrap_err();
+        assert!(err.message().contains("after 'if'"));
+    }
+
+    #[test]
+    fn assign_stmt_reports_missing_rhs_for_compound_assign() {
+        let err = assign::assign_stmt("$x +=").unwrap_err();
+        assert!(err.message().contains("compound assignment"));
+    }
+
+    #[test]
+    fn assign_stmt_reports_missing_method_name_for_mutating_call() {
+        let err = assign::assign_stmt("$x .=").unwrap_err();
+        assert!(err.message().contains("method name after '.='"));
+    }
+
+    #[test]
+    fn known_call_stmt_reports_argument_parse_context() {
+        let err = simple::known_call_stmt("ok ,").unwrap_err();
+        assert!(err.message().contains("known call arguments"));
+    }
+
+    #[test]
+    fn known_call_stmt_reports_missing_comma_argument() {
+        let err = simple::known_call_stmt("ok(,)").unwrap_err();
+        assert!(err.message().contains("known call arguments"));
+    }
+
+    #[test]
+    fn known_call_stmt_reports_missing_named_argument_value() {
+        let err = simple::known_call_stmt("ok :foo()").unwrap_err();
+        assert!(err.message().contains("named argument value"));
+    }
+
+    #[test]
+    fn qualified_ident_requires_segment_after_double_colon() {
+        let err = qualified_ident("Foo::").unwrap_err();
+        assert!(err.message().contains("identifier after '::'"));
+    }
+}

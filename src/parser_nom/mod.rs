@@ -1,5 +1,6 @@
 mod expr;
 mod helpers;
+mod memo;
 mod parse_result;
 mod primary;
 mod stmt;
