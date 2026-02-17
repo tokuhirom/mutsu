@@ -31,7 +31,7 @@
 - [ ] roast/S32-io/chdir-process.t
 - [ ] roast/S32-io/null-char.t
 - [ ] roast/S32-io/other-stress.t
-- [ ] roast/S32-str/chop.t
+- [x] roast/S32-str/chop.t
 - [ ] roast/S32-str/trim.t
 - [ ] roast/integration/advent2012-day16.t
 - [ ] roast/MISC/bug-coverage-stress.t
