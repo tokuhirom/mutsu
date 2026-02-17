@@ -40,6 +40,16 @@ impl Interpreter {
                     }
                 }
             }
+            // &?BLOCK: self-referencing Sub with original params for recursion
+            let block_self = Value::Sub {
+                package: package.clone(),
+                name: name.clone(),
+                params: params.clone(),
+                body: body.clone(),
+                env: new_env.clone(),
+                id: next_instance_id(),
+            };
+            new_env.insert("&?BLOCK".to_string(), block_self);
             let block_sub = Value::Sub {
                 package: package.clone(),
                 name: name.clone(),

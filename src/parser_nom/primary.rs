@@ -842,7 +842,7 @@ fn parse_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, &'a str> {
         if end < bytes.len()
             && bytes[end] == b'-'
             && end + 1 < bytes.len()
-            && (bytes[end + 1].is_ascii_alphanumeric() || bytes[end + 1] == b'_')
+            && (bytes[end + 1].is_ascii_alphabetic() || bytes[end + 1] == b'_')
         {
             end += 1;
             while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
