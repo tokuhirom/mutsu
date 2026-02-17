@@ -381,6 +381,60 @@ fn interpolate_string_content(content: &str) -> Expr {
                 '\\' => current.push('\\'),
                 '$' => current.push('$'),
                 '@' => current.push('@'),
+                'x' => {
+                    rest = &rest[2..];
+                    if rest.starts_with('[') {
+                        if let Some(end) = rest.find(']') {
+                            let hex = &rest[1..end];
+                            if let Ok(n) = u32::from_str_radix(hex, 16)
+                                && let Some(ch) = char::from_u32(n)
+                            {
+                                current.push(ch);
+                            }
+                            rest = &rest[end + 1..];
+                        }
+                    } else {
+                        let hex_chars: String = rest
+                            .chars()
+                            .take_while(|ch| ch.is_ascii_hexdigit())
+                            .collect();
+                        let len = hex_chars.len();
+                        if let Ok(n) = u32::from_str_radix(&hex_chars, 16)
+                            && let Some(ch) = char::from_u32(n)
+                        {
+                            current.push(ch);
+                        }
+                        rest = &rest[len..];
+                    }
+                    continue;
+                }
+                'o' => {
+                    rest = &rest[2..];
+                    if rest.starts_with('[') {
+                        if let Some(end) = rest.find(']') {
+                            let oct = &rest[1..end];
+                            if let Ok(n) = u32::from_str_radix(oct, 8)
+                                && let Some(ch) = char::from_u32(n)
+                            {
+                                current.push(ch);
+                            }
+                            rest = &rest[end + 1..];
+                        }
+                    } else {
+                        let oct_chars: String = rest
+                            .chars()
+                            .take_while(|ch| matches!(ch, '0'..='7'))
+                            .collect();
+                        let len = oct_chars.len();
+                        if let Ok(n) = u32::from_str_radix(&oct_chars, 8)
+                            && let Some(ch) = char::from_u32(n)
+                        {
+                            current.push(ch);
+                        }
+                        rest = &rest[len..];
+                    }
+                    continue;
+                }
                 'c' => {
                     rest = &rest[2..];
                     if rest.starts_with('[')
@@ -552,6 +606,34 @@ fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
                             rest.chars().take_while(|c| c.is_ascii_hexdigit()).collect();
                         let len = hex_chars.len();
                         if let Ok(n) = u32::from_str_radix(&hex_chars, 16)
+                            && let Some(c) = char::from_u32(n)
+                        {
+                            current.push(c);
+                        }
+                        rest = &rest[len..];
+                    }
+                    continue;
+                }
+                'o' => {
+                    // \o[OOO] or \oOOO
+                    rest = &rest[2..];
+                    if rest.starts_with('[') {
+                        if let Some(end) = rest.find(']') {
+                            let oct = &rest[1..end];
+                            if let Ok(n) = u32::from_str_radix(oct, 8)
+                                && let Some(c) = char::from_u32(n)
+                            {
+                                current.push(c);
+                            }
+                            rest = &rest[end + 1..];
+                        }
+                    } else {
+                        let oct_chars: String = rest
+                            .chars()
+                            .take_while(|c| matches!(c, '0'..='7'))
+                            .collect();
+                        let len = oct_chars.len();
+                        if let Ok(n) = u32::from_str_radix(&oct_chars, 8)
                             && let Some(c) = char::from_u32(n)
                         {
                             current.push(c);

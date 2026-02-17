@@ -13,7 +13,7 @@
 - [ ] roast/S04-statement-modifiers/while.t
 - [ ] roast/S04-statements/do.t
 - [ ] roast/S04-statements/unless.t
-- [ ] roast/S05-metachars/newline.t
+- [x] roast/S05-metachars/newline.t
 - [ ] roast/S05-metasyntax/delimiters.t
 - [ ] roast/S06-other/main-eval.t
 - [ ] roast/S06-traits/native-is-copy.t
