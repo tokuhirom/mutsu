@@ -5,7 +5,7 @@ plan 23;
 # R reverses the arguments of an infix operator
 is 5 R- 3, -2, 'R- reverses subtraction: 3 - 5 = -2';
 is 2 R** 3, 9, 'R** reverses exponentiation: 3 ** 2 = 9';
-is 10 R/ 2, 0, 'R/ reverses division: 2 / 10 = 0';
+is 10 R/ 2, 0.2, 'R/ reverses division: 2 / 10 = 0.2';
 is 10 R% 3, 3, 'R% reverses modulo: 3 % 10 = 3';
 is "world" R~ "hello ", "hello world", 'R~ reverses concatenation';
 

@@ -4,3 +4,10 @@ pre-commit:
       run: cargo fmt && git add -u
     clippy:
       run: cargo clippy -- -D warnings
+
+pre-push:
+  commands:
+    test:
+      run: make test
+    roast:
+      run: make roast

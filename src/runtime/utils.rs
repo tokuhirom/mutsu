@@ -113,6 +113,9 @@ pub(crate) fn gist_value(value: &Value) -> String {
                 } else {
                     "-Inf".to_string()
                 }
+            } else if *n % *d == 0 {
+                // Exact integer: Rat(10, 2) => "5"
+                format!("{}", *n / *d)
             } else {
                 let mut dd = *d;
                 while dd % 2 == 0 {
@@ -123,12 +126,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
                 }
                 if dd == 1 {
                     let val = *n as f64 / *d as f64;
-                    let s = format!("{}", val);
-                    if s.contains('.') {
-                        s
-                    } else {
-                        format!("{}.0", val)
-                    }
+                    format!("{}", val)
                 } else {
                     format!("<{}/{}>", n, d)
                 }

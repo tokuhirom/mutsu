@@ -383,6 +383,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     } else {
                         Some(Ok(Value::Str("-Inf".to_string())))
                     }
+                } else if *n % *d == 0 {
+                    // Exact integer: Rat(10, 2) => "5"
+                    Some(Ok(Value::Str(format!("{}", *n / *d))))
                 } else {
                     let mut dd = *d;
                     while dd % 2 == 0 {
@@ -393,12 +396,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     }
                     if dd == 1 {
                         let val = *n as f64 / *d as f64;
-                        let s = format!("{}", val);
-                        if s.contains('.') {
-                            Some(Ok(Value::Str(s)))
-                        } else {
-                            Some(Ok(Value::Str(format!("{}.0", val))))
-                        }
+                        Some(Ok(Value::Str(format!("{}", val))))
                     } else {
                         Some(Ok(Value::Str(format!("<{}/{}>", n, d))))
                     }

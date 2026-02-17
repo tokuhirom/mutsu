@@ -577,6 +577,9 @@ impl Value {
                     } else {
                         "-Inf".to_string()
                     }
+                } else if *n % *d == 0 {
+                    // Exact integer: Rat(10, 2) => "5"
+                    format!("{}", *n / *d)
                 } else {
                     let whole = *n as f64 / *d as f64;
                     // Check if it can be represented as exact decimal

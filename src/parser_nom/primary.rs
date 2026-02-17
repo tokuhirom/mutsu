@@ -1233,6 +1233,11 @@ fn keyword_literal(input: &str) -> PResult<'_, Expr> {
         if rest.starts_with('(') {
             return Err(PError::expected("not a function call"));
         }
+        // Reject if followed by `=>` (pair key context)
+        let trimmed = rest.trim_start();
+        if trimmed.starts_with("=>") && !trimmed.starts_with("==>") {
+            return Err(PError::expected("not a pair key"));
+        }
         Ok((rest, Expr::Literal(val)))
     };
 
