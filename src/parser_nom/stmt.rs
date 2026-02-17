@@ -2067,21 +2067,33 @@ fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, kind) = if let Some(r) = keyword("BEGIN", input) {
         (r, PhaserKind::Begin)
     } else if let Some(r) = keyword("CHECK", input) {
-        (r, PhaserKind::Begin)
+        (r, PhaserKind::Check)
     } else if let Some(r) = keyword("INIT", input) {
-        (r, PhaserKind::Begin)
+        (r, PhaserKind::Init)
     } else if let Some(r) = keyword("END", input) {
         (r, PhaserKind::End)
     } else if let Some(r) = keyword("ENTER", input) {
         (r, PhaserKind::Enter)
     } else if let Some(r) = keyword("LEAVE", input) {
         (r, PhaserKind::Leave)
+    } else if let Some(r) = keyword("KEEP", input) {
+        (r, PhaserKind::Keep)
+    } else if let Some(r) = keyword("UNDO", input) {
+        (r, PhaserKind::Undo)
     } else if let Some(r) = keyword("FIRST", input) {
         (r, PhaserKind::First)
     } else if let Some(r) = keyword("NEXT", input) {
         (r, PhaserKind::Next)
     } else if let Some(r) = keyword("LAST", input) {
         (r, PhaserKind::Last)
+    } else if let Some(r) = keyword("PRE", input) {
+        (r, PhaserKind::Pre)
+    } else if let Some(r) = keyword("POST", input) {
+        (r, PhaserKind::Post)
+    } else if let Some(r) = keyword("QUIT", input) {
+        (r, PhaserKind::Quit)
+    } else if let Some(r) = keyword("CLOSE", input) {
+        (r, PhaserKind::Close)
     } else {
         return Err(PError::expected("phaser keyword"));
     };

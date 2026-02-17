@@ -79,7 +79,11 @@ impl Compiler {
                     for s in stmts {
                         match s {
                             Stmt::Phaser {
-                                kind: PhaserKind::Enter | PhaserKind::Leave,
+                                kind:
+                                    PhaserKind::Enter
+                                    | PhaserKind::Leave
+                                    | PhaserKind::Keep
+                                    | PhaserKind::Undo,
                                 ..
                             } => {}
                             _ => self.compile_stmt(s),
@@ -88,7 +92,7 @@ impl Compiler {
                     self.code.patch_block_body_end(idx);
                     for s in stmts {
                         if let Stmt::Phaser {
-                            kind: PhaserKind::Leave,
+                            kind: PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo,
                             body,
                         } = s
                         {
@@ -532,7 +536,7 @@ impl Compiler {
 
             // --- Phaser (BEGIN/END) ---
             Stmt::Phaser {
-                kind: PhaserKind::Begin,
+                kind: PhaserKind::Begin | PhaserKind::Check | PhaserKind::Init,
                 body,
             } => {
                 // BEGIN: compile body inline (runs immediately)
@@ -1536,7 +1540,7 @@ impl Compiler {
     fn has_phasers(stmts: &[Stmt]) -> bool {
         stmts
             .iter()
-            .any(|s| matches!(s, Stmt::Phaser { kind, .. } if matches!(kind, PhaserKind::Enter | PhaserKind::Leave | PhaserKind::First | PhaserKind::Next | PhaserKind::Last)))
+            .any(|s| matches!(s, Stmt::Phaser { kind, .. } if matches!(kind, PhaserKind::Enter | PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo | PhaserKind::First | PhaserKind::Next | PhaserKind::Last)))
     }
 
     /// Check if a block body contains placeholder variables ($^a, $^b, etc.)
@@ -1826,7 +1830,10 @@ impl Compiler {
             matches!(
                 s,
                 Stmt::Phaser {
-                    kind: PhaserKind::Enter | PhaserKind::Leave,
+                    kind: PhaserKind::Enter
+                        | PhaserKind::Leave
+                        | PhaserKind::Keep
+                        | PhaserKind::Undo,
                     ..
                 }
             )
@@ -1854,7 +1861,9 @@ impl Compiler {
             if let Stmt::Phaser { kind, body } = stmt {
                 match kind {
                     PhaserKind::Enter => enter_ph.push(Stmt::Block(body.clone())),
-                    PhaserKind::Leave => leave_ph.push(Stmt::Block(body.clone())),
+                    PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo => {
+                        leave_ph.push(Stmt::Block(body.clone()))
+                    }
                     PhaserKind::First => first_ph.push(Stmt::Block(body.clone())),
                     PhaserKind::Next => next_ph.push(Stmt::Block(body.clone())),
                     PhaserKind::Last => last_ph.push(Stmt::Block(body.clone())),

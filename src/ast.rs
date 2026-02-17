@@ -23,12 +23,20 @@ pub(crate) struct FunctionDef {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PhaserKind {
     Begin,
+    Check,
+    Init,
     End,
     Enter,
     Leave,
+    Keep,
+    Undo,
     First,
     Next,
     Last,
+    Pre,
+    Post,
+    Quit,
+    Close,
 }
 
 #[derive(Debug, Clone)]

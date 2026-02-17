@@ -123,7 +123,9 @@ impl Interpreter {
             if let Stmt::Phaser { kind, body } = stmt {
                 match kind {
                     PhaserKind::Enter => enter_ph.push(Stmt::Block(body.clone())),
-                    PhaserKind::Leave => leave_ph.push(Stmt::Block(body.clone())),
+                    PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo => {
+                        leave_ph.push(Stmt::Block(body.clone()))
+                    }
                     _ => body_main.push(stmt.clone()),
                 }
             } else {
