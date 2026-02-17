@@ -25,7 +25,7 @@
 - [ ] roast/S15-normalization/nfc-concat.t
 - [ ] roast/S16-io/say-and-ref.t
 - [ ] roast/S17-procasync/windows-arg-quoting.t
-- [ ] roast/S17-supply/watch-path.t
+- [x] roast/S17-supply/watch-path.t
 - [ ] roast/S24-testing/14-like-unlike.t
 - [x] roast/S24-testing/7-bail_out.t
 - [ ] roast/S32-io/chdir-process.t
