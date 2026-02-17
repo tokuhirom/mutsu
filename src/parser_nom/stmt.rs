@@ -2704,6 +2704,8 @@ const KNOWN_CALLS: &[&str] = &[
     "chars",
     "defined",
     "warn",
+    "EVAL",
+    "EVALFILE",
 ];
 
 /// Check if a name is a known statement-level function call.
