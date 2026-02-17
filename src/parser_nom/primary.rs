@@ -1878,8 +1878,9 @@ pub(super) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Expr>> {
 }
 
 /// Parse a regex literal: /pattern/ or rx/pattern/ or m/pattern/
-/// Scan `input` for content delimited by `close_ch`, handling backslash escapes
-/// and paired-delimiter nesting. Returns `(content, rest_after_close)` or None.
+/// Scan `input` for content delimited by `close_ch`, handling backslash escapes,
+/// single-quoted strings, and paired-delimiter nesting.
+/// Returns `(content, rest_after_close)` or None.
 fn scan_to_delim(
     input: &str,
     open_ch: char,
@@ -1896,6 +1897,18 @@ fn scan_to_delim(
             }
         } else if is_paired && c == open_ch {
             depth += 1;
+        } else if c == '\'' {
+            // Skip single-quoted string content in regex (e.g., '/' or '\\')
+            loop {
+                match chars.next() {
+                    Some((_, '\\')) => {
+                        chars.next(); // skip escaped char
+                    }
+                    Some((_, '\'')) => break,
+                    Some(_) => {}
+                    None => return None,
+                }
+            }
         } else if c == '\\' {
             // skip next char
             chars.next();
@@ -1907,33 +1920,18 @@ fn scan_to_delim(
 fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // rx/pattern/ or rx{pattern}
     if let Ok((rest, _)) = parse_tag(input, "rx") {
-        let close_delim = if rest.starts_with('/') {
-            '/'
+        let (open_ch, close_ch, is_paired) = if rest.starts_with('/') {
+            ('/', '/', false)
         } else if rest.starts_with('{') {
-            '}'
+            ('{', '}', true)
         } else {
             return Err(PError::expected("regex delimiter"));
         };
         let r = &rest[1..];
-        let mut end = 0;
-        let bytes = r.as_bytes();
-        while end < bytes.len() {
-            if bytes[end] == close_delim as u8 {
-                break;
-            }
-            if bytes[end] == b'\\' && end + 1 < bytes.len() {
-                end += 2;
-            } else {
-                end += 1;
-            }
+        if let Some((pattern, rest)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
+            return Ok((rest, Expr::Literal(Value::Regex(pattern.to_string()))));
         }
-        let pattern = &r[..end];
-        let rest = if end < r.len() {
-            &r[end + 1..]
-        } else {
-            &r[end..]
-        };
-        return Ok((rest, Expr::Literal(Value::Regex(pattern.to_string()))));
+        return Err(PError::expected("regex closing delimiter"));
     }
 
     // !!! — fatal stub operator
@@ -2128,21 +2126,9 @@ fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // Bare /pattern/
     if input.starts_with('/') && !input.starts_with("//") {
         let r = &input[1..];
-        let mut end = 0;
-        let bytes = r.as_bytes();
-        while end < bytes.len() {
-            if bytes[end] == b'/' {
-                break;
-            }
-            if bytes[end] == b'\\' && end + 1 < bytes.len() {
-                end += 2;
-            } else {
-                end += 1;
-            }
-        }
-        if end > 0 && end < bytes.len() {
-            let pattern = &r[..end];
-            let rest = &r[end + 1..];
+        if let Some((pattern, rest)) = scan_to_delim(r, '/', '/', false)
+            && !pattern.is_empty()
+        {
             return Ok((rest, Expr::Literal(Value::Regex(pattern.to_string()))));
         }
     }
