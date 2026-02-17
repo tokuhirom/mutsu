@@ -39,6 +39,7 @@ impl Interpreter {
             "does-ok" => self.test_fn_does_ok(args).map(Some),
             "can-ok" => self.test_fn_can_ok(args).map(Some),
             "todo" => self.test_fn_todo(args).map(Some),
+            "subtest" => self.test_fn_subtest(args).map(Some),
             _ => Ok(None),
         }
     }
@@ -584,5 +585,23 @@ impl Interpreter {
         let end = start + count - 1;
         state.force_todo.push((start, end));
         Ok(Value::Nil)
+    }
+
+    fn test_fn_subtest(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // subtest 'name' => { ... } (Pair arg) or subtest 'name', { ... } (two args)
+        // Pairs are treated as named args by positional_value, so check raw args first
+        let (label, block) = if let Some(Value::Pair(key, val)) = args.first() {
+            (key.to_string(), *val.clone())
+        } else {
+            let label = Self::positional_string(args, 0);
+            let block = Self::positional_value(args, 1)
+                .cloned()
+                .unwrap_or(Value::Nil);
+            (label, block)
+        };
+        let ctx = self.begin_subtest();
+        let run_result = self.call_sub_value(block, vec![], true);
+        self.finish_subtest(ctx, &label, run_result.map(|_| ()))?;
+        Ok(Value::Bool(true))
     }
 }

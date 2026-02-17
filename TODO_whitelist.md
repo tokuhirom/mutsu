@@ -9,7 +9,7 @@
 - [ ] roast/S03-operators/boolean-bitwise.t
 - [x] roast/S03-operators/gcd.t
 - [ ] roast/S03-operators/so.t
-- [ ] roast/S03-smartmatch/any-callable.t
+- [x] roast/S03-smartmatch/any-callable.t
 - [ ] roast/S04-statement-modifiers/while.t
 - [ ] roast/S04-statements/do.t
 - [ ] roast/S04-statements/unless.t
@@ -32,6 +32,6 @@
 - [ ] roast/S32-io/null-char.t
 - [ ] roast/S32-io/other-stress.t
 - [x] roast/S32-str/chop.t
-- [ ] roast/S32-str/trim.t
+- [x] roast/S32-str/trim.t
 - [ ] roast/integration/advent2012-day16.t
 - [ ] roast/MISC/bug-coverage-stress.t
