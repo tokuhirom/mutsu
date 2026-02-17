@@ -1465,6 +1465,46 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             let (r, expr) = expression(r)?;
             return Ok((r, expr));
         }
+        "if" => {
+            let (r, _) = ws(rest)?;
+            let (r, cond) = super::expr::expression(r)?;
+            let (r, _) = ws(r)?;
+            let (r, then_branch) = parse_block_body(r)?;
+            let (r, _) = ws(r)?;
+            // Check for else
+            let (r, else_branch) = if let Some(r2) = super::stmt::keyword("else", r) {
+                let (r2, _) = ws(r2)?;
+                let (r2, body) = parse_block_body(r2)?;
+                (r2, body)
+            } else {
+                (r, Vec::new())
+            };
+            return Ok((
+                r,
+                Expr::DoStmt(Box::new(crate::ast::Stmt::If {
+                    cond,
+                    then_branch,
+                    else_branch,
+                })),
+            ));
+        }
+        "unless" => {
+            let (r, _) = ws(rest)?;
+            let (r, cond) = super::expr::expression(r)?;
+            let (r, _) = ws(r)?;
+            let (r, body) = parse_block_body(r)?;
+            return Ok((
+                r,
+                Expr::DoStmt(Box::new(crate::ast::Stmt::If {
+                    cond: Expr::Unary {
+                        op: crate::token_kind::TokenKind::Bang,
+                        expr: Box::new(cond),
+                    },
+                    then_branch: body,
+                    else_branch: Vec::new(),
+                })),
+            ));
+        }
         "sub" => {
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {

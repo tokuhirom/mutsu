@@ -12,7 +12,7 @@
 - [x] roast/S03-smartmatch/any-callable.t
 - [ ] roast/S04-statement-modifiers/while.t
 - [ ] roast/S04-statements/do.t
-- [ ] roast/S04-statements/unless.t
+- [x] roast/S04-statements/unless.t
 - [x] roast/S05-metachars/newline.t
 - [ ] roast/S05-metasyntax/delimiters.t
 - [ ] roast/S06-other/main-eval.t

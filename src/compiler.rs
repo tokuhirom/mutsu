@@ -1257,6 +1257,9 @@ impl Compiler {
                         self.code.emit(OpCode::SetGlobal(name_idx));
                     }
                 }
+                Stmt::Expr(inner_expr) => {
+                    self.compile_expr(inner_expr);
+                }
                 _ => {
                     self.compile_stmt(stmt);
                     self.code.emit(OpCode::LoadNil);

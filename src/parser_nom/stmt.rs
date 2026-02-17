@@ -189,7 +189,7 @@ fn is_ident_char(b: Option<u8>) -> bool {
 }
 
 /// Try to match a keyword at the start of input, ensuring word boundary.
-fn keyword<'a>(kw: &str, input: &'a str) -> Option<&'a str> {
+pub(super) fn keyword<'a>(kw: &str, input: &'a str) -> Option<&'a str> {
     if input.starts_with(kw) && !is_ident_char(input.as_bytes().get(kw.len()).copied()) {
         Some(&input[kw.len()..])
     } else {
@@ -1177,6 +1177,28 @@ fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, cond) = expression(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
+    // unless cannot have else/elsif/orwith — check but consume the trailing clause
+    let (check, _) = ws(rest)?;
+    for kw in &["else", "elsif", "orwith"] {
+        if let Some(r) = keyword(kw, check) {
+            // Consume the rest of the invalid clause to produce a hard error
+            let (r, _) = ws(r)?;
+            // Skip condition (if any) and block
+            let r = if kw != &"else" {
+                if let Ok((r, _)) = expression(r) { r } else { r }
+            } else {
+                r
+            };
+            let (r, _) = ws(r)?;
+            let r = if let Ok((r, _)) = block(r) { r } else { r };
+            return Ok((
+                r,
+                Stmt::Die(Expr::Literal(crate::value::Value::Str(format!(
+                    "X::Syntax::UnlessElse: unless does not allow '{kw}'"
+                )))),
+            ));
+        }
+    }
     Ok((
         rest,
         Stmt::If {
@@ -2452,6 +2474,23 @@ fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
                 else_branch: Vec::new(),
             },
         ));
+    }
+    // Check for do { } with loop modifiers (X::Obsolete in Raku)
+    let is_do_block = matches!(
+        &stmt,
+        Stmt::Expr(Expr::DoBlock { .. }) | Stmt::Expr(Expr::DoStmt(_))
+    );
+    if is_do_block {
+        for kw in &["while", "until", "for", "given"] {
+            if keyword(kw, rest).is_some() {
+                return Err(PError {
+                    message: format!(
+                        "X::Obsolete: Unsupported use of do...{kw}. In Raku please use: repeat...while or repeat...until."
+                    ),
+                    remaining_len: Some(rest.len()),
+                });
+            }
+        }
     }
     if let Some(r) = keyword("for", rest) {
         let (r, _) = ws1(r)?;
