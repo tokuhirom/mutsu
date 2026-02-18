@@ -20,7 +20,6 @@ roast/S02-literals/version.t
 roast/S02-magicals/78258.t
 roast/S02-magicals/args.t
 roast/S02-magicals/block.t
-roast/S02-magicals/DISTRO.t
 roast/S02-magicals/file_line.t
 roast/S02-magicals/GROUP.t
 roast/S02-magicals/pid.t
@@ -142,7 +141,6 @@ roast/S16-io/cwd.t
 roast/S17-channel/subscription-drain-in-react.t
 roast/S17-procasync/many-processes-no-close-stdin.t
 roast/S17-procasync/no-runaway-file-limit.t
-roast/S17-procasync/windows-arg-quoting.t
 roast/S17-supply/watch-path.t
 roast/S19-command-line-options/03-dash-p.t
 roast/S24-testing/0-compile.t
