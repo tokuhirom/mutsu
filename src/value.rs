@@ -193,6 +193,7 @@ pub enum Value {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum VersionPart {
     Num(i64),
+    Str(String),
     Whatever,
 }
 
@@ -391,7 +392,7 @@ impl Value {
 
     pub(crate) fn version_strip_trailing_zeros(parts: &[VersionPart]) -> Vec<VersionPart> {
         let mut v: Vec<VersionPart> = parts.to_vec();
-        while v.last() == Some(&VersionPart::Num(0)) {
+        while matches!(v.last(), Some(VersionPart::Num(0))) {
             v.pop();
         }
         if v.is_empty() {
@@ -702,10 +703,91 @@ impl Value {
             .iter()
             .map(|p| match p {
                 VersionPart::Num(n) => n.to_string(),
+                VersionPart::Str(s) => s.clone(),
                 VersionPart::Whatever => "*".to_string(),
             })
             .collect::<Vec<_>>()
             .join(".")
+    }
+
+    /// Parse a version string into parts, handling:
+    /// - `.`, `-`, `+`, `/` as separators
+    /// - `_` as a separator (becomes a separate part if alone)
+    /// - Transitions between digits and non-digit/non-separator chars create implicit splits
+    /// - Leading zeros stripped from numeric parts
+    pub(crate) fn parse_version_string(s: &str) -> (Vec<VersionPart>, bool, bool) {
+        let mut plus = false;
+        let mut minus = false;
+        let mut raw = s;
+        if let Some(stripped) = raw.strip_suffix('+') {
+            plus = true;
+            raw = stripped;
+        } else if let Some(stripped) = raw.strip_suffix('-') {
+            minus = true;
+            raw = stripped;
+        }
+
+        let mut parts = Vec::new();
+        let mut current = String::new();
+        let mut is_digit_run = false;
+
+        for ch in raw.chars() {
+            match ch {
+                '.' | '-' | '+' | '/' => {
+                    if !current.is_empty() {
+                        parts.push(Self::make_version_part(&current, is_digit_run));
+                        current.clear();
+                    }
+                    is_digit_run = false;
+                }
+                '_' => {
+                    if !current.is_empty() {
+                        parts.push(Self::make_version_part(&current, is_digit_run));
+                        current.clear();
+                    }
+                    // _ by itself is a "whatever" separator part
+                    parts.push(VersionPart::Str("_".to_string()));
+                    is_digit_run = false;
+                }
+                c if c.is_ascii_digit() => {
+                    if !current.is_empty() && !is_digit_run {
+                        // Transition from alpha to digit
+                        parts.push(Self::make_version_part(&current, false));
+                        current.clear();
+                    }
+                    current.push(c);
+                    is_digit_run = true;
+                }
+                c => {
+                    if !current.is_empty() && is_digit_run {
+                        // Transition from digit to alpha
+                        parts.push(Self::make_version_part(&current, true));
+                        current.clear();
+                    }
+                    current.push(c);
+                    is_digit_run = false;
+                }
+            }
+        }
+        if !current.is_empty() {
+            parts.push(Self::make_version_part(&current, is_digit_run));
+        }
+
+        if parts.is_empty() {
+            parts.push(VersionPart::Num(0));
+        }
+
+        (parts, plus, minus)
+    }
+
+    fn make_version_part(s: &str, is_digit: bool) -> VersionPart {
+        if s == "*" {
+            VersionPart::Whatever
+        } else if is_digit {
+            VersionPart::Num(s.parse::<i64>().unwrap_or(0))
+        } else {
+            VersionPart::Str(s.to_string())
+        }
     }
 
     /// Convert a Value to a num_bigint::BigInt for arbitrary-precision arithmetic.

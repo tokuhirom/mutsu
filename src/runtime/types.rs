@@ -33,26 +33,7 @@ impl Interpreter {
                         minus: false,
                     };
                 }
-                let mut plus = false;
-                let mut minus = false;
-                let mut raw = s.as_str();
-                if let Some(stripped) = raw.strip_suffix('+') {
-                    plus = true;
-                    raw = stripped;
-                } else if let Some(stripped) = raw.strip_suffix('-') {
-                    minus = true;
-                    raw = stripped;
-                }
-                let parts: Vec<VersionPart> = raw
-                    .split('.')
-                    .map(|p| {
-                        if p == "*" {
-                            VersionPart::Whatever
-                        } else {
-                            VersionPart::Num(p.parse::<i64>().unwrap_or(0))
-                        }
-                    })
-                    .collect();
+                let (parts, plus, minus) = Value::parse_version_string(&s);
                 Value::Version { parts, plus, minus }
             }
             // Version.new(*) - Whatever argument (bare * evaluates to Num(Inf))
@@ -98,6 +79,13 @@ impl Interpreter {
                                 return false;
                             }
                         }
+                        (VersionPart::Str(a), VersionPart::Str(b)) => {
+                            if a != b {
+                                return false;
+                            }
+                        }
+                        // Different types (Num vs Str) are never equal
+                        _ => return false,
                     }
                 }
                 // If RHS is longer than LHS, extra RHS parts must be zero
@@ -324,7 +312,15 @@ impl Interpreter {
                 } else {
                     let mut items = Vec::new();
                     while positional_idx < args.len() {
-                        items.push(args[positional_idx].clone());
+                        // *@ (flattening slurpy): flatten array/list args
+                        match &args[positional_idx] {
+                            Value::Array(arr) => {
+                                items.extend(arr.iter().cloned());
+                            }
+                            other => {
+                                items.push(other.clone());
+                            }
+                        }
                         positional_idx += 1;
                     }
                     if !pd.name.is_empty() {

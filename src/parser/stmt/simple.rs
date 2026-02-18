@@ -1,9 +1,34 @@
+use std::cell::RefCell;
+use std::collections::HashSet;
+
 use super::super::expr::expression;
 use super::super::helpers::{ws, ws1};
 use super::super::parse_result::{PError, PResult, merge_expected_messages, opt_char, parse_char};
 
 use crate::ast::{Expr, PhaserKind, Stmt};
 use crate::value::Value;
+
+thread_local! {
+    static USER_DECLARED_SUBS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+}
+
+/// Register a user-declared sub name so it can be recognized as a call without parens.
+pub(in crate::parser) fn register_user_sub(name: &str) {
+    USER_DECLARED_SUBS.with(|s| {
+        s.borrow_mut().insert(name.to_string());
+    });
+}
+
+/// Reset declared sub names (called at parse start).
+pub(in crate::parser) fn reset_user_subs() {
+    USER_DECLARED_SUBS.with(|s| {
+        s.borrow_mut().clear();
+    });
+}
+
+pub(in crate::parser) fn is_user_declared_sub(name: &str) -> bool {
+    USER_DECLARED_SUBS.with(|s| s.borrow().contains(name))
+}
 
 use super::{
     block, ident, is_stmt_modifier_keyword, keyword, parse_comma_or_expr, parse_statement_modifier,

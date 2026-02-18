@@ -749,6 +749,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !r.starts_with('.')
         && !is_stmt_modifier_ahead(r)
     {
+        let is_user_sub = crate::parser::stmt::simple::is_user_declared_sub(&name);
         // Only trigger if next token starts a term (not an operator)
         let next = r.chars().next().unwrap();
         if (next == '$'
@@ -758,9 +759,14 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || next == '\''
             || next == '"'
             || next == '('
-            || next.is_ascii_digit())
+            || next.is_ascii_digit()
+            || is_user_sub)
             && let Ok((r2, arg)) = parse_listop_arg(r)
         {
+            // For user subs, collect comma-separated args
+            if is_user_sub {
+                return parse_expr_listop_args(r, name);
+            }
             return Ok((
                 r2,
                 Expr::Call {

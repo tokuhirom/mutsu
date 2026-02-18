@@ -315,37 +315,32 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     Err(PError::expected("regex literal"))
 }
 
-/// Parse a version literal: v5.26.1
+/// Parse a version literal: v5.26.1, v6.c, v6c, v6.d.2
 pub(super) fn version_lit(input: &str) -> PResult<'_, Expr> {
-    use crate::value::VersionPart;
     let (rest, _) = parse_char(input, 'v')?;
-    // Must start with a digit
+    // Must start with a digit (v6c is valid, but vtest is an identifier)
     if rest.is_empty() || !rest.as_bytes()[0].is_ascii_digit() {
         return Err(PError::expected("version number"));
     }
     let (rest, version) = take_while1(rest, |c: char| {
-        c.is_ascii_digit() || c == '.' || c == '*' || c == '+' || c == '-'
+        c.is_ascii_alphanumeric() || c == '.' || c == '*' || c == '+' || c == '-' || c == '_'
     })?;
     // Don't consume trailing '.' — it's likely a method call (e.g. v1.2.3.WHAT)
+    // But only if the char after '.' is uppercase (method) or not alphanumeric
     let (version, rest) = if let Some(stripped) = version.strip_suffix('.') {
-        (stripped, &input[1 + version.len() - 1..])
+        // Check what follows: if it's an uppercase letter, it's a method call
+        let after = &input[1 + version.len()..];
+        if after.is_empty()
+            || after.starts_with(|c: char| c.is_ascii_uppercase() || !c.is_ascii_alphanumeric())
+        {
+            (stripped, &input[1 + version.len() - 1..])
+        } else {
+            (version, rest)
+        }
     } else {
         (version, rest)
     };
-    // Check for + or - suffix
-    let version_str = version.trim_end_matches(['+', '-']);
-    let plus = version.ends_with('+');
-    let minus = version.ends_with('-');
-    let parts: Vec<VersionPart> = version_str
-        .split('.')
-        .map(|s| {
-            if s == "*" {
-                VersionPart::Whatever
-            } else {
-                VersionPart::Num(s.parse::<i64>().unwrap_or(0))
-            }
-        })
-        .collect();
+    let (parts, plus, minus) = Value::parse_version_string(version);
     Ok((rest, Expr::Literal(Value::Version { parts, plus, minus })))
 }
 

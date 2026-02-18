@@ -79,6 +79,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
         primary::reset_primary_memo();
         stmt::reset_statement_memo();
     }
+    stmt::reset_user_subs();
     crate::trace::trace_log!("parse", "parser start memo={}", memo_enabled);
     primary::set_original_source(input);
     // Split off =finish content before parsing

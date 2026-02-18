@@ -64,18 +64,18 @@ pub(super) fn or_expr(input: &str) -> PResult<'_, Expr> {
 }
 
 fn or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
-    let (mut rest, mut left) = and_expr_mode(input, mode)?;
+    let (mut rest, mut left) = assign_or_and_expr(input, mode)?;
     loop {
         let (r, _) = ws(rest)?;
         if let Some((op @ (LogicalOp::Or | LogicalOp::OrElse), len)) = parse_word_logical_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = if mode == ExprMode::Full {
-                and_expr_mode(r, mode).map_err(|err| {
+                assign_or_and_expr(r, mode).map_err(|err| {
                     enrich_expected_error(err, "expected expression after 'or'/'orelse'", r.len())
                 })?
             } else {
-                and_expr_mode(r, mode)?
+                assign_or_and_expr(r, mode)?
             };
             left = Expr::Binary {
                 left: Box::new(left),
@@ -88,6 +88,32 @@ fn or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         break;
     }
     Ok((rest, left))
+}
+
+/// Assignment expressions at the or/and level: $var = expr
+/// This sits between or/and and not in precedence.
+fn assign_or_and_expr(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
+    // Try to parse: $var = expr (simple variable assignment as expression)
+    if let Ok((rest, expr)) = and_expr_mode(input, mode) {
+        let (r, _) = ws(rest)?;
+        if r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>") {
+            // Check if LHS is a variable
+            if let Expr::Var(name) = &expr {
+                let r = &r[1..];
+                let (r, _) = ws(r)?;
+                let (r, rhs) = and_expr_mode(r, mode)?;
+                return Ok((
+                    r,
+                    Expr::AssignExpr {
+                        name: name.clone(),
+                        expr: Box::new(rhs),
+                    },
+                ));
+            }
+        }
+        return Ok((rest, expr));
+    }
+    and_expr_mode(input, mode)
 }
 
 /// Low-precedence: and / andthen / notandthen
