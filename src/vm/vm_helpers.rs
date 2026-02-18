@@ -283,6 +283,12 @@ impl VM {
                 self.locals[i] = val.clone();
             }
         }
+        // Load persisted state variable values
+        for (slot, key) in &cf.code.state_locals {
+            if let Some(val) = self.interpreter.get_state_var(key) {
+                self.locals[*slot] = val.clone();
+            }
+        }
 
         let mut ip = 0;
         let mut result = Ok(());
@@ -317,6 +323,20 @@ impl VM {
         };
 
         self.stack.truncate(saved_stack_depth);
+
+        // Sync state variables back to persistent storage.
+        // Read from env first (methods like push update env directly),
+        // falling back to locals.
+        for (slot, key) in &cf.code.state_locals {
+            let local_name = &cf.code.locals[*slot];
+            let val = self
+                .interpreter
+                .env()
+                .get(local_name)
+                .cloned()
+                .unwrap_or_else(|| self.locals[*slot].clone());
+            self.interpreter.set_state_var(key.clone(), val);
+        }
 
         if !fn_name.is_empty() {
             self.interpreter.pop_routine();

@@ -148,6 +148,15 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     } else {
         (input, "")
     };
+    // Bare @ (anonymous array variable)
+    let next_is_ident = !rest.is_empty()
+        && rest
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_');
+    if !next_is_ident && twigil.is_empty() {
+        return Ok((rest, Expr::ArrayVar("__ANON_ARRAY__".to_string())));
+    }
     let (rest, name) = parse_ident_with_hyphens(rest)?;
     let full_name = if twigil.is_empty() {
         name.to_string()
@@ -166,6 +175,15 @@ pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
     } else {
         (input, "")
     };
+    // Bare % (anonymous hash variable)
+    let next_is_ident = !rest.is_empty()
+        && rest
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_');
+    if !next_is_ident && twigil.is_empty() {
+        return Ok((rest, Expr::HashVar("__ANON_HASH__".to_string())));
+    }
     // Special: %*ENV
     let (rest, name) = parse_ident_with_hyphens(rest)?;
     let full_name = if twigil.is_empty() {

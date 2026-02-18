@@ -533,9 +533,9 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 })),
             ));
         }
-        "my" | "our" => {
-            // my/our declaration in expression context
-            // e.g., (my $x = 5) or so my $x = 5
+        "my" | "our" | "state" => {
+            // my/our/state declaration in expression context
+            // e.g., (my $x = 5) or (state $x = 3)
             if let Ok((r, stmt)) = super::super::stmt::my_decl_pub(input) {
                 return Ok((r, Expr::DoStmt(Box::new(stmt))));
             }

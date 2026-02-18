@@ -182,9 +182,10 @@ mod tests {
     }
 
     #[test]
-    fn primary_aggregates_furthest_expected_messages() {
-        let err = primary("@").unwrap_err();
-        assert_eq!(err.message(), "expected at least one matching character");
+    fn primary_bare_at_sigil_parses_as_anon_array() {
+        let (rest, expr) = primary("@").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::ArrayVar(ref n) if n == "__ANON_ARRAY__"));
     }
 
     #[test]

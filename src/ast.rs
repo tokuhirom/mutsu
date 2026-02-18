@@ -196,6 +196,7 @@ pub(crate) enum Stmt {
         name: String,
         expr: Expr,
         type_constraint: Option<String>,
+        is_state: bool,
     },
     Assign {
         name: String,

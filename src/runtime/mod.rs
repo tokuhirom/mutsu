@@ -194,6 +194,7 @@ pub struct Interpreter {
     end_phasers: Vec<(Vec<Stmt>, HashMap<String, Value>)>,
     chroot_root: Option<PathBuf>,
     loaded_modules: HashSet<String>,
+    state_vars: HashMap<String, Value>,
 }
 
 pub(crate) struct SubtestContext {
@@ -401,6 +402,7 @@ impl Interpreter {
             end_phasers: Vec::new(),
             chroot_root: None,
             loaded_modules: HashSet::new(),
+            state_vars: HashMap::new(),
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
