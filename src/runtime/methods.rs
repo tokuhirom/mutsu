@@ -29,6 +29,9 @@ impl Interpreter {
                 self.write_to_named_handle("$*ERR", &content, false)?;
                 return Ok(Value::Nil);
             }
+            "polymod" => {
+                return self.method_polymod(&target, &args);
+            }
             "VAR" if args.is_empty() => {
                 // Non-container .VAR is identity. Container variables are handled in
                 // call_method_mut_with_values via target variable metadata.
@@ -797,5 +800,60 @@ impl Interpreter {
             }
             other => Ok(other),
         }
+    }
+
+    /// `$n.polymod(@divisors)` — successive modular decomposition.
+    fn method_polymod(&mut self, target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        fn val_to_f64(v: &Value) -> f64 {
+            match v {
+                Value::Int(n) => *n as f64,
+                Value::Num(n) => *n,
+                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                Value::Bool(b) => {
+                    if *b {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
+                Value::Str(s) => s.parse::<f64>().unwrap_or(0.0),
+                _ => 0.0,
+            }
+        }
+        fn f64_to_val(n: f64) -> Value {
+            if n.is_finite() && n == n.trunc() && n.abs() < i64::MAX as f64 {
+                Value::Int(n as i64)
+            } else {
+                Value::Num(n)
+            }
+        }
+        let mut n = val_to_f64(target);
+        // Flatten args into a list of divisors
+        let mut divisors = Vec::new();
+        for arg in args {
+            match arg {
+                Value::Array(items) => divisors.extend(items.iter().cloned()),
+                _ => divisors.push(arg.clone()),
+            }
+        }
+        let mut result = Vec::new();
+        for d in &divisors {
+            let d_val = val_to_f64(d);
+            if d_val == 0.0 {
+                result.push(f64_to_val(n));
+                n = f64::INFINITY;
+                continue;
+            }
+            let rem = n % d_val;
+            let quot = ((n - rem) / d_val).trunc();
+            result.push(f64_to_val(rem));
+            n = quot;
+            // Modulo 1 always yields remainder 0 and quotient = n; stop infinite loops
+            if d_val == 1.0 {
+                break;
+            }
+        }
+        result.push(f64_to_val(n));
+        Ok(Value::Array(result))
     }
 }
