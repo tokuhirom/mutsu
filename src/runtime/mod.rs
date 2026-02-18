@@ -48,7 +48,6 @@ mod sprintf;
 mod subtest;
 mod system;
 mod test_functions;
-mod test_util_functions;
 mod types;
 mod unicode;
 pub(crate) mod utils;
@@ -195,8 +194,6 @@ pub struct Interpreter {
     end_phasers: Vec<(Vec<Stmt>, HashMap<String, Value>)>,
     chroot_root: Option<PathBuf>,
     loaded_modules: HashSet<String>,
-    temp_files: Vec<PathBuf>,
-    temp_dirs: Vec<PathBuf>,
 }
 
 pub(crate) struct SubtestContext {
@@ -404,8 +401,6 @@ impl Interpreter {
             end_phasers: Vec::new(),
             chroot_root: None,
             loaded_modules: HashSet::new(),
-            temp_files: Vec::new(),
-            temp_dirs: Vec::new(),
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();

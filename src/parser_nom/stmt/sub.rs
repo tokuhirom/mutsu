@@ -4,7 +4,7 @@ use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 
 use crate::ast::{Expr, ParamDef, Stmt};
 
-use super::{block, ident, keyword, var_name};
+use super::{block, ident, keyword, qualified_ident, var_name};
 
 /// Parse `sub` declaration.
 pub(super) fn sub_decl(input: &str) -> PResult<'_, Stmt> {
@@ -149,6 +149,22 @@ pub(super) fn skip_return_type_annotation(input: &str) -> Result<&str, PError> {
     Ok(rest)
 }
 
+/// Helper to construct a default ParamDef with only required fields.
+fn make_param(name: String) -> ParamDef {
+    ParamDef {
+        name,
+        default: None,
+        named: false,
+        slurpy: false,
+        sigilless: false,
+        type_constraint: None,
+        literal_value: None,
+        sub_signature: None,
+        where_constraint: None,
+        traits: Vec::new(),
+    }
+}
+
 pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     let mut rest = input;
     let mut named = false;
@@ -161,32 +177,14 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         // Optional capture variable name
         if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') {
             let (r, name) = var_name(r)?;
-            return Ok((
-                r,
-                ParamDef {
-                    name,
-                    named: false,
-                    slurpy: true,
-                    sigilless: false,
-                    default: None,
-                    type_constraint: None,
-                    literal_value: None,
-                },
-            ));
+            let mut p = make_param(name);
+            p.slurpy = true;
+            return Ok((r, p));
         }
         // Bare |
-        return Ok((
-            r,
-            ParamDef {
-                name: "_capture".to_string(),
-                named: false,
-                slurpy: true,
-                sigilless: false,
-                default: None,
-                type_constraint: None,
-                literal_value: None,
-            },
-        ));
+        let mut p = make_param("_capture".to_string());
+        p.slurpy = true;
+        return Ok((r, p));
     }
 
     // Slurpy: *@arr or *%hash
@@ -204,16 +202,42 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         rest = &rest[1..];
     }
 
-    // Type constraint
-    if let Ok((r, tc)) = ident(rest) {
-        // Skip type smileys :D, :U, :_
-        let r = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
-            &r[2..]
+    // Type constraint (may be qualified: IO::Path)
+    if let Ok((r, tc)) = qualified_ident(rest) {
+        // Preserve type smileys :D, :U, :_ as part of the type constraint
+        let (r, tc) = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
+            let smiley = &r[..2];
+            (&r[2..], format!("{}{}", tc, smiley))
         } else {
-            r
+            (r, tc)
         };
         let (r2, _) = ws(r)?;
-        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') || r2.starts_with(':')
+
+        // Check for sub-signature: Type (inner-params)
+        if r2.starts_with('(') {
+            // Parse sub-signature (destructuring)
+            let (r3, _) = parse_char(r2, '(')?;
+            let (r3, _) = ws(r3)?;
+            let (r3, sub_params) = parse_param_list(r3)?;
+            let (r3, _) = ws(r3)?;
+            let (r3, _) = parse_char(r3, ')')?;
+            let (r3, _) = ws(r3)?;
+
+            // After sub-signature, there may be more sub-signatures or the end
+            // For now we just build a param with the sub-signature
+            let mut p = make_param("__subsig__".to_string());
+            p.type_constraint = Some(tc);
+            p.sub_signature = Some(sub_params);
+            p.named = named;
+            p.slurpy = slurpy;
+            return Ok((r3, p));
+        }
+
+        if r2.starts_with('$')
+            || r2.starts_with('@')
+            || r2.starts_with('%')
+            || r2.starts_with(':')
+            || r2.starts_with('\\')
         {
             type_constraint = Some(tc);
             rest = r2;
@@ -234,18 +258,10 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             Expr::Literal(v) => Some(v.clone()),
             _ => None,
         };
-        return Ok((
-            rest,
-            ParamDef {
-                name: "__literal__".to_string(),
-                named: false,
-                slurpy: false,
-                sigilless: false,
-                default: None,
-                type_constraint,
-                literal_value,
-            },
-        ));
+        let mut p = make_param("__literal__".to_string());
+        p.type_constraint = type_constraint;
+        p.literal_value = literal_value;
+        return Ok((rest, p));
     }
 
     // Sigilless parameter: \name
@@ -261,18 +277,60 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         } else {
             (r, None)
         };
-        return Ok((
-            r,
-            ParamDef {
-                name,
-                named,
-                slurpy,
-                sigilless: true,
-                default,
-                type_constraint,
-                literal_value: None,
-            },
-        ));
+        let mut p = make_param(name);
+        p.named = named;
+        p.slurpy = slurpy;
+        p.sigilless = true;
+        p.default = default;
+        p.type_constraint = type_constraint;
+        return Ok((r, p));
+    }
+
+    // Sub-signature without type: just (inner-params)
+    if rest.starts_with('(') {
+        let (r, _) = parse_char(rest, '(')?;
+        let (r, _) = ws(r)?;
+        let (r, sub_params) = parse_param_list(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ')')?;
+        let mut p = make_param("__subsig__".to_string());
+        p.sub_signature = Some(sub_params);
+        p.named = named;
+        p.slurpy = slurpy;
+        p.type_constraint = type_constraint;
+        return Ok((r, p));
+    }
+
+    // Named parameter with alias: :key($var) or :value(&callback)
+    if named && let Ok((r, alias_name)) = ident(rest) {
+        let (r2, _) = ws(r)?;
+        if r2.starts_with('(') {
+            let (r3, _) = parse_char(r2, '(')?;
+            let (r3, _) = ws(r3)?;
+            // Inside could be a sub-signature or a single variable
+            // Try to parse as a sub-signature first (handles nested params)
+            let (r3, sub_params) = parse_param_list(r3)?;
+            let (r3, _) = ws(r3)?;
+            let (r3, _) = parse_char(r3, ')')?;
+            // If it's a single simple variable param, use its name; otherwise sub-signature
+            if sub_params.len() == 1
+                && sub_params[0].sub_signature.is_none()
+                && !sub_params[0].name.starts_with("__")
+            {
+                let mut p = make_param(sub_params[0].name.clone());
+                p.named = true;
+                p.slurpy = slurpy;
+                p.type_constraint = type_constraint;
+                return Ok((r3, p));
+            }
+            // Multiple params or complex: treat as sub-signature
+            let mut p = make_param(format!("__{}", alias_name));
+            p.named = true;
+            p.slurpy = slurpy;
+            p.type_constraint = type_constraint;
+            p.sub_signature = Some(sub_params);
+            return Ok((r3, p));
+        }
     }
 
     let (rest, name) = var_name(rest)?;
@@ -288,38 +346,34 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         (rest, None)
     };
 
-    // `is copy`, `is rw`, `is readonly` traits
-    let (rest, _) = ws(rest)?;
-    let rest = if let Some(r) = keyword("is", rest) {
+    // `is copy`, `is rw`, `is readonly`, `is raw` traits (may have multiple)
+    let (mut rest, _) = ws(rest)?;
+    let mut param_traits = Vec::new();
+    while let Some(r) = keyword("is", rest) {
         let (r, _) = ws1(r)?;
-        let (r, _trait) = ident(r)?;
-        r
-    } else {
-        rest
-    };
+        let (r, trait_name) = ident(r)?;
+        param_traits.push(trait_name);
+        let (r, _) = ws(r)?;
+        rest = r;
+    }
 
     // `where` constraint
-    let (rest, _) = ws(rest)?;
-    let rest = if let Some(r) = keyword("where", rest) {
+    let (rest, where_constraint) = if let Some(r) = keyword("where", rest) {
         let (r, _) = ws1(r)?;
-        let (r, _constraint) = expression(r)?;
-        r
+        let (r, constraint) = expression(r)?;
+        (r, Some(Box::new(constraint)))
     } else {
-        rest
+        (rest, None)
     };
 
-    Ok((
-        rest,
-        ParamDef {
-            name,
-            default,
-            named,
-            slurpy,
-            sigilless: false,
-            type_constraint,
-            literal_value: None,
-        },
-    ))
+    let mut p = make_param(name);
+    p.default = default;
+    p.named = named;
+    p.slurpy = slurpy;
+    p.type_constraint = type_constraint;
+    p.where_constraint = where_constraint;
+    p.traits = param_traits;
+    Ok((rest, p))
 }
 
 /// Parse `method` declaration.

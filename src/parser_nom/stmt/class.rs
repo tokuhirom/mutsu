@@ -5,7 +5,7 @@ use crate::ast::Stmt;
 
 use super::{block, ident, keyword, qualified_ident};
 
-use super::parse_param_list;
+use super::{parse_param_list, skip_sub_traits};
 
 /// Parse `class` declaration.
 pub(super) fn class_decl(input: &str) -> PResult<'_, Stmt> {
@@ -180,12 +180,16 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     // proto token | proto rule | proto sub | proto method
     let _is_token = keyword("token", rest).is_some() || keyword("rule", rest).is_some();
-    let rest = keyword("token", rest)
+    let rest = if let Some(r) = keyword("token", rest)
         .or_else(|| keyword("rule", rest))
         .or_else(|| keyword("sub", rest))
         .or_else(|| keyword("method", rest))
-        .unwrap_or(rest);
-    let (rest, _) = ws1(rest)?;
+    {
+        let (r, _) = ws1(r)?;
+        r
+    } else {
+        rest
+    };
     let (rest, name) = ident(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, param_defs) = if rest.starts_with('(') {
@@ -199,6 +203,9 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
         (rest, Vec::new())
     };
     let params: Vec<String> = param_defs.iter().map(|p| p.name.clone()).collect();
+    let (rest, _) = ws(rest)?;
+    // Skip traits (is export, etc.)
+    let (rest, _) = skip_sub_traits(rest)?;
     let (rest, _) = ws(rest)?;
     // May have {*} body or just semicolon
     if rest.starts_with('{') {

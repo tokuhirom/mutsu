@@ -195,15 +195,11 @@ impl Interpreter {
         {
             return self.call_infix_routine(op, args);
         }
-        if self.loaded_modules.contains("Test")
-            || self.loaded_modules.iter().any(|m| m.starts_with("Test::"))
+        if (self.loaded_modules.contains("Test")
+            || self.loaded_modules.iter().any(|m| m.starts_with("Test::")))
+            && let Some(result) = self.call_test_function(name, args)?
         {
-            if let Some(result) = self.call_test_function(name, args)? {
-                return Ok(result);
-            }
-            if let Some(result) = self.call_test_util_function(name, args)? {
-                return Ok(result);
-            }
+            return Ok(result);
         }
         if let Some(pattern) = self.eval_token_call_values(name, args)? {
             return Ok(Value::Regex(pattern));

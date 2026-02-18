@@ -215,8 +215,6 @@ impl Interpreter {
     }
 
     pub(super) fn finish(&mut self) -> Result<(), RuntimeError> {
-        // Clean up temp files/dirs created by Test::Util functions
-        self.cleanup_temp_files();
         if !self.end_phasers.is_empty() {
             let phasers = self.end_phasers.clone();
             for (body, captured_env) in phasers.iter().rev() {

@@ -69,11 +69,12 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, Stmt::Use { module, arg }))
 }
 
-/// Parse `my` variable declaration.
+/// Parse `my`, `our`, or `state` variable declaration.
 pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("my", input)
         .or_else(|| keyword("our", input))
-        .ok_or_else(|| PError::expected("my/our declaration"))?;
+        .or_else(|| keyword("state", input))
+        .ok_or_else(|| PError::expected("my/our/state declaration"))?;
     let (rest, _) = ws1(rest)?;
 
     // my enum Foo <...>
@@ -100,9 +101,34 @@ pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
         return class_decl_body(r);
     }
 
+    // Sigilless variable: my \name = expr
+    if let Some(r) = rest.strip_prefix('\\') {
+        let (r, name) = ident(r)?;
+        let (r, _) = ws(r)?;
+        if r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>") {
+            let r = &r[1..];
+            let (r, _) = ws(r)?;
+            let (r, expr) = expression(r)?;
+            let stmt = Stmt::VarDecl {
+                name,
+                expr,
+                type_constraint: None,
+            };
+            return parse_statement_modifier(r, stmt);
+        }
+        return Ok((
+            r,
+            Stmt::VarDecl {
+                name,
+                expr: Expr::Literal(Value::Nil),
+                type_constraint: None,
+            },
+        ));
+    }
+
     // Optional type constraint: my Int $x
     let (rest, type_constraint) = {
-        // Try to parse a type name followed by a sigil
+        // Try to parse a type name followed by a sigil or \
         let saved = rest;
         if let Ok((r, tc)) = ident(rest) {
             let (r2, _) = ws(r)?;
@@ -110,6 +136,7 @@ pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
                 || r2.starts_with('@')
                 || r2.starts_with('%')
                 || r2.starts_with('&')
+                || r2.starts_with('\\')
             {
                 (r2, Some(tc))
             } else {
@@ -119,6 +146,31 @@ pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
             (saved, None)
         }
     };
+
+    // Sigilless variable after type: my Int \name = expr
+    if let Some(r) = rest.strip_prefix('\\') {
+        let (r, name) = ident(r)?;
+        let (r, _) = ws(r)?;
+        if r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>") {
+            let r = &r[1..];
+            let (r, _) = ws(r)?;
+            let (r, expr) = expression(r)?;
+            let stmt = Stmt::VarDecl {
+                name,
+                expr,
+                type_constraint,
+            };
+            return parse_statement_modifier(r, stmt);
+        }
+        return Ok((
+            r,
+            Stmt::VarDecl {
+                name,
+                expr: Expr::Literal(Value::Nil),
+                type_constraint,
+            },
+        ));
+    }
 
     // Destructuring: my ($a, $b) = expr
     if rest.starts_with('(') {

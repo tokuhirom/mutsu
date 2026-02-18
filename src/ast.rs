@@ -11,6 +11,12 @@ pub(crate) struct ParamDef {
     pub(crate) sigilless: bool,
     pub(crate) type_constraint: Option<String>,
     pub(crate) literal_value: Option<Value>,
+    #[allow(dead_code)]
+    pub(crate) sub_signature: Option<Vec<ParamDef>>,
+    #[allow(dead_code)]
+    pub(crate) where_constraint: Option<Box<Expr>>,
+    #[allow(dead_code)]
+    pub(crate) traits: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
