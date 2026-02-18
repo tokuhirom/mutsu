@@ -79,7 +79,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if input.starts_with('^')
         && !input.starts_with("^..")
         && let Some(&c) = input.as_bytes().get(1)
-        && (c == b'$' || c == b'(' || c.is_ascii_digit())
+        && (c == b'$' || c == b'(' || c.is_ascii_digit() || c.is_ascii_alphabetic() || c == b'_')
     {
         let rest = &input[1..];
         let (rest, expr) = postfix_expr(rest)?;
@@ -226,7 +226,13 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
         if rest.starts_with('(')
             && matches!(
                 &expr,
-                Expr::Var(_) | Expr::CodeVar(_) | Expr::MethodCall { .. }
+                Expr::Var(_)
+                    | Expr::CodeVar(_)
+                    | Expr::MethodCall { .. }
+                    | Expr::AnonSub(_)
+                    | Expr::AnonSubParams { .. }
+                    | Expr::Index { .. }
+                    | Expr::CallOn { .. }
             )
         {
             let (r, _) = parse_char(rest, '(')?;
@@ -304,6 +310,31 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
             let (r, index) = expression(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, '}')?;
+            // Check for :exists / :delete adverbs on curly-brace subscript
+            if r.starts_with(":exists") && !is_ident_char(r.as_bytes().get(7).copied()) {
+                let r = &r[7..];
+                expr = Expr::Exists(Box::new(Expr::Index {
+                    target: Box::new(expr),
+                    index: Box::new(index),
+                }));
+                rest = r;
+                continue;
+            }
+            if r.starts_with(":delete") && !is_ident_char(r.as_bytes().get(7).copied()) {
+                let r = &r[7..];
+                // Use MethodCall as a proxy for delete operation
+                expr = Expr::MethodCall {
+                    target: Box::new(Expr::Index {
+                        target: Box::new(expr),
+                        index: Box::new(index),
+                    }),
+                    name: "DELETE-KEY".to_string(),
+                    args: vec![],
+                    modifier: None,
+                };
+                rest = r;
+                continue;
+            }
             expr = Expr::Index {
                 target: Box::new(expr),
                 index: Box::new(index),

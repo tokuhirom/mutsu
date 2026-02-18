@@ -3,7 +3,7 @@ mod assign;
 mod class;
 mod control;
 mod decl;
-mod modifier;
+pub(super) mod modifier;
 mod simple;
 mod sub;
 
@@ -48,9 +48,59 @@ pub(super) fn keyword<'a>(kw: &str, input: &'a str) -> Option<&'a str> {
 }
 
 /// Parse an identifier (alphanumeric, _, -).
+/// Hyphen is only allowed when followed by an alphabetic char (not a digit).
 fn ident(input: &str) -> PResult<'_, String> {
-    let (rest, name) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+    let (rest, name) = parse_raku_ident(input)?;
     Ok((rest, name.to_string()))
+}
+
+/// Parse a Raku-style identifier.
+/// Allows hyphens and apostrophes between word segments, but only when followed by a letter.
+/// e.g. `foo-bar` is valid, `doesn't` is valid, but `foo-3` stops at `foo`.
+pub(super) fn parse_raku_ident<'a>(input: &'a str) -> PResult<'a, &'a str> {
+    let bytes = input.as_bytes();
+    if bytes.is_empty() || !(bytes[0].is_ascii_alphanumeric() || bytes[0] == b'_') {
+        return Err(PError::expected("identifier"));
+    }
+    let mut end = 0;
+    while end < bytes.len() {
+        let b = bytes[end];
+        if b.is_ascii_alphanumeric() || b == b'_' {
+            end += 1;
+        } else if b == b'-' || b == b'\'' {
+            // Hyphen/apostrophe is part of identifier only if followed by a letter
+            if end + 1 < bytes.len() && bytes[end + 1].is_ascii_alphabetic() {
+                end += 1; // consume the hyphen/apostrophe
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    // Handle non-ASCII (Unicode) chars
+    if end < input.len() {
+        let rest = &input[end..];
+        let mut chars = rest.chars();
+        while let Some(c) = chars.next() {
+            if c.is_alphanumeric() || c == '_' {
+                end += c.len_utf8();
+            } else if c == '-' || c == '\'' {
+                if let Some(next) = chars.clone().next() {
+                    if next.is_alphabetic() {
+                        end += 1;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+    }
+    Ok((&input[end..], &input[..end]))
 }
 
 /// Parse a qualified identifier (Foo::Bar::Baz).
@@ -59,6 +109,16 @@ fn qualified_ident(input: &str) -> PResult<'_, String> {
     let mut full = name;
     while rest.starts_with("::") {
         let r = &rest[2..];
+        // Handle ::<SYMBOL> subscript syntax (e.g., CORE::<&run>)
+        if let Some(after_bracket) = r.strip_prefix('<')
+            && let Some(end) = after_bracket.find('>')
+        {
+            let symbol = &after_bracket[..end];
+            full.push_str("::");
+            full.push_str(symbol);
+            rest = &after_bracket[end + 1..];
+            continue;
+        }
         if let Ok((r2, part)) = ident(r) {
             full.push_str("::");
             full.push_str(&part);
@@ -140,6 +200,11 @@ pub(super) fn ident_pub(input: &str) -> PResult<'_, String> {
 /// Public accessor for var_name (used by primary.rs for anon sub params).
 pub(super) fn var_name_pub(input: &str) -> PResult<'_, String> {
     var_name(input)
+}
+
+/// Public accessor for parse_param_list (used by primary.rs for arrow lambda sub-signatures).
+pub(super) fn parse_param_list_pub(input: &str) -> PResult<'_, Vec<crate::ast::ParamDef>> {
+    parse_param_list(input)
 }
 
 /// Public accessor for statement (used by primary.rs for do-statement expressions).

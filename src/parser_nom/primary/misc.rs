@@ -185,6 +185,21 @@ pub(super) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
     ))
 }
 
+/// Parse `\(...)` Capture literal.
+pub(super) fn capture_literal(input: &str) -> PResult<'_, Expr> {
+    if !input.starts_with("\\(") {
+        return Err(PError::expected("capture literal"));
+    }
+    let r = &input[1..]; // skip backslash, keep (
+    let (r, _) = parse_char(r, '(')?;
+    let (r, _) = ws(r)?;
+    let (r, items) = super::parse_call_arg_list(r)?;
+    let (r, _) = ws(r)?;
+    let (r, _) = parse_char(r, ')')?;
+    // Represent as ArrayLiteral for now (Capture is not in the AST)
+    Ok((r, Expr::ArrayLiteral(items)))
+}
+
 /// Parse `-> $param { body }` or `-> $a, $b { body }` arrow lambda.
 pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
     if !input.starts_with("->") {
@@ -192,6 +207,23 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
     }
     let r = &input[2..];
     let (r, _) = ws(r)?;
+    // Zero-param pointed block: -> { body }
+    if r.starts_with('{') {
+        let (r, body) = parse_block_body(r)?;
+        return Ok((r, Expr::AnonSub(body)));
+    }
+    // Sub-signature destructuring: -> (:key($var), :value($var2)) { body }
+    if r.starts_with('(') {
+        let (r, _) = parse_char(r, '(')?;
+        let (r, _) = ws(r)?;
+        let (r, sub_params) = super::super::stmt::parse_param_list_pub(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ')')?;
+        let (r, _) = ws(r)?;
+        let (r, body) = parse_block_body(r)?;
+        let params: Vec<String> = sub_params.iter().map(|p| p.name.clone()).collect();
+        return Ok((r, Expr::AnonSubParams { params, body }));
+    }
     // Parse params
     let (r, first) = super::super::stmt::parse_pointy_param_pub(r)?;
     let (r, _) = ws(r)?;

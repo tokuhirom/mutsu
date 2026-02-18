@@ -42,6 +42,15 @@ pub(super) fn sub_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
     // Skip traits (is test-assertion, is export, returns ..., etc.)
     let (rest, _) = skip_sub_traits(rest)?;
     let (rest, _) = ws(rest)?;
+    // Detect `sub name;` without a block body — this is a unit-scoped sub declaration error
+    if rest.starts_with(';') || rest.is_empty() {
+        return Err(PError::raw(
+            "X::UnitScope::Invalid: A unit-scoped sub definition is not allowed except on a MAIN sub; \
+             Please use the block form. If you did not mean to declare a unit-scoped sub, \
+             perhaps you accidentally placed a semicolon after routine's definition?".to_string(),
+            Some(rest.len()),
+        ));
+    }
     let (rest, body) = block(rest)?;
     Ok((
         rest,
@@ -334,6 +343,12 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     }
 
     let (rest, name) = var_name(rest)?;
+    // Optional (?) / required (!) suffix
+    let rest = if rest.starts_with('?') || rest.starts_with('!') {
+        &rest[1..]
+    } else {
+        rest
+    };
     let (rest, _) = ws(rest)?;
 
     // Default value

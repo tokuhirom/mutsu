@@ -38,6 +38,8 @@ impl Compiler {
         mut self,
         stmts: &[Stmt],
     ) -> (CompiledCode, HashMap<String, CompiledFunction>) {
+        // Hoist sub declarations: register all subs before executing the block
+        self.hoist_sub_decls(stmts);
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
             if is_last && let Stmt::Expr(expr) = stmt {
@@ -1684,6 +1686,8 @@ impl Compiler {
                 sub_compiler.alloc_local(&pd.name);
             }
         }
+        // Hoist sub declarations within the sub body
+        sub_compiler.hoist_sub_decls(body);
         // Compile body statements; last Stmt::Expr should NOT emit Pop (implicit return)
         for (i, stmt) in body.iter().enumerate() {
             let is_last = i == body.len() - 1;
@@ -2000,12 +2004,34 @@ impl Compiler {
         None
     }
 
+    /// Hoist sub declarations: emit RegisterSub for all SubDecl statements
+    /// before executing the rest of the block, so that `&name` references
+    /// are available before the sub declaration appears in source order.
+    fn hoist_sub_decls(&mut self, stmts: &[Stmt]) {
+        for stmt in stmts {
+            if let Stmt::SubDecl {
+                name,
+                params,
+                param_defs,
+                body,
+                multi,
+            } = stmt
+            {
+                let idx = self.code.add_stmt(stmt.clone());
+                self.code.emit(OpCode::RegisterSub(idx));
+                self.compile_sub_body(name, params, param_defs, body, *multi);
+            }
+        }
+    }
+
     /// Compile a block inline (for blocks without placeholders).
     fn compile_block_inline(&mut self, stmts: &[Stmt]) {
         if stmts.is_empty() {
             self.code.emit(OpCode::LoadNil);
             return;
         }
+        // Hoist sub declarations
+        self.hoist_sub_decls(stmts);
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
             if is_last {

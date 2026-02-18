@@ -266,17 +266,13 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             ),
             remaining_len: err.remaining_len.or(Some(rest.len())),
         })?;
-        let (rest, _) = ws(rest)?;
-        let (rest, _) = opt_char(rest, ';');
         if let Expr::Index { target, index } = expr {
-            return Ok((
-                rest,
-                Stmt::Expr(Expr::IndexAssign {
-                    target,
-                    index,
-                    value: Box::new(value),
-                }),
-            ));
+            let stmt = Stmt::Expr(Expr::IndexAssign {
+                target,
+                index,
+                value: Box::new(value),
+            });
+            return parse_statement_modifier(rest, stmt);
         }
     }
 

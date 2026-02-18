@@ -1,10 +1,11 @@
 use super::super::parse_result::{PError, PResult, parse_char, take_while_opt, take_while1};
 
-use crate::ast::Expr;
+use crate::ast::{Expr, Stmt};
 use crate::value::Value;
 
 use super::super::expr::{expression, expression_no_sequence};
 use super::super::helpers::ws;
+use super::super::stmt::keyword;
 
 /// Parse a parenthesized expression or list.
 pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
@@ -43,6 +44,13 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         expression_no_sequence(input)?
     };
     let (input, _) = ws(input)?;
+    // Check for inline statement modifier: ($_ with data), (expr if cond), etc.
+    if let Some(result) = try_inline_modifier(input, first.clone()) {
+        let (rest, modified_expr) = result?;
+        let (rest, _) = ws(rest)?;
+        let (rest, _) = parse_char(rest, ')')?;
+        return Ok((rest, modified_expr));
+    }
     // Check for sequence operator after single item: (1 ... 5)
     if let Some(seq) = try_parse_sequence_in_paren(input, std::slice::from_ref(&first)) {
         return seq;
@@ -152,6 +160,29 @@ fn try_parse_sequence_in_paren<'a>(input: &'a str, seeds: &[Expr]) -> Option<PRe
             right: Box::new(right_expr),
         };
         Ok((r, seq))
+    })();
+    Some(result)
+}
+
+/// Try to parse an inline statement modifier inside parenthesized expression.
+/// Handles: ($_ with data), (expr if cond), (expr for list), etc.
+fn try_inline_modifier<'a>(input: &'a str, expr: Expr) -> Option<PResult<'a, Expr>> {
+    use super::super::stmt::modifier::parse_statement_modifier;
+    // Check if the input starts with a modifier keyword
+    let modifier_keywords = [
+        "if", "unless", "with", "without", "for", "while", "until", "given",
+    ];
+    let is_modifier = modifier_keywords
+        .iter()
+        .any(|kw| keyword(kw, input).is_some());
+    if !is_modifier {
+        return None;
+    }
+    // Wrap expr as Stmt::Expr, apply modifier, wrap result as Expr::DoStmt
+    let stmt = Stmt::Expr(expr);
+    let result = (|| {
+        let (rest, modified_stmt) = parse_statement_modifier(input, stmt)?;
+        Ok((rest, Expr::DoStmt(Box::new(modified_stmt))))
     })();
     Some(result)
 }

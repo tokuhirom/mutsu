@@ -95,6 +95,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(container::array_literal(input));
         try_primary!(container::angle_list(input));
         try_primary!(ident::whatever(input));
+        try_primary!(misc::capture_literal(input));
         try_primary!(misc::arrow_lambda(input));
         try_primary!(misc::block_or_hash_expr(input));
         // ::Foo class literal (type object reference)

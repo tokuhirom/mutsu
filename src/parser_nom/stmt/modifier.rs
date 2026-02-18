@@ -8,7 +8,9 @@ use crate::token_kind::TokenKind;
 use super::keyword;
 
 pub(super) fn is_stmt_modifier_keyword(input: &str) -> bool {
-    for kw in &["if", "unless", "for", "while", "until", "given", "when"] {
+    for kw in &[
+        "if", "unless", "for", "while", "until", "given", "when", "with", "without",
+    ] {
         if keyword(kw, input).is_some() {
             return true;
         }
@@ -17,7 +19,7 @@ pub(super) fn is_stmt_modifier_keyword(input: &str) -> bool {
 }
 
 /// Parse statement modifier (postfix if/unless/for/while/until/given/when).
-pub(super) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
+pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     let (rest, _) = ws(input)?;
 
     // If there's a semicolon, the statement is terminated — no modifiers
@@ -193,6 +195,52 @@ pub(super) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
             Stmt::Given {
                 topic,
                 body: vec![stmt],
+            },
+        ));
+    }
+
+    if let Some(r) = keyword("with", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, cond) = expression(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = opt_char(r, ';');
+        // `stmt with expr` is like `given expr { if .defined { stmt } }`
+        return Ok((
+            r,
+            Stmt::Given {
+                topic: cond,
+                body: vec![Stmt::If {
+                    cond: Expr::MethodCall {
+                        target: Box::new(Expr::Var("_".to_string())),
+                        name: "defined".to_string(),
+                        args: Vec::new(),
+                        modifier: None,
+                    },
+                    then_branch: vec![stmt],
+                    else_branch: Vec::new(),
+                }],
+            },
+        ));
+    }
+    if let Some(r) = keyword("without", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, cond) = expression(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = opt_char(r, ';');
+        return Ok((
+            r,
+            Stmt::If {
+                cond: Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(Expr::MethodCall {
+                        target: Box::new(cond),
+                        name: "defined".to_string(),
+                        args: Vec::new(),
+                        modifier: None,
+                    }),
+                },
+                then_branch: vec![stmt],
+                else_branch: Vec::new(),
             },
         ));
     }

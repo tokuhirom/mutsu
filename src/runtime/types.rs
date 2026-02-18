@@ -294,6 +294,9 @@ impl Interpreter {
         params: &[String],
         args: &[Value],
     ) -> Result<(), RuntimeError> {
+        // Always set @_ for legacy Perl-style argument access
+        self.env
+            .insert("@_".to_string(), Value::Array(args.to_vec()));
         if param_defs.is_empty() {
             // Legacy path: just bind by position
             for (i, param) in params.iter().enumerate() {

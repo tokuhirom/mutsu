@@ -49,6 +49,33 @@ pub(super) fn scan_to_delim(
             }
         } else if is_paired && c == open_ch {
             depth += 1;
+        } else if c == '<' && input[i + 1..].starts_with('[') {
+            // Skip character class <[...]> content without interpreting quotes
+            // Handles <['"]>, <[\s]>, etc.
+            chars.next(); // consume the '[' we already checked
+            let mut bracket_depth = 1u32;
+            loop {
+                match chars.next() {
+                    Some((_, '\\')) => {
+                        chars.next(); // skip escaped char
+                    }
+                    Some((_, ']')) => {
+                        bracket_depth -= 1;
+                        if bracket_depth == 0 {
+                            // Consume the closing >
+                            if let Some((_, '>')) = chars.next() {
+                                // done
+                            }
+                            break;
+                        }
+                    }
+                    Some((_, '[')) => {
+                        bracket_depth += 1;
+                    }
+                    Some(_) => {}
+                    None => return None,
+                }
+            }
         } else if c == '\'' {
             // Skip single-quoted string content in regex (e.g., '/' or '\\')
             loop {

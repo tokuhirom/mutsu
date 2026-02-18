@@ -1,6 +1,4 @@
-use super::super::parse_result::{
-    PError, PResult, merge_expected_messages, parse_char, parse_tag, take_while1,
-};
+use super::super::parse_result::{PError, PResult, merge_expected_messages, parse_char, parse_tag};
 
 use crate::ast::{Expr, make_anon_sub};
 use crate::value::Value;
@@ -312,7 +310,7 @@ fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
 }
 
 pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
-    let (rest, name) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+    let (rest, name) = super::super::stmt::parse_raku_ident(input)?;
     let name = name.to_string();
 
     // Handle special expression keywords before qualified name resolution
@@ -484,6 +482,8 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 })?;
                 return Ok((r2, params_body));
             }
+            // sub not followed by { or ( in expression context — not valid
+            return Err(PError::expected_at("anonymous sub body '{' or '('", r));
         }
         "gather" => {
             let (r, _) = ws(rest)?;
@@ -562,15 +562,23 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         _ => {}
     }
 
-    // Check for :: qualified name (e.g. Foo::Bar)
+    // Check for :: qualified name (e.g. Foo::Bar, CORE::<&run>)
     let (rest, name) = {
         let mut full_name = name;
         let mut r = rest;
         while r.starts_with("::") {
             let after = &r[2..];
-            if let Ok((rest2, part)) =
-                take_while1(after, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
+            // Handle ::<SYMBOL> subscript syntax (e.g., CORE::<&run>)
+            if let Some(after_bracket) = after.strip_prefix('<')
+                && let Some(end) = after_bracket.find('>')
             {
+                let symbol = &after_bracket[..end];
+                full_name.push_str("::");
+                full_name.push_str(symbol);
+                r = &after_bracket[end + 1..];
+                continue;
+            }
+            if let Ok((rest2, part)) = super::super::stmt::parse_raku_ident(after) {
                 full_name.push_str("::");
                 full_name.push_str(part);
                 r = rest2;
