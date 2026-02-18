@@ -399,6 +399,7 @@ pub(super) const KNOWN_CALLS: &[&str] = &[
     "warn",
     "EVAL",
     "EVALFILE",
+    "substr",
 ];
 
 /// Check if a name is a known statement-level function call.
