@@ -70,20 +70,19 @@ impl Interpreter {
                 pending_todo = None;
             }
 
-            // #?rakudo.jvm skip — JVM-specific skip: skip the following { } block.
-            // Only skip if followed by a brace block (no count prefix like "35 skip").
-            // Lines like "#?rakudo.jvm 35 skip '...'" are count-based and should be
-            // ignored (the N lines following are not in a block).
+            // #?rakudo.jvm skip — JVM-specific skip directive.
+            // Since mutsu is not JVM, we ignore .jvm directives entirely
+            // (treat them as plain comments).
+            // Only skip for generic #?rakudo skip directives (no platform suffix).
             if !skipping_block
                 && trimmed.starts_with("#?rakudo")
                 && trimmed.contains("skip")
-                && trimmed.contains(".jvm")
+                && !trimmed.contains(".jvm")
+                && !trimmed.contains(".moar")
+                && !trimmed.contains(".js")
             {
                 // Check if this is a block-skip (no number prefix) vs line-count skip
-                let after_prefix = trimmed
-                    .trim_start_matches("#?rakudo.jvm")
-                    .trim_start_matches("#?rakudo")
-                    .trim_start();
+                let after_prefix = trimmed.trim_start_matches("#?rakudo").trim_start();
                 let is_count_skip = after_prefix
                     .chars()
                     .next()
@@ -103,16 +102,39 @@ impl Interpreter {
                 continue;
             }
 
+            // If we haven't started a brace block yet, check this line
+            if !started_block {
+                // If this line opens a brace block, track it
+                let has_brace = trimmed.contains('{');
+                if has_brace {
+                    for ch in line.chars() {
+                        if ch == '{' {
+                            brace_depth += 1;
+                            started_block = true;
+                        } else if ch == '}' && started_block {
+                            brace_depth -= 1;
+                        }
+                    }
+                    if started_block && brace_depth <= 0 {
+                        skipping_block = false;
+                    }
+                } else if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                    // Non-empty, non-comment line without braces: skip just this one line
+                    skipping_block = false;
+                }
+                output.push('\n');
+                continue;
+            }
+
             for ch in line.chars() {
                 if ch == '{' {
                     brace_depth += 1;
-                    started_block = true;
-                } else if ch == '}' && started_block {
+                } else if ch == '}' {
                     brace_depth -= 1;
                 }
             }
 
-            if started_block && brace_depth <= 0 {
+            if brace_depth <= 0 {
                 skipping_block = false;
             }
             output.push('\n');

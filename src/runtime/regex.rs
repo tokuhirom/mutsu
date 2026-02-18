@@ -356,7 +356,7 @@ impl Interpreter {
             }
             RegexAtom::Any => true,
             RegexAtom::Digit => c.is_ascii_digit(),
-            RegexAtom::Word => c.is_ascii_alphanumeric() || c == '_',
+            RegexAtom::Word => c.is_alphanumeric() || c == '_',
             RegexAtom::Space => c.is_whitespace(),
             RegexAtom::CharClass(class) => self.regex_match_class(class, c),
             RegexAtom::UnicodeProp { name, negated } => {
@@ -442,7 +442,7 @@ impl Interpreter {
                     }
                 }
                 ClassItem::Word => {
-                    if c.is_ascii_alphanumeric() || c == '_' {
+                    if c.is_alphanumeric() || c == '_' {
                         matched = true;
                         break;
                     }

@@ -1,7 +1,7 @@
 use super::super::parse_result::{PError, PResult, parse_char};
 
 use crate::ast::Expr;
-use crate::token_kind::lookup_unicode_char_by_name;
+use crate::token_kind::{lookup_emoji_sequence, lookup_unicode_char_by_name};
 use crate::value::Value;
 
 use super::super::expr::expression;
@@ -270,11 +270,15 @@ pub(super) fn process_escape_sequence<'a>(
             let r = &rest[2..];
             if r.starts_with('[') {
                 if let Some(end) = r.find(']') {
-                    let hex = &r[1..end];
-                    if let Ok(n) = u32::from_str_radix(hex, 16)
-                        && let Some(ch) = char::from_u32(n)
-                    {
-                        current.push(ch);
+                    let content = &r[1..end];
+                    // Handle comma-separated hex values: \x[0041,0300]
+                    for part in content.split(',') {
+                        let hex = part.trim();
+                        if let Ok(n) = u32::from_str_radix(hex, 16)
+                            && let Some(ch) = char::from_u32(n)
+                        {
+                            current.push(ch);
+                        }
                     }
                     return Some((&r[end + 1..], true));
                 }
@@ -322,6 +326,17 @@ pub(super) fn process_escape_sequence<'a>(
             {
                 current.push_str(&s);
                 return Some((after, true));
+            }
+            // \c followed by decimal digits → character by codepoint (e.g. \c10 = LF)
+            let digits: String = r.chars().take_while(|ch| ch.is_ascii_digit()).collect();
+            if !digits.is_empty() {
+                let len = digits.len();
+                if let Ok(n) = digits.parse::<u32>()
+                    && let Some(ch) = char::from_u32(n)
+                {
+                    current.push(ch);
+                }
+                return Some((&r[len..], true));
             }
             return Some((r, true));
         }
@@ -467,6 +482,19 @@ pub(super) fn corner_bracket_string(input: &str) -> PResult<'_, Expr> {
 pub(super) fn parse_backslash_c_bracket(rest: &str) -> Option<(String, &str)> {
     let end = rest.find(']')?;
     let names_str = &rest[..end];
+    let full_name = names_str.trim();
+
+    // First try the full content as a single name (handles emoji sequences)
+    if !full_name.contains(',') {
+        if let Some(c) = lookup_unicode_char_by_name(full_name) {
+            return Some((c.to_string(), &rest[end + 1..]));
+        }
+        // Try as emoji sequence name
+        if let Some(s) = lookup_emoji_sequence(full_name) {
+            return Some((s, &rest[end + 1..]));
+        }
+    }
+
     let mut result = String::new();
     for part in names_str.split(',') {
         let name = part.trim();
