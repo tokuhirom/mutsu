@@ -329,6 +329,33 @@ fn sequence_expr(input: &str) -> PResult<'_, Expr> {
 fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (rest, left) = junctive_expr_mode(input, mode)?;
     let (r, _) = ws(rest)?;
+    // Detect Perl 5 =~ and !~ brainos (only when followed by space or m/)
+    if r.starts_with("=~") && !r.starts_with("=~=") && !r.starts_with("=:=") {
+        let after = &r[2..];
+        if after.starts_with(' ')
+            || after.starts_with('\t')
+            || after.starts_with("m/")
+            || after.starts_with("m ")
+        {
+            return Err(PError::expected_at(
+                "Unsupported use of =~ to do pattern matching; in Raku please use ~~",
+                r,
+            ));
+        }
+    }
+    if r.starts_with("!~") && !r.starts_with("!~~") {
+        let after = &r[2..];
+        if after.starts_with(' ')
+            || after.starts_with('\t')
+            || after.starts_with("m/")
+            || after.starts_with("m ")
+        {
+            return Err(PError::expected_at(
+                "Unsupported use of !~ to do pattern matching; in Raku please use !~~",
+                r,
+            ));
+        }
+    }
     if let Some((op, len)) = parse_comparison_op(r) {
         let r = &r[len..];
         let (r, _) = ws(r)?;

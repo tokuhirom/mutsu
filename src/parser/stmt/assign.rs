@@ -452,6 +452,20 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         return parse_statement_modifier(r, stmt);
     }
 
+    // Detect Perl 5 =~ braino: only when followed by space or m/ (not =~$var which is = ~$var)
+    if rest.starts_with("=~") && !rest.starts_with("=~=") && !rest.starts_with("=:=") {
+        let after = &rest[2..];
+        if after.starts_with(' ')
+            || after.starts_with('\t')
+            || after.starts_with("m/")
+            || after.starts_with("m ")
+        {
+            return Err(PError::expected_at(
+                "Unsupported use of =~ to do pattern matching; in Raku please use ~~",
+                rest,
+            ));
+        }
+    }
     // Simple assignment
     if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {
         let rest = &rest[1..];

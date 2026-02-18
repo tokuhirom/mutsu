@@ -407,6 +407,10 @@ impl VM {
         let end = body_end as usize;
         match self.run_range(code, body_start, catch_begin, compiled_fns) {
             Ok(()) => {
+                // Successful try resets $! to Nil
+                self.interpreter
+                    .env_mut()
+                    .insert("!".to_string(), Value::Nil);
                 *ip = end;
                 Ok(())
             }

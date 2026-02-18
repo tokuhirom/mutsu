@@ -252,6 +252,7 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
                     | Expr::MethodCall { .. }
                     | Expr::AnonSub(_)
                     | Expr::AnonSubParams { .. }
+                    | Expr::Lambda { .. }
                     | Expr::Index { .. }
                     | Expr::CallOn { .. }
             )

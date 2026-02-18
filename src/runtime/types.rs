@@ -169,10 +169,13 @@ impl Interpreter {
             }
             let saved = self.env.get("_").cloned();
             self.env.insert("_".to_string(), value.clone());
-            let ok = self
-                .eval_block_value(&[Stmt::Expr(subset.predicate.clone())])
-                .map(|v| v.truthy())
-                .unwrap_or(false);
+            let ok = if let Some(pred) = &subset.predicate {
+                self.eval_block_value(&[Stmt::Expr(pred.clone())])
+                    .map(|v| v.truthy())
+                    .unwrap_or(false)
+            } else {
+                true
+            };
             if let Some(old) = saved {
                 self.env.insert("_".to_string(), old);
             } else {

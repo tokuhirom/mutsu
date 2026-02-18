@@ -390,6 +390,35 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // Check for colon-arg syntax: .method: arg, arg2
+    let (r2, _) = ws(rest)?;
+    if r2.starts_with(':') && !r2.starts_with("::") {
+        let r3 = &r2[1..];
+        let (r3, _) = ws(r3)?;
+        let (r3, first_arg) = expression(r3)?;
+        let mut args = vec![first_arg];
+        let mut r_inner = r3;
+        loop {
+            let (r4, _) = ws(r_inner)?;
+            if !r4.starts_with(',') {
+                break;
+            }
+            let r4 = &r4[1..];
+            let (r4, _) = ws(r4)?;
+            let (r4, next) = expression(r4)?;
+            args.push(next);
+            r_inner = r4;
+        }
+        return Ok((
+            r_inner,
+            Expr::MethodCall {
+                target: Box::new(Expr::Var("_".to_string())),
+                name,
+                args,
+                modifier,
+            },
+        ));
+    }
     Ok((
         rest,
         Expr::MethodCall {

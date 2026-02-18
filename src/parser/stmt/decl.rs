@@ -100,6 +100,11 @@ pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         return class_decl_body(r);
     }
+    // my subset Name of BaseType where ...
+    if let Some(r) = keyword("subset", rest) {
+        let (r, _) = ws1(r)?;
+        return subset_decl(r);
+    }
 
     // Sigilless variable: my \name = expr
     if let Some(r) = rest.strip_prefix('\\') {
@@ -553,10 +558,13 @@ pub(super) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
     } else {
         (rest, "Any".to_string())
     };
-    let rest =
-        keyword("where", rest).ok_or_else(|| PError::expected("'where' in subset declaration"))?;
-    let (rest, _) = ws1(rest)?;
-    let (rest, predicate) = expression(rest)?;
+    let (rest, predicate) = if let Some(r) = keyword("where", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, pred) = expression(r)?;
+        (r, Some(pred))
+    } else {
+        (rest, None)
+    };
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
     Ok((

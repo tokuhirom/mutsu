@@ -251,12 +251,17 @@ impl Interpreter {
         Ok(())
     }
 
-    pub(crate) fn register_subset_decl(&mut self, name: &str, base: &str, predicate: &Expr) {
+    pub(crate) fn register_subset_decl(
+        &mut self,
+        name: &str,
+        base: &str,
+        predicate: Option<&Expr>,
+    ) {
         self.subsets.insert(
             name.to_string(),
             SubsetDef {
                 base: base.to_string(),
-                predicate: predicate.clone(),
+                predicate: predicate.cloned(),
             },
         );
     }

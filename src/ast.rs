@@ -332,7 +332,7 @@ pub(crate) enum Stmt {
     SubsetDecl {
         name: String,
         base: String,
-        predicate: Expr,
+        predicate: Option<Expr>,
     },
     Phaser {
         kind: PhaserKind,
@@ -449,9 +449,15 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
         }
         Stmt::ProtoDecl { .. } => {}
         Stmt::DoesDecl { .. } => {}
-        Stmt::SubsetDecl { predicate, .. } => {
+        Stmt::SubsetDecl {
+            predicate: Some(predicate),
+            ..
+        } => {
             collect_ph_expr(predicate, out);
         }
+        Stmt::SubsetDecl {
+            predicate: None, ..
+        } => {}
         _ => {}
     }
 }

@@ -118,6 +118,15 @@ pub(super) fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
     rest = r;
     loop {
         let (r, _) = ws(rest)?;
+        // Handle invocant marker ':'
+        if let Some(r) = r.strip_prefix(':') {
+            let (r, _) = ws(r)?;
+            if r.starts_with(')') {
+                return Ok((r, params));
+            }
+            rest = r;
+            continue;
+        }
         if !r.starts_with(',') {
             // Check for --> return type annotation at end of param list
             if let Some(stripped) = r.strip_prefix("-->") {
@@ -283,7 +292,6 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         let (r, _) = ws(r)?;
         // Default value
         let (r, default) = if r.starts_with('=') && !r.starts_with("==") {
-            let r = &r[1..];
             let (r, _) = ws(r)?;
             let (r, expr) = expression(r)?;
             (r, Some(expr))
