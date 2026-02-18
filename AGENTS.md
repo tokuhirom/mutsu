@@ -72,8 +72,14 @@ Flow: `call_method_with_values()` tries `native_method_*arg()` first; if `None`,
 - Prefer ASCII in source files unless a specific Unicode feature is required.
 - Do not rewrite or reformat unrelated code.
 - Do not use stubs, hardcoded outputs, or early returns to make tests pass.
-- Commit directly to the main branch. Do not use feature branches.
-- Push to remote after completing work.
+- Do NOT commit directly to the main branch. Always create a feature branch and open a pull request.
+- PR workflow:
+  1. Create a feature branch from main: `git checkout -b <branch-name>`
+  2. Commit changes to the feature branch.
+  3. Push and open a PR with `gh pr create`.
+  4. Enable auto-merge: `gh pr merge --auto --squash <pr-number>`.
+  5. CI (GitHub Actions) runs `make test` and `make roast`. The PR merges automatically when CI passes.
+- If CI fails, fix the issue on the same branch, push again, and wait for CI to pass.
 - Write all documents, code comments, and commit messages in English.
 - Do not use `echo`, `cat`, `printf`, or heredoc via Bash to create files. Always use the Write tool.
 - Do not use `cat`, `head`, `tail`, or `sed` via Bash to read files. Always use the Read tool.
