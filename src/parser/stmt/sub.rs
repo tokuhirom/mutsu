@@ -23,6 +23,8 @@ pub(super) fn sub_decl(input: &str) -> PResult<'_, Stmt> {
 
 pub(super) fn sub_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
     let (rest, name) = ident(input)?;
+    // Register user-declared sub so it can be called without parens later
+    super::simple::register_user_sub(&name);
     let (rest, _) = ws(rest)?;
 
     // Parse params

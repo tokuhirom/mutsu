@@ -4,7 +4,7 @@ mod class;
 mod control;
 mod decl;
 pub(super) mod modifier;
-mod simple;
+pub(super) mod simple;
 mod sub;
 
 use super::memo::{MemoEntry, MemoStats, ParseMemo};
@@ -32,6 +32,10 @@ static STMT_MEMO: ParseMemo<Stmt> = ParseMemo::new(&STMT_MEMO_TLS, &STMT_MEMO_ST
 
 pub(super) fn reset_statement_memo() {
     STMT_MEMO.reset();
+}
+
+pub(super) fn reset_user_subs() {
+    simple::reset_user_subs();
 }
 
 pub(super) fn statement_memo_stats() -> (usize, usize, usize) {

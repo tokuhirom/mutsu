@@ -29,6 +29,8 @@ roast/S02-one-pass-parsing/misc.t
 roast/S02-types/fatrat.t
 roast/S02-types/nan.t
 roast/S02-types/parsing-bool.t
+roast/S02-types/unicode.t
+roast/S02-types/version.t
 roast/S03-operators/assign-is-not-binding.t
 roast/S03-operators/basic-types.t
 roast/S03-operators/boolean-bitwise.t
