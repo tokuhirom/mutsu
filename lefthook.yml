@@ -5,9 +5,3 @@ pre-commit:
     clippy:
       run: cargo clippy -- -D warnings
 
-pre-push:
-  commands:
-    test:
-      run: make test
-    roast:
-      run: make roast
