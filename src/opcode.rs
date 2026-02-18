@@ -163,6 +163,7 @@ pub(crate) enum OpCode {
     // -- I/O --
     Say(u32),
     Print(u32),
+    Note(u32),
 
     // -- Calls (args compiled to bytecode, dispatch delegated to interpreter) --
     /// Expression-level function call: pop `arity` args, call name, push result.

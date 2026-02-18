@@ -124,8 +124,7 @@ impl Compiler {
                 for expr in exprs {
                     self.compile_expr(expr);
                 }
-                // Note goes to stderr; for now compile as Say (the interpreter handles it)
-                self.code.emit(OpCode::Say(exprs.len() as u32));
+                self.code.emit(OpCode::Note(exprs.len() as u32));
             }
             Stmt::VarDecl {
                 name,

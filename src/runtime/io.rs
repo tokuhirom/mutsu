@@ -286,12 +286,15 @@ impl Interpreter {
         if let Some(handle) = self.get_dynamic_handle(name) {
             return self.write_to_handle_value(&handle, text, newline);
         }
-        if newline {
-            self.output.push_str(text);
-            self.output.push('\n');
+        let payload = if newline {
+            format!("{}\n", text)
         } else {
-            self.output.push_str(text);
+            text.to_string()
+        };
+        if name == "$*ERR" {
+            self.stderr_output.push_str(&payload);
         }
+        self.output.push_str(&payload);
         Ok(())
     }
 

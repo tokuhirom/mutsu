@@ -1388,6 +1388,10 @@ impl VM {
                 self.exec_print_op(*n)?;
                 *ip += 1;
             }
+            OpCode::Note(n) => {
+                self.exec_note_op(*n)?;
+                *ip += 1;
+            }
 
             // -- Calls --
             OpCode::CallFunc { name_idx, arity } => {

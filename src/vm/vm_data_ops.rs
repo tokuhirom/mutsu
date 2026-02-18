@@ -42,6 +42,24 @@ impl VM {
         Ok(())
     }
 
+    pub(super) fn exec_note_op(&mut self, n: u32) -> Result<(), RuntimeError> {
+        let n = n as usize;
+        let content = if n == 0 {
+            "Noted".to_string()
+        } else {
+            let start = self.stack.len() - n;
+            let values: Vec<Value> = self.stack.drain(start..).collect();
+            let mut parts = Vec::new();
+            for v in &values {
+                parts.push(runtime::gist_value(v));
+            }
+            parts.join("")
+        };
+        self.interpreter
+            .write_to_named_handle("$*ERR", &content, true)?;
+        Ok(())
+    }
+
     pub(super) fn exec_print_op(&mut self, n: u32) -> Result<(), RuntimeError> {
         let n = n as usize;
         let start = self.stack.len() - n;

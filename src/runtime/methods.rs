@@ -24,6 +24,11 @@ impl Interpreter {
                 self.output.push('\n');
                 return Ok(Value::Nil);
             }
+            "note" if args.is_empty() => {
+                let content = format!("{}\n", gist_value(&target));
+                self.write_to_named_handle("$*ERR", &content, false)?;
+                return Ok(Value::Nil);
+            }
             "VAR" if args.is_empty() => {
                 // Non-container .VAR is identity. Container variables are handled in
                 // call_method_mut_with_values via target variable metadata.

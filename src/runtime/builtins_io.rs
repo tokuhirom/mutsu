@@ -311,8 +311,12 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let mut content = String::new();
-        for arg in args {
-            content.push_str(&arg.to_string_value());
+        if args.is_empty() && name == "note" {
+            content.push_str("Noted");
+        } else {
+            for arg in args {
+                content.push_str(&arg.to_string_value());
+            }
         }
         let (handle, newline) = match name {
             "print" => ("$*OUT", false),

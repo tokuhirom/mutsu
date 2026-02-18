@@ -40,10 +40,14 @@ pub(super) fn put_stmt(input: &str) -> PResult<'_, Stmt> {
 /// Parse a `note` statement.
 pub(super) fn note_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("note", input).ok_or_else(|| PError::expected("note statement"))?;
-    let (rest, _) = ws1(rest)?;
-    let (rest, args) = parse_expr_list(rest)?;
-    let stmt = Stmt::Note(args);
-    parse_statement_modifier(rest, stmt)
+    // `note` with no arguments is valid (prints "Noted\n")
+    if let Ok((rest2, _)) = ws1(rest)
+        && let Ok((rest3, args)) = parse_expr_list(rest2)
+    {
+        return parse_statement_modifier(rest3, Stmt::Note(args));
+    }
+    // Bare `note` with no args
+    parse_statement_modifier(rest, Stmt::Note(vec![]))
 }
 
 /// Parse a comma-separated expression list.
