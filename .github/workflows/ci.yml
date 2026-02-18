@@ -11,36 +11,43 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
-          profile: minimal
-          override: true
+          submodules: true
 
-      - name: Cache cargo registry
-        uses: actions/cache@v3
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          path: ~/.cargo/registry
-          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-registry-
+          components: clippy, rustfmt
 
-      - name: Cache cargo target
-        uses: actions/cache@v3
+      - name: Cache cargo
+        uses: actions/cache@v4
         with:
-          path: target
-          key: cargo-target-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Install prove
+        run: sudo apt-get update && sudo apt-get install -y perl
 
       - name: Format check
         run: cargo fmt --all -- --check
 
-      - name: Run cargo tests
+      - name: Clippy
+        run: cargo clippy -- -D warnings
+
+      - name: Unit tests
         run: cargo test
 
-      - name: Run TAP conversion tests
-        run: |
-          cargo run -- t/conversion-functions.t
-          cargo run -- t/os-functions.t
-          cargo run -- t/numeric-functions.t
+      - name: Build
+        run: cargo build
+
+      - name: TAP tests (make test)
+        run: make test
+
+      - name: Roast tests (make roast)
+        run: make roast
