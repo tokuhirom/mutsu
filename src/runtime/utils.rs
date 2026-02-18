@@ -427,6 +427,9 @@ pub(crate) fn to_complex_parts(val: &Value) -> Option<(f64, f64)> {
 
 pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
     match (a, b) {
+        (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
+            version_cmp_parts(ap, bp) as i32
+        }
         (Value::Int(a), Value::Int(b)) => a.cmp(b) as i32,
         (Value::Num(a), Value::Num(b)) => {
             a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal) as i32

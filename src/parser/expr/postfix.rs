@@ -370,6 +370,58 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
             continue;
         }
 
+        // Hyper method call: »/>> followed by .method or method name
+        // Also hyper postfix: » followed by superscript digits (e.g. »²)
+        if rest.starts_with('\u{00BB}') || rest.starts_with(">>") {
+            let after_hyper = if rest.starts_with('\u{00BB}') {
+                &rest['\u{00BB}'.len_utf8()..]
+            } else {
+                &rest[2..]
+            };
+            // Check for hyper + superscript exponent: »²
+            if let Some((exp, len)) = parse_superscript_exp(after_hyper) {
+                rest = &after_hyper[len..];
+                expr = Expr::HyperOp {
+                    op: "**".to_string(),
+                    left: Box::new(expr),
+                    right: Box::new(Expr::Literal(Value::Int(exp))),
+                    dwim_left: false,
+                    dwim_right: true,
+                };
+                continue;
+            }
+            // Check for ».method or >>.method
+            let r = after_hyper.strip_prefix('.').unwrap_or(after_hyper);
+            if let Ok((r, name)) =
+                take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
+            {
+                let name = name.to_string();
+                // Check for args in parens
+                if r.starts_with('(') {
+                    let (r, _) = parse_char(r, '(')?;
+                    let (r, _) = ws(r)?;
+                    let (r, args) = parse_call_arg_list(r)?;
+                    let (r, _) = ws(r)?;
+                    let (r, _) = parse_char(r, ')')?;
+                    expr = Expr::HyperMethodCall {
+                        target: Box::new(expr),
+                        name,
+                        args,
+                    };
+                    rest = r;
+                    continue;
+                }
+                // No-arg hyper method call
+                expr = Expr::HyperMethodCall {
+                    target: Box::new(expr),
+                    name,
+                    args: Vec::new(),
+                };
+                rest = r;
+                continue;
+            }
+        }
+
         // Postfix ++ and --
         if let Some((op, len)) = parse_postfix_update_op(rest) {
             rest = &rest[len..];

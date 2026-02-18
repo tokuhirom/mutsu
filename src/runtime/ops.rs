@@ -311,6 +311,13 @@ impl Interpreter {
         right: Value,
         f: fn(i32) -> bool,
     ) -> Result<Value, RuntimeError> {
+        // Version-vs-Version comparison: use version_cmp_parts directly
+        if let (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) =
+            (&left, &right)
+        {
+            let ord = super::version_cmp_parts(ap, bp) as i32;
+            return Ok(Value::Bool(f(ord)));
+        }
         let (l, r) = super::coerce_numeric(left, right);
         if let (Some((an, ad)), Some((bn, bd))) = (super::to_rat_parts(&l), super::to_rat_parts(&r))
             && (matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)))

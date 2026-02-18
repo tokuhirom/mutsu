@@ -257,6 +257,37 @@ pub(crate) fn native_method_1arg(
             let factor = (1.0 / scale).abs();
             Some(Ok(Value::Num((x * factor).round() / factor)))
         }
+        "pick" => {
+            let mut items = runtime::value_to_list(target);
+            Some(Ok(match arg {
+                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
+                    // .pick(*) — Fisher-Yates shuffle
+                    let len = items.len();
+                    for i in (1..len).rev() {
+                        let j = (crate::builtins::rng::builtin_rand() * (i + 1) as f64) as usize
+                            % (i + 1);
+                        items.swap(i, j);
+                    }
+                    Value::Array(items)
+                }
+                Value::Int(n) => {
+                    let count = (*n).max(0) as usize;
+                    if count == 0 || items.is_empty() {
+                        Value::Array(Vec::new())
+                    } else {
+                        let mut result = Vec::with_capacity(count.min(items.len()));
+                        for _ in 0..count.min(items.len()) {
+                            let idx = (crate::builtins::rng::builtin_rand() * items.len() as f64)
+                                as usize
+                                % items.len();
+                            result.push(items.swap_remove(idx));
+                        }
+                        Value::Array(result)
+                    }
+                }
+                _ => return None,
+            }))
+        }
         "roll" => {
             let count = match arg {
                 Value::Int(i) if *i > 0 => *i as usize,

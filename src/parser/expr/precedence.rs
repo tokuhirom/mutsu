@@ -603,9 +603,9 @@ fn parse_meta_op(input: &str) -> Option<(&str, &str, usize)> {
             return Some((meta, op, 1 + op.len()));
         }
     }
-    // Bare Z (zip with comma) — Z followed by non-ident, non-operator char
-    if meta == "Z" && !is_ident_char(r.as_bytes().first().copied()) {
-        return Some(("Z", "", 1));
+    // Bare Z (zip with comma) or bare X (cross product) — followed by non-ident, non-operator char
+    if (meta == "Z" || meta == "X") && !is_ident_char(r.as_bytes().first().copied()) {
+        return Some((meta, "", 1));
     }
     None
 }

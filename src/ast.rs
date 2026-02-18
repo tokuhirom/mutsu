@@ -78,6 +78,11 @@ pub(crate) enum Expr {
         args: Vec<Expr>,
         modifier: Option<char>,
     },
+    HyperMethodCall {
+        target: Box<Expr>,
+        name: String,
+        args: Vec<Expr>,
+    },
     Exists(Box<Expr>),
     RoutineMagic,
     BlockMagic,
@@ -476,7 +481,7 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             collect_ph_expr(right, out);
         }
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => collect_ph_expr(expr, out),
-        Expr::MethodCall { target, args, .. } => {
+        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
             collect_ph_expr(target, out);
             for a in args {
                 collect_ph_expr(a, out);
