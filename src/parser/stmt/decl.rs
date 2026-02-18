@@ -214,6 +214,42 @@ pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
 
     let (rest, _) = ws(rest)?;
 
+    // Skip `is default(...)` or other `is` traits on variables
+    let rest = {
+        let mut r = rest;
+        while let Some(after_is) = keyword("is", r) {
+            let (r2, _) = ws1(after_is)?;
+            // Parse trait name
+            let (r2, _trait_name) = ident(r2)?;
+            let (r2, _) = ws(r2)?;
+            // Parse optional trait argument: (expr)
+            if let Some(r3) = r2.strip_prefix('(') {
+                let (r3, _) = ws(r3)?;
+                let mut depth = 1;
+                let mut end = 0;
+                for (i, c) in r3.char_indices() {
+                    match c {
+                        '(' => depth += 1,
+                        ')' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                end = i;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                let r3 = &r3[end + 1..];
+                let (r3, _) = ws(r3)?;
+                r = r3;
+            } else {
+                r = r2;
+            }
+        }
+        r
+    };
+
     // Assignment
     if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {
         #[cfg(test)]

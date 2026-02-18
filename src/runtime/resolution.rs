@@ -206,9 +206,25 @@ impl Interpreter {
             self.env = new_env;
             self.routine_stack.push((package.clone(), name.clone()));
             self.block_stack.push(block_sub);
+            let let_mark = self.let_saves.len();
             let result = self.eval_block_value(&body);
             self.block_stack.pop();
             self.routine_stack.pop();
+            // Manage let saves based on sub result
+            match &result {
+                Ok(_) => {
+                    // Explicit return or successful completion — discard saves
+                    self.discard_let_saves(let_mark);
+                }
+                Err(e) if e.return_value.is_some() => {
+                    // Explicit return — discard saves
+                    self.discard_let_saves(let_mark);
+                }
+                Err(_) => {
+                    // Exception/fail — restore saves
+                    self.restore_let_saves(let_mark);
+                }
+            }
             let mut merged = saved_env;
             if merge_all {
                 for (k, v) in self.env.iter() {
@@ -224,6 +240,7 @@ impl Interpreter {
             self.env = merged;
             return match result {
                 Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
+                Err(e) if e.is_fail => Ok(Value::Nil),
                 other => other,
             };
         }

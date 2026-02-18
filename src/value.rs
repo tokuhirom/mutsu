@@ -870,6 +870,7 @@ pub struct RuntimeError {
     pub is_redo: bool,
     pub is_proceed: bool,
     pub is_succeed: bool,
+    pub is_fail: bool,
     pub label: Option<String>,
 }
 
@@ -887,6 +888,7 @@ impl RuntimeError {
             is_redo: false,
             is_proceed: false,
             is_succeed: false,
+            is_fail: false,
             label: None,
         }
     }
@@ -909,6 +911,7 @@ impl RuntimeError {
             is_redo: false,
             is_proceed: false,
             is_succeed: false,
+            is_fail: false,
             label: None,
         }
     }
@@ -926,6 +929,7 @@ impl RuntimeError {
             is_redo: false,
             is_proceed: false,
             is_succeed: false,
+            is_fail: false,
             label: None,
         }
     }
@@ -943,6 +947,7 @@ impl RuntimeError {
             is_redo: false,
             is_proceed: false,
             is_succeed: false,
+            is_fail: false,
             label: None,
         }
     }
@@ -960,6 +965,7 @@ impl RuntimeError {
             is_redo: true,
             is_proceed: false,
             is_succeed: false,
+            is_fail: false,
             label: None,
         }
     }
@@ -977,6 +983,7 @@ impl RuntimeError {
             is_redo: false,
             is_proceed: true,
             is_succeed: false,
+            is_fail: false,
             label: None,
         }
     }
@@ -994,6 +1001,7 @@ impl RuntimeError {
             is_redo: false,
             is_proceed: false,
             is_succeed: true,
+            is_fail: false,
             label: None,
         }
     }

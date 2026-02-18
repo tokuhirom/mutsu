@@ -319,6 +319,7 @@ const STMT_PARSERS: &[StmtParser] = &[
     control::react_stmt,
     control::whenever_stmt,
     class::package_decl,
+    simple::let_stmt,
     simple::known_call_stmt,
     assign_stmt,
     simple::block_stmt,

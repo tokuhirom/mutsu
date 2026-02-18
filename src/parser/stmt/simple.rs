@@ -157,19 +157,29 @@ pub(super) fn redo_stmt(input: &str) -> PResult<'_, Stmt> {
 
 /// Parse `die` statement.
 pub(super) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
-    let rest = keyword("die", input)
-        .or_else(|| keyword("fail", input))
-        .ok_or_else(|| PError::expected("die/fail statement"))?;
+    let (rest, is_fail) = if let Some(r) = keyword("fail", input) {
+        (r, true)
+    } else {
+        let r = keyword("die", input).ok_or_else(|| PError::expected("die/fail statement"))?;
+        (r, false)
+    };
     let (rest, _) = ws(rest)?;
     if rest.starts_with(';') || rest.is_empty() || rest.starts_with('}') {
         let (rest, _) = opt_char(rest, ';');
-        return Ok((
-            rest,
-            Stmt::Die(Expr::Literal(Value::Str("Died".to_string()))),
-        ));
+        let default_msg = if is_fail { "Failed" } else { "Died" };
+        let stmt = if is_fail {
+            Stmt::Fail(Expr::Literal(Value::Str(default_msg.to_string())))
+        } else {
+            Stmt::Die(Expr::Literal(Value::Str(default_msg.to_string())))
+        };
+        return Ok((rest, stmt));
     }
     let (rest, expr) = expression(rest)?;
-    let stmt = Stmt::Die(expr);
+    let stmt = if is_fail {
+        Stmt::Fail(expr)
+    } else {
+        Stmt::Die(expr)
+    };
     parse_statement_modifier(rest, stmt)
 }
 
@@ -348,6 +358,84 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
 
     let stmt = Stmt::Expr(expr);
     parse_statement_modifier(rest, stmt)
+}
+
+/// Parse `let` statement: `let $var = expr`, `let $var`, `let @arr[idx] = expr`.
+pub(super) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("let", input).ok_or_else(|| PError::expected("let statement"))?;
+    let (rest, _) = ws1(rest)?;
+    // Parse sigil + var name
+    let sigil = rest
+        .chars()
+        .next()
+        .ok_or_else(|| PError::expected("variable after let"))?;
+    if sigil != '$' && sigil != '@' && sigil != '%' {
+        return Err(PError::expected("variable after let"));
+    }
+    let rest_after_sigil = &rest[1..];
+    let (rest, var_name) = super::ident(rest_after_sigil)?;
+    // Env key: scalars strip $, arrays/hashes keep sigil
+    let full_name = if sigil == '$' {
+        var_name.clone()
+    } else {
+        format!("{}{}", sigil, var_name)
+    };
+    let (rest, _) = ws(rest)?;
+
+    // Check for index: @arr[idx]
+    if let Some(idx_rest) = rest.strip_prefix('[') {
+        let (idx_rest, _) = ws(idx_rest)?;
+        let (idx_rest, idx_expr) = expression(idx_rest)?;
+        let (idx_rest, _) = ws(idx_rest)?;
+        let (idx_rest, _) = parse_char(idx_rest, ']')?;
+        let (idx_rest, _) = ws(idx_rest)?;
+        if idx_rest.starts_with('=') && !idx_rest.starts_with("==") {
+            let val_rest = &idx_rest[1..];
+            let (val_rest, _) = ws(val_rest)?;
+            let (val_rest, val_expr) = expression(val_rest)?;
+            return parse_statement_modifier(
+                val_rest,
+                Stmt::Let {
+                    name: full_name,
+                    index: Some(Box::new(idx_expr)),
+                    value: Some(Box::new(val_expr)),
+                },
+            );
+        }
+        return parse_statement_modifier(
+            idx_rest,
+            Stmt::Let {
+                name: full_name,
+                index: Some(Box::new(idx_expr)),
+                value: None,
+            },
+        );
+    }
+
+    // Check for assignment: let $var = expr
+    if rest.starts_with('=') && !rest.starts_with("==") {
+        let val_rest = &rest[1..];
+        let (val_rest, _) = ws(val_rest)?;
+        let (val_rest, val_expr) = expression(val_rest)?;
+        return parse_statement_modifier(
+            val_rest,
+            Stmt::Let {
+                name: full_name,
+                index: None,
+                value: Some(Box::new(val_expr)),
+            },
+        );
+    }
+
+    // Bare let: let $var / let @arr / let %hash
+    parse_statement_modifier(
+        rest,
+        Stmt::Let {
+            name: full_name,
+            index: None,
+            value: None,
+        },
+    )
 }
 
 /// Known function names that get Stmt::Call treatment at statement level.

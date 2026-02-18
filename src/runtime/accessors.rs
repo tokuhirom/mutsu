@@ -116,4 +116,28 @@ impl Interpreter {
         let captured_env = self.env.clone();
         self.end_phasers.push((body, captured_env));
     }
+
+    /// Push a saved variable value for `let` scope management.
+    pub(crate) fn let_saves_push(&mut self, name: String, value: Value) {
+        self.let_saves.push((name, value));
+    }
+
+    /// Current length of let_saves stack (used as a mark).
+    pub(crate) fn let_saves_len(&self) -> usize {
+        self.let_saves.len()
+    }
+
+    /// Restore variables from let_saves starting at `mark`, then truncate.
+    pub(crate) fn restore_let_saves(&mut self, mark: usize) {
+        for i in (mark..self.let_saves.len()).rev() {
+            let (name, old_val) = self.let_saves[i].clone();
+            self.env.insert(name, old_val);
+        }
+        self.let_saves.truncate(mark);
+    }
+
+    /// Discard let_saves from `mark` without restoring (block succeeded).
+    pub(crate) fn discard_let_saves(&mut self, mark: usize) {
+        self.let_saves.truncate(mark);
+    }
 }
