@@ -58,46 +58,37 @@ fn ident(input: &str) -> PResult<'_, String> {
 /// Allows hyphens and apostrophes between word segments, but only when followed by a letter.
 /// e.g. `foo-bar` is valid, `doesn't` is valid, but `foo-3` stops at `foo`.
 pub(super) fn parse_raku_ident<'a>(input: &'a str) -> PResult<'a, &'a str> {
-    let bytes = input.as_bytes();
-    if bytes.is_empty() || !(bytes[0].is_ascii_alphanumeric() || bytes[0] == b'_') {
+    // Check first character: must be alphanumeric (including Unicode) or underscore
+    let first = input
+        .chars()
+        .next()
+        .ok_or_else(|| PError::expected("identifier"))?;
+    if !first.is_alphanumeric() && first != '_' {
         return Err(PError::expected("identifier"));
     }
-    let mut end = 0;
-    while end < bytes.len() {
-        let b = bytes[end];
-        if b.is_ascii_alphanumeric() || b == b'_' {
-            end += 1;
-        } else if b == b'-' || b == b'\'' {
+    let mut end = first.len_utf8();
+    // Continue consuming identifier characters
+    let mut chars = input[end..].chars().peekable();
+    while let Some(&c) = chars.peek() {
+        if c.is_alphanumeric() || c == '_' {
+            end += c.len_utf8();
+            chars.next();
+        } else if c == '-' || c == '\'' {
             // Hyphen/apostrophe is part of identifier only if followed by a letter
-            if end + 1 < bytes.len() && bytes[end + 1].is_ascii_alphabetic() {
-                end += 1; // consume the hyphen/apostrophe
-            } else {
-                break;
-            }
-        } else {
-            break;
-        }
-    }
-    // Handle non-ASCII (Unicode) chars
-    if end < input.len() {
-        let rest = &input[end..];
-        let mut chars = rest.chars();
-        while let Some(c) = chars.next() {
-            if c.is_alphanumeric() || c == '_' {
-                end += c.len_utf8();
-            } else if c == '-' || c == '\'' {
-                if let Some(next) = chars.clone().next() {
-                    if next.is_alphabetic() {
-                        end += 1;
-                    } else {
-                        break;
-                    }
+            let mut lookahead = chars.clone();
+            lookahead.next(); // skip the hyphen/apostrophe
+            if let Some(&next) = lookahead.peek() {
+                if next.is_alphabetic() {
+                    end += 1; // consume the hyphen/apostrophe
+                    chars.next();
                 } else {
                     break;
                 }
             } else {
                 break;
             }
+        } else {
+            break;
         }
     }
     Ok((&input[end..], &input[..end]))

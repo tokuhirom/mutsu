@@ -230,6 +230,43 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
     )
 }
 
+/// Check if a name is an infix word operator (should not be treated as a listop call).
+fn is_infix_word_op(name: &str) -> bool {
+    matches!(
+        name,
+        "Z" | "X"
+            | "R"
+            | "x"
+            | "xx"
+            | "eq"
+            | "ne"
+            | "lt"
+            | "gt"
+            | "le"
+            | "ge"
+            | "cmp"
+            | "leg"
+            | "and"
+            | "or"
+            | "not"
+            | "div"
+            | "mod"
+            | "gcd"
+            | "lcm"
+            | "but"
+            | "does"
+            | "min"
+            | "max"
+            | "ff"
+            | "fff"
+            | "before"
+            | "after"
+            | "andthen"
+            | "orelse"
+            | "notandthen"
+    )
+}
+
 /// Check if input starts with a statement modifier keyword.
 fn is_stmt_modifier_ahead(input: &str) -> bool {
     for kw in &["if", "unless", "for", "while", "until", "given", "when"] {
@@ -687,6 +724,41 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 }
             }
             return Ok((rest_after, Expr::Call { name, args }));
+        }
+    }
+
+    // User-defined function call in listop style: bareword followed by space and a term
+    // e.g., `äöü 17` or `my-func $x`
+    // Exclude single uppercase letters (like Z, X, R) which are infix meta-operators.
+    if !is_keyword(&name)
+        && !is_infix_word_op(&name)
+        && !r.is_empty()
+        && !r.starts_with(';')
+        && !r.starts_with('}')
+        && !r.starts_with(')')
+        && !r.starts_with(',')
+        && !r.starts_with('.')
+        && !is_stmt_modifier_ahead(r)
+    {
+        // Only trigger if next token starts a term (not an operator)
+        let next = r.chars().next().unwrap();
+        if (next == '$'
+            || next == '@'
+            || next == '%'
+            || next == '&'
+            || next == '\''
+            || next == '"'
+            || next == '('
+            || next.is_ascii_digit())
+            && let Ok((r2, arg)) = parse_listop_arg(r)
+        {
+            return Ok((
+                r2,
+                Expr::Call {
+                    name,
+                    args: vec![arg],
+                },
+            ));
         }
     }
 

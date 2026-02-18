@@ -309,23 +309,46 @@ impl Interpreter {
         let mut positional_idx = 0usize;
         for pd in param_defs {
             if pd.slurpy {
-                let mut items = Vec::new();
-                while positional_idx < args.len() {
-                    items.push(args[positional_idx].clone());
-                    positional_idx += 1;
-                }
-                if !pd.name.is_empty() {
-                    // Store with @ prefix so @args lookup works
-                    let key = if pd.name.starts_with('@') || pd.name.starts_with('%') {
-                        pd.name.clone()
-                    } else {
-                        format!("@{}", pd.name)
-                    };
-                    self.env.insert(key, Value::Array(items));
+                let is_hash_slurpy = pd.name.starts_with('%');
+                if is_hash_slurpy {
+                    // *%hash — collect Pair arguments into a hash
+                    let mut hash_items = std::collections::HashMap::new();
+                    for arg in args.iter() {
+                        if let Value::Pair(k, v) = arg {
+                            hash_items.insert(k.clone(), *v.clone());
+                        }
+                    }
+                    if !pd.name.is_empty() {
+                        self.env.insert(pd.name.clone(), Value::Hash(hash_items));
+                    }
+                } else {
+                    let mut items = Vec::new();
+                    while positional_idx < args.len() {
+                        items.push(args[positional_idx].clone());
+                        positional_idx += 1;
+                    }
+                    if !pd.name.is_empty() {
+                        let key = if pd.name.starts_with('@') {
+                            pd.name.clone()
+                        } else {
+                            format!("@{}", pd.name)
+                        };
+                        self.env.insert(key, Value::Array(items));
+                    }
                 }
             } else if pd.named {
-                // Named params not supported with pre-evaluated values, use default
-                if let Some(default_expr) = &pd.default {
+                // Look for a matching named argument (Pair) in args
+                let mut found = false;
+                for arg in args {
+                    if let Value::Pair(key, val) = arg
+                        && key == &pd.name
+                    {
+                        self.env.insert(pd.name.clone(), *val.clone());
+                        found = true;
+                        break;
+                    }
+                }
+                if !found && let Some(default_expr) = &pd.default {
                     let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?;
                     if !pd.name.is_empty() {
                         self.env.insert(pd.name.clone(), value);

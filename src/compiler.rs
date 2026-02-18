@@ -1699,8 +1699,8 @@ impl Compiler {
             sub_compiler.compile_stmt(stmt);
         }
 
+        let arity = param_defs.iter().filter(|p| !p.slurpy && !p.named).count();
         let key = if multi {
-            let arity = param_defs.len();
             let type_sig: Vec<String> = param_defs
                 .iter()
                 .map(|pd| pd.type_constraint.clone().unwrap_or_default())
@@ -1716,7 +1716,9 @@ impl Compiler {
                 }
             )
         } else {
-            format!("{}::{}", self.current_package, name)
+            // Include arity in key to avoid collisions between same-named
+            // subs with different arities in different scopes
+            format!("{}::{}/{}", self.current_package, name, arity)
         };
 
         let cf = CompiledFunction {
@@ -2007,19 +2009,15 @@ impl Compiler {
     /// Hoist sub declarations: emit RegisterSub for all SubDecl statements
     /// before executing the rest of the block, so that `&name` references
     /// are available before the sub declaration appears in source order.
+    /// Note: we only emit RegisterSub here, not compile_sub_body, because
+    /// the normal SubDecl handling will compile the body. Compiling here
+    /// would cause the compiled_functions map (which is flat) to be overwritten
+    /// by later hoists from other scopes.
     fn hoist_sub_decls(&mut self, stmts: &[Stmt]) {
         for stmt in stmts {
-            if let Stmt::SubDecl {
-                name,
-                params,
-                param_defs,
-                body,
-                multi,
-            } = stmt
-            {
+            if let Stmt::SubDecl { .. } = stmt {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterSub(idx));
-                self.compile_sub_body(name, params, param_defs, body, *multi);
             }
         }
     }

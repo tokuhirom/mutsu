@@ -7,6 +7,71 @@ use crate::value::Value;
 use super::super::expr::expression;
 use super::var::parse_var_name_from_str;
 
+/// Map a Unicode opening bracket to its closing counterpart.
+/// Only includes pairs that Raku recognizes for quoting.
+fn unicode_bracket_close(open: char) -> Option<char> {
+    match open {
+        '\u{0028}' => Some('\u{0029}'), // ( )
+        '\u{005B}' => Some('\u{005D}'), // [ ]
+        '\u{007B}' => Some('\u{007D}'), // { }
+        '\u{00AB}' => Some('\u{00BB}'), // « »
+        '\u{2018}' => Some('\u{2019}'), // ' '
+        '\u{201A}' => Some('\u{2019}'), // ‚ '
+        '\u{201C}' => Some('\u{201D}'), // " "
+        '\u{201E}' => Some('\u{201D}'), // „ "
+        '\u{2039}' => Some('\u{203A}'), // ‹ ›
+        '\u{2045}' => Some('\u{2046}'), // ⁅ ⁆
+        '\u{207D}' => Some('\u{207E}'), // ⁽ ⁾
+        '\u{208D}' => Some('\u{208E}'), // ₍ ₎
+        '\u{2308}' => Some('\u{2309}'), // ⌈ ⌉
+        '\u{230A}' => Some('\u{230B}'), // ⌊ ⌋
+        '\u{2329}' => Some('\u{232A}'), // 〈 〉
+        '\u{27C5}' => Some('\u{27C6}'), // ⟅ ⟆
+        '\u{27E6}' => Some('\u{27E7}'), // ⟦ ⟧
+        '\u{27E8}' => Some('\u{27E9}'), // ⟨ ⟩
+        '\u{27EA}' => Some('\u{27EB}'), // ⟪ ⟫
+        '\u{27EC}' => Some('\u{27ED}'), // ⟬ ⟭
+        '\u{27EE}' => Some('\u{27EF}'), // ⟮ ⟯
+        '\u{2983}' => Some('\u{2984}'), // ⦃ ⦄
+        '\u{2985}' => Some('\u{2986}'), // ⦅ ⦆
+        '\u{2987}' => Some('\u{2988}'), // ⦇ ⦈
+        '\u{2989}' => Some('\u{298A}'), // ⦉ ⦊
+        '\u{298B}' => Some('\u{298C}'), // ⦋ ⦌
+        '\u{298D}' => Some('\u{2990}'), // ⦍ ⦐
+        '\u{298F}' => Some('\u{298E}'), // ⦏ ⦎
+        '\u{2991}' => Some('\u{2992}'), // ⦑ ⦒
+        '\u{2993}' => Some('\u{2994}'), // ⦓ ⦔
+        '\u{2995}' => Some('\u{2996}'), // ⦕ ⦖
+        '\u{2997}' => Some('\u{2998}'), // ⦗ ⦘
+        '\u{29FC}' => Some('\u{29FD}'), // ⧼ ⧽
+        '\u{2E22}' => Some('\u{2E23}'), // ⸢ ⸣
+        '\u{2E24}' => Some('\u{2E25}'), // ⸤ ⸥
+        '\u{2E26}' => Some('\u{2E27}'), // ⸦ ⸧
+        '\u{2E28}' => Some('\u{2E29}'), // ⸨ ⸩
+        '\u{3008}' => Some('\u{3009}'), // 〈 〉
+        '\u{300A}' => Some('\u{300B}'), // 《 》
+        '\u{300C}' => Some('\u{300D}'), // 「 」
+        '\u{300E}' => Some('\u{300F}'), // 『 』
+        '\u{3010}' => Some('\u{3011}'), // 【 】
+        '\u{3014}' => Some('\u{3015}'), // 〔 〕
+        '\u{3016}' => Some('\u{3017}'), // 〖 〗
+        '\u{3018}' => Some('\u{3019}'), // 〘 〙
+        '\u{301A}' => Some('\u{301B}'), // 〚 〛
+        '\u{301D}' => Some('\u{301E}'), // 〝 〞
+        '\u{FD3E}' => Some('\u{FD3F}'), // ﴾ ﴿
+        '\u{FE17}' => Some('\u{FE18}'), // ︗ ︘
+        '\u{FE59}' => Some('\u{FE5A}'), // ﹙ ﹚
+        '\u{FE5B}' => Some('\u{FE5C}'), // ﹛ ﹜
+        '\u{FE5D}' => Some('\u{FE5E}'), // ﹝ ﹞
+        '\u{FF08}' => Some('\u{FF09}'), // （ ）
+        '\u{FF3B}' => Some('\u{FF3D}'), // ［ ］
+        '\u{FF5B}' => Some('\u{FF5D}'), // ｛ ｝
+        '\u{FF5F}' => Some('\u{FF60}'), // ｟ ｠
+        '\u{FF62}' => Some('\u{FF63}'), // ｢ ｣
+        _ => None,
+    }
+}
+
 /// Read a bracketed string with nesting support (e.g., `{...{...}...}`)
 pub(super) fn read_bracketed(input: &str, open: char, close: char) -> PResult<'_, &str> {
     if !input.starts_with(open) {
@@ -154,6 +219,22 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
             }
             let s = content.replace("\\'", "'").replace("\\\\", "\\");
             return Ok((rest, Expr::Literal(Value::Str(s))));
+        }
+        Some(c) => {
+            if let Some(close_char) = unicode_bracket_close(c) {
+                let rest = &after_prefix[c.len_utf8()..];
+                let end = rest
+                    .find(close_char)
+                    .ok_or_else(|| PError::expected("closing Unicode bracket"))?;
+                let content = &rest[..end];
+                let rest = &rest[end + close_char.len_utf8()..];
+                if is_qq {
+                    return Ok((rest, interpolate_string_content(content)));
+                }
+                let s = content.replace("\\'", "'").replace("\\\\", "\\");
+                return Ok((rest, Expr::Literal(Value::Str(s))));
+            }
+            return Err(PError::expected("q string delimiter"));
         }
         _ => return Err(PError::expected("q string delimiter")),
     };
@@ -436,7 +517,7 @@ pub(super) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
         }
         if rest.starts_with('\\') && rest.len() > 1 {
             if let Some((r, needs_continue)) =
-                process_escape_sequence(rest, &mut current, &['"', '{'])
+                process_escape_sequence(rest, &mut current, &['"', '{', '}'])
             {
                 rest = r;
                 if needs_continue {

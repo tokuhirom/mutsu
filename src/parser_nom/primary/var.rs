@@ -35,7 +35,8 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         return paren_expr(input);
     }
     // Handle $_ special variable
-    if input.starts_with('_') && (input.len() == 1 || !input.as_bytes()[1].is_ascii_alphanumeric())
+    if input.starts_with('_')
+        && (input.len() == 1 || !input[1..].chars().next().unwrap().is_alphanumeric())
     {
         return Ok((&input[1..], Expr::Var("_".to_string())));
     }
@@ -48,7 +49,10 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         // If next char is alphanumeric or _, it's a twigil (e.g. $!attr)
         // If not, it's the bare $! variable
         let is_twigil = !after.is_empty()
-            && (after.as_bytes()[0].is_ascii_alphanumeric() || after.as_bytes()[0] == b'_');
+            && after
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphanumeric() || c == '_');
         if !is_twigil {
             return Ok((after, Expr::Var("!".to_string())));
         }
@@ -70,14 +74,16 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     }
     // Handle bare $ (anonymous state variable)
     // If next char is not a valid identifier start, twigil, or special char, it's an anonymous var
-    let next_is_ident_or_twigil = !input.is_empty()
-        && (input.as_bytes()[0].is_ascii_alphanumeric()
-            || input.as_bytes()[0] == b'_'
-            || input.as_bytes()[0] == b'*'
-            || input.as_bytes()[0] == b'?'
-            || input.as_bytes()[0] == b'!'
-            || input.as_bytes()[0] == b'^'
-            || input.as_bytes()[0] == b'.');
+    let next_is_ident_or_twigil = !input.is_empty() && {
+        let first_char = input.chars().next().unwrap();
+        first_char.is_alphanumeric()
+            || first_char == '_'
+            || first_char == '*'
+            || first_char == '?'
+            || first_char == '!'
+            || first_char == '^'
+            || first_char == '.'
+    };
     if !next_is_ident_or_twigil {
         return Ok((input, Expr::Var("__ANON_STATE__".to_string())));
     }
@@ -112,20 +118,23 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
 pub(super) fn parse_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, &'a str> {
     let (rest, _first) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_')?;
     let mut end = input.len() - rest.len();
-    let bytes = input.as_bytes();
     loop {
-        if end < bytes.len()
-            && bytes[end] == b'-'
-            && end + 1 < bytes.len()
-            && (bytes[end + 1].is_ascii_alphabetic() || bytes[end + 1] == b'_')
+        let remaining = &input[end..];
+        if let Some(after_hyphen) = remaining.strip_prefix('-')
+            && let Some(next) = after_hyphen.chars().next()
+            && (next.is_alphabetic() || next == '_')
         {
-            end += 1;
-            while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
-                end += 1;
+            end += 1; // consume hyphen
+            for c in after_hyphen.chars() {
+                if c.is_alphanumeric() || c == '_' {
+                    end += c.len_utf8();
+                } else {
+                    break;
+                }
             }
-        } else {
-            break;
+            continue;
         }
+        break;
     }
     Ok((&input[end..], &input[..end]))
 }

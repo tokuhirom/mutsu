@@ -196,12 +196,14 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((r, p));
     }
 
-    // Slurpy: *@arr or *%hash
+    // Slurpy: *@arr or *%hash or *$scalar
+    let mut slurpy_sigil = None;
     if rest.starts_with('*')
         && rest.len() > 1
         && (rest.as_bytes()[1] == b'@' || rest.as_bytes()[1] == b'%' || rest.as_bytes()[1] == b'$')
     {
         slurpy = true;
+        slurpy_sigil = Some(rest.as_bytes()[1] as char);
         rest = &rest[1..];
     }
 
@@ -381,7 +383,18 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         (rest, None)
     };
 
-    let mut p = make_param(name);
+    // For slurpy params, prefix the name with the sigil so runtime can
+    // distinguish *@array from *%hash
+    let param_name = if slurpy {
+        match slurpy_sigil {
+            Some('%') => format!("%{}", name),
+            Some('@') => format!("@{}", name),
+            _ => name,
+        }
+    } else {
+        name
+    };
+    let mut p = make_param(param_name);
     p.default = default;
     p.named = named;
     p.slurpy = slurpy;
