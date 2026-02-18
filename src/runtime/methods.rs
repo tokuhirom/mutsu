@@ -267,6 +267,13 @@ impl Interpreter {
                 ));
             }
             if (method == "raku" || method == "perl") && args.is_empty() {
+                if class_name == "ObjAt" {
+                    let which = attributes
+                        .get("WHICH")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    return Ok(Value::Str(format!("ObjAt.new(\"{}\")", which)));
+                }
                 return Ok(Value::Str(format!("{}.new()", class_name)));
             }
             if method == "name" && args.is_empty() {
@@ -298,11 +305,14 @@ impl Interpreter {
         // Fallback methods
         match method {
             "gist" if args.is_empty() => match target {
-                Value::Package(name) => Ok(Value::Str(format!("({})", name))),
+                Value::Package(name) => {
+                    let short = name.split("::").last().unwrap_or(&name);
+                    Ok(Value::Str(format!("({})", short)))
+                }
                 other => Ok(Value::Str(other.to_string_value())),
             },
             "raku" | "perl" if args.is_empty() => match target {
-                Value::Package(name) => Ok(Value::Str(format!("({})", name))),
+                Value::Package(name) => Ok(Value::Str(name.clone())),
                 other => Ok(Value::Str(other.to_string_value())),
             },
             "name" if args.is_empty() => match target {

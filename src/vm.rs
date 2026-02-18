@@ -2105,6 +2105,15 @@ impl VM {
                 )));
             }
 
+            OpCode::IndirectTypeLookup => {
+                let name_val = self.stack.pop().unwrap_or(Value::Nil);
+                let name = name_val.to_string_value();
+                // Resolve to Package — any string name is valid as a type lookup
+                let val = Value::Package(name);
+                self.stack.push(val);
+                *ip += 1;
+            }
+
             OpCode::StateVarInit(slot, key_idx) => {
                 let init_val = self.stack.pop().unwrap_or(Value::Nil);
                 let key = Self::const_str(code, *key_idx);

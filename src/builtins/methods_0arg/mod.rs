@@ -37,6 +37,28 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Slip(items) if items.is_empty() => false,
             _ => true,
         }))),
+        "WHICH" => {
+            let which_str = match target {
+                Value::Package(name) => name.clone(),
+                Value::Int(n) => format!("Int|{}", n),
+                Value::BigInt(n) => format!("Int|{}", n),
+                Value::Num(n) => format!("Num|{}", n),
+                Value::Str(s) => format!("Str|{}", s),
+                Value::Bool(b) => format!("Bool|{}", if *b { 1 } else { 0 }),
+                Value::Rat(n, d) => format!("Rat|{}/{}", n, d),
+                Value::FatRat(n, d) => format!("FatRat|{}/{}", n, d),
+                Value::Complex(r, i) => format!("Complex|{}+{}i", r, i),
+                Value::Nil => "Any|U140803128".to_string(),
+                _ => format!(
+                    "{:?}|0x{:p}",
+                    runtime::utils::value_type_name(target),
+                    target as *const Value
+                ),
+            };
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("WHICH".to_string(), Value::Str(which_str));
+            Some(Ok(Value::make_instance("ObjAt".to_string(), attrs)))
+        }
         "Bool" => Some(Ok(Value::Bool(target.truthy()))),
         "Str" => match target {
             Value::Package(_) | Value::Instance { .. } => None,
