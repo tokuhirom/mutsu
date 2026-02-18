@@ -122,6 +122,15 @@ impl Interpreter {
                 let key = item.to_string_value();
                 map.contains_key(&key)
             }),
+            // Regex ~~ Hash: check if any key matches the regex
+            (Value::Regex(pat), Value::Hash(map)) => {
+                for key in map.keys() {
+                    if self.regex_find_first(pat, key).is_some() {
+                        return true;
+                    }
+                }
+                false
+            }
             // Scalar ~~ Hash: check key existence
             (_, Value::Hash(map)) => {
                 let key = left.to_string_value();

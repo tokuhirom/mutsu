@@ -51,6 +51,7 @@ roast/S03-smartmatch/any-hash-pair.t
 roast/S03-smartmatch/any-method.t
 roast/S03-smartmatch/any-str.t
 roast/S03-smartmatch/any-sub.t
+roast/S03-smartmatch/regex-hash.t
 roast/S03-smartmatch/scalar-hash.t
 roast/S04-exceptions/control_across_runloop.t
 roast/S04-statement-modifiers/until.t
