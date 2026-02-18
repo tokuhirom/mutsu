@@ -576,6 +576,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Package(_) => Some(Ok(make_rat(0, 1))),
             _ => Some(Ok(make_rat(0, 1))),
         },
+        "tree" => match target {
+            Value::Array(items) => Some(Ok(Value::Array(tree_recursive(items)))),
+            _ => Some(Ok(target.clone())),
+        },
         "sink" => Some(Ok(Value::Nil)),
         "NFC" | "NFD" | "NFKC" | "NFKD" => {
             use unicode_normalization::UnicodeNormalization;
@@ -591,6 +595,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
         _ => None,
     }
+}
+
+/// Recursively apply `.tree` to nested arrays.
+fn tree_recursive(items: &[Value]) -> Vec<Value> {
+    items
+        .iter()
+        .map(|v| match v {
+            Value::Array(inner) => Value::Array(tree_recursive(inner)),
+            other => other.clone(),
+        })
+        .collect()
 }
 
 /// Convert a Value to a string for Unicode normalization.

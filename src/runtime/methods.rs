@@ -181,6 +181,9 @@ impl Interpreter {
             "grep" => {
                 return self.dispatch_grep(target, &args);
             }
+            "tree" if !args.is_empty() => {
+                return self.dispatch_tree(target, &args);
+            }
             _ => {}
         }
 
@@ -859,5 +862,90 @@ impl Interpreter {
         }
         result.push(f64_to_val(n));
         Ok(Value::Array(result))
+    }
+
+    fn dispatch_tree(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        // Non-iterable: .tree(anything) returns self
+        let items = match &target {
+            Value::Array(items) => items.clone(),
+            _ => return Ok(target),
+        };
+
+        let arg = &args[0];
+        match arg {
+            // .tree(0) — identity
+            Value::Int(0) => Ok(target),
+            // .tree(n) — tree to n levels
+            Value::Int(n) if *n > 0 => Ok(Value::Array(self.tree_depth(&items, *n as usize)?)),
+            // .tree(*) — full depth (same as .tree()); * compiles to Inf
+            Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
+                Ok(Value::Array(self.tree_depth(&items, usize::MAX)?))
+            }
+            // .tree([&first, *@rest]) — array of closures form
+            Value::Array(closure_list) => {
+                if closure_list.is_empty() {
+                    return Ok(target);
+                }
+                let first = &closure_list[0];
+                self.call_sub_value(first.clone(), vec![target], false)
+            }
+            // .tree(&closure, ...) — apply closures at depth levels
+            Value::Sub { .. } => {
+                let closures: Vec<Value> = args.to_vec();
+                self.tree_with_closures(&items, &closures, 0)
+            }
+            _ => Ok(target),
+        }
+    }
+
+    fn tree_depth(&mut self, items: &[Value], depth: usize) -> Result<Vec<Value>, RuntimeError> {
+        let mut result = Vec::new();
+        for item in items {
+            match item {
+                Value::Array(inner) if depth > 0 => {
+                    result.push(Value::Array(self.tree_depth(inner, depth - 1)?));
+                }
+                other => result.push(other.clone()),
+            }
+        }
+        Ok(result)
+    }
+
+    fn tree_with_closures(
+        &mut self,
+        items: &[Value],
+        closures: &[Value],
+        depth: usize,
+    ) -> Result<Value, RuntimeError> {
+        let mut processed = Vec::new();
+        for item in items {
+            match item {
+                Value::Array(inner) if closures.len() > depth + 1 => {
+                    let sub_result = self.tree_with_closures(inner, closures, depth + 1)?;
+                    processed.push(sub_result);
+                }
+                Value::Array(inner) => {
+                    // Apply the last closure to leaf arrays
+                    if let Some(closure) = closures.last()
+                        && closures.len() > 1
+                    {
+                        processed.push(self.call_sub_value(
+                            closure.clone(),
+                            vec![Value::Array(inner.clone())],
+                            false,
+                        )?);
+                    } else {
+                        processed.push(Value::Array(inner.clone()));
+                    }
+                }
+                other => processed.push(other.clone()),
+            }
+        }
+        // Apply the closure at this depth level
+        if let Some(closure) = closures.get(depth) {
+            self.call_sub_value(closure.clone(), vec![Value::Array(processed)], false)
+        } else {
+            Ok(Value::Array(processed))
+        }
     }
 }

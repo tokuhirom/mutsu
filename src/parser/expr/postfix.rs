@@ -270,10 +270,15 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
             continue;
         }
 
-        // Array indexing: [expr]
+        // Array indexing: [expr] or zen slice []
         if rest.starts_with('[') {
             let r = &rest[1..];
             let (r, _) = ws(r)?;
+            // Zen slice: expr[] — returns expr unchanged (identity on lists)
+            if let Some(after) = r.strip_prefix(']') {
+                rest = after;
+                continue;
+            }
             let (r, index) = expression(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ']')?;
