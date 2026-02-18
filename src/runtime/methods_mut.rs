@@ -41,8 +41,9 @@ impl Interpreter {
                         },
                     };
                     items.extend(args);
+                    let result = Value::Array(items.clone());
                     self.env.insert(key, Value::Array(items));
-                    return Ok(Value::Nil);
+                    return Ok(result);
                 }
                 "append" => {
                     let mut items = match self.env.get(&key) {

@@ -2105,6 +2105,24 @@ impl VM {
                 )));
             }
 
+            OpCode::StateVarInit(slot, key_idx) => {
+                let init_val = self.stack.pop().unwrap_or(Value::Nil);
+                let key = Self::const_str(code, *key_idx);
+                let val = if let Some(stored) = self.interpreter.get_state_var(key) {
+                    stored.clone()
+                } else {
+                    self.interpreter
+                        .set_state_var(key.to_string(), init_val.clone());
+                    init_val
+                };
+                let slot_idx = *slot as usize;
+                self.locals[slot_idx] = val.clone();
+                // Also sync to env so PreIncrement/PreDecrement can find it
+                let name = code.locals[slot_idx].clone();
+                self.interpreter.env_mut().insert(name, val);
+                *ip += 1;
+            }
+
             OpCode::BlockScope {
                 enter_end,
                 body_end,

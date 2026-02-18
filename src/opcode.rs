@@ -415,6 +415,13 @@ pub(crate) enum OpCode {
     /// Evaluate an AST expression via the interpreter (for operators not yet compiled).
     /// The u32 indexes into stmt_pool.
     EvalAstExpr(u32),
+
+    /// State variable initialization.
+    /// slot = local slot index, key_idx = constant index for unique state key.
+    /// Pops init value from stack.
+    /// If state_vars has key: set locals[slot] = stored value (discard init).
+    /// If not: set locals[slot] = init value, store in state_vars.
+    StateVarInit(u32, u32),
 }
 
 /// A compiled chunk of bytecode.
@@ -424,6 +431,8 @@ pub(crate) struct CompiledCode {
     pub(crate) constants: Vec<Value>,
     pub(crate) stmt_pool: Vec<Stmt>,
     pub(crate) locals: Vec<String>,
+    /// Maps local slot indices to persistent state keys for `state` variables.
+    pub(crate) state_locals: Vec<(usize, String)>,
 }
 
 impl CompiledCode {
@@ -433,6 +442,7 @@ impl CompiledCode {
             constants: Vec::new(),
             stmt_pool: Vec::new(),
             locals: Vec::new(),
+            state_locals: Vec::new(),
         }
     }
 

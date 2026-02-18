@@ -1,4 +1,7 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static STATE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 use crate::ast::{AssignOp, CallArg, Expr, PhaserKind, Stmt, make_anon_sub};
 use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
@@ -132,6 +135,7 @@ impl Compiler {
                 name,
                 expr,
                 type_constraint,
+                is_state,
             } => {
                 self.compile_expr(expr);
                 if let Some(tc) = type_constraint {
@@ -139,7 +143,14 @@ impl Compiler {
                     self.code.emit(OpCode::TypeCheck(tc_idx));
                 }
                 let slot = self.alloc_local(name);
-                self.code.emit(OpCode::SetLocal(slot));
+                if *is_state {
+                    let key = format!("__state_{}", STATE_COUNTER.fetch_add(1, Ordering::Relaxed));
+                    let key_idx = self.code.add_constant(Value::Str(key.clone()));
+                    self.code.state_locals.push((slot as usize, key.clone()));
+                    self.code.emit(OpCode::StateVarInit(slot, key_idx));
+                } else {
+                    self.code.emit(OpCode::SetLocal(slot));
+                }
             }
             Stmt::Assign {
                 name,
@@ -735,6 +746,12 @@ impl Compiler {
                     if let Expr::Var(name) = expr.as_ref() {
                         let name_idx = self.code.add_constant(Value::Str(name.clone()));
                         self.code.emit(OpCode::PreIncrement(name_idx));
+                    } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
+                        // ++state $ — compile the VarDecl, then increment
+                        self.compile_expr(expr);
+                        self.code.emit(OpCode::Pop);
+                        let name_idx = self.code.add_constant(Value::Str(var_name));
+                        self.code.emit(OpCode::PreIncrement(name_idx));
                     } else {
                         self.code.emit(OpCode::LoadNil);
                     }
@@ -742,6 +759,11 @@ impl Compiler {
                 TokenKind::MinusMinus => {
                     if let Expr::Var(name) = expr.as_ref() {
                         let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        self.code.emit(OpCode::PreDecrement(name_idx));
+                    } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
+                        self.compile_expr(expr);
+                        self.code.emit(OpCode::Pop);
+                        let name_idx = self.code.add_constant(Value::Str(var_name));
                         self.code.emit(OpCode::PreDecrement(name_idx));
                     } else {
                         self.code.emit(OpCode::LoadNil);
@@ -966,13 +988,20 @@ impl Compiler {
             } if matches!(
                 target.as_ref(),
                 Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::CodeVar(_)
-            ) =>
+            ) || Self::is_dostmt_vardecl(target) =>
             {
                 let target_name = match target.as_ref() {
                     Expr::Var(n) => n.clone(),
                     Expr::ArrayVar(n) => format!("@{}", n),
                     Expr::HashVar(n) => format!("%{}", n),
                     Expr::CodeVar(n) => format!("&{}", n),
+                    Expr::DoStmt(stmt) => {
+                        if let Stmt::VarDecl { name, .. } = stmt.as_ref() {
+                            name.clone()
+                        } else {
+                            unreachable!()
+                        }
+                    }
                     _ => unreachable!(),
                 };
                 self.compile_expr(target);
@@ -1279,15 +1308,30 @@ impl Compiler {
                         self.code.emit(OpCode::SetGlobal(name_idx));
                     }
                 }
-                Stmt::VarDecl { name, expr, .. } => {
+                Stmt::VarDecl {
+                    name,
+                    expr,
+                    is_state,
+                    ..
+                } => {
                     // my $x = expr in expression context → declare, assign, return value
                     self.compile_expr(expr);
-                    self.code.emit(OpCode::Dup);
-                    if let Some(&slot) = self.local_map.get(name.as_str()) {
-                        self.code.emit(OpCode::SetLocal(slot));
+                    if *is_state {
+                        let slot = self.alloc_local(name);
+                        let key =
+                            format!("__state_{}", STATE_COUNTER.fetch_add(1, Ordering::Relaxed));
+                        let key_idx = self.code.add_constant(Value::Str(key.clone()));
+                        self.code.state_locals.push((slot as usize, key.clone()));
+                        self.code.emit(OpCode::StateVarInit(slot, key_idx));
+                        self.code.emit(OpCode::GetLocal(slot));
                     } else {
-                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                        self.code.emit(OpCode::SetGlobal(name_idx));
+                        self.code.emit(OpCode::Dup);
+                        if let Some(&slot) = self.local_map.get(name.as_str()) {
+                            self.code.emit(OpCode::SetLocal(slot));
+                        } else {
+                            let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                            self.code.emit(OpCode::SetGlobal(name_idx));
+                        }
                     }
                 }
                 Stmt::Expr(inner_expr) => {
@@ -1932,11 +1976,13 @@ impl Compiler {
                 name: first_var.clone(),
                 expr: Expr::Literal(Value::Bool(true)),
                 type_constraint: None,
+                is_state: false,
             },
             Stmt::VarDecl {
                 name: ran_var.clone(),
                 expr: Expr::Literal(Value::Bool(false)),
                 type_constraint: None,
+                is_state: false,
             },
         ];
 
@@ -1974,6 +2020,22 @@ impl Compiler {
         };
 
         (pre, loop_body, post)
+    }
+
+    fn is_dostmt_vardecl(expr: &Expr) -> bool {
+        matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))
+    }
+
+    /// Extract the variable name from a DoStmt(VarDecl { .. }) expression,
+    /// used for `++state $` patterns.
+    fn extract_vardecl_name(expr: &Expr) -> Option<String> {
+        if let Expr::DoStmt(stmt) = expr
+            && let Stmt::VarDecl { name, .. } = stmt.as_ref()
+        {
+            Some(name.clone())
+        } else {
+            None
+        }
     }
 
     fn postfix_index_name(target: &Expr) -> Option<String> {

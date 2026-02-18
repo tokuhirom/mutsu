@@ -5,6 +5,14 @@ impl Interpreter {
         &mut self.env
     }
 
+    pub(crate) fn get_state_var(&self, key: &str) -> Option<&Value> {
+        self.state_vars.get(key)
+    }
+
+    pub(crate) fn set_state_var(&mut self, key: String, value: Value) {
+        self.state_vars.insert(key, value);
+    }
+
     pub(crate) fn when_matched(&self) -> bool {
         self.when_matched
     }

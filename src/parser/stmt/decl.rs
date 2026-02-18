@@ -71,6 +71,7 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
 
 /// Parse `my`, `our`, or `state` variable declaration.
 pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
+    let is_state = keyword("state", input).is_some();
     let rest = keyword("my", input)
         .or_else(|| keyword("our", input))
         .or_else(|| keyword("state", input))
@@ -118,6 +119,7 @@ pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
                 name,
                 expr,
                 type_constraint: None,
+                is_state,
             };
             return parse_statement_modifier(r, stmt);
         }
@@ -127,6 +129,7 @@ pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
                 name,
                 expr: Expr::Literal(Value::Nil),
                 type_constraint: None,
+                is_state,
             },
         ));
     }
@@ -164,6 +167,7 @@ pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
                 name,
                 expr,
                 type_constraint,
+                is_state,
             };
             return parse_statement_modifier(r, stmt);
         }
@@ -173,6 +177,7 @@ pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
                 name,
                 expr: Expr::Literal(Value::Nil),
                 type_constraint,
+                is_state,
             },
         ));
     }
@@ -220,6 +225,7 @@ pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
             name,
             expr,
             type_constraint,
+            is_state,
         };
         return parse_statement_modifier(rest, stmt);
     }
@@ -253,6 +259,7 @@ pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
             name,
             expr,
             type_constraint,
+            is_state,
         };
         return parse_statement_modifier(rest, stmt);
     }
@@ -264,6 +271,7 @@ pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
             name,
             expr,
             type_constraint,
+            is_state,
         };
         return parse_statement_modifier(rest, stmt);
     }
@@ -282,6 +290,7 @@ pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
             name,
             expr,
             type_constraint,
+            is_state,
         },
     ))
 }
@@ -337,6 +346,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
             name: tmp_name,
             expr: rhs,
             type_constraint: None,
+            is_state: false,
         }];
         for (i, var_name) in names.iter().enumerate() {
             stmts.push(Stmt::VarDecl {
@@ -346,6 +356,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
                     index: Box::new(Expr::Literal(Value::Int(i as i64))),
                 },
                 type_constraint: None,
+                is_state: false,
             });
         }
         return Ok((rest, Stmt::Block(stmts)));
@@ -359,6 +370,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
             name: name.clone(),
             expr: Expr::Literal(Value::Nil),
             type_constraint: None,
+            is_state: false,
         });
     }
     Ok((rest, Stmt::Block(stmts)))
@@ -530,6 +542,7 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 name,
                 expr,
                 type_constraint: None,
+                is_state: false,
             },
         ));
     }
@@ -540,6 +553,7 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
             name,
             expr: Expr::Literal(Value::Nil),
             type_constraint: None,
+            is_state: false,
         },
     ))
 }
