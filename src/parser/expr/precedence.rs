@@ -603,6 +603,10 @@ fn parse_meta_op(input: &str) -> Option<(&str, &str, usize)> {
             return Some((meta, op, 1 + op.len()));
         }
     }
+    // Bare Z (zip with comma) — Z followed by non-ident, non-operator char
+    if meta == "Z" && !is_ident_char(r.as_bytes().first().copied()) {
+        return Some(("Z", "", 1));
+    }
     None
 }
 
@@ -684,7 +688,7 @@ fn structural_expr(input: &str) -> PResult<'_, Expr> {
         if let Some((meta, op, len)) = parse_meta_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = concat_expr(r).map_err(|err| {
+            let (r, right) = range_expr(r).map_err(|err| {
                 enrich_expected_error(err, "expected expression after meta operator", r.len())
             })?;
             left = Expr::MetaOp {
