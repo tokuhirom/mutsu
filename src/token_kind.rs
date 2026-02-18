@@ -170,3 +170,15 @@ pub(crate) fn lookup_unicode_char_by_name(name: &str) -> Option<char> {
         _ => None,
     }
 }
+
+/// Look up an emoji sequence by its CLDR name (e.g., "woman gesturing OK").
+/// Returns the emoji string (which may contain multiple codepoints for ZWJ sequences).
+pub(crate) fn lookup_emoji_sequence(name: &str) -> Option<String> {
+    let lower = name.to_lowercase();
+    for emoji in emojis::iter() {
+        if emoji.name().to_lowercase() == lower {
+            return Some(emoji.as_str().to_string());
+        }
+    }
+    None
+}
