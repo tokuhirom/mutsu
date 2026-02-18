@@ -1,4 +1,4 @@
-# Parser Improvement Plan (`parser_nom`)
+# Parser Improvement Plan (`parser`)
 
 This document defines the ongoing parser refactoring policy and next steps.
 
@@ -51,7 +51,7 @@ Prefer helper functions for recurring patterns:
 Keep parse diagnostics both human-readable and machine-friendly:
 
 - Use `RuntimeErrorCode` (`ParseUnparsed`, `ParseExpected`, `ParseGeneric`) instead of raw tag strings.
-- Populate `RuntimeError { code, line, column }` at parser boundary (`parser_nom::parse_program`).
+- Populate `RuntimeError { code, line, column }` at parser boundary (`parser::parse_program`).
 - Keep `message` useful for humans (`near` snippet, line/column text), but do not rely on message parsing in tooling.
 
 ## Next milestones
@@ -92,7 +92,7 @@ When making parser refactors:
 
 1. Keep parser behavior unchanged unless explicitly intended.
 2. Add or adjust focused parser unit tests.
-3. Run `cargo test parser_nom::`.
+3. Run `cargo test parser::`.
 4. Run full `cargo test` before merge.
 5. Update `docs/parser-overview.md` if structure changed.
 

@@ -7,7 +7,7 @@ use super::super::expr::expression;
 use super::super::helpers::ws;
 
 /// Parse comma-separated call arguments inside parens.
-pub(in crate::parser_nom) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Expr>> {
+pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Expr>> {
     if input.starts_with(')') {
         return Ok((input, Vec::new()));
     }

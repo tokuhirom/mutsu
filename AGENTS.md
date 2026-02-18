@@ -20,11 +20,11 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 
 ### Execution pipeline
 
-Source → **Parser** (`parser_nom/`) → **Compiler** (`compiler.rs`) → **VM** (`vm.rs`) → Output
+Source → **Parser** (`parser/`) → **Compiler** (`compiler.rs`) → **VM** (`vm.rs`) → Output
 
-The parser is currently nom-based (`parser_nom/`) and is used unconditionally.
+The parser is in `src/parser/` and is used unconditionally.
 
-`parse_dispatch.rs` provides `parse_source()` used by parsing call sites and currently delegates directly to `parser_nom::parse_program()`.
+`parse_dispatch.rs` provides `parse_source()` used by parsing call sites and currently delegates directly to `parser::parse_program()`.
 
 Parser implementation details (dispatch order, precedence, extension checklist) are documented in `docs/parser-overview.md`.
 
@@ -61,7 +61,7 @@ Flow: `call_method_with_values()` tries `native_method_*arg()` first; if `None`,
 
 ### Parser error metadata
 
-- `parser_nom::parse_program()` maps parse failures to `RuntimeError` with structured metadata:
+- `parser::parse_program()` maps parse failures to `RuntimeError` with structured metadata:
   - `code`: `RuntimeErrorCode::{ParseUnparsed, ParseExpected, ParseGeneric}`
   - `line`, `column`: 1-based source location where available
 - CLI output (`main.rs`) prints this metadata as a separate line (`metadata: code=..., line=..., column=...`) to make failures easier to inspect and machine-process.
@@ -231,7 +231,7 @@ Raku's grammar is not a single monolithic grammar — it switches between sub-la
 
 Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang but addition in Main slang). Raku's official grammar (`Raku::Grammar`) handles this via slang switching at parse time.
 
-**Implication for mutsu**: nom is a single-grammar parser combinator framework and does not natively support slang switching. As we add `grammar`/`token`/`rule` support (which let users define custom grammars), we may need an architecture that can switch parsing modes contextually. Keep the nom parser modular so that individual sub-parsers (regex, quote, etc.) can be extracted and reused in a future architecture.
+**Implication for mutsu**: The parser does not natively support slang switching. As we add `grammar`/`token`/`rule` support (which let users define custom grammars), we may need an architecture that can switch parsing modes contextually. Keep the parser modular so that individual sub-parsers (regex, quote, etc.) can be extracted and reused in a future architecture.
 
 ## Conventions
 
