@@ -24,6 +24,10 @@ impl Interpreter {
                 self.output.push('\n');
                 return Ok(Value::Nil);
             }
+            "print" if args.is_empty() => {
+                self.output.push_str(&target.to_string_value());
+                return Ok(Value::Nil);
+            }
             "note" if args.is_empty() => {
                 let content = format!("{}\n", gist_value(&target));
                 self.write_to_named_handle("$*ERR", &content, false)?;

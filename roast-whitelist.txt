@@ -172,7 +172,6 @@ roast/S32-trig/pi.t
 roast/S32-num/abs.t
 roast/S32-num/exp.t
 roast/S32-num/log.t
-roast/S32-num/pi.t
 roast/S32-num/polar.t
 roast/S32-num/unpolar.t
 roast/S32-trig/simple.t
