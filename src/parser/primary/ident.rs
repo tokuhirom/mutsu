@@ -3,6 +3,13 @@ use super::super::parse_result::{PError, PResult, merge_expected_messages, parse
 use crate::ast::{Expr, Stmt, make_anon_sub};
 use crate::value::Value;
 
+fn is_superscript_digit(c: char) -> bool {
+    matches!(
+        c,
+        '\u{2070}' | '\u{00B9}' | '\u{00B2}' | '\u{00B3}' | '\u{2074}'..='\u{2079}'
+    )
+}
+
 use super::super::expr::{expression, or_expr_pub};
 use super::super::helpers::ws;
 use super::misc::parse_block_body;
@@ -45,9 +52,10 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     // Also reject if followed by `(` to prevent treating e() as a constant
     let try_kw = |kw: &str, val: Value| -> PResult<'_, Expr> {
         let (rest, _) = parse_tag(input, kw)?;
-        // Check word boundary
+        // Check word boundary (superscript digits are NOT word chars)
         if let Some(c) = rest.chars().next()
             && (c.is_alphanumeric() || c == '_' || c == '-')
+            && !is_superscript_digit(c)
         {
             return Err(PError::expected("word boundary"));
         }
@@ -85,11 +93,32 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if let Ok(r) = try_kw("Inf", Value::Num(f64::INFINITY)) {
         return Ok(r);
     }
+    // ∞ (U+221E INFINITY)
+    if input.starts_with('\u{221E}') {
+        return Ok((
+            &input['\u{221E}'.len_utf8()..],
+            Expr::Literal(Value::Num(f64::INFINITY)),
+        ));
+    }
     if let Ok(r) = try_kw("-Inf", Value::Num(f64::NEG_INFINITY)) {
         return Ok(r);
     }
+    // Note: -∞ is handled by prefix negation + ∞ literal, not as a special case,
+    // so that -∞² parses correctly as -(∞²) not (-∞)².
     if let Ok(r) = try_kw("NaN", Value::Num(f64::NAN)) {
         return Ok(r);
+    }
+    // rand — generates a random number (term)
+    if input.starts_with("rand")
+        && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
+    {
+        return Ok((
+            &input[4..],
+            Expr::Call {
+                name: "rand".to_string(),
+                args: vec![],
+            },
+        ));
     }
     if let Ok(r) = try_kw("pi", Value::Num(std::f64::consts::PI)) {
         return Ok(r);
