@@ -1422,6 +1422,10 @@ impl Compiler {
                     self.code.emit(OpCode::IndexAssignInvalid);
                 }
             }
+            Expr::IndirectTypeLookup(inner) => {
+                self.compile_expr(inner);
+                self.code.emit(OpCode::IndirectTypeLookup);
+            }
             Expr::ControlFlow { kind, label } => match kind {
                 crate::ast::ControlFlowKind::Last => {
                     self.code.emit(OpCode::Last(label.clone()));

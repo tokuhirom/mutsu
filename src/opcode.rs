@@ -422,6 +422,9 @@ pub(crate) enum OpCode {
     /// If state_vars has key: set locals[slot] = stored value (discard init).
     /// If not: set locals[slot] = init value, store in state_vars.
     StateVarInit(u32, u32),
+
+    /// Indirect type lookup: pop string from stack, resolve to Package value.
+    IndirectTypeLookup,
 }
 
 /// A compiled chunk of bytecode.

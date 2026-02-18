@@ -15,12 +15,20 @@ use super::super::helpers::ws;
 use super::misc::parse_block_body;
 use super::regex::parse_call_arg_list;
 
-/// Parse `::Foo` class literal (type object reference).
+/// Parse `::Foo` class literal (type object reference) or `::($expr)` indirect type lookup.
 pub(super) fn class_literal(input: &str) -> PResult<'_, Expr> {
     if !input.starts_with("::") {
         return Err(PError::expected("class literal"));
     }
     let rest = &input[2..];
+    // Handle ::($expr) — indirect name lookup
+    if let Some(after_paren) = rest.strip_prefix('(') {
+        let (r, _) = ws(after_paren)?;
+        let (r, inner) = expression(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ')')?;
+        return Ok((r, Expr::IndirectTypeLookup(Box::new(inner))));
+    }
     let (rest, name) = super::super::stmt::ident_pub(rest)?;
     // Handle qualified names: ::Foo::Bar
     let mut full_name = name;

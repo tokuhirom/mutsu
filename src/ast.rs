@@ -169,6 +169,7 @@ pub(crate) enum Expr {
         kind: ControlFlowKind,
         label: Option<String>,
     },
+    IndirectTypeLookup(Box<Expr>),
 }
 
 #[derive(Debug, Clone)]
