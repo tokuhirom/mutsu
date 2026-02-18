@@ -1,6 +1,6 @@
 # Parser Opportunities Audit (2026-02)
 
-This document records concrete parser improvement opportunities found by reviewing the current `parser_nom` implementation.
+This document records concrete parser improvement opportunities found by reviewing the current `parser` implementation.
 
 ## Summary
 
@@ -15,9 +15,9 @@ This document records concrete parser improvement opportunities found by reviewi
 
 Current file sizes:
 
-- `src/parser_nom/stmt.rs`: 2687 lines
-- `src/parser_nom/primary.rs`: 1491 lines
-- `src/parser_nom/expr.rs`: 1271 lines
+- `src/parser/stmt.rs`: 2687 lines
+- `src/parser/primary.rs`: 1491 lines
+- `src/parser/expr.rs`: 1271 lines
 
 Repository convention says Rust source files should stay under 500 lines.
 

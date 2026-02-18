@@ -58,7 +58,7 @@ pub(super) fn primary_memo_stats() -> (usize, usize, usize) {
 }
 
 // Re-exports used by other modules
-pub(in crate::parser_nom) use regex::parse_call_arg_list;
+pub(in crate::parser) use regex::parse_call_arg_list;
 
 pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
     if let Some(cached) = PRIMARY_MEMO.get(input) {

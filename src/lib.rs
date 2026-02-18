@@ -4,7 +4,7 @@ mod compiler;
 mod interpreter;
 mod opcode;
 mod parse_dispatch;
-mod parser_nom;
+mod parser;
 pub mod repl;
 mod runtime;
 mod token_kind;

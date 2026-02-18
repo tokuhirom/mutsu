@@ -1,13 +1,13 @@
 # Parser Refactoring Plan
 
-Current state: `src/parser_nom/` is 9,128 lines across 6 files. The three main files (`stmt.rs` 3,626 lines, `primary.rs` 2,732 lines, `expr.rs` 2,164 lines) all exceed the 500-line convention and contain significant duplication.
+Current state: `src/parser/` is 9,128 lines across 6 files. The three main files (`stmt.rs` 3,626 lines, `primary.rs` 2,732 lines, `expr.rs` 2,164 lines) all exceed the 500-line convention and contain significant duplication.
 
 ## 1. Extract memoization into a generic module
 
 **Problem:** Each of `stmt.rs`, `expr.rs`, `primary.rs` contains ~60 lines of nearly identical memoization boilerplate (`*MemoEntry` enum, `*MemoStats` struct, `thread_local!`, `*_memo_key/get/store/reset/stats` functions). Total ~180 lines of copy-paste.
 
 **Plan:**
-- Create `src/parser_nom/memo.rs` with a generic `ParseMemo<T: Clone>` struct.
+- Create `src/parser/memo.rs` with a generic `ParseMemo<T: Clone>` struct.
 - Provide `get()`, `store()`, `reset()`, `stats()` methods.
 - Each call site instantiates `ParseMemo<Expr>` or `ParseMemo<Stmt>` via `thread_local!`.
 - Eliminates ~120 lines of duplication.
@@ -44,7 +44,7 @@ Current state: `src/parser_nom/` is 9,128 lines across 6 files. The three main f
 
 **Problem:** `stmt.rs` is 3,626 lines — over 7x the 500-line convention. It contains logically distinct sections that rarely interact.
 
-**Plan:** Split into submodules under `src/parser_nom/stmt/`:
+**Plan:** Split into submodules under `src/parser/stmt/`:
 - `stmt/mod.rs` — re-exports, `STMT_PARSERS` dispatch table, `statement()`, `program()`, `stmt_list`, `block`.
 - `stmt/decl.rs` — `my_decl`, `has_decl`, `enum_decl`, `constant_decl`, `subset_decl`, `use_stmt`.
 - `stmt/control.rs` — `if_stmt`, `given_stmt`, `when_stmt`, `with_stmt`, `for_stmt`, `while_stmt`, `until_stmt`, `loop_stmt`, `repeat_stmt`, `labeled_loop_stmt`.
@@ -61,7 +61,7 @@ Each submodule stays under 500 lines. `mod.rs` uses `pub(super) use` to maintain
 
 **Problem:** `primary.rs` is 2,732 lines — over 5x the convention.
 
-**Plan:** Split into `src/parser_nom/primary/`:
+**Plan:** Split into `src/parser/primary/`:
 - `primary/mod.rs` — `primary()` dispatch, memoization, `set_original_source`, `current_line_number`.
 - `primary/string.rs` — `q_string`, `single_quoted_string`, `double_quoted_string`, `corner_bracket_string`, `interpolate_string_content`, `parse_backslash_c_bracket`, `parse_var_name_from_str` (+ shared escape helpers from item 3).
 - `primary/number.rs` — `integer`, `decimal`, `parse_int_radix`.
@@ -75,7 +75,7 @@ Each submodule stays under 500 lines. `mod.rs` uses `pub(super) use` to maintain
 
 **Problem:** `expr.rs` is 2,164 lines. After eliminating the `_no_seq` duplication (~200 lines) and extracting memoization (~60 lines), it drops to ~1,900 lines — still large but more manageable.
 
-**Plan (if still too large after items 1-2):** Split into `src/parser_nom/expr/`:
+**Plan (if still too large after items 1-2):** Split into `src/parser/expr/`:
 - `expr/mod.rs` — `expression`, `expression_no_sequence`, memoization, WhateverCode logic.
 - `expr/operators.rs` — All operator enums (`ComparisonOp`, `ConcatOp`, `AdditiveOp`, etc.) and their recognizer functions (`parse_comparison_op`, `parse_additive_op`, etc.).
 - `expr/precedence.rs` — The full precedence chain (`ternary` through `postfix_expr`).
@@ -103,5 +103,5 @@ Each submodule stays under 500 lines. `mod.rs` uses `pub(super) use` to maintain
 
 - No file exceeds 500 lines.
 - No significant code duplication remains.
-- Public API of `parser_nom` module unchanged (`parse_program()` only).
+- Public API of `parser` module unchanged (`parse_program()` only).
 - Zero behavioral changes — pure refactoring.

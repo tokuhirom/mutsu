@@ -1,4 +1,4 @@
-# Parser Overview (`parser_nom`)
+# Parser Overview (`parser`)
 
 This document summarizes the current hand-written parser so contributors (and AI agents) can make focused changes without re-reading the entire implementation.
 
@@ -7,24 +7,24 @@ For ongoing refactoring policy and roadmap, see `docs/parser-improvement-plan.md
 ## Scope and entry points
 
 - Runtime entry: `src/parse_dispatch.rs` -> `parse_source()`
-- Parser entry: `src/parser_nom/mod.rs` -> `parse_program(input)`
-- Statement loop: `src/parser_nom/stmt.rs` -> `program()` -> `stmt_list()` -> `statement()`
-- Expression entry: `src/parser_nom/expr.rs` -> `expression()`
+- Parser entry: `src/parser/mod.rs` -> `parse_program(input)`
+- Statement loop: `src/parser/stmt.rs` -> `program()` -> `stmt_list()` -> `statement()`
+- Expression entry: `src/parser/expr.rs` -> `expression()`
 
 `parse_program()` also handles `=finish` splitting and returns `(Vec<Stmt>, Option<String>)`.
 
 ## File responsibilities
 
-- `src/parser_nom/mod.rs`: top-level parse orchestration and parse error wrapping
-- `src/parser_nom/parse_result.rs`: `PResult` / `PError` and tiny parser primitives
-- `src/parser_nom/helpers.rs`: whitespace/comment/Pod skipping (`ws`, `ws1`)
-- `src/parser_nom/stmt.rs`: statement grammar and statement-level dispatch order
-- `src/parser_nom/expr.rs`: operator precedence climbing and expression combinators
-- `src/parser_nom/primary.rs`: literals, identifiers/calls, vars, blocks, hashes, regex literals
+- `src/parser/mod.rs`: top-level parse orchestration and parse error wrapping
+- `src/parser/parse_result.rs`: `PResult` / `PError` and tiny parser primitives
+- `src/parser/helpers.rs`: whitespace/comment/Pod skipping (`ws`, `ws1`)
+- `src/parser/stmt.rs`: statement grammar and statement-level dispatch order
+- `src/parser/expr.rs`: operator precedence climbing and expression combinators
+- `src/parser/primary.rs`: literals, identifiers/calls, vars, blocks, hashes, regex literals
 
 ## Statement dispatch order (important)
 
-`statement()` in `src/parser_nom/stmt.rs` tries many forms in fixed order and returns the first match.
+`statement()` in `src/parser/stmt.rs` tries many forms in fixed order and returns the first match.
 Order changes can alter parse behavior.
 
 High-impact groups in current order:
@@ -37,7 +37,7 @@ High-impact groups in current order:
 
 ## Expression precedence (low -> high)
 
-In `src/parser_nom/expr.rs`, `expression()` starts at ternary/fat-arrow level and descends:
+In `src/parser/expr.rs`, `expression()` starts at ternary/fat-arrow level and descends:
 
 1. `ternary` (`?? !!`)
 2. `or_expr` (`or`)
@@ -84,12 +84,12 @@ When adding/changing grammar:
 3. If it is a statement form, place it carefully in `statement()` order.
 4. If it is an operator, place it in the correct precedence function.
 5. Reuse/create `TokenKind` variants only when needed by AST/compiler/runtime.
-6. Add focused unit tests near parser code (`src/parser_nom/*` tests).
+6. Add focused unit tests near parser code (`src/parser/*` tests).
 7. Add/adjust prove tests in `t/*.t` for end-to-end behavior.
 
 ## Current limitations to keep in mind
 
-- Parsing is currently single-backend (`parser_nom`) and always selected.
+- Parsing is currently single-backend (`parser`) and always selected.
 - Raku slang switching (main/regex/quote/pod contexts) is only partially modeled; be cautious with context-sensitive constructs.
 - Packrat-inspired features are partial: selective memoization exists for `statement`/`expression`/`primary`, and furthest-failure aggregation currently focuses on statement-level alternatives.
 
