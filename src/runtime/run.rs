@@ -243,7 +243,7 @@ impl Interpreter {
     }
 
     pub(super) fn load_module(&mut self, module: &str) -> Result<(), RuntimeError> {
-        let filename = format!("{}.rakumod", module);
+        let filename = format!("{}.rakumod", module.replace("::", "/"));
         let mut candidates: Vec<std::path::PathBuf> = Vec::new();
         for base in &self.lib_paths {
             candidates.push(Path::new(base).join(&filename));

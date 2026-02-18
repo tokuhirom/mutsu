@@ -433,12 +433,18 @@ impl Interpreter {
     pub(crate) fn use_module(&mut self, module: &str) -> Result<(), RuntimeError> {
         self.loaded_modules.insert(module.to_string());
         if module == "Test"
-            || module.starts_with("Test::")
             || matches!(
                 module,
                 "strict" | "warnings" | "MONKEY-SEE-NO-EVAL" | "MONKEY-TYPING" | "nqp" | "MONKEY"
             )
         {
+            return Ok(());
+        }
+        // Try to load Test:: submodules from source; fall back to no-op if unavailable
+        if module.starts_with("Test::") {
+            if self.load_module(module).is_err() {
+                return Ok(());
+            }
             return Ok(());
         }
         self.load_module(module)
