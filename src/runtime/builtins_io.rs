@@ -180,10 +180,9 @@ impl Interpreter {
                 path
             )));
         }
-        self.env.insert(
-            "$*CWD".to_string(),
-            Value::Str(Self::stringify_path(&path_buf)),
-        );
+        let cwd_val = Value::Str(Self::stringify_path(&path_buf));
+        self.env.insert("$*CWD".to_string(), cwd_val.clone());
+        self.env.insert("*CWD".to_string(), cwd_val);
         Ok(Value::Bool(true))
     }
 
@@ -200,10 +199,9 @@ impl Interpreter {
             )));
         }
         let saved = self.env.get("$*CWD").cloned();
-        self.env.insert(
-            "$*CWD".to_string(),
-            Value::Str(Self::stringify_path(&path_buf)),
-        );
+        let cwd_val = Value::Str(Self::stringify_path(&path_buf));
+        self.env.insert("$*CWD".to_string(), cwd_val.clone());
+        self.env.insert("*CWD".to_string(), cwd_val);
         let result = if let Some(body) = args.get(1) {
             if matches!(body, Value::Sub { .. }) {
                 self.call_sub_value(body.clone(), vec![], false)
@@ -214,9 +212,11 @@ impl Interpreter {
             Ok(Value::Nil)
         };
         if let Some(prev) = saved {
-            self.env.insert("$*CWD".to_string(), prev);
+            self.env.insert("$*CWD".to_string(), prev.clone());
+            self.env.insert("*CWD".to_string(), prev);
         } else {
             self.env.remove("$*CWD");
+            self.env.remove("*CWD");
         }
         result
     }

@@ -8,43 +8,51 @@ impl Interpreter {
             Some("STDOUT".to_string()),
         );
         self.env.insert("$*OUT".to_string(), stdout.clone());
+        self.env.insert("*OUT".to_string(), stdout);
         let stderr = self.create_handle(
             IoHandleTarget::Stderr,
             IoHandleMode::Write,
             Some("STDERR".to_string()),
         );
         self.env.insert("$*ERR".to_string(), stderr.clone());
+        self.env.insert("*ERR".to_string(), stderr);
         let stdin = self.create_handle(
             IoHandleTarget::Stdin,
             IoHandleMode::Read,
             Some("STDIN".to_string()),
         );
         self.env.insert("$*IN".to_string(), stdin.clone());
+        self.env.insert("*IN".to_string(), stdin);
         let argfiles = self.create_handle(
             IoHandleTarget::ArgFiles,
             IoHandleMode::Read,
             Some("$*ARGFILES".to_string()),
         );
         self.env.insert("$*ARGFILES".to_string(), argfiles.clone());
-        self.env
-            .insert("$*SPEC".to_string(), self.make_io_spec_instance());
+        self.env.insert("*ARGFILES".to_string(), argfiles);
+        let spec = self.make_io_spec_instance();
+        self.env.insert("$*SPEC".to_string(), spec.clone());
+        self.env.insert("*SPEC".to_string(), spec);
         let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        self.env.insert(
-            "$*CWD".to_string(),
-            Value::Str(cwd.to_string_lossy().to_string()),
-        );
+        let cwd_str = cwd.to_string_lossy().to_string();
+        self.env
+            .insert("$*CWD".to_string(), Value::Str(cwd_str.clone()));
+        self.env
+            .insert("*CWD".to_string(), Value::Str(cwd_str.clone()));
         let tmpdir = env::temp_dir();
-        self.env.insert(
-            "$*TMPDIR".to_string(),
-            Value::Str(tmpdir.to_string_lossy().to_string()),
-        );
+        let tmpdir_str = tmpdir.to_string_lossy().to_string();
+        self.env
+            .insert("$*TMPDIR".to_string(), Value::Str(tmpdir_str.clone()));
+        self.env
+            .insert("*TMPDIR".to_string(), Value::Str(tmpdir_str));
         if let Ok(home) = env::var("HOME") {
-            self.env.insert("$*HOME".to_string(), Value::Str(home));
+            self.env
+                .insert("$*HOME".to_string(), Value::Str(home.clone()));
+            self.env.insert("*HOME".to_string(), Value::Str(home));
         } else {
-            self.env.insert(
-                "$*HOME".to_string(),
-                Value::Str(cwd.to_string_lossy().to_string()),
-            );
+            self.env
+                .insert("$*HOME".to_string(), Value::Str(cwd_str.clone()));
+            self.env.insert("*HOME".to_string(), Value::Str(cwd_str));
         }
         let distro = Self::make_distro_instance();
         self.env.insert("*DISTRO".to_string(), distro.clone());

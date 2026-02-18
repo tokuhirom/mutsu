@@ -29,7 +29,11 @@ impl Interpreter {
         let repr = Self::stringify_path(&canonical);
         self.env
             .insert("$*CHROOT".to_string(), Value::Str(repr.clone()));
-        self.env.insert("$*CWD".to_string(), Value::Str(repr));
+        self.env
+            .insert("*CHROOT".to_string(), Value::Str(repr.clone()));
+        self.env
+            .insert("$*CWD".to_string(), Value::Str(repr.clone()));
+        self.env.insert("*CWD".to_string(), Value::Str(repr));
         Ok(Value::Bool(true))
     }
 

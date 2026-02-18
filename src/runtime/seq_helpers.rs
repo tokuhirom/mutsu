@@ -46,6 +46,51 @@ impl Interpreter {
                 self.env.insert("/".to_string(), Value::Nil);
                 false
             }
+            // IO::Path/Str ~~ Pair(:e), :d, :f, :r, :w, :x file tests
+            (_, Value::Pair(key, val))
+                if val.truthy()
+                    && matches!(key.as_str(), "e" | "d" | "f" | "r" | "w" | "x" | "s" | "z") =>
+            {
+                let path_str = match left {
+                    Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } if class_name == "IO::Path" => {
+                        attributes.get("path").map(|v| v.to_string_value())
+                    }
+                    Value::Str(s) => Some(s.clone()),
+                    _ => None,
+                };
+                if let Some(p) = path_str {
+                    let path = std::path::Path::new(&p);
+                    match key.as_str() {
+                        "e" => path.exists(),
+                        "d" => path.is_dir(),
+                        "f" => path.is_file(),
+                        "r" => path.exists(), // simplified: exists = readable
+                        "w" => path.exists(), // simplified
+                        "x" => {
+                            #[cfg(unix)]
+                            {
+                                use std::os::unix::fs::PermissionsExt;
+                                std::fs::metadata(&p)
+                                    .map(|m| m.permissions().mode() & 0o111 != 0)
+                                    .unwrap_or(false)
+                            }
+                            #[cfg(not(unix))]
+                            {
+                                false
+                            }
+                        }
+                        "s" => std::fs::metadata(&p).map(|m| m.len() > 0).unwrap_or(false),
+                        "z" => std::fs::metadata(&p).map(|m| m.len() == 0).unwrap_or(false),
+                        _ => false,
+                    }
+                } else {
+                    false
+                }
+            }
             // Hash ~~ Pair: check that key exists in hash and value smartmatches
             (Value::Hash(map), Value::Pair(key, val)) => {
                 if let Some(hash_val) = map.get(key.as_str()) {
