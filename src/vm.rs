@@ -194,13 +194,19 @@ impl VM {
             }
             OpCode::GetArrayVar(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
-                let val = self.get_env_with_main_alias(name).unwrap_or(Value::Nil);
+                let val = self
+                    .get_env_with_main_alias(name)
+                    .or_else(|| self.get_local_by_bare_name(code, name))
+                    .unwrap_or(Value::Nil);
                 self.stack.push(val);
                 *ip += 1;
             }
             OpCode::GetHashVar(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
-                let val = self.get_env_with_main_alias(name).unwrap_or(Value::Nil);
+                let val = self
+                    .get_env_with_main_alias(name)
+                    .or_else(|| self.get_local_by_bare_name(code, name))
+                    .unwrap_or(Value::Nil);
                 self.stack.push(val);
                 *ip += 1;
             }
@@ -263,6 +269,24 @@ impl VM {
                         result
                     } else if let Some(native_result) = Self::try_native_function(name, &[]) {
                         native_result?
+                    } else {
+                        let result = self.interpreter.call_function(name, Vec::new())?;
+                        self.sync_locals_from_env(code);
+                        result
+                    }
+                } else if self.interpreter.has_multi_function(name) {
+                    // Bare multi function call with no args.
+                    if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
+                        let pkg = self.interpreter.current_package().to_string();
+                        let result = self.call_compiled_function_named(
+                            cf,
+                            Vec::new(),
+                            compiled_fns,
+                            &pkg,
+                            name,
+                        )?;
+                        self.sync_locals_from_env(code);
+                        result
                     } else {
                         let result = self.interpreter.call_function(name, Vec::new())?;
                         self.sync_locals_from_env(code);

@@ -7,4 +7,4 @@ test:
 
 roast:
 	cargo build
-	prove -e 'target/debug/mutsu' $(shell cat roast-whitelist.txt)
+	prove -e 'timeout 30 target/debug/mutsu' $(shell cat roast-whitelist.txt)

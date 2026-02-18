@@ -6,6 +6,12 @@ impl Interpreter {
         self.functions.contains_key(&fq) || self.functions.contains_key(name)
     }
 
+    /// Check if a multi-dispatched function with the given name exists (any arity).
+    pub(crate) fn has_multi_function(&self, name: &str) -> bool {
+        let fq_slash = format!("{}::{}/", self.current_package, name);
+        self.functions.keys().any(|k| k.starts_with(&fq_slash))
+    }
+
     pub(crate) fn register_sub_decl(
         &mut self,
         name: &str,

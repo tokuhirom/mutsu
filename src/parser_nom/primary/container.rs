@@ -225,8 +225,10 @@ pub(super) fn angle_list(input: &str) -> PResult<'_, Expr> {
     let mut words = Vec::new();
     let mut rest = input;
     loop {
-        // Skip whitespace
-        let (r, _) = take_while_opt(rest, |c: char| c == ' ' || c == '\t');
+        // Skip breaking whitespace (all Unicode whitespace except non-breaking spaces)
+        let (r, _) = take_while_opt(rest, |c: char| {
+            c.is_whitespace() && !is_non_breaking_space(c)
+        });
         rest = r;
         if rest.starts_with('>') {
             rest = &rest[1..];
@@ -236,7 +238,7 @@ pub(super) fn angle_list(input: &str) -> PResult<'_, Expr> {
             return Err(PError::expected("closing >"));
         }
         let (r, word) = take_while1(rest, |c: char| {
-            c != '>' && c != ' ' && c != '\t' && c != '\n'
+            c != '>' && (!c.is_whitespace() || is_non_breaking_space(c))
         })?;
         words.push(word.to_string());
         rest = r;
@@ -253,4 +255,9 @@ pub(super) fn angle_list(input: &str) -> PResult<'_, Expr> {
             .collect();
         Ok((rest, Expr::ArrayLiteral(exprs)))
     }
+}
+
+/// Returns true for non-breaking space characters that should not split words in `<...>`.
+fn is_non_breaking_space(c: char) -> bool {
+    matches!(c, '\u{00A0}' | '\u{2007}' | '\u{202F}' | '\u{FEFF}')
 }

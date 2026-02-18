@@ -1,6 +1,6 @@
 use super::super::parse_result::{PError, PResult, merge_expected_messages, parse_char, parse_tag};
 
-use crate::ast::{Expr, make_anon_sub};
+use crate::ast::{Expr, Stmt, make_anon_sub};
 use crate::value::Value;
 
 use super::super::expr::{expression, or_expr_pub};
@@ -420,6 +420,15 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 let (r, body) = parse_block_body(r)?;
                 return Ok((r, Expr::Try { body, catch: None }));
             }
+            // try EXPR — wrap expression in try
+            let (r, expr) = expression(r)?;
+            return Ok((
+                r,
+                Expr::Try {
+                    body: vec![Stmt::Expr(expr)],
+                    catch: None,
+                },
+            ));
         }
         "do" => {
             let (r, _) = ws(rest)?;

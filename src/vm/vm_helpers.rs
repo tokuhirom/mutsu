@@ -22,6 +22,16 @@ impl VM {
         None
     }
 
+    /// Look up a sigiled variable name (e.g. "@z") in the locals array by its
+    /// bare (sigil-stripped) name.  This handles function parameters that are
+    /// stored without sigils in the compiled-function locals.
+    pub(super) fn get_local_by_bare_name(&self, code: &CompiledCode, name: &str) -> Option<Value> {
+        // Strip the leading sigil (@, %)
+        let bare = name.strip_prefix('@').or_else(|| name.strip_prefix('%'))?;
+        let idx = code.locals.iter().position(|n| n == bare)?;
+        Some(self.locals.get(idx)?.clone())
+    }
+
     pub(super) fn get_env_with_main_alias(&self, name: &str) -> Option<Value> {
         if let Some(val) = self.interpreter.env().get(name) {
             return Some(val.clone());

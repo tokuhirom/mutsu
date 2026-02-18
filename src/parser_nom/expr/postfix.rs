@@ -115,6 +115,27 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut expr) = primary(input)?;
 
     loop {
+        // Unspace: backslash + whitespace collapses to nothing, allowing
+        // `foo\ .method` to parse as `foo.method`.
+        if rest.starts_with('\\') {
+            let after_bs = &rest[1..];
+            if let Some(c) = after_bs.chars().next()
+                && c.is_whitespace()
+            {
+                // Peek ahead: consume unspace only if followed by a postfix operator
+                let mut scan = &after_bs[c.len_utf8()..];
+                while let Some(c2) = scan.chars().next() {
+                    if c2.is_whitespace() {
+                        scan = &scan[c2.len_utf8()..];
+                    } else {
+                        break;
+                    }
+                }
+                if scan.starts_with('.') && !scan.starts_with("..") {
+                    rest = scan;
+                }
+            }
+        }
         // Method call: .method or .method(args) or .method: args
         // Also handles modifiers: .?method, .!method
         // Also handles: .^method (meta-method)
