@@ -96,10 +96,19 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if let Ok(r) = try_kw("pi", Value::Num(std::f64::consts::PI)) {
         return Ok(r);
     }
+    if let Ok(r) = try_kw("π", Value::Num(std::f64::consts::PI)) {
+        return Ok(r);
+    }
     if let Ok(r) = try_kw("tau", Value::Num(std::f64::consts::TAU)) {
         return Ok(r);
     }
+    if let Ok(r) = try_kw("τ", Value::Num(std::f64::consts::TAU)) {
+        return Ok(r);
+    }
     if let Ok(r) = try_kw("e", Value::Num(std::f64::consts::E)) {
+        return Ok(r);
+    }
+    if let Ok(r) = try_kw("\u{1D452}", Value::Num(std::f64::consts::E)) {
         return Ok(r);
     }
     Err(PError::expected("keyword literal"))
