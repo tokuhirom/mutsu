@@ -1963,6 +1963,12 @@ impl VM {
                 *ip += 1;
             }
 
+            // -- HyperMethodCall (».method) --
+            OpCode::HyperMethodCall { name_idx, arity } => {
+                self.exec_hyper_method_call_op(code, *name_idx, *arity)?;
+                *ip += 1;
+            }
+
             // -- HyperOp (>>op<<) --
             OpCode::HyperOp {
                 op_idx,
@@ -1990,9 +1996,17 @@ impl VM {
                         let left_list = runtime::value_to_list(&left);
                         let right_list = runtime::value_to_list(&right);
                         let mut results = Vec::new();
-                        for l in &left_list {
-                            for r in &right_list {
-                                results.push(Interpreter::apply_reduction_op(&op, l, r)?);
+                        if op.is_empty() || op == "," {
+                            for l in &left_list {
+                                for r in &right_list {
+                                    results.push(Value::Array(vec![l.clone(), r.clone()]));
+                                }
+                            }
+                        } else {
+                            for l in &left_list {
+                                for r in &right_list {
+                                    results.push(Interpreter::apply_reduction_op(&op, l, r)?);
+                                }
                             }
                         }
                         Value::Array(results)

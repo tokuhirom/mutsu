@@ -609,7 +609,7 @@ impl Interpreter {
                         });
                     }
                 } else {
-                    items.sort_by_key(|a| a.to_string_value());
+                    items.sort_by(|a, b| compare_values(a, b).cmp(&0));
                 }
                 Ok(Value::Array(items))
             }

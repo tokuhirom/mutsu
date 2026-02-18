@@ -351,6 +351,12 @@ pub(crate) enum OpCode {
     // -- Phaser --
     PhaserEnd(u32),
 
+    // -- HyperMethodCall (».method) --
+    HyperMethodCall {
+        name_idx: u32,
+        arity: u32,
+    },
+
     // -- HyperOp (>>op<<) --
     HyperOp {
         op_idx: u32,

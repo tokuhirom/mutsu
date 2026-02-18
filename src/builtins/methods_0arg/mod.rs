@@ -256,7 +256,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "sort" => match target {
             Value::Array(items) => {
                 let mut sorted = items.clone();
-                sorted.sort_by_key(|a| a.to_string_value());
+                sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
                 Some(Ok(Value::Array(sorted)))
             }
             _ => None,

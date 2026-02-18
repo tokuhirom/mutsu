@@ -175,6 +175,39 @@ impl VM {
         Ok(())
     }
 
+    pub(super) fn exec_hyper_method_call_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        arity: u32,
+    ) -> Result<(), RuntimeError> {
+        let method = Self::const_str(code, name_idx).to_string();
+        let arity = arity as usize;
+        if self.stack.len() < arity + 1 {
+            return Err(RuntimeError::new("VM stack underflow in HyperMethodCall"));
+        }
+        let start = self.stack.len() - arity;
+        let args: Vec<Value> = self.stack.drain(start..).collect();
+        let target = self
+            .stack
+            .pop()
+            .ok_or_else(|| RuntimeError::new("VM stack underflow in HyperMethodCall target"))?;
+        let items = crate::runtime::value_to_list(&target);
+        let mut results = Vec::with_capacity(items.len());
+        for item in &items {
+            let call_result =
+                if let Some(native_result) = Self::try_native_method(item, &method, &args) {
+                    native_result?
+                } else {
+                    self.interpreter
+                        .call_method_with_values(item.clone(), &method, args.clone())?
+                };
+            results.push(call_result);
+        }
+        self.stack.push(Value::Array(results));
+        Ok(())
+    }
+
     pub(super) fn exec_exec_call_op(
         &mut self,
         code: &CompiledCode,

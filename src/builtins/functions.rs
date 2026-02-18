@@ -276,7 +276,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
         "sort" => Some(Ok(match arg {
             Value::Array(items) => {
                 let mut sorted = items.clone();
-                sorted.sort_by_key(|a| a.to_string_value());
+                sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
                 Value::Array(sorted)
             }
             _ => Value::Nil,

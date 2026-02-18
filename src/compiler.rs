@@ -1041,6 +1041,16 @@ impl Compiler {
                     modifier_idx,
                 });
             }
+            // Hyper method call: target».method(args)
+            Expr::HyperMethodCall { target, name, args } => {
+                self.compile_expr(target);
+                let arity = args.len() as u32;
+                for arg in args {
+                    self.compile_method_arg(arg);
+                }
+                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                self.code.emit(OpCode::HyperMethodCall { name_idx, arity });
+            }
             // Indexing
             Expr::Index { target, index } => {
                 // Special case: %*ENV<key> compiles to GetEnvIndex
@@ -1701,7 +1711,7 @@ impl Compiler {
                     || Self::expr_has_placeholder(else_expr)
             }
             Expr::Call { args, .. } => args.iter().any(Self::expr_has_placeholder),
-            Expr::MethodCall { target, args, .. } => {
+            Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
                 Self::expr_has_placeholder(target) || args.iter().any(Self::expr_has_placeholder)
             }
             Expr::Index { target, index } | Expr::IndexAssign { target, index, .. } => {

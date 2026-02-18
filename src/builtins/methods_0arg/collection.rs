@@ -155,6 +155,24 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             _ => None,
         },
+        "sum" => match target {
+            Value::Array(items) => {
+                let has_float = items
+                    .iter()
+                    .any(|v| matches!(v, Value::Num(_) | Value::Rat(_, _)));
+                if has_float {
+                    let total: f64 = items
+                        .iter()
+                        .map(|v| runtime::to_float_value(v).unwrap_or(0.0))
+                        .sum();
+                    Some(Ok(Value::Num(total)))
+                } else {
+                    let total: i64 = items.iter().map(runtime::to_int).sum();
+                    Some(Ok(Value::Int(total)))
+                }
+            }
+            _ => None,
+        },
         "squish" => match target {
             Value::Array(items) => {
                 let mut result = Vec::new();
