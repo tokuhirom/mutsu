@@ -386,8 +386,51 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
             continue;
         }
 
+        // Superscript digits as postfix exponentiation: x² → x ** 2, x³ → x ** 3
+        if let Some((exp, len)) = parse_superscript_exp(rest) {
+            rest = &rest[len..];
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: crate::token_kind::TokenKind::StarStar,
+                right: Box::new(Expr::Literal(Value::Int(exp))),
+            };
+            continue;
+        }
+
         break;
     }
 
     Ok((rest, expr))
+}
+
+/// Parse superscript digits as an exponent. Returns (exponent_value, byte_length).
+fn parse_superscript_exp(input: &str) -> Option<(i64, usize)> {
+    fn superscript_digit(c: char) -> Option<i64> {
+        match c {
+            '\u{2070}' => Some(0), // ⁰
+            '\u{00B9}' => Some(1), // ¹
+            '\u{00B2}' => Some(2), // ²
+            '\u{00B3}' => Some(3), // ³
+            '\u{2074}' => Some(4), // ⁴
+            '\u{2075}' => Some(5), // ⁵
+            '\u{2076}' => Some(6), // ⁶
+            '\u{2077}' => Some(7), // ⁷
+            '\u{2078}' => Some(8), // ⁸
+            '\u{2079}' => Some(9), // ⁹
+            _ => None,
+        }
+    }
+    let mut chars = input.chars();
+    let first = chars.next()?;
+    let mut value = superscript_digit(first)?;
+    let mut len = first.len_utf8();
+    for c in chars {
+        if let Some(d) = superscript_digit(c) {
+            value = value * 10 + d;
+            len += c.len_utf8();
+        } else {
+            break;
+        }
+    }
+    Some((value, len))
 }
