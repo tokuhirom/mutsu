@@ -2373,7 +2373,8 @@ impl VM {
                     predicate,
                 } = stmt
                 {
-                    self.interpreter.register_subset_decl(name, base, predicate);
+                    self.interpreter
+                        .register_subset_decl(name, base, predicate.as_ref());
                     self.sync_locals_from_env(code);
                     *ip += 1;
                 } else {

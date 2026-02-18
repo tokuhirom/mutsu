@@ -73,7 +73,7 @@ struct RoleDef {
 #[derive(Debug, Clone)]
 struct SubsetDef {
     base: String,
-    predicate: Expr,
+    predicate: Option<Expr>,
 }
 
 #[derive(Debug, Clone)]
