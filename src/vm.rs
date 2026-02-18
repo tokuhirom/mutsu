@@ -1732,6 +1732,13 @@ impl VM {
                 return Err(RuntimeError::new(val.to_string_value()));
             }
 
+            OpCode::Fail => {
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let mut err = RuntimeError::new(val.to_string_value());
+                err.is_fail = true;
+                return Err(err);
+            }
+
             // -- Functions --
             OpCode::Return => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
@@ -1747,6 +1754,7 @@ impl VM {
                     is_redo: false,
                     is_proceed: false,
                     is_succeed: false,
+                    is_fail: false,
                     label: None,
                 });
             }
@@ -2470,7 +2478,70 @@ impl VM {
             OpCode::AssignReadOnly => {
                 return Err(RuntimeError::new("X::Assignment::RO"));
             }
+
+            // -- Let scope management --
+            OpCode::LetSave {
+                name_idx,
+                index_mode,
+            } => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                if *index_mode {
+                    // Pop the index from stack (consumed, not used for save)
+                    let _idx_val = self.stack.pop().unwrap_or(Value::Int(0));
+                }
+                // Save the entire variable value
+                let old_val = self
+                    .get_env_with_main_alias(&name)
+                    .or_else(|| {
+                        // Also check locals
+                        code.locals
+                            .iter()
+                            .position(|n| n == &name)
+                            .map(|i| self.locals[i].clone())
+                    })
+                    .unwrap_or(Value::Nil);
+                self.interpreter.let_saves_push(name, old_val);
+                *ip += 1;
+            }
+            OpCode::LetBlock { body_end } => {
+                let mark = self.interpreter.let_saves_len();
+                let body_start = *ip + 1;
+                let end = *body_end as usize;
+                match self.run_range(code, body_start, end, compiled_fns) {
+                    Ok(()) => {
+                        let topic = self
+                            .interpreter
+                            .env()
+                            .get("_")
+                            .cloned()
+                            .unwrap_or(Value::Nil);
+                        if Self::is_let_success(&topic) {
+                            self.interpreter.discard_let_saves(mark);
+                        } else {
+                            self.interpreter.restore_let_saves(mark);
+                            self.sync_locals_from_env(code);
+                        }
+                    }
+                    Err(e) => {
+                        self.interpreter.restore_let_saves(mark);
+                        self.sync_locals_from_env(code);
+                        return Err(e);
+                    }
+                }
+                *ip = end;
+            }
         }
         Ok(())
+    }
+
+    /// Check if a value represents a "successful" block exit for `let` purposes.
+    /// Per S04 "Definition of Success": a successful exit returns a **defined** value.
+    /// Nil, Mu, and Any type objects are undefined (failure).
+    fn is_let_success(val: &Value) -> bool {
+        match val {
+            Value::Nil => false,
+            Value::Package(name) if name == "Mu" || name == "Any" => false,
+            _ => true,
+        }
     }
 }

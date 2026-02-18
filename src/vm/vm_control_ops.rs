@@ -401,6 +401,7 @@ impl VM {
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let saved_depth = self.stack.len();
+        let let_mark = self.interpreter.let_saves_len();
         let body_start = *ip + 1;
         let catch_begin = catch_start as usize;
         let control_begin = control_start as usize;
@@ -411,14 +412,19 @@ impl VM {
                 self.interpreter
                     .env_mut()
                     .insert("!".to_string(), Value::Nil);
+                self.interpreter.discard_let_saves(let_mark);
                 *ip = end;
                 Ok(())
             }
-            Err(e) if e.return_value.is_some() => Err(e),
+            Err(e) if e.return_value.is_some() => {
+                self.interpreter.discard_let_saves(let_mark);
+                Err(e)
+            }
             Err(e)
                 if (e.is_last || e.is_next || e.is_redo || e.is_proceed || e.is_succeed)
                     && control_begin < end =>
             {
+                self.interpreter.discard_let_saves(let_mark);
                 self.stack.truncate(saved_depth);
                 let saved_when = self.interpreter.when_matched();
                 self.interpreter.set_when_matched(false);
@@ -428,6 +434,9 @@ impl VM {
                 Ok(())
             }
             Err(e) => {
+                // Exception — restore let saves
+                self.interpreter.restore_let_saves(let_mark);
+                self.sync_locals_from_env(code);
                 if catch_begin >= control_begin {
                     return Err(e);
                 }

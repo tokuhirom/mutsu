@@ -192,6 +192,7 @@ pub(super) fn is_keyword(name: &str) -> bool {
             | "start"
             | "quietly"
             | "sink"
+            | "let"
     )
 }
 

@@ -303,6 +303,7 @@ pub(crate) enum Stmt {
     },
     Default(Vec<Stmt>),
     Die(Expr),
+    Fail(Expr),
     Catch(Vec<Stmt>),
     Control(Vec<Stmt>),
     Take(Expr),
@@ -350,6 +351,11 @@ pub(crate) enum Stmt {
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
     },
+    Let {
+        name: String,
+        index: Option<Box<Expr>>,
+        value: Option<Box<Expr>>,
+    },
     Expr(Expr),
 }
 
@@ -378,7 +384,7 @@ pub(crate) fn collect_placeholders(stmts: &[Stmt]) -> Vec<String> {
 
 fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
     match stmt {
-        Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Take(e) => {
+        Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
             collect_ph_expr(e, out);
         }
         Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => collect_ph_expr(expr, out),
@@ -452,6 +458,14 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
             collect_ph_expr(cond, out);
             for s in body {
                 collect_ph_stmt(s, out);
+            }
+        }
+        Stmt::Let { value, index, .. } => {
+            if let Some(e) = value {
+                collect_ph_expr(e, out);
+            }
+            if let Some(e) = index {
+                collect_ph_expr(e, out);
             }
         }
         Stmt::ProtoDecl { .. } => {}

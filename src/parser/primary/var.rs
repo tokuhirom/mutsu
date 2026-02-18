@@ -1,4 +1,4 @@
-use super::super::parse_result::{PResult, parse_char, take_while1};
+use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 
 use crate::ast::Expr;
 use crate::value::Value;
@@ -30,8 +30,12 @@ pub(super) fn parse_var_name_from_str(input: &str) -> (&str, String) {
 /// Parse a $variable reference.
 pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '$')?;
-    // Handle $(expr) — scalar context / itemization
-    if input.starts_with('(') {
+    // Handle $(stmt; expr) — statement block in scalar context
+    // Try to parse as a statement list first (for cases like `$(let $a = 23; $a)`)
+    if let Some(inner) = input.strip_prefix('(') {
+        if let Ok(result) = parse_dollar_paren_block(inner) {
+            return Ok(result);
+        }
         return paren_expr(input);
     }
     // Handle $_ special variable
@@ -210,4 +214,40 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
         format!("{}{}", twigil, name)
     };
     Ok((rest, Expr::CodeVar(full_name)))
+}
+
+/// Parse `$(stmt; stmt; ... expr)` — statement block in scalar context.
+/// Returns DoBlock expression.
+fn parse_dollar_paren_block(input: &str) -> PResult<'_, Expr> {
+    use super::super::helpers::ws;
+    // Parse first statement
+    let (mut rest, _) = ws(input)?;
+    let mut stmts = Vec::new();
+    loop {
+        if rest.starts_with(')') || rest.is_empty() {
+            break;
+        }
+        let (r, stmt) = super::super::stmt::statement_pub(rest)?;
+        stmts.push(stmt);
+        let (r, _) = ws(r)?;
+        // Consume semicolons
+        let mut r = r;
+        while r.starts_with(';') {
+            r = &r[1..];
+            let (r2, _) = ws(r)?;
+            r = r2;
+        }
+        rest = r;
+    }
+    if stmts.len() < 2 {
+        return Err(PError::expected("statement block with multiple statements"));
+    }
+    let (rest, _) = parse_char(rest, ')')?;
+    Ok((
+        rest,
+        Expr::DoBlock {
+            body: stmts,
+            label: None,
+        },
+    ))
 }

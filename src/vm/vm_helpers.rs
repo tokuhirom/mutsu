@@ -311,6 +311,7 @@ impl VM {
             }
         }
 
+        let let_mark = self.interpreter.let_saves_len();
         let mut ip = 0;
         let mut result = Ok(());
         while ip < cf.code.ops.len() {
@@ -320,10 +321,20 @@ impl VM {
                     let ret_val = e.return_value.unwrap();
                     self.stack.truncate(saved_stack_depth);
                     self.stack.push(ret_val);
+                    self.interpreter.discard_let_saves(let_mark);
+                    result = Ok(());
+                    break;
+                }
+                Err(e) if e.is_fail => {
+                    // fail() — restore let saves and return Nil
+                    self.interpreter.restore_let_saves(let_mark);
+                    self.stack.truncate(saved_stack_depth);
+                    self.stack.push(Value::Nil);
                     result = Ok(());
                     break;
                 }
                 Err(e) => {
+                    self.interpreter.restore_let_saves(let_mark);
                     result = Err(e);
                     break;
                 }

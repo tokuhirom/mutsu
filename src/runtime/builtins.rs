@@ -81,7 +81,8 @@ impl Interpreter {
         crate::trace::trace_log!("call", "call_function: {} ({} args)", name, args.len());
         match name {
             // Error / control flow
-            "die" | "fail" => self.builtin_die(&args),
+            "die" => self.builtin_die(&args),
+            "fail" => self.builtin_fail(&args),
             "exit" => self.builtin_exit(&args),
             // Type coercion
             "Int" | "Num" | "Str" | "Bool" => self.builtin_coerce(name, &args),
@@ -314,6 +315,16 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .unwrap_or_else(|| "Died".to_string());
         Err(RuntimeError::new(&msg))
+    }
+
+    fn builtin_fail(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let msg = args
+            .first()
+            .map(|v| v.to_string_value())
+            .unwrap_or_else(|| "Failed".to_string());
+        let mut err = RuntimeError::new(&msg);
+        err.is_fail = true;
+        Err(err)
     }
 
     fn builtin_exit(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

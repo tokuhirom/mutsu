@@ -107,6 +107,23 @@ impl Compiler {
                         }
                     }
                     self.code.patch_loop_end(idx);
+                } else if Self::has_let_deep(stmts) {
+                    // Block contains `let` — wrap in LetBlock for save/restore
+                    let idx = self.code.emit(OpCode::LetBlock { body_end: 0 });
+                    for (i, s) in stmts.iter().enumerate() {
+                        let is_last = i == stmts.len() - 1;
+                        if is_last {
+                            if let Stmt::Expr(expr) = s {
+                                self.compile_expr(expr);
+                                self.code.emit(OpCode::SetTopic);
+                            } else {
+                                self.compile_stmt(s);
+                            }
+                        } else {
+                            self.compile_stmt(s);
+                        }
+                    }
+                    self.code.patch_let_block_end(idx);
                 } else {
                     for s in stmts {
                         self.compile_stmt(s);
@@ -401,6 +418,10 @@ impl Compiler {
                 self.compile_expr(expr);
                 self.code.emit(OpCode::Die);
             }
+            Stmt::Fail(expr) => {
+                self.compile_expr(expr);
+                self.code.emit(OpCode::Fail);
+            }
             Stmt::Proceed => {
                 self.code.emit(OpCode::Proceed);
             }
@@ -663,6 +684,46 @@ impl Compiler {
                     param_idx,
                     target_var_idx,
                 });
+            }
+            Stmt::Let { name, index, value } => {
+                // Emit LetSave: saves current value of the variable
+                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                let has_index = index.is_some();
+                if let Some(idx_expr) = index {
+                    self.compile_expr(idx_expr);
+                }
+                self.code.emit(OpCode::LetSave {
+                    name_idx,
+                    index_mode: has_index,
+                });
+                // Compile the assignment if value is provided
+                if let Some(val_expr) = value {
+                    if has_index {
+                        // For array index assignment: compile as Stmt::Expr(IndexAssign)
+                        let target_expr = if let Some(stripped) = name.strip_prefix('@') {
+                            Expr::ArrayVar(stripped.to_string())
+                        } else if let Some(stripped) = name.strip_prefix('%') {
+                            Expr::Var(stripped.to_string())
+                        } else {
+                            Expr::Var(name.to_string())
+                        };
+                        let assign_expr = Expr::IndexAssign {
+                            target: Box::new(target_expr),
+                            index: Box::new(index.as_ref().unwrap().as_ref().clone()),
+                            value: Box::new(val_expr.as_ref().clone()),
+                        };
+                        self.compile_expr(&assign_expr);
+                        self.code.emit(OpCode::Pop);
+                    } else {
+                        self.compile_expr(val_expr);
+                        if let Some(&slot) = self.local_map.get(name.as_str()) {
+                            self.code.emit(OpCode::SetLocal(slot));
+                        } else {
+                            let set_idx = self.code.add_constant(Value::Str(name.clone()));
+                            self.code.emit(OpCode::SetGlobal(set_idx));
+                        }
+                    }
+                }
             }
         }
     }
@@ -1671,7 +1732,7 @@ impl Compiler {
 
     fn stmt_has_placeholder(stmt: &Stmt) -> bool {
         match stmt {
-            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Take(e) => {
+            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
                 Self::expr_has_placeholder(e)
             }
             Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
@@ -1946,6 +2007,57 @@ impl Compiler {
                 }
             )
         })
+    }
+
+    /// Check if a statement list contains `let` statements (not inside sub/lambda bodies).
+    fn has_let_deep(stmts: &[Stmt]) -> bool {
+        for s in stmts {
+            match s {
+                Stmt::Let { .. } => return true,
+                Stmt::Block(inner) => {
+                    if Self::has_let_deep(inner) {
+                        return true;
+                    }
+                }
+                Stmt::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    if Self::has_let_deep(then_branch) || Self::has_let_deep(else_branch) {
+                        return true;
+                    }
+                }
+                Stmt::Expr(expr) => {
+                    if Self::expr_has_let_deep(expr) {
+                        return true;
+                    }
+                }
+                Stmt::Call { args, .. } => {
+                    for arg in args {
+                        if let crate::ast::CallArg::Positional(expr) = arg
+                            && Self::expr_has_let_deep(expr)
+                        {
+                            return true;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    fn expr_has_let_deep(expr: &Expr) -> bool {
+        match expr {
+            Expr::DoBlock { body, .. } => Self::has_let_deep(body),
+            Expr::Try { body, .. } => Self::has_let_deep(body),
+            Expr::Call { args, .. } => args.iter().any(Self::expr_has_let_deep),
+            Expr::MethodCall { args, target, .. } => {
+                Self::expr_has_let_deep(target) || args.iter().any(Self::expr_has_let_deep)
+            }
+            _ => false,
+        }
     }
 
     fn next_tmp_name(&mut self, prefix: &str) -> String {

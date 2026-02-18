@@ -390,6 +390,7 @@ pub(crate) enum OpCode {
 
     // -- Error handling --
     Die,
+    Fail,
 
     // -- Functions --
     Return,
@@ -431,6 +432,19 @@ pub(crate) enum OpCode {
 
     /// Indirect type lookup: pop string from stack, resolve to Package value.
     IndirectTypeLookup,
+
+    /// Save current variable value for `let` scope management.
+    /// Pops the array index (if index_mode is true) from the stack.
+    LetSave {
+        name_idx: u32,
+        index_mode: bool,
+    },
+
+    /// Block with `let` scope management. Executes body, then checks
+    /// the topic ($_) to decide whether to restore or discard let saves.
+    LetBlock {
+        body_end: u32,
+    },
 }
 
 /// A compiled chunk of bytecode.
@@ -537,6 +551,14 @@ impl CompiledCode {
         match &mut self.ops[idx] {
             OpCode::SmartMatchExpr { rhs_end, .. } => *rhs_end = target,
             _ => panic!("patch_smart_match_rhs_end on non-SmartMatchExpr opcode"),
+        }
+    }
+
+    pub(crate) fn patch_let_block_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::LetBlock { body_end, .. } => *body_end = target,
+            _ => panic!("patch_let_block_end on non-LetBlock opcode"),
         }
     }
 
