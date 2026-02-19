@@ -276,6 +276,7 @@ impl Compiler {
                     body_end: 0,
                     label: label.clone(),
                     arity,
+                    collect: false,
                 });
                 for s in &loop_body {
                     self.compile_stmt(s);
@@ -1420,6 +1421,15 @@ impl Compiler {
                 Stmt::Expr(inner_expr) => {
                     self.compile_expr(inner_expr);
                 }
+                Stmt::For {
+                    iterable,
+                    param,
+                    params,
+                    body,
+                    label,
+                } => {
+                    self.compile_do_for_expr(iterable, param, params, body, label);
+                }
                 Stmt::ClassDecl { name, .. } => {
                     // Register the class and return the type object
                     self.compile_stmt(stmt);
@@ -1987,6 +1997,68 @@ impl Compiler {
             self.compile_block_inline(else_branch);
         }
         self.code.patch_jump(jump_end);
+    }
+
+    /// Compile `do for` expression: like a for loop but collects each iteration result.
+    fn compile_do_for_expr(
+        &mut self,
+        iterable: &Expr,
+        param: &Option<String>,
+        params: &[String],
+        body: &[Stmt],
+        label: &Option<String>,
+    ) {
+        let (_pre_stmts, mut loop_body, _post_stmts) = self.expand_loop_phasers(body);
+        let param_idx = param
+            .as_ref()
+            .map(|p| self.code.add_constant(Value::Str(p.clone())));
+        let mut bind_stmts = Vec::new();
+        if param.is_some() && param_idx.is_none() {
+            bind_stmts.push(Stmt::Assign {
+                name: param.as_ref().unwrap().clone(),
+                expr: Expr::Var("_".to_string()),
+                op: AssignOp::Assign,
+            });
+        }
+        for (i, p) in params.iter().enumerate() {
+            bind_stmts.push(Stmt::Assign {
+                name: p.clone(),
+                expr: Expr::Index {
+                    target: Box::new(Expr::Var("_".to_string())),
+                    index: Box::new(Expr::Literal(Value::Int(i as i64))),
+                },
+                op: AssignOp::Assign,
+            });
+        }
+        if !bind_stmts.is_empty() {
+            let mut merged = bind_stmts;
+            merged.extend(loop_body);
+            loop_body = merged;
+        }
+        let arity = if !params.is_empty() {
+            params.len() as u32
+        } else {
+            1
+        };
+        self.compile_expr(iterable);
+        let loop_idx = self.code.emit(OpCode::ForLoop {
+            param_idx,
+            param_local: None,
+            body_end: 0,
+            label: label.clone(),
+            arity,
+            collect: true,
+        });
+        // Compile body; last Stmt::Expr leaves value on stack (no Pop) for collection
+        for (i, s) in loop_body.iter().enumerate() {
+            let is_last = i == loop_body.len() - 1;
+            if is_last && let Stmt::Expr(expr) = s {
+                self.compile_expr(expr);
+                continue;
+            }
+            self.compile_stmt(s);
+        }
+        self.code.patch_loop_end(loop_idx);
     }
 
     fn do_if_branch_supported(stmts: &[Stmt]) -> bool {

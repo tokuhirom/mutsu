@@ -404,4 +404,51 @@ impl Interpreter {
         }
         Ok(Value::Bool(false))
     }
+
+    /// `start { ... }` — execute block and wrap result in a kept Promise.
+    /// Single-threaded: runs the block immediately (no actual threading).
+    pub(super) fn builtin_start(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        let block = args.into_iter().next().unwrap_or(Value::Nil);
+        let result = self.call_sub_value(block, vec![], false)?;
+        Ok(self.make_promise_instance("Kept", result))
+    }
+
+    /// `await` — extract results from Promise instances.
+    pub(super) fn builtin_await(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let mut results = Vec::new();
+        for arg in args {
+            match arg {
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Promise" => {
+                    let result = attributes.get("result").cloned().unwrap_or(Value::Nil);
+                    results.push(result);
+                }
+                Value::Array(elems) => {
+                    for elem in elems {
+                        if let Value::Instance {
+                            class_name,
+                            attributes,
+                            ..
+                        } = elem
+                            && class_name == "Promise"
+                        {
+                            let result = attributes.get("result").cloned().unwrap_or(Value::Nil);
+                            results.push(result);
+                            continue;
+                        }
+                        results.push(elem.clone());
+                    }
+                }
+                _ => results.push(arg.clone()),
+            }
+        }
+        if results.len() == 1 {
+            Ok(results.into_iter().next().unwrap())
+        } else {
+            Ok(Value::Array(results))
+        }
+    }
 }
