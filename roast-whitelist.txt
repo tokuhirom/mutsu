@@ -90,6 +90,7 @@ roast/S11-modules/versioning.t
 roast/S12-class/literal.t
 roast/S12-construction/autopairs.t
 roast/S12-methods/typed-attributes.t
+roast/S12-traits/precomp.t
 roast/S14-roles/bool.t
 roast/S15-nfg/cgj.t
 roast/S15-nfg/emoji-test.t
