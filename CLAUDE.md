@@ -20,7 +20,7 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 
 ### Execution pipeline
 
-Source → **Parser** (`parser/`) → **Compiler** (`compiler.rs`) → **VM** (`vm.rs`) → Output
+Source → **Parser** (`parser/`) → **Compiler** (`compiler/`) → **VM** (`vm/`) → Output
 
 The parser is in `src/parser/` and is used unconditionally.
 
@@ -45,11 +45,35 @@ This is a **hybrid** architecture: the bytecode VM handles primitive operations 
 
 Flow: `call_method_with_values()` tries `native_method_*arg()` first; if `None`, falls through to runtime handlers.
 
-### Key modules
+### Compiler (`src/compiler/`)
+
+Compiles AST into bytecode (`OpCode` instructions):
+
+- `mod.rs`: Entry point — `compile()` function, `Compiler` struct
+- `stmt.rs`: Statement compilation (`compile_stmt()`)
+- `expr.rs`: Expression compilation (`compile_expr()`)
+- `helpers.rs`: Shared helpers — constant pool management, local variable slots, operator mapping
+
+### VM (`src/vm/`)
+
+Executes compiled bytecode. `vm.rs` contains the VM struct, `run()`, and a thin `exec_one()` dispatch match that delegates to submodules:
+
+- `vm_arith_ops.rs`: Arithmetic, logic, bitwise, repetition, mixin, pair ops
+- `vm_comparison_ops.rs`: Numeric/string comparison, three-way, identity, divisibility
+- `vm_set_ops.rs`: Set/Bag/Mix operations, junctions
+- `vm_call_ops.rs`: Function calls, method calls, hyper method calls
+- `vm_control_ops.rs`: Loops (while, for, C-style, repeat), given/when, try/catch
+- `vm_data_ops.rs`: Array/hash construction, say/print/note I/O
+- `vm_var_ops.rs`: Variable access (global, array, hash, bare word), indexing, post-increment/decrement
+- `vm_register_ops.rs`: Closures, sub/class/role/enum registration, module loading
+- `vm_string_regex_ops.rs`: Substitution, transliteration, hyper/meta/infix ops
+- `vm_misc_ops.rs`: Range creation, coercion, reduction, magic vars, block scope, let
+- `vm_helpers.rs`: Shared helpers — env lookup, type checking, junction threading, compiled function dispatch
+
+### Other key modules
 
 - `runtime/` (~35 submodules): Main interpreter engine — function dispatch (`calls.rs`, `dispatch.rs`), method dispatch (`methods.rs`, `methods_mut.rs`), built-in functions (`builtins_*.rs`), class system (`class.rs`), regex engine (`regex.rs`, `regex_parse.rs`), TAP test functions (`test_functions.rs`)
 - `builtins/`: Pure value operations — arithmetic (`arith.rs`), native functions (`functions.rs`), native methods (`methods_0arg/`, `methods_narg.rs`), RNG (`rng.rs`), unicode (`unicode.rs`)
-- `vm/`: Bytecode VM — call ops (`vm_call_ops.rs`), control flow (`vm_control_ops.rs`), data ops (`vm_data_ops.rs`), variable ops (`vm_var_ops.rs`)
 
 ### Test infrastructure
 
