@@ -11,7 +11,7 @@ set -euo pipefail
 
 OUTDIR="tmp"
 WHITELIST="roast-whitelist.txt"
-COUNT=1
+COUNT=5
 
 while getopts "n:" opt; do
     case "$opt" in
