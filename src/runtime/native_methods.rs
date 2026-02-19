@@ -38,6 +38,7 @@ impl Interpreter {
             "Promise" => self.native_promise(attributes, method, args),
             "Channel" => Ok(self.native_channel(attributes, method)),
             "Proc::Async" => Ok(self.native_proc_async(attributes, method)),
+            "Supply" => self.native_supply(attributes, method, args),
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on '{}'",
                 method, class_name
@@ -106,6 +107,72 @@ impl Interpreter {
         }
     }
 
+    // --- Supply immutable ---
+
+    fn native_supply(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        match method {
+            "repeated" => {
+                let as_fn = Self::named_value(&args, "as");
+                let with_fn = Self::named_value(&args, "with");
+                let values = match attributes.get("values") {
+                    Some(Value::Array(items)) => items.clone(),
+                    _ => Vec::new(),
+                };
+                let mut seen_keys: Vec<Value> = Vec::new();
+                let mut result = Vec::new();
+                for val in &values {
+                    let key = if let Some(ref f) = as_fn {
+                        self.call_sub_value(f.clone(), vec![val.clone()], true)?
+                    } else {
+                        val.clone()
+                    };
+                    let found = seen_keys.iter().any(|s| {
+                        if let Some(ref f) = with_fn {
+                            self.call_sub_value(f.clone(), vec![s.clone(), key.clone()], true)
+                                .map(|v| v.truthy())
+                                .unwrap_or(false)
+                        } else {
+                            s == &key
+                        }
+                    });
+                    if found {
+                        result.push(val.clone());
+                    } else {
+                        seen_keys.push(key);
+                    }
+                }
+                let mut new_attrs = HashMap::new();
+                new_attrs.insert("values".to_string(), Value::Array(result));
+                new_attrs.insert("taps".to_string(), Value::Array(Vec::new()));
+                new_attrs.insert("live".to_string(), Value::Bool(false));
+                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+            }
+            "tap" => {
+                // Immutable tap: emit all values and return a Tap instance
+                let tap = args.first().cloned().unwrap_or(Value::Nil);
+                let done_cb = Self::named_value(&args, "done");
+                if let Some(Value::Array(values)) = attributes.get("values") {
+                    for v in values {
+                        let _ = self.call_sub_value(tap.clone(), vec![v.clone()], true);
+                    }
+                }
+                if let Some(done_fn) = done_cb {
+                    let _ = self.call_sub_value(done_fn, vec![], true);
+                }
+                Ok(Value::make_instance("Tap".to_string(), HashMap::new()))
+            }
+            _ => Err(RuntimeError::new(format!(
+                "No native method '{}' on Supply",
+                method
+            ))),
+        }
+    }
+
     // --- Supply mutable ---
 
     fn native_supply_mut(
@@ -131,6 +198,7 @@ impl Interpreter {
             }
             "tap" => {
                 let tap = args.first().cloned().unwrap_or(Value::Nil);
+                let done_cb = Self::named_value(&args, "done");
                 if let Some(Value::Array(items)) = attrs.get_mut("taps") {
                     items.push(tap.clone());
                 } else {
@@ -141,7 +209,48 @@ impl Interpreter {
                         let _ = self.call_sub_value(tap.clone(), vec![v.clone()], true);
                     }
                 }
-                Ok((Value::Nil, attrs))
+                // Call done callback after all values emitted
+                if let Some(done_fn) = done_cb {
+                    let _ = self.call_sub_value(done_fn, vec![], true);
+                }
+                let tap_instance = Value::make_instance("Tap".to_string(), HashMap::new());
+                Ok((tap_instance, attrs))
+            }
+            "repeated" => {
+                let as_fn = Self::named_value(&args, "as");
+                let with_fn = Self::named_value(&args, "with");
+                let values = match attrs.get("values") {
+                    Some(Value::Array(items)) => items.clone(),
+                    _ => Vec::new(),
+                };
+                let mut seen_keys: Vec<Value> = Vec::new();
+                let mut result = Vec::new();
+                for val in &values {
+                    let key = if let Some(ref f) = as_fn {
+                        self.call_sub_value(f.clone(), vec![val.clone()], true)?
+                    } else {
+                        val.clone()
+                    };
+                    let found = seen_keys.iter().any(|s| {
+                        if let Some(ref f) = with_fn {
+                            self.call_sub_value(f.clone(), vec![s.clone(), key.clone()], true)
+                                .map(|v| v.truthy())
+                                .unwrap_or(false)
+                        } else {
+                            s == &key
+                        }
+                    });
+                    if found {
+                        result.push(val.clone());
+                    } else {
+                        seen_keys.push(key);
+                    }
+                }
+                let mut new_attrs = HashMap::new();
+                new_attrs.insert("values".to_string(), Value::Array(result));
+                new_attrs.insert("taps".to_string(), Value::Array(Vec::new()));
+                new_attrs.insert("live".to_string(), Value::Bool(false));
+                Ok((Value::make_instance("Supply".to_string(), new_attrs), attrs))
             }
             _ => Err(RuntimeError::new(format!(
                 "No native mutable method '{}' on Supply",

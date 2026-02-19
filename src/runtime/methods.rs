@@ -152,6 +152,21 @@ impl Interpreter {
             "sort" => {
                 return self.dispatch_sort(target, &args);
             }
+            "from-list" => {
+                if let Value::Package(ref class_name) = target
+                    && class_name == "Supply"
+                {
+                    let mut values = Vec::new();
+                    for arg in &args {
+                        Self::flat_into(arg, &mut values);
+                    }
+                    let mut attrs = HashMap::new();
+                    attrs.insert("values".to_string(), Value::Array(values));
+                    attrs.insert("taps".to_string(), Value::Array(Vec::new()));
+                    attrs.insert("live".to_string(), Value::Bool(false));
+                    return Ok(Value::make_instance("Supply".to_string(), attrs));
+                }
+            }
             "new" => {
                 return self.dispatch_new(target, args);
             }
@@ -672,6 +687,9 @@ impl Interpreter {
                     return Ok(Value::make_instance(class_name.clone(), attrs));
                 }
                 "Supply" => return Ok(self.make_supply_instance()),
+                "ThreadPoolScheduler" | "CurrentThreadScheduler" | "Tap" => {
+                    return Ok(Value::make_instance(class_name.clone(), HashMap::new()));
+                }
                 "Proc::Async" => {
                     let mut attrs = HashMap::new();
                     attrs.insert("cmd".to_string(), Value::Array(args.clone()));

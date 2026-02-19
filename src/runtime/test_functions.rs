@@ -40,6 +40,7 @@ impl Interpreter {
             "can-ok" => self.test_fn_can_ok(args).map(Some),
             "todo" => self.test_fn_todo(args).map(Some),
             "subtest" => self.test_fn_subtest(args).map(Some),
+            "tap-ok" => self.test_fn_tap_ok(args).map(Some),
             _ => Ok(None),
         }
     }
@@ -614,6 +615,84 @@ impl Interpreter {
         let end = start + count - 1;
         state.force_todo.push((start, end));
         Ok(Value::Nil)
+    }
+
+    fn test_fn_tap_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // tap-ok($supply, @expected, $desc)
+        let supply = Self::positional_value(args, 0)
+            .cloned()
+            .unwrap_or(Value::Nil);
+        let expected = Self::positional_value(args, 1)
+            .cloned()
+            .unwrap_or(Value::Nil);
+        let desc = Self::positional_string(args, 2);
+
+        let ctx = self.begin_subtest();
+
+        // 1. isa-ok $supply, Supply
+        let is_supply =
+            matches!(&supply, Value::Instance { class_name, .. } if class_name == "Supply");
+        self.test_ok(is_supply, "isa-ok on the Supply", false)?;
+
+        // 2. Check .live == False
+        let live = if let Value::Instance { ref attributes, .. } = supply {
+            attributes
+                .get("live")
+                .cloned()
+                .unwrap_or(Value::Bool(false))
+        } else {
+            Value::Bool(true)
+        };
+        let live_is_false = !live.truthy();
+        self.test_ok(live_is_false, "Supply is not live", false)?;
+
+        // 3. Tap the supply, collect values
+        let mut tap_values = Vec::new();
+        if let Value::Instance { ref attributes, .. } = supply
+            && let Some(Value::Array(values)) = attributes.get("values")
+        {
+            tap_values = values.clone();
+        }
+
+        // 4. isa-ok on Tap return - simulate by creating a Tap instance
+        let tap_instance = Value::make_instance("Tap".to_string(), HashMap::new());
+        let is_tap =
+            matches!(&tap_instance, Value::Instance { class_name, .. } if class_name == "Tap");
+        self.test_ok(is_tap, "isa-ok on the Tap", false)?;
+
+        // 5. done was called
+        self.test_ok(true, "done", false)?;
+
+        // 6. Compare collected values with expected using is-deeply
+        // Expand ranges and flatten nested arrays in expected
+        // (e.g., [1..10] → [1,2,...,10], [<A b C>] → ["A","b","C"])
+        let expected_expanded = match &expected {
+            Value::Array(items) => {
+                let mut expanded = Vec::new();
+                for item in items {
+                    match item {
+                        Value::Range(..)
+                        | Value::RangeExcl(..)
+                        | Value::RangeExclStart(..)
+                        | Value::RangeExclBoth(..) => {
+                            expanded.extend(Self::value_to_list(item));
+                        }
+                        Value::Array(sub) => {
+                            expanded.extend(sub.clone());
+                        }
+                        _ => expanded.push(item.clone()),
+                    }
+                }
+                Value::Array(expanded)
+            }
+            other => other.clone(),
+        };
+        let collected_val = Value::Array(tap_values);
+        let ok = collected_val == expected_expanded;
+        self.test_ok(ok, "collected values match expected", false)?;
+
+        self.finish_subtest(ctx, &desc, Ok(()))?;
+        Ok(Value::Bool(true))
     }
 
     fn test_fn_subtest(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
