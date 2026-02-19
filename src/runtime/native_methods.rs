@@ -34,6 +34,7 @@ impl Interpreter {
             "IO::Path" => self.native_io_path(attributes, method, args),
             "IO::Handle" => self.native_io_handle(attributes, method, args),
             "IO::Socket::INET" => self.native_socket_inet(attributes, method, args),
+            "IO::Pipe" => self.native_io_pipe(attributes, method),
             "Distro" => self.native_distro(attributes, method),
             "Perl" => Ok(self.native_perl(attributes, method)),
             "Promise" => self.native_promise(attributes, method, args),

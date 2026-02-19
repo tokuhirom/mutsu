@@ -371,6 +371,19 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "IO::Pipe".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["slurp", "Str", "gist"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                mro: vec!["IO::Pipe".to_string()],
+            },
+        );
+        classes.insert(
             "IO::Socket::INET".to_string(),
             ClassDef {
                 parents: Vec::new(),
@@ -477,7 +490,7 @@ impl Interpreter {
         self.env.insert("@*ARGS".to_string(), Value::Array(args));
     }
 
-    pub(crate) fn add_lib_path(&mut self, path: String) {
+    pub fn add_lib_path(&mut self, path: String) {
         if !path.is_empty() {
             self.lib_paths.push(path);
         }

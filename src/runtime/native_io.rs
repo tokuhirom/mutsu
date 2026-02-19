@@ -425,4 +425,22 @@ impl Interpreter {
             ))),
         }
     }
+
+    pub(super) fn native_io_pipe(
+        &self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+    ) -> Result<Value, RuntimeError> {
+        let content = attributes
+            .get("content")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        match method {
+            "slurp" | "Str" | "gist" => Ok(Value::Str(content)),
+            _ => Err(RuntimeError::new(format!(
+                "No native method '{}' on IO::Pipe",
+                method
+            ))),
+        }
+    }
 }

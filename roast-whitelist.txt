@@ -84,6 +84,7 @@ roast/S06-signature/scalar-type.t
 roast/S06-traits/is-readonly.t
 roast/S06-traits/native-is-copy.t
 roast/S07-hyperrace/stress.t
+roast/S11-compunit/rt126904.t
 roast/S11-modules/versioning.t
 roast/S12-class/literal.t
 roast/S12-construction/autopairs.t
