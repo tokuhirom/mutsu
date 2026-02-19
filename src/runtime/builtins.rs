@@ -181,6 +181,9 @@ impl Interpreter {
             "sleep" => self.builtin_sleep(&args),
             "sleep-timer" => self.builtin_sleep_timer(&args),
             "sleep-till" => self.builtin_sleep_till(&args),
+            // Concurrency (single-threaded simulation)
+            "start" => self.builtin_start(args),
+            "await" => self.builtin_await(&args),
             // Fallback
             _ => self.call_function_fallback(name, &args),
         }

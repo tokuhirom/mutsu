@@ -1755,6 +1755,7 @@ impl VM {
                 body_end,
                 label,
                 arity,
+                collect,
             } => {
                 let spec = vm_control_ops::ForLoopSpec {
                     param_idx: *param_idx,
@@ -1762,6 +1763,7 @@ impl VM {
                     body_end: *body_end,
                     label: label.clone(),
                     arity: *arity,
+                    collect: *collect,
                 };
                 self.exec_for_loop_op(code, &spec, ip, compiled_fns)?;
             }

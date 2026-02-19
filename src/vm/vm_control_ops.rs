@@ -6,6 +6,7 @@ pub(super) struct ForLoopSpec {
     pub(super) body_end: u32,
     pub(super) label: Option<String>,
     pub(super) arity: u32,
+    pub(super) collect: bool,
 }
 
 pub(super) struct CStyleLoopSpec {
@@ -90,6 +91,12 @@ impl VM {
         } else {
             items
         };
+        let stack_base = if spec.collect {
+            Some(self.stack.len())
+        } else {
+            None
+        };
+        let mut collected = if spec.collect { Some(Vec::new()) } else { None };
         'for_loop: for item in chunked_items {
             // Only set $_ when no named parameter is given (for @list { ... })
             // When -> $k is used, $_ should remain from the enclosing scope
@@ -108,7 +115,18 @@ impl VM {
             }
             'body_redo: loop {
                 match self.run_range(code, body_start, loop_end, compiled_fns) {
-                    Ok(()) => break 'body_redo,
+                    Ok(()) => {
+                        if let Some(ref mut coll) = collected {
+                            let base = stack_base.unwrap();
+                            if self.stack.len() > base {
+                                let val = self.stack.pop().unwrap();
+                                coll.push(val);
+                            }
+                            // Drain any extra values pushed during this iteration
+                            self.stack.truncate(base);
+                        }
+                        break 'body_redo;
+                    }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
                         if param_name.is_none() {
                             self.interpreter
@@ -137,6 +155,9 @@ impl VM {
             if self.interpreter.is_halted() {
                 break;
             }
+        }
+        if let Some(coll) = collected {
+            self.stack.push(Value::Array(coll));
         }
         *ip = loop_end;
         Ok(())

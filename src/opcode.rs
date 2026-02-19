@@ -278,6 +278,7 @@ pub(crate) enum OpCode {
         body_end: u32,
         label: Option<String>,
         arity: u32,
+        collect: bool,
     },
     /// C-style loop: [cond opcodes][body opcodes][step opcodes].
     /// Layout after CStyleLoop: cond at [ip+1..cond_end), body at [cond_end..step_start),
