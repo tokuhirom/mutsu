@@ -674,7 +674,8 @@ impl Interpreter {
                         Value::Range(..)
                         | Value::RangeExcl(..)
                         | Value::RangeExclStart(..)
-                        | Value::RangeExclBoth(..) => {
+                        | Value::RangeExclBoth(..)
+                        | Value::GenericRange { .. } => {
                             expanded.extend(Self::value_to_list(item));
                         }
                         Value::Array(sub) => {

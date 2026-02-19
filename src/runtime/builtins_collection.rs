@@ -232,7 +232,8 @@ impl Interpreter {
             Value::Range(..)
             | Value::RangeExcl(..)
             | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..) => {
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. } => {
                 out.extend(Self::value_to_list(val));
             }
             other => out.push(other.clone()),
@@ -284,6 +285,9 @@ impl Interpreter {
                 Value::RangeExcl(a, b) => list_items.extend((*a..*b).map(Value::Int)),
                 Value::RangeExclStart(a, b) => list_items.extend((*a + 1..=*b).map(Value::Int)),
                 Value::RangeExclBoth(a, b) => list_items.extend((*a + 1..*b).map(Value::Int)),
+                v if v.is_range() => {
+                    list_items.extend(crate::runtime::utils::value_to_list(v));
+                }
                 other => list_items.push(other.clone()),
             }
         }
@@ -298,6 +302,9 @@ impl Interpreter {
                 Value::Array(items) => list_items.extend(items.clone()),
                 Value::Range(a, b) => list_items.extend((*a..=*b).map(Value::Int)),
                 Value::RangeExcl(a, b) => list_items.extend((*a..*b).map(Value::Int)),
+                v if v.is_range() => {
+                    list_items.extend(crate::runtime::utils::value_to_list(v));
+                }
                 other => list_items.push(other.clone()),
             }
         }

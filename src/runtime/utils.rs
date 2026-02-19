@@ -125,6 +125,12 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
         Value::RangeExclStart(a, b) => Value::Array((a + 1..=b).map(Value::Int).collect()),
         Value::RangeExclBoth(a, b) if b == i64::MAX || a == i64::MIN => value,
         Value::RangeExclBoth(a, b) => Value::Array((a + 1..b).map(Value::Int).collect()),
+        Value::GenericRange {
+            ref start, ref end, ..
+        } if matches!(start.as_ref(), Value::Str(_)) && matches!(end.as_ref(), Value::Str(_)) => {
+            Value::Array(value_to_list(&value))
+        }
+        Value::GenericRange { .. } => value,
         Value::Slip(items) => Value::Array(items),
         other => Value::Array(vec![other]),
     }
@@ -207,7 +213,8 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::Range(_, _)
         | Value::RangeExcl(_, _)
         | Value::RangeExclStart(_, _)
-        | Value::RangeExclBoth(_, _) => "Range",
+        | Value::RangeExclBoth(_, _)
+        | Value::GenericRange { .. } => "Range",
         Value::Pair(_, _) => "Pair",
         Value::Rat(_, _) => "Rat",
         Value::FatRat(_, _) => "FatRat",
@@ -280,6 +287,51 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             let start = *a + 1;
             let end = (*b).min(start + MAX_RANGE_EXPAND);
             (start..end).map(Value::Int).collect()
+        }
+        Value::GenericRange {
+            start,
+            end,
+            excl_start,
+            excl_end,
+        } => {
+            // String ranges: expand as character sequences
+            if let (Value::Str(a), Value::Str(b)) = (start.as_ref(), end.as_ref()) {
+                if a.len() == 1 && b.len() == 1 {
+                    let s = a.chars().next().unwrap() as u32;
+                    let e = b.chars().next().unwrap() as u32;
+                    let s = if *excl_start { s + 1 } else { s };
+                    if *excl_end {
+                        (s..e)
+                            .filter_map(char::from_u32)
+                            .map(|c| Value::Str(c.to_string()))
+                            .collect()
+                    } else {
+                        (s..=e)
+                            .filter_map(char::from_u32)
+                            .map(|c| Value::Str(c.to_string()))
+                            .collect()
+                    }
+                } else {
+                    // Multi-char string ranges: use string succession
+                    let mut result = Vec::new();
+                    let mut current = if *excl_start {
+                        crate::runtime::Interpreter::string_succ(a)
+                    } else {
+                        a.clone()
+                    };
+                    let limit = MAX_RANGE_EXPAND as usize;
+                    while current <= *b && result.len() < limit {
+                        if *excl_end && current == *b {
+                            break;
+                        }
+                        result.push(Value::Str(current.clone()));
+                        current = crate::runtime::Interpreter::string_succ(&current);
+                    }
+                    result
+                }
+            } else {
+                vec![val.clone()]
+            }
         }
         Value::Set(items) => items.iter().map(|s| Value::Str(s.clone())).collect(),
         Value::Bag(items) => items

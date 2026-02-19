@@ -236,26 +236,187 @@ impl Interpreter {
             (_, Value::Bool(b)) => *b,
             // Instance identity
             (Value::Instance { .. }, _) | (_, Value::Instance { .. }) => false,
-            // Range ~~ Range: LHS is subset of RHS (all range variants)
+            // Range ~~ Range: LHS is subset of RHS.
+            // Uses raw bound values. Exclusivity is compared pairwise:
+            // if RHS excludes a bound, LHS must either also exclude it
+            // or have a strictly interior value.
             (l, r) if l.is_range() && r.is_range() => {
-                let (l_min, l_max) = Self::range_effective_bounds(l);
-                let (r_min, r_max) = Self::range_effective_bounds(r);
-                l_min >= r_min && l_max <= r_max
+                let r_str = Self::range_has_string_endpoints(r);
+                let (_, _, l_es, l_ee) = Self::range_exclusivity(l);
+                let (_, _, r_es, r_ee) = Self::range_exclusivity(r);
+                if r_str {
+                    let (l_min_s, l_max_s) = Self::range_raw_string_bounds(l);
+                    let (r_min_s, r_max_s) = Self::range_raw_string_bounds(r);
+                    let min_ok = if r_es {
+                        l_min_s > r_min_s || (l_min_s == r_min_s && l_es)
+                    } else {
+                        l_min_s >= r_min_s
+                    };
+                    let max_ok = if r_ee {
+                        l_max_s < r_max_s || (l_max_s == r_max_s && l_ee)
+                    } else {
+                        l_max_s <= r_max_s
+                    };
+                    min_ok && max_ok
+                } else {
+                    let (l_min, l_max) = Self::range_raw_bounds_f64(l);
+                    let (r_min, r_max) = Self::range_raw_bounds_f64(r);
+                    let min_ok = if r_es {
+                        l_min > r_min || (l_min == r_min && l_es)
+                    } else {
+                        l_min >= r_min
+                            || (l_min.is_nan() && r_min.is_nan())
+                            || (l_min.is_nan() && r_min.is_infinite() && r_min < 0.0)
+                    };
+                    let max_ok = if r_ee {
+                        l_max < r_max || (l_max == r_max && l_ee)
+                    } else {
+                        l_max <= r_max
+                            || (l_max.is_nan() && r_max.is_nan())
+                            || (l_max.is_nan() && r_max.is_infinite() && r_max > 0.0)
+                    };
+                    min_ok && max_ok
+                }
             }
+            // Range ~~ Numeric: numify range (element count) and compare with ==
+            (l, r) if l.is_range() && r.is_numeric() => {
+                let elems = Self::range_elems_f64(l);
+                let rval = r.to_f64();
+                elems == rval
+            }
+            // Value ~~ Range: check if value is contained in the range
+            (l, r) if r.is_range() => Self::value_in_range(l, r),
             // Default: compare equality
             _ => left.to_string_value() == right.to_string_value(),
         }
     }
 
-    /// Get effective inclusive bounds of a range (accounting for exclusivity).
-    fn range_effective_bounds(v: &Value) -> (i64, i64) {
+    /// Get raw bounds of a range as f64 (NOT adjusted for exclusivity).
+    fn range_raw_bounds_f64(v: &Value) -> (f64, f64) {
         match v {
-            Value::Range(a, b) => (*a, *b),
-            Value::RangeExcl(a, b) => (*a, *b - 1),
-            Value::RangeExclStart(a, b) => (*a + 1, *b),
-            Value::RangeExclBoth(a, b) => (*a + 1, *b - 1),
-            _ => (0, 0),
+            Value::Range(a, b) => (*a as f64, *b as f64),
+            Value::RangeExcl(a, b) => (*a as f64, *b as f64),
+            Value::RangeExclStart(a, b) => (*a as f64, *b as f64),
+            Value::RangeExclBoth(a, b) => (*a as f64, *b as f64),
+            Value::GenericRange { start, end, .. } => (start.to_f64(), end.to_f64()),
+            _ => (0.0, 0.0),
         }
+    }
+
+    /// Get exclusivity flags for a range: (start_val, end_val, excl_start, excl_end).
+    fn range_exclusivity(v: &Value) -> (f64, f64, bool, bool) {
+        match v {
+            Value::Range(a, b) => (*a as f64, *b as f64, false, false),
+            Value::RangeExcl(a, b) => (*a as f64, *b as f64, false, true),
+            Value::RangeExclStart(a, b) => (*a as f64, *b as f64, true, false),
+            Value::RangeExclBoth(a, b) => (*a as f64, *b as f64, true, true),
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } => (start.to_f64(), end.to_f64(), *excl_start, *excl_end),
+            _ => (0.0, 0.0, false, false),
+        }
+    }
+
+    /// Check if a range has string endpoints.
+    fn range_has_string_endpoints(v: &Value) -> bool {
+        match v {
+            Value::GenericRange { start, end, .. } => {
+                matches!(**start, Value::Str(_)) || matches!(**end, Value::Str(_))
+            }
+            _ => false,
+        }
+    }
+
+    /// Get raw string bounds of a range.
+    fn range_raw_string_bounds(v: &Value) -> (String, String) {
+        match v {
+            Value::GenericRange { start, end, .. } => {
+                (start.to_string_value(), end.to_string_value())
+            }
+            Value::Range(a, b) => (a.to_string(), b.to_string()),
+            Value::RangeExcl(a, b) => (a.to_string(), b.to_string()),
+            Value::RangeExclStart(a, b) => (a.to_string(), b.to_string()),
+            Value::RangeExclBoth(a, b) => (a.to_string(), b.to_string()),
+            _ => (String::new(), String::new()),
+        }
+    }
+
+    /// Compute element count of a range as f64.
+    fn range_elems_f64(v: &Value) -> f64 {
+        match v {
+            Value::Range(a, b) => {
+                if *b == i64::MAX || *a == i64::MIN {
+                    f64::INFINITY
+                } else {
+                    (*b - *a + 1) as f64
+                }
+            }
+            Value::RangeExcl(a, b) => {
+                if *b == i64::MAX || *a == i64::MIN {
+                    f64::INFINITY
+                } else {
+                    (*b - *a) as f64
+                }
+            }
+            Value::RangeExclStart(a, b) => {
+                if *b == i64::MAX || *a == i64::MIN {
+                    f64::INFINITY
+                } else {
+                    (*b - *a) as f64
+                }
+            }
+            Value::RangeExclBoth(a, b) => {
+                if *b == i64::MAX || *a == i64::MIN {
+                    f64::INFINITY
+                } else {
+                    (*b - *a - 1) as f64
+                }
+            }
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } => {
+                let s = start.to_f64();
+                let e = end.to_f64();
+                let count = e - s + 1.0;
+                let adj = if *excl_start { 1.0 } else { 0.0 } + if *excl_end { 1.0 } else { 0.0 };
+                count - adj
+            }
+            _ => 0.0,
+        }
+    }
+
+    /// Check if a value is contained within a range.
+    fn value_in_range(val: &Value, range: &Value) -> bool {
+        let (r_min, r_max) = Self::range_raw_bounds_f64(range);
+        let (_, _, r_es, r_ee) = Self::range_exclusivity(range);
+
+        // For string ranges, compare strings
+        if Self::range_has_string_endpoints(range) {
+            let v_str = val.to_string_value();
+            let (r_min_s, r_max_s) = Self::range_raw_string_bounds(range);
+            let min_ok = if r_es {
+                v_str > r_min_s
+            } else {
+                v_str >= r_min_s
+            };
+            let max_ok = if r_ee {
+                v_str < r_max_s
+            } else {
+                v_str <= r_max_s
+            };
+            return min_ok && max_ok;
+        }
+
+        let v = val.to_f64();
+        let min_ok = if r_es { v > r_min } else { v >= r_min };
+        let max_ok = if r_ee { v < r_max } else { v <= r_max };
+        min_ok && max_ok
     }
 
     pub(super) fn seq_value_to_f64(v: &Value) -> Option<f64> {

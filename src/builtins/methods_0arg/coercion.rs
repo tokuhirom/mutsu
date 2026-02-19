@@ -151,6 +151,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::Array((a + 1..*b).map(Value::Int).collect())))
                 }
             }
+            Value::GenericRange { .. } => Some(Ok(target.clone())),
             Value::Array(_) => Some(Ok(target.clone())),
             _ => Some(Ok(Value::Array(vec![target.clone()]))),
         },
@@ -160,7 +161,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Range(_, _)
             | Value::RangeExcl(_, _)
             | Value::RangeExclStart(_, _)
-            | Value::RangeExclBoth(_, _) => Some(Ok(target.clone())),
+            | Value::RangeExclBoth(_, _)
+            | Value::GenericRange { .. } => Some(Ok(target.clone())),
             _ => None,
         },
         _ => None,

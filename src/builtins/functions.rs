@@ -293,7 +293,8 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                     Value::Range(..)
                     | Value::RangeExcl(..)
                     | Value::RangeExclStart(..)
-                    | Value::RangeExclBoth(..) => {
+                    | Value::RangeExclBoth(..)
+                    | Value::GenericRange { .. } => {
                         out.extend(crate::runtime::utils::value_to_list(v));
                     }
                     other => out.push(other.clone()),

@@ -56,7 +56,8 @@ impl Interpreter {
                     Value::Range(_, _) => "Range",
                     Value::RangeExcl(_, _)
                     | Value::RangeExclStart(_, _)
-                    | Value::RangeExclBoth(_, _) => "Range",
+                    | Value::RangeExclBoth(_, _)
+                    | Value::GenericRange { .. } => "Range",
                     Value::Array(_) => "Array",
                     Value::LazyList(_) => "Array",
                     Value::Hash(_) => "Hash",
@@ -831,6 +832,10 @@ impl Interpreter {
             }
             Value::RangeExclBoth(a, b) => {
                 let items: Vec<Value> = (a + 1..b).map(Value::Int).collect();
+                self.eval_grep_over_items(args.first().cloned(), items)
+            }
+            Value::GenericRange { .. } => {
+                let items = crate::runtime::utils::value_to_list(&target);
                 self.eval_grep_over_items(args.first().cloned(), items)
             }
             other => Ok(other),
