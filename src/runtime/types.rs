@@ -251,34 +251,6 @@ impl Interpreter {
         self.args_match_param_types(args, param_defs)
     }
 
-    pub(super) fn matches_expected(
-        &mut self,
-        matcher: &ExpectedMatcher,
-        actual: &str,
-    ) -> Result<bool, RuntimeError> {
-        match matcher {
-            ExpectedMatcher::Exact(Value::Str(s)) => Ok(actual == s),
-            ExpectedMatcher::Exact(Value::Int(i)) => Ok(actual.trim() == i.to_string()),
-            ExpectedMatcher::Exact(Value::Bool(b)) => Ok(*b != actual.is_empty()),
-            ExpectedMatcher::Exact(Value::Nil) => Ok(actual.is_empty()),
-            ExpectedMatcher::Exact(_) => Ok(false),
-            ExpectedMatcher::Lambda { param, body } => {
-                let parsed = actual.trim().parse::<i64>().ok();
-                let arg = parsed
-                    .map(Value::Int)
-                    .unwrap_or_else(|| Value::Str(actual.to_string()));
-                let saved = self.env.insert(param.clone(), arg);
-                let result = self.eval_block_value(body);
-                if let Some(old) = saved {
-                    self.env.insert(param.clone(), old);
-                } else {
-                    self.env.remove(param);
-                }
-                Ok(result?.truthy())
-            }
-        }
-    }
-
     pub(crate) fn bind_function_args_values(
         &mut self,
         param_defs: &[ParamDef],

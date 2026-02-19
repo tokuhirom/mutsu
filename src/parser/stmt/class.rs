@@ -5,7 +5,7 @@ use crate::ast::Stmt;
 
 use super::{block, ident, keyword, qualified_ident};
 
-use super::{parse_param_list, skip_sub_traits};
+use super::{parse_param_list, parse_sub_traits};
 
 /// Parse `class` declaration.
 pub(super) fn class_decl(input: &str) -> PResult<'_, Stmt> {
@@ -204,8 +204,8 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
     };
     let params: Vec<String> = param_defs.iter().map(|p| p.name.clone()).collect();
     let (rest, _) = ws(rest)?;
-    // Skip traits (is export, etc.)
-    let (rest, _) = skip_sub_traits(rest)?;
+    // Parse traits (is export, etc.)
+    let (rest, traits) = parse_sub_traits(rest)?;
     let (rest, _) = ws(rest)?;
     // May have {*} body or just semicolon
     if rest.starts_with('{') {
@@ -216,6 +216,7 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
                 name,
                 params,
                 param_defs,
+                is_export: traits.is_export,
             },
         ));
     }
@@ -226,6 +227,7 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
             name,
             params,
             param_defs,
+            is_export: traits.is_export,
         },
     ))
 }

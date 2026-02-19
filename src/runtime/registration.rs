@@ -80,6 +80,52 @@ impl Interpreter {
         self.proto_subs.insert(key);
     }
 
+    /// Register a sub under GLOBAL:: (used for `is export` trait).
+    pub(crate) fn register_sub_decl_as_global(
+        &mut self,
+        name: &str,
+        params: &[String],
+        param_defs: &[ParamDef],
+        body: &[Stmt],
+        multi: bool,
+    ) {
+        let def = FunctionDef {
+            package: "GLOBAL".to_string(),
+            name: name.to_string(),
+            params: params.to_vec(),
+            param_defs: param_defs.to_vec(),
+            body: body.to_vec(),
+        };
+        if multi {
+            let arity = param_defs.iter().filter(|p| !p.slurpy && !p.named).count();
+            let type_sig: Vec<&str> = param_defs
+                .iter()
+                .filter(|p| !p.slurpy && !p.named)
+                .map(|p| p.type_constraint.as_deref().unwrap_or("Any"))
+                .collect();
+            let has_types = type_sig.iter().any(|t| *t != "Any");
+            if has_types {
+                let typed_fq = format!("GLOBAL::{}/{}:{}", name, arity, type_sig.join(","));
+                self.functions.insert(typed_fq, def.clone());
+            }
+            let fq = format!("GLOBAL::{}/{}", name, arity);
+            if !has_types {
+                self.functions.insert(fq, def);
+            } else {
+                self.functions.entry(fq).or_insert(def);
+            }
+        } else {
+            let fq = format!("GLOBAL::{}", name);
+            self.functions.insert(fq, def);
+        }
+    }
+
+    /// Register a proto sub under GLOBAL:: (used for `is export` trait).
+    pub(crate) fn register_proto_decl_as_global(&mut self, name: &str) {
+        let key = format!("GLOBAL::{}", name);
+        self.proto_subs.insert(key);
+    }
+
     pub(crate) fn register_proto_token_decl(&mut self, name: &str) {
         let key = format!("{}::{}", self.current_package, name);
         self.proto_tokens.insert(key);

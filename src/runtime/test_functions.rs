@@ -35,6 +35,8 @@ impl Interpreter {
             "throws-like" => self.test_fn_throws_like(args).map(Some),
             "fails-like" => self.test_fn_throws_like(args).map(Some),
             "is_run" => self.test_fn_is_run(args).map(Some),
+            "make-temp-dir" => self.test_fn_make_temp_dir(args).map(Some),
+            "make-temp-file" => self.test_fn_make_temp_file(args).map(Some),
             "use-ok" => self.test_fn_use_ok(args).map(Some),
             "does-ok" => self.test_fn_does_ok(args).map(Some),
             "can-ok" => self.test_fn_can_ok(args).map(Some),
@@ -497,28 +499,18 @@ impl Interpreter {
         let expectations =
             Self::positional_value_required(args, 1, "is_run expects expectations")?.clone();
         let desc = Self::positional_string(args, 2);
-        let mut expected_out = None;
-        let mut expected_err = None;
-        let mut expected_status = None;
+        let mut expected_out: Option<Value> = None;
+        let mut expected_err: Option<Value> = None;
+        let mut expected_status: Option<i64> = None;
         let mut run_args: Option<Vec<Value>> = None;
         if let Value::Hash(expected_hash) = &expectations {
             for (name, value) in expected_hash {
-                let matcher = match value {
-                    Value::Sub { params, body, .. } => {
-                        let param = params.first().cloned().unwrap_or_else(|| "_".to_string());
-                        Some(ExpectedMatcher::Lambda {
-                            param,
-                            body: body.clone(),
-                        })
-                    }
-                    other => Some(ExpectedMatcher::Exact(other.clone())),
-                };
                 match name.as_str() {
-                    "out" => expected_out = matcher,
-                    "err" => expected_err = matcher,
+                    "out" => expected_out = Some(value.clone()),
+                    "err" => expected_err = Some(value.clone()),
                     "status" => {
-                        if let Some(ExpectedMatcher::Exact(Value::Int(i))) = matcher {
-                            expected_status = Some(i);
+                        if let Value::Int(i) = value {
+                            expected_status = Some(*i);
                         }
                     }
                     _ => {}
@@ -559,17 +551,52 @@ impl Interpreter {
             }
         };
         let mut ok = true;
-        if let Some(matcher) = expected_out {
-            ok &= self.matches_expected(&matcher, &out)?;
+        if let Some(expected) = expected_out {
+            ok &= self.smart_match(&Value::Str(out), &expected);
         }
-        if let Some(matcher) = expected_err {
-            ok &= self.matches_expected(&matcher, &err)?;
+        if let Some(expected) = expected_err {
+            ok &= self.smart_match(&Value::Str(err), &expected);
         }
         if let Some(expect) = expected_status {
             ok &= status == expect;
         }
         self.test_ok(ok, &desc, false)?;
         Ok(Value::Bool(ok))
+    }
+
+    fn test_fn_make_temp_dir(&self, _args: &[Value]) -> Result<Value, RuntimeError> {
+        let dir = std::env::temp_dir().join(format!("mutsu-tmp-{}", std::process::id()));
+        let unique = dir.join(format!("{}", crate::value::next_instance_id()));
+        std::fs::create_dir_all(&unique)
+            .map_err(|e| RuntimeError::new(format!("make-temp-dir: {}", e)))?;
+        Ok(self.make_io_path_instance(&unique.to_string_lossy()))
+    }
+
+    fn test_fn_make_temp_file(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let dir = std::env::temp_dir().join(format!("mutsu-tmp-{}", std::process::id()));
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| RuntimeError::new(format!("make-temp-file: {}", e)))?;
+        let file_path = dir.join(format!("tmp-{}", crate::value::next_instance_id()));
+
+        let mut content: Option<String> = None;
+        for arg in args {
+            if let Value::Pair(key, val) = arg
+                && key == "content"
+            {
+                content = Some(val.to_string_value());
+            }
+            if let Value::Hash(map) = arg
+                && let Some(val) = map.get("content")
+            {
+                content = Some(val.to_string_value());
+            }
+        }
+
+        let content_str = content.unwrap_or_default();
+        std::fs::write(&file_path, &content_str)
+            .map_err(|e| RuntimeError::new(format!("make-temp-file: {}", e)))?;
+
+        Ok(self.make_io_path_instance(&file_path.to_string_lossy()))
     }
 
     fn test_fn_use_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

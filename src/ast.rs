@@ -191,12 +191,6 @@ pub(crate) enum CallArg {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum ExpectedMatcher {
-    Exact(Value),
-    Lambda { param: String, body: Vec<Stmt> },
-}
-
-#[derive(Debug, Clone)]
 pub(crate) enum Stmt {
     VarDecl {
         name: String,
@@ -215,6 +209,7 @@ pub(crate) enum Stmt {
         param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,
         multi: bool,
+        is_export: bool,
     },
     TokenDecl {
         name: String,
@@ -350,6 +345,7 @@ pub(crate) enum Stmt {
         name: String,
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
+        is_export: bool,
     },
     Let {
         name: String,

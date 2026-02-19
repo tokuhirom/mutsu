@@ -225,42 +225,6 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn builtin_make_temp_dir(&self, _args: &[Value]) -> Result<Value, RuntimeError> {
-        let dir = std::env::temp_dir().join(format!("mutsu-tmp-{}", std::process::id()));
-        let unique = dir.join(format!("{}", crate::value::next_instance_id()));
-        std::fs::create_dir_all(&unique)
-            .map_err(|e| RuntimeError::new(format!("make-temp-dir: {}", e)))?;
-        Ok(self.make_io_path_instance(&unique.to_string_lossy()))
-    }
-
-    pub(super) fn builtin_make_temp_file(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let dir = std::env::temp_dir().join(format!("mutsu-tmp-{}", std::process::id()));
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| RuntimeError::new(format!("make-temp-file: {}", e)))?;
-        let file_path = dir.join(format!("tmp-{}", crate::value::next_instance_id()));
-
-        // Check for :content named arg
-        let mut content: Option<String> = None;
-        for arg in args {
-            if let Value::Pair(key, val) = arg
-                && key == "content"
-            {
-                content = Some(val.to_string_value());
-            }
-            if let Value::Hash(map) = arg
-                && let Some(val) = map.get("content")
-            {
-                content = Some(val.to_string_value());
-            }
-        }
-
-        let content_str = content.unwrap_or_default();
-        std::fs::write(&file_path, &content_str)
-            .map_err(|e| RuntimeError::new(format!("make-temp-file: {}", e)))?;
-
-        Ok(self.make_io_path_instance(&file_path.to_string_lossy()))
-    }
-
     pub(super) fn builtin_kill(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let signal = args.first().map(super::to_int).unwrap_or(15);
         let mut success = true;

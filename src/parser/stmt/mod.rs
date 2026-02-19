@@ -21,7 +21,7 @@ use args::{parse_stmt_call_args, parse_stmt_call_args_no_paren};
 use assign::{assign_stmt, parse_assign_expr_or_comma, parse_comma_or_expr, try_parse_assign_expr};
 use class::class_decl_body;
 use modifier::{is_stmt_modifier_keyword, parse_statement_modifier};
-use sub::{method_decl_body, parse_param_list, skip_sub_traits, sub_decl_body};
+use sub::{method_decl_body, parse_param_list, parse_sub_traits, sub_decl_body};
 
 thread_local! {
     static STMT_MEMO_TLS: RefCell<HashMap<(usize, usize), MemoEntry<Stmt>>> = RefCell::new(HashMap::new());
