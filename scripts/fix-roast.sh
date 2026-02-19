@@ -7,8 +7,11 @@ while true; do
   git checkout main
   git pull origin main
 
+  # Regenerate category lists
+  ./scripts/roast-history.sh
+
   # Pick the next failing roast test
-  TEST_FILE=$(./scripts/pick-next-roast.sh)
+  TEST_FILE=$(./scripts/pick-next-roast.sh 2>/dev/null | grep -v '^===' | head -1 | awk '{print $2}') || true
 
   if [ -z "$TEST_FILE" ]; then
     echo "All tests passing! Nothing to fix."

@@ -48,6 +48,15 @@ impl Interpreter {
                 }
                 Ok(self.make_io_path_instance(&path))
             }
+            "sibling" => {
+                let sibling_name = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let parent = original.parent().unwrap_or_else(|| Path::new("."));
+                let sibling_path = Self::stringify_path(&parent.join(&sibling_name));
+                Ok(self.make_io_path_instance(&sibling_path))
+            }
             "child" | "add" => {
                 let child_name = args
                     .first()

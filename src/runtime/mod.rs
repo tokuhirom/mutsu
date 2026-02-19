@@ -326,6 +326,7 @@ impl Interpreter {
                     "IO",
                     "basename",
                     "parent",
+                    "sibling",
                     "child",
                     "add",
                     "extension",
