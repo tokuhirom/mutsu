@@ -186,8 +186,8 @@ impl Interpreter {
                 Ok(Value::Str(content))
             }
             "open" => {
-                let (read, write, append) = Self::parse_io_flags_values(&args);
-                self.open_file_handle(&path_buf, read, write, append)
+                let (read, write, append, bin) = Self::parse_io_flags_values(&args);
+                self.open_file_handle(&path_buf, read, write, append, bin)
             }
             "copy" => {
                 let dest = args
@@ -428,11 +428,89 @@ impl Interpreter {
                 }
                 Ok(Value::Str(String::new()))
             }
+            "Supply" => self.handle_supply(target, &args),
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on IO::Handle",
                 method
             ))),
         }
+    }
+
+    fn handle_supply(
+        &mut self,
+        target: &HashMap<String, Value>,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        // Extract :size named parameter (default 65536)
+        let size = args
+            .iter()
+            .find_map(|a| {
+                if let Value::Pair(name, val) = a
+                    && name == "size"
+                {
+                    match val.as_ref() {
+                        Value::Int(i) => Some(*i as usize),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(65536);
+
+        let is_bin = target.get("bin").is_some_and(|v| v.truthy());
+
+        let target_val = Value::make_instance("IO::Handle".to_string(), target.clone());
+
+        let mut values = Vec::new();
+        if is_bin {
+            // Binary mode: read bytes in chunks, produce Buf instances
+            loop {
+                let bytes = self.read_bytes_from_handle_value(&target_val, size)?;
+                if bytes.is_empty() {
+                    break;
+                }
+                for chunk in bytes.chunks(size) {
+                    let byte_vals: Vec<Value> =
+                        chunk.iter().map(|b| Value::Int(*b as i64)).collect();
+                    let mut buf_attrs = HashMap::new();
+                    buf_attrs.insert("bytes".to_string(), Value::Array(byte_vals));
+                    values.push(Value::make_instance("Buf".to_string(), buf_attrs));
+                }
+                if bytes.len() < size {
+                    break;
+                }
+            }
+        } else {
+            // Text mode: read all content as string, split into chunks of `size` chars
+            let path = target.get("path").map(|v| v.to_string_value());
+            let content = if let Some(ref p) = path {
+                fs::read_to_string(p)
+                    .map_err(|err| RuntimeError::new(format!("Failed to read '{}': {}", p, err)))?
+            } else {
+                // Read from handle
+                let mut all = String::new();
+                loop {
+                    let line = self.read_line_from_handle_value(&target_val)?;
+                    if line.is_empty() {
+                        break;
+                    }
+                    all.push_str(&line);
+                    all.push('\n');
+                }
+                all
+            };
+            let chars: Vec<char> = content.chars().collect();
+            for chunk in chars.chunks(size) {
+                let s: String = chunk.iter().collect();
+                values.push(Value::Str(s));
+            }
+        }
+
+        let mut supply_attrs = HashMap::new();
+        supply_attrs.insert("live".to_string(), Value::Bool(false));
+        supply_attrs.insert("values".to_string(), Value::Array(values));
+        Ok(Value::make_instance("Supply".to_string(), supply_attrs))
     }
 
     pub(super) fn native_io_pipe(

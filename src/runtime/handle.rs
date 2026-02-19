@@ -296,10 +296,11 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn parse_io_flags_values(args: &[Value]) -> (bool, bool, bool) {
+    pub(super) fn parse_io_flags_values(args: &[Value]) -> (bool, bool, bool, bool) {
         let mut read = false;
         let mut write = false;
         let mut append = false;
+        let mut bin = false;
         for arg in args {
             if let Value::Pair(name, value) = arg {
                 let truthy = value.truthy();
@@ -307,6 +308,7 @@ impl Interpreter {
                     "r" => read = truthy,
                     "w" => write = truthy,
                     "a" => append = truthy,
+                    "bin" => bin = truthy,
                     _ => {}
                 }
             }
@@ -314,7 +316,7 @@ impl Interpreter {
         if !read && !write && !append {
             read = true;
         }
-        (read, write, append)
+        (read, write, append, bin)
     }
 
     pub(super) fn open_file_handle(
@@ -323,6 +325,7 @@ impl Interpreter {
         read: bool,
         write: bool,
         append: bool,
+        bin: bool,
     ) -> Result<Value, RuntimeError> {
         let mut options = fs::OpenOptions::new();
         options.read(read);
@@ -354,8 +357,9 @@ impl Interpreter {
             file: Some(file),
             socket: None,
             closed: false,
+            bin,
         };
         self.handles.insert(id, state);
-        Ok(self.make_handle_instance(id))
+        Ok(self.make_handle_instance_with_bin(id, bin))
     }
 }

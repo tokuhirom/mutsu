@@ -111,6 +111,8 @@ struct IoHandleState {
     file: Option<fs::File>,
     socket: Option<std::net::TcpStream>,
     closed: bool,
+    #[allow(dead_code)]
+    bin: bool,
 }
 
 #[derive(Clone)]
@@ -376,7 +378,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: [
                     "close", "get", "getc", "lines", "words", "read", "write", "print", "say",
-                    "flush", "seek", "tell", "eof", "encoding", "opened", "slurp",
+                    "flush", "seek", "tell", "eof", "encoding", "opened", "slurp", "Supply",
                 ]
                 .iter()
                 .map(|s| s.to_string())

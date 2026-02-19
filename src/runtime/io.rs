@@ -101,12 +101,17 @@ impl Interpreter {
             file: None,
             socket: None,
             closed: false,
+            bin: false,
         };
         self.handles.insert(id, state);
         self.make_handle_instance(id)
     }
 
     pub(super) fn make_handle_instance(&self, handle_id: usize) -> Value {
+        self.make_handle_instance_with_bin(handle_id, false)
+    }
+
+    pub(super) fn make_handle_instance_with_bin(&self, handle_id: usize, bin: bool) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("handle".to_string(), Value::Int(handle_id as i64));
         if let Some(state) = self.handles.get(&handle_id) {
@@ -117,6 +122,9 @@ impl Interpreter {
                 "mode".to_string(),
                 Value::Str(Self::mode_name(state.mode).to_string()),
             );
+        }
+        if bin {
+            attrs.insert("bin".to_string(), Value::Bool(true));
         }
         Value::make_instance("IO::Handle".to_string(), attrs)
     }
