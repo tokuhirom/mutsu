@@ -573,6 +573,34 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
     Ok((rest, left))
 }
 
+/// Parse infixed function call: [&func], R[&func], X[&func], Z[&func]
+/// Returns (modifier, func_name, total_consumed_len)
+fn parse_infix_func_op(input: &str) -> Option<(Option<String>, String, usize)> {
+    let (modifier, bracket_start) = if input.starts_with("R[&") {
+        (Some("R".to_string()), 1)
+    } else if input.starts_with("X[&") {
+        (Some("X".to_string()), 1)
+    } else if input.starts_with("Z[&") {
+        (Some("Z".to_string()), 1)
+    } else if input.starts_with("[&") {
+        (None, 0)
+    } else {
+        return None;
+    };
+    let r = &input[bracket_start + 2..]; // skip "[&"
+    let end = r.find(']')?;
+    let name = &r[..end];
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
+        return None;
+    }
+    let total_len = bracket_start + 2 + end + 1; // prefix + "[&" + name + "]"
+    Some((modifier, name.to_string(), total_len))
+}
+
 /// Parse meta operator: R-, X+, Zcmp, etc.
 fn parse_meta_op(input: &str) -> Option<(&str, &str, usize)> {
     let meta = if input.starts_with('R') {
@@ -680,6 +708,62 @@ fn structural_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: tok,
                 right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        // Infixed function call: [&func], R[&func], X[&func], Z[&func]
+        if let Some((modifier, name, len)) = parse_infix_func_op(r) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            // For X[&func], consume comma-separated list on right
+            let (r, right_exprs) = if modifier.as_deref() == Some("X") {
+                let (r, first) = range_expr(r).map_err(|err| {
+                    enrich_expected_error(
+                        err,
+                        "expected expression after infixed function",
+                        r.len(),
+                    )
+                })?;
+                let mut items = vec![first];
+                let mut r = r;
+                loop {
+                    let (r2, _) = ws(r)?;
+                    if !r2.starts_with(',') || r2.starts_with(",,") {
+                        break;
+                    }
+                    let r2 = &r2[1..];
+                    let (r2, _) = ws(r2)?;
+                    if r2.starts_with(';')
+                        || r2.is_empty()
+                        || r2.starts_with('}')
+                        || r2.starts_with(')')
+                    {
+                        break;
+                    }
+                    if let Ok((r3, next)) = range_expr(r2) {
+                        items.push(next);
+                        r = r3;
+                    } else {
+                        break;
+                    }
+                }
+                (r, items)
+            } else {
+                let (r, expr) = concat_expr(r).map_err(|err| {
+                    enrich_expected_error(
+                        err,
+                        "expected expression after infixed function",
+                        r.len(),
+                    )
+                })?;
+                (r, vec![expr])
+            };
+            left = Expr::InfixFunc {
+                name,
+                left: Box::new(left),
+                right: right_exprs,
+                modifier,
             };
             rest = r;
             continue;
