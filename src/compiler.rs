@@ -553,18 +553,23 @@ impl Compiler {
 
             // --- Package scope ---
             Stmt::Package { name, body } => {
-                let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                let pkg_idx = self.code.emit(OpCode::PackageScope {
-                    name_idx,
-                    body_end: 0,
-                });
-                let saved_package = self.current_package.clone();
-                self.current_package = name.clone();
-                for s in body {
-                    self.compile_stmt(s);
+                if body.is_empty() {
+                    // unit module/package — set package for the rest of the scope
+                    self.current_package = name.clone();
+                } else {
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let pkg_idx = self.code.emit(OpCode::PackageScope {
+                        name_idx,
+                        body_end: 0,
+                    });
+                    let saved_package = self.current_package.clone();
+                    self.current_package = name.clone();
+                    for s in body {
+                        self.compile_stmt(s);
+                    }
+                    self.current_package = saved_package;
+                    self.code.patch_body_end(pkg_idx);
                 }
-                self.current_package = saved_package;
-                self.code.patch_body_end(pkg_idx);
             }
 
             // --- Phaser (BEGIN/END) ---
@@ -751,7 +756,13 @@ impl Compiler {
                 }
             },
             Expr::Var(name) => {
-                if let Some(&slot) = self.local_map.get(name.as_str()) {
+                // Compile-time package/module variables
+                if name == "?PACKAGE" || name == "?MODULE" {
+                    let idx = self
+                        .code
+                        .add_constant(Value::Package(self.current_package.clone()));
+                    self.code.emit(OpCode::LoadConst(idx));
+                } else if let Some(&slot) = self.local_map.get(name.as_str()) {
                     self.code.emit(OpCode::GetLocal(slot));
                 } else {
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
