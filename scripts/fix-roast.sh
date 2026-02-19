@@ -21,6 +21,11 @@ while true; do
   git checkout -b "$BRANCH"
 
   claude -p \
+    --allowedTools \
+      "Bash(cargo *)" "Bash(make *)" "Bash(prove *)" \
+      "Bash(git *)" "Bash(gh *)" \
+      "Bash(raku *)" "Bash(./target/debug/mutsu *)" "Bash(timeout *)" \
+      "Read" "Edit" "Write" "Glob" "Grep" "Task" \
     "Fix the failing roast test: $TEST_FILE
 
 Steps:
