@@ -2,53 +2,36 @@
 set -euo pipefail
 
 while true; do
-  echo "=== $(date): 新しいサイクル開始 ==="
+  echo "=== $(date): Starting new cycle ==="
 
   git checkout main
   git pull origin main
 
-  # 失敗テストファイルを取得
+  # Pick the next failing roast test
   TEST_FILE=$(./scripts/pick-next-roast.sh)
 
   if [ -z "$TEST_FILE" ]; then
-    echo "全テスト完了！修正対象なし。"
+    echo "All tests passing! Nothing to fix."
     break
   fi
 
-  echo "対象: $TEST_FILE"
+  echo "Target: $TEST_FILE"
 
   BRANCH="fix/$(basename "$TEST_FILE" | sed 's/[^a-zA-Z0-9_-]/-/g')-$(date +%s)"
   git checkout -b "$BRANCH"
 
   claude -p \
-    "$TEST_FILE のテストを実行し、通るまでコードを修正してください。
+    "Fix the failing roast test: $TEST_FILE
 
-手順:
-1. テストを実行して失敗内容を確認
-2. 対応するソースコードを修正
-3. テストが通るまで繰り返す（最大5回）
-4. 修正完了したら git add && git commit
-5. 5回試しても通らなければギブアップ"
-
-  # 最終確認
-  if go test "./${TEST_FILE%/*}/..." 2>&1; then
-    echo "✅ テスト通過 → PR作成（auto-merge）"
-    git push origin "$BRANCH"
-    PR_URL=$(gh pr create \
-      --title "fix: $(basename "$TEST_FILE") のテスト修正" \
-      --body "Claude Code 自動修正。対象: $TEST_FILE" \
-      --base main --head "$BRANCH")
-    gh pr merge "$PR_URL" --auto --squash
-  else
-    echo "❌ テスト失敗 → draft PR作成"
-    git push origin "$BRANCH"
-    gh pr create \
-      --title "WIP: $(basename "$TEST_FILE")（要レビュー）" \
-      --body "自動修正失敗。手動レビュー必要。対象: $TEST_FILE" \
-      --base main --head "$BRANCH" --draft
-  fi
+Steps:
+1. Run the test with a timeout and check what is failing.
+2. Use raku -e to verify the expected behavior.
+3. Use mutsu's --dump-ast and MUTSU_TRACE=1 to investigate the cause.
+4. Fix mutsu so the test passes.
+5. Run make test and make roast. If there are regressions, fix them.
+6. Once fixed, git add && git commit, then create a PR with auto-merge. Check CI status every minute. If CI fails, fix and push again. If CI passes, auto-merge completes and you are done."
 
   git checkout main
-  echo "=== サイクル完了 ==="
+  echo "=== Cycle complete ==="
   sleep 5
 done
