@@ -1,6 +1,87 @@
 use super::*;
 
 impl VM {
+    pub(super) fn exec_get_bare_word_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
+        let name = Self::const_str(code, name_idx);
+        let val = if name == "Bool::True" {
+            Value::Bool(true)
+        } else if name == "Bool::False" {
+            Value::Bool(false)
+        } else if name == "Order::Less" {
+            Value::Enum {
+                enum_type: "Order".to_string(),
+                key: "Less".to_string(),
+                value: -1,
+                index: 0,
+            }
+        } else if name == "Order::Same" {
+            Value::Enum {
+                enum_type: "Order".to_string(),
+                key: "Same".to_string(),
+                value: 0,
+                index: 1,
+            }
+        } else if name == "Order::More" {
+            Value::Enum {
+                enum_type: "Order".to_string(),
+                key: "More".to_string(),
+                value: 1,
+                index: 2,
+            }
+        } else if let Some(v) = self.interpreter.env().get(name) {
+            if matches!(v, Value::Enum { .. } | Value::Nil) {
+                v.clone()
+            } else if self.interpreter.has_class(name) || Self::is_builtin_type(name) {
+                Value::Package(name.to_string())
+            } else if !name.starts_with('$') && !name.starts_with('@') && !name.starts_with('%') {
+                v.clone()
+            } else {
+                Value::Str(name.to_string())
+            }
+        } else if self.interpreter.has_class(name) || Self::is_builtin_type(name) {
+            Value::Package(name.to_string())
+        } else if self.interpreter.has_function(name) {
+            if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
+                let pkg = self.interpreter.current_package().to_string();
+                let result =
+                    self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?;
+                self.sync_locals_from_env(code);
+                result
+            } else if let Some(native_result) = Self::try_native_function(name, &[]) {
+                native_result?
+            } else {
+                let result = self.interpreter.call_function(name, Vec::new())?;
+                self.sync_locals_from_env(code);
+                result
+            }
+        } else if self.interpreter.has_multi_function(name) {
+            if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
+                let pkg = self.interpreter.current_package().to_string();
+                let result =
+                    self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?;
+                self.sync_locals_from_env(code);
+                result
+            } else {
+                let result = self.interpreter.call_function(name, Vec::new())?;
+                self.sync_locals_from_env(code);
+                result
+            }
+        } else if name == "NaN" {
+            Value::Num(f64::NAN)
+        } else if name == "Inf" {
+            Value::Num(f64::INFINITY)
+        } else {
+            Value::Str(name.to_string())
+        };
+        self.stack.push(val);
+        Ok(())
+    }
+
     pub(super) fn exec_index_op(&mut self) -> Result<(), RuntimeError> {
         let index = self.stack.pop().unwrap();
         let mut target = self.stack.pop().unwrap();
