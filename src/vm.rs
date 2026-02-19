@@ -1390,15 +1390,30 @@ impl VM {
                     (Value::Num(a), Value::Int(b)) if a.is_infinite() && a.is_sign_negative() => {
                         Value::Range(i64::MIN, *b)
                     }
-                    (Value::Str(a), Value::Str(b)) if a.len() == 1 && b.len() == 1 => {
-                        let start = a.chars().next().unwrap();
-                        let end = b.chars().next().unwrap();
-                        let items: Vec<Value> = (start as u32..=end as u32)
-                            .filter_map(char::from_u32)
-                            .map(|c| Value::Str(c.to_string()))
-                            .collect();
-                        Value::Array(items)
-                    }
+                    (Value::Str(a), Value::Str(b)) => Value::GenericRange {
+                        start: Box::new(Value::Str(a.clone())),
+                        end: Box::new(Value::Str(b.clone())),
+                        excl_start: false,
+                        excl_end: false,
+                    },
+                    (l, r) if l.is_numeric() && r.is_numeric() => Value::GenericRange {
+                        start: Box::new(l.clone()),
+                        end: Box::new(r.clone()),
+                        excl_start: false,
+                        excl_end: false,
+                    },
+                    (Value::Str(a), r) if r.is_numeric() => Value::GenericRange {
+                        start: Box::new(Value::Str(a.clone())),
+                        end: Box::new(r.clone()),
+                        excl_start: false,
+                        excl_end: false,
+                    },
+                    (l, Value::Str(b)) if l.is_numeric() => Value::GenericRange {
+                        start: Box::new(l.clone()),
+                        end: Box::new(Value::Str(b.clone())),
+                        excl_start: false,
+                        excl_end: false,
+                    },
                     _ => Value::Nil,
                 };
                 self.stack.push(result);
@@ -1407,9 +1422,20 @@ impl VM {
             OpCode::MakeRangeExcl => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let result = match (left, right) {
-                    (Value::Int(a), Value::Int(b)) => Value::RangeExcl(a, b),
-                    _ => Value::Nil,
+                let result = match (&left, &right) {
+                    (Value::Int(a), Value::Int(b)) => Value::RangeExcl(*a, *b),
+                    (l, r) if l.is_numeric() || r.is_numeric() => Value::GenericRange {
+                        start: Box::new(left.clone()),
+                        end: Box::new(right.clone()),
+                        excl_start: false,
+                        excl_end: true,
+                    },
+                    _ => Value::GenericRange {
+                        start: Box::new(left),
+                        end: Box::new(right),
+                        excl_start: false,
+                        excl_end: true,
+                    },
                 };
                 self.stack.push(result);
                 *ip += 1;
@@ -1417,9 +1443,20 @@ impl VM {
             OpCode::MakeRangeExclStart => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let result = match (left, right) {
-                    (Value::Int(a), Value::Int(b)) => Value::RangeExclStart(a, b),
-                    _ => Value::Nil,
+                let result = match (&left, &right) {
+                    (Value::Int(a), Value::Int(b)) => Value::RangeExclStart(*a, *b),
+                    (l, r) if l.is_numeric() || r.is_numeric() => Value::GenericRange {
+                        start: Box::new(left.clone()),
+                        end: Box::new(right.clone()),
+                        excl_start: true,
+                        excl_end: false,
+                    },
+                    _ => Value::GenericRange {
+                        start: Box::new(left),
+                        end: Box::new(right),
+                        excl_start: true,
+                        excl_end: false,
+                    },
                 };
                 self.stack.push(result);
                 *ip += 1;
@@ -1427,9 +1464,20 @@ impl VM {
             OpCode::MakeRangeExclBoth => {
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
-                let result = match (left, right) {
-                    (Value::Int(a), Value::Int(b)) => Value::RangeExclBoth(a, b),
-                    _ => Value::Nil,
+                let result = match (&left, &right) {
+                    (Value::Int(a), Value::Int(b)) => Value::RangeExclBoth(*a, *b),
+                    (l, r) if l.is_numeric() || r.is_numeric() => Value::GenericRange {
+                        start: Box::new(left.clone()),
+                        end: Box::new(right.clone()),
+                        excl_start: true,
+                        excl_end: true,
+                    },
+                    _ => Value::GenericRange {
+                        start: Box::new(left),
+                        end: Box::new(right),
+                        excl_start: true,
+                        excl_end: true,
+                    },
                 };
                 self.stack.push(result);
                 *ip += 1;

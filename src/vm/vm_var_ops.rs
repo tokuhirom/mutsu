@@ -330,6 +330,17 @@ fn range_params(v: &Value) -> (i64, i64, bool, bool) {
         Value::RangeExcl(a, b) => (*a, *b, false, true),
         Value::RangeExclStart(a, b) => (*a + 1, *b, true, false),
         Value::RangeExclBoth(a, b) => (*a + 1, *b, true, true),
+        Value::GenericRange {
+            start,
+            end,
+            excl_start,
+            excl_end,
+        } => {
+            let s = start.to_f64() as i64;
+            let e = end.to_f64() as i64;
+            let s = if *excl_start { s + 1 } else { s };
+            (s, e, *excl_start, *excl_end)
+        }
         _ => (0, 0, false, false),
     }
 }

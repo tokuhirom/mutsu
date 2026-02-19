@@ -242,6 +242,7 @@ impl Interpreter {
                 let end = (*b).min(start + 1_000_000);
                 (start..end).map(Value::Int).collect()
             }
+            Value::GenericRange { .. } => vec![val.clone()],
             Value::Set(items) => items.iter().map(|s| Value::Str(s.clone())).collect(),
             Value::Bag(items) => items
                 .iter()

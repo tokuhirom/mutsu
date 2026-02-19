@@ -139,6 +139,12 @@ pub enum Value {
     RangeExcl(i64, i64),
     RangeExclStart(i64, i64),
     RangeExclBoth(i64, i64),
+    GenericRange {
+        start: Box<Value>,
+        end: Box<Value>,
+        excl_start: bool,
+        excl_end: bool,
+    },
     Array(Vec<Value>),
     Hash(HashMap<String, Value>),
     Rat(i64, i64),
@@ -221,6 +227,20 @@ impl PartialEq for Value {
             (Value::RangeExcl(a1, b1), Value::RangeExcl(a2, b2)) => a1 == a2 && b1 == b2,
             (Value::RangeExclStart(a1, b1), Value::RangeExclStart(a2, b2)) => a1 == a2 && b1 == b2,
             (Value::RangeExclBoth(a1, b1), Value::RangeExclBoth(a2, b2)) => a1 == a2 && b1 == b2,
+            (
+                Value::GenericRange {
+                    start: s1,
+                    end: e1,
+                    excl_start: es1,
+                    excl_end: ee1,
+                },
+                Value::GenericRange {
+                    start: s2,
+                    end: e2,
+                    excl_start: es2,
+                    excl_end: ee2,
+                },
+            ) => es1 == es2 && ee1 == ee2 && s1 == s2 && e1 == e2,
             (Value::Array(a), Value::Array(b)) => a == b,
             (Value::Hash(a), Value::Hash(b)) => a == b,
             (Value::Rat(a1, b1), Value::Rat(a2, b2)) => {
@@ -371,6 +391,7 @@ impl Value {
             | (Value::RangeExcl(_, _), Value::RangeExcl(_, _))
             | (Value::RangeExclStart(_, _), Value::RangeExclStart(_, _))
             | (Value::RangeExclBoth(_, _), Value::RangeExclBoth(_, _))
+            | (Value::GenericRange { .. }, Value::GenericRange { .. })
             | (Value::LazyList(_), Value::LazyList(_))
             | (Value::Version { .. }, Value::Version { .. })
             | (Value::Nil, Value::Nil)
@@ -409,7 +430,60 @@ impl Value {
                 | Value::RangeExcl(_, _)
                 | Value::RangeExclStart(_, _)
                 | Value::RangeExclBoth(_, _)
+                | Value::GenericRange { .. }
         )
+    }
+
+    /// Check if this value is a numeric type (Int, Num, Rat, FatRat, BigInt).
+    pub(crate) fn is_numeric(&self) -> bool {
+        matches!(
+            self,
+            Value::Int(_)
+                | Value::BigInt(_)
+                | Value::Num(_)
+                | Value::Rat(_, _)
+                | Value::FatRat(_, _)
+        )
+    }
+
+    /// Convert a numeric value to f64.
+    pub(crate) fn to_f64(&self) -> f64 {
+        match self {
+            Value::Int(i) => *i as f64,
+            Value::BigInt(n) => n.to_f64().unwrap_or(0.0),
+            Value::Num(f) => *f,
+            Value::Rat(n, d) => {
+                if *d != 0 {
+                    *n as f64 / *d as f64
+                } else if *n == 0 {
+                    f64::NAN
+                } else if *n > 0 {
+                    f64::INFINITY
+                } else {
+                    f64::NEG_INFINITY
+                }
+            }
+            Value::FatRat(n, d) => {
+                if *d != 0 {
+                    *n as f64 / *d as f64
+                } else if *n == 0 {
+                    f64::NAN
+                } else if *n > 0 {
+                    f64::INFINITY
+                } else {
+                    f64::NEG_INFINITY
+                }
+            }
+            Value::Bool(b) => {
+                if *b {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            Value::Str(s) => s.trim().parse::<f64>().unwrap_or(0.0),
+            _ => 0.0,
+        }
     }
 
     pub(crate) fn truthy(&self) -> bool {
@@ -423,6 +497,7 @@ impl Value {
             Value::RangeExcl(_, _) => true,
             Value::RangeExclStart(_, _) => true,
             Value::RangeExclBoth(_, _) => true,
+            Value::GenericRange { .. } => true,
             Value::Array(items) => !items.is_empty(),
             Value::Hash(items) => !items.is_empty(),
             Value::Rat(n, _) => *n != 0,
@@ -471,7 +546,8 @@ impl Value {
             Value::Range(_, _)
             | Value::RangeExcl(_, _)
             | Value::RangeExclStart(_, _)
-            | Value::RangeExclBoth(_, _) => "Range",
+            | Value::RangeExclBoth(_, _)
+            | Value::GenericRange { .. } => "Range",
             Value::Nil => "Nil",
             Value::Instance { class_name, .. } => class_name.as_str(),
             Value::Package(name) => name.as_str(),
@@ -558,6 +634,22 @@ impl Value {
             Value::RangeExcl(a, b) => format!("{}..^{}", a, b),
             Value::RangeExclStart(a, b) => format!("^{}..{}", a, b),
             Value::RangeExclBoth(a, b) => format!("^{}..^{}", a, b),
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } => {
+                let prefix = if *excl_start { "^" } else { "" };
+                let sep = if *excl_end { "..^" } else { ".." };
+                format!(
+                    "{}{}{}{}",
+                    prefix,
+                    start.to_string_value(),
+                    sep,
+                    end.to_string_value()
+                )
+            }
             Value::Array(items) => items
                 .iter()
                 .map(|v| v.to_string_value())
