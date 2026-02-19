@@ -60,7 +60,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Some(Ok(Value::make_instance("ObjAt".to_string(), attrs)))
         }
         "Bool" => Some(Ok(Value::Bool(target.truthy()))),
-        "Str" => match target {
+        "Str" | "Stringy" => match target {
             Value::Package(_) | Value::Instance { .. } => None,
             Value::Str(s) if s == "IO::Special" => Some(Ok(Value::Str(String::new()))),
             Value::Array(items) if items.iter().all(|v| matches!(v, Value::Int(_))) => {

@@ -1,6 +1,6 @@
 mod args;
 mod assign;
-mod class;
+pub(super) mod class;
 mod control;
 mod decl;
 pub(super) mod modifier;

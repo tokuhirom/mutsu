@@ -8,7 +8,7 @@ use super::{block, ident, keyword, qualified_ident};
 use super::{parse_param_list, parse_sub_traits};
 
 /// Parse `class` declaration.
-pub(super) fn class_decl(input: &str) -> PResult<'_, Stmt> {
+pub(crate) fn class_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("class", input).ok_or_else(|| PError::expected("class declaration"))?;
     let (rest, _) = ws1(rest)?;
     class_decl_body(rest)

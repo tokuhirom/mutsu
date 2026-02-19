@@ -15,6 +15,15 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         // Empty parens = empty list
         return Ok((input, Expr::ArrayLiteral(Vec::new())));
     }
+    // Try class declaration in parens: (class A { })
+    if (input.starts_with("class ") || input.starts_with("class\t") || input.starts_with("class\n"))
+        && let Ok((r, class_stmt)) = super::super::stmt::class::class_decl(input)
+    {
+        let (r, _) = ws(r)?;
+        if let Ok((r, _)) = parse_char(r, ')') {
+            return Ok((r, Expr::DoStmt(Box::new(class_stmt))));
+        }
+    }
     // Try assignment expression: ($var = expr)
     let (input, first) = if let Ok((r, var_expr)) = expression_no_sequence(input) {
         let (r2, _) = ws(r)?;
