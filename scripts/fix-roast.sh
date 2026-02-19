@@ -7,8 +7,9 @@ while true; do
   git checkout main
   git pull origin main
 
-  # Regenerate category lists
-  # ./scripts/roast-history.sh
+  # Do NOT run roast-history.sh here — it modifies HISTORY.tsv/SVG
+  # which causes merge conflicts on feature branches.
+  # Run it manually with --commit when needed.
 
   # Pick the next failing roast test
   TEST_FILE=$(./scripts/pick-next-roast.sh 2>/dev/null | grep -v '^===' | head -1 | awk '{print $2}') || true

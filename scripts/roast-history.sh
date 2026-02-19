@@ -1,11 +1,18 @@
 #!/bin/bash
 # Run all roast tests and append results to HISTORY.tsv
 # Also writes per-file categorization to tmp/roast-*.txt
-# Usage: ./scripts/roast-history.sh
+# Usage: ./scripts/roast-history.sh [--commit]
 
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
+
+COMMIT_RESULTS=false
+for arg in "$@"; do
+  case "$arg" in
+    --commit) COMMIT_RESULTS=true ;;
+  esac
+done
 
 MUTSU=./target/release/mutsu
 HISTORY=HISTORY.tsv
@@ -138,11 +145,15 @@ echo "Appended to $HISTORY"
 python3 scripts/plot_roast_history.py "$HISTORY" "$HISTORY_GRAPH"
 echo "Generated $HISTORY_GRAPH"
 
-# Auto-commit only when the script reaches this point (completed run).
-if git diff --quiet -- "$HISTORY" "$HISTORY_GRAPH"; then
-  echo "No changes to commit in $HISTORY or $HISTORY_GRAPH"
+# Auto-commit only when --commit flag is passed.
+if [ "$COMMIT_RESULTS" = true ]; then
+  if git diff --quiet -- "$HISTORY" "$HISTORY_GRAPH"; then
+    echo "No changes to commit in $HISTORY or $HISTORY_GRAPH"
+  else
+    git add "$HISTORY" "$HISTORY_GRAPH"
+    git commit -m "Update roast history ($DATE)" -- "$HISTORY" "$HISTORY_GRAPH"
+    echo "Committed $HISTORY and $HISTORY_GRAPH"
+  fi
 else
-  git add "$HISTORY" "$HISTORY_GRAPH"
-  git commit -m "Update roast history ($DATE)" -- "$HISTORY" "$HISTORY_GRAPH"
-  echo "Committed $HISTORY and $HISTORY_GRAPH"
+  echo "Skipping commit (use --commit to auto-commit)"
 fi
