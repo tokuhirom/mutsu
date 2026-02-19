@@ -223,23 +223,25 @@ Before writing any code, always investigate the test in this order:
 
 ## roast fix workflow
 
-When the user says **"roast fix"**, execute this automated loop:
+When the user says **"roast fix"**, execute this automated loop (serially, without sub-agents):
 
-1. Run `scripts/pick-next-roast.sh -n 3` to find the next 3 failing roast tests.
-2. For each test, spawn a **sub-agent** (Task tool) that:
-   - Creates a git worktree: `git worktree add .git/worktrees-work/<branch-name> -b <branch-name> main`
-   - Investigates the test (see "Investigating a failing roast test" above)
-   - Works in that worktree directory to fix the interpreter so the roast test passes
-   - Runs `cargo build && timeout 30 target/debug/mutsu <roast-test-path>` to verify
-   - Appends the test path to `roast-whitelist.txt` (sorted)
-   - **Before committing**: runs `make test` and `make roast` to ensure no regressions
-   - Commits, pushes the branch, and creates a PR with `gh pr create`
-   - Polls PR CI status every 60 seconds with `gh pr checks <pr-number>`
-   - If CI fails: reads the failure log, pushes fix commits, and retries
-   - If CI passes: merges the PR with `gh pr merge <pr-number> --merge`
-   - Cleans up the worktree: `git worktree remove .git/worktrees-work/<branch-name>`
-3. When sub-agents finish, pull main (`git pull`), then repeat from step 1.
-4. Continue this loop indefinitely until stopped by the user.
+1. Run `scripts/pick-next-roast.sh -n 1` to find the next failing roast test.
+2. Create a git worktree: `git worktree add .git/worktrees-work/<branch-name> -b <branch-name> main`
+3. Work in that worktree directory for all subsequent steps.
+4. Investigate the test (see "Investigating a failing roast test" above).
+5. Fix the interpreter so the roast test passes.
+6. Run `cargo build && timeout 30 target/debug/mutsu <roast-test-path>` to verify.
+7. Append the test path to `roast-whitelist.txt` (sorted).
+8. **Before committing**: run `make test` and `make roast` to ensure no regressions.
+9. Commit, push the branch, and create a PR with `gh pr create`.
+10. Enable auto-merge: `gh pr merge --auto --squash <pr-number>`.
+11. Poll PR CI status every 60 seconds with `gh pr checks <pr-number>`:
+    - If CI fails: read the failure log, push fix commits, and retry.
+    - If CI passes and PR is merged: proceed to next step.
+12. Clean up the worktree: `git worktree remove .git/worktrees-work/<branch-name>`
+13. Switch back to main and pull: `git checkout main && git pull`.
+14. Repeat from step 1 with the next failing test.
+15. Continue this loop indefinitely until stopped by the user.
 
 ## Debugging guidelines
 
