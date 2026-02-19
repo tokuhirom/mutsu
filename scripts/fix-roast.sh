@@ -7,9 +7,13 @@ while true; do
   git checkout main
   git pull origin main
 
-  # Do NOT run roast-history.sh here — it modifies HISTORY.tsv/SVG
-  # which causes merge conflicts on feature branches.
-  # Run it manually with --commit when needed.
+  # Regenerate category lists (without --commit to avoid HISTORY.tsv changes)
+  ./scripts/roast-history.sh
+
+  # Add newly passing tests to the whitelist
+  if [ -f tmp/roast-pass.txt ]; then
+    sort -u roast-whitelist.txt tmp/roast-pass.txt -o roast-whitelist.txt
+  fi
 
   # Pick the next failing roast test
   TEST_FILE=$(./scripts/pick-next-roast.sh 2>/dev/null | grep -v '^===' | head -1 | awk '{print $2}') || true
@@ -32,7 +36,8 @@ Steps:
 3. Use mutsu's --dump-ast and MUTSU_TRACE=1 to investigate the cause.
 4. Fix mutsu so the test passes.
 5. Run make test and make roast. If there are regressions, fix them.
-6. Once fixed, git add && git commit, then create a PR with auto-merge. Check CI status every minute. If CI fails, fix and push again. If CI passes, auto-merge completes and you are done."
+6. Add the test file to roast-whitelist.txt (keep it sorted).
+7. Once fixed, git add && git commit, then create a PR with auto-merge. Check CI status every minute. If CI fails, fix and push again. If CI passes, auto-merge completes and you are done."
 
   echo start claude
   claude -p --output-format stream-json --verbose \
