@@ -23,13 +23,7 @@ while true; do
   BRANCH="fix/$(basename "$TEST_FILE" | sed 's/[^a-zA-Z0-9_-]/-/g')-$(date +%s)"
   git checkout -b "$BRANCH"
 
-  claude -p \
-    --allowedTools \
-      "Bash(cargo *)" "Bash(make *)" "Bash(prove *)" \
-      "Bash(git *)" "Bash(gh *)" \
-      "Bash(raku *)" "Bash(./target/debug/mutsu *)" "Bash(timeout *)" \
-      "Read" "Edit" "Write" "Glob" "Grep" "Task" \
-    "Fix the failing roast test: $TEST_FILE
+  PROMPT="Fix the failing roast test: $TEST_FILE
 
 Steps:
 1. Run the test with a timeout and check what is failing.
@@ -39,7 +33,17 @@ Steps:
 5. Run make test and make roast. If there are regressions, fix them.
 6. Once fixed, git add && git commit, then create a PR with auto-merge. Check CI status every minute. If CI fails, fix and push again. If CI passes, auto-merge completes and you are done."
 
+  claude -p --verbose \
+    --allowedTools \
+      "Bash(cargo *)" "Bash(make *)" "Bash(prove *)" \
+      "Bash(git *)" "Bash(gh *)" \
+      "Bash(raku *)" "Bash(./target/debug/mutsu *)" "Bash(timeout *)" \
+      "Read" "Edit" "Write" "Glob" "Grep" "Task" \
+    -- "$PROMPT"
+
+  git stash --include-untracked
   git checkout main
+  git stash pop || true
   echo "=== Cycle complete ==="
   sleep 5
 done
