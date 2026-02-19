@@ -102,6 +102,47 @@ pub(super) fn read_bracketed(input: &str, open: char, close: char) -> PResult<'_
     }
 }
 
+/// Parse Q quoting with arbitrary delimiters: Q!...!, Q{...}, Q/.../, etc.
+/// Q means no interpolation and no escape processing — content is taken verbatim.
+pub(super) fn big_q_string(input: &str) -> PResult<'_, Expr> {
+    let rest = input
+        .strip_prefix('Q')
+        .ok_or_else(|| PError::expected("Q string"))?;
+    // Q:s form (interpolating) — e.g. Q:s|...|
+    let (rest, is_scalar_interp) = if let Some(r) = rest.strip_prefix(":s") {
+        (r, true)
+    } else {
+        (rest, false)
+    };
+    let delim_char = rest
+        .chars()
+        .next()
+        .ok_or_else(|| PError::expected("Q string delimiter"))?;
+    // Must not be alphanumeric or whitespace
+    if delim_char.is_alphanumeric() || delim_char.is_whitespace() {
+        return Err(PError::expected("Q string delimiter"));
+    }
+    // Check for bracket-style delimiter
+    if let Some(close_char) = unicode_bracket_close(delim_char) {
+        let (after, content) = read_bracketed(rest, delim_char, close_char)?;
+        if is_scalar_interp {
+            return Ok((after, interpolate_string_content(content)));
+        }
+        return Ok((after, Expr::Literal(Value::Str(content.to_string()))));
+    }
+    // Non-bracket delimiter — same char opens and closes, no nesting
+    let after_open = &rest[delim_char.len_utf8()..];
+    let end = after_open
+        .find(delim_char)
+        .ok_or_else(|| PError::expected("closing Q delimiter"))?;
+    let content = &after_open[..end];
+    let after = &after_open[end + delim_char.len_utf8()..];
+    if is_scalar_interp {
+        return Ok((after, interpolate_string_content(content)));
+    }
+    Ok((after, Expr::Literal(Value::Str(content.to_string()))))
+}
+
 /// Parse q{...}, q[...], q(...), q<...>, q/.../ quoting forms.
 pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
     if !input.starts_with('q') {

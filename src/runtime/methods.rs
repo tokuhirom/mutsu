@@ -315,9 +315,17 @@ impl Interpreter {
                 return Ok(Value::make_instance(class_name.clone(), attrs));
             }
             if args.is_empty() {
-                for (attr_name, is_public, _) in self.collect_class_attributes(class_name) {
-                    if is_public && attr_name == method {
-                        return Ok(attributes.get(method).cloned().unwrap_or(Value::Nil));
+                let class_attrs = self.collect_class_attributes(class_name);
+                if class_attrs.is_empty() {
+                    // No class definition — treat all instance attributes as public
+                    if let Some(val) = attributes.get(method) {
+                        return Ok(val.clone());
+                    }
+                } else {
+                    for (attr_name, is_public, _) in &class_attrs {
+                        if *is_public && attr_name == method {
+                            return Ok(attributes.get(method).cloned().unwrap_or(Value::Nil));
+                        }
                     }
                 }
             }

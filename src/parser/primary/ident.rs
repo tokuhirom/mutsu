@@ -230,6 +230,10 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "sum"
             | "pick"
             | "roll"
+            | "run"
+            | "shell"
+            | "make-temp-dir"
+            | "make-temp-file"
     ) || is_expr_listop(name)
 }
 
@@ -267,6 +271,7 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
             | "EVAL"
             | "tap-ok"
             | "flat"
+            | "is_run"
     )
 }
 
