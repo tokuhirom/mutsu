@@ -35,10 +35,50 @@ use super::{
     parse_stmt_call_args, parse_stmt_call_args_no_paren, statement,
 };
 
+/// Check if `say`/`print`/`put` is used bare (no arguments) — this is a compile error in Raku.
+fn check_bare_io_func<'a>(name: &str, rest: &'a str) -> PResult<'a, ()> {
+    let trimmed = rest.trim_start();
+    if trimmed.is_empty() || trimmed.starts_with(';') || trimmed.starts_with('}') {
+        return Err(PError::fatal(format!(
+            "X::Comp: Unsupported use of bare \"{}\". \
+             In Raku please use: .{} if you meant to call it as a method on $_, \
+             or use an explicit invocant or argument, \
+             or use &{} to refer to the function as a noun.",
+            name, name, name
+        )));
+    }
+    Ok((rest, ()))
+}
+
+/// Check if `say`/`print`/`put` is followed by `for`/`while`/`until` — X::Obsolete error.
+fn check_io_func_followed_by_loop<'a>(name: &str, rest_after_ws: &'a str) -> PResult<'a, ()> {
+    for kw in &["for", "while", "until"] {
+        if let Some(r) = keyword(kw, rest_after_ws) {
+            let next_char = r.chars().next();
+            if next_char.is_none()
+                || next_char == Some(' ')
+                || next_char == Some('\t')
+                || next_char == Some('\n')
+            {
+                return Err(PError::fatal(format!(
+                    "X::Obsolete: Unsupported use of bare \"{}\". \
+                     In Raku please use: .{} if you meant to call it as a method on $_, \
+                     or use an explicit invocant or argument, \
+                     or use &{} to refer to the function as a noun.",
+                    name, name, name
+                )));
+            }
+        }
+    }
+    Ok((rest_after_ws, ()))
+}
+
 /// Parse a `say` statement.
 pub(super) fn say_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("say", input).ok_or_else(|| PError::expected("say statement"))?;
+    check_bare_io_func("say", rest)?;
     let (rest, _) = ws1(rest)?;
+    check_io_func_followed_by_loop("say", rest)?;
     let (rest, args) = parse_expr_list(rest)?;
     let stmt = Stmt::Say(args);
     parse_statement_modifier(rest, stmt)
@@ -47,7 +87,9 @@ pub(super) fn say_stmt(input: &str) -> PResult<'_, Stmt> {
 /// Parse a `print` statement.
 pub(super) fn print_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("print", input).ok_or_else(|| PError::expected("print statement"))?;
+    check_bare_io_func("print", rest)?;
     let (rest, _) = ws1(rest)?;
+    check_io_func_followed_by_loop("print", rest)?;
     let (rest, args) = parse_expr_list(rest)?;
     let stmt = Stmt::Print(args);
     parse_statement_modifier(rest, stmt)
@@ -56,7 +98,9 @@ pub(super) fn print_stmt(input: &str) -> PResult<'_, Stmt> {
 /// Parse a `put` statement.
 pub(super) fn put_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("put", input).ok_or_else(|| PError::expected("put statement"))?;
+    check_bare_io_func("put", rest)?;
     let (rest, _) = ws1(rest)?;
+    check_io_func_followed_by_loop("put", rest)?;
     let (rest, args) = parse_expr_list(rest)?;
     let stmt = Stmt::Say(args);
     parse_statement_modifier(rest, stmt)

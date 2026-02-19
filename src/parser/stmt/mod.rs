@@ -234,6 +234,9 @@ fn stmt_list(input: &str) -> PResult<'_, Vec<Stmt>> {
                 rest = r;
             }
             Err(e) => {
+                if e.is_fatal() {
+                    return Err(e);
+                }
                 let consumed = input.len() - r.len();
                 let line_num = input[..consumed].matches('\n').count() + 1;
                 let context: String = r.chars().take(80).collect();
@@ -341,7 +344,14 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
                 early_success = Some(r);
                 break;
             }
-            Err(err) => update_best_error(&mut best_error, err, input_len),
+            Err(err) => {
+                if err.is_fatal() {
+                    let result = Err(err);
+                    STMT_MEMO.store(input, &result);
+                    return result;
+                }
+                update_best_error(&mut best_error, err, input_len);
+            }
         }
     }
 
