@@ -21,6 +21,23 @@ pub(super) fn class_literal(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("class literal"));
     }
     let rest = &input[2..];
+    // Handle ::?PACKAGE and ::?MODULE — compile-time pseudo-packages
+    if let Some(after) = rest.strip_prefix("?PACKAGE")
+        && after
+            .chars()
+            .next()
+            .is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '-')
+    {
+        return Ok((after, Expr::Var("?PACKAGE".to_string())));
+    }
+    if let Some(after) = rest.strip_prefix("?MODULE")
+        && after
+            .chars()
+            .next()
+            .is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '-')
+    {
+        return Ok((after, Expr::Var("?MODULE".to_string())));
+    }
     // Handle ::($expr) — indirect name lookup
     if let Some(after_paren) = rest.strip_prefix('(') {
         let (r, _) = ws(after_paren)?;
