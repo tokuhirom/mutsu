@@ -1,5 +1,13 @@
 use super::*;
 
+/// Options extracted from named arguments for run/shell.
+struct ProcOptions {
+    cwd: Option<String>,
+    env: HashMap<String, String>,
+    capture_err: bool,
+    capture_out: bool,
+}
+
 impl Interpreter {
     pub(super) fn builtin_gethost(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let host_str = args.first().map(|v| v.to_string_value());
@@ -38,47 +46,77 @@ impl Interpreter {
     }
 
     /// Helper to create a Proc instance from process execution results.
-    fn make_proc_instance(exitcode: i64, signal: i64, pid: i64, command: Value) -> Value {
+    fn make_proc_instance(
+        exitcode: i64,
+        signal: i64,
+        pid: i64,
+        command: Value,
+        captured_err: Option<String>,
+        captured_out: Option<String>,
+    ) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("exitcode".to_string(), Value::Int(exitcode));
         attrs.insert("signal".to_string(), Value::Int(signal));
         attrs.insert("pid".to_string(), Value::Int(pid));
         attrs.insert("command".to_string(), command);
+        if let Some(err_content) = captured_err {
+            attrs.insert("err".to_string(), Self::make_io_pipe(err_content));
+        }
+        if let Some(out_content) = captured_out {
+            attrs.insert("out".to_string(), Self::make_io_pipe(out_content));
+        }
         Value::make_instance("Proc".to_string(), attrs)
     }
 
-    /// Extract named options (cwd, env) from arguments.
-    fn extract_proc_options(
-        args: &[Value],
-        skip: usize,
-    ) -> (Option<String>, HashMap<String, String>) {
-        let mut cwd_opt: Option<String> = None;
-        let mut env_opts: HashMap<String, String> = HashMap::new();
+    /// Create an IO::Pipe instance wrapping captured content.
+    fn make_io_pipe(content: String) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("content".to_string(), Value::Str(content));
+        Value::make_instance("IO::Pipe".to_string(), attrs)
+    }
+
+    /// Extract named options (cwd, env, :err, :out) from arguments.
+    fn extract_proc_options(args: &[Value], skip: usize) -> ProcOptions {
+        let mut opts = ProcOptions {
+            cwd: None,
+            env: HashMap::new(),
+            capture_err: false,
+            capture_out: false,
+        };
         for value in args.iter().skip(skip) {
             if let Value::Hash(map) = value {
                 for (key, inner) in map {
                     match key.as_str() {
                         "cwd" => {
-                            cwd_opt = Some(inner.to_string_value());
+                            opts.cwd = Some(inner.to_string_value());
                         }
                         "env" => {
                             if let Value::Hash(env_map) = inner {
                                 for (ek, ev) in env_map {
-                                    env_opts.insert(ek.clone(), ev.to_string_value());
+                                    opts.env.insert(ek.clone(), ev.to_string_value());
                                 }
                             }
+                        }
+                        "err" => {
+                            opts.capture_err = inner.truthy();
+                        }
+                        "out" => {
+                            opts.capture_out = inner.truthy();
                         }
                         _ => {}
                     }
                 }
             }
-            if let Value::Pair(key, inner) = value
-                && key == "cwd"
-            {
-                cwd_opt = Some(inner.to_string_value());
+            if let Value::Pair(key, inner) = value {
+                match key.as_str() {
+                    "cwd" => opts.cwd = Some(inner.to_string_value()),
+                    "err" => opts.capture_err = inner.truthy(),
+                    "out" => opts.capture_out = inner.truthy(),
+                    _ => {}
+                }
             }
         }
-        (cwd_opt, env_opts)
+        opts
     }
 
     pub(super) fn builtin_run(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -88,26 +126,23 @@ impl Interpreter {
                 0,
                 0,
                 Value::Str(String::new()),
+                None,
+                None,
             ));
         }
 
         // Collect positional string args and named options
         let mut positional: Vec<String> = Vec::new();
-        let mut named_start = args.len();
-        for (i, arg) in args.iter().enumerate() {
+        for arg in args.iter() {
             match arg {
-                Value::Hash(_) | Value::Pair(_, _) => {
-                    if named_start == args.len() {
-                        named_start = i;
-                    }
-                }
+                Value::Hash(_) | Value::Pair(_, _) => {}
                 _ => {
                     positional.push(arg.to_string_value());
                 }
             }
         }
 
-        let (cwd_opt, env_opts) = Self::extract_proc_options(args, 0);
+        let opts = Self::extract_proc_options(args, 0);
 
         if positional.is_empty() {
             return Ok(Self::make_proc_instance(
@@ -115,6 +150,8 @@ impl Interpreter {
                 0,
                 0,
                 Value::Str(String::new()),
+                None,
+                None,
             ));
         }
 
@@ -126,20 +163,48 @@ impl Interpreter {
 
         let mut cmd = Command::new(program);
         cmd.args(rest_args);
-        // Suppress stdout/stderr by default (like Raku's run)
-        cmd.stdout(std::process::Stdio::null());
-        cmd.stderr(std::process::Stdio::null());
 
-        if let Some(cwd) = cwd_opt {
+        if opts.capture_out {
+            cmd.stdout(std::process::Stdio::piped());
+        } else {
+            cmd.stdout(std::process::Stdio::null());
+        }
+        if opts.capture_err {
+            cmd.stderr(std::process::Stdio::piped());
+        } else {
+            cmd.stderr(std::process::Stdio::null());
+        }
+
+        if let Some(cwd) = opts.cwd {
             cmd.current_dir(cwd);
         }
-        for (k, v) in env_opts {
+        for (k, v) in opts.env {
             cmd.env(k, v);
         }
 
         match cmd.spawn() {
             Ok(mut child) => {
                 let pid = child.id() as i64;
+                let captured_out = if opts.capture_out {
+                    child.stdout.take().map(|mut s| {
+                        let mut buf = String::new();
+                        use std::io::Read;
+                        let _ = s.read_to_string(&mut buf);
+                        buf
+                    })
+                } else {
+                    None
+                };
+                let captured_err = if opts.capture_err {
+                    child.stderr.take().map(|mut s| {
+                        let mut buf = String::new();
+                        use std::io::Read;
+                        let _ = s.read_to_string(&mut buf);
+                        buf
+                    })
+                } else {
+                    None
+                };
                 match child.wait() {
                     Ok(status) => {
                         let exitcode = status.code().unwrap_or(-1) as i64;
@@ -150,15 +215,26 @@ impl Interpreter {
                         };
                         #[cfg(not(unix))]
                         let signal = 0i64;
-                        Ok(Self::make_proc_instance(exitcode, signal, pid, command_val))
+                        Ok(Self::make_proc_instance(
+                            exitcode,
+                            signal,
+                            pid,
+                            command_val,
+                            captured_err,
+                            captured_out,
+                        ))
                     }
-                    Err(_) => Ok(Self::make_proc_instance(-1, 0, pid, command_val)),
+                    Err(_) => Ok(Self::make_proc_instance(
+                        -1,
+                        0,
+                        pid,
+                        command_val,
+                        captured_err,
+                        captured_out,
+                    )),
                 }
             }
-            Err(_) => {
-                // Process failed to start
-                Ok(Self::make_proc_instance(-1, 0, 0, command_val))
-            }
+            Err(_) => Ok(Self::make_proc_instance(-1, 0, 0, command_val, None, None)),
         }
     }
 
@@ -173,10 +249,12 @@ impl Interpreter {
                 0,
                 0,
                 Value::Str(String::new()),
+                None,
+                None,
             ));
         }
 
-        let (cwd_opt, env_opts) = Self::extract_proc_options(args, 1);
+        let opts = Self::extract_proc_options(args, 1);
 
         let command_val = Value::Str(command_str.clone());
 
@@ -189,20 +267,48 @@ impl Interpreter {
             cmd.arg("-c").arg(&command_str);
             cmd
         };
-        // Suppress stdout/stderr by default
-        command.stdout(std::process::Stdio::null());
-        command.stderr(std::process::Stdio::null());
 
-        if let Some(cwd) = cwd_opt {
+        if opts.capture_out {
+            command.stdout(std::process::Stdio::piped());
+        } else {
+            command.stdout(std::process::Stdio::null());
+        }
+        if opts.capture_err {
+            command.stderr(std::process::Stdio::piped());
+        } else {
+            command.stderr(std::process::Stdio::null());
+        }
+
+        if let Some(cwd) = opts.cwd {
             command.current_dir(cwd);
         }
-        for (k, v) in env_opts {
+        for (k, v) in opts.env {
             command.env(k, v);
         }
 
         match command.spawn() {
             Ok(mut child) => {
                 let pid = child.id() as i64;
+                let captured_out = if opts.capture_out {
+                    child.stdout.take().map(|mut s| {
+                        let mut buf = String::new();
+                        use std::io::Read;
+                        let _ = s.read_to_string(&mut buf);
+                        buf
+                    })
+                } else {
+                    None
+                };
+                let captured_err = if opts.capture_err {
+                    child.stderr.take().map(|mut s| {
+                        let mut buf = String::new();
+                        use std::io::Read;
+                        let _ = s.read_to_string(&mut buf);
+                        buf
+                    })
+                } else {
+                    None
+                };
                 match child.wait() {
                     Ok(status) => {
                         let exitcode = status.code().unwrap_or(-1) as i64;
@@ -213,15 +319,26 @@ impl Interpreter {
                         };
                         #[cfg(not(unix))]
                         let signal = 0i64;
-                        Ok(Self::make_proc_instance(exitcode, signal, pid, command_val))
+                        Ok(Self::make_proc_instance(
+                            exitcode,
+                            signal,
+                            pid,
+                            command_val,
+                            captured_err,
+                            captured_out,
+                        ))
                     }
-                    Err(_) => Ok(Self::make_proc_instance(-1, 0, pid, command_val)),
+                    Err(_) => Ok(Self::make_proc_instance(
+                        -1,
+                        0,
+                        pid,
+                        command_val,
+                        captured_err,
+                        captured_out,
+                    )),
                 }
             }
-            Err(_) => {
-                // Process failed to start
-                Ok(Self::make_proc_instance(-1, 0, 0, command_val))
-            }
+            Err(_) => Ok(Self::make_proc_instance(-1, 0, 0, command_val, None, None)),
         }
     }
 

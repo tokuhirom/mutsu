@@ -31,8 +31,10 @@ fn main() {
 
     let mut dump_ast = false;
     let mut repl_flag = false;
+    let mut lib_paths: Vec<String> = Vec::new();
     let mut filtered_args: Vec<String> = Vec::new();
-    for arg in &args[1..] {
+    let mut iter = args[1..].iter();
+    while let Some(arg) = iter.next() {
         if arg == "--dump-ast" {
             dump_ast = true;
         } else if arg == "--repl" {
@@ -40,6 +42,15 @@ fn main() {
         } else if arg.starts_with("--parser=") {
             eprintln!("--parser option is no longer supported");
             std::process::exit(1);
+        } else if arg == "-I" {
+            if let Some(path) = iter.next() {
+                lib_paths.push(path.clone());
+            } else {
+                eprintln!("Usage: {} -I <path>", args[0]);
+                std::process::exit(1);
+            }
+        } else if let Some(path_suffix) = arg.strip_prefix("-I") {
+            lib_paths.push(path_suffix.to_string());
         } else {
             filtered_args.push(arg.clone());
         }
@@ -83,6 +94,9 @@ fn main() {
     }
 
     let mut interpreter = Interpreter::new();
+    for path in lib_paths {
+        interpreter.add_lib_path(path);
+    }
     interpreter.set_program_path(&program_name);
     match interpreter.run(&input) {
         Ok(output) => print!("{}", output),
