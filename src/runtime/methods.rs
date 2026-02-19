@@ -119,6 +119,24 @@ impl Interpreter {
                 }
                 return Ok(Value::Nil);
             }
+            "comb" if args.len() == 1 => {
+                let text = target.to_string_value();
+                let pattern = match &args[0] {
+                    Value::Regex(pat) => pat.clone(),
+                    Value::Str(s) => s.clone(),
+                    _ => args[0].to_string_value(),
+                };
+                let matches = self.regex_find_all(&pattern, &text);
+                let chars: Vec<char> = text.chars().collect();
+                let result: Vec<Value> = matches
+                    .iter()
+                    .map(|(start, end)| {
+                        let s: String = chars[*start..*end].iter().collect();
+                        Value::Str(s)
+                    })
+                    .collect();
+                return Ok(Value::Array(result));
+            }
             "IO" if args.is_empty() => {
                 return Ok(self.make_io_path_instance(&target.to_string_value()));
             }

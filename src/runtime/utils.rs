@@ -296,7 +296,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         } => {
             // String ranges: expand as character sequences
             if let (Value::Str(a), Value::Str(b)) = (start.as_ref(), end.as_ref()) {
-                if a.len() == 1 && b.len() == 1 {
+                if a.chars().count() == 1 && b.chars().count() == 1 {
                     let s = a.chars().next().unwrap() as u32;
                     let e = b.chars().next().unwrap() as u32;
                     let s = if *excl_start { s + 1 } else { s };
