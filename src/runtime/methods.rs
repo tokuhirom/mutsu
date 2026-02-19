@@ -125,6 +125,9 @@ impl Interpreter {
             "contains" => {
                 return self.dispatch_contains(target, &args);
             }
+            "trans" => {
+                return self.dispatch_trans(target, &args);
+            }
             "Seq" if args.is_empty() => {
                 return Ok(match target {
                     Value::Array(_) | Value::LazyList(_) => target,

@@ -34,6 +34,7 @@ mod handle;
 mod io;
 mod methods;
 mod methods_mut;
+mod methods_trans;
 mod native_io;
 mod native_methods;
 mod ops;
