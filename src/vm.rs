@@ -135,6 +135,48 @@ impl VM {
         (self.interpreter, Ok(()))
     }
 
+    /// Run compiled bytecode without consuming self.
+    /// Used by map/grep to avoid VM creation/destruction per iteration.
+    pub(crate) fn run_reuse(
+        &mut self,
+        code: &CompiledCode,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
+        self.stack.clear();
+        // Initialize local variable slots
+        self.locals.resize(code.locals.len(), Value::Nil);
+        for (i, name) in code.locals.iter().enumerate() {
+            if let Some(val) = self.interpreter.env().get(name) {
+                self.locals[i] = val.clone();
+            } else {
+                self.locals[i] = Value::Nil;
+            }
+        }
+        let mut ip = 0;
+        while ip < code.ops.len() {
+            self.exec_one(code, &mut ip, compiled_fns)?;
+            if self.interpreter.is_halted() {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// Get a reference to the interpreter (for reading env values).
+    pub(crate) fn interpreter(&self) -> &Interpreter {
+        &self.interpreter
+    }
+
+    /// Get a mutable reference to the interpreter (for setting env values).
+    pub(crate) fn interpreter_mut(&mut self) -> &mut Interpreter {
+        &mut self.interpreter
+    }
+
+    /// Consume the VM and return the interpreter.
+    pub(crate) fn into_interpreter(self) -> Interpreter {
+        self.interpreter
+    }
+
     /// Execute opcodes in [start..end), used by loop compound opcodes.
     fn run_range(
         &mut self,
