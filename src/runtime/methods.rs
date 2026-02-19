@@ -753,6 +753,19 @@ impl Interpreter {
                         .unwrap_or_default();
                     return Ok(self.make_io_path_instance(&path));
                 }
+                "Buf" => {
+                    let byte_vals: Vec<Value> = args
+                        .iter()
+                        .flat_map(|a| match a {
+                            Value::Int(i) => vec![Value::Int(*i)],
+                            Value::Array(items) => items.clone(),
+                            _ => vec![],
+                        })
+                        .collect();
+                    let mut attrs = HashMap::new();
+                    attrs.insert("bytes".to_string(), Value::Array(byte_vals));
+                    return Ok(Value::make_instance("Buf".to_string(), attrs));
+                }
                 "Rat" => {
                     let a = match args.first() {
                         Some(Value::Int(i)) => *i,
@@ -1065,6 +1078,7 @@ impl Interpreter {
             file: None,
             socket: Some(stream),
             closed: false,
+            bin: false,
         };
         self.handles.insert(id, state);
         let mut attrs = HashMap::new();

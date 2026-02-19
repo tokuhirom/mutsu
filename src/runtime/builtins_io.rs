@@ -45,9 +45,9 @@ impl Interpreter {
             .first()
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("open requires a path argument"))?;
-        let (read, write, append) = Self::parse_io_flags_values(&args[1..]);
+        let (read, write, append, bin) = Self::parse_io_flags_values(&args[1..]);
         let path_buf = self.resolve_path(&path);
-        self.open_file_handle(&path_buf, read, write, append)
+        self.open_file_handle(&path_buf, read, write, append, bin)
     }
 
     pub(super) fn builtin_close(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

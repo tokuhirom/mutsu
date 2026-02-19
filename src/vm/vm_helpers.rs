@@ -133,6 +133,8 @@ impl VM {
                 | "Semaphore"
                 | "Whatever"
                 | "Instant"
+                | "Buf"
+                | "Blob"
         )
     }
 

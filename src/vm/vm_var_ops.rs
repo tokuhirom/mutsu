@@ -190,6 +190,8 @@ impl VM {
                     .collect();
                 Value::Array(result)
             }
+            // Type parameterization: e.g. Buf[uint8] → returns the type unchanged
+            (pkg @ Value::Package(_), _) => pkg,
             _ => Value::Nil,
         };
         self.stack.push(result);
