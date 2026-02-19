@@ -253,9 +253,18 @@ impl Interpreter {
         }
         let compiler = crate::compiler::Compiler::new();
         let (code, compiled_fns) = compiler.compile(body);
+        self.run_compiled_block(&code, &compiled_fns)
+    }
+
+    /// Run pre-compiled bytecode and return the `$_` topic value.
+    fn run_compiled_block(
+        &mut self,
+        code: &crate::opcode::CompiledCode,
+        compiled_fns: &std::collections::HashMap<String, crate::opcode::CompiledFunction>,
+    ) -> Result<Value, RuntimeError> {
         let interp = std::mem::take(self);
         let vm = crate::vm::VM::new(interp);
-        let (interp, result) = vm.run(&code, &compiled_fns);
+        let (interp, result) = vm.run(code, compiled_fns);
         let value = interp.env().get("_").cloned().unwrap_or(Value::Nil);
         *self = interp;
         result.map(|_| value)
@@ -272,51 +281,117 @@ impl Interpreter {
         {
             let arity = if !params.is_empty() { params.len() } else { 1 };
             let mut result = Vec::new();
+
+            // Compile once, reuse VM for every iteration
+            let compiler = crate::compiler::Compiler::new();
+            let (code, compiled_fns) = compiler.compile(&body);
+
+            let underscore = "_".to_string();
+
+            // Save original values for keys we'll modify
+            let mut touched_keys: Vec<String> = Vec::with_capacity(env.len() + params.len() + 1);
+            for k in env.keys() {
+                touched_keys.push(k.clone());
+            }
+            for p in &params {
+                if !touched_keys.contains(p) {
+                    touched_keys.push(p.clone());
+                }
+            }
+            if !touched_keys.iter().any(|k| k == "_") {
+                touched_keys.push(underscore.clone());
+            }
+            let saved: Vec<(String, Option<Value>)> = touched_keys
+                .iter()
+                .map(|k| (k.clone(), self.env.get(k).cloned()))
+                .collect();
+
+            // Pre-insert closure env
+            for (k, v) in &env {
+                self.env.insert(k.clone(), v.clone());
+            }
+
+            // Create VM once, reuse across iterations
+            let interp = std::mem::take(self);
+            let mut vm = crate::vm::VM::new(interp);
+
             let mut i = 0usize;
             while i < list_items.len() {
                 if arity > 1 && i + arity > list_items.len() {
-                    return Err(RuntimeError::new("Not enough elements for map block arity"));
-                }
-                let saved = self.env.clone();
-                for (k, v) in &env {
-                    self.env.insert(k.clone(), v.clone());
-                }
-                if arity == 1 {
-                    let item = list_items[i].clone();
-                    if let Some(p) = params.first() {
-                        self.env.insert(p.clone(), item.clone());
-                    }
-                    self.env.insert("_".to_string(), item);
-                } else {
-                    for (idx, p) in params.iter().enumerate() {
-                        if i + idx < list_items.len() {
-                            self.env.insert(p.clone(), list_items[i + idx].clone());
+                    *self = vm.into_interpreter();
+                    for (k, orig) in &saved {
+                        match orig {
+                            Some(v) => {
+                                self.env.insert(k.clone(), v.clone());
+                            }
+                            None => {
+                                self.env.remove(k);
+                            }
                         }
                     }
-                    self.env.insert("_".to_string(), list_items[i].clone());
+                    return Err(RuntimeError::new("Not enough elements for map block arity"));
                 }
-                match self.eval_block_value(&body) {
-                    Ok(Value::Slip(elems)) => {
-                        self.env = saved;
-                        result.extend(elems);
+                {
+                    let interp = vm.interpreter_mut();
+                    if arity == 1 {
+                        let item = list_items[i].clone();
+                        if let Some(p) = params.first() {
+                            interp.env_insert(p.clone(), item.clone());
+                        }
+                        interp.env_insert(underscore.clone(), item);
+                    } else {
+                        for (idx, p) in params.iter().enumerate() {
+                            if i + idx < list_items.len() {
+                                interp.env_insert(p.clone(), list_items[i + idx].clone());
+                            }
+                        }
+                        interp.env_insert(underscore.clone(), list_items[i].clone());
                     }
-                    Ok(val) => {
-                        self.env = saved;
-                        result.push(val);
+                }
+                match vm.run_reuse(&code, &compiled_fns) {
+                    Ok(()) => {
+                        let val = vm
+                            .interpreter()
+                            .env()
+                            .get("_")
+                            .cloned()
+                            .unwrap_or(Value::Nil);
+                        match val {
+                            Value::Slip(elems) => result.extend(elems),
+                            v => result.push(v),
+                        }
                     }
-                    Err(e) if e.is_next => {
-                        self.env = saved;
-                    }
-                    Err(e) if e.is_last => {
-                        self.env = saved;
-                        break;
-                    }
+                    Err(e) if e.is_next => {}
+                    Err(e) if e.is_last => break,
                     Err(e) => {
-                        self.env = saved;
+                        *self = vm.into_interpreter();
+                        for (k, orig) in &saved {
+                            match orig {
+                                Some(v) => {
+                                    self.env.insert(k.clone(), v.clone());
+                                }
+                                None => {
+                                    self.env.remove(k);
+                                }
+                            }
+                        }
                         return Err(e);
                     }
                 }
                 i += arity;
+            }
+
+            *self = vm.into_interpreter();
+            // Restore original values
+            for (k, orig) in saved {
+                match orig {
+                    Some(v) => {
+                        self.env.insert(k, v);
+                    }
+                    None => {
+                        self.env.remove(&k);
+                    }
+                }
             }
             return Ok(Value::Array(result));
         }
@@ -333,19 +408,85 @@ impl Interpreter {
         }) = func
         {
             let mut result = Vec::new();
+
+            // Compile once, reuse VM for every iteration
+            let compiler = crate::compiler::Compiler::new();
+            let (code, compiled_fns) = compiler.compile(&body);
+
+            let underscore = "_".to_string();
+
+            let mut touched_keys: Vec<String> = Vec::with_capacity(env.len() + 2);
+            for k in env.keys() {
+                touched_keys.push(k.clone());
+            }
+            if let Some(p) = params.first()
+                && !touched_keys.contains(p)
+            {
+                touched_keys.push(p.clone());
+            }
+            if !touched_keys.iter().any(|k| k == "_") {
+                touched_keys.push(underscore.clone());
+            }
+            let saved: Vec<(String, Option<Value>)> = touched_keys
+                .iter()
+                .map(|k| (k.clone(), self.env.get(k).cloned()))
+                .collect();
+
+            // Pre-insert closure env
+            for (k, v) in &env {
+                self.env.insert(k.clone(), v.clone());
+            }
+
+            // Create VM once, reuse across iterations
+            let interp = std::mem::take(self);
+            let mut vm = crate::vm::VM::new(interp);
+
             for item in list_items {
-                let saved = self.env.clone();
-                for (k, v) in &env {
-                    self.env.insert(k.clone(), v.clone());
+                {
+                    let interp = vm.interpreter_mut();
+                    if let Some(p) = params.first() {
+                        interp.env_insert(p.clone(), item.clone());
+                    }
+                    interp.env_insert(underscore.clone(), item.clone());
                 }
-                if let Some(p) = params.first() {
-                    self.env.insert(p.clone(), item.clone());
+                match vm.run_reuse(&code, &compiled_fns) {
+                    Ok(()) => {
+                        let val = vm
+                            .interpreter()
+                            .env()
+                            .get("_")
+                            .cloned()
+                            .unwrap_or(Value::Nil);
+                        if val.truthy() {
+                            result.push(item);
+                        }
+                    }
+                    Err(e) => {
+                        *self = vm.into_interpreter();
+                        for (k, orig) in &saved {
+                            match orig {
+                                Some(v) => {
+                                    self.env.insert(k.clone(), v.clone());
+                                }
+                                None => {
+                                    self.env.remove(k);
+                                }
+                            }
+                        }
+                        return Err(e);
+                    }
                 }
-                self.env.insert("_".to_string(), item.clone());
-                let val = self.eval_block_value(&body)?;
-                self.env = saved;
-                if val.truthy() {
-                    result.push(item);
+            }
+
+            *self = vm.into_interpreter();
+            for (k, orig) in saved {
+                match orig {
+                    Some(v) => {
+                        self.env.insert(k, v);
+                    }
+                    None => {
+                        self.env.remove(&k);
+                    }
                 }
             }
             return Ok(Value::Array(result));

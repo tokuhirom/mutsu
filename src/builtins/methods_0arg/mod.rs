@@ -603,6 +603,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             _ => Some(Ok(target.clone())),
         },
         "sink" => Some(Ok(Value::Nil)),
+        "item" => Some(Ok(target.clone())),
+        "race" | "hyper" => {
+            // Single-threaded: just materialize into an array
+            let items = runtime::value_to_list(target);
+            Some(Ok(Value::Array(items)))
+        }
         "NFC" | "NFD" | "NFKC" | "NFKD" => {
             use unicode_normalization::UnicodeNormalization;
             let s = uni_or_str(target);

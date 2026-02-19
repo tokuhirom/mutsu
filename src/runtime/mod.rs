@@ -466,6 +466,10 @@ impl Interpreter {
         &self.env
     }
 
+    pub(crate) fn env_insert(&mut self, key: String, value: Value) {
+        self.env.insert(key, value);
+    }
+
     pub(crate) fn has_class(&self, name: &str) -> bool {
         self.classes.contains_key(name)
     }
