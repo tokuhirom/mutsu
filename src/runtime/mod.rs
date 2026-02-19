@@ -140,8 +140,19 @@ enum RegexAtom {
     Group(RegexPattern),
     Alternation(Vec<RegexPattern>),
     ZeroWidth,
-    UnicodeProp { name: String, negated: bool },
-    UnicodePropAssert { name: String, negated: bool }, // zero-width assertion
+    UnicodeProp {
+        name: String,
+        negated: bool,
+    },
+    UnicodePropAssert {
+        name: String,
+        negated: bool,
+    }, // zero-width assertion
+    /// Combined character class: <+ xdigit - lower>, matches positive AND NOT negative
+    CompositeClass {
+        positive: Vec<ClassItem>,
+        negative: Vec<ClassItem>,
+    },
 }
 
 #[derive(Clone)]
@@ -165,6 +176,8 @@ enum ClassItem {
     Digit,
     Word,
     Space,
+    NamedBuiltin(String),
+    UnicodePropItem { name: String, negated: bool },
 }
 
 pub struct Interpreter {

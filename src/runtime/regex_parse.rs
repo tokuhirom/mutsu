@@ -273,49 +273,50 @@ impl Interpreter {
                             name: prop_name.to_string(),
                             negated: false,
                         }
+                    } else if trimmed.starts_with('+') || trimmed.starts_with('-') {
+                        // Combined character class: <+ xdigit - lower>
+                        if let Some(atom) = self.parse_combined_class(trimmed) {
+                            atom
+                        } else {
+                            continue;
+                        }
                     } else {
                         // Check for named character classes
                         match trimmed {
-                            "alpha" => RegexAtom::CharClass(CharClass {
-                                items: vec![
-                                    ClassItem::Range('a', 'z'),
-                                    ClassItem::Range('A', 'Z'),
-                                    ClassItem::Char('_'),
-                                ],
-                                negated: false,
-                            }),
-                            "upper" => RegexAtom::CharClass(CharClass {
-                                items: vec![ClassItem::Range('A', 'Z')],
-                                negated: false,
-                            }),
-                            "lower" => RegexAtom::CharClass(CharClass {
-                                items: vec![ClassItem::Range('a', 'z')],
-                                negated: false,
-                            }),
-                            "digit" => RegexAtom::CharClass(CharClass {
-                                items: vec![ClassItem::Digit],
-                                negated: false,
-                            }),
-                            "xdigit" => RegexAtom::CharClass(CharClass {
-                                items: vec![
-                                    ClassItem::Range('0', '9'),
-                                    ClassItem::Range('a', 'f'),
-                                    ClassItem::Range('A', 'F'),
-                                ],
-                                negated: false,
-                            }),
-                            "space" | "ws" => RegexAtom::CharClass(CharClass {
-                                items: vec![ClassItem::Space],
-                                negated: false,
-                            }),
-                            "alnum" => RegexAtom::CharClass(CharClass {
-                                items: vec![
-                                    ClassItem::Range('a', 'z'),
-                                    ClassItem::Range('A', 'Z'),
-                                    ClassItem::Range('0', '9'),
-                                ],
-                                negated: false,
-                            }),
+                            "alpha" | "upper" | "lower" | "digit" | "xdigit" | "space" | "ws"
+                            | "alnum" | "blank" | "cntrl" | "punct" => {
+                                RegexAtom::CharClass(CharClass {
+                                    items: vec![ClassItem::NamedBuiltin(trimmed.to_string())],
+                                    negated: false,
+                                })
+                            }
+                            "ident" => {
+                                // <ident> = <alpha> <alnum>*
+                                RegexAtom::Group(RegexPattern {
+                                    tokens: vec![
+                                        RegexToken {
+                                            atom: RegexAtom::CharClass(CharClass {
+                                                items: vec![ClassItem::NamedBuiltin(
+                                                    "alpha".to_string(),
+                                                )],
+                                                negated: false,
+                                            }),
+                                            quant: RegexQuant::One,
+                                        },
+                                        RegexToken {
+                                            atom: RegexAtom::CharClass(CharClass {
+                                                items: vec![ClassItem::NamedBuiltin(
+                                                    "alnum".to_string(),
+                                                )],
+                                                negated: false,
+                                            }),
+                                            quant: RegexQuant::ZeroOrMore,
+                                        },
+                                    ],
+                                    anchor_start: false,
+                                    anchor_end: false,
+                                })
+                            }
                             _ => RegexAtom::Named(name),
                         }
                     }
@@ -564,6 +565,48 @@ impl Interpreter {
         Some(CharClass {
             items,
             negated: final_negated,
+        })
+    }
+
+    /// Parse combined character class like `+ xdigit - lower` or `+ :HexDigit - :Upper`.
+    fn parse_combined_class(&self, input: &str) -> Option<RegexAtom> {
+        let mut positive_items: Vec<ClassItem> = Vec::new();
+        let mut negative_items: Vec<ClassItem> = Vec::new();
+        let mut remaining = input.trim();
+        while !remaining.is_empty() {
+            let adding;
+            if remaining.starts_with('+') {
+                adding = true;
+                remaining = remaining[1..].trim_start();
+            } else if remaining.starts_with('-') {
+                adding = false;
+                remaining = remaining[1..].trim_start();
+            } else {
+                break;
+            }
+            let class_end = remaining.find(['+', '-']).unwrap_or(remaining.len());
+            let class_name = remaining[..class_end].trim();
+            remaining = remaining[class_end..].trim_start();
+            let item = if let Some(prop) = class_name.strip_prefix(':') {
+                ClassItem::UnicodePropItem {
+                    name: prop.to_string(),
+                    negated: false,
+                }
+            } else {
+                ClassItem::NamedBuiltin(class_name.to_string())
+            };
+            if adding {
+                positive_items.push(item);
+            } else {
+                negative_items.push(item);
+            }
+        }
+        if positive_items.is_empty() {
+            return None;
+        }
+        Some(RegexAtom::CompositeClass {
+            positive: positive_items,
+            negative: negative_items,
         })
     }
 }
