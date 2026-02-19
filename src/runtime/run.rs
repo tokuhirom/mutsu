@@ -36,9 +36,23 @@ impl Interpreter {
         let mut started_block = false;
         let mut brace_depth = 0i32;
         let mut pending_todo: Option<String> = None;
+        let mut skip_lines_remaining: usize = 0;
+        let mut skip_reason: String = String::new();
 
         for line in input.lines() {
             let trimmed = line.trim_start();
+
+            // Count-based skip: skip the next N non-comment, non-empty lines
+            if skip_lines_remaining > 0 {
+                if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                    skip_lines_remaining -= 1;
+                    // Emit a skip() call for each skipped test line
+                    output.push_str(&format!("skip '{}', 1;\n", skip_reason));
+                    continue;
+                }
+                output.push('\n');
+                continue;
+            }
 
             // #?rakudo todo 'reason' — mark the next test as todo
             if trimmed.starts_with("#?rakudo")
@@ -83,17 +97,34 @@ impl Interpreter {
             {
                 // Check if this is a block-skip (no number prefix) vs line-count skip
                 let after_prefix = trimmed.trim_start_matches("#?rakudo").trim_start();
-                let is_count_skip = after_prefix
-                    .chars()
-                    .next()
-                    .is_some_and(|c| c.is_ascii_digit());
-                if !is_count_skip {
-                    skipping_block = true;
-                    started_block = false;
-                    brace_depth = 0;
+                if let Some(first_char) = after_prefix.chars().next()
+                    && first_char.is_ascii_digit()
+                {
+                    // Parse the count: #?rakudo N skip 'reason'
+                    let count: usize = after_prefix
+                        .split_whitespace()
+                        .next()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(1);
+                    // Extract skip reason from quotes
+                    skip_reason = if let Some(start) = after_prefix.find('\'') {
+                        if let Some(end) = after_prefix[start + 1..].find('\'') {
+                            after_prefix[start + 1..start + 1 + end].to_string()
+                        } else {
+                            "skip".to_string()
+                        }
+                    } else {
+                        "skip".to_string()
+                    };
+                    skip_lines_remaining = count;
                     output.push('\n');
                     continue;
                 }
+                skipping_block = true;
+                started_block = false;
+                brace_depth = 0;
+                output.push('\n');
+                continue;
             }
 
             if !skipping_block {

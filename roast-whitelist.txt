@@ -13,7 +13,6 @@ roast/S02-lexical-conventions/pod-in-multi-line-exprs.t
 roast/S02-lexical-conventions/sub-block-parsing.t
 roast/S02-lexical-conventions/unicode.t
 roast/S02-lexical-conventions/unicode-whitespace.t
-roast/S02-names/bare-sigil.t
 roast/S02-literals/char-by-name.t
 roast/S02-literals/hex_chars.t
 roast/S02-literals/pair-boolean.t
@@ -25,6 +24,7 @@ roast/S02-magicals/file_line.t
 roast/S02-magicals/GROUP.t
 roast/S02-magicals/pid.t
 roast/S02-magicals/USER.t
+roast/S02-names/bare-sigil.t
 roast/S02-one-pass-parsing/less-than.t
 roast/S02-one-pass-parsing/misc.t
 roast/S02-types/built-in.t
@@ -32,12 +32,12 @@ roast/S02-types/fatrat.t
 roast/S02-types/nan.t
 roast/S02-types/parsing-bool.t
 roast/S02-types/unicode.t
-roast/S02-types/version.t
 roast/S02-types/version-stress.t
+roast/S02-types/version.t
 roast/S03-operators/assign-is-not-binding.t
 roast/S03-operators/basic-types.t
-roast/S03-operators/brainos.t
 roast/S03-operators/boolean-bitwise.t
+roast/S03-operators/brainos.t
 roast/S03-operators/comparison-simple.t
 roast/S03-operators/gcd.t
 roast/S03-operators/infixed-function.t
@@ -150,6 +150,7 @@ roast/S15-normalization/nfkd-7.t
 roast/S15-normalization/nfkd-8.t
 roast/S15-normalization/nfkd-9.t
 roast/S15-normalization/nfkd-sanity.t
+roast/S15-string-types/Str.t
 roast/S16-filehandles/misc.t
 roast/S16-filehandles/unlink.t
 roast/S16-io/bare-say.t
