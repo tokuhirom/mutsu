@@ -201,6 +201,26 @@ make roast 2>&1 | grep -E "(FAILED|Failed)" | head -20
 make roast 2>&1 | grep -E "(not ok|FAILED|Failed|Wstat)" | head -20
 ```
 
+## Running mutsu safely
+
+mutsu is under active development — parsing or execution can hang. **Always use `timeout`** when running mutsu:
+
+```
+timeout 30 target/debug/mutsu <file>
+timeout 30 target/debug/mutsu -e '<code>'
+timeout 30 target/debug/mutsu --dump-ast <file>
+```
+
+## Investigating a failing roast test
+
+Before writing any code, always investigate the test in this order:
+
+1. **Run with `raku`** to see the expected output: `raku <roast-test-path>`
+2. **Dump AST with `raku`** (if needed): `raku --target=ast -e '<relevant code>'`
+3. **Dump AST with `mutsu`**: `timeout 30 target/debug/mutsu --dump-ast <roast-test-path>`
+4. **Run with `mutsu`**: `timeout 30 target/debug/mutsu <roast-test-path>`
+5. Compare outputs to identify what mutsu is doing wrong, then fix the interpreter.
+
 ## roast fix workflow
 
 When the user says **"roast fix"**, execute this automated loop:
@@ -208,9 +228,11 @@ When the user says **"roast fix"**, execute this automated loop:
 1. Run `scripts/pick-next-roast.sh -n 3` to find the next 3 failing roast tests.
 2. For each test, spawn a **sub-agent** (Task tool) that:
    - Creates a git worktree: `git worktree add .git/worktrees-work/<branch-name> -b <branch-name> main`
+   - Investigates the test (see "Investigating a failing roast test" above)
    - Works in that worktree directory to fix the interpreter so the roast test passes
    - Runs `cargo build && timeout 30 target/debug/mutsu <roast-test-path>` to verify
    - Appends the test path to `roast-whitelist.txt` (sorted)
+   - **Before committing**: runs `make test` and `make roast` to ensure no regressions
    - Commits, pushes the branch, and creates a PR with `gh pr create`
    - Polls PR CI status every 60 seconds with `gh pr checks <pr-number>`
    - If CI fails: reads the failure log, pushes fix commits, and retries
@@ -223,8 +245,8 @@ When the user says **"roast fix"**, execute this automated loop:
 
 - Do NOT use printf debugging (eprintln! → build → check → repeat). Rust builds are slow.
 - Preferred approaches in order:
-  1. **AST dump**: `./target/debug/mutsu --dump-ast <file>` or `--dump-ast -e '<code>'`
-  2. **Trace logs**: `MUTSU_TRACE=1 ./target/debug/mutsu <file>` (filter: `MUTSU_TRACE=eval` or `MUTSU_TRACE=parse,vm`)
+  1. **AST dump**: `timeout 30 ./target/debug/mutsu --dump-ast <file>` or `--dump-ast -e '<code>'`
+  2. **Trace logs**: `timeout 30 env MUTSU_TRACE=1 ./target/debug/mutsu <file>` (filter: `MUTSU_TRACE=eval` or `MUTSU_TRACE=parse,vm`)
   3. **Focused unit tests**: `#[test]` in the relevant module, run with `cargo test <name>`
   4. **Read the code**: Trace logic by reading, not running
   5. **Debugger**: `rust-gdb ./target/debug/mutsu`
@@ -244,7 +266,7 @@ Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang 
 
 ## Conventions
 
-- Keep each Rust source file under 500 lines. Split into smaller modules if exceeded.
+- Keep each Rust source file under 500 lines. When a file exceeds 500 lines, split it into smaller modules immediately — do not defer.
 - Write feature tests using prove (`t/*.t`).
 - Use Rust unit tests (`#[test]`) for internal components like parser and runtime helpers.
 - Every feature addition must include tests.
