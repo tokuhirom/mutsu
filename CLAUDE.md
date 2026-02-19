@@ -237,6 +237,7 @@ When the user says **"roast fix"**, execute this automated loop (serially, witho
 10. Enable auto-merge: `gh pr merge --auto --squash <pr-number>`.
 11. Poll PR CI status every 60 seconds with `gh pr checks <pr-number>`:
     - If CI fails: read the failure log, push fix commits, and retry.
+    - If PR has conflicts: rebase onto main (`git pull --rebase origin main`), force push, and wait for CI again.
     - If CI passes and PR is merged: proceed to next step.
 12. Clean up the worktree: `git worktree remove .git/worktrees-work/<branch-name>`
 13. Switch back to main and pull: `git checkout main && git pull`.
