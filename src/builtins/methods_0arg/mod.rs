@@ -383,6 +383,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             let parts: Vec<Value> = s.chars().map(|c| Value::Str(c.to_string())).collect();
             Some(Ok(Value::Array(parts)))
         }
+        "join" => match target {
+            Value::Array(items) => {
+                let joined = items
+                    .iter()
+                    .map(|v| v.to_string_value())
+                    .collect::<Vec<_>>()
+                    .join("");
+                Some(Ok(Value::Str(joined)))
+            }
+            _ => Some(Ok(Value::Str(target.to_string_value()))),
+        },
         "gist" | "raku" | "perl" => match target {
             Value::Bool(b) => {
                 if method == "gist" {

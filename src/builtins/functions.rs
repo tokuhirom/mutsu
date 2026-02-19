@@ -576,19 +576,25 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
         }
         "flat" => {
             let mut result = Vec::new();
-            for arg in args {
-                match arg {
+            fn flat_val_deep(v: &Value, out: &mut Vec<Value>) {
+                match v {
                     Value::Array(items) => {
                         for item in items {
-                            if let Value::Array(sub) = item {
-                                result.extend(sub.clone());
-                            } else {
-                                result.push(item.clone());
-                            }
+                            flat_val_deep(item, out);
                         }
                     }
-                    other => result.push(other.clone()),
+                    Value::Range(..)
+                    | Value::RangeExcl(..)
+                    | Value::RangeExclStart(..)
+                    | Value::RangeExclBoth(..)
+                    | Value::GenericRange { .. } => {
+                        out.extend(crate::runtime::utils::value_to_list(v));
+                    }
+                    other => out.push(other.clone()),
                 }
+            }
+            for arg in args {
+                flat_val_deep(arg, &mut result);
             }
             Some(Ok(Value::Array(result)))
         }

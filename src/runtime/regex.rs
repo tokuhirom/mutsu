@@ -363,6 +363,37 @@ impl Interpreter {
                 let prop_match = check_unicode_property(name, c);
                 if *negated { !prop_match } else { prop_match }
             }
+            RegexAtom::CompositeClass { positive, negative } => {
+                let pos_match = positive.iter().any(|item| match item {
+                    ClassItem::NamedBuiltin(n) => matches_named_builtin(n, c),
+                    ClassItem::UnicodePropItem { name, negated } => {
+                        let m = check_unicode_property(name, c);
+                        if *negated { !m } else { m }
+                    }
+                    _ => self.regex_match_class(
+                        &CharClass {
+                            items: vec![item.clone()],
+                            negated: false,
+                        },
+                        c,
+                    ),
+                });
+                let neg_match = negative.iter().any(|item| match item {
+                    ClassItem::NamedBuiltin(n) => matches_named_builtin(n, c),
+                    ClassItem::UnicodePropItem { name, negated } => {
+                        let m = check_unicode_property(name, c);
+                        if *negated { !m } else { m }
+                    }
+                    _ => self.regex_match_class(
+                        &CharClass {
+                            items: vec![item.clone()],
+                            negated: false,
+                        },
+                        c,
+                    ),
+                });
+                pos_match && !neg_match
+            }
             RegexAtom::Group(_)
             | RegexAtom::Alternation(_)
             | RegexAtom::Newline
@@ -453,8 +484,79 @@ impl Interpreter {
                         break;
                     }
                 }
+                ClassItem::NamedBuiltin(name) => {
+                    if matches_named_builtin(name, c) {
+                        matched = true;
+                        break;
+                    }
+                }
+                ClassItem::UnicodePropItem { name, negated } => {
+                    let prop_match = check_unicode_property(name, c);
+                    if if *negated { !prop_match } else { prop_match } {
+                        matched = true;
+                        break;
+                    }
+                }
             }
         }
         if class.negated { !matched } else { matched }
+    }
+
+    /// Find all non-overlapping regex matches, returning (start, end) char-index pairs.
+    pub(super) fn regex_find_all(&self, pattern: &str, text: &str) -> Vec<(usize, usize)> {
+        let parsed = match self.parse_regex(pattern) {
+            Some(p) => p,
+            None => return Vec::new(),
+        };
+        let chars: Vec<char> = text.chars().collect();
+        let mut results = Vec::new();
+        let mut pos = 0;
+        while pos <= chars.len() {
+            let search_start = if parsed.anchor_start { 0 } else { pos };
+            let mut found = None;
+            if parsed.anchor_start {
+                if pos == 0
+                    && let Some(end) = self.regex_match_end_from(&parsed, &chars, 0)
+                {
+                    found = Some((0, end));
+                }
+            } else {
+                for start in search_start..=chars.len() {
+                    if let Some(end) = self.regex_match_end_from(&parsed, &chars, start) {
+                        found = Some((start, end));
+                        break;
+                    }
+                }
+            }
+            match found {
+                Some((start, end)) => {
+                    results.push((start, end));
+                    // Advance past the match (at least 1 to avoid infinite loop)
+                    pos = if end > start { end } else { start + 1 };
+                }
+                None => break,
+            }
+            if parsed.anchor_start {
+                break;
+            }
+        }
+        results
+    }
+}
+
+/// Check if a character matches a named builtin character class.
+pub(super) fn matches_named_builtin(name: &str, c: char) -> bool {
+    match name {
+        "alpha" => c.is_alphabetic() || c == '_',
+        "upper" => check_unicode_property("Uppercase_Letter", c),
+        "lower" => check_unicode_property("Lowercase_Letter", c),
+        "digit" => c.is_ascii_digit(),
+        "xdigit" => c.is_ascii_hexdigit(),
+        "space" | "ws" => c.is_whitespace(),
+        "alnum" => c.is_alphabetic() || c == '_' || c.is_ascii_digit(),
+        "blank" => c == '\t' || c == ' ' || c == '\u{A0}',
+        "cntrl" => c.is_control(),
+        "punct" => check_unicode_property("Punctuation", c),
+        _ => false,
     }
 }
