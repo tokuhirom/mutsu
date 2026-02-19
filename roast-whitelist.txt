@@ -43,6 +43,7 @@ roast/S03-operators/gcd.t
 roast/S03-operators/infixed-function.t
 roast/S03-operators/lcm.t
 roast/S03-operators/list-quote-junction.t
+roast/S03-operators/names.t
 roast/S03-operators/not.t
 roast/S03-operators/so.t
 roast/S03-operators/spaceship-and-containers.t

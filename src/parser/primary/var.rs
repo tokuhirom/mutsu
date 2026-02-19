@@ -199,6 +199,7 @@ pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
 }
 
 /// Parse a &code variable reference.
+/// Handles `&foo`, twigil forms `&?BLOCK`, and operator references like `&infix:<+>`.
 pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '&')?;
     // Handle twigils: &?BLOCK, &?ROUTINE
@@ -208,6 +209,17 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
         (input, "")
     };
     let (rest, name) = parse_ident_with_hyphens(rest)?;
+    // Check for operator reference: &infix:<OP>, &prefix:<OP>, &postfix:<OP>
+    if twigil.is_empty() && matches!(name, "infix" | "prefix" | "postfix") && rest.starts_with(":<")
+    {
+        let r = &rest[2..]; // skip ':' and '<'
+        if let Some(end_pos) = r.find('>') {
+            let op_name = &r[..end_pos];
+            let r = &r[end_pos + 1..];
+            let full_name = format!("{}:<{}>", name, op_name);
+            return Ok((r, Expr::CodeVar(full_name)));
+        }
+    }
     let full_name = if twigil.is_empty() {
         name.to_string()
     } else {
