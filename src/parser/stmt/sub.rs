@@ -41,8 +41,8 @@ pub(super) fn sub_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
     };
 
     let (rest, _) = ws(rest)?;
-    // Skip traits (is test-assertion, is export, returns ..., etc.)
-    let (rest, _) = skip_sub_traits(rest)?;
+    // Parse traits (is test-assertion, is export, returns ..., etc.)
+    let (rest, traits) = parse_sub_traits(rest)?;
     let (rest, _) = ws(rest)?;
     // Detect `sub name;` without a block body — this is a unit-scoped sub declaration error
     if rest.starts_with(';') || rest.is_empty() {
@@ -62,22 +62,33 @@ pub(super) fn sub_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
             param_defs,
             body,
             multi,
+            is_export: traits.is_export,
         },
     ))
 }
 
-/// Skip sub/method traits like `is test-assertion`, `is export`, `returns Str`, etc.
-pub(super) fn skip_sub_traits(mut input: &str) -> PResult<'_, ()> {
+/// Result of parsing sub traits — captures whether `is export` was present.
+pub(super) struct SubTraits {
+    pub is_export: bool,
+}
+
+/// Parse sub/method traits like `is test-assertion`, `is export`, `returns Str`, etc.
+/// Returns `SubTraits` indicating which traits were found.
+pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
+    let mut is_export = false;
     loop {
         let (r, _) = ws(input)?;
         if r.starts_with('{') || r.is_empty() {
-            return Ok((r, ()));
+            return Ok((r, SubTraits { is_export }));
         }
         if let Some(r) = keyword("is", r) {
             let (r, _) = ws(r)?;
-            // Skip the trait name (may include hyphens like test-assertion)
-            let (r, _trait_name) =
+            // Parse the trait name (may include hyphens like test-assertion)
+            let (r, trait_name) =
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+            if trait_name == "export" {
+                is_export = true;
+            }
             // Skip optional parenthesized trait args: is export(:DEFAULT)
             let r = skip_balanced_parens(r);
             input = r;
@@ -97,7 +108,7 @@ pub(super) fn skip_sub_traits(mut input: &str) -> PResult<'_, ()> {
             input = r;
             continue;
         }
-        return Ok((r, ()));
+        return Ok((r, SubTraits { is_export }));
     }
 }
 
@@ -445,7 +456,7 @@ pub(super) fn method_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
         (rest, (Vec::new(), Vec::new()))
     };
 
-    let (rest, _) = skip_sub_traits(rest)?;
+    let (rest, _traits) = parse_sub_traits(rest)?;
     let (rest, body) = block(rest)?;
     Ok((
         rest,

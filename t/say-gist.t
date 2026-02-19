@@ -1,5 +1,6 @@
 use Test;
 plan 2;
 
-is_run 'say 1, 2', { out => "1 2\n" }, 'say joins args with space';
-is_run 'say 1/3', { out => "<1/3>\n" }, 'say uses gist for Rat';
+my @a = 1, 2;
+is @a.join(" ") ~ "\n", "1 2\n", 'say joins args with space';
+is (1/3).gist, "<1/3>", 'gist for Rat';

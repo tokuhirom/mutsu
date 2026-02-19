@@ -598,6 +598,7 @@ impl Compiler {
                 param_defs,
                 body,
                 multi,
+                ..
             } => {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterSub(idx));
@@ -1456,6 +1457,7 @@ impl Compiler {
                     param_defs: Vec::new(),
                     body: body.clone(),
                     multi: false,
+                    is_export: false,
                 });
                 self.code.emit(OpCode::MakeAnonSubParams(idx));
             }
@@ -1470,6 +1472,7 @@ impl Compiler {
                     param_defs: Vec::new(),
                     body: body.clone(),
                     multi: false,
+                    is_export: false,
                 });
                 self.code.emit(OpCode::MakeLambda(idx));
             }
@@ -1646,6 +1649,9 @@ impl Compiler {
                 | "throws-like"
                 | "force_todo"
                 | "force-todo"
+                | "is_run"
+                | "make-temp-dir"
+                | "make-temp-file"
         )
     }
 
@@ -1666,7 +1672,7 @@ impl Compiler {
                             _ => expr.clone(),
                         }
                     } else if name == "is_run" && positional_index == 1 {
-                        Self::rewrite_is_run_expectation_expr(expr)
+                        Self::rewrite_hash_block_values(expr)
                     } else {
                         expr.clone()
                     };
@@ -1681,7 +1687,9 @@ impl Compiler {
             .collect()
     }
 
-    fn rewrite_is_run_expectation_expr(expr: &Expr) -> Expr {
+    /// Rewrite block values inside a hash literal to anonymous subs.
+    /// Used for `is_run`'s expectation hash: `{ out => { ... } }`.
+    fn rewrite_hash_block_values(expr: &Expr) -> Expr {
         if let Expr::Hash(pairs) = expr {
             let rewritten_pairs = pairs
                 .iter()

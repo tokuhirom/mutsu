@@ -176,8 +176,6 @@ impl Interpreter {
             "chroot" => self.builtin_chroot(&args),
             "run" => self.builtin_run(&args),
             "shell" => self.builtin_shell(&args),
-            "make-temp-dir" => self.builtin_make_temp_dir(&args),
-            "make-temp-file" => self.builtin_make_temp_file(&args),
             "kill" => self.builtin_kill(&args),
             "syscall" => self.builtin_syscall(&args),
             "sleep" => self.builtin_sleep(&args),
@@ -447,8 +445,6 @@ impl Interpreter {
                 | "shift"
                 | "unshift"
                 | "indir"
-                | "make-temp-dir"
-                | "make-temp-file"
                 | "run"
                 | "splice"
                 | "flat"

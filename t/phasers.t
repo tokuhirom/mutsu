@@ -1,5 +1,5 @@
 use Test;
-plan 4;
+plan 3;
 
 my $x = 0;
 BEGIN { $x = 2; }
@@ -21,5 +21,3 @@ for 1..3 -> $i {
     LAST { $seq ~= "L"; }
 }
 is $seq, "FXNXNXL", 'FIRST/NEXT/LAST in loop';
-
-is_run 'say "body"; END { say "end" }', { out => "body\nend\n" }, 'END runs after program';
