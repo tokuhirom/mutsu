@@ -374,7 +374,10 @@ impl Interpreter {
                 Value::Sub { name, .. } => Ok(Value::Str(name)),
                 _ => Ok(Value::Nil),
             },
-            "Str" if args.is_empty() => Ok(Value::Str(target.to_string_value())),
+            "Str" | "Stringy" if args.is_empty() => match target {
+                Value::Package(_) => Ok(Value::Str(String::new())),
+                _ => Ok(Value::Str(target.to_string_value())),
+            },
             _ => Err(RuntimeError::new(format!(
                 "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
                 method
