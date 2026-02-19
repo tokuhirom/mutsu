@@ -69,6 +69,16 @@ impl Interpreter {
                     Err(RuntimeError::new("IO::Handle is not attached to a file"))
                 }
             }
+            IoHandleTarget::Socket => {
+                if let Some(sock) = state.socket.as_mut() {
+                    sock.write_all(payload.as_bytes()).map_err(|err| {
+                        RuntimeError::new(format!("Failed to write to socket: {}", err))
+                    })?;
+                    Ok(())
+                } else {
+                    Err(RuntimeError::new("Socket not connected"))
+                }
+            }
             IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => {
                 Err(RuntimeError::new("Cannot write to read-only handle"))
             }
@@ -125,6 +135,30 @@ impl Interpreter {
                 }
                 Ok(String::from_utf8_lossy(&buffer).to_string())
             }
+            IoHandleTarget::Socket => {
+                let sock = state
+                    .socket
+                    .as_mut()
+                    .ok_or_else(|| RuntimeError::new("Socket not connected"))?;
+                let mut buffer = Vec::new();
+                let mut byte = [0u8];
+                loop {
+                    let n = sock
+                        .read(&mut byte)
+                        .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                    if n == 0 {
+                        break;
+                    }
+                    buffer.push(byte[0]);
+                    if byte[0] == b'\n' {
+                        break;
+                    }
+                }
+                if buffer.is_empty() {
+                    return Ok(String::new());
+                }
+                Ok(String::from_utf8_lossy(&buffer).to_string())
+            }
         }
     }
 
@@ -149,6 +183,18 @@ impl Interpreter {
                     .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
                 let mut buffer = vec![0u8; count];
                 let bytes = file
+                    .read(&mut buffer)
+                    .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                buffer.truncate(bytes);
+                Ok(buffer)
+            }
+            IoHandleTarget::Socket => {
+                let sock = state
+                    .socket
+                    .as_mut()
+                    .ok_or_else(|| RuntimeError::new("Socket not connected"))?;
+                let mut buffer = vec![0u8; count];
+                let bytes = sock
                     .read(&mut buffer)
                     .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
                 buffer.truncate(bytes);
@@ -306,6 +352,7 @@ impl Interpreter {
             path: Some(Self::stringify_path(path)),
             encoding: "utf-8".to_string(),
             file: Some(file),
+            socket: None,
             closed: false,
         };
         self.handles.insert(id, state);

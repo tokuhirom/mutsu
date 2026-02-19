@@ -33,6 +33,7 @@ impl Interpreter {
         match class_name {
             "IO::Path" => self.native_io_path(attributes, method, args),
             "IO::Handle" => self.native_io_handle(attributes, method, args),
+            "IO::Socket::INET" => self.native_socket_inet(attributes, method, args),
             "Distro" => self.native_distro(attributes, method),
             "Perl" => Ok(self.native_perl(attributes, method)),
             "Promise" => self.native_promise(attributes, method, args),
@@ -429,6 +430,59 @@ impl Interpreter {
             "compiler" => Value::make_instance("Perl".to_string(), attributes.clone()),
             "backend" => Value::Str("mutsu".to_string()),
             _ => attributes.get(method).cloned().unwrap_or(Value::Nil),
+        }
+    }
+
+    // --- IO::Socket::INET ---
+
+    fn native_socket_inet(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        _args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let handle_id = attributes.get("handle").and_then(|v| {
+            if let Value::Int(i) = v {
+                Some(*i as usize)
+            } else {
+                None
+            }
+        });
+        match method {
+            "getpeername" => {
+                let id =
+                    handle_id.ok_or_else(|| RuntimeError::new("IO::Socket::INET has no handle"))?;
+                let state = self
+                    .handles
+                    .get(&id)
+                    .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
+                if state.closed {
+                    return Err(RuntimeError::new("Socket is closed"));
+                }
+                if let Some(ref stream) = state.socket {
+                    let addr = stream
+                        .peer_addr()
+                        .map_err(|e| RuntimeError::new(format!("getpeername failed: {}", e)))?;
+                    Ok(Value::Str(addr.to_string()))
+                } else {
+                    Err(RuntimeError::new("Socket not connected"))
+                }
+            }
+            "close" => {
+                let id =
+                    handle_id.ok_or_else(|| RuntimeError::new("IO::Socket::INET has no handle"))?;
+                let state = self
+                    .handles
+                    .get_mut(&id)
+                    .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
+                state.closed = true;
+                state.socket = None;
+                Ok(Value::Bool(true))
+            }
+            _ => Err(RuntimeError::new(format!(
+                "No method '{}' on IO::Socket::INET",
+                method
+            ))),
         }
     }
 }

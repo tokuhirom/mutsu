@@ -79,6 +79,7 @@ impl Interpreter {
             path: path.clone(),
             encoding: "utf-8".to_string(),
             file: None,
+            socket: None,
             closed: false,
         };
         self.handles.insert(id, state);

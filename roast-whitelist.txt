@@ -147,6 +147,7 @@ roast/S15-normalization/nfkd-sanity.t
 roast/S16-filehandles/misc.t
 roast/S16-filehandles/unlink.t
 roast/S16-io/cwd.t
+roast/S16-unfiled/getpeername.t
 roast/S17-channel/subscription-drain-in-react.t
 roast/S17-procasync/many-processes-no-close-stdin.t
 roast/S17-procasync/no-runaway-file-limit.t
