@@ -33,7 +33,7 @@ Steps:
 5. Run make test and make roast. If there are regressions, fix them.
 6. Once fixed, git add && git commit, then create a PR with auto-merge. Check CI status every minute. If CI fails, fix and push again. If CI passes, auto-merge completes and you are done."
 
-  claude -p \
+  claude -p --verbose \
     --allowedTools \
       "Bash(cargo *)" "Bash(make *)" "Bash(prove *)" \
       "Bash(git *)" "Bash(gh *)" \
@@ -41,7 +41,9 @@ Steps:
       "Read" "Edit" "Write" "Glob" "Grep" "Task" \
     -- "$PROMPT"
 
+  git stash --include-untracked
   git checkout main
+  git stash pop || true
   echo "=== Cycle complete ==="
   sleep 5
 done
