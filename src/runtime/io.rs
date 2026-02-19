@@ -54,6 +54,26 @@ impl Interpreter {
                 .insert("$*HOME".to_string(), Value::Str(cwd_str.clone()));
             self.env.insert("*HOME".to_string(), Value::Str(cwd_str));
         }
+        // $*EXECUTABLE - path to the interpreter binary
+        let exe_path = std::env::current_exe()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "mutsu".to_string());
+        let exe_io = self.make_io_path_instance(&exe_path);
+        self.env.insert("$*EXECUTABLE".to_string(), exe_io.clone());
+        self.env.insert("*EXECUTABLE".to_string(), exe_io);
+        self.env.insert(
+            "$*EXECUTABLE-NAME".to_string(),
+            Value::Str(
+                std::path::Path::new(&exe_path)
+                    .file_name()
+                    .map(|f| f.to_string_lossy().to_string())
+                    .unwrap_or_else(|| exe_path.clone()),
+            ),
+        );
+        self.env.insert(
+            "*EXECUTABLE-NAME".to_string(),
+            self.env.get("$*EXECUTABLE-NAME").cloned().unwrap(),
+        );
         let distro = Self::make_distro_instance();
         self.env.insert("*DISTRO".to_string(), distro.clone());
         self.env.insert("?DISTRO".to_string(), distro);

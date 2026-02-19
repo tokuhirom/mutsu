@@ -512,7 +512,20 @@ impl Value {
             Value::Package(_) => false,
             Value::Routine { .. } => true,
             Value::Sub { .. } => true,
-            Value::Instance { .. } => true,
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } => {
+                if class_name == "Proc" {
+                    // Proc is truthy when exitcode == 0
+                    return match attributes.get("exitcode") {
+                        Some(Value::Int(code)) => *code == 0,
+                        _ => false,
+                    };
+                }
+                true
+            }
             Value::Junction { kind, values } => match kind {
                 JunctionKind::Any => values.iter().any(|v| v.truthy()),
                 JunctionKind::All => values.iter().all(|v| v.truthy()),

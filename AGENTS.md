@@ -68,6 +68,7 @@ Flow: `call_method_with_values()` tries `native_method_*arg()` first; if `None`,
 
 ## Working agreements
 
+- **Do NOT confuse `Test::Util` functions with builtins.** Functions like `is_run`, `doesn't-hang`, `make-temp-dir`, `make-temp-file` come from `roast/packages/Test-Helpers/lib/Test/Util.rakumod`, NOT from the Raku core. When a roast test does `use Test::Util`, the functions it provides must be implemented in mutsu's test module (`runtime/test_functions.rs`) or as builtins — do not assume they are already available just because the test imports them.
 - Perl 6 (Raku) regex is not compatible with Perl 5 regex; never assume Perl 5 compatibility.
 - Prefer ASCII in source files unless a specific Unicode feature is required.
 - Do not rewrite or reformat unrelated code.

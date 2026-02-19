@@ -80,6 +80,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(number::integer(input));
         try_primary!(string::single_quoted_string(input));
         try_primary!(string::double_quoted_string(input));
+        try_primary!(string::big_q_string(input));
         try_primary!(string::q_string(input));
         try_primary!(string::corner_bracket_string(input));
         try_primary!(regex::regex_lit(input));
@@ -210,5 +211,29 @@ mod tests {
     fn primary_reports_invalid_anon_sub_params() {
         let err = primary("sub ($x,)").unwrap_err();
         assert!(err.message().contains("anonymous sub parameter list/body"));
+    }
+
+    #[test]
+    fn primary_big_q_bang_delimiter() {
+        reset_primary_memo();
+        let (rest, expr) = primary("Q!hello!").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "hello"));
+    }
+
+    #[test]
+    fn primary_big_q_bracket_delimiter() {
+        reset_primary_memo();
+        let (rest, expr) = primary("Q{hello world}").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "hello world"));
+    }
+
+    #[test]
+    fn primary_big_q_bang_with_newline() {
+        reset_primary_memo();
+        let (rest, expr) = primary("Q!hello!\n").unwrap();
+        assert_eq!(rest, "\n");
+        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "hello"));
     }
 }

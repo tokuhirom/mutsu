@@ -65,7 +65,7 @@ impl Interpreter {
             }
             "absolute" => {
                 let absolute = Self::stringify_path(&path_buf);
-                Ok(self.make_io_path_instance(&absolute))
+                Ok(Value::Str(absolute))
             }
             "relative" => {
                 let rel = path_buf
