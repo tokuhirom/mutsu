@@ -347,4 +347,54 @@ impl Interpreter {
             .collect();
         Ok(Value::Hash(hash_map))
     }
+
+    /// `cross(@a, @b, ...)` — Cartesian product of lists.
+    /// With `with => &op`, applies the operator to each pair instead of making tuples.
+    pub(super) fn builtin_cross(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        let mut lists: Vec<Vec<Value>> = Vec::new();
+        let mut with_func: Option<Value> = None;
+
+        for arg in &args {
+            match arg {
+                Value::Pair(k, v) if k.as_str() == "with" => {
+                    with_func = Some(v.as_ref().clone());
+                }
+                _ => {
+                    lists.push(super::utils::value_to_list(arg));
+                }
+            }
+        }
+
+        if lists.is_empty() {
+            return Ok(Value::Array(vec![]));
+        }
+
+        // Compute Cartesian product iteratively
+        let mut result: Vec<Vec<Value>> = vec![vec![]];
+        for list in &lists {
+            let mut new_result = Vec::new();
+            for combo in &result {
+                for item in list {
+                    let mut new_combo = combo.clone();
+                    new_combo.push(item.clone());
+                    new_result.push(new_combo);
+                }
+            }
+            result = new_result;
+        }
+
+        // Apply `with` function or create tuples
+        if let Some(func) = with_func {
+            let mut final_result = Vec::new();
+            for combo in result {
+                let val = self.call_sub_value(func.clone(), combo, false)?;
+                final_result.push(val);
+            }
+            Ok(Value::Array(final_result))
+        } else {
+            // Return as list of lists (tuples)
+            let tuples: Vec<Value> = result.into_iter().map(Value::Array).collect();
+            Ok(Value::Array(tuples))
+        }
+    }
 }
