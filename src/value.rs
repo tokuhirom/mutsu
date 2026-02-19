@@ -640,6 +640,27 @@ impl Value {
                 excl_start,
                 excl_end,
             } => {
+                // String ranges expand to space-separated elements
+                if let (Value::Str(a), Value::Str(b)) = (start.as_ref(), end.as_ref())
+                    && a.len() == 1
+                    && b.len() == 1
+                {
+                    let s = a.chars().next().unwrap() as u32;
+                    let e = b.chars().next().unwrap() as u32;
+                    let s = if *excl_start { s + 1 } else { s };
+                    let items: Vec<String> = if *excl_end {
+                        (s..e)
+                            .filter_map(char::from_u32)
+                            .map(|c| c.to_string())
+                            .collect()
+                    } else {
+                        (s..=e)
+                            .filter_map(char::from_u32)
+                            .map(|c| c.to_string())
+                            .collect()
+                    };
+                    return items.join(" ");
+                }
                 let prefix = if *excl_start { "^" } else { "" };
                 let sep = if *excl_end { "..^" } else { ".." };
                 format!(
