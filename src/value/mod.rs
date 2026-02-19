@@ -1,0 +1,397 @@
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use crate::ast::Stmt;
+use num_bigint::BigInt as NumBigInt;
+use num_traits::{ToPrimitive, Zero};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+mod display;
+mod error;
+mod types;
+
+pub use display::{tclc_str, wordcase_str};
+pub use error::{RuntimeError, RuntimeErrorCode};
+
+static INSTANCE_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+pub(crate) fn next_instance_id() -> u64 {
+    INSTANCE_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum JunctionKind {
+    Any,
+    All,
+    One,
+    None,
+}
+
+fn gcd(mut a: i64, mut b: i64) -> i64 {
+    a = a.abs();
+    b = b.abs();
+    while b != 0 {
+        let t = b;
+        b = a % b;
+        a = t;
+    }
+    a
+}
+
+pub fn make_rat(num: i64, den: i64) -> Value {
+    if den == 0 {
+        if num == 0 {
+            return Value::Rat(0, 0); // NaN
+        } else if num > 0 {
+            return Value::Rat(1, 0); // Inf
+        } else {
+            return Value::Rat(-1, 0); // -Inf
+        }
+    }
+    let g = gcd(num, den);
+    let (mut n, mut d) = (num / g, den / g);
+    if d < 0 {
+        n = -n;
+        d = -d;
+    }
+    Value::Rat(n, d)
+}
+
+#[allow(private_interfaces)]
+#[derive(Debug, Clone)]
+pub enum Value {
+    Int(i64),
+    BigInt(NumBigInt),
+    Num(f64),
+    Str(String),
+    Bool(bool),
+    Range(i64, i64),
+    RangeExcl(i64, i64),
+    RangeExclStart(i64, i64),
+    RangeExclBoth(i64, i64),
+    GenericRange {
+        start: Box<Value>,
+        end: Box<Value>,
+        excl_start: bool,
+        excl_end: bool,
+    },
+    Array(Vec<Value>),
+    Hash(HashMap<String, Value>),
+    Rat(i64, i64),
+    FatRat(i64, i64),
+    Complex(f64, f64),
+    Set(HashSet<String>),
+    Bag(HashMap<String, i64>),
+    Mix(HashMap<String, f64>),
+    CompUnitDepSpec {
+        short_name: String,
+    },
+    Package(String),
+    Routine {
+        package: String,
+        name: String,
+    },
+    Pair(String, Box<Value>),
+    Enum {
+        enum_type: String,
+        key: String,
+        value: i64,
+        index: usize,
+    },
+    Regex(String),
+    Sub {
+        package: String,
+        name: String,
+        params: Vec<String>,
+        body: Vec<Stmt>,
+        env: HashMap<String, Value>,
+        id: u64,
+    },
+    Instance {
+        class_name: String,
+        attributes: HashMap<String, Value>,
+        id: u64,
+    },
+    Junction {
+        kind: JunctionKind,
+        values: Vec<Value>,
+    },
+    Slip(Vec<Value>),
+    LazyList(Rc<LazyList>),
+    Version {
+        parts: Vec<VersionPart>,
+        plus: bool,
+        minus: bool,
+    },
+    Nil,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum VersionPart {
+    Num(i64),
+    Str(String),
+    Whatever,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct LazyList {
+    pub(crate) body: Vec<Stmt>,
+    pub(crate) env: HashMap<String, Value>,
+    pub(crate) cache: RefCell<Option<Vec<Value>>>,
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::Int(a), Value::Int(b)) => a == b,
+            (Value::BigInt(a), Value::BigInt(b)) => a == b,
+            (Value::BigInt(a), Value::Int(b)) | (Value::Int(b), Value::BigInt(a)) => {
+                *a == NumBigInt::from(*b)
+            }
+            (Value::Num(a), Value::Num(b)) => (a.is_nan() && b.is_nan()) || a == b,
+            (Value::Int(a), Value::Num(b)) => (*a as f64) == *b,
+            (Value::Num(a), Value::Int(b)) => *a == (*b as f64),
+            (Value::Str(a), Value::Str(b)) => a == b,
+            (Value::Bool(a), Value::Bool(b)) => a == b,
+            (Value::Range(a1, b1), Value::Range(a2, b2)) => a1 == a2 && b1 == b2,
+            (Value::RangeExcl(a1, b1), Value::RangeExcl(a2, b2)) => a1 == a2 && b1 == b2,
+            (Value::RangeExclStart(a1, b1), Value::RangeExclStart(a2, b2)) => a1 == a2 && b1 == b2,
+            (Value::RangeExclBoth(a1, b1), Value::RangeExclBoth(a2, b2)) => a1 == a2 && b1 == b2,
+            (
+                Value::GenericRange {
+                    start: s1,
+                    end: e1,
+                    excl_start: es1,
+                    excl_end: ee1,
+                },
+                Value::GenericRange {
+                    start: s2,
+                    end: e2,
+                    excl_start: es2,
+                    excl_end: ee2,
+                },
+            ) => es1 == es2 && ee1 == ee2 && s1 == s2 && e1 == e2,
+            (Value::Array(a), Value::Array(b)) => a == b,
+            (Value::Hash(a), Value::Hash(b)) => a == b,
+            (Value::Rat(a1, b1), Value::Rat(a2, b2)) => {
+                if *b1 == 0 && *b2 == 0 && *a1 == 0 && *a2 == 0 {
+                    return false; // NaN != NaN
+                }
+                a1 == a2 && b1 == b2
+            }
+            (Value::Rat(n, d), Value::Int(i)) | (Value::Int(i), Value::Rat(n, d)) => {
+                *d != 0 && *n == *i * *d
+            }
+            (Value::Rat(n, d), Value::Num(f)) | (Value::Num(f), Value::Rat(n, d)) => {
+                if *d == 0 {
+                    return false;
+                }
+                (*n as f64 / *d as f64) == *f
+            }
+            (Value::Complex(r1, i1), Value::Complex(r2, i2)) => {
+                let f_eq = |a: &f64, b: &f64| (a.is_nan() && b.is_nan()) || a == b;
+                f_eq(r1, r2) && f_eq(i1, i2)
+            }
+            (Value::Complex(r, i), Value::Int(n)) | (Value::Int(n), Value::Complex(r, i)) => {
+                *i == 0.0 && *r == *n as f64
+            }
+            (Value::Complex(r, i), Value::Num(f)) | (Value::Num(f), Value::Complex(r, i)) => {
+                *i == 0.0 && *r == *f
+            }
+            (Value::FatRat(a1, b1), Value::FatRat(a2, b2)) => a1 == a2 && b1 == b2,
+            (Value::Set(a), Value::Set(b)) => a == b,
+            (Value::Bag(a), Value::Bag(b)) => a == b,
+            (Value::Mix(a), Value::Mix(b)) => a == b,
+            (
+                Value::CompUnitDepSpec { short_name: a },
+                Value::CompUnitDepSpec { short_name: b },
+            ) => a == b,
+            (Value::Package(a), Value::Package(b)) => a == b,
+            (Value::Pair(ak, av), Value::Pair(bk, bv)) => ak == bk && av == bv,
+            (
+                Value::Enum {
+                    enum_type: at,
+                    key: ak,
+                    ..
+                },
+                Value::Enum {
+                    enum_type: bt,
+                    key: bk,
+                    ..
+                },
+            ) => at == bt && ak == bk,
+            (Value::Regex(a), Value::Regex(b)) => a == b,
+            (
+                Value::Routine {
+                    package: ap,
+                    name: an,
+                },
+                Value::Routine {
+                    package: bp,
+                    name: bn,
+                },
+            ) => ap == bp && an == bn,
+            (
+                Value::Instance {
+                    class_name: a,
+                    attributes: aa,
+                    ..
+                },
+                Value::Instance {
+                    class_name: b,
+                    attributes: ba,
+                    ..
+                },
+            ) => a == b && aa == ba,
+            (
+                Value::Junction {
+                    kind: ak,
+                    values: av,
+                },
+                Value::Junction {
+                    kind: bk,
+                    values: bv,
+                },
+            ) => ak == bk && av == bv,
+            (Value::Sub { id: a, .. }, Value::Sub { id: b, .. }) => a == b,
+            (Value::LazyList(a), Value::LazyList(b)) => Rc::ptr_eq(a, b),
+            (
+                Value::Version {
+                    parts: ap,
+                    plus: aplus,
+                    minus: aminus,
+                },
+                Value::Version {
+                    parts: bp,
+                    plus: bplus,
+                    minus: bminus,
+                },
+            ) => {
+                if aplus != bplus || aminus != bminus {
+                    return false;
+                }
+                // Normalize trailing zeroes: compare after stripping trailing Num(0)
+                let a_norm = Self::version_strip_trailing_zeros(ap);
+                let b_norm = Self::version_strip_trailing_zeros(bp);
+                a_norm == b_norm
+            }
+            (Value::Nil, Value::Nil) => true,
+            _ => false,
+        }
+    }
+}
+
+impl Value {
+    pub(crate) fn make_instance(class_name: String, attributes: HashMap<String, Value>) -> Self {
+        Value::Instance {
+            class_name,
+            attributes,
+            id: next_instance_id(),
+        }
+    }
+
+    pub(crate) fn version_strip_trailing_zeros(parts: &[VersionPart]) -> Vec<VersionPart> {
+        let mut v: Vec<VersionPart> = parts.to_vec();
+        while matches!(v.last(), Some(VersionPart::Num(0))) {
+            v.pop();
+        }
+        if v.is_empty() {
+            vec![VersionPart::Num(0)]
+        } else {
+            v
+        }
+    }
+
+    pub(crate) fn is_range(&self) -> bool {
+        matches!(
+            self,
+            Value::Range(_, _)
+                | Value::RangeExcl(_, _)
+                | Value::RangeExclStart(_, _)
+                | Value::RangeExclBoth(_, _)
+                | Value::GenericRange { .. }
+        )
+    }
+
+    /// Check if this value is a numeric type (Int, Num, Rat, FatRat, BigInt).
+    pub(crate) fn is_numeric(&self) -> bool {
+        matches!(
+            self,
+            Value::Int(_)
+                | Value::BigInt(_)
+                | Value::Num(_)
+                | Value::Rat(_, _)
+                | Value::FatRat(_, _)
+        )
+    }
+
+    /// Convert a numeric value to f64.
+    pub(crate) fn to_f64(&self) -> f64 {
+        match self {
+            Value::Int(i) => *i as f64,
+            Value::BigInt(n) => n.to_f64().unwrap_or(0.0),
+            Value::Num(f) => *f,
+            Value::Rat(n, d) => {
+                if *d != 0 {
+                    *n as f64 / *d as f64
+                } else if *n == 0 {
+                    f64::NAN
+                } else if *n > 0 {
+                    f64::INFINITY
+                } else {
+                    f64::NEG_INFINITY
+                }
+            }
+            Value::FatRat(n, d) => {
+                if *d != 0 {
+                    *n as f64 / *d as f64
+                } else if *n == 0 {
+                    f64::NAN
+                } else if *n > 0 {
+                    f64::INFINITY
+                } else {
+                    f64::NEG_INFINITY
+                }
+            }
+            Value::Bool(b) => {
+                if *b {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            Value::Str(s) => s.trim().parse::<f64>().unwrap_or(0.0),
+            _ => 0.0,
+        }
+    }
+
+    /// Convert a Value to a num_bigint::BigInt for arbitrary-precision arithmetic.
+    pub(crate) fn to_bigint(&self) -> NumBigInt {
+        match self {
+            Value::Int(i) => NumBigInt::from(*i),
+            Value::BigInt(n) => n.clone(),
+            Value::Num(f) => NumBigInt::from(*f as i64),
+            Value::Rat(n, d) => {
+                if *d != 0 {
+                    NumBigInt::from(n / d)
+                } else {
+                    NumBigInt::from(0)
+                }
+            }
+            Value::Str(s) => s
+                .parse::<NumBigInt>()
+                .unwrap_or_else(|_| NumBigInt::from(0)),
+            _ => NumBigInt::from(0),
+        }
+    }
+
+    /// Create a Value from a BigInt, normalizing to Int(i64) when possible.
+    pub(crate) fn from_bigint(n: NumBigInt) -> Value {
+        if let Some(i) = n.to_i64() {
+            Value::Int(i)
+        } else {
+            Value::BigInt(n)
+        }
+    }
+}
