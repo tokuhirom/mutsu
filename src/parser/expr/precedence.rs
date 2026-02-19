@@ -688,9 +688,46 @@ fn structural_expr(input: &str) -> PResult<'_, Expr> {
         if let Some((meta, op, len)) = parse_meta_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = range_expr(r).map_err(|err| {
-                enrich_expected_error(err, "expected expression after meta operator", r.len())
-            })?;
+            // For bare Z and X (list infix), consume comma-separated list on right
+            // In Raku, Z and X have lower precedence than comma
+            let (r, right) = if (meta == "Z" || meta == "X") && op.is_empty() {
+                let (r, first) = range_expr(r).map_err(|err| {
+                    enrich_expected_error(err, "expected expression after meta operator", r.len())
+                })?;
+                let mut items = vec![first];
+                let mut r = r;
+                loop {
+                    let (r2, _) = ws(r)?;
+                    if !r2.starts_with(',') || r2.starts_with(",,") {
+                        break;
+                    }
+                    let r2 = &r2[1..];
+                    let (r2, _) = ws(r2)?;
+                    // Stop at statement-ending tokens
+                    if r2.starts_with(';')
+                        || r2.is_empty()
+                        || r2.starts_with('}')
+                        || r2.starts_with(')')
+                    {
+                        break;
+                    }
+                    if let Ok((r3, next)) = range_expr(r2) {
+                        items.push(next);
+                        r = r3;
+                    } else {
+                        break;
+                    }
+                }
+                if items.len() == 1 {
+                    (r, items.into_iter().next().unwrap())
+                } else {
+                    (r, Expr::ArrayLiteral(items))
+                }
+            } else {
+                range_expr(r).map_err(|err| {
+                    enrich_expected_error(err, "expected expression after meta operator", r.len())
+                })?
+            };
             left = Expr::MetaOp {
                 meta: meta.to_string(),
                 op: op.to_string(),

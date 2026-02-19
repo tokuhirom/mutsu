@@ -266,6 +266,7 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
             | "use-ok"
             | "EVAL"
             | "tap-ok"
+            | "flat"
     )
 }
 

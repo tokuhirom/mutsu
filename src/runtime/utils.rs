@@ -175,7 +175,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
             .map(|(k, v)| format!("{}\t{}", k, gist_value(v)))
             .collect::<Vec<_>>()
             .join("\n"),
-        Value::Pair(k, v) => format!("{}\t{}", k, gist_value(v)),
+        Value::Pair(k, v) => format!("{} => {}", k, gist_value(v)),
         Value::Version { .. } => format!("v{}", value.to_string_value()),
         Value::Nil => "Nil".to_string(),
         _ => value.to_string_value(),

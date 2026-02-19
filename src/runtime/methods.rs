@@ -20,7 +20,7 @@ impl Interpreter {
         // Primary method dispatch by name
         match method {
             "say" if args.is_empty() => {
-                self.output.push_str(&target.to_string_value());
+                self.output.push_str(&crate::runtime::gist_value(&target));
                 self.output.push('\n');
                 return Ok(Value::Nil);
             }
@@ -635,6 +635,14 @@ impl Interpreter {
                     items.sort_by(|a, b| compare_values(a, b).cmp(&0));
                 }
                 Ok(Value::Array(items))
+            }
+            Value::Hash(map) => {
+                // Convert hash to list of pairs, then sort
+                let items: Vec<Value> = map
+                    .into_iter()
+                    .map(|(k, v)| Value::Pair(k, Box::new(v)))
+                    .collect();
+                self.dispatch_sort(Value::Array(items), args)
             }
             other => Ok(other),
         }

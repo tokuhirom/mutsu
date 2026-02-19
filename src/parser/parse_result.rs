@@ -10,6 +10,18 @@ pub(super) struct PError {
     pub remaining_len: Option<usize>,
 }
 
+/// Sentinel prefix for fatal (non-recoverable) parse errors.
+pub(super) const FATAL_PREFIX: &str = "FATAL:";
+
+impl PError {
+    /// Check if this is a fatal (non-recoverable) parse error.
+    pub fn is_fatal(&self) -> bool {
+        self.messages
+            .first()
+            .is_some_and(|m| m.starts_with(FATAL_PREFIX))
+    }
+}
+
 impl PError {
     pub fn expected(what: &str) -> Self {
         PError {
@@ -30,6 +42,15 @@ impl PError {
         PError {
             messages: vec![message],
             remaining_len,
+        }
+    }
+
+    /// Build a fatal (non-recoverable) parse error.
+    /// Fatal errors are not swallowed by the statement dispatcher.
+    pub fn fatal(message: String) -> Self {
+        PError {
+            messages: vec![format!("{}{}", FATAL_PREFIX, message)],
+            remaining_len: None,
         }
     }
 
@@ -96,6 +117,12 @@ impl std::fmt::Display for PError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.messages.is_empty() {
             write!(f, "expected parseable input")
+        } else if self.is_fatal() {
+            // Fatal errors have pre-formatted messages; strip the FATAL: prefix
+            let msg = self.messages[0]
+                .strip_prefix(FATAL_PREFIX)
+                .unwrap_or(&self.messages[0]);
+            write!(f, "{}", msg)
         } else {
             write!(f, "expected {}", self.messages.join(" or "))
         }

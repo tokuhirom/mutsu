@@ -118,6 +118,12 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
             }
         }
         Err(e) => {
+            if e.is_fatal() {
+                // Fatal parse errors (e.g. bare say/print/put) pass through directly
+                let mut err = RuntimeError::new(format!("{}", e));
+                err.code = Some(RuntimeErrorCode::ParseGeneric);
+                return Err(err);
+            }
             if let Some(consumed) = e.consumed_from(source.len()) {
                 let tail = &source[consumed..];
                 let near_offset = consumed + leading_ws_bytes(tail);
