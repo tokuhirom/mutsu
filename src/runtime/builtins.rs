@@ -116,6 +116,7 @@ impl Interpreter {
             "abs" => self.builtin_abs(&args),
             "min" => self.builtin_min(&args),
             "max" => self.builtin_max(&args),
+            "cross" => self.builtin_cross(args),
             // List operations
             "join" => self.builtin_join(&args),
             "item" => Ok(args.first().cloned().unwrap_or(Value::Nil)),

@@ -289,6 +289,7 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
             | "is_run"
             | "run"
             | "shell"
+            | "cross"
             | "await"
     )
 }

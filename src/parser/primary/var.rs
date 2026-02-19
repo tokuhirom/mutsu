@@ -202,6 +202,15 @@ pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
 /// Handles `&foo`, twigil forms `&?BLOCK`, and operator references like `&infix:<+>`.
 pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '&')?;
+    // Handle &[op] — short form for &infix:<op>
+    if let Some(after_bracket) = input.strip_prefix('[')
+        && let Some(end_pos) = after_bracket.find(']')
+    {
+        let op_name = &after_bracket[..end_pos];
+        let rest = &after_bracket[end_pos + 1..];
+        let full_name = format!("infix:<{}>", op_name);
+        return Ok((rest, Expr::CodeVar(full_name)));
+    }
     // Handle twigils: &?BLOCK, &?ROUTINE
     let (rest, twigil) = if let Some(stripped) = input.strip_prefix('?') {
         (stripped, "?")

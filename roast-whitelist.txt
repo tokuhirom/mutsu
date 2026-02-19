@@ -182,6 +182,7 @@ roast/S32-array/bool.t
 roast/S32-hash/antipairs.t
 roast/S32-hash/invert.t
 roast/S32-io/other.t
+roast/S32-list/cross.t
 roast/S32-num/abs.t
 roast/S32-num/exp.t
 roast/S32-num/log.t
