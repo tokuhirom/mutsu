@@ -281,20 +281,27 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             }
             _ => Value::Nil,
         })),
-        "flat" => Some(Ok(match arg {
-            Value::Array(items) => {
-                let mut flat = Vec::new();
-                for item in items {
-                    if let Value::Array(sub) = item {
-                        flat.extend(sub.clone());
-                    } else {
-                        flat.push(item.clone());
+        "flat" => {
+            let mut flat = Vec::new();
+            fn flat_val(v: &Value, out: &mut Vec<Value>) {
+                match v {
+                    Value::Array(items) => {
+                        for item in items {
+                            flat_val(item, out);
+                        }
                     }
+                    Value::Range(..)
+                    | Value::RangeExcl(..)
+                    | Value::RangeExclStart(..)
+                    | Value::RangeExclBoth(..) => {
+                        out.extend(crate::runtime::utils::value_to_list(v));
+                    }
+                    other => out.push(other.clone()),
                 }
-                Value::Array(flat)
             }
-            other => Value::Array(vec![other.clone()]),
-        })),
+            flat_val(arg, &mut flat);
+            Some(Ok(Value::Array(flat)))
+        }
         "first" => Some(Ok(match arg {
             Value::Array(items) => items.first().cloned().unwrap_or(Value::Nil),
             _ => arg.clone(),

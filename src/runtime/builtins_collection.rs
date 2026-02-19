@@ -217,20 +217,26 @@ impl Interpreter {
     pub(super) fn builtin_flat(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut result = Vec::new();
         for arg in args {
-            match arg {
-                Value::Array(items) => {
-                    for item in items {
-                        if let Value::Array(sub) = item {
-                            result.extend(sub.clone());
-                        } else {
-                            result.push(item.clone());
-                        }
-                    }
-                }
-                other => result.push(other.clone()),
-            }
+            Self::flat_into(arg, &mut result);
         }
         Ok(Value::Array(result))
+    }
+
+    pub(crate) fn flat_into(val: &Value, out: &mut Vec<Value>) {
+        match val {
+            Value::Array(items) => {
+                for item in items {
+                    Self::flat_into(item, out);
+                }
+            }
+            Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..) => {
+                out.extend(Self::value_to_list(val));
+            }
+            other => out.push(other.clone()),
+        }
     }
 
     pub(super) fn builtin_slip(&self, args: &[Value]) -> Result<Value, RuntimeError> {

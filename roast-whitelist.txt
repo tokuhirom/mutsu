@@ -149,6 +149,7 @@ roast/S16-io/cwd.t
 roast/S17-channel/subscription-drain-in-react.t
 roast/S17-procasync/many-processes-no-close-stdin.t
 roast/S17-procasync/no-runaway-file-limit.t
+roast/S17-supply/repeated.t
 roast/S17-supply/watch-path.t
 roast/S19-command-line-options/03-dash-p.t
 roast/S24-testing/0-compile.t
