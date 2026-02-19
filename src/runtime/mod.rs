@@ -90,6 +90,7 @@ enum IoHandleTarget {
     Stdin,
     ArgFiles,
     File,
+    Socket,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,6 +108,7 @@ struct IoHandleState {
     path: Option<String>,
     encoding: String,
     file: Option<fs::File>,
+    socket: Option<std::net::TcpStream>,
     closed: bool,
 }
 
@@ -365,6 +367,19 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["IO::Handle".to_string()],
+            },
+        );
+        classes.insert(
+            "IO::Socket::INET".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["close", "getpeername"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                mro: vec!["IO::Socket::INET".to_string()],
             },
         );
         classes.insert(

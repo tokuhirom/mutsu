@@ -168,6 +168,13 @@ impl Interpreter {
                     return Ok(Value::make_instance("Supply".to_string(), attrs));
                 }
             }
+            "connect" => {
+                if let Value::Package(ref class_name) = target
+                    && class_name == "IO::Socket::INET"
+                {
+                    return self.dispatch_socket_connect(&args);
+                }
+            }
             "new" => {
                 return self.dispatch_new(target, args);
             }
@@ -980,5 +987,50 @@ impl Interpreter {
         } else {
             Ok(Value::Array(processed))
         }
+    }
+
+    pub(super) fn dispatch_socket_connect(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let host = args
+            .first()
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let port = args
+            .get(1)
+            .map(|v| match v {
+                Value::Int(i) => *i as u16,
+                Value::Num(f) => *f as u16,
+                other => other.to_string_value().parse::<u16>().unwrap_or(0),
+            })
+            .unwrap_or(0);
+        let addr = format!("{}:{}", host, port);
+        let stream = std::net::TcpStream::connect_timeout(
+            &addr
+                .to_socket_addrs()
+                .map_err(|e| RuntimeError::new(format!("Failed to resolve '{}': {}", addr, e)))?
+                .next()
+                .ok_or_else(|| RuntimeError::new(format!("No addresses found for '{}'", addr)))?,
+            Duration::from_secs(10),
+        )
+        .map_err(|e| RuntimeError::new(format!("Failed to connect to '{}': {}", addr, e)))?;
+        let id = self.next_handle_id;
+        self.next_handle_id += 1;
+        let state = IoHandleState {
+            target: IoHandleTarget::Socket,
+            mode: IoHandleMode::ReadWrite,
+            path: None,
+            encoding: "utf-8".to_string(),
+            file: None,
+            socket: Some(stream),
+            closed: false,
+        };
+        self.handles.insert(id, state);
+        let mut attrs = HashMap::new();
+        attrs.insert("handle".to_string(), Value::Int(id as i64));
+        attrs.insert("host".to_string(), Value::Str(host));
+        attrs.insert("port".to_string(), Value::Int(port as i64));
+        Ok(Value::make_instance("IO::Socket::INET".to_string(), attrs))
     }
 }
