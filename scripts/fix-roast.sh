@@ -8,7 +8,7 @@ while true; do
   git pull origin main
 
   # Regenerate category lists
-  ./scripts/roast-history.sh
+  # ./scripts/roast-history.sh
 
   # Pick the next failing roast test
   TEST_FILE=$(./scripts/pick-next-roast.sh 2>/dev/null | grep -v '^===' | head -1 | awk '{print $2}') || true
@@ -33,7 +33,8 @@ Steps:
 5. Run make test and make roast. If there are regressions, fix them.
 6. Once fixed, git add && git commit, then create a PR with auto-merge. Check CI status every minute. If CI fails, fix and push again. If CI passes, auto-merge completes and you are done."
 
-  claude -p --verbose \
+  echo start claude
+  claude -p --output-format stream-json --verbose \
     --allowedTools \
       "Bash(cargo *)" "Bash(make *)" "Bash(prove *)" \
       "Bash(git *)" "Bash(gh *)" \
@@ -41,6 +42,7 @@ Steps:
       "Read" "Edit" "Write" "Glob" "Grep" "Task" \
     -- "$PROMPT"
 
+  echo stash
   git stash --include-untracked
   git checkout main
   git stash pop || true
