@@ -21,8 +21,7 @@ hooks
 io-handle-testfile
 objects
 refs
-temp-test.24180.901
-temp-test.3948737.283
+temp-test.*
 tempfile-copy-mtgt
 tempfile-copy-stgt
 tempfile-move1
