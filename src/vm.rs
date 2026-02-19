@@ -11,6 +11,7 @@ use num_traits::{Signed, Zero};
 mod vm_call_ops;
 mod vm_control_ops;
 mod vm_data_ops;
+mod vm_exec_ops;
 mod vm_helpers;
 mod vm_var_ops;
 
@@ -366,39 +367,27 @@ impl VM {
 
             // -- Arithmetic (native) --
             OpCode::Add => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                self.stack.push(crate::builtins::arith_add(left, right)?);
+                self.exec_binary_fallible(crate::builtins::arith_add)?;
                 *ip += 1;
             }
             OpCode::Sub => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                self.stack.push(crate::builtins::arith_sub(left, right));
+                self.exec_binary_infallible(crate::builtins::arith_sub);
                 *ip += 1;
             }
             OpCode::Mul => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                self.stack.push(crate::builtins::arith_mul(left, right));
+                self.exec_binary_infallible(crate::builtins::arith_mul);
                 *ip += 1;
             }
             OpCode::Div => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                self.stack.push(crate::builtins::arith_div(left, right)?);
+                self.exec_binary_fallible(crate::builtins::arith_div)?;
                 *ip += 1;
             }
             OpCode::Mod => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                self.stack.push(crate::builtins::arith_mod(left, right)?);
+                self.exec_binary_fallible(crate::builtins::arith_mod)?;
                 *ip += 1;
             }
             OpCode::Pow => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                self.stack.push(crate::builtins::arith_pow(left, right));
+                self.exec_binary_infallible(crate::builtins::arith_pow);
                 *ip += 1;
             }
             OpCode::Negate => {
@@ -452,13 +441,13 @@ impl VM {
 
             // -- String (native) --
             OpCode::Concat => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                self.stack.push(Value::Str(format!(
-                    "{}{}",
-                    left.to_string_value(),
-                    right.to_string_value()
-                )));
+                self.exec_binary_infallible(|left, right| {
+                    Value::Str(format!(
+                        "{}{}",
+                        left.to_string_value(),
+                        right.to_string_value()
+                    ))
+                });
                 *ip += 1;
             }
 
@@ -626,71 +615,15 @@ impl VM {
 
             // -- Three-way comparison (native) --
             OpCode::Spaceship => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                let ord = match (&left, &right) {
-                    (Value::Int(a), Value::Int(b)) => a.cmp(b),
-                    (Value::Rat(_, _), _)
-                    | (_, Value::Rat(_, _))
-                    | (Value::FatRat(_, _), _)
-                    | (_, Value::FatRat(_, _)) => {
-                        if let (Some((an, ad)), Some((bn, bd))) =
-                            (runtime::to_rat_parts(&left), runtime::to_rat_parts(&right))
-                        {
-                            (an.wrapping_mul(bd)).cmp(&(bn.wrapping_mul(ad)))
-                        } else {
-                            left.to_string_value().cmp(&right.to_string_value())
-                        }
-                    }
-                    (Value::Num(a), Value::Num(b)) => {
-                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-                    }
-                    (Value::Int(a), Value::Num(b)) => (*a as f64)
-                        .partial_cmp(b)
-                        .unwrap_or(std::cmp::Ordering::Equal),
-                    (Value::Num(a), Value::Int(b)) => a
-                        .partial_cmp(&(*b as f64))
-                        .unwrap_or(std::cmp::Ordering::Equal),
-                    (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
-                        runtime::version_cmp_parts(ap, bp)
-                    }
-                    _ => left.to_string_value().cmp(&right.to_string_value()),
-                };
+                let (left, right) = self.pop_binary_operands();
+                let ord = Self::compare_order_values(&left, &right);
                 self.stack.push(runtime::make_order(ord));
                 *ip += 1;
             }
             OpCode::Before | OpCode::After => {
                 let is_before = matches!(code.ops[*ip], OpCode::Before);
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                let ord = match (&left, &right) {
-                    (Value::Int(a), Value::Int(b)) => a.cmp(b),
-                    (Value::Rat(_, _), _)
-                    | (_, Value::Rat(_, _))
-                    | (Value::FatRat(_, _), _)
-                    | (_, Value::FatRat(_, _)) => {
-                        if let (Some((an, ad)), Some((bn, bd))) =
-                            (runtime::to_rat_parts(&left), runtime::to_rat_parts(&right))
-                        {
-                            (an.wrapping_mul(bd)).cmp(&(bn.wrapping_mul(ad)))
-                        } else {
-                            left.to_string_value().cmp(&right.to_string_value())
-                        }
-                    }
-                    (Value::Num(a), Value::Num(b)) => {
-                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-                    }
-                    (Value::Int(a), Value::Num(b)) => (*a as f64)
-                        .partial_cmp(b)
-                        .unwrap_or(std::cmp::Ordering::Equal),
-                    (Value::Num(a), Value::Int(b)) => a
-                        .partial_cmp(&(*b as f64))
-                        .unwrap_or(std::cmp::Ordering::Equal),
-                    (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
-                        runtime::version_cmp_parts(ap, bp)
-                    }
-                    _ => left.to_string_value().cmp(&right.to_string_value()),
-                };
+                let (left, right) = self.pop_binary_operands();
+                let ord = Self::compare_order_values(&left, &right);
                 let result = if is_before {
                     ord == std::cmp::Ordering::Less
                 } else {
@@ -700,36 +633,8 @@ impl VM {
                 *ip += 1;
             }
             OpCode::Cmp => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                let ord = match (&left, &right) {
-                    (Value::Int(a), Value::Int(b)) => a.cmp(b),
-                    (Value::Rat(_, _), _)
-                    | (_, Value::Rat(_, _))
-                    | (Value::FatRat(_, _), _)
-                    | (_, Value::FatRat(_, _)) => {
-                        if let (Some((an, ad)), Some((bn, bd))) =
-                            (runtime::to_rat_parts(&left), runtime::to_rat_parts(&right))
-                        {
-                            (an.wrapping_mul(bd)).cmp(&(bn.wrapping_mul(ad)))
-                        } else {
-                            left.to_string_value().cmp(&right.to_string_value())
-                        }
-                    }
-                    (Value::Num(a), Value::Num(b)) => {
-                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-                    }
-                    (Value::Int(a), Value::Num(b)) => (*a as f64)
-                        .partial_cmp(b)
-                        .unwrap_or(std::cmp::Ordering::Equal),
-                    (Value::Num(a), Value::Int(b)) => a
-                        .partial_cmp(&(*b as f64))
-                        .unwrap_or(std::cmp::Ordering::Equal),
-                    (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
-                        runtime::version_cmp_parts(ap, bp)
-                    }
-                    _ => left.to_string_value().cmp(&right.to_string_value()),
-                };
+                let (left, right) = self.pop_binary_operands();
+                let ord = Self::compare_order_values(&left, &right);
                 self.stack.push(runtime::make_order(ord));
                 *ip += 1;
             }
@@ -1016,80 +921,72 @@ impl VM {
 
             // -- Bitwise (native) --
             OpCode::BitAnd => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                let (l, r) = runtime::coerce_numeric(left, right);
-                let result = match (l, r) {
-                    (Value::Int(a), Value::Int(b)) => Value::Int(a & b),
-                    _ => Value::Int(0),
-                };
-                self.stack.push(result);
+                self.exec_binary_infallible(|left, right| {
+                    let (l, r) = runtime::coerce_numeric(left, right);
+                    match (l, r) {
+                        (Value::Int(a), Value::Int(b)) => Value::Int(a & b),
+                        _ => Value::Int(0),
+                    }
+                });
                 *ip += 1;
             }
             OpCode::BitOr => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                let (l, r) = runtime::coerce_numeric(left, right);
-                let result = match (l, r) {
-                    (Value::Int(a), Value::Int(b)) => Value::Int(a | b),
-                    _ => Value::Int(0),
-                };
-                self.stack.push(result);
+                self.exec_binary_infallible(|left, right| {
+                    let (l, r) = runtime::coerce_numeric(left, right);
+                    match (l, r) {
+                        (Value::Int(a), Value::Int(b)) => Value::Int(a | b),
+                        _ => Value::Int(0),
+                    }
+                });
                 *ip += 1;
             }
             OpCode::BitXor => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                let (l, r) = runtime::coerce_numeric(left, right);
-                let result = match (l, r) {
-                    (Value::Int(a), Value::Int(b)) => Value::Int(a ^ b),
-                    _ => Value::Int(0),
-                };
-                self.stack.push(result);
+                self.exec_binary_infallible(|left, right| {
+                    let (l, r) = runtime::coerce_numeric(left, right);
+                    match (l, r) {
+                        (Value::Int(a), Value::Int(b)) => Value::Int(a ^ b),
+                        _ => Value::Int(0),
+                    }
+                });
                 *ip += 1;
             }
             OpCode::BitShiftLeft => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                let (l, r) = runtime::coerce_numeric(left, right);
-                let result = match (l, r) {
-                    (Value::Int(a), Value::Int(b)) => Value::Int(a << b),
-                    _ => Value::Int(0),
-                };
-                self.stack.push(result);
+                self.exec_binary_infallible(|left, right| {
+                    let (l, r) = runtime::coerce_numeric(left, right);
+                    match (l, r) {
+                        (Value::Int(a), Value::Int(b)) => Value::Int(a << b),
+                        _ => Value::Int(0),
+                    }
+                });
                 *ip += 1;
             }
             OpCode::BitShiftRight => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                let (l, r) = runtime::coerce_numeric(left, right);
-                let result = match (l, r) {
-                    (Value::Int(a), Value::Int(b)) => Value::Int(a >> b),
-                    _ => Value::Int(0),
-                };
-                self.stack.push(result);
+                self.exec_binary_infallible(|left, right| {
+                    let (l, r) = runtime::coerce_numeric(left, right);
+                    match (l, r) {
+                        (Value::Int(a), Value::Int(b)) => Value::Int(a >> b),
+                        _ => Value::Int(0),
+                    }
+                });
                 *ip += 1;
             }
 
             OpCode::BoolBitOr => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                let result = Value::Bool(left.truthy() | right.truthy());
-                self.stack.push(result);
+                self.exec_binary_infallible(|left, right| {
+                    Value::Bool(left.truthy() | right.truthy())
+                });
                 *ip += 1;
             }
             OpCode::BoolBitAnd => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                let result = Value::Bool(left.truthy() & right.truthy());
-                self.stack.push(result);
+                self.exec_binary_infallible(|left, right| {
+                    Value::Bool(left.truthy() & right.truthy())
+                });
                 *ip += 1;
             }
             OpCode::BoolBitXor => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                let result = Value::Bool(left.truthy() ^ right.truthy());
-                self.stack.push(result);
+                self.exec_binary_infallible(|left, right| {
+                    Value::Bool(left.truthy() ^ right.truthy())
+                });
                 *ip += 1;
             }
 
@@ -1256,58 +1153,37 @@ impl VM {
                 *ip += 1;
             }
             OpCode::SetSubset => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                let a = runtime::coerce_to_set(&left);
-                let b = runtime::coerce_to_set(&right);
-                self.stack.push(Value::Bool(a.is_subset(&b)));
+                self.exec_set_relation_op(|a, b| a.is_subset(b));
                 *ip += 1;
             }
             OpCode::SetSuperset => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                let a = runtime::coerce_to_set(&left);
-                let b = runtime::coerce_to_set(&right);
-                self.stack.push(Value::Bool(a.is_superset(&b)));
+                self.exec_set_relation_op(|a, b| a.is_superset(b));
                 *ip += 1;
             }
             OpCode::SetStrictSubset => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                let a = runtime::coerce_to_set(&left);
-                let b = runtime::coerce_to_set(&right);
-                self.stack
-                    .push(Value::Bool(a.is_subset(&b) && a.len() < b.len()));
+                self.exec_set_relation_op(|a, b| a.is_subset(b) && a.len() < b.len());
                 *ip += 1;
             }
             OpCode::SetStrictSuperset => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                let a = runtime::coerce_to_set(&left);
-                let b = runtime::coerce_to_set(&right);
-                self.stack
-                    .push(Value::Bool(a.is_superset(&b) && a.len() > b.len()));
+                self.exec_set_relation_op(|a, b| a.is_superset(b) && a.len() > b.len());
                 *ip += 1;
             }
             OpCode::JunctionAny => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                self.stack
-                    .push(runtime::merge_junction(JunctionKind::Any, left, right));
+                self.exec_binary_infallible(|left, right| {
+                    runtime::merge_junction(JunctionKind::Any, left, right)
+                });
                 *ip += 1;
             }
             OpCode::JunctionAll => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                self.stack
-                    .push(runtime::merge_junction(JunctionKind::All, left, right));
+                self.exec_binary_infallible(|left, right| {
+                    runtime::merge_junction(JunctionKind::All, left, right)
+                });
                 *ip += 1;
             }
             OpCode::JunctionOne => {
-                let right = self.stack.pop().unwrap();
-                let left = self.stack.pop().unwrap();
-                self.stack
-                    .push(runtime::merge_junction(JunctionKind::One, left, right));
+                self.exec_binary_infallible(|left, right| {
+                    runtime::merge_junction(JunctionKind::One, left, right)
+                });
                 *ip += 1;
             }
 
@@ -1668,45 +1544,11 @@ impl VM {
 
             // -- Prefix increment/decrement --
             OpCode::PreIncrement(name_idx) => {
-                let name = Self::const_str(code, *name_idx);
-                let val = self
-                    .interpreter
-                    .env()
-                    .get(name)
-                    .cloned()
-                    .unwrap_or(Value::Int(0));
-                let new_val = match val {
-                    Value::Int(i) => Value::Int(i + 1),
-                    Value::Bool(_) => Value::Bool(true),
-                    Value::Rat(n, d) => make_rat(n + d, d),
-                    _ => Value::Int(1),
-                };
-                self.interpreter
-                    .env_mut()
-                    .insert(name.to_string(), new_val.clone());
-                self.update_local_if_exists(code, name, &new_val);
-                self.stack.push(new_val);
+                self.exec_pre_inc_dec_op(code, *name_idx, true);
                 *ip += 1;
             }
             OpCode::PreDecrement(name_idx) => {
-                let name = Self::const_str(code, *name_idx);
-                let val = self
-                    .interpreter
-                    .env()
-                    .get(name)
-                    .cloned()
-                    .unwrap_or(Value::Int(0));
-                let new_val = match val {
-                    Value::Int(i) => Value::Int(i - 1),
-                    Value::Bool(_) => Value::Bool(false),
-                    Value::Rat(n, d) => make_rat(n - d, d),
-                    _ => Value::Int(-1),
-                };
-                self.interpreter
-                    .env_mut()
-                    .insert(name.to_string(), new_val.clone());
-                self.update_local_if_exists(code, name, &new_val);
-                self.stack.push(new_val);
+                self.exec_pre_inc_dec_op(code, *name_idx, false);
                 *ip += 1;
             }
 
@@ -1958,32 +1800,7 @@ impl VM {
                 pattern_idx,
                 replacement_idx,
             } => {
-                let pattern = Self::const_str(code, *pattern_idx).to_string();
-                let replacement = Self::const_str(code, *replacement_idx).to_string();
-                let target = self
-                    .interpreter
-                    .env()
-                    .get("_")
-                    .cloned()
-                    .unwrap_or(Value::Nil);
-                let text = target.to_string_value();
-                if let Some((start, end)) =
-                    self.interpreter.regex_find_first_bridge(&pattern, &text)
-                {
-                    let start_b = runtime::char_idx_to_byte(&text, start);
-                    let end_b = runtime::char_idx_to_byte(&text, end);
-                    let mut out = String::new();
-                    out.push_str(&text[..start_b]);
-                    out.push_str(&replacement);
-                    out.push_str(&text[end_b..]);
-                    let result = Value::Str(out);
-                    self.interpreter
-                        .env_mut()
-                        .insert("_".to_string(), result.clone());
-                    self.stack.push(result);
-                } else {
-                    self.stack.push(Value::Str(text));
-                }
+                self.exec_subst_op(code, *pattern_idx, *replacement_idx, true);
                 *ip += 1;
             }
 
@@ -1992,28 +1809,7 @@ impl VM {
                 pattern_idx,
                 replacement_idx,
             } => {
-                let pattern = Self::const_str(code, *pattern_idx).to_string();
-                let replacement = Self::const_str(code, *replacement_idx).to_string();
-                let target = self
-                    .interpreter
-                    .env()
-                    .get("_")
-                    .cloned()
-                    .unwrap_or(Value::Nil);
-                let text = target.to_string_value();
-                if let Some((start, end)) =
-                    self.interpreter.regex_find_first_bridge(&pattern, &text)
-                {
-                    let start_b = runtime::char_idx_to_byte(&text, start);
-                    let end_b = runtime::char_idx_to_byte(&text, end);
-                    let mut out = String::new();
-                    out.push_str(&text[..start_b]);
-                    out.push_str(&replacement);
-                    out.push_str(&text[end_b..]);
-                    self.stack.push(Value::Str(out));
-                } else {
-                    self.stack.push(Value::Str(text));
-                }
+                self.exec_subst_op(code, *pattern_idx, *replacement_idx, false);
                 *ip += 1;
             }
 
