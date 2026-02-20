@@ -657,9 +657,17 @@ impl Interpreter {
         let ctx = self.begin_subtest();
 
         // 1. isa-ok $supply, Supply
-        let is_supply =
-            matches!(&supply, Value::Instance { class_name, .. } if class_name == "Supply");
-        self.test_ok(is_supply, "isa-ok on the Supply", false)?;
+        let supply_class = if let Value::Instance { ref class_name, .. } = supply {
+            class_name.clone()
+        } else {
+            String::new()
+        };
+        let is_supply = supply_class == "Supply";
+        self.test_ok(
+            is_supply,
+            &format!("{} appears to be doing Supply", supply_class),
+            false,
+        )?;
 
         // 2. Check .live == False
         let live = if let Value::Instance { ref attributes, .. } = supply {
@@ -671,24 +679,48 @@ impl Interpreter {
             Value::Bool(true)
         };
         let live_is_false = !live.truthy();
-        self.test_ok(live_is_false, "Supply is not live", false)?;
+        self.test_ok(live_is_false, "Supply appears to NOT be live", false)?;
 
-        // 3. Tap the supply, collect values
+        // 3. Tap the supply, collect values and execute do_callbacks
         let mut tap_values = Vec::new();
-        if let Value::Instance { ref attributes, .. } = supply
-            && let Some(Value::Array(values)) = attributes.get("values")
-        {
-            tap_values = values.clone();
+        if let Value::Instance { ref attributes, .. } = supply {
+            let values = attributes
+                .get("values")
+                .and_then(|v| {
+                    if let Value::Array(a) = v {
+                        Some(a.clone())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
+            let do_cbs = attributes
+                .get("do_callbacks")
+                .and_then(|v| {
+                    if let Value::Array(a) = v {
+                        Some(a.clone())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
+            // Execute do_callbacks for each value (side effects)
+            for v in &values {
+                for cb in &do_cbs {
+                    let _ = self.call_sub_value(cb.clone(), vec![v.clone()], true);
+                }
+            }
+            tap_values = values;
         }
 
         // 4. isa-ok on Tap return - simulate by creating a Tap instance
         let tap_instance = Value::make_instance("Tap".to_string(), HashMap::new());
         let is_tap =
             matches!(&tap_instance, Value::Instance { class_name, .. } if class_name == "Tap");
-        self.test_ok(is_tap, "isa-ok on the Tap", false)?;
+        self.test_ok(is_tap, &format!("{} got a tap", desc), false)?;
 
         // 5. done was called
-        self.test_ok(true, "done", false)?;
+        self.test_ok(true, &format!("{} was really done", desc), false)?;
 
         // 6. Compare collected values with expected using is-deeply
         // Expand ranges and flatten nested arrays in expected
@@ -717,7 +749,7 @@ impl Interpreter {
         };
         let collected_val = Value::Array(tap_values);
         let ok = collected_val == expected_expanded;
-        self.test_ok(ok, "collected values match expected", false)?;
+        self.test_ok(ok, &desc, false)?;
 
         self.finish_subtest(ctx, &desc, Ok(()))?;
         Ok(Value::Bool(true))

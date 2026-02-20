@@ -160,14 +160,51 @@ impl Interpreter {
                 let tap = args.first().cloned().unwrap_or(Value::Nil);
                 let done_cb = Self::named_value(&args, "done");
                 if let Some(Value::Array(values)) = attributes.get("values") {
-                    for v in values {
-                        let _ = self.call_sub_value(tap.clone(), vec![v.clone()], true);
+                    // If there are do_callbacks, call them for each value as side effects
+                    if let Some(Value::Array(do_cbs)) = attributes.get("do_callbacks") {
+                        for v in values {
+                            for cb in do_cbs {
+                                let _ = self.call_sub_value(cb.clone(), vec![v.clone()], true);
+                            }
+                            let _ = self.call_sub_value(tap.clone(), vec![v.clone()], true);
+                        }
+                    } else {
+                        for v in values {
+                            let _ = self.call_sub_value(tap.clone(), vec![v.clone()], true);
+                        }
                     }
                 }
                 if let Some(done_fn) = done_cb {
                     let _ = self.call_sub_value(done_fn, vec![], true);
                 }
                 Ok(Value::make_instance("Tap".to_string(), HashMap::new()))
+            }
+            "do" => {
+                // Supply.do($callback) — create a new Supply that calls $callback
+                // as a side-effect for each value, passing values through
+                let callback = args.first().cloned().unwrap_or(Value::Nil);
+                let values = attributes
+                    .get("values")
+                    .cloned()
+                    .unwrap_or(Value::Array(Vec::new()));
+                let live = attributes
+                    .get("live")
+                    .cloned()
+                    .unwrap_or(Value::Bool(false));
+                let mut new_attrs = HashMap::new();
+                new_attrs.insert("values".to_string(), values);
+                new_attrs.insert("taps".to_string(), Value::Array(Vec::new()));
+                new_attrs.insert("live".to_string(), live);
+                // Accumulate do_callbacks chain
+                let mut do_cbs =
+                    if let Some(Value::Array(existing)) = attributes.get("do_callbacks") {
+                        existing.clone()
+                    } else {
+                        Vec::new()
+                    };
+                do_cbs.push(callback);
+                new_attrs.insert("do_callbacks".to_string(), Value::Array(do_cbs));
+                Ok(Value::make_instance("Supply".to_string(), new_attrs))
             }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Supply",
