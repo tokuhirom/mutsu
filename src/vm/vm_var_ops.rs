@@ -43,7 +43,10 @@ impl VM {
             } else {
                 Value::Str(name.to_string())
             }
-        } else if self.interpreter.has_class(name) || Self::is_builtin_type(name) {
+        } else if self.interpreter.has_class(name)
+            || Self::is_builtin_type(name)
+            || Self::is_type_with_smiley(name, &self.interpreter)
+        {
             Value::Package(name.to_string())
         } else if self.interpreter.has_function(name) {
             if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {

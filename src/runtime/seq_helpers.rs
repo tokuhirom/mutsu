@@ -139,20 +139,31 @@ impl Interpreter {
             }
             // When RHS is a type/Package, check type membership
             (_, Value::Package(type_name)) => {
+                // Handle type smileys (:U, :D, :_)
+                let (base_type, smiley) = super::types::strip_type_smiley(type_name);
+
                 // A Package on the LHS is a type object - check type hierarchy
                 if let Value::Package(left_name) = left {
-                    if Self::type_matches(type_name, left_name) {
-                        return true;
+                    let type_ok = if Self::type_matches(base_type, left_name) {
+                        true
+                    } else if let Some(class_def) = self.classes.get(left_name.as_str()) {
+                        class_def
+                            .parents
+                            .clone()
+                            .iter()
+                            .any(|parent| Self::type_matches(base_type, parent))
+                    } else {
+                        false
+                    };
+                    if !type_ok {
+                        return false;
                     }
-                    // Check if left_name is a subclass of type_name
-                    if let Some(class_def) = self.classes.get(left_name.as_str()) {
-                        for parent in class_def.parents.clone() {
-                            if Self::type_matches(type_name, &parent) {
-                                return true;
-                            }
-                        }
-                    }
-                    return false;
+                    // Check definedness constraint
+                    return match smiley {
+                        Some(":U") => true,  // Package is undefined
+                        Some(":D") => false, // Package is not defined
+                        _ => true,
+                    };
                 }
                 self.type_matches_value(type_name, left)
             }

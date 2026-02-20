@@ -59,14 +59,39 @@ pub(super) fn class_literal(input: &str) -> PResult<'_, Expr> {
             break;
         }
     }
+    // Type smileys: ::Foo:U, ::Foo:D, ::Foo:_
+    if (r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_"))
+        && !r[2..].starts_with('<')
+    {
+        let smiley = &r[..2];
+        full_name = format!("{}{}", full_name, smiley);
+        r = &r[2..];
+    }
     Ok((r, Expr::BareWord(full_name)))
 }
 
 pub(super) fn whatever(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '*')?;
-    // Make sure it's not ** (power op)
-    if input.starts_with('*') {
-        return Err(PError::expected("whatever (not **)"));
+    // ** is HyperWhatever (but not **N which is power op)
+    if let Some(after) = input.strip_prefix('*') {
+        // Make sure it's not *** or **N (power op with operand)
+        if after.starts_with('*') {
+            return Err(PError::expected("whatever"));
+        }
+        // **<digit> or **$ would be power op, but **) or **, or end is HyperWhatever
+        if !after.is_empty()
+            && !after.starts_with(')')
+            && !after.starts_with(',')
+            && !after.starts_with(';')
+            && !after.starts_with('}')
+            && !after.starts_with(' ')
+            && !after.starts_with('\n')
+            && !after.starts_with('\t')
+            && !after.starts_with('\r')
+        {
+            return Err(PError::expected("whatever (not **)"));
+        }
+        return Ok((after, Expr::HyperWhatever));
     }
     Ok((input, Expr::Whatever))
 }
@@ -695,6 +720,18 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             } else {
                 return Err(PError::expected_at("identifier after '::'", after));
             }
+        }
+        // Type smileys: TypeName:U, TypeName:D, TypeName:_
+        if (r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_"))
+            && !r[2..].starts_with('<')
+            && full_name
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_uppercase())
+        {
+            let smiley = &r[..2];
+            full_name.push_str(smiley);
+            r = &r[2..];
         }
         (r, full_name)
     };

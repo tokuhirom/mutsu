@@ -7,6 +7,10 @@ impl Compiler {
                 let idx = self.code.add_constant(Value::Num(f64::INFINITY));
                 self.code.emit(OpCode::LoadConst(idx));
             }
+            Expr::HyperWhatever => {
+                let idx = self.code.add_constant(Value::HyperWhatever);
+                self.code.emit(OpCode::LoadConst(idx));
+            }
             Expr::Literal(v) => match v {
                 Value::Nil => {
                     self.code.emit(OpCode::LoadNil);

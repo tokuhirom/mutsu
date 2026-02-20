@@ -233,6 +233,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::Regex(_) => "Regex",
         Value::Version { .. } => "Version",
         Value::Slip(_) => "Slip",
+        Value::HyperWhatever => "HyperWhatever",
         Value::Mixin(inner, _) => value_type_name(inner),
     }
 }

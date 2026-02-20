@@ -138,6 +138,15 @@ impl VM {
         )
     }
 
+    /// Check if a name is a type with a smiley suffix (:U, :D, :_).
+    pub(super) fn is_type_with_smiley(name: &str, interp: &crate::runtime::Interpreter) -> bool {
+        let (base, smiley) = crate::runtime::types::strip_type_smiley(name);
+        if smiley.is_none() {
+            return false;
+        }
+        interp.has_class(base) || Self::is_builtin_type(base)
+    }
+
     pub(super) fn label_matches(error_label: &Option<String>, loop_label: &Option<String>) -> bool {
         error_label.as_deref() == loop_label.as_deref() || error_label.is_none()
     }

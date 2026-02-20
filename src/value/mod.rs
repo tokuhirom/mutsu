@@ -125,6 +125,7 @@ pub enum Value {
         minus: bool,
     },
     Nil,
+    HyperWhatever,
     /// A value with mixin overrides from the `but` operator.
     /// Inner value is the original; the HashMap maps type names (e.g. "Bool") to override values.
     Mixin(Box<Value>, HashMap<String, Value>),

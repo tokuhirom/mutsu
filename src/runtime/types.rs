@@ -1,5 +1,25 @@
 use super::*;
 
+/// Strip a type smiley suffix (:U, :D, :_) from a constraint string.
+/// Returns (base_type, smiley) where smiley is Some(":U"), Some(":D"), Some(":_") or None.
+pub(crate) fn strip_type_smiley(constraint: &str) -> (&str, Option<&str>) {
+    if let Some(base) = constraint.strip_suffix(":U") {
+        (base, Some(":U"))
+    } else if let Some(base) = constraint.strip_suffix(":D") {
+        (base, Some(":D"))
+    } else if let Some(base) = constraint.strip_suffix(":_") {
+        (base, Some(":_"))
+    } else {
+        (constraint, None)
+    }
+}
+
+/// Check if a value is "defined" in the Raku sense.
+/// Type objects (Package) are undefined; concrete values and instances are defined.
+pub(crate) fn value_is_defined(value: &Value) -> bool {
+    !matches!(value, Value::Package(_) | Value::Nil)
+}
+
 impl Interpreter {
     pub(super) fn init_order_enum(&mut self) {
         let variants = vec![
@@ -163,6 +183,21 @@ impl Interpreter {
     }
 
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
+        // Handle type smileys (:U, :D, :_)
+        let (base_constraint, smiley) = strip_type_smiley(constraint);
+        if let Some(smiley) = smiley {
+            let type_ok = self.type_matches_value(base_constraint, value);
+            if !type_ok {
+                return false;
+            }
+            return match smiley {
+                ":U" => !value_is_defined(value),
+                ":D" => value_is_defined(value),
+                ":_" => true,
+                _ => true,
+            };
+        }
+
         if let Some(subset) = self.subsets.get(constraint).cloned() {
             if !self.type_matches_value(&subset.base, value) {
                 return false;

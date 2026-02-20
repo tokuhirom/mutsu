@@ -52,6 +52,7 @@ pub(crate) enum PhaserKind {
 pub(crate) enum Expr {
     Literal(Value),
     Whatever,
+    HyperWhatever,
     BareWord(String),
     StringInterpolation(Vec<Expr>),
     Var(String),
