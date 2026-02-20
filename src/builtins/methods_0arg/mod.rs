@@ -18,6 +18,15 @@ pub(crate) fn native_method_0arg(
     target: &Value,
     method: &str,
 ) -> Option<Result<Value, RuntimeError>> {
+    // For Mixin values, handle Bool method specially, then delegate to inner
+    if let Value::Mixin(inner, mixins) = target {
+        if method == "Bool"
+            && let Some(bool_val) = mixins.get("Bool")
+        {
+            return Some(Ok(bool_val.clone()));
+        }
+        return native_method_0arg(inner, method);
+    }
     // Try core string/numeric/array methods first
     if let result @ Some(_) = dispatch_core(target, method) {
         return result;

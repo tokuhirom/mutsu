@@ -236,9 +236,29 @@ impl VM {
     }
 
     pub(super) fn exec_but_mixin_op(&mut self) {
-        let _right = self.stack.pop().unwrap();
+        let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack.push(left);
+        // Determine the mixin type from the right-hand value
+        let mixin_type = match &right {
+            Value::Bool(_) => "Bool",
+            Value::Int(_) | Value::BigInt(_) => "Int",
+            Value::Num(_) => "Num",
+            Value::Str(_) => "Str",
+            _ => "Any",
+        };
+        // If left is already a Mixin, add to existing mixins
+        let result = match left {
+            Value::Mixin(inner, mut mixins) => {
+                mixins.insert(mixin_type.to_string(), right);
+                Value::Mixin(inner, mixins)
+            }
+            other => {
+                let mut mixins = std::collections::HashMap::new();
+                mixins.insert(mixin_type.to_string(), right);
+                Value::Mixin(Box::new(other), mixins)
+            }
+        };
+        self.stack.push(result);
     }
 
     pub(super) fn exec_isa_op(&mut self) {

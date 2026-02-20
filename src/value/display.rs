@@ -293,6 +293,13 @@ impl Value {
                 .collect::<Vec<_>>()
                 .join(" "),
             Value::Nil => String::new(),
+            Value::Mixin(inner, mixins) => {
+                if let Some(str_val) = mixins.get("Str") {
+                    str_val.to_string_value()
+                } else {
+                    inner.to_string_value()
+                }
+            }
         }
     }
 
