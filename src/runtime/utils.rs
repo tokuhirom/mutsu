@@ -223,7 +223,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::Bag(_) => "Bag",
         Value::Mix(_) => "Mix",
         Value::Nil => "Any",
-        Value::Sub { .. } => "Sub",
+        Value::Sub(_) | Value::WeakSub(_) => "Sub",
         Value::Routine { .. } => "Routine",
         Value::Package(_) => "Package",
         Value::CompUnitDepSpec { .. } => "Any",

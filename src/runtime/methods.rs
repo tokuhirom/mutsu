@@ -139,7 +139,7 @@ impl Interpreter {
                     Value::Nil => "Any",
                     Value::Package(name) => name.as_str(),
                     Value::Routine { .. } => "Routine",
-                    Value::Sub { .. } => "Sub",
+                    Value::Sub(_) | Value::WeakSub(_) => "Sub",
                     Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
                     Value::Instance { class_name, .. } => class_name.as_str(),
                     Value::Junction { .. } => "Junction",
@@ -574,7 +574,7 @@ impl Interpreter {
                 Value::Routine { name, .. } => Ok(Value::Str(name)),
                 Value::Package(name) => Ok(Value::Str(name)),
                 Value::Str(name) => Ok(Value::Str(name)),
-                Value::Sub { name, .. } => Ok(Value::Str(name)),
+                Value::Sub(data) => Ok(Value::Str(data.name.clone())),
                 _ => Ok(Value::Nil),
             },
             "Str" | "Stringy" if args.is_empty() => match target {
@@ -814,48 +814,45 @@ impl Interpreter {
     fn dispatch_sort(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
         match target {
             Value::Array(mut items) => {
-                if let Some(Value::Sub {
-                    params, body, env, ..
-                }) = args.first().cloned()
-                {
-                    let is_key_extractor = params.len() <= 1;
+                if let Some(Value::Sub(data)) = args.first().cloned() {
+                    let is_key_extractor = data.params.len() <= 1;
                     if is_key_extractor {
                         items.sort_by(|a, b| {
                             let saved = self.env.clone();
-                            for (k, v) in &env {
+                            for (k, v) in &data.env {
                                 self.env.insert(k.clone(), v.clone());
                             }
-                            if let Some(p) = params.first() {
+                            if let Some(p) = data.params.first() {
                                 self.env.insert(p.clone(), a.clone());
                             }
                             self.env.insert("_".to_string(), a.clone());
-                            let key_a = self.eval_block_value(&body).unwrap_or(Value::Nil);
+                            let key_a = self.eval_block_value(&data.body).unwrap_or(Value::Nil);
                             self.env = saved.clone();
-                            for (k, v) in &env {
+                            for (k, v) in &data.env {
                                 self.env.insert(k.clone(), v.clone());
                             }
-                            if let Some(p) = params.first() {
+                            if let Some(p) = data.params.first() {
                                 self.env.insert(p.clone(), b.clone());
                             }
                             self.env.insert("_".to_string(), b.clone());
-                            let key_b = self.eval_block_value(&body).unwrap_or(Value::Nil);
+                            let key_b = self.eval_block_value(&data.body).unwrap_or(Value::Nil);
                             self.env = saved;
                             key_a.to_string_value().cmp(&key_b.to_string_value())
                         });
                     } else {
                         items.sort_by(|a, b| {
                             let saved = self.env.clone();
-                            for (k, v) in &env {
+                            for (k, v) in &data.env {
                                 self.env.insert(k.clone(), v.clone());
                             }
-                            if params.len() >= 2 {
-                                self.env.insert(params[0].clone(), a.clone());
-                                self.env.insert(params[1].clone(), b.clone());
-                            } else if let Some(p) = params.first() {
+                            if data.params.len() >= 2 {
+                                self.env.insert(data.params[0].clone(), a.clone());
+                                self.env.insert(data.params[1].clone(), b.clone());
+                            } else if let Some(p) = data.params.first() {
                                 self.env.insert(p.clone(), a.clone());
                             }
                             self.env.insert("_".to_string(), a.clone());
-                            let result = self.eval_block_value(&body).unwrap_or(Value::Int(0));
+                            let result = self.eval_block_value(&data.body).unwrap_or(Value::Int(0));
                             self.env = saved;
                             match result {
                                 Value::Int(n) => n.cmp(&0),
@@ -1196,7 +1193,7 @@ impl Interpreter {
                 self.call_sub_value(first.clone(), vec![target], false)
             }
             // .tree(&closure, ...) — apply closures at depth levels
-            Value::Sub { .. } => {
+            Value::Sub(_) => {
                 let closures: Vec<Value> = args.to_vec();
                 self.tree_with_closures(&items, &closures, 0)
             }

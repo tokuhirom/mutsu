@@ -59,6 +59,13 @@ impl Interpreter {
         // Check if stored as a variable first (my &f = ...)
         let var_key = format!("&{}", bare_name);
         if let Some(val) = self.env.get(&var_key) {
+            // Upgrade WeakSub references (e.g., &?BLOCK) to strong Sub
+            if let Value::WeakSub(weak) = val {
+                return match weak.upgrade() {
+                    Some(strong) => Value::Sub(strong),
+                    None => Value::Nil,
+                };
+            }
             return val.clone();
         }
         // Look up as a function reference (including multi subs)
@@ -80,14 +87,13 @@ impl Interpreter {
                 name: bare_name.to_string(),
             }
         } else if let Some(def) = def {
-            Value::Sub {
-                package: def.package,
-                name: def.name,
-                params: def.params,
-                body: def.body,
-                env: self.env.clone(),
-                id: next_instance_id(),
-            }
+            Value::make_sub(
+                def.package,
+                def.name,
+                def.params,
+                def.body,
+                self.env.clone(),
+            )
         } else if Self::is_builtin_function(bare_name) {
             Value::Routine {
                 package: "GLOBAL".to_string(),

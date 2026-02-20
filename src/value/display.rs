@@ -259,7 +259,11 @@ impl Value {
             }
             Value::Package(s) => format!("({})", s),
             Value::Routine { package, name } => format!("{}::{}", package, name),
-            Value::Sub { name, .. } => name.clone(),
+            Value::Sub(data) => data.name.clone(),
+            Value::WeakSub(weak) => match weak.upgrade() {
+                Some(data) => data.name.clone(),
+                None => String::new(),
+            },
             Value::Instance {
                 class_name,
                 attributes,

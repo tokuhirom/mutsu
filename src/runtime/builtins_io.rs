@@ -203,7 +203,7 @@ impl Interpreter {
         self.env.insert("$*CWD".to_string(), cwd_val.clone());
         self.env.insert("*CWD".to_string(), cwd_val);
         let result = if let Some(body) = args.get(1) {
-            if matches!(body, Value::Sub { .. }) {
+            if matches!(body, Value::Sub(_)) {
                 self.call_sub_value(body.clone(), vec![], false)
             } else {
                 Ok(body.clone())

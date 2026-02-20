@@ -28,14 +28,13 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
-            let val = Value::Sub {
-                package: self.interpreter.current_package().to_string(),
-                name: String::new(),
-                params: vec![],
-                body: body.clone(),
-                env: self.interpreter.env().clone(),
-                id: next_instance_id(),
-            };
+            let val = Value::make_sub(
+                self.interpreter.current_package().to_string(),
+                String::new(),
+                vec![],
+                body.clone(),
+                self.interpreter.env().clone(),
+            );
             self.stack.push(val);
             Ok(())
         } else {
@@ -50,14 +49,13 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubDecl { params, body, .. } = stmt {
-            let val = Value::Sub {
-                package: self.interpreter.current_package().to_string(),
-                name: String::new(),
-                params: params.clone(),
-                body: body.clone(),
-                env: self.interpreter.env().clone(),
-                id: next_instance_id(),
-            };
+            let val = Value::make_sub(
+                self.interpreter.current_package().to_string(),
+                String::new(),
+                params.clone(),
+                body.clone(),
+                self.interpreter.env().clone(),
+            );
             self.stack.push(val);
             Ok(())
         } else {
@@ -72,14 +70,13 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubDecl { params, body, .. } = stmt {
-            let val = Value::Sub {
-                package: self.interpreter.current_package().to_string(),
-                name: String::new(),
-                params: params.clone(),
-                body: body.clone(),
-                env: self.interpreter.env().clone(),
-                id: next_instance_id(),
-            };
+            let val = Value::make_sub(
+                self.interpreter.current_package().to_string(),
+                String::new(),
+                params.clone(),
+                body.clone(),
+                self.interpreter.env().clone(),
+            );
             self.stack.push(val);
             Ok(())
         } else {
@@ -94,14 +91,13 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
-            let val = Value::Sub {
-                package: self.interpreter.current_package().to_string(),
-                name: String::new(),
-                params: vec![],
-                body: body.clone(),
-                env: self.interpreter.env().clone(),
-                id: next_instance_id(),
-            };
+            let val = Value::make_sub(
+                self.interpreter.current_package().to_string(),
+                String::new(),
+                vec![],
+                body.clone(),
+                self.interpreter.env().clone(),
+            );
             self.stack.push(val);
             Ok(())
         } else {

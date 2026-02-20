@@ -7,56 +7,58 @@ impl Interpreter {
         target_val: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if let Value::Sub {
-            package,
-            name,
-            params,
-            body,
-            env,
-            ..
-        } = target_val
-        {
+        // Upgrade WeakSub to Sub transparently
+        let target_val = match target_val {
+            Value::WeakSub(ref weak) => match weak.upgrade() {
+                Some(strong) => Value::Sub(strong),
+                None => return Err(RuntimeError::new("Callable has been freed")),
+            },
+            other => other,
+        };
+        if let Value::Sub(data) = target_val {
             let saved_env = self.env.clone();
             let mut new_env = saved_env.clone();
-            for (k, v) in env {
-                if matches!(new_env.get(&k), Some(Value::Array(_))) && matches!(v, Value::Array(_))
-                {
+            for (k, v) in &data.env {
+                if matches!(new_env.get(k), Some(Value::Array(_))) && matches!(v, Value::Array(_)) {
                     continue;
                 }
-                new_env.insert(k, v);
+                new_env.insert(k.clone(), v.clone());
             }
             // Bind named params
-            for (i, pname) in params.iter().enumerate() {
+            for (i, pname) in data.params.iter().enumerate() {
                 if let Some(value) = args.get(i) {
                     new_env.insert(pname.clone(), value.clone());
                 }
             }
             // Bind implicit $_ for bare blocks called with arguments
-            if params.is_empty() && !args.is_empty() {
+            if data.params.is_empty() && !args.is_empty() {
                 new_env.insert("_".to_string(), args[0].clone());
             }
-            // &?BLOCK: self-referencing Sub with original params for recursion
-            let block_self = Value::Sub {
-                package: package.clone(),
-                name: name.clone(),
-                params: params.clone(),
-                body: body.clone(),
+            // &?BLOCK: weak self-reference to break reference cycles
+            let block_arc = std::sync::Arc::new(crate::value::SubData {
+                package: data.package.clone(),
+                name: data.name.clone(),
+                params: data.params.clone(),
+                body: data.body.clone(),
                 env: new_env.clone(),
-                id: next_instance_id(),
-            };
-            new_env.insert("&?BLOCK".to_string(), block_self);
-            let block_sub = Value::Sub {
-                package: package.clone(),
-                name: name.clone(),
-                params: params.clone(),
-                body: body.clone(),
-                env: new_env.clone(),
-                id: next_instance_id(),
-            };
+                id: crate::value::next_instance_id(),
+            });
+            new_env.insert(
+                "&?BLOCK".to_string(),
+                Value::WeakSub(std::sync::Arc::downgrade(&block_arc)),
+            );
+            let block_sub = Value::make_sub(
+                data.package.clone(),
+                data.name.clone(),
+                data.params.clone(),
+                data.body.clone(),
+                new_env.clone(),
+            );
             self.env = new_env;
-            self.routine_stack.push((package.clone(), name.clone()));
+            self.routine_stack
+                .push((data.package.clone(), data.name.clone()));
             self.block_stack.push(block_sub);
-            let result = self.eval_block_value(&body);
+            let result = self.eval_block_value(&data.body);
             self.block_stack.pop();
             self.routine_stack.pop();
             let mut merged = saved_env;
@@ -244,7 +246,7 @@ impl Interpreter {
             .get(name)
             .cloned()
             .or_else(|| self.env.get(&format!("&{}", name)).cloned())
-            && matches!(callable, Value::Sub { .. } | Value::Routine { .. })
+            && matches!(callable, Value::Sub(_) | Value::Routine { .. })
         {
             return self.eval_call_on_value(callable, args.to_vec());
         }
@@ -480,19 +482,16 @@ impl Interpreter {
         func: &Value,
         item: Value,
     ) -> Result<Value, RuntimeError> {
-        if let Value::Sub {
-            params, body, env, ..
-        } = func
-        {
+        if let Value::Sub(data) = func {
             let saved_env = self.env.clone();
-            for (k, v) in env {
+            for (k, v) in &data.env {
                 self.env.insert(k.clone(), v.clone());
             }
-            if let Some(p) = params.first() {
+            if let Some(p) = data.params.first() {
                 self.env.insert(p.clone(), item.clone());
             }
             self.env.insert("_".to_string(), item.clone());
-            let result = self.eval_block_value(body);
+            let result = self.eval_block_value(&data.body);
             self.env = saved_env;
             return result;
         }

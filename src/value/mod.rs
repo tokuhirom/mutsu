@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::ast::Stmt;
 use num_bigint::BigInt as NumBigInt;
 use num_traits::{ToPrimitive, Zero};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, Weak};
 
 mod display;
 mod error;
@@ -12,6 +12,7 @@ mod types;
 
 pub use display::{tclc_str, wordcase_str};
 pub use error::{RuntimeError, RuntimeErrorCode};
+// SubData is re-exported so callers can destructure Value::Sub(data)
 
 static INSTANCE_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -25,6 +26,16 @@ pub enum JunctionKind {
     All,
     One,
     None,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubData {
+    pub package: String,
+    pub name: String,
+    pub params: Vec<String>,
+    pub(crate) body: Vec<Stmt>,
+    pub env: HashMap<String, Value>,
+    pub id: u64,
 }
 
 fn gcd(mut a: i64, mut b: i64) -> i64 {
@@ -99,14 +110,10 @@ pub enum Value {
         index: usize,
     },
     Regex(String),
-    Sub {
-        package: String,
-        name: String,
-        params: Vec<String>,
-        body: Vec<Stmt>,
-        env: HashMap<String, Value>,
-        id: u64,
-    },
+    Sub(Arc<SubData>),
+    /// A weak reference to a Sub (used for &?BLOCK self-references to break cycles).
+    /// Upgrade to the strong value when accessed; returns Nil if expired.
+    WeakSub(Weak<SubData>),
     Instance {
         class_name: String,
         attributes: HashMap<String, Value>,
@@ -435,7 +442,7 @@ impl PartialEq for Value {
                     values: bv,
                 },
             ) => ak == bk && av == bv,
-            (Value::Sub { id: a, .. }, Value::Sub { id: b, .. }) => a == b,
+            (Value::Sub(a), Value::Sub(b)) => a.id == b.id,
             (Value::LazyList(a), Value::LazyList(b)) => Arc::ptr_eq(a, b),
             (
                 Value::Version {
@@ -466,6 +473,64 @@ impl PartialEq for Value {
 }
 
 impl Value {
+    /// Create a new Sub value wrapping the given SubData in an Arc.
+    pub(crate) fn make_sub(
+        package: String,
+        name: String,
+        params: Vec<String>,
+        body: Vec<Stmt>,
+        env: HashMap<String, Value>,
+    ) -> Self {
+        Value::Sub(Arc::new(SubData {
+            package,
+            name,
+            params,
+            body,
+            env,
+            id: next_instance_id(),
+        }))
+    }
+
+    /// Create a new Sub value with an explicit id.
+    pub(crate) fn make_sub_with_id(
+        package: String,
+        name: String,
+        params: Vec<String>,
+        body: Vec<Stmt>,
+        env: HashMap<String, Value>,
+        id: u64,
+    ) -> Self {
+        Value::Sub(Arc::new(SubData {
+            package,
+            name,
+            params,
+            body,
+            env,
+            id,
+        }))
+    }
+
+    /// Access SubData fields if this is a Sub (or upgraded WeakSub).
+    #[allow(dead_code)]
+    pub(crate) fn as_sub(&self) -> Option<&SubData> {
+        match self {
+            Value::Sub(data) => Some(data),
+            _ => None,
+        }
+    }
+
+    /// Upgrade a WeakSub to a Sub, or return Nil if expired.
+    #[allow(dead_code)]
+    pub(crate) fn upgrade_weak(&self) -> Value {
+        match self {
+            Value::WeakSub(weak) => match weak.upgrade() {
+                Some(strong) => Value::Sub(strong),
+                None => Value::Nil,
+            },
+            other => other.clone(),
+        }
+    }
+
     pub(crate) fn make_instance(class_name: String, attributes: HashMap<String, Value>) -> Self {
         Value::Instance {
             class_name,

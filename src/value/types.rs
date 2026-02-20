@@ -34,7 +34,7 @@ impl Value {
             | (Value::Enum { .. }, Value::Enum { .. })
             | (Value::Regex(_), Value::Regex(_))
             | (Value::Routine { .. }, Value::Routine { .. })
-            | (Value::Sub { .. }, Value::Sub { .. })
+            | (Value::Sub(_), Value::Sub(_))
             | (Value::Instance { .. }, Value::Instance { .. })
             | (Value::Range(_, _), Value::Range(_, _))
             | (Value::RangeExcl(_, _), Value::RangeExcl(_, _))
@@ -79,7 +79,7 @@ impl Value {
             Value::CompUnitDepSpec { .. } => true,
             Value::Package(_) => false,
             Value::Routine { .. } => true,
-            Value::Sub { .. } => true,
+            Value::Sub(_) | Value::WeakSub(_) => true,
             Value::Instance {
                 class_name,
                 attributes,
@@ -143,7 +143,7 @@ impl Value {
             Value::Instance { class_name, .. } => class_name.as_str(),
             Value::Package(name) => name.as_str(),
             Value::Enum { enum_type, .. } => enum_type.as_str(),
-            Value::Sub { .. } | Value::Routine { .. } => "Sub",
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => "Sub",
             Value::Regex(_) => "Regex",
             Value::Junction { .. } => "Junction",
             Value::Version { .. } => "Version",
@@ -194,7 +194,10 @@ impl Value {
             "Int" => matches!(self, Value::Bool(_)),
             "Stringy" => matches!(self, Value::Str(_)),
             "Block" | "Routine" | "Code" | "Callable" => {
-                matches!(self, Value::Sub { .. } | Value::Routine { .. })
+                matches!(
+                    self,
+                    Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                )
             }
             "Seq" | "List" => matches!(self, Value::Array(_) | Value::LazyList(_) | Value::Slip(_)),
             "Positional" => matches!(self, Value::Array(_) | Value::LazyList(_)),
