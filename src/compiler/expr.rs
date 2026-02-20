@@ -777,6 +777,11 @@ impl Compiler {
                 self.compile_expr(inner);
                 self.code.emit(OpCode::IndirectTypeLookup);
             }
+            Expr::IndirectCodeLookup { package, name } => {
+                self.compile_expr(package);
+                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                self.code.emit(OpCode::IndirectCodeLookup(name_idx));
+            }
             Expr::ControlFlow { kind, label } => match kind {
                 crate::ast::ControlFlowKind::Last => {
                     self.code.emit(OpCode::Last(label.clone()));

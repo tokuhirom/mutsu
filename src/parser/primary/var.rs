@@ -3,6 +3,8 @@ use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 use crate::ast::Expr;
 use crate::value::Value;
 
+use super::super::expr::expression;
+use super::super::helpers::ws;
 use super::container::paren_expr;
 use super::current_line_number;
 
@@ -198,8 +200,18 @@ pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
     Ok((rest, Expr::HashVar(full_name)))
 }
 
+/// Check if an identifier is a known pseudo-package name.
+fn is_pseudo_package(name: &str) -> bool {
+    matches!(
+        name,
+        "SETTING" | "CALLER" | "OUTER" | "CORE" | "GLOBAL" | "MY" | "OUR" | "DYNAMIC" | "UNIT"
+    )
+}
+
 /// Parse a &code variable reference.
-/// Handles `&foo`, twigil forms `&?BLOCK`, and operator references like `&infix:<+>`.
+/// Handles `&foo`, twigil forms `&?BLOCK`, operator references like `&infix:<+>`,
+/// package-qualified code refs like `&SETTING::OUTER::name`, and indirect package
+/// lookups like `&::($expr)::name` or `&CALLER::($expr)::name`.
 pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '&')?;
     // Handle &[op] — short form for &infix:<op>
@@ -210,6 +222,69 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
         let rest = &after_bracket[end_pos + 1..];
         let full_name = format!("infix:<{}>", op_name);
         return Ok((rest, Expr::CodeVar(full_name)));
+    }
+    // Handle &CALLER::($expr)::name — CALLER prefix followed by indirect lookup
+    if let Some(after_caller) = input.strip_prefix("CALLER::(") {
+        let (after_expr, expr) = expression(after_caller)?;
+        let (after_expr, _) = parse_char(after_expr, ')')?;
+        let (after_expr, _) = ws(after_expr)?;
+        if let Some(after_sep) = after_expr.strip_prefix("::") {
+            let (rest, name) = parse_ident_with_hyphens(after_sep)?;
+            return Ok((
+                rest,
+                Expr::IndirectCodeLookup {
+                    package: Box::new(expr),
+                    name: name.to_string(),
+                },
+            ));
+        }
+        return Err(PError::expected(":: after indirect package lookup"));
+    }
+    // Handle &::($expr)::name — indirect package lookup
+    if let Some(after_colons) = input.strip_prefix("::(") {
+        let (after_expr, expr) = expression(after_colons)?;
+        let (after_expr, _) = parse_char(after_expr, ')')?;
+        let (after_expr, _) = ws(after_expr)?;
+        if let Some(after_sep) = after_expr.strip_prefix("::") {
+            let (rest, name) = parse_ident_with_hyphens(after_sep)?;
+            return Ok((
+                rest,
+                Expr::IndirectCodeLookup {
+                    package: Box::new(expr),
+                    name: name.to_string(),
+                },
+            ));
+        }
+        return Err(PError::expected(":: after indirect package lookup"));
+    }
+    // Handle package-qualified code refs: &SETTING::OUTER::...::name
+    // or &CALLER::SETTING::OUTER::...::name
+    if let Ok((_, first_ident)) = parse_ident_with_hyphens(input)
+        && is_pseudo_package(first_ident)
+    {
+        let after_first = &input[first_ident.len()..];
+        if after_first.starts_with("::") {
+            // Consume the full Package::Package::...::name chain
+            let mut pos = 0;
+            let mut qualified = String::new();
+            loop {
+                if let Ok((_, ident)) = parse_ident_with_hyphens(&input[pos..]) {
+                    let after_ident = &input[pos + ident.len()..];
+                    if after_ident.starts_with("::") && is_pseudo_package(ident) {
+                        // This is a pseudo-package, consume it and the ::
+                        qualified.push_str(ident);
+                        qualified.push_str("::");
+                        pos += ident.len() + 2;
+                        continue;
+                    }
+                    // This is the final name
+                    qualified.push_str(ident);
+                    pos += ident.len();
+                    return Ok((&input[pos..], Expr::CodeVar(qualified)));
+                }
+                break;
+            }
+        }
     }
     // Handle twigils: &?BLOCK, &?ROUTINE
     let (rest, twigil) = if let Some(stripped) = input.strip_prefix('?') {

@@ -249,6 +249,7 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
                 &expr,
                 Expr::Var(_)
                     | Expr::CodeVar(_)
+                    | Expr::IndirectCodeLookup { .. }
                     | Expr::MethodCall { .. }
                     | Expr::AnonSub(_)
                     | Expr::AnonSubParams { .. }

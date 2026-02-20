@@ -1003,6 +1003,10 @@ impl VM {
                 self.exec_indirect_type_lookup_op();
                 *ip += 1;
             }
+            OpCode::IndirectCodeLookup(name_idx) => {
+                self.exec_indirect_code_lookup_op(code, *name_idx);
+                *ip += 1;
+            }
             OpCode::StateVarInit(slot, key_idx) => {
                 self.exec_state_var_init_op(code, *slot, *key_idx);
                 *ip += 1;

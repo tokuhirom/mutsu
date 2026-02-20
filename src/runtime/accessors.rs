@@ -41,15 +41,30 @@ impl Interpreter {
                 name: name.to_string(),
             };
         }
+        // Handle package-qualified names: strip pseudo-package prefixes and
+        // resolve the bare function name.
+        let bare_name = Self::strip_pseudo_packages(name);
+        let has_packages = bare_name != name;
+        // When SETTING:: (or similar) pseudo-packages are present, resolve to
+        // the builtin directly — these refer to the outer setting scope, not
+        // user-defined overrides.
+        // When pseudo-package qualifiers are present (e.g. SETTING::), resolve
+        // to the builtin directly, bypassing user-defined overrides.
+        if has_packages && Self::is_builtin_function(bare_name) {
+            return Value::Routine {
+                package: "GLOBAL".to_string(),
+                name: bare_name.to_string(),
+            };
+        }
         // Check if stored as a variable first (my &f = ...)
-        let var_key = format!("&{}", name);
+        let var_key = format!("&{}", bare_name);
         if let Some(val) = self.env.get(&var_key) {
             return val.clone();
         }
         // Look up as a function reference (including multi subs)
-        let def = self.resolve_function(name).or_else(|| {
-            let prefix_local = format!("{}::{}/", self.current_package, name);
-            let prefix_global = format!("GLOBAL::{}/", name);
+        let def = self.resolve_function(bare_name).or_else(|| {
+            let prefix_local = format!("{}::{}/", self.current_package, bare_name);
+            let prefix_global = format!("GLOBAL::{}/", bare_name);
             self.functions
                 .iter()
                 .find(|(k, _)| k.starts_with(&prefix_local) || k.starts_with(&prefix_global))
@@ -64,14 +79,39 @@ impl Interpreter {
                 env: self.env.clone(),
                 id: next_instance_id(),
             }
-        } else if Self::is_builtin_function(name) {
+        } else if Self::is_builtin_function(bare_name) {
             Value::Routine {
                 package: "GLOBAL".to_string(),
-                name: name.to_string(),
+                name: bare_name.to_string(),
             }
         } else {
             Value::Nil
         }
+    }
+
+    /// Strip pseudo-package prefixes (SETTING::, OUTER::, CALLER::, CORE::, etc.)
+    /// from a qualified name and return the final bare function name.
+    fn strip_pseudo_packages(name: &str) -> &str {
+        let pseudo = [
+            "SETTING", "CALLER", "OUTER", "CORE", "GLOBAL", "MY", "OUR", "DYNAMIC", "UNIT",
+        ];
+        let mut rest = name;
+        loop {
+            let mut found = false;
+            for pkg in &pseudo {
+                if let Some(after) = rest.strip_prefix(pkg)
+                    && let Some(after) = after.strip_prefix("::")
+                {
+                    rest = after;
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                break;
+            }
+        }
+        rest
     }
 
     pub(crate) fn routine_stack_top(&self) -> Option<&(String, String)> {
