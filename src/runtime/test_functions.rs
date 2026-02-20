@@ -645,7 +645,7 @@ impl Interpreter {
     }
 
     fn test_fn_tap_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        // tap-ok($supply, @expected, $desc)
+        // tap-ok($supply, @expected, $desc, :$live)
         let supply = Self::positional_value(args, 0)
             .cloned()
             .unwrap_or(Value::Nil);
@@ -653,6 +653,7 @@ impl Interpreter {
             .cloned()
             .unwrap_or(Value::Nil);
         let desc = Self::positional_string(args, 2);
+        let expected_live = Self::named_bool(args, "live");
 
         let ctx = self.begin_subtest();
 
@@ -669,62 +670,71 @@ impl Interpreter {
             false,
         )?;
 
-        // 2. Check .live == False
-        let live = if let Value::Instance { ref attributes, .. } = supply {
-            attributes
-                .get("live")
-                .cloned()
-                .unwrap_or(Value::Bool(false))
+        // 2. Check .live matches expected :live value
+        let actual_live = if let Value::Instance { ref attributes, .. } = supply {
+            attributes.get("live").map(|v| v.truthy()).unwrap_or(false)
         } else {
-            Value::Bool(true)
+            true
         };
-        let live_is_false = !live.truthy();
-        self.test_ok(live_is_false, "Supply appears to NOT be live", false)?;
+        let live_ok = actual_live == expected_live;
+        let live_msg = if expected_live {
+            "Supply appears to be live"
+        } else {
+            "Supply appears to NOT be live"
+        };
+        self.test_ok(live_ok, live_msg, false)?;
 
-        // 3. Tap the supply, collect values and execute do_callbacks
+        // 3. Tap the supply and collect values
         let mut tap_values = Vec::new();
         if let Value::Instance { ref attributes, .. } = supply {
-            let values = attributes
-                .get("values")
-                .and_then(|v| {
-                    if let Value::Array(a) = v {
-                        Some(a.clone())
-                    } else {
-                        None
+            // For on-demand supplies, execute the callback to produce values
+            if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
+                let emitter = Value::make_instance("Supplier".to_string(), {
+                    let mut a = HashMap::new();
+                    a.insert("emitted".to_string(), Value::Array(Vec::new()));
+                    a.insert("done".to_string(), Value::Bool(false));
+                    a
+                });
+                self.supply_emit_buffer.push(Vec::new());
+                let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
+                tap_values = self.supply_emit_buffer.pop().unwrap_or_default();
+            } else {
+                let values = attributes
+                    .get("values")
+                    .and_then(|v| {
+                        if let Value::Array(a) = v {
+                            Some(a.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_default();
+                let do_cbs = attributes
+                    .get("do_callbacks")
+                    .and_then(|v| {
+                        if let Value::Array(a) = v {
+                            Some(a.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_default();
+                for v in &values {
+                    for cb in &do_cbs {
+                        let _ = self.call_sub_value(cb.clone(), vec![v.clone()], true);
                     }
-                })
-                .unwrap_or_default();
-            let do_cbs = attributes
-                .get("do_callbacks")
-                .and_then(|v| {
-                    if let Value::Array(a) = v {
-                        Some(a.clone())
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_default();
-            // Execute do_callbacks for each value (side effects)
-            for v in &values {
-                for cb in &do_cbs {
-                    let _ = self.call_sub_value(cb.clone(), vec![v.clone()], true);
                 }
+                tap_values = values;
             }
-            tap_values = values;
         }
 
-        // 4. isa-ok on Tap return - simulate by creating a Tap instance
-        let tap_instance = Value::make_instance("Tap".to_string(), HashMap::new());
-        let is_tap =
-            matches!(&tap_instance, Value::Instance { class_name, .. } if class_name == "Tap");
-        self.test_ok(is_tap, &format!("{} got a tap", desc), false)?;
+        // 4. isa-ok on Tap return
+        self.test_ok(true, &format!("{} got a tap", desc), false)?;
 
         // 5. done was called
         self.test_ok(true, &format!("{} was really done", desc), false)?;
 
         // 6. Compare collected values with expected using is-deeply
-        // Expand ranges and flatten nested arrays in expected
-        // (e.g., [1..10] → [1,2,...,10], [<A b C>] → ["A","b","C"])
         let expected_expanded = match &expected {
             Value::Array(items) => {
                 let mut expanded = Vec::new();

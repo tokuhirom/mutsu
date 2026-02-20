@@ -14,6 +14,7 @@ impl Interpreter {
             "Promise" => self.native_promise_mut(attributes, method, args),
             "Channel" => self.native_channel_mut(attributes, method, args),
             "Supply" => self.native_supply_mut(attributes, method, args),
+            "Supplier" => self.native_supplier_mut(attributes, method, args),
             "Proc::Async" => self.native_proc_async_mut(attributes, method, args),
             _ => Err(RuntimeError::new(format!(
                 "No native mutable method '{}' on '{}'",
@@ -42,6 +43,7 @@ impl Interpreter {
             "Channel" => Ok(self.native_channel(attributes, method)),
             "Proc::Async" => Ok(self.native_proc_async(attributes, method)),
             "Supply" => self.native_supply(attributes, method, args),
+            "Supplier" => self.native_supplier(attributes, method, args),
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on '{}'",
                 method, class_name
@@ -157,23 +159,44 @@ impl Interpreter {
             }
             "tap" => {
                 // Immutable tap: emit all values and return a Tap instance
-                let tap = args.first().cloned().unwrap_or(Value::Nil);
+                let tap_cb = args.first().cloned().unwrap_or(Value::Nil);
                 let done_cb = Self::named_value(&args, "done");
-                if let Some(Value::Array(values)) = attributes.get("values") {
-                    // If there are do_callbacks, call them for each value as side effects
-                    if let Some(Value::Array(do_cbs)) = attributes.get("do_callbacks") {
-                        for v in values {
-                            for cb in do_cbs {
-                                let _ = self.call_sub_value(cb.clone(), vec![v.clone()], true);
-                            }
-                            let _ = self.call_sub_value(tap.clone(), vec![v.clone()], true);
-                        }
+
+                // For on-demand supplies, execute the callback to produce values
+                let values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
+                    let emitter = Value::make_instance("Supplier".to_string(), {
+                        let mut a = HashMap::new();
+                        a.insert("emitted".to_string(), Value::Array(Vec::new()));
+                        a.insert("done".to_string(), Value::Bool(false));
+                        a
+                    });
+                    // Use supply_emit_buffer to collect emitted values
+                    self.supply_emit_buffer.push(Vec::new());
+                    let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
+                    self.supply_emit_buffer.pop().unwrap_or_default()
+                } else if let Some(Value::Array(v)) = attributes.get("values") {
+                    v.clone()
+                } else {
+                    Vec::new()
+                };
+
+                // Call do_callbacks and tap callback for each value
+                let do_cbs = attributes.get("do_callbacks").and_then(|v| {
+                    if let Value::Array(a) = v {
+                        Some(a.clone())
                     } else {
-                        for v in values {
-                            let _ = self.call_sub_value(tap.clone(), vec![v.clone()], true);
+                        None
+                    }
+                });
+                for v in &values {
+                    if let Some(ref cbs) = do_cbs {
+                        for cb in cbs {
+                            let _ = self.call_sub_value(cb.clone(), vec![v.clone()], true);
                         }
                     }
+                    let _ = self.call_sub_value(tap_cb.clone(), vec![v.clone()], true);
                 }
+
                 if let Some(done_fn) = done_cb {
                     let _ = self.call_sub_value(done_fn, vec![], true);
                 }
@@ -206,8 +229,81 @@ impl Interpreter {
                 new_attrs.insert("do_callbacks".to_string(), Value::Array(do_cbs));
                 Ok(Value::make_instance("Supply".to_string(), new_attrs))
             }
+            "Supply" | "supply" => {
+                // .Supply on a Supply is identity (noop) — return self
+                // Preserve the same id for === identity check
+                Ok(Value::Instance {
+                    class_name: "Supply".to_string(),
+                    attributes: attributes.clone(),
+                    id: 0, // placeholder — identity is checked via container, not id
+                })
+            }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Supply",
+                method
+            ))),
+        }
+    }
+
+    // --- Supplier immutable ---
+
+    fn native_supplier(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        match method {
+            "Supply" => {
+                // Return a Supply backed by this Supplier
+                let mut supply_attrs = HashMap::new();
+                supply_attrs.insert("values".to_string(), Value::Array(Vec::new()));
+                supply_attrs.insert("taps".to_string(), Value::Array(Vec::new()));
+                supply_attrs.insert(
+                    "live".to_string(),
+                    attributes.get("live").cloned().unwrap_or(Value::Bool(true)),
+                );
+                Ok(Value::make_instance("Supply".to_string(), supply_attrs))
+            }
+            "emit" => {
+                // Push to supply_emit_buffer (works for on-demand callbacks)
+                let value = args.first().cloned().unwrap_or(Value::Nil);
+                if let Some(buf) = self.supply_emit_buffer.last_mut() {
+                    buf.push(value);
+                }
+                Ok(Value::Nil)
+            }
+            "done" => Ok(Value::Nil),
+            _ => Err(RuntimeError::new(format!(
+                "No native method '{}' on Supplier",
+                method
+            ))),
+        }
+    }
+
+    // --- Supplier mutable ---
+
+    fn native_supplier_mut(
+        &mut self,
+        mut attrs: HashMap<String, Value>,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+        match method {
+            "emit" => {
+                let value = args.first().cloned().unwrap_or(Value::Nil);
+                // Push to supply_emit_buffer if active
+                if let Some(buf) = self.supply_emit_buffer.last_mut() {
+                    buf.push(value);
+                }
+                Ok((Value::Nil, attrs))
+            }
+            "done" => {
+                attrs.insert("done".to_string(), Value::Bool(true));
+                Ok((Value::Nil, attrs))
+            }
+            _ => Err(RuntimeError::new(format!(
+                "No native mutable method '{}' on Supplier",
                 method
             ))),
         }
@@ -237,18 +333,50 @@ impl Interpreter {
                 Ok((Value::Nil, attrs))
             }
             "tap" => {
-                let tap = args.first().cloned().unwrap_or(Value::Nil);
+                let tap_cb = args.first().cloned().unwrap_or(Value::Nil);
                 let done_cb = Self::named_value(&args, "done");
-                if let Some(Value::Array(items)) = attrs.get_mut("taps") {
-                    items.push(tap.clone());
+
+                // For on-demand supplies, execute the callback to produce values
+                let values = if let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned() {
+                    let emitter = Value::make_instance("Supplier".to_string(), {
+                        let mut a = HashMap::new();
+                        a.insert("emitted".to_string(), Value::Array(Vec::new()));
+                        a.insert("done".to_string(), Value::Bool(false));
+                        a
+                    });
+                    self.supply_emit_buffer.push(Vec::new());
+                    let _ = self.call_sub_value(on_demand_cb, vec![emitter], false);
+                    self.supply_emit_buffer.pop().unwrap_or_default()
                 } else {
-                    attrs.insert("taps".to_string(), Value::Array(vec![tap.clone()]));
-                }
-                if let Some(Value::Array(values)) = attrs.get("values") {
-                    for v in values {
-                        let _ = self.call_sub_value(tap.clone(), vec![v.clone()], true);
+                    if let Some(Value::Array(items)) = attrs.get_mut("taps") {
+                        items.push(tap_cb.clone());
+                    } else {
+                        attrs.insert("taps".to_string(), Value::Array(vec![tap_cb.clone()]));
                     }
+                    if let Some(Value::Array(values)) = attrs.get("values") {
+                        values.clone()
+                    } else {
+                        Vec::new()
+                    }
+                };
+
+                // Call do_callbacks and tap callback for each value
+                let do_cbs = attrs.get("do_callbacks").and_then(|v| {
+                    if let Value::Array(a) = v {
+                        Some(a.clone())
+                    } else {
+                        None
+                    }
+                });
+                for v in &values {
+                    if let Some(ref cbs) = do_cbs {
+                        for cb in cbs {
+                            let _ = self.call_sub_value(cb.clone(), vec![v.clone()], true);
+                        }
+                    }
+                    let _ = self.call_sub_value(tap_cb.clone(), vec![v.clone()], true);
                 }
+
                 // Call done callback after all values emitted
                 if let Some(done_fn) = done_cb {
                     let _ = self.call_sub_value(done_fn, vec![], true);

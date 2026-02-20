@@ -214,6 +214,7 @@ pub struct Interpreter {
     loaded_modules: HashSet<String>,
     state_vars: HashMap<String, Value>,
     let_saves: Vec<(String, Value)>,
+    pub(super) supply_emit_buffer: Vec<Vec<Value>>,
 }
 
 pub(crate) struct SubtestContext {
@@ -266,11 +267,24 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["emit", "tap", "repeated", "do"]
+                native_methods: ["emit", "tap", "repeated", "do", "Supply"]
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["Supply".to_string()],
+            },
+        );
+        classes.insert(
+            "Supplier".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["emit", "done", "Supply"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                mro: vec!["Supplier".to_string()],
             },
         );
         classes.insert(
@@ -523,6 +537,7 @@ impl Interpreter {
             loaded_modules: HashSet::new(),
             state_vars: HashMap::new(),
             let_saves: Vec::new(),
+            supply_emit_buffer: Vec::new(),
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();

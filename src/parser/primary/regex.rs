@@ -43,6 +43,11 @@ pub(super) fn scan_to_delim(
     let mut chars = input.char_indices();
     while let Some((i, c)) = chars.next() {
         if c == close_ch {
+            // Skip '.' when it's part of '..' (range operator)
+            if close_ch == '.' && input[i + 1..].starts_with('.') {
+                chars.next(); // skip the second '.'
+                continue;
+            }
             depth -= 1;
             if depth == 0 {
                 return Some((&input[..i], &input[i + c.len_utf8()..]));
@@ -188,7 +193,13 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         && let Some(open_ch) = after_s.chars().next()
     {
         let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
-        if is_delim {
+        // Don't treat s.identifier as substitution when the identifier is 2+ chars
+        // (likely a method call on bare 's'). Single-char like s.a.b. is still valid regex.
+        let looks_like_method = open_ch == '.'
+            && after_s.len() > 2
+            && after_s[1..].starts_with(|c: char| c.is_alphabetic() || c == '_')
+            && after_s[2..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-');
+        if is_delim && !looks_like_method {
             let (close_ch, is_paired) = match open_ch {
                 '{' => ('}', true),
                 '[' => (']', true),

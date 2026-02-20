@@ -192,6 +192,27 @@ impl Interpreter {
                     return Ok(Value::make_instance("Supply".to_string(), attrs));
                 }
             }
+            "on-demand" => {
+                if let Value::Package(ref class_name) = target
+                    && class_name == "Supply"
+                {
+                    let callback = args.first().cloned().unwrap_or(Value::Nil);
+                    let mut attrs = HashMap::new();
+                    attrs.insert("values".to_string(), Value::Array(Vec::new()));
+                    attrs.insert("taps".to_string(), Value::Array(Vec::new()));
+                    attrs.insert("live".to_string(), Value::Bool(false));
+                    attrs.insert("on_demand_callback".to_string(), callback);
+                    return Ok(Value::make_instance("Supply".to_string(), attrs));
+                }
+                // on-demand called on a Supply instance should die
+                if let Value::Instance { ref class_name, .. } = target
+                    && class_name == "Supply"
+                {
+                    return Err(RuntimeError::new(
+                        "Cannot call on-demand on a Supply instance",
+                    ));
+                }
+            }
             "connect" => {
                 if let Value::Package(ref class_name) = target
                     && class_name == "IO::Socket::INET"
@@ -738,6 +759,12 @@ impl Interpreter {
                     return Ok(Value::make_instance(class_name.clone(), attrs));
                 }
                 "Supply" => return Ok(self.make_supply_instance()),
+                "Supplier" => {
+                    let mut attrs = HashMap::new();
+                    attrs.insert("emitted".to_string(), Value::Array(Vec::new()));
+                    attrs.insert("done".to_string(), Value::Bool(false));
+                    return Ok(Value::make_instance(class_name.clone(), attrs));
+                }
                 "ThreadPoolScheduler" | "CurrentThreadScheduler" | "Tap" => {
                     return Ok(Value::make_instance(class_name.clone(), HashMap::new()));
                 }
