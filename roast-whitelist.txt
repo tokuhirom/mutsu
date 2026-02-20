@@ -169,6 +169,7 @@ roast/S24-testing/0-compile.t
 roast/S24-testing/11-plan-skip-all-subtests.t
 roast/S24-testing/11-plan-skip-all.t
 roast/S24-testing/13-cmp-ok.t
+roast/S24-testing/14-like-unlike.t
 roast/S24-testing/2-force_todo.t
 roast/S24-testing/6-done_testing.t
 roast/S24-testing/7-bail_out.t
