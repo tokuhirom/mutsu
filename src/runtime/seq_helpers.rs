@@ -32,11 +32,12 @@ impl Interpreter {
             (_, Value::Regex(pat)) => {
                 let text = left.to_string_value();
                 if let Some(captures) = self.regex_match_with_captures(pat, &text) {
-                    // Set $/ to the matched substring
+                    // Set $/ to a Match object with from/to/str
                     if let Some((start, end)) = self.regex_find_first(pat, &text) {
                         let chars: Vec<char> = text.chars().collect();
                         let matched: String = chars[start..end].iter().collect();
-                        self.env.insert("/".to_string(), Value::Str(matched));
+                        let match_obj = Value::make_match_object(matched, start as i64, end as i64);
+                        self.env.insert("/".to_string(), match_obj);
                     }
                     for (k, v) in captures {
                         self.env.insert(format!("<{}>", k), Value::Str(v));

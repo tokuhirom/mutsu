@@ -59,6 +59,7 @@ roast/S03-smartmatch/any-sub.t
 roast/S03-smartmatch/range-range.t
 roast/S03-smartmatch/regex-hash.t
 roast/S03-smartmatch/scalar-hash.t
+roast/S04-exception-handlers/top-level.t
 roast/S04-exceptions/control_across_runloop.t
 roast/S04-statement-modifiers/until.t
 roast/S04-statement-modifiers/values_in_bool_context.t
@@ -197,6 +198,7 @@ roast/S32-str/append.t
 roast/S32-str/bool.t
 roast/S32-str/chop.t
 roast/S32-str/lc.t
+roast/S32-str/pos.t
 roast/S32-str/length.t
 roast/S32-str/tclc.t
 roast/S32-str/tc.t

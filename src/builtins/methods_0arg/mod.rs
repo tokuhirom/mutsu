@@ -31,6 +31,35 @@ pub(crate) fn native_method_0arg(
 }
 
 fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
+    // Match object methods: from, to, Str, pos; delegates unknown to string
+    if let Value::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target
+        && class_name == "Match"
+    {
+        match method {
+            "from" => {
+                return Some(Ok(attributes.get("from").cloned().unwrap_or(Value::Int(0))));
+            }
+            "to" | "pos" => {
+                return Some(Ok(attributes.get("to").cloned().unwrap_or(Value::Int(0))));
+            }
+            "Str" => {
+                return Some(Ok(attributes
+                    .get("str")
+                    .cloned()
+                    .unwrap_or(Value::Str(String::new()))));
+            }
+            "Bool" => return Some(Ok(Value::Bool(true))),
+            _ => {
+                // Delegate unknown methods to string representation
+                let str_val = Value::Str(target.to_string_value());
+                return native_method_0arg(&str_val, method);
+            }
+        }
+    }
     match method {
         "defined" => Some(Ok(Value::Bool(match target {
             Value::Nil | Value::Package(_) => false,

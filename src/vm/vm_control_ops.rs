@@ -320,13 +320,20 @@ impl VM {
         let body_start = *ip + 1;
         let end = body_end as usize;
 
-        let topic = self
-            .interpreter
-            .env()
-            .get("_")
-            .cloned()
-            .unwrap_or(Value::Nil);
-        if self.interpreter.smart_match_values(&topic, &cond_val) {
+        // Num(Inf) represents Whatever (*) which always matches in `when *`
+        let matches = if matches!(&cond_val, Value::Num(v) if v.is_infinite() && v.is_sign_positive())
+        {
+            true
+        } else {
+            let topic = self
+                .interpreter
+                .env()
+                .get("_")
+                .cloned()
+                .unwrap_or(Value::Nil);
+            self.interpreter.smart_match_values(&topic, &cond_val)
+        };
+        if matches {
             let mut did_proceed = false;
             match self.run_range(code, body_start, end, compiled_fns) {
                 Ok(()) => {}
@@ -472,7 +479,12 @@ impl VM {
                 self.interpreter.env_mut().insert("_".to_string(), err_val);
                 let saved_when = self.interpreter.when_matched();
                 self.interpreter.set_when_matched(false);
-                self.run_range(code, catch_begin, control_begin, compiled_fns)?;
+                match self.run_range(code, catch_begin, control_begin, compiled_fns) {
+                    Ok(()) => {}
+                    // succeed from `when` inside CATCH means exception was handled
+                    Err(e) if e.is_succeed => {}
+                    Err(e) => return Err(e),
+                }
                 self.interpreter.set_when_matched(saved_when);
                 if let Some(v) = saved_topic {
                     self.interpreter.env_mut().insert("_".to_string(), v);

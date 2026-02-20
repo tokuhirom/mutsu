@@ -88,14 +88,21 @@ impl Compiler {
         stmts: &[Stmt],
     ) -> (CompiledCode, HashMap<String, CompiledFunction>) {
         self.hoist_sub_decls(stmts);
-        for (i, stmt) in stmts.iter().enumerate() {
-            let is_last = i == stmts.len() - 1;
-            if is_last && let Stmt::Expr(expr) = stmt {
-                self.compile_expr(expr);
-                self.code.emit(OpCode::SetTopic);
-                continue;
+        // If the top-level body contains a CATCH block, wrap in implicit try.
+        let has_catch = stmts.iter().any(|s| matches!(s, Stmt::Catch(_)));
+        if has_catch {
+            self.compile_try(stmts, &None);
+            self.code.emit(OpCode::Pop);
+        } else {
+            for (i, stmt) in stmts.iter().enumerate() {
+                let is_last = i == stmts.len() - 1;
+                if is_last && let Stmt::Expr(expr) = stmt {
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::SetTopic);
+                    continue;
+                }
+                self.compile_stmt(stmt);
             }
-            self.compile_stmt(stmt);
         }
         (self.code, self.compiled_functions)
     }

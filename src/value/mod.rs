@@ -291,6 +291,15 @@ impl Value {
         }
     }
 
+    /// Create a Match object instance with from, to, and str attributes.
+    pub(crate) fn make_match_object(matched: String, from: i64, to: i64) -> Self {
+        let mut attrs = HashMap::new();
+        attrs.insert("str".to_string(), Value::Str(matched));
+        attrs.insert("from".to_string(), Value::Int(from));
+        attrs.insert("to".to_string(), Value::Int(to));
+        Value::make_instance("Match".to_string(), attrs)
+    }
+
     pub(crate) fn version_strip_trailing_zeros(parts: &[VersionPart]) -> Vec<VersionPart> {
         let mut v: Vec<VersionPart> = parts.to_vec();
         while matches!(v.last(), Some(VersionPart::Num(0))) {
