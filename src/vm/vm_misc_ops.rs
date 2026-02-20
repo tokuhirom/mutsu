@@ -389,11 +389,10 @@ impl VM {
         code: &CompiledCode,
         stmt_idx: u32,
     ) -> Result<(), RuntimeError> {
-        let stmt = &code.stmt_pool[stmt_idx as usize];
-        Err(RuntimeError::new(format!(
-            "Unsupported expression in compiled code: {:?}",
-            stmt
-        )))
+        let stmt = code.stmt_pool[stmt_idx as usize].clone();
+        let result = self.interpreter.eval_block_value(&[stmt])?;
+        self.stack.push(result);
+        Ok(())
     }
 
     pub(super) fn exec_indirect_type_lookup_op(&mut self) {

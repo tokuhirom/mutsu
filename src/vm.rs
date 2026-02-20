@@ -998,6 +998,7 @@ impl VM {
             }
             OpCode::EvalAstExpr(stmt_idx) => {
                 self.exec_eval_ast_expr_op(code, *stmt_idx)?;
+                *ip += 1;
             }
             OpCode::IndirectTypeLookup => {
                 self.exec_indirect_type_lookup_op();
