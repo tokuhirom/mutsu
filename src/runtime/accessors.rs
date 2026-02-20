@@ -62,15 +62,24 @@ impl Interpreter {
             return val.clone();
         }
         // Look up as a function reference (including multi subs)
-        let def = self.resolve_function(bare_name).or_else(|| {
+        let def = self.resolve_function(bare_name);
+        let is_multi = if def.is_none() {
+            // Check if there are multi-dispatch variants (stored with arity/type suffixes)
             let prefix_local = format!("{}::{}/", self.current_package, bare_name);
             let prefix_global = format!("GLOBAL::{}/", bare_name);
             self.functions
-                .iter()
-                .find(|(k, _)| k.starts_with(&prefix_local) || k.starts_with(&prefix_global))
-                .map(|(_, v)| v.clone())
-        });
-        if let Some(def) = def {
+                .keys()
+                .any(|k| k.starts_with(&prefix_local) || k.starts_with(&prefix_global))
+        } else {
+            false
+        };
+        if is_multi {
+            // Multi subs should resolve via the dispatcher at call time
+            Value::Routine {
+                package: self.current_package.clone(),
+                name: bare_name.to_string(),
+            }
+        } else if let Some(def) = def {
             Value::Sub {
                 package: def.package,
                 name: def.name,
