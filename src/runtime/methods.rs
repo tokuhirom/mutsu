@@ -79,6 +79,7 @@ impl Interpreter {
                     Value::Regex(_) => "Regex",
                     Value::Version { .. } => "Version",
                     Value::Slip(_) => "Slip",
+                    Value::HyperWhatever => "HyperWhatever",
                     Value::Mixin(inner, _) => {
                         return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
                     }
@@ -866,6 +867,13 @@ impl Interpreter {
                         _ => 0.0,
                     };
                     return Ok(Value::Complex(re, im));
+                }
+                // Types that cannot be instantiated with .new
+                "HyperWhatever" | "Whatever" | "Junction" => {
+                    return Err(RuntimeError::new(format!(
+                        "X::Cannot::New: Cannot create new object of type {}",
+                        class_name
+                    )));
                 }
                 _ => {}
             }

@@ -103,6 +103,7 @@ impl Value {
             Value::Regex(_) => true,
             Value::Version { .. } => true,
             Value::Nil => false,
+            Value::HyperWhatever => true,
             Value::Mixin(inner, mixins) => {
                 if let Some(bool_val) = mixins.get("Bool") {
                     bool_val.truthy()
@@ -144,6 +145,7 @@ impl Value {
             Value::Version { .. } => "Version",
             Value::Slip(_) => "Slip",
             Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
+            Value::HyperWhatever => "HyperWhatever",
             Value::Mixin(inner, _) => return inner.isa_check(type_name),
         };
         if my_type == type_name {

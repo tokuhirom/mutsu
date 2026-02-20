@@ -49,7 +49,7 @@ mod sprintf;
 mod subtest;
 mod system;
 mod test_functions;
-mod types;
+pub(crate) mod types;
 mod unicode;
 pub(crate) mod utils;
 
