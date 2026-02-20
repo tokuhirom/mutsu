@@ -24,27 +24,49 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((r, Expr::DoStmt(Box::new(class_stmt))));
         }
     }
-    // Try assignment expression: ($var = expr)
+    // Try assignment expression: ($var = expr) or ($var op= expr)
     let (input, first) = if let Ok((r, var_expr)) = expression_no_sequence(input) {
         let (r2, _) = ws(r)?;
-        if matches!(&var_expr, Expr::Var(_))
-            && r2.starts_with('=')
-            && !r2.starts_with("==")
-            && !r2.starts_with("=>")
-        {
-            let r2 = &r2[1..];
-            let (r2, _) = ws(r2)?;
-            let (r2, rhs) = expression(r2)?;
-            if let Expr::Var(name) = &var_expr {
-                (
-                    r2,
-                    Expr::AssignExpr {
-                        name: name.clone(),
-                        expr: Box::new(rhs),
-                    },
-                )
+        if matches!(&var_expr, Expr::Var(_)) {
+            if r2.starts_with('=') && !r2.starts_with("==") && !r2.starts_with("=>") {
+                // Simple assignment: ($var = expr)
+                let r2 = &r2[1..];
+                let (r2, _) = ws(r2)?;
+                let (r2, rhs) = expression(r2)?;
+                if let Expr::Var(name) = &var_expr {
+                    (
+                        r2,
+                        Expr::AssignExpr {
+                            name: name.clone(),
+                            expr: Box::new(rhs),
+                        },
+                    )
+                } else {
+                    unreachable!()
+                }
+            } else if let Some((stripped, op)) =
+                super::super::stmt::assign::parse_compound_assign_op(r2)
+            {
+                // Compound assignment: ($var += expr)
+                let (r2, _) = ws(stripped)?;
+                let (r2, rhs) = expression(r2)?;
+                if let Expr::Var(name) = &var_expr {
+                    (
+                        r2,
+                        Expr::AssignExpr {
+                            name: name.clone(),
+                            expr: Box::new(Expr::Binary {
+                                left: Box::new(Expr::Var(name.clone())),
+                                op: op.token_kind(),
+                                right: Box::new(rhs),
+                            }),
+                        },
+                    )
+                } else {
+                    unreachable!()
+                }
             } else {
-                unreachable!()
+                (r, var_expr)
             }
         } else {
             (r, var_expr)

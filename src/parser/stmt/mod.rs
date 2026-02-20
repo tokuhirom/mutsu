@@ -1,5 +1,5 @@
 mod args;
-mod assign;
+pub(super) mod assign;
 pub(super) mod class;
 mod control;
 mod decl;

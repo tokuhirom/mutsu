@@ -5,7 +5,7 @@ use super::super::expr::expression;
 use super::super::helpers::{ws, ws1};
 use super::super::parse_result::{PError, PResult, merge_expected_messages, opt_char, parse_char};
 
-use crate::ast::{Expr, PhaserKind, Stmt};
+use crate::ast::{AssignOp, Expr, PhaserKind, Stmt};
 use crate::value::Value;
 
 thread_local! {
@@ -351,6 +351,56 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 value: Box::new(value),
             });
             return parse_statement_modifier(rest, stmt);
+        }
+    }
+
+    // Check for assignment after parenthesized assign expression: ($x = $y) = 5
+    if let Expr::AssignExpr { ref name, .. } = expr {
+        if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {
+            let var_name = name.clone();
+            let r = &rest[1..];
+            let (r, _) = ws(r)?;
+            let (r, rhs) = super::assign::parse_assign_expr_or_comma(r).map_err(|err| PError {
+                messages: merge_expected_messages(
+                    "expected right-hand expression after '='",
+                    &err.messages,
+                ),
+                remaining_len: err.remaining_len.or(Some(r.len())),
+            })?;
+            let stmts = vec![
+                Stmt::Expr(expr),
+                Stmt::Assign {
+                    name: var_name,
+                    expr: rhs,
+                    op: AssignOp::Assign,
+                },
+            ];
+            return parse_statement_modifier(r, Stmt::Block(stmts));
+        }
+        if let Some((stripped, op)) = super::assign::parse_compound_assign_op(rest) {
+            let var_name = name.clone();
+            let (r, _) = ws(stripped)?;
+            let (r, rhs) = super::assign::parse_assign_expr_or_comma(r).map_err(|err| PError {
+                messages: merge_expected_messages(
+                    "expected right-hand expression after compound assignment",
+                    &err.messages,
+                ),
+                remaining_len: err.remaining_len.or(Some(r.len())),
+            })?;
+            let var_expr = Expr::Var(var_name.clone());
+            let stmts = vec![
+                Stmt::Expr(expr),
+                Stmt::Assign {
+                    name: var_name,
+                    expr: Expr::Binary {
+                        left: Box::new(var_expr),
+                        op: op.token_kind(),
+                        right: Box::new(rhs),
+                    },
+                    op: AssignOp::Assign,
+                },
+            ];
+            return parse_statement_modifier(r, Stmt::Block(stmts));
         }
     }
 
