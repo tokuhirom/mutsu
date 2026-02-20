@@ -11,9 +11,9 @@ impl VM {
             let list = LazyList {
                 body: body.clone(),
                 env: self.interpreter.env().clone(),
-                cache: std::cell::RefCell::new(None),
+                cache: std::sync::Mutex::new(None),
             };
-            let val = Value::LazyList(std::rc::Rc::new(list));
+            let val = Value::LazyList(std::sync::Arc::new(list));
             self.stack.push(val);
             Ok(())
         } else {

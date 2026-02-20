@@ -41,9 +41,76 @@ impl Interpreter {
                 // call_method_mut_with_values via target variable metadata.
                 return Ok(target);
             }
-            "in" | "anyof" | "allof" => {
+            "in" => {
                 if matches!(&target, Value::Package(name) if name == "Promise") {
-                    return Ok(self.make_promise_instance("Kept", Value::Nil));
+                    let secs = args.first().map(|v| v.to_f64()).unwrap_or(0.0);
+                    let promise = SharedPromise::new();
+                    let ret = Value::Promise(promise.clone());
+                    std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_secs_f64(secs));
+                        promise.keep(Value::Bool(true), String::new(), String::new());
+                    });
+                    return Ok(ret);
+                }
+            }
+            "allof" => {
+                if matches!(&target, Value::Package(name) if name == "Promise") {
+                    let promise = SharedPromise::new();
+                    let ret = Value::Promise(promise.clone());
+                    let mut promises = Vec::new();
+                    for arg in &args {
+                        match arg {
+                            Value::Promise(p) => promises.push(p.clone()),
+                            Value::Array(arr) => {
+                                for elem in arr {
+                                    if let Value::Promise(p) = elem {
+                                        promises.push(p.clone());
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    std::thread::spawn(move || {
+                        for p in &promises {
+                            p.wait();
+                        }
+                        promise.keep(Value::Bool(true), String::new(), String::new());
+                    });
+                    return Ok(ret);
+                }
+            }
+            "anyof" => {
+                if matches!(&target, Value::Package(name) if name == "Promise") {
+                    let promise = SharedPromise::new();
+                    let ret = Value::Promise(promise.clone());
+                    let mut promises = Vec::new();
+                    for arg in &args {
+                        match arg {
+                            Value::Promise(p) => promises.push(p.clone()),
+                            Value::Array(arr) => {
+                                for elem in arr {
+                                    if let Value::Promise(p) = elem {
+                                        promises.push(p.clone());
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    std::thread::spawn(move || {
+                        // Poll until any promise resolves
+                        loop {
+                            for p in &promises {
+                                if p.status() != "Planned" {
+                                    promise.keep(Value::Bool(true), String::new(), String::new());
+                                    return;
+                                }
+                            }
+                            std::thread::sleep(Duration::from_millis(1));
+                        }
+                    });
+                    return Ok(ret);
                 }
             }
             "WHAT" if args.is_empty() => {
@@ -79,6 +146,8 @@ impl Interpreter {
                     Value::Regex(_) => "Regex",
                     Value::Version { .. } => "Version",
                     Value::Slip(_) => "Slip",
+                    Value::Promise(_) => "Promise",
+                    Value::Channel(_) => "Channel",
                     Value::HyperWhatever => "HyperWhatever",
                     Value::Mixin(inner, _) => {
                         return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
@@ -312,6 +381,103 @@ impl Interpreter {
                 }
                 _ => {}
             }
+        }
+
+        // SharedPromise dispatch
+        if let Value::Promise(ref shared) = target {
+            return match method {
+                "result" => Ok(shared.result_blocking()),
+                "status" => Ok(Value::Str(shared.status())),
+                "then" => {
+                    let block = args.into_iter().next().unwrap_or(Value::Nil);
+                    let orig = shared.clone();
+                    let new_promise = SharedPromise::new();
+                    let ret = Value::Promise(new_promise.clone());
+                    let mut thread_interp = self.clone_for_thread();
+                    std::thread::spawn(move || {
+                        let (result, output, stderr) = orig.wait();
+                        match thread_interp.call_sub_value(block, vec![result], false) {
+                            Ok(v) => {
+                                let out = std::mem::take(&mut thread_interp.output);
+                                let err = std::mem::take(&mut thread_interp.stderr_output);
+                                new_promise.keep(
+                                    v,
+                                    format!("{}{}", output, out),
+                                    format!("{}{}", stderr, err),
+                                );
+                            }
+                            Err(e) => {
+                                let out = std::mem::take(&mut thread_interp.output);
+                                let err = std::mem::take(&mut thread_interp.stderr_output);
+                                new_promise.break_with(
+                                    e.message,
+                                    format!("{}{}", output, out),
+                                    format!("{}{}", stderr, err),
+                                );
+                            }
+                        }
+                    });
+                    Ok(ret)
+                }
+                "keep" => {
+                    let value = args.into_iter().next().unwrap_or(Value::Nil);
+                    shared.keep(value, String::new(), String::new());
+                    Ok(Value::Nil)
+                }
+                "break" => {
+                    let reason = args
+                        .into_iter()
+                        .next()
+                        .unwrap_or(Value::Nil)
+                        .to_string_value();
+                    shared.break_with(reason, String::new(), String::new());
+                    Ok(Value::Nil)
+                }
+                "cause" => {
+                    let (result, _, _) = shared.wait();
+                    if shared.status() == "Broken" {
+                        Ok(result)
+                    } else {
+                        Ok(Value::Nil)
+                    }
+                }
+                "Bool" => Ok(Value::Bool(true)),
+                "WHAT" => Ok(Value::Package("Promise".to_string())),
+                "raku" | "perl" => Ok(Value::Str(format!(
+                    "Promise.new(status => {})",
+                    shared.status()
+                ))),
+                "Str" | "gist" => Ok(Value::Str(format!("Promise({})", shared.status()))),
+                _ => Err(RuntimeError::new(format!(
+                    "No method '{}' on Promise",
+                    method
+                ))),
+            };
+        }
+
+        // SharedChannel dispatch
+        if let Value::Channel(ref ch) = target {
+            return match method {
+                "send" => {
+                    let value = args.into_iter().next().unwrap_or(Value::Nil);
+                    ch.send(value);
+                    Ok(Value::Nil)
+                }
+                "receive" => Ok(ch.receive()),
+                "poll" => Ok(ch.poll().unwrap_or(Value::Nil)),
+                "close" => {
+                    ch.close();
+                    Ok(Value::Nil)
+                }
+                "closed" => Ok(Value::Bool(ch.closed())),
+                "Bool" => Ok(Value::Bool(true)),
+                "WHAT" => Ok(Value::Package("Channel".to_string())),
+                "Str" | "gist" => Ok(Value::Str("Channel".to_string())),
+                _ => Err(RuntimeError::new(format!(
+                    "No method '{}' on Channel",
+                    method
+                ))),
+            };
         }
 
         // Instance dispatch
@@ -760,13 +926,10 @@ impl Interpreter {
                     return Ok(Value::Num(secs.unwrap_or(0.0)));
                 }
                 "Promise" => {
-                    return Ok(self.make_promise_instance("Planned", Value::Nil));
+                    return Ok(Value::Promise(SharedPromise::new()));
                 }
                 "Channel" => {
-                    let mut attrs = HashMap::new();
-                    attrs.insert("queue".to_string(), Value::Array(Vec::new()));
-                    attrs.insert("closed".to_string(), Value::Bool(false));
-                    return Ok(Value::make_instance(class_name.clone(), attrs));
+                    return Ok(Value::Channel(SharedChannel::new()));
                 }
                 "Supply" => return Ok(self.make_supply_instance()),
                 "Supplier" => {

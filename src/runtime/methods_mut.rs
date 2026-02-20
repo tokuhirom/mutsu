@@ -165,6 +165,11 @@ impl Interpreter {
             }
         }
 
+        // SharedPromise/SharedChannel are internally mutable — delegate to immutable dispatch
+        if matches!(target, Value::Promise(_) | Value::Channel(_)) {
+            return self.call_method_with_values(target, method, args);
+        }
+
         if let Value::Instance {
             class_name,
             attributes,

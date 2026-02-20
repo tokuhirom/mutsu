@@ -438,8 +438,83 @@ impl Interpreter {
         match method {
             "start" => {
                 attrs.insert("started".to_string(), Value::Bool(true));
-                let result = self.make_promise_instance("Kept", Value::Int(0));
-                Ok((result, attrs))
+
+                // Extract command and args
+                let cmd_arr = match attrs.get("cmd") {
+                    Some(Value::Array(arr)) => arr.clone(),
+                    _ => Vec::new(),
+                };
+                let (program, cmd_args): (String, Vec<String>) = if cmd_arr.is_empty() {
+                    return Err(RuntimeError::new("Proc::Async: no command specified"));
+                } else {
+                    let prog = cmd_arr[0].to_string_value();
+                    let a: Vec<String> = cmd_arr[1..].iter().map(|v| v.to_string_value()).collect();
+                    (prog, a)
+                };
+
+                let promise = SharedPromise::new();
+                let ret = Value::Promise(promise.clone());
+
+                // Get stdout/stderr supply references for taps
+                let stdout_supply = attrs.get("stdout").cloned().unwrap_or(Value::Nil);
+                let _stderr_supply = attrs.get("stderr").cloned().unwrap_or(Value::Nil);
+
+                // Spawn the actual process in a thread
+                let mut thread_interp = self.clone_for_thread();
+                std::thread::spawn(move || {
+                    use std::io::BufRead;
+                    use std::process::{Command, Stdio};
+
+                    let child = Command::new(&program)
+                        .args(&cmd_args)
+                        .stdout(Stdio::piped())
+                        .stderr(Stdio::piped())
+                        .spawn();
+
+                    match child {
+                        Ok(mut child) => {
+                            // Read stdout
+                            if let Some(stdout) = child.stdout.take() {
+                                let reader = std::io::BufReader::new(stdout);
+                                for line in reader.lines() {
+                                    if let Ok(line) = line
+                                        && let Value::Instance { ref attributes, .. } =
+                                            stdout_supply
+                                        && let Some(Value::Array(taps)) = attributes.get("taps")
+                                    {
+                                        for tap in taps {
+                                            let _ = thread_interp.call_sub_value(
+                                                tap.clone(),
+                                                vec![Value::Str(line.clone())],
+                                                true,
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+
+                            let status = child.wait();
+                            let exit_code =
+                                status.map(|s| s.code().unwrap_or(-1)).unwrap_or(-1) as i64;
+                            let output = std::mem::take(&mut thread_interp.output);
+                            let stderr_out = std::mem::take(&mut thread_interp.stderr_output);
+                            promise.keep(Value::Int(exit_code), output, stderr_out);
+                        }
+                        Err(e) => {
+                            promise.break_with(
+                                format!("Failed to spawn '{}': {}", program, e),
+                                String::new(),
+                                String::new(),
+                            );
+                        }
+                    }
+                });
+
+                Ok((ret, attrs))
+            }
+            "kill" => {
+                // For now, just return Nil — proper kill support would need process handle
+                Ok((Value::Nil, attrs))
             }
             _ => Err(RuntimeError::new(format!(
                 "No native mutable method '{}' on Proc::Async",

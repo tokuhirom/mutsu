@@ -4,8 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::ast::Stmt;
 use num_bigint::BigInt as NumBigInt;
 use num_traits::{ToPrimitive, Zero};
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, Condvar, Mutex};
 
 mod display;
 mod error;
@@ -118,12 +117,14 @@ pub enum Value {
         values: Vec<Value>,
     },
     Slip(Vec<Value>),
-    LazyList(Rc<LazyList>),
+    LazyList(Arc<LazyList>),
     Version {
         parts: Vec<VersionPart>,
         plus: bool,
         minus: bool,
     },
+    Promise(SharedPromise),
+    Channel(SharedChannel),
     Nil,
     HyperWhatever,
     /// A value with mixin overrides from the `but` operator.
@@ -138,11 +139,187 @@ pub(crate) enum VersionPart {
     Whatever,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct LazyList {
     pub(crate) body: Vec<Stmt>,
     pub(crate) env: HashMap<String, Value>,
-    pub(crate) cache: RefCell<Option<Vec<Value>>>,
+    pub(crate) cache: Mutex<Option<Vec<Value>>>,
+}
+
+impl Clone for LazyList {
+    fn clone(&self) -> Self {
+        Self {
+            body: self.body.clone(),
+            env: self.env.clone(),
+            cache: Mutex::new(self.cache.lock().unwrap().clone()),
+        }
+    }
+}
+
+// --- SharedPromise: thread-safe promise state ---
+
+#[derive(Debug)]
+struct PromiseState {
+    status: String, // "Planned", "Kept", "Broken"
+    result: Value,
+    output: String, // captured stdout from thread
+    stderr_output: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SharedPromise {
+    inner: Arc<(Mutex<PromiseState>, Condvar)>,
+}
+
+impl SharedPromise {
+    pub(crate) fn new() -> Self {
+        Self {
+            inner: Arc::new((
+                Mutex::new(PromiseState {
+                    status: "Planned".to_string(),
+                    result: Value::Nil,
+                    output: String::new(),
+                    stderr_output: String::new(),
+                }),
+                Condvar::new(),
+            )),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn new_kept(result: Value) -> Self {
+        Self {
+            inner: Arc::new((
+                Mutex::new(PromiseState {
+                    status: "Kept".to_string(),
+                    result,
+                    output: String::new(),
+                    stderr_output: String::new(),
+                }),
+                Condvar::new(),
+            )),
+        }
+    }
+
+    pub(crate) fn keep(&self, result: Value, output: String, stderr: String) {
+        let (lock, cvar) = &*self.inner;
+        let mut state = lock.lock().unwrap();
+        state.status = "Kept".to_string();
+        state.result = result;
+        state.output = output;
+        state.stderr_output = stderr;
+        cvar.notify_all();
+    }
+
+    pub(crate) fn break_with(&self, error: String, output: String, stderr: String) {
+        let (lock, cvar) = &*self.inner;
+        let mut state = lock.lock().unwrap();
+        state.status = "Broken".to_string();
+        state.result = Value::Str(error);
+        state.output = output;
+        state.stderr_output = stderr;
+        cvar.notify_all();
+    }
+
+    pub(crate) fn status(&self) -> String {
+        let (lock, _) = &*self.inner;
+        lock.lock().unwrap().status.clone()
+    }
+
+    pub(crate) fn wait(&self) -> (Value, String, String) {
+        let (lock, cvar) = &*self.inner;
+        let mut state = lock.lock().unwrap();
+        while state.status == "Planned" {
+            state = cvar.wait(state).unwrap();
+        }
+        (
+            state.result.clone(),
+            state.output.clone(),
+            state.stderr_output.clone(),
+        )
+    }
+
+    pub(crate) fn result_blocking(&self) -> Value {
+        self.wait().0
+    }
+}
+
+impl PartialEq for SharedPromise {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+// --- SharedChannel: thread-safe channel ---
+
+#[derive(Debug)]
+struct ChannelState {
+    queue: std::collections::VecDeque<Value>,
+    closed: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SharedChannel {
+    inner: Arc<(Mutex<ChannelState>, Condvar)>,
+}
+
+impl SharedChannel {
+    pub(crate) fn new() -> Self {
+        Self {
+            inner: Arc::new((
+                Mutex::new(ChannelState {
+                    queue: std::collections::VecDeque::new(),
+                    closed: false,
+                }),
+                Condvar::new(),
+            )),
+        }
+    }
+
+    pub(crate) fn send(&self, value: Value) {
+        let (lock, cvar) = &*self.inner;
+        let mut state = lock.lock().unwrap();
+        state.queue.push_back(value);
+        cvar.notify_one();
+    }
+
+    pub(crate) fn receive(&self) -> Value {
+        let (lock, cvar) = &*self.inner;
+        let mut state = lock.lock().unwrap();
+        loop {
+            if let Some(val) = state.queue.pop_front() {
+                return val;
+            }
+            if state.closed {
+                return Value::Nil;
+            }
+            state = cvar.wait(state).unwrap();
+        }
+    }
+
+    pub(crate) fn poll(&self) -> Option<Value> {
+        let (lock, _) = &*self.inner;
+        let mut state = lock.lock().unwrap();
+        state.queue.pop_front()
+    }
+
+    pub(crate) fn close(&self) {
+        let (lock, cvar) = &*self.inner;
+        let mut state = lock.lock().unwrap();
+        state.closed = true;
+        cvar.notify_all();
+    }
+
+    pub(crate) fn closed(&self) -> bool {
+        let (lock, _) = &*self.inner;
+        lock.lock().unwrap().closed
+    }
+}
+
+impl PartialEq for SharedChannel {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
 }
 
 impl PartialEq for Value {
@@ -259,7 +436,7 @@ impl PartialEq for Value {
                 },
             ) => ak == bk && av == bv,
             (Value::Sub { id: a, .. }, Value::Sub { id: b, .. }) => a == b,
-            (Value::LazyList(a), Value::LazyList(b)) => Rc::ptr_eq(a, b),
+            (Value::LazyList(a), Value::LazyList(b)) => Arc::ptr_eq(a, b),
             (
                 Value::Version {
                     parts: ap,
@@ -280,6 +457,8 @@ impl PartialEq for Value {
                 let b_norm = Self::version_strip_trailing_zeros(bp);
                 a_norm == b_norm
             }
+            (Value::Promise(a), Value::Promise(b)) => a == b,
+            (Value::Channel(a), Value::Channel(b)) => a == b,
             (Value::Nil, Value::Nil) => true,
             _ => false,
         }
@@ -408,3 +587,9 @@ impl Value {
         }
     }
 }
+
+// Compile-time assertions that Value is Send + Sync
+const _: fn() = || {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<Value>();
+};

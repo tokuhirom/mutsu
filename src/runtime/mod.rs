@@ -16,7 +16,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use crate::ast::{Expr, FunctionDef, ParamDef, PhaserKind, Stmt};
 use crate::opcode::{CompiledCode, OpCode};
 use crate::parse_dispatch;
-use crate::value::{JunctionKind, LazyList, RuntimeError, Value, make_rat, next_instance_id};
+use crate::value::{
+    JunctionKind, LazyList, RuntimeError, SharedChannel, SharedPromise, Value, make_rat,
+    next_instance_id,
+};
 use num_traits::Signed;
 
 mod accessors;
@@ -57,6 +60,7 @@ pub(crate) use utils::*;
 
 use self::unicode::check_unicode_property;
 
+#[derive(Clone)]
 struct ClassDef {
     parents: Vec<String>,
     attributes: Vec<(String, bool, Option<Expr>)>, // (name, is_public, default)
@@ -605,6 +609,43 @@ impl Interpreter {
 
     pub(crate) fn has_class(&self, name: &str) -> bool {
         self.classes.contains_key(name)
+    }
+
+    /// Create a lightweight clone of this interpreter for use in a spawned thread.
+    /// Shares function/class/role/enum definitions but starts with fresh output and test state.
+    pub(crate) fn clone_for_thread(&self) -> Self {
+        Self {
+            env: self.env.clone(),
+            output: String::new(),
+            stderr_output: String::new(),
+            test_state: None,
+            halted: false,
+            bailed_out: false,
+            functions: self.functions.clone(),
+            token_defs: self.token_defs.clone(),
+            lib_paths: self.lib_paths.clone(),
+            handles: HashMap::new(),
+            next_handle_id: 1,
+            program_path: self.program_path.clone(),
+            current_package: self.current_package.clone(),
+            routine_stack: Vec::new(),
+            block_stack: Vec::new(),
+            doc_comments: HashMap::new(),
+            when_matched: false,
+            gather_items: Vec::new(),
+            enum_types: self.enum_types.clone(),
+            classes: self.classes.clone(),
+            roles: self.roles.clone(),
+            subsets: self.subsets.clone(),
+            proto_subs: self.proto_subs.clone(),
+            proto_tokens: self.proto_tokens.clone(),
+            end_phasers: Vec::new(),
+            chroot_root: self.chroot_root.clone(),
+            loaded_modules: self.loaded_modules.clone(),
+            state_vars: HashMap::new(),
+            let_saves: Vec::new(),
+            supply_emit_buffer: Vec::new(),
+        }
     }
 }
 
