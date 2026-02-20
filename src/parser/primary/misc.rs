@@ -1,12 +1,15 @@
 use super::super::parse_result::{PError, PResult, parse_char};
 
-use crate::ast::{Expr, make_anon_sub};
+use crate::ast::{Expr, Stmt, make_anon_sub};
 use crate::value::Value;
 
 use super::super::expr::expression;
 use super::super::helpers::ws;
+use super::super::stmt::keyword;
 use super::string::{double_quoted_string, single_quoted_string};
 use super::var::parse_ident_with_hyphens;
+
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Known reduction operators (must be listed to distinguish from array literals).
 const REDUCTION_OPS: &[&str] = &[
@@ -317,6 +320,29 @@ fn is_hash_literal_start(input: &str) -> bool {
         }
     }
     false
+}
+
+static ANON_CLASS_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Parse an anonymous class expression: `class { ... }`
+pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
+    let rest = keyword("class", input).ok_or_else(|| PError::expected("anonymous class"))?;
+    let (rest, _) = ws(rest)?;
+    // Must be followed by '{' (no name) to be an anonymous class
+    if !rest.starts_with('{') {
+        return Err(PError::expected("'{' for anonymous class"));
+    }
+    let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let name = format!("__ANON_CLASS_{id}__");
+    let (rest, body) = parse_block_body(rest)?;
+    Ok((
+        rest,
+        Expr::DoStmt(Box::new(Stmt::ClassDecl {
+            name,
+            parents: Vec::new(),
+            body,
+        })),
+    ))
 }
 
 /// Parse hash literal body: key => val, key => val, ... }

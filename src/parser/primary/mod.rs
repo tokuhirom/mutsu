@@ -102,6 +102,8 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         // ::Foo class literal (type object reference)
         try_primary!(ident::class_literal(input));
         try_primary!(misc::colonpair_expr(input));
+        // anonymous class: class { ... }
+        try_primary!(misc::anon_class_expr(input));
 
         match ident::identifier_or_call(input) {
             Ok(r) => Ok(r),
