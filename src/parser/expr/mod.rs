@@ -193,6 +193,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_not_smartmatch() {
+        let (rest, expr) = expression("\"abc\" !~~ \"xyz\"").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Binary {
+                op: TokenKind::BangTilde,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn parse_method_call() {
         let (rest, expr) = expression("$x.defined").unwrap();
         assert_eq!(rest, "");

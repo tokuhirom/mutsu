@@ -126,6 +126,12 @@ struct RegexPattern {
     anchor_end: bool,
 }
 
+#[derive(Clone, Default)]
+struct RegexCaptures {
+    named: HashMap<String, String>,
+    positional: Vec<String>,
+}
+
 #[derive(Clone)]
 struct RegexToken {
     atom: RegexAtom,
@@ -144,8 +150,13 @@ enum RegexAtom {
     Newline,
     NotNewline,
     Group(RegexPattern),
+    CaptureGroup(RegexPattern),
     Alternation(Vec<RegexPattern>),
     ZeroWidth,
+    CodeAssertion {
+        code: String,
+        negated: bool,
+    },
     UnicodeProp {
         name: String,
         negated: bool,

@@ -23,7 +23,7 @@ impl Interpreter {
         &self,
         pattern: &str,
         text: &str,
-    ) -> Option<HashMap<String, String>> {
+    ) -> Option<RegexCaptures> {
         let parsed = self.parse_regex(pattern)?;
         let chars: Vec<char> = text.chars().collect();
         if parsed.anchor_start {
@@ -130,9 +130,9 @@ impl Interpreter {
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,
-    ) -> Option<(usize, HashMap<String, String>)> {
+    ) -> Option<(usize, RegexCaptures)> {
         let mut stack = Vec::new();
-        stack.push((0usize, start, HashMap::new()));
+        stack.push((0usize, start, RegexCaptures::default()));
         while let Some((idx, pos, caps)) = stack.pop() {
             if idx == pattern.tokens.len() {
                 if pattern.anchor_end {
@@ -147,25 +147,17 @@ impl Interpreter {
             let token = &pattern.tokens[idx];
             match token.quant {
                 RegexQuant::One => {
-                    if let Some((next, cap)) =
-                        self.regex_match_atom_with_capture(&token.atom, chars, pos)
+                    if let Some((next, new_caps)) =
+                        self.regex_match_atom_with_capture(&token.atom, chars, pos, &caps)
                     {
-                        let mut next_caps = caps.clone();
-                        if let Some((name, value)) = cap {
-                            next_caps.insert(name, value);
-                        }
-                        stack.push((idx + 1, next, next_caps));
+                        stack.push((idx + 1, next, new_caps));
                     }
                 }
                 RegexQuant::ZeroOrOne => {
-                    if let Some((next, cap)) =
-                        self.regex_match_atom_with_capture(&token.atom, chars, pos)
+                    if let Some((next, new_caps)) =
+                        self.regex_match_atom_with_capture(&token.atom, chars, pos, &caps)
                     {
-                        let mut next_caps = caps.clone();
-                        if let Some((name, value)) = cap {
-                            next_caps.insert(name, value);
-                        }
-                        stack.push((idx + 1, next, next_caps));
+                        stack.push((idx + 1, next, new_caps));
                     }
                     stack.push((idx + 1, pos, caps.clone()));
                 }
@@ -174,13 +166,14 @@ impl Interpreter {
                     positions.push((pos, caps.clone()));
                     let mut current = pos;
                     let mut current_caps = caps.clone();
-                    while let Some((next, cap)) =
-                        self.regex_match_atom_with_capture(&token.atom, chars, current)
-                    {
-                        if let Some((name, value)) = cap {
-                            current_caps.insert(name, value);
-                        }
-                        positions.push((next, current_caps.clone()));
+                    while let Some((next, new_caps)) = self.regex_match_atom_with_capture(
+                        &token.atom,
+                        chars,
+                        current,
+                        &current_caps,
+                    ) {
+                        current_caps = new_caps.clone();
+                        positions.push((next, new_caps));
                         current = next;
                     }
                     for (p, c) in positions {
@@ -188,26 +181,21 @@ impl Interpreter {
                     }
                 }
                 RegexQuant::OneOrMore => {
-                    let mut positions = Vec::new();
                     let (mut current, mut current_caps) =
-                        match self.regex_match_atom_with_capture(&token.atom, chars, pos) {
-                            Some((next, cap)) => {
-                                let mut caps = caps.clone();
-                                if let Some((name, value)) = cap {
-                                    caps.insert(name, value);
-                                }
-                                (next, caps)
-                            }
+                        match self.regex_match_atom_with_capture(&token.atom, chars, pos, &caps) {
+                            Some((next, new_caps)) => (next, new_caps),
                             None => continue,
                         };
+                    let mut positions = Vec::new();
                     positions.push((current, current_caps.clone()));
-                    while let Some((next, cap)) =
-                        self.regex_match_atom_with_capture(&token.atom, chars, current)
-                    {
-                        if let Some((name, value)) = cap {
-                            current_caps.insert(name, value);
-                        }
-                        positions.push((next, current_caps.clone()));
+                    while let Some((next, new_caps)) = self.regex_match_atom_with_capture(
+                        &token.atom,
+                        chars,
+                        current,
+                        &current_caps,
+                    ) {
+                        current_caps = new_caps.clone();
+                        positions.push((next, new_caps));
                         current = next;
                     }
                     for (p, c) in positions {
@@ -290,9 +278,12 @@ impl Interpreter {
         chars: &[char],
         pos: usize,
     ) -> Option<usize> {
-        // Group, Alternation, and ZeroWidth can match zero-width, so check before pos >= chars.len()
+        // Group, CaptureGroup, Alternation, ZeroWidth, CodeAssertion can match zero-width
         match atom {
             RegexAtom::Group(pattern) => {
+                return self.regex_match_end_from(pattern, chars, pos);
+            }
+            RegexAtom::CaptureGroup(pattern) => {
                 return self.regex_match_end_from(pattern, chars, pos);
             }
             RegexAtom::Alternation(alternatives) => {
@@ -305,6 +296,11 @@ impl Interpreter {
             }
             RegexAtom::ZeroWidth => {
                 return Some(pos); // Matches at any position without consuming
+            }
+            RegexAtom::CodeAssertion { .. } => {
+                // In non-capture mode, code assertions always succeed
+                // (we can't evaluate them without capture context)
+                return Some(pos);
             }
             RegexAtom::UnicodePropAssert { name, negated } => {
                 // Zero-width assertion: check next char but don't consume
@@ -395,10 +391,12 @@ impl Interpreter {
                 pos_match && !neg_match
             }
             RegexAtom::Group(_)
+            | RegexAtom::CaptureGroup(_)
             | RegexAtom::Alternation(_)
             | RegexAtom::Newline
             | RegexAtom::NotNewline
             | RegexAtom::ZeroWidth
+            | RegexAtom::CodeAssertion { .. }
             | RegexAtom::UnicodePropAssert { .. } => unreachable!(),
         };
         if matched {
@@ -416,7 +414,8 @@ impl Interpreter {
         atom: &RegexAtom,
         chars: &[char],
         pos: usize,
-    ) -> Option<(usize, Option<(String, String)>)> {
+        current_caps: &RegexCaptures,
+    ) -> Option<(usize, RegexCaptures)> {
         // Handle zero-width and group atoms before the length check
         match atom {
             RegexAtom::Group(_)
@@ -425,7 +424,36 @@ impl Interpreter {
             | RegexAtom::UnicodePropAssert { .. } => {
                 return self
                     .regex_match_atom(atom, chars, pos)
-                    .map(|next| (next, None));
+                    .map(|next| (next, current_caps.clone()));
+            }
+            RegexAtom::CaptureGroup(pattern) => {
+                // Match the inner pattern and capture the matched text
+                if let Some((end, inner_caps)) = self.regex_match_end_from_caps(pattern, chars, pos)
+                {
+                    let captured: String = chars[pos..end].iter().collect();
+                    let mut new_caps = current_caps.clone();
+                    // Merge inner captures (nested capture groups)
+                    for (k, v) in &inner_caps.named {
+                        new_caps.named.insert(k.clone(), v.clone());
+                    }
+                    for v in &inner_caps.positional {
+                        new_caps.positional.push(v.clone());
+                    }
+                    // Add this capture group's match
+                    new_caps.positional.push(captured);
+                    return Some((end, new_caps));
+                }
+                return None;
+            }
+            RegexAtom::CodeAssertion { code, negated } => {
+                // Evaluate the code with current captures available
+                let result = self.eval_regex_code_assertion(code, current_caps);
+                let pass = if *negated { !result } else { result };
+                return if pass {
+                    Some((pos, current_caps.clone()))
+                } else {
+                    None
+                };
             }
             _ => {}
         }
@@ -440,13 +468,56 @@ impl Interpreter {
                 }
                 if chars[pos..pos + name_chars.len()] == name_chars[..] {
                     let captured: String = name_chars.iter().collect();
-                    return Some((pos + name_chars.len(), Some((name.clone(), captured))));
+                    let mut new_caps = current_caps.clone();
+                    new_caps.named.insert(name.clone(), captured);
+                    return Some((pos + name_chars.len(), new_caps));
                 }
                 None
             }
             _ => self
                 .regex_match_atom(atom, chars, pos)
-                .map(|next| (next, None)),
+                .map(|next| (next, current_caps.clone())),
+        }
+    }
+
+    /// Evaluate a code assertion inside a regex.
+    /// Sets up $0, $1, etc. from current captures, evaluates the code,
+    /// and returns whether the result is truthy.
+    fn eval_regex_code_assertion(&self, code: &str, caps: &RegexCaptures) -> bool {
+        // We need to evaluate in a mutable context but `self` is &self.
+        // Use unsafe interior mutability pattern via a clone-and-eval approach.
+        // Parse the code first.
+        let (stmts, _) = match crate::parse_dispatch::parse_source(code) {
+            Ok(result) => result,
+            Err(_) => return false,
+        };
+        // Create a minimal interpreter with env set up
+        let mut env = self.env.clone();
+        // Set positional capture variables ($0, $1, etc.)
+        for (i, val) in caps.positional.iter().enumerate() {
+            env.insert(i.to_string(), Value::Str(val.clone()));
+        }
+        // Build $/ as an array for $/[n] access
+        let match_list: Vec<Value> = caps
+            .positional
+            .iter()
+            .map(|s| Value::Str(s.clone()))
+            .collect();
+        env.insert("/".to_string(), Value::Array(match_list));
+        // Set named captures
+        for (k, v) in &caps.named {
+            env.insert(format!("<{}>", k), Value::Str(v.clone()));
+        }
+        // Evaluate the code in a fresh interpreter with this env
+        let mut interp = Interpreter {
+            env,
+            functions: self.functions.clone(),
+            current_package: self.current_package.clone(),
+            ..Default::default()
+        };
+        match interp.eval_block_value(&stmts) {
+            Ok(val) => val.truthy(),
+            Err(_) => false,
         }
     }
 
