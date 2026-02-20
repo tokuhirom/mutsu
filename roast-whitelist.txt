@@ -171,6 +171,7 @@ roast/S17-procasync/many-processes-no-close-stdin.t
 roast/S17-procasync/no-runaway-file-limit.t
 roast/S17-promise/stress.t
 roast/S17-supply/do.t
+roast/S17-supply/on-demand.t
 roast/S17-supply/repeated.t
 roast/S17-supply/watch-path.t
 roast/S19-command-line-options/03-dash-p.t
