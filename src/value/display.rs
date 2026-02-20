@@ -323,6 +323,8 @@ impl Value {
                 .map(|v| v.to_string_value())
                 .collect::<Vec<_>>()
                 .join(" "),
+            Value::Promise(p) => format!("Promise({})", p.status()),
+            Value::Channel(_) => "Channel".to_string(),
             Value::Nil => String::new(),
             Value::HyperWhatever => "**".to_string(),
             Value::Mixin(inner, mixins) => {

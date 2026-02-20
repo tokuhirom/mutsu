@@ -405,19 +405,45 @@ impl Interpreter {
         Ok(Value::Bool(false))
     }
 
-    /// `start { ... }` — execute block and wrap result in a kept Promise.
-    /// Single-threaded: runs the block immediately (no actual threading).
+    /// `start { ... }` — spawn a thread to execute the block and return a Promise.
     pub(super) fn builtin_start(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        use crate::value::SharedPromise;
+
         let block = args.into_iter().next().unwrap_or(Value::Nil);
-        let result = self.call_sub_value(block, vec![], false)?;
-        Ok(self.make_promise_instance("Kept", result))
+        let promise = SharedPromise::new();
+        let ret = Value::Promise(promise.clone());
+        let mut thread_interp = self.clone_for_thread();
+
+        std::thread::spawn(
+            move || match thread_interp.call_sub_value(block, vec![], false) {
+                Ok(result) => {
+                    let output = std::mem::take(&mut thread_interp.output);
+                    let stderr = std::mem::take(&mut thread_interp.stderr_output);
+                    promise.keep(result, output, stderr);
+                }
+                Err(e) => {
+                    let output = std::mem::take(&mut thread_interp.output);
+                    let stderr = std::mem::take(&mut thread_interp.stderr_output);
+                    promise.break_with(e.message, output, stderr);
+                }
+            },
+        );
+
+        Ok(ret)
     }
 
-    /// `await` — extract results from Promise instances.
+    /// `await` — block until Promise(s) resolve, then return their results.
     pub(super) fn builtin_await(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut results = Vec::new();
         for arg in args {
             match arg {
+                Value::Promise(shared) => {
+                    let (result, output, stderr) = shared.wait();
+                    self.output.push_str(&output);
+                    self.stderr_output.push_str(&stderr);
+                    results.push(result);
+                }
+                // Backward compat: Instance-based Promise
                 Value::Instance {
                     class_name,
                     attributes,
@@ -428,18 +454,24 @@ impl Interpreter {
                 }
                 Value::Array(elems) => {
                     for elem in elems {
-                        if let Value::Instance {
-                            class_name,
-                            attributes,
-                            ..
-                        } = elem
-                            && class_name == "Promise"
-                        {
-                            let result = attributes.get("result").cloned().unwrap_or(Value::Nil);
-                            results.push(result);
-                            continue;
+                        match elem {
+                            Value::Promise(shared) => {
+                                let (result, output, stderr) = shared.wait();
+                                self.output.push_str(&output);
+                                self.stderr_output.push_str(&stderr);
+                                results.push(result);
+                            }
+                            Value::Instance {
+                                class_name,
+                                attributes,
+                                ..
+                            } if class_name == "Promise" => {
+                                let result =
+                                    attributes.get("result").cloned().unwrap_or(Value::Nil);
+                                results.push(result);
+                            }
+                            _ => results.push(elem.clone()),
                         }
-                        results.push(elem.clone());
                     }
                 }
                 _ => results.push(arg.clone()),

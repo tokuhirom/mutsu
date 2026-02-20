@@ -46,7 +46,9 @@ impl Value {
             | (Value::Nil, Value::Nil)
             | (Value::Package(_), Value::Package(_))
             | (Value::CompUnitDepSpec { .. }, Value::CompUnitDepSpec { .. })
-            | (Value::Junction { .. }, Value::Junction { .. }) => self == other,
+            | (Value::Junction { .. }, Value::Junction { .. })
+            | (Value::Promise(_), Value::Promise(_))
+            | (Value::Channel(_), Value::Channel(_)) => self == other,
             // Cross-type comparisons always return false for eqv
             _ => false,
         }
@@ -100,6 +102,8 @@ impl Value {
             },
             Value::Slip(items) => !items.is_empty(),
             Value::LazyList(_) => true,
+            Value::Promise(_) => true,
+            Value::Channel(_) => true,
             Value::Regex(_) => true,
             Value::Version { .. } => true,
             Value::Nil => false,
@@ -144,6 +148,8 @@ impl Value {
             Value::Junction { .. } => "Junction",
             Value::Version { .. } => "Version",
             Value::Slip(_) => "Slip",
+            Value::Promise(_) => "Promise",
+            Value::Channel(_) => "Channel",
             Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
             Value::HyperWhatever => "HyperWhatever",
             Value::Mixin(inner, _) => return inner.isa_check(type_name),

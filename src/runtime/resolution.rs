@@ -86,7 +86,7 @@ impl Interpreter {
     }
 
     pub(super) fn force_lazy_list(&mut self, list: &LazyList) -> Result<Vec<Value>, RuntimeError> {
-        if let Some(cached) = list.cache.borrow().clone() {
+        if let Some(cached) = list.cache.lock().unwrap().clone() {
             return Ok(cached);
         }
         let saved_env = self.env.clone();
@@ -104,7 +104,7 @@ impl Interpreter {
         }
         self.env = merged_env;
         run_res?;
-        *list.cache.borrow_mut() = Some(items.clone());
+        *list.cache.lock().unwrap() = Some(items.clone());
         Ok(items)
     }
 
