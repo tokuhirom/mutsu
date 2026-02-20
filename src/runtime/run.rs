@@ -132,7 +132,6 @@ impl Interpreter {
                 .insert("*PROGRAM".to_string(), Value::Str(String::new()));
         }
         self.collect_doc_comments(&preprocessed);
-        self.loose_ok = false;
         let file_name = self
             .program_path
             .clone()

@@ -62,15 +62,24 @@ impl Interpreter {
             return val.clone();
         }
         // Look up as a function reference (including multi subs)
-        let def = self.resolve_function(bare_name).or_else(|| {
+        let def = self.resolve_function(bare_name);
+        let is_multi = if def.is_none() {
+            // Check if there are multi-dispatch variants (stored with arity/type suffixes)
             let prefix_local = format!("{}::{}/", self.current_package, bare_name);
             let prefix_global = format!("GLOBAL::{}/", bare_name);
             self.functions
-                .iter()
-                .find(|(k, _)| k.starts_with(&prefix_local) || k.starts_with(&prefix_global))
-                .map(|(_, v)| v.clone())
-        });
-        if let Some(def) = def {
+                .keys()
+                .any(|k| k.starts_with(&prefix_local) || k.starts_with(&prefix_global))
+        } else {
+            false
+        };
+        if is_multi {
+            // Multi subs should resolve via the dispatcher at call time
+            Value::Routine {
+                package: self.current_package.clone(),
+                name: bare_name.to_string(),
+            }
+        } else if let Some(def) = def {
             Value::Sub {
                 package: def.package,
                 name: def.name,
@@ -128,6 +137,54 @@ impl Interpreter {
 
     pub(crate) fn block_stack_top(&self) -> Option<&Value> {
         self.block_stack.last()
+    }
+
+    /// Stringify a value, calling the `.Str` method for Instance and Package types.
+    pub(crate) fn stringify_value(&mut self, value: Value) -> Result<String, RuntimeError> {
+        match &value {
+            Value::Instance { .. } | Value::Package(_) => {
+                let result = self.call_method_with_values(value, "Str", vec![])?;
+                Ok(result.to_string_value())
+            }
+            _ => Ok(value.to_string_value()),
+        }
+    }
+
+    /// Check if a value can respond to a given method name.
+    pub(crate) fn value_can_method(&mut self, value: &Value, method: &str) -> bool {
+        // Check builtin 0-arg method (covers most built-in methods)
+        if crate::builtins::native_method_0arg(value, method).is_some() {
+            return true;
+        }
+        // For instances, check class methods
+        if let Value::Instance { class_name, .. } = value {
+            return self.class_has_method(class_name, method);
+        }
+        // Universal methods available on all values
+        matches!(
+            method,
+            "WHAT"
+                | "say"
+                | "print"
+                | "put"
+                | "gist"
+                | "Str"
+                | "Int"
+                | "Num"
+                | "Bool"
+                | "Numeric"
+                | "Real"
+                | "so"
+                | "not"
+                | "defined"
+                | "isa"
+                | "does"
+                | "ACCEPTS"
+                | "raku"
+                | "perl"
+                | "clone"
+                | "new"
+        )
     }
 
     pub(crate) fn regex_find_first_bridge(

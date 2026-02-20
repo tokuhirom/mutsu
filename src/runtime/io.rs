@@ -35,10 +35,9 @@ impl Interpreter {
         self.env.insert("*SPEC".to_string(), spec);
         let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let cwd_str = cwd.to_string_lossy().to_string();
-        self.env
-            .insert("$*CWD".to_string(), Value::Str(cwd_str.clone()));
-        self.env
-            .insert("*CWD".to_string(), Value::Str(cwd_str.clone()));
+        let cwd_val = self.make_io_path_instance(&cwd_str);
+        self.env.insert("$*CWD".to_string(), cwd_val.clone());
+        self.env.insert("*CWD".to_string(), cwd_val);
         let tmpdir = env::temp_dir();
         let tmpdir_str = tmpdir.to_string_lossy().to_string();
         self.env
@@ -294,10 +293,21 @@ impl Interpreter {
             "auth".to_string(),
             Value::Str("The Perl Foundation".to_string()),
         );
-        attrs.insert("version".to_string(), Value::Str("v6.d".to_string()));
+        attrs.insert(
+            "version".to_string(),
+            Value::Version {
+                parts: vec![crate::value::VersionPart::Num(6)],
+                plus: false,
+                minus: false,
+            },
+        );
         attrs.insert(
             "signature".to_string(),
-            Value::Array(vec![Value::Int(0)]), // Blob placeholder (non-empty)
+            Value::make_instance("Blob".to_string(), {
+                let mut a = HashMap::new();
+                a.insert("values".to_string(), Value::Array(vec![Value::Int(0)]));
+                a
+            }),
         );
         attrs.insert(
             "desc".to_string(),
@@ -352,6 +362,10 @@ impl Interpreter {
     pub(super) fn get_dynamic_string(&self, name: &str) -> Option<String> {
         self.env.get(name).and_then(|value| match value {
             Value::Str(s) => Some(s.clone()),
+            Value::Instance { attributes, .. } => {
+                // Support IO::Path instances (e.g., $*CWD)
+                attributes.get("path").map(|v| v.to_string_value())
+            }
             _ => None,
         })
     }

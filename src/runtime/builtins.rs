@@ -463,6 +463,7 @@ impl Interpreter {
                 | "squish"
                 | "min"
                 | "max"
+                | "minmax"
                 | "sum"
                 | "any"
                 | "all"
