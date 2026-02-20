@@ -250,8 +250,8 @@ Before writing any code, always investigate the test in this order:
 When the user says **"roast fix"**, execute this automated loop (serially, without sub-agents):
 
 1. Run `scripts/pick-next-roast.sh -n 1` to find the next failing roast test.
-2. Create a git worktree: `git worktree add .git/worktrees-work/<branch-name> -b <branch-name> main`
-3. Work in that worktree directory for all subsequent steps.
+2. Ensure you are on `main` and up to date: `git checkout main && git pull`.
+3. Create a feature branch: `git checkout -b <branch-name>`.
 4. Investigate the test (see "Investigating a failing roast test" above).
 5. Fix the interpreter so the roast test passes.
 6. Run `cargo build && timeout 30 target/debug/mutsu <roast-test-path>` to verify.
@@ -263,10 +263,9 @@ When the user says **"roast fix"**, execute this automated loop (serially, witho
     - If CI fails: read the failure log, push fix commits, and retry.
     - If PR has conflicts: rebase onto main (`git pull --rebase origin main`), force push, and wait for CI again.
     - If CI passes and PR is merged: proceed to next step.
-12. Clean up the worktree: `git worktree remove .git/worktrees-work/<branch-name>`
-13. Switch back to main and pull: `git checkout main && git pull`.
-14. Repeat from step 1 with the next failing test.
-15. Continue this loop indefinitely until stopped by the user.
+12. Switch back to main and pull: `git checkout main && git pull`.
+13. Repeat from step 1 with the next failing test.
+14. Continue this loop indefinitely until stopped by the user.
 
 ## Debugging guidelines
 
