@@ -135,7 +135,29 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             };
             Some(Ok(result))
         }
-        "Numeric" | "Num" => {
+        "Num" => {
+            let result = match target {
+                Value::Int(i) => Value::Num(*i as f64),
+                Value::BigInt(n) => {
+                    use num_traits::ToPrimitive;
+                    Value::Num(n.to_f64().unwrap_or(f64::INFINITY))
+                }
+                Value::Num(f) => Value::Num(*f),
+                Value::Rat(n, d) if *d != 0 => Value::Num(*n as f64 / *d as f64),
+                Value::Str(s) => {
+                    if let Ok(f) = s.trim().parse::<f64>() {
+                        Value::Num(f)
+                    } else {
+                        return None;
+                    }
+                }
+                Value::Bool(b) => Value::Num(if *b { 1.0 } else { 0.0 }),
+                Value::Complex(r, _) => Value::Num(*r),
+                _ => return None,
+            };
+            Some(Ok(result))
+        }
+        "Numeric" => {
             let result = match target {
                 Value::Int(i) => Value::Int(*i),
                 Value::BigInt(_) => target.clone(),

@@ -807,23 +807,23 @@ impl Interpreter {
                 }
                 "Rat" => {
                     let a = match args.first() {
-                        Some(Value::Int(i)) => *i,
-                        _ => 0,
+                        Some(v) => to_int(v),
+                        None => 0,
                     };
                     let b = match args.get(1) {
-                        Some(Value::Int(i)) => *i,
-                        _ => 1,
+                        Some(v) => to_int(v),
+                        None => 1,
                     };
                     return Ok(make_rat(a, b));
                 }
                 "FatRat" => {
                     let a = match args.first() {
-                        Some(Value::Int(i)) => *i,
-                        _ => 0,
+                        Some(v) => to_int(v),
+                        None => 0,
                     };
                     let b = match args.get(1) {
-                        Some(Value::Int(i)) => *i,
-                        _ => 1,
+                        Some(v) => to_int(v),
+                        None => 1,
                     };
                     return Ok(Value::FatRat(a, b));
                 }

@@ -49,12 +49,18 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
             }
         }
     } else {
-        match (l, r) {
-            (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_add(b)),
-            (Value::Num(a), Value::Num(b)) => Value::Num(a + b),
-            (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 + b),
-            (Value::Num(a), Value::Int(b)) => Value::Num(a + b as f64),
-            _ => Value::Int(0),
+        let lf = runtime::to_float_value(&l);
+        let rf = runtime::to_float_value(&r);
+        if let (Some(a), Some(b)) = (lf, rf) {
+            Value::Num(a + b)
+        } else {
+            match (l, r) {
+                (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_add(b)),
+                (Value::Num(a), Value::Num(b)) => Value::Num(a + b),
+                (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 + b),
+                (Value::Num(a), Value::Int(b)) => Value::Num(a + b as f64),
+                _ => Value::Int(0),
+            }
         }
     }
 }
@@ -80,12 +86,18 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
             }
         }
     } else {
-        match (l, r) {
-            (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_sub(b)),
-            (Value::Num(a), Value::Num(b)) => Value::Num(a - b),
-            (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 - b),
-            (Value::Num(a), Value::Int(b)) => Value::Num(a - b as f64),
-            _ => Value::Int(0),
+        let lf = runtime::to_float_value(&l);
+        let rf = runtime::to_float_value(&r);
+        if let (Some(a), Some(b)) = (lf, rf) {
+            Value::Num(a - b)
+        } else {
+            match (l, r) {
+                (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_sub(b)),
+                (Value::Num(a), Value::Num(b)) => Value::Num(a - b),
+                (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 - b),
+                (Value::Num(a), Value::Int(b)) => Value::Num(a - b as f64),
+                _ => Value::Int(0),
+            }
         }
     }
 }
@@ -111,12 +123,19 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
             }
         }
     } else {
-        match (l, r) {
-            (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_mul(b)),
-            (Value::Num(a), Value::Num(b)) => Value::Num(a * b),
-            (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 * b),
-            (Value::Num(a), Value::Int(b)) => Value::Num(a * b as f64),
-            _ => Value::Int(0),
+        // When mixing Num with Rat, convert to float
+        let lf = runtime::to_float_value(&l);
+        let rf = runtime::to_float_value(&r);
+        if let (Some(a), Some(b)) = (lf, rf) {
+            Value::Num(a * b)
+        } else {
+            match (l, r) {
+                (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_mul(b)),
+                (Value::Num(a), Value::Num(b)) => Value::Num(a * b),
+                (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 * b),
+                (Value::Num(a), Value::Int(b)) => Value::Num(a * b as f64),
+                _ => Value::Int(0),
+            }
         }
     }
 }
@@ -135,13 +154,21 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
             (ai * br - ar * bi) / denom,
         ))
     } else {
+        // When mixing Num with Rat/FatRat, convert to float
+        let has_num = matches!(l, Value::Num(_)) || matches!(r, Value::Num(_));
+        let has_rat = matches!(l, Value::Rat(_, _) | Value::FatRat(_, _))
+            || matches!(r, Value::Rat(_, _) | Value::FatRat(_, _));
+        if has_num && has_rat {
+            let lf = runtime::to_float_value(&l).unwrap_or(0.0);
+            let rf = runtime::to_float_value(&r).unwrap_or(1.0);
+            return Ok(Value::Num(lf / rf));
+        }
         Ok(match (&l, &r) {
             (Value::Rat(_, _), _) | (_, Value::Rat(_, _)) | (Value::Int(_), Value::Int(_)) => {
                 let (an, ad) = runtime::to_rat_parts(&l).unwrap_or((0, 1));
                 let (bn, bd) = runtime::to_rat_parts(&r).unwrap_or((0, 1));
                 let new_d = ad * bn;
                 if new_d == 0 {
-                    // Rat with zero denominator: Raku allows this (numifies to Inf/-Inf/NaN)
                     Value::Rat(an * bd, 0)
                 } else {
                     make_rat(an * bd, new_d)
@@ -163,9 +190,10 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
             if bn == 0 {
                 return Err(RuntimeError::new("Modulo by zero"));
             }
-            let lf = an as f64 / ad as f64;
-            let rf = bn as f64 / bd as f64;
-            Ok(Value::Num(lf % rf))
+            // Rat % Rat = Rat: (a/b) % (c/d) = ((a*d) mod (b*c)) / (b*d)
+            let num = (an * bd) % (ad * bn);
+            let den = ad * bd;
+            Ok(crate::value::make_rat(num, den))
         } else {
             Ok(match (l, r) {
                 (Value::Int(_), Value::Int(0)) => {

@@ -186,7 +186,38 @@ impl Value {
                     }
                 }
             }
-            Value::FatRat(a, b) => format!("{}/{}", a, b),
+            Value::FatRat(a, b) => {
+                if *b == 0 {
+                    if *a == 0 {
+                        "NaN".to_string()
+                    } else if *a > 0 {
+                        "Inf".to_string()
+                    } else {
+                        "-Inf".to_string()
+                    }
+                } else if *a % *b == 0 {
+                    format!("{}", *a / *b)
+                } else {
+                    let whole = *a as f64 / *b as f64;
+                    let mut dd = *b;
+                    while dd % 2 == 0 {
+                        dd /= 2;
+                    }
+                    while dd % 5 == 0 {
+                        dd /= 5;
+                    }
+                    if dd == 1 {
+                        let s = format!("{}", whole);
+                        if s.contains('.') {
+                            s
+                        } else {
+                            format!("{}.0", whole)
+                        }
+                    } else {
+                        format!("{:.6}", whole)
+                    }
+                }
+            }
             Value::Complex(r, i) => format_complex(*r, *i),
             Value::Set(s) => {
                 let mut keys: Vec<&String> = s.iter().collect();
