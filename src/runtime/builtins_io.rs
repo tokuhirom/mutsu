@@ -180,7 +180,7 @@ impl Interpreter {
                 path
             )));
         }
-        let cwd_val = Value::Str(Self::stringify_path(&path_buf));
+        let cwd_val = self.make_io_path_instance(&Self::stringify_path(&path_buf));
         self.env.insert("$*CWD".to_string(), cwd_val.clone());
         self.env.insert("*CWD".to_string(), cwd_val);
         Ok(Value::Bool(true))
@@ -199,7 +199,7 @@ impl Interpreter {
             )));
         }
         let saved = self.env.get("$*CWD").cloned();
-        let cwd_val = Value::Str(Self::stringify_path(&path_buf));
+        let cwd_val = self.make_io_path_instance(&Self::stringify_path(&path_buf));
         self.env.insert("$*CWD".to_string(), cwd_val.clone());
         self.env.insert("*CWD".to_string(), cwd_val);
         let result = if let Some(body) = args.get(1) {

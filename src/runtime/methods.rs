@@ -378,6 +378,15 @@ impl Interpreter {
             }
         }
 
+        // Package (type object) dispatch — check user-defined methods
+        if let Value::Package(ref name) = target
+            && self.has_user_method(name, method)
+        {
+            let attrs = HashMap::new();
+            let (result, _updated) = self.run_instance_method(name, attrs, method, args)?;
+            return Ok(result);
+        }
+
         // Fallback methods
         match method {
             "gist" if args.is_empty() => match target {

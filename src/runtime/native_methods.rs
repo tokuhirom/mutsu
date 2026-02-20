@@ -601,8 +601,26 @@ impl Interpreter {
                     "auth".to_string(),
                     Value::Str("github.com/tokuhirom".to_string()),
                 );
-                compiler_attrs.insert("version".to_string(), Value::Str("v0.1.0".to_string()));
-                compiler_attrs.insert("signature".to_string(), Value::Array(vec![Value::Int(0)]));
+                compiler_attrs.insert(
+                    "version".to_string(),
+                    Value::Version {
+                        parts: vec![
+                            crate::value::VersionPart::Num(0),
+                            crate::value::VersionPart::Num(1),
+                            crate::value::VersionPart::Num(0),
+                        ],
+                        plus: false,
+                        minus: false,
+                    },
+                );
+                compiler_attrs.insert(
+                    "signature".to_string(),
+                    Value::make_instance("Blob".to_string(), {
+                        let mut a = HashMap::new();
+                        a.insert("values".to_string(), Value::Array(vec![Value::Int(0)]));
+                        a
+                    }),
+                );
                 compiler_attrs.insert(
                     "desc".to_string(),
                     Value::Str("mutsu Raku interpreter".to_string()),

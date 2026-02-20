@@ -130,6 +130,54 @@ impl Interpreter {
         self.block_stack.last()
     }
 
+    /// Stringify a value, calling the `.Str` method for Instance and Package types.
+    pub(crate) fn stringify_value(&mut self, value: Value) -> Result<String, RuntimeError> {
+        match &value {
+            Value::Instance { .. } | Value::Package(_) => {
+                let result = self.call_method_with_values(value, "Str", vec![])?;
+                Ok(result.to_string_value())
+            }
+            _ => Ok(value.to_string_value()),
+        }
+    }
+
+    /// Check if a value can respond to a given method name.
+    pub(crate) fn value_can_method(&mut self, value: &Value, method: &str) -> bool {
+        // Check builtin 0-arg method (covers most built-in methods)
+        if crate::builtins::native_method_0arg(value, method).is_some() {
+            return true;
+        }
+        // For instances, check class methods
+        if let Value::Instance { class_name, .. } = value {
+            return self.class_has_method(class_name, method);
+        }
+        // Universal methods available on all values
+        matches!(
+            method,
+            "WHAT"
+                | "say"
+                | "print"
+                | "put"
+                | "gist"
+                | "Str"
+                | "Int"
+                | "Num"
+                | "Bool"
+                | "Numeric"
+                | "Real"
+                | "so"
+                | "not"
+                | "defined"
+                | "isa"
+                | "does"
+                | "ACCEPTS"
+                | "raku"
+                | "perl"
+                | "clone"
+                | "new"
+        )
+    }
+
     pub(crate) fn regex_find_first_bridge(
         &self,
         pattern: &str,

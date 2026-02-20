@@ -39,9 +39,9 @@ impl Interpreter {
             .insert("$*CHROOT".to_string(), Value::Str(repr.clone()));
         self.env
             .insert("*CHROOT".to_string(), Value::Str(repr.clone()));
-        self.env
-            .insert("$*CWD".to_string(), Value::Str(repr.clone()));
-        self.env.insert("*CWD".to_string(), Value::Str(repr));
+        let cwd_val = self.make_io_path_instance(&repr);
+        self.env.insert("$*CWD".to_string(), cwd_val.clone());
+        self.env.insert("*CWD".to_string(), cwd_val);
         Ok(Value::Bool(true))
     }
 

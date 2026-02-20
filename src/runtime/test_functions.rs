@@ -50,10 +50,6 @@ impl Interpreter {
     fn test_fn_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let desc = Self::positional_string(args, 1);
         let todo = Self::named_bool(args, "todo");
-        if self.loose_ok {
-            self.test_ok(true, &desc, todo)?;
-            return Ok(Value::Bool(true));
-        }
         let value = Self::positional_value(args, 0)
             .cloned()
             .unwrap_or(Value::Nil);
@@ -65,10 +61,6 @@ impl Interpreter {
     fn test_fn_nok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let desc = Self::positional_string(args, 1);
         let todo = Self::named_bool(args, "todo");
-        if self.loose_ok {
-            self.test_ok(true, &desc, todo)?;
-            return Ok(Value::Bool(true));
-        }
         let value = Self::positional_value_required(args, 0, "nok expects condition")?;
         let ok = !value.truthy();
         self.test_ok(ok, &desc, todo)?;
@@ -98,10 +90,6 @@ impl Interpreter {
     fn test_fn_is(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let desc = Self::positional_string(args, 2);
         let todo = Self::named_bool(args, "todo");
-        if self.loose_ok {
-            self.test_ok(true, &desc, todo)?;
-            return Ok(Value::Bool(true));
-        }
         let left = Self::positional_value(args, 0);
         let right = Self::positional_value(args, 1);
         let ok = match (left, right) {
@@ -115,10 +103,6 @@ impl Interpreter {
     fn test_fn_isnt(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let desc = Self::positional_string(args, 2);
         let todo = Self::named_bool(args, "todo");
-        if self.loose_ok {
-            self.test_ok(true, &desc, todo)?;
-            return Ok(Value::Bool(true));
-        }
         let left = Self::positional_value_required(args, 0, "isnt expects left")?;
         let right = Self::positional_value_required(args, 1, "isnt expects right")?;
         let ok = left != right;
@@ -128,9 +112,6 @@ impl Interpreter {
 
     fn test_fn_plan(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if let Some(reason) = Self::named_value(args, "skip-all") {
-            if self.forbid_skip_all {
-                return Err(RuntimeError::new("Subtest block cannot use plan skip-all"));
-            }
             self.test_state.get_or_insert_with(TestState::new).planned = Some(0);
             let reason_str = reason.to_string_value();
             if reason_str.is_empty() || reason_str == "True" {
@@ -266,24 +247,36 @@ impl Interpreter {
     fn test_fn_like(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let desc = Self::positional_string(args, 2);
         let todo = Self::named_bool(args, "todo");
-        self.test_ok(true, &desc, todo)?;
-        Ok(Value::Bool(true))
+        let text = match Self::positional_value(args, 0) {
+            Some(v) => self.stringify_value(v.clone())?,
+            None => String::new(),
+        };
+        let ok = match Self::positional_value(args, 1) {
+            Some(Value::Regex(pat)) => self.regex_is_match(pat, &text),
+            _ => false,
+        };
+        self.test_ok(ok, &desc, todo)?;
+        Ok(Value::Bool(ok))
     }
 
     fn test_fn_unlike(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let desc = Self::positional_string(args, 2);
         let todo = Self::named_bool(args, "todo");
-        self.test_ok(true, &desc, todo)?;
-        Ok(Value::Bool(true))
+        let text = match Self::positional_value(args, 0) {
+            Some(v) => self.stringify_value(v.clone())?,
+            None => String::new(),
+        };
+        let ok = match Self::positional_value(args, 1) {
+            Some(Value::Regex(pat)) => !self.regex_is_match(pat, &text),
+            _ => true,
+        };
+        self.test_ok(ok, &desc, todo)?;
+        Ok(Value::Bool(ok))
     }
 
     fn test_fn_is_deeply(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let desc = Self::positional_string(args, 2);
         let todo = Self::named_bool(args, "todo");
-        if self.loose_ok {
-            self.test_ok(true, &desc, todo)?;
-            return Ok(Value::Bool(true));
-        }
         let left = Self::positional_value(args, 0);
         let right = Self::positional_value(args, 1);
         let ok = match (left, right) {
@@ -297,10 +290,6 @@ impl Interpreter {
     fn test_fn_is_approx(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let desc = Self::positional_string(args, 2);
         let todo = Self::named_bool(args, "todo");
-        if self.loose_ok {
-            self.test_ok(true, &desc, todo)?;
-            return Ok(Value::Bool(true));
-        }
         let got = Self::positional_value_required(args, 0, "is-approx expects got")?;
         let expected = Self::positional_value_required(args, 1, "is-approx expects expected")?;
         let ok = match (got, expected) {
@@ -361,32 +350,46 @@ impl Interpreter {
     }
 
     fn test_fn_isa_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let value = Self::positional_value_required(args, 0, "isa-ok expects value")?;
-        // Extract type name from Package value or string
-        let type_name = match Self::positional_value(args, 1) {
-            Some(Value::Package(name)) => name.clone(),
-            _ => Self::positional_string(args, 1),
-        };
-        let desc = Self::positional_string(args, 2);
+        // isa-ok uses the first non-named-pair arg as value.
+        // We need special handling because positional_value filters out ALL Pairs,
+        // but the first arg could be a Pair value being tested.
+        let (value, type_name, desc) = Self::extract_isa_ok_args(args);
         let todo = Self::named_bool(args, "todo");
-        let ok = match type_name.as_str() {
-            "Array" => matches!(value, Value::Array(_)),
-            "Rat" => matches!(value, Value::Rat(_, _)),
-            "FatRat" => matches!(value, Value::FatRat(_, _)),
-            "Complex" => matches!(value, Value::Complex(_, _)),
-            "Set" => matches!(value, Value::Set(_)),
-            "Bag" => matches!(value, Value::Bag(_)),
-            "Mix" => matches!(value, Value::Mix(_)),
-            _ => {
-                if let Value::Instance { class_name, .. } = value {
-                    class_name == type_name.as_str()
-                } else {
-                    true
-                }
-            }
-        };
+        let ok = value.isa_check(&type_name);
         self.test_ok(ok, &desc, todo)?;
         Ok(Value::Bool(ok))
+    }
+
+    /// Extract (value, type_name, desc) for isa-ok from raw args.
+    /// The first arg is always the value (even if it's a Pair).
+    /// Named Pairs (like :todo) are excluded from positional counting
+    /// only after the first 3 positional args are consumed.
+    fn extract_isa_ok_args(args: &[Value]) -> (&Value, String, String) {
+        let mut positionals = Vec::new();
+        for arg in args {
+            // Stop collecting after 3 positional args
+            if positionals.len() >= 3 {
+                break;
+            }
+            // Only skip Pair args that look like named args (key is a known name)
+            if let Value::Pair(key, _) = arg
+                && matches!(key.as_str(), "todo")
+            {
+                continue;
+            }
+            positionals.push(arg);
+        }
+        let value = positionals.first().copied().unwrap_or(&Value::Nil);
+        let type_name = match positionals.get(1) {
+            Some(Value::Package(name)) => name.clone(),
+            Some(v) => v.to_string_value(),
+            None => String::new(),
+        };
+        let desc = positionals
+            .get(2)
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        (value, type_name, desc)
     }
 
     fn test_fn_force_todo(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -622,15 +625,31 @@ impl Interpreter {
     }
 
     fn test_fn_does_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let value = Self::positional_value(args, 0)
+            .cloned()
+            .unwrap_or(Value::Nil);
+        let role_name = match Self::positional_value(args, 1) {
+            Some(Value::Package(name)) => name.clone(),
+            _ => Self::positional_string(args, 1),
+        };
         let desc = Self::positional_string(args, 2);
-        self.test_ok(true, &desc, false)?;
-        Ok(Value::Bool(true))
+        let todo = Self::named_bool(args, "todo");
+        // NOTE: does_check currently delegates to isa_check (issue #91)
+        let ok = value.does_check(&role_name);
+        self.test_ok(ok, &desc, todo)?;
+        Ok(Value::Bool(ok))
     }
 
     fn test_fn_can_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let value = Self::positional_value(args, 0)
+            .cloned()
+            .unwrap_or(Value::Nil);
+        let method_name = Self::positional_string(args, 1);
         let desc = Self::positional_string(args, 2);
-        self.test_ok(true, &desc, false)?;
-        Ok(Value::Bool(true))
+        let todo = Self::named_bool(args, "todo");
+        let ok = self.value_can_method(&value, &method_name);
+        self.test_ok(ok, &desc, todo)?;
+        Ok(Value::Bool(ok))
     }
 
     fn test_fn_todo(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
