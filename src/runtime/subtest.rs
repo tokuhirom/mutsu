@@ -53,14 +53,13 @@ impl Interpreter {
         } = supply_val
             && class_name == "Supply"
         {
-            let tap_sub = Value::Sub {
-                package: self.current_package.clone(),
-                name: String::new(),
-                params: param.iter().cloned().collect(),
-                body: body.to_vec(),
-                env: self.env.clone(),
-                id: next_instance_id(),
-            };
+            let tap_sub = Value::make_sub(
+                self.current_package.clone(),
+                String::new(),
+                param.iter().cloned().collect(),
+                body.to_vec(),
+                self.env.clone(),
+            );
             let mut attrs = attributes.clone();
             if let Some(Value::Array(items)) = attrs.get_mut("taps") {
                 items.push(tap_sub.clone());

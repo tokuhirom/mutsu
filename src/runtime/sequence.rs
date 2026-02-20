@@ -16,7 +16,7 @@ impl Interpreter {
         let mut seeds: Vec<Value> = Vec::new();
         let mut generator: Option<Value> = None;
         for v in &seeds_raw {
-            if matches!(v, Value::Sub { .. }) {
+            if matches!(v, Value::Sub(_)) {
                 generator = Some(v.clone());
             } else {
                 seeds.push(v.clone());
@@ -47,7 +47,7 @@ impl Interpreter {
                 let rest: Vec<Value> = items[1..].to_vec();
                 match first {
                     Value::Num(f) if f.is_infinite() => (None, None, rest),
-                    Value::Sub { .. } => (
+                    Value::Sub(_) => (
                         Some(first.clone()),
                         Some(EndpointKind::Closure(first.clone())),
                         rest,
@@ -64,7 +64,7 @@ impl Interpreter {
                     ),
                 }
             }
-            Value::Sub { .. } => (
+            Value::Sub(_) => (
                 Some(right.clone()),
                 Some(EndpointKind::Closure(right.clone())),
                 vec![],
@@ -260,19 +260,18 @@ impl Interpreter {
         // For closure/regex endpoints, check if any seed already satisfies the predicate
         if !seeds.is_empty() {
             if let Some(EndpointKind::Closure(ref closure_val)) = endpoint_kind
-                && let Value::Sub {
-                    params,
-                    body,
-                    env: cenv,
-                    ..
-                } = closure_val
+                && let Value::Sub(data) = closure_val
             {
                 // Determine arity from params
-                let arity = if !params.is_empty() { params.len() } else { 1 };
+                let arity = if !data.params.is_empty() {
+                    data.params.len()
+                } else {
+                    1
+                };
 
                 for (i, _) in seeds.iter().enumerate() {
                     let saved = self.env.clone();
-                    for (k, v) in cenv {
+                    for (k, v) in &data.env {
                         self.env.insert(k.clone(), v.clone());
                     }
 
@@ -288,7 +287,7 @@ impl Interpreter {
                     };
 
                     // Bind parameters
-                    for (j, param) in params.iter().enumerate() {
+                    for (j, param) in data.params.iter().enumerate() {
                         if j < args.len() {
                             self.env.insert(param.clone(), args[j].clone());
                         }
@@ -299,7 +298,7 @@ impl Interpreter {
                         self.env.insert("_".to_string(), last_arg.clone());
                     }
 
-                    let predicate_result = self.eval_block_value(body)?;
+                    let predicate_result = self.eval_block_value(&data.body)?;
                     self.env = saved;
                     if predicate_result.truthy() {
                         let end = if exclusive { i } else { i + 1 };
@@ -376,17 +375,18 @@ impl Interpreter {
             let next = match &mode {
                 SeqMode::Closure => {
                     let genfn = generator.as_ref().unwrap();
-                    if let Value::Sub {
-                        params, body, env, ..
-                    } = genfn
-                    {
+                    if let Value::Sub(data) = genfn {
                         let saved = self.env.clone();
-                        for (k, v) in env {
+                        for (k, v) in &data.env {
                             self.env.insert(k.clone(), v.clone());
                         }
 
                         // Determine arity from params
-                        let arity = if !params.is_empty() { params.len() } else { 1 };
+                        let arity = if !data.params.is_empty() {
+                            data.params.len()
+                        } else {
+                            1
+                        };
 
                         // Collect the appropriate number of previous values
                         let result_len = result.len();
@@ -403,7 +403,7 @@ impl Interpreter {
                         };
 
                         // Bind parameters
-                        for (i, param) in params.iter().enumerate() {
+                        for (i, param) in data.params.iter().enumerate() {
                             if i < args.len() {
                                 self.env.insert(param.clone(), args[i].clone());
                             }
@@ -414,7 +414,7 @@ impl Interpreter {
                             self.env.insert("_".to_string(), last_arg.clone());
                         }
 
-                        let val = self.eval_block_value(body)?;
+                        let val = self.eval_block_value(&data.body)?;
                         self.env = saved;
                         val
                     } else {
@@ -459,20 +459,18 @@ impl Interpreter {
                 match epk {
                     EndpointKind::Closure(closure_val) => {
                         // Call the closure with the generated value(s) as predicate
-                        if let Value::Sub {
-                            params,
-                            body,
-                            env: cenv,
-                            ..
-                        } = closure_val
-                        {
+                        if let Value::Sub(data) = closure_val {
                             let saved = self.env.clone();
-                            for (k, v) in cenv {
+                            for (k, v) in &data.env {
                                 self.env.insert(k.clone(), v.clone());
                             }
 
                             // Determine arity from params
-                            let arity = if !params.is_empty() { params.len() } else { 1 };
+                            let arity = if !data.params.is_empty() {
+                                data.params.len()
+                            } else {
+                                1
+                            };
 
                             // Collect the appropriate number of values including the new one
                             let result_len = result.len();
@@ -492,7 +490,7 @@ impl Interpreter {
                             };
 
                             // Bind parameters
-                            for (i, param) in params.iter().enumerate() {
+                            for (i, param) in data.params.iter().enumerate() {
                                 if i < args.len() {
                                     self.env.insert(param.clone(), args[i].clone());
                                 }
@@ -503,7 +501,7 @@ impl Interpreter {
                                 self.env.insert("_".to_string(), last_arg.clone());
                             }
 
-                            let predicate_result = self.eval_block_value(body)?;
+                            let predicate_result = self.eval_block_value(&data.body)?;
                             self.env = saved;
                             if predicate_result.truthy() {
                                 if !exclusive {

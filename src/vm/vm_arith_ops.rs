@@ -213,25 +213,26 @@ impl VM {
         static COMPOSE_ID: std::sync::atomic::AtomicU64 =
             std::sync::atomic::AtomicU64::new(1_000_000);
         let id = COMPOSE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let composed = Value::Sub {
-            package: String::new(),
-            name: "<composed>".to_string(),
-            params: vec!["x".to_string()],
-            body: vec![Stmt::Expr(Expr::Call {
+        let env = {
+            let mut env = std::collections::HashMap::new();
+            env.insert("__compose_left__".to_string(), left);
+            env.insert("__compose_right__".to_string(), right);
+            env
+        };
+        let composed = Value::make_sub_with_id(
+            String::new(),
+            "<composed>".to_string(),
+            vec!["x".to_string()],
+            vec![Stmt::Expr(Expr::Call {
                 name: "__compose_left__".to_string(),
                 args: vec![Expr::Call {
                     name: "__compose_right__".to_string(),
                     args: vec![Expr::Var("x".to_string())],
                 }],
             })],
-            env: {
-                let mut env = std::collections::HashMap::new();
-                env.insert("__compose_left__".to_string(), left);
-                env.insert("__compose_right__".to_string(), right);
-                env
-            },
+            env,
             id,
-        };
+        );
         self.stack.push(composed);
     }
 

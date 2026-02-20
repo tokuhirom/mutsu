@@ -18,7 +18,6 @@ use crate::opcode::{CompiledCode, OpCode};
 use crate::parse_dispatch;
 use crate::value::{
     JunctionKind, LazyList, RuntimeError, SharedChannel, SharedPromise, Value, make_rat,
-    next_instance_id,
 };
 use num_traits::Signed;
 

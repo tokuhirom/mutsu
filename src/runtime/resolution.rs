@@ -155,63 +155,65 @@ impl Interpreter {
         args: Vec<Value>,
         merge_all: bool,
     ) -> Result<Value, RuntimeError> {
+        // Upgrade WeakSub to Sub transparently
+        let func = match func {
+            Value::WeakSub(ref weak) => match weak.upgrade() {
+                Some(strong) => Value::Sub(strong),
+                None => return Err(RuntimeError::new("Callable has been freed")),
+            },
+            other => other,
+        };
         if let Value::Routine { name, .. } = &func {
             return self.call_function(name, args);
         }
-        if let Value::Sub {
-            package,
-            name,
-            params,
-            body,
-            env,
-            ..
-        } = func
-        {
+        if let Value::Sub(data) = func {
             let saved_env = self.env.clone();
             let mut new_env = saved_env.clone();
-            for (k, v) in env {
+            for (k, v) in &data.env {
                 if merge_all {
-                    new_env.entry(k).or_insert(v);
+                    new_env.entry(k.clone()).or_insert(v.clone());
                     continue;
                 }
-                if matches!(new_env.get(&k), Some(Value::Array(_))) && matches!(v, Value::Array(_))
-                {
+                if matches!(new_env.get(k), Some(Value::Array(_))) && matches!(v, Value::Array(_)) {
                     continue;
                 }
-                new_env.insert(k, v);
+                new_env.insert(k.clone(), v.clone());
             }
-            for (i, param_name) in params.iter().enumerate() {
+            for (i, param_name) in data.params.iter().enumerate() {
                 if let Some(value) = args.get(i) {
                     new_env.insert(param_name.clone(), value.clone());
                 }
             }
             // Bind implicit $_ for bare blocks called with arguments
-            if params.is_empty() && !args.is_empty() {
+            if data.params.is_empty() && !args.is_empty() {
                 new_env.insert("_".to_string(), args[0].clone());
             }
-            // &?BLOCK: a self-referencing Sub with original params for recursion
-            let block_self = Value::Sub {
-                package: package.clone(),
-                name: name.clone(),
-                params: params.clone(),
-                body: body.clone(),
+            // &?BLOCK: weak self-reference to break reference cycles
+            let block_arc = std::sync::Arc::new(crate::value::SubData {
+                package: data.package.clone(),
+                name: data.name.clone(),
+                params: data.params.clone(),
+                body: data.body.clone(),
                 env: new_env.clone(),
-                id: next_instance_id(),
-            };
-            new_env.insert("&?BLOCK".to_string(), block_self);
-            let block_sub = Value::Sub {
-                package: package.clone(),
-                name: name.clone(),
-                params: vec![],
-                body: body.clone(),
-                env: new_env.clone(),
-                id: next_instance_id(),
-            };
+                id: crate::value::next_instance_id(),
+            });
+            new_env.insert(
+                "&?BLOCK".to_string(),
+                Value::WeakSub(std::sync::Arc::downgrade(&block_arc)),
+            );
+            let block_sub = Value::make_sub(
+                data.package.clone(),
+                data.name.clone(),
+                vec![],
+                data.body.clone(),
+                new_env.clone(),
+            );
             self.env = new_env;
-            self.routine_stack.push((package.clone(), name.clone()));
+            self.routine_stack
+                .push((data.package.clone(), data.name.clone()));
             self.block_stack.push(block_sub);
             let let_mark = self.let_saves.len();
-            let result = self.eval_block_value(&body);
+            let result = self.eval_block_value(&data.body);
             self.block_stack.pop();
             self.routine_stack.pop();
             // Manage let saves based on sub result
@@ -279,25 +281,27 @@ impl Interpreter {
         func: Option<Value>,
         list_items: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if let Some(Value::Sub {
-            params, body, env, ..
-        }) = func
-        {
-            let arity = if !params.is_empty() { params.len() } else { 1 };
+        if let Some(Value::Sub(data)) = func {
+            let arity = if !data.params.is_empty() {
+                data.params.len()
+            } else {
+                1
+            };
             let mut result = Vec::new();
 
             // Compile once, reuse VM for every iteration
             let compiler = crate::compiler::Compiler::new();
-            let (code, compiled_fns) = compiler.compile(&body);
+            let (code, compiled_fns) = compiler.compile(&data.body);
 
             let underscore = "_".to_string();
 
             // Save original values for keys we'll modify
-            let mut touched_keys: Vec<String> = Vec::with_capacity(env.len() + params.len() + 1);
-            for k in env.keys() {
+            let mut touched_keys: Vec<String> =
+                Vec::with_capacity(data.env.len() + data.params.len() + 1);
+            for k in data.env.keys() {
                 touched_keys.push(k.clone());
             }
-            for p in &params {
+            for p in &data.params {
                 if !touched_keys.contains(p) {
                     touched_keys.push(p.clone());
                 }
@@ -311,7 +315,7 @@ impl Interpreter {
                 .collect();
 
             // Pre-insert closure env
-            for (k, v) in &env {
+            for (k, v) in &data.env {
                 self.env.insert(k.clone(), v.clone());
             }
 
@@ -339,12 +343,12 @@ impl Interpreter {
                     let interp = vm.interpreter_mut();
                     if arity == 1 {
                         let item = list_items[i].clone();
-                        if let Some(p) = params.first() {
+                        if let Some(p) = data.params.first() {
                             interp.env_insert(p.clone(), item.clone());
                         }
                         interp.env_insert(underscore.clone(), item);
                     } else {
-                        for (idx, p) in params.iter().enumerate() {
+                        for (idx, p) in data.params.iter().enumerate() {
                             if i + idx < list_items.len() {
                                 interp.env_insert(p.clone(), list_items[i + idx].clone());
                             }
@@ -407,23 +411,20 @@ impl Interpreter {
         func: Option<Value>,
         list_items: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if let Some(Value::Sub {
-            params, body, env, ..
-        }) = func
-        {
+        if let Some(Value::Sub(data)) = func {
             let mut result = Vec::new();
 
             // Compile once, reuse VM for every iteration
             let compiler = crate::compiler::Compiler::new();
-            let (code, compiled_fns) = compiler.compile(&body);
+            let (code, compiled_fns) = compiler.compile(&data.body);
 
             let underscore = "_".to_string();
 
-            let mut touched_keys: Vec<String> = Vec::with_capacity(env.len() + 2);
-            for k in env.keys() {
+            let mut touched_keys: Vec<String> = Vec::with_capacity(data.env.len() + 2);
+            for k in data.env.keys() {
                 touched_keys.push(k.clone());
             }
-            if let Some(p) = params.first()
+            if let Some(p) = data.params.first()
                 && !touched_keys.contains(p)
             {
                 touched_keys.push(p.clone());
@@ -437,7 +438,7 @@ impl Interpreter {
                 .collect();
 
             // Pre-insert closure env
-            for (k, v) in &env {
+            for (k, v) in &data.env {
                 self.env.insert(k.clone(), v.clone());
             }
 
@@ -448,7 +449,7 @@ impl Interpreter {
             for item in list_items {
                 {
                     let interp = vm.interpreter_mut();
-                    if let Some(p) = params.first() {
+                    if let Some(p) = data.params.first() {
                         interp.env_insert(p.clone(), item.clone());
                     }
                     interp.env_insert(underscore.clone(), item.clone());

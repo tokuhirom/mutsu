@@ -9,9 +9,9 @@ impl Interpreter {
             // When RHS is a callable (Sub), invoke it with LHS as argument and
             // return truthiness of the result.  If the sub accepts no parameters,
             // call it with no arguments (simple closure truth).
-            (_, Value::Sub { params, .. }) => {
+            (_, Value::Sub(data)) => {
                 let func = right.clone();
-                let args = if params.is_empty() {
+                let args = if data.params.is_empty() {
                     vec![]
                 } else {
                     vec![left.clone()]

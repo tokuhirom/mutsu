@@ -330,7 +330,7 @@ impl Interpreter {
         let desc = Self::positional_string(args, 1);
         let todo = Self::named_bool(args, "todo");
         let ok = match &block {
-            Value::Sub { body, .. } => self.eval_block_value(body).is_ok(),
+            Value::Sub(data) => self.eval_block_value(&data.body).is_ok(),
             _ => true,
         };
         self.test_ok(ok, &desc, todo)?;
@@ -342,7 +342,7 @@ impl Interpreter {
         let desc = Self::positional_string(args, 1);
         let todo = Self::named_bool(args, "todo");
         let ok = match &block {
-            Value::Sub { body, .. } => self.eval_block_value(body).is_err(),
+            Value::Sub(data) => self.eval_block_value(&data.body).is_err(),
             _ => false,
         };
         self.test_ok(ok, &desc, todo)?;
@@ -454,7 +454,7 @@ impl Interpreter {
             Self::positional_value_required(args, 1, "throws-like expects type")?.to_string_value();
         let desc = Self::positional_string(args, 2);
         let result = match &code_val {
-            Value::Sub { body, .. } => self.eval_block_value(body),
+            Value::Sub(data) => self.eval_block_value(&data.body),
             Value::Str(code) => {
                 let mut nested = Interpreter::new();
                 if let Some(Value::Int(pid)) = self.env.get("*PID") {

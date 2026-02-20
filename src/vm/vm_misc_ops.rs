@@ -327,7 +327,7 @@ impl VM {
 
     pub(super) fn exec_block_magic_op(&mut self) -> Result<(), RuntimeError> {
         if let Some(val) = self.interpreter.block_stack_top().cloned() {
-            if matches!(val, Value::Sub { .. }) {
+            if matches!(val, Value::Sub(_)) {
                 self.stack.push(val);
             } else {
                 return Err(RuntimeError::new("X::Undeclared::Symbols"));
