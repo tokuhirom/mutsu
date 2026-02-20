@@ -8,7 +8,10 @@ impl Compiler {
                 self.code.emit(OpCode::Pop);
             }
             Stmt::Block(stmts) => {
-                if Self::has_block_enter_leave_phasers(stmts) {
+                if Self::has_catch_or_control(stmts) {
+                    self.compile_try(stmts, &None);
+                    self.code.emit(OpCode::Pop);
+                } else if Self::has_block_enter_leave_phasers(stmts) {
                     let idx = self.code.emit(OpCode::BlockScope {
                         enter_end: 0,
                         body_end: 0,
@@ -123,17 +126,13 @@ impl Compiler {
             } => {
                 self.compile_expr(cond);
                 let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
-                for s in then_branch {
-                    self.compile_stmt(s);
-                }
+                self.compile_body_with_implicit_try(then_branch);
                 if else_branch.is_empty() {
                     self.code.patch_jump(jump_else);
                 } else {
                     let jump_end = self.code.emit(OpCode::Jump(0));
                     self.code.patch_jump(jump_else);
-                    for s in else_branch {
-                        self.compile_stmt(s);
-                    }
+                    self.compile_body_with_implicit_try(else_branch);
                     self.code.patch_jump(jump_end);
                 }
             }
@@ -149,9 +148,7 @@ impl Compiler {
                 });
                 self.compile_expr(cond);
                 self.code.patch_while_cond_end(loop_idx);
-                for s in &loop_body {
-                    self.compile_stmt(s);
-                }
+                self.compile_body_with_implicit_try(&loop_body);
                 self.code.patch_loop_end(loop_idx);
                 for s in &post_stmts {
                     self.compile_stmt(s);
@@ -193,9 +190,7 @@ impl Compiler {
                     arity,
                     collect: false,
                 });
-                for s in &loop_body {
-                    self.compile_stmt(s);
-                }
+                self.compile_body_with_implicit_try(&loop_body);
                 self.code.patch_loop_end(loop_idx);
                 for s in &post_stmts {
                     self.compile_stmt(s);
@@ -233,9 +228,7 @@ impl Compiler {
                 }
                 self.code.patch_cstyle_cond_end(loop_idx);
                 // Compile body
-                for s in &loop_body {
-                    self.compile_stmt(s);
-                }
+                self.compile_body_with_implicit_try(&loop_body);
                 self.code.patch_cstyle_step_start(loop_idx);
                 // Compile step (if any)
                 if let Some(step_expr) = step {
@@ -422,9 +415,7 @@ impl Compiler {
                     label: label.clone(),
                 });
                 // Compile body
-                for s in &loop_body {
-                    self.compile_stmt(s);
-                }
+                self.compile_body_with_implicit_try(&loop_body);
                 self.code.patch_repeat_cond_end(loop_idx);
                 // Compile condition (or push True if none)
                 if let Some(cond_expr) = cond {
@@ -444,7 +435,7 @@ impl Compiler {
             }
             Stmt::Loop { .. } => unreachable!("loop repeat flag is exhaustive"),
             // --- No-ops: these statements are handled elsewhere ---
-            // CATCH/CONTROL are handled by try expressions, not standalone
+            // CATCH/CONTROL are extracted by compile_try/compile_body_with_implicit_try
             Stmt::Catch(_) | Stmt::Control(_) => {}
             // HasDecl/MethodDecl/DoesDecl outside class context are no-ops
             Stmt::HasDecl { .. } | Stmt::MethodDecl { .. } | Stmt::DoesDecl { .. } => {}
