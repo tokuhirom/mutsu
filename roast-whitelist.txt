@@ -102,6 +102,7 @@ roast/S12-class/declaration-order.t
 roast/S12-class/literal.t
 roast/S12-class/type-object.t
 roast/S12-construction/autopairs.t
+roast/S12-enums/anonymous.t
 roast/S12-methods/typed-attributes.t
 roast/S12-traits/precomp.t
 roast/S14-roles/bool.t

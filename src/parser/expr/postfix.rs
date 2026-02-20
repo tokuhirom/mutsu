@@ -304,9 +304,16 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
             };
             let key = &r[..end];
             if key.is_empty()
-                || !key
-                    .chars()
-                    .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+                || !key.chars().all(|c| {
+                    c.is_alphanumeric()
+                        || c == '_'
+                        || c == '-'
+                        || c == '!'
+                        || c == '.'
+                        || c == '?'
+                        || c == '+'
+                        || c == '/'
+                })
             {
                 return Err(PError::expected_at("angle index key", r));
             }

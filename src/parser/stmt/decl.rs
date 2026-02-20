@@ -486,10 +486,90 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Parse `enum` declaration.
-pub(super) fn enum_decl(input: &str) -> PResult<'_, Stmt> {
+/// Parse `anon enum` declaration.
+pub(crate) fn anon_enum_decl(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("anon", input).ok_or_else(|| PError::expected("anon enum declaration"))?;
+    let (rest, _) = ws1(rest)?;
+    let rest = keyword("enum", rest).ok_or_else(|| PError::expected("enum after anon"))?;
+    let (rest, _) = ws1(rest)?;
+    parse_anon_enum_body(rest)
+}
+
+pub(crate) fn enum_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("enum", input).ok_or_else(|| PError::expected("enum declaration"))?;
     let (rest, _) = ws1(rest)?;
+    // Anonymous enum: `enum < foo bar >` or `enum :: < foo bar >`
+    if rest.starts_with('<') || rest.starts_with('(') {
+        return parse_anon_enum_body(rest);
+    }
+    if let Some(r) = rest.strip_prefix("::") {
+        let (r, _) = ws(r)?;
+        if r.starts_with('<') || r.starts_with('(') {
+            return parse_anon_enum_body(r);
+        }
+    }
     parse_enum_decl_body(rest)
+}
+
+/// Parse anonymous enum body (after `enum` keyword with no name).
+fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
+    let (rest, variants) = if input.starts_with('<') {
+        let (r, _) = parse_char(input, '<')?;
+        let mut variants = Vec::new();
+        let mut r = r;
+        loop {
+            let (r2, _) = take_while_opt(r, |c: char| c == ' ' || c == '\t');
+            if let Some(r2) = r2.strip_prefix('>') {
+                r = r2;
+                break;
+            }
+            let (r2, word) =
+                take_while1(r2, |c: char| c != '>' && c != ' ' && c != '\t' && c != '\n')?;
+            variants.push((word.to_string(), None));
+            r = r2;
+        }
+        (r, variants)
+    } else if input.starts_with('(') {
+        let (r, _) = parse_char(input, '(')?;
+        let (r, _) = ws(r)?;
+        let mut variants = Vec::new();
+        let mut r = r;
+        loop {
+            if let Some(r2) = r.strip_prefix(')') {
+                r = r2;
+                break;
+            }
+            let (r2, vname) = ident(r)?;
+            let (r2, _) = ws(r2)?;
+            let (r2, val) = if let Some(stripped) = r2.strip_prefix("=>") {
+                let (r2, _) = ws(stripped)?;
+                let (r2, expr) = expression(r2)?;
+                (r2, Some(expr))
+            } else {
+                (r2, None)
+            };
+            variants.push((vname, val));
+            let (r2, _) = ws(r2)?;
+            if let Some(stripped) = r2.strip_prefix(',') {
+                let (r2, _) = ws(stripped)?;
+                r = r2;
+            } else {
+                r = r2;
+            }
+        }
+        (r, variants)
+    } else {
+        return Err(PError::expected("anonymous enum variants"));
+    };
+    let (rest, _) = ws(rest)?;
+    let (rest, _) = opt_char(rest, ';');
+    Ok((
+        rest,
+        Stmt::EnumDecl {
+            name: String::new(),
+            variants,
+        },
+    ))
 }
 
 pub(super) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {

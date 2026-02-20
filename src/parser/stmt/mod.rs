@@ -2,7 +2,7 @@ mod args;
 pub(super) mod assign;
 pub(super) mod class;
 mod control;
-mod decl;
+pub(crate) mod decl;
 pub(super) mod modifier;
 pub(super) mod simple;
 mod sub;
@@ -286,6 +286,7 @@ const STMT_PARSERS: &[StmtParser] = &[
     class::role_decl,
     class::grammar_decl,
     decl::subset_decl,
+    decl::anon_enum_decl,
     decl::enum_decl,
     decl::has_decl,
     class::does_decl,

@@ -600,6 +600,18 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 return Ok((r, Expr::DoStmt(Box::new(stmt))));
             }
         }
+        "enum" => {
+            // enum in expression context: enum < ... > or enum :: < ... >
+            if let Ok((r, stmt)) = super::super::stmt::decl::enum_decl(input) {
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            }
+        }
+        "anon" => {
+            // anon enum < ... > in expression context
+            if let Ok((r, stmt)) = super::super::stmt::decl::anon_enum_decl(input) {
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            }
+        }
         "sub" => {
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {
