@@ -67,7 +67,7 @@ impl Value {
             Value::Array(items) => !items.is_empty(),
             Value::Hash(items) => !items.is_empty(),
             Value::Rat(n, _) => *n != 0,
-            Value::FatRat(_, _) => true,
+            Value::FatRat(n, _) => !n.is_zero(),
             Value::Complex(r, i) => *r != 0.0 || *i != 0.0,
             Value::Set(s) => !s.is_empty(),
             Value::Bag(b) => !b.is_empty(),

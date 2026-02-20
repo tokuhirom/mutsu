@@ -151,7 +151,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         max = item;
                     }
                 }
-                Some(Ok(Value::Range(runtime::to_int(min), runtime::to_int(max))))
+                Some(Ok(Value::GenericRange {
+                    start: Box::new(min.clone()),
+                    end: Box::new(max.clone()),
+                    excl_start: false,
+                    excl_end: false,
+                }))
             }
             _ => None,
         },
