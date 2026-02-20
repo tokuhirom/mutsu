@@ -37,6 +37,7 @@ impl Interpreter {
             "IO::Pipe" => self.native_io_pipe(attributes, method),
             "Distro" => self.native_distro(attributes, method),
             "Perl" => Ok(self.native_perl(attributes, method)),
+            "Compiler" => Ok(self.native_perl(attributes, method)),
             "Promise" => self.native_promise(attributes, method, args),
             "Channel" => Ok(self.native_channel(attributes, method)),
             "Proc::Async" => Ok(self.native_proc_async(attributes, method)),
@@ -428,8 +429,50 @@ impl Interpreter {
 
     fn native_perl(&self, attributes: &HashMap<String, Value>, method: &str) -> Value {
         match method {
-            "compiler" => Value::make_instance("Perl".to_string(), attributes.clone()),
+            "compiler" => {
+                let mut compiler_attrs = HashMap::new();
+                compiler_attrs.insert("name".to_string(), Value::Str("mutsu".to_string()));
+                compiler_attrs.insert(
+                    "auth".to_string(),
+                    Value::Str("github.com/tokuhirom".to_string()),
+                );
+                compiler_attrs.insert("version".to_string(), Value::Str("v0.1.0".to_string()));
+                compiler_attrs.insert("signature".to_string(), Value::Array(vec![Value::Int(0)]));
+                compiler_attrs.insert(
+                    "desc".to_string(),
+                    Value::Str("mutsu Raku interpreter".to_string()),
+                );
+                compiler_attrs.insert("release".to_string(), Value::Str("0.1.0".to_string()));
+                compiler_attrs.insert("codename".to_string(), Value::Str("mutsu".to_string()));
+                compiler_attrs.insert("id".to_string(), Value::Str(String::new()));
+                Value::make_instance("Compiler".to_string(), compiler_attrs)
+            }
             "backend" => Value::Str("mutsu".to_string()),
+            "gist" => {
+                let name = attributes
+                    .get("name")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let version = attributes
+                    .get("version")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                Value::Str(format!("{} ({})", name, version))
+            }
+            "Str" => {
+                let name = attributes
+                    .get("name")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                Value::Str(name)
+            }
+            "raku" => {
+                let name = attributes
+                    .get("name")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                Value::Str(format!("{}.new(...)", name))
+            }
             _ => attributes.get(method).cloned().unwrap_or(Value::Nil),
         }
     }
