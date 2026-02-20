@@ -249,6 +249,7 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
 
 pub(crate) fn arith_negate(val: Value) -> Result<Value, RuntimeError> {
     match val {
+        Value::Bool(b) => Ok(Value::Int(if b { -1 } else { 0 })),
         Value::Int(i) => Ok(Value::Int(-i)),
         Value::Num(f) => Ok(Value::Num(-f)),
         Value::Rat(n, d) => Ok(Value::Rat(-n, d)),
