@@ -154,9 +154,8 @@ pub(super) fn return_stmt(input: &str) -> PResult<'_, Stmt> {
         return Ok((rest, Stmt::Return(Expr::Literal(Value::Nil))));
     }
     let (rest, expr) = expression(rest)?;
-    let (rest, _) = ws(rest)?;
-    let (rest, _) = opt_char(rest, ';');
-    Ok((rest, Stmt::Return(expr)))
+    let stmt = Stmt::Return(expr);
+    parse_statement_modifier(rest, stmt)
 }
 
 /// Parse `last` / `next` / `redo`.
