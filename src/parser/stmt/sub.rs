@@ -6,6 +6,43 @@ use crate::ast::{Expr, ParamDef, Stmt};
 
 use super::{block, ident, keyword, qualified_ident, var_name};
 
+/// Parse a sub name, which can be a regular identifier or an operator-style name
+/// like `infix:<+>`, `prefix:<->`, `postfix:<++>`, `circumfix:<[ ]>`.
+fn parse_sub_name(input: &str) -> PResult<'_, String> {
+    let (rest, base) = ident(input)?;
+    // Check for operator category names followed by :<...>
+    let is_op_category = matches!(
+        base.as_str(),
+        "infix" | "prefix" | "postfix" | "circumfix" | "postcircumfix" | "trait_mod"
+    );
+    if is_op_category && rest.starts_with(":<") {
+        // Scan for matching '>' — handle nested <> pairs
+        let after_open = &rest[2..];
+        let mut depth = 1u32;
+        let mut chars = after_open.char_indices();
+        while let Some((i, c)) = chars.next() {
+            match c {
+                '>' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        let op_symbol = &after_open[..i];
+                        let after_close = &after_open[i + 1..];
+                        let full_name = format!("{}:<{}>", base, op_symbol);
+                        return Ok((after_close, full_name));
+                    }
+                }
+                '<' => depth += 1,
+                '\\' => {
+                    chars.next();
+                }
+                _ => {}
+            }
+        }
+        // If we can't find the closing '>', fall through to return the base name
+    }
+    Ok((rest, base))
+}
+
 /// Parse `sub` declaration.
 pub(super) fn sub_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, multi) = if let Some(r) = keyword("multi", input) {
@@ -22,7 +59,7 @@ pub(super) fn sub_decl(input: &str) -> PResult<'_, Stmt> {
 }
 
 pub(super) fn sub_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
-    let (rest, name) = ident(input)?;
+    let (rest, name) = parse_sub_name(input)?;
     // Register user-declared sub so it can be called without parens later
     super::simple::register_user_sub(&name);
     let (rest, _) = ws(rest)?;
