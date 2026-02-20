@@ -110,8 +110,11 @@ impl Interpreter {
                     return match pattern {
                         Value::Regex(pat) | Value::Str(pat) => {
                             if let Some(captures) = self.regex_match_with_captures(pat, &text) {
-                                for (k, v) in captures {
-                                    self.env.insert(format!("<{}>", k), Value::Str(v));
+                                for (i, v) in captures.positional.iter().enumerate() {
+                                    self.env.insert(i.to_string(), Value::Str(v.clone()));
+                                }
+                                for (k, v) in &captures.named {
+                                    self.env.insert(format!("<{}>", k), Value::Str(v.clone()));
                                 }
                                 Ok(Value::Bool(true))
                             } else {

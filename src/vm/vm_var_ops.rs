@@ -193,6 +193,38 @@ impl VM {
                     .collect();
                 Value::Array(result)
             }
+            // WhateverCode index: @a[*-1] → evaluate the lambda with array length
+            (
+                Value::Array(ref items),
+                Value::Sub {
+                    ref params,
+                    ref body,
+                    ref env,
+                    ..
+                },
+            ) => {
+                let len = items.len() as i64;
+                let param = params.first().map(|s| s.as_str()).unwrap_or("_");
+                let mut sub_env = env.clone();
+                sub_env.insert(param.to_string(), Value::Int(len));
+                let saved_env = std::mem::take(self.interpreter.env_mut());
+                *self.interpreter.env_mut() = sub_env;
+                let idx = self
+                    .interpreter
+                    .eval_block_value(body)
+                    .unwrap_or(Value::Nil);
+                *self.interpreter.env_mut() = saved_env;
+                match idx {
+                    Value::Int(i) => {
+                        if i < 0 {
+                            Value::Nil
+                        } else {
+                            items.get(i as usize).cloned().unwrap_or(Value::Nil)
+                        }
+                    }
+                    _ => Value::Nil,
+                }
+            }
             // Type parameterization: e.g. Buf[uint8] → returns the type unchanged
             (pkg @ Value::Package(_), _) => pkg,
             _ => Value::Nil,

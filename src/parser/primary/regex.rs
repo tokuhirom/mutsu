@@ -93,6 +93,22 @@ pub(super) fn scan_to_delim(
                     None => return None,
                 }
             }
+        } else if c == '$' && !is_paired {
+            // In non-paired delimiters (like /), $ followed by the close
+            // delimiter MIGHT be a variable reference ($/ is the match variable)
+            // or it might be the end-of-string anchor followed by the closing
+            // delimiter. Disambiguate: if $/ is followed by [ or . or < it's
+            // the variable; otherwise it's anchor + close.
+            let after = &input[i + 1..];
+            if after.starts_with(close_ch) {
+                let after_delim = &after[close_ch.len_utf8()..];
+                if after_delim.starts_with('[')
+                    || after_delim.starts_with('.')
+                    || after_delim.starts_with('<')
+                {
+                    chars.next(); // skip the delimiter char (it's part of $/)
+                }
+            }
         } else if c == '\\' {
             // skip next char
             chars.next();

@@ -295,12 +295,19 @@ impl Value {
         }
     }
 
-    /// Create a Match object instance with from, to, and str attributes.
-    pub(crate) fn make_match_object(matched: String, from: i64, to: i64) -> Self {
+    /// Create a Match object with positional captures.
+    pub(crate) fn make_match_object_with_captures(
+        matched: String,
+        from: i64,
+        to: i64,
+        positional: &[String],
+    ) -> Self {
         let mut attrs = HashMap::new();
         attrs.insert("str".to_string(), Value::Str(matched));
         attrs.insert("from".to_string(), Value::Int(from));
         attrs.insert("to".to_string(), Value::Int(to));
+        let caps: Vec<Value> = positional.iter().map(|s| Value::Str(s.clone())).collect();
+        attrs.insert("list".to_string(), Value::Array(caps));
         Value::make_instance("Match".to_string(), attrs)
     }
 
