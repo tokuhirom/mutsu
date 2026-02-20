@@ -113,6 +113,36 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("regex closing delimiter"));
     }
 
+    // ... — stub operator (Yada-Yada)
+    // Must be checked before the sequence operator. Only matches as a primary
+    // expression (statement start), not in infix position.
+    if let Some(r) = input.strip_prefix("...") {
+        // Make sure it's not "...^" (sequence exclude-end) — that's handled in infix
+        if !r.starts_with('^') {
+            let (r, _) = ws(r)?;
+            let (r, msg) = if r.starts_with(';')
+                || r.is_empty()
+                || r.starts_with('}')
+                || r.starts_with(')')
+                || r.starts_with(',')
+            {
+                (
+                    r,
+                    Expr::Literal(Value::Str("Stub code executed".to_string())),
+                )
+            } else {
+                expression(r)?
+            };
+            return Ok((
+                r,
+                Expr::Call {
+                    name: "die".to_string(),
+                    args: vec![msg],
+                },
+            ));
+        }
+    }
+
     // !!! — fatal stub operator
     if let Some(r) = input.strip_prefix("!!!") {
         let (r, _) = ws(r)?;

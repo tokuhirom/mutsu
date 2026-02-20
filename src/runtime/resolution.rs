@@ -185,6 +185,10 @@ impl Interpreter {
                     new_env.insert(param_name.clone(), value.clone());
                 }
             }
+            // Bind implicit $_ for bare blocks called with arguments
+            if params.is_empty() && !args.is_empty() {
+                new_env.insert("_".to_string(), args[0].clone());
+            }
             // &?BLOCK: a self-referencing Sub with original params for recursion
             let block_self = Value::Sub {
                 package: package.clone(),
