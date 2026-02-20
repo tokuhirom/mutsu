@@ -204,15 +204,21 @@ impl Compiler {
         }
         // Hoist sub declarations within the sub body
         sub_compiler.hoist_sub_decls(body);
-        // Compile body statements; last Stmt::Expr should NOT emit Pop (implicit return)
-        for (i, stmt) in body.iter().enumerate() {
-            let is_last = i == body.len() - 1;
-            if is_last && let Stmt::Expr(expr) = stmt {
-                sub_compiler.compile_expr(expr);
-                // Don't emit Pop — leave value on stack as implicit return
-                continue;
+        // If sub body contains CATCH/CONTROL, wrap in implicit try
+        if Self::has_catch_or_control(body) {
+            sub_compiler.compile_try(body, &None);
+            sub_compiler.code.emit(OpCode::Pop);
+        } else {
+            // Compile body statements; last Stmt::Expr should NOT emit Pop (implicit return)
+            for (i, stmt) in body.iter().enumerate() {
+                let is_last = i == body.len() - 1;
+                if is_last && let Stmt::Expr(expr) = stmt {
+                    sub_compiler.compile_expr(expr);
+                    // Don't emit Pop — leave value on stack as implicit return
+                    continue;
+                }
+                sub_compiler.compile_stmt(stmt);
             }
-            sub_compiler.compile_stmt(stmt);
         }
 
         let arity = param_defs.iter().filter(|p| !p.slurpy && !p.named).count();
@@ -243,6 +249,27 @@ impl Compiler {
             param_defs: param_defs.to_vec(),
         };
         self.compiled_functions.insert(key, cf);
+    }
+
+    /// Check if a list of statements contains a CATCH or CONTROL block.
+    pub(super) fn has_catch_or_control(stmts: &[Stmt]) -> bool {
+        stmts
+            .iter()
+            .any(|s| matches!(s, Stmt::Catch(_) | Stmt::Control(_)))
+    }
+
+    /// Compile a block body, automatically wrapping in implicit try if it contains
+    /// CATCH or CONTROL blocks. This should be used for any block context (bare blocks,
+    /// if branches, loop bodies, sub bodies) to ensure CATCH/CONTROL are not silently ignored.
+    pub(super) fn compile_body_with_implicit_try(&mut self, stmts: &[Stmt]) {
+        if Self::has_catch_or_control(stmts) {
+            self.compile_try(stmts, &None);
+            self.code.emit(OpCode::Pop);
+        } else {
+            for s in stmts {
+                self.compile_stmt(s);
+            }
+        }
     }
 
     /// Compile Expr::Try { body, catch } to TryCatch opcode.
