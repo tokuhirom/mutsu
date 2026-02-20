@@ -11,7 +11,7 @@ use crate::token_kind::TokenKind;
 use super::{ident, parse_statement_modifier, var_name};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum CompoundAssignOp {
+pub(crate) enum CompoundAssignOp {
     DefinedOr,
     LogicalOr,
     LogicalAnd,
@@ -54,7 +54,7 @@ impl CompoundAssignOp {
         }
     }
 
-    pub(super) fn token_kind(self) -> TokenKind {
+    pub(crate) fn token_kind(self) -> TokenKind {
         match self {
             CompoundAssignOp::DefinedOr => TokenKind::SlashSlash,
             CompoundAssignOp::LogicalOr => TokenKind::OrOr,
@@ -97,7 +97,7 @@ pub(super) const COMPOUND_ASSIGN_OPS: &[CompoundAssignOp] = &[
     CompoundAssignOp::Max, // max= (word boundary checked in parse_compound_assign_op)
 ];
 
-pub(super) fn parse_compound_assign_op(input: &str) -> Option<(&str, CompoundAssignOp)> {
+pub(crate) fn parse_compound_assign_op(input: &str) -> Option<(&str, CompoundAssignOp)> {
     for op in COMPOUND_ASSIGN_OPS {
         if let Some(stripped) = input.strip_prefix(op.symbol()) {
             return Some((stripped, *op));
