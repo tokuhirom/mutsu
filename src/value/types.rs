@@ -192,7 +192,7 @@ impl Value {
             }
             "Seq" | "List" => matches!(self, Value::Array(_) | Value::LazyList(_) | Value::Slip(_)),
             "Positional" => matches!(self, Value::Array(_) | Value::LazyList(_)),
-            "Associative" => matches!(self, Value::Hash(_)),
+            "Map" | "Associative" => matches!(self, Value::Hash(_)),
             "Iterable" => matches!(self, Value::Array(_) | Value::LazyList(_) | Value::Hash(_)),
             _ => false,
         }

@@ -233,7 +233,11 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::EnumDecl { name, variants } = stmt {
-            self.interpreter.register_enum_decl(name, variants)?;
+            let result = self.interpreter.register_enum_decl(name, variants)?;
+            // For anonymous enums, push the Map result onto the stack
+            if name.is_empty() {
+                self.stack.push(result);
+            }
             self.sync_locals_from_env(code);
             Ok(())
         } else {

@@ -338,6 +338,7 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
         && let Some(c) = input[1..].chars().next()
         && (c == '$'
             || c == '@'
+            || c == '%'
             || c == '('
             || c == '"'
             || c == '\''
@@ -357,6 +358,7 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
         && let Some(&c) = input.as_bytes().get(1)
         && (c == b'$'
             || c == b'@'
+            || c == b'%'
             || c == b'('
             || c == b'"'
             || c == b'\''

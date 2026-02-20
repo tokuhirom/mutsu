@@ -135,7 +135,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         variants: &[(String, Option<Expr>)],
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<Value, RuntimeError> {
         let mut enum_variants = Vec::new();
         let mut next_value: i64 = 0;
         for (key, value_expr) in variants {
@@ -151,22 +151,37 @@ impl Interpreter {
             enum_variants.push((key.clone(), val));
             next_value = val + 1;
         }
+        let is_anonymous = name.is_empty();
+        let enum_type_name = if is_anonymous { "__ANON_ENUM__" } else { name };
         self.enum_types
-            .insert(name.to_string(), enum_variants.clone());
-        self.env
-            .insert(name.to_string(), Value::Str(name.to_string()));
+            .insert(enum_type_name.to_string(), enum_variants.clone());
+        if !is_anonymous {
+            self.env
+                .insert(name.to_string(), Value::Str(name.to_string()));
+        }
         for (index, (key, val)) in enum_variants.iter().enumerate() {
             let enum_val = Value::Enum {
-                enum_type: name.to_string(),
+                enum_type: enum_type_name.to_string(),
                 key: key.clone(),
                 value: *val,
                 index,
             };
-            self.env
-                .insert(format!("{}::{}", name, key), enum_val.clone());
+            if !is_anonymous {
+                self.env
+                    .insert(format!("{}::{}", name, key), enum_val.clone());
+            }
             self.env.insert(key.clone(), enum_val);
         }
-        Ok(())
+        // For anonymous enums, return a Map (Hash) of key => value pairs
+        if is_anonymous {
+            let mut map = HashMap::new();
+            for (key, val) in &enum_variants {
+                map.insert(key.clone(), Value::Int(*val));
+            }
+            Ok(Value::Hash(map))
+        } else {
+            Ok(Value::Nil)
+        }
     }
 
     pub(crate) fn register_class_decl(
