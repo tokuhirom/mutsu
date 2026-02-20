@@ -186,24 +186,25 @@ Per-type method documentation — consult when implementing methods on specific 
 
 ## Roast (official Raku test suite)
 
-- The ultimate goal is to pass ALL roast tests. Pick any failing test and work on it.
+- The ultimate goal is to pass ALL roast tests. Use `pick-next-roast.sh` to select which test to work on (see "Roast test prioritization" below).
 - `roast/` is read-only; never modify files under `roast/`.
 - `TODO_roast/` tracks per-file pass/fail status (split by synopsis number). Mark a test `[x]` only when **all** subtests pass.
 - When a test file has known partial failures, add indented notes under its entry describing the blockers.
-- Do not add a roast test to the whitelist unless `prove -e 'cargo run --' <file>` exits cleanly.
+- Do not add a roast test to the whitelist unless `prove -e 'target/debug/mutsu' <file>` exits cleanly.
 - Never add special-case logic, hardcoded results, or test-specific hacks just to pass a roast test. Every fix must be a genuine, general-purpose improvement.
 - When the expected behavior is unclear, consult `./old-design-docs/` for the original Raku language specification.
-- When investigating a roast test and deciding to defer it, always record the reason for failure in the relevant file under `TODO_roast/`.
+- When investigating a roast test outside of "roast fix" mode and deciding to defer it, always record the reason for failure in the relevant file under `TODO_roast/`. (In "roast fix" mode, deferring is not allowed — implement everything needed.)
 - Roast is the authoritative spec. If passing a roast test requires changing a local test under `t/`, update the local test.
 - When `make roast` shows failures in whitelisted tests, investigate each failure — do NOT dismiss them as "pre-existing".
 - Never remove a previously passing test from the whitelist due to a regression. If a change causes a whitelisted test to fail, fix the regression so the test passes again.
-- When a roast test requires solving multiple unrelated prerequisites, fix what you can, update the relevant file under `TODO_roast/`, and move on.
+- When a roast test requires solving multiple unrelated prerequisites (outside of "roast fix" mode): fix what you can, update the relevant file under `TODO_roast/`, and move on. In "roast fix" mode, implement ALL prerequisites — do not move on until the test passes.
 
 ## Working on complex features
 
 - Do NOT fear complex cases. Every feature must eventually be implemented fully.
 - Deferring hard work does not make it go away — tackle difficult features head-on.
 - When a roast test requires a complex feature (e.g., attribute traits, arbitrary regex delimiters, module precompilation), implement it rather than skipping to easier tests.
+- When a single test requires implementing multiple unrelated features, implement them all in the same PR. Large PRs are acceptable when the test demands it.
 
 ## Roast test prioritization
 
@@ -214,9 +215,11 @@ Per-type method documentation — consult when implementing methods on specific 
   - `tmp/roast-fail.txt` — some subtests failing
   - `tmp/roast-pass.txt` — fully passing
 - Priority order: panic → timeout → error/fail.
-- Do NOT cherry-pick "almost passing" tests. Pick tests randomly from the fail/error lists. The goal is broad language coverage, not gaming the pass count.
+- **ALWAYS use `./scripts/pick-next-roast.sh -n N` to select the next test(s).** Do NOT manually browse, scan, or read roast test files to choose which test to work on. The script's selection is final — work on whatever it returns, regardless of perceived difficulty.
+- Do NOT skip a test because it looks hard or requires implementing a complex feature. If `pick-next-roast.sh` returns it, work on it.
+- Do NOT run multiple roast tests to "assess" which one is closest to passing. This is cherry-picking and is forbidden.
+- The goal is broad language coverage, not gaming the pass count.
 - After making changes, always run `./scripts/roast-history.sh` to regenerate category lists and check for newly passing tests. Compare the new `tmp/roast-pass.txt` against the whitelist to find tests to add.
-- Use `./scripts/pick-next-roast.sh -n N` to pick the next N roast tests to work on (prioritized by category, shortest files first).
 
 ## Checking `make roast` results
 
@@ -253,7 +256,7 @@ When the user says **"roast fix"**, execute this automated loop (serially, witho
 2. Ensure you are on `main` and up to date: `git checkout main && git pull`.
 3. Create a feature branch: `git checkout -b <branch-name>`.
 4. Investigate the test (see "Investigating a failing roast test" above).
-5. Fix the interpreter so the roast test passes.
+5. Fix the interpreter so the roast test passes. **Implement ALL features required to pass the test, no matter how many or how complex.** Do NOT skip the test or move on because it requires multiple new features. This is the core work of the project.
 6. Run `cargo build && timeout 30 target/debug/mutsu <roast-test-path>` to verify.
 7. Append the test path to `roast-whitelist.txt` (sorted).
 8. **Before committing**: run `make test` and `make roast` to ensure no regressions.
