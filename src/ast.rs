@@ -175,6 +175,10 @@ pub(crate) enum Expr {
         label: Option<String>,
     },
     IndirectTypeLookup(Box<Expr>),
+    IndirectCodeLookup {
+        package: Box<Expr>,
+        name: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -559,6 +563,7 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             }
         }
         Expr::CodeVar(_) => {}
+        Expr::IndirectCodeLookup { package, .. } => collect_ph_expr(package, out),
         Expr::Reduction { expr, .. } => collect_ph_expr(expr, out),
         Expr::HyperOp { left, right, .. } | Expr::MetaOp { left, right, .. } => {
             collect_ph_expr(left, out);

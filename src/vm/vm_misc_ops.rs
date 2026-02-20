@@ -212,6 +212,22 @@ impl VM {
         self.stack.push(val);
     }
 
+    pub(super) fn exec_indirect_code_lookup_op(&mut self, code: &CompiledCode, name_idx: u32) {
+        let func_name = Self::const_str(code, name_idx).to_string();
+        // Pop the package name from the stack (result of evaluating the package expr)
+        let package = self.stack.pop().unwrap_or(Value::Nil);
+        // Construct a qualified name: "SETTING::OUTER::...::not"
+        // resolve_code_var will strip pseudo-package prefixes and resolve to builtin
+        let pkg_str = package.to_string_value();
+        let qualified = if pkg_str.is_empty() {
+            func_name
+        } else {
+            format!("{}::{}", pkg_str, func_name)
+        };
+        let val = self.interpreter.resolve_code_var(&qualified);
+        self.stack.push(val);
+    }
+
     pub(super) fn exec_assign_expr_op(&mut self, code: &CompiledCode, name_idx: u32) {
         let name = match &code.constants[name_idx as usize] {
             Value::Str(s) => s.clone(),

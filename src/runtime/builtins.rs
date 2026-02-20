@@ -189,6 +189,9 @@ impl Interpreter {
             // Concurrency (single-threaded simulation)
             "start" => self.builtin_start(args),
             "await" => self.builtin_await(&args),
+            // Boolean coercion functions
+            "not" => Ok(Value::Bool(!args.first().unwrap_or(&Value::Nil).truthy())),
+            "so" => Ok(Value::Bool(args.first().unwrap_or(&Value::Nil).truthy())),
             // Fallback
             _ => self.call_function_fallback(name, &args),
         }

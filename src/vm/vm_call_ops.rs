@@ -161,9 +161,9 @@ impl VM {
         }
         let start = self.stack.len() - arity;
         let args: Vec<Value> = self.stack.drain(start..).collect();
-        let key = format!("&{}", name);
-        let result = if self.interpreter.env().contains_key(&key) {
-            let target = self.interpreter.resolve_code_var(&name);
+        // resolve_code_var handles pseudo-package stripping internally
+        let target = self.interpreter.resolve_code_var(&name);
+        let result = if !matches!(target, Value::Nil) {
             self.interpreter.eval_call_on_value(target, args)?
         } else if let Some(native_result) = Self::try_native_function(&name, &args) {
             native_result?
