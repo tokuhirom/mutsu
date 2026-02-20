@@ -175,6 +175,69 @@ impl Interpreter {
         parents: &[String],
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
+        // Validate that all parent classes exist
+        // Allow inheriting from built-in types that may not be in the classes HashMap
+        const BUILTIN_TYPES: &[&str] = &[
+            "Mu",
+            "Any",
+            "Cool",
+            "Int",
+            "Num",
+            "Str",
+            "Bool",
+            "Rat",
+            "FatRat",
+            "Complex",
+            "Array",
+            "Hash",
+            "List",
+            "Map",
+            "Set",
+            "Bag",
+            "Mix",
+            "Range",
+            "Pair",
+            "IO",
+            "IO::Path",
+            "IO::Handle",
+            "Regex",
+            "Match",
+            "Junction",
+            "Exception",
+            "Failure",
+            "Version",
+            "Nil",
+            "Block",
+            "Code",
+            "Routine",
+            "Sub",
+            "Method",
+            "Seq",
+            "Slip",
+            "Whatever",
+            "WhateverCode",
+            "HyperWhatever",
+            "Callable",
+            "Numeric",
+            "Real",
+            "Stringy",
+            "Positional",
+            "Associative",
+            "Order",
+            "Endian",
+            "Proc",
+            "Proc::Async",
+            "Supply",
+            "Supplier",
+        ];
+        for parent in parents {
+            if !self.classes.contains_key(parent) && !BUILTIN_TYPES.contains(&parent.as_str()) {
+                return Err(RuntimeError::new(format!(
+                    "X::Inheritance::UnknownParent: class '{}' specifies unknown parent class '{}'",
+                    name, parent
+                )));
+            }
+        }
         let mut class_def = ClassDef {
             parents: parents.to_vec(),
             attributes: Vec::new(),

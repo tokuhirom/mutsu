@@ -111,10 +111,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         },
         "key" => match target {
             Value::Pair(k, _) => Some(Ok(Value::Str(k.clone()))),
+            Value::Bool(true) => Some(Ok(Value::Str("True".to_string()))),
+            Value::Bool(false) => Some(Ok(Value::Str("False".to_string()))),
             _ => None,
         },
         "value" => match target {
             Value::Pair(_, v) => Some(Ok(*v.clone())),
+            Value::Bool(b) => Some(Ok(Value::Int(if *b { 1 } else { 0 }))),
             _ => None,
         },
         "Slip" => match target {

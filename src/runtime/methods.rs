@@ -79,6 +79,9 @@ impl Interpreter {
                     Value::Regex(_) => "Regex",
                     Value::Version { .. } => "Version",
                     Value::Slip(_) => "Slip",
+                    Value::Mixin(inner, _) => {
+                        return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
+                    }
                 };
                 return Ok(Value::Package(type_name.to_string()));
             }

@@ -327,15 +327,30 @@ pub(super) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
     if rest.starts_with('(') {
         let (rest, _) = parse_char(rest, '(')?;
         let (rest, _) = ws(rest)?;
-        // init
-        let (rest, init) = if rest.starts_with(';') {
-            (rest, None)
+        // init: may be comma-separated list of statements
+        let (rest, init) = if let Some(rest_after_semi) = rest.strip_prefix(';') {
+            (rest_after_semi, None)
         } else {
-            let (r, s) = statement(rest)?;
-            (r, Some(Box::new(s)))
+            let (mut r, first) = statement(rest)?;
+            let mut stmts = vec![first];
+            loop {
+                let (r2, _) = ws(r)?;
+                if let Some(r2_after_comma) = r2.strip_prefix(',') {
+                    let (r2, _) = ws(r2_after_comma)?;
+                    let (r2, s) = statement(r2)?;
+                    stmts.push(s);
+                    r = r2;
+                } else {
+                    r = r2;
+                    break;
+                }
+            }
+            if stmts.len() == 1 {
+                (r, Some(Box::new(stmts.into_iter().next().unwrap())))
+            } else {
+                (r, Some(Box::new(Stmt::Block(stmts))))
+            }
         };
-        // The init statement already consumed its semicolon if it's a decl
-        // But for safety, consume any extra semicolons
         let (rest, _) = ws(rest)?;
         // cond
         let (rest, cond) = if let Some(rest) = rest.strip_prefix(';') {
@@ -347,12 +362,37 @@ pub(super) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
             (r, Some(e))
         };
         let (rest, _) = ws(rest)?;
-        // step
+        // step: may be comma-separated list of expressions
         let (rest, step) = if rest.starts_with(')') {
             (rest, None)
         } else {
-            let (r, e) = expression(rest)?;
-            (r, Some(e))
+            let (mut r, first) = expression(rest)?;
+            let mut exprs = vec![first];
+            loop {
+                let (r2, _) = ws(r)?;
+                if let Some(r2_after_comma) = r2.strip_prefix(',') {
+                    let (r2, _) = ws(r2_after_comma)?;
+                    let (r2, e) = expression(r2)?;
+                    exprs.push(e);
+                    r = r2;
+                } else {
+                    r = r2;
+                    break;
+                }
+            }
+            if exprs.len() == 1 {
+                (r, Some(exprs.into_iter().next().unwrap()))
+            } else {
+                // Wrap multiple step expressions in a DoBlock
+                let stmts: Vec<Stmt> = exprs.into_iter().map(Stmt::Expr).collect();
+                (
+                    r,
+                    Some(Expr::DoBlock {
+                        body: stmts,
+                        label: None,
+                    }),
+                )
+            }
         };
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
