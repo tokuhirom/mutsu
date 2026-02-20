@@ -82,6 +82,7 @@ roast/S05-metasyntax/null.t
 roast/S05-transliteration/79778.t
 roast/S06-multi/compile-time.t
 roast/S06-other/main-eval.t
+roast/S06-signature/closure-over-parameters.t
 roast/S06-signature/passing-hashes.t
 roast/S06-signature/scalar-type.t
 roast/S06-traits/is-readonly.t
