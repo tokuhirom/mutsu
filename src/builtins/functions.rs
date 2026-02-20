@@ -50,6 +50,9 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
         }
         "uc" => Some(Ok(Value::Str(arg.to_string_value().to_uppercase()))),
         "lc" => Some(Ok(Value::Str(arg.to_string_value().to_lowercase()))),
+        "fc" => Some(Ok(Value::Str(super::methods_0arg::unicode_foldcase(
+            &arg.to_string_value(),
+        )))),
         "tc" => Some(Ok(Value::Str(titlecase_string(&arg.to_string_value())))),
         "tclc" => Some(Ok(Value::Str(crate::value::tclc_str(
             &arg.to_string_value(),

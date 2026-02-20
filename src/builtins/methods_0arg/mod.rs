@@ -244,6 +244,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
         "uc" => Some(Ok(Value::Str(target.to_string_value().to_uppercase()))),
         "lc" => Some(Ok(Value::Str(target.to_string_value().to_lowercase()))),
+        "fc" => Some(Ok(Value::Str(unicode_foldcase(&target.to_string_value())))),
         "tc" => Some(Ok(Value::Str(titlecase_string(&target.to_string_value())))),
         "sign" => {
             let result = match target {
@@ -689,4 +690,32 @@ fn uni_or_str(target: &Value) -> String {
             .collect(),
         _ => target.to_string_value(),
     }
+}
+
+/// Unicode case folding (Simple + Full mappings).
+/// This is used by the `.fc` method and the `fc()` function.
+/// Case folding is like lowercasing but additionally maps characters like
+/// ß → ss, ﬁ → fi, etc. for caseless comparison.
+pub(crate) fn unicode_foldcase(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\u{00DF}' => result.push_str("ss"),        // ß → ss
+            '\u{0130}' => result.push_str("i\u{0307}"), // İ → i + combining dot
+            '\u{FB00}' => result.push_str("ff"),        // ﬀ → ff
+            '\u{FB01}' => result.push_str("fi"),        // ﬁ → fi
+            '\u{FB02}' => result.push_str("fl"),        // ﬂ → fl
+            '\u{FB03}' => result.push_str("ffi"),       // ﬃ → ffi
+            '\u{FB04}' => result.push_str("ffl"),       // ﬄ → ffl
+            '\u{FB05}' => result.push_str("st"),        // ﬅ → st
+            '\u{FB06}' => result.push_str("st"),        // ﬆ → st
+            '\u{1E9E}' => result.push_str("ss"),        // ẞ → ss (capital sharp s)
+            _ => {
+                for lc in c.to_lowercase() {
+                    result.push(lc);
+                }
+            }
+        }
+    }
+    result
 }
