@@ -32,9 +32,6 @@ impl Interpreter {
 
     fn preprocess_roast_directives(input: &str) -> String {
         let mut output = String::new();
-        let mut skipping_block = false;
-        let mut started_block = false;
-        let mut brace_depth = 0i32;
         let mut pending_todo: Option<String> = None;
         let mut skip_lines_remaining: usize = 0;
         let mut skip_reason: String = String::new();
@@ -54,7 +51,9 @@ impl Interpreter {
                 continue;
             }
 
-            // #?rakudo todo 'reason' — mark the next test as todo
+            // #?rakudo todo 'reason' — mark the next test as todo.
+            // Although mutsu is not rakudo, we honor todo directives because
+            // they indicate known spec issues that also affect mutsu.
             if trimmed.starts_with("#?rakudo")
                 && !trimmed.contains(".jvm")
                 && trimmed.contains("todo")
@@ -84,18 +83,15 @@ impl Interpreter {
                 pending_todo = None;
             }
 
-            // #?rakudo.jvm skip — JVM-specific skip directive.
-            // Since mutsu is not JVM, we ignore .jvm directives entirely
-            // (treat them as plain comments).
-            // Only skip for generic #?rakudo skip directives (no platform suffix).
-            if !skipping_block
-                && trimmed.starts_with("#?rakudo")
+            // #?rakudo N skip 'reason' — count-based skip directive.
+            // Skip the next N test lines. Block-level #?rakudo skip (without count)
+            // is ignored since mutsu is not rakudo.
+            if trimmed.starts_with("#?rakudo")
                 && trimmed.contains("skip")
                 && !trimmed.contains(".jvm")
                 && !trimmed.contains(".moar")
                 && !trimmed.contains(".js")
             {
-                // Check if this is a block-skip (no number prefix) vs line-count skip
                 let after_prefix = trimmed.trim_start_matches("#?rakudo").trim_start();
                 if let Some(first_char) = after_prefix.chars().next()
                     && first_char.is_ascii_digit()
@@ -106,7 +102,6 @@ impl Interpreter {
                         .next()
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(1);
-                    // Extract skip reason from quotes
                     skip_reason = if let Some(start) = after_prefix.find('\'') {
                         if let Some(end) = after_prefix[start + 1..].find('\'') {
                             after_prefix[start + 1..start + 1 + end].to_string()
@@ -120,54 +115,10 @@ impl Interpreter {
                     output.push('\n');
                     continue;
                 }
-                skipping_block = true;
-                started_block = false;
-                brace_depth = 0;
-                output.push('\n');
-                continue;
+                // Block-level skip (no count prefix): ignore, treat as comment
             }
 
-            if !skipping_block {
-                output.push_str(line);
-                output.push('\n');
-                continue;
-            }
-
-            // If we haven't started a brace block yet, check this line
-            if !started_block {
-                // If this line opens a brace block, track it
-                let has_brace = trimmed.contains('{');
-                if has_brace {
-                    for ch in line.chars() {
-                        if ch == '{' {
-                            brace_depth += 1;
-                            started_block = true;
-                        } else if ch == '}' && started_block {
-                            brace_depth -= 1;
-                        }
-                    }
-                    if started_block && brace_depth <= 0 {
-                        skipping_block = false;
-                    }
-                } else if !trimmed.is_empty() && !trimmed.starts_with('#') {
-                    // Non-empty, non-comment line without braces: skip just this one line
-                    skipping_block = false;
-                }
-                output.push('\n');
-                continue;
-            }
-
-            for ch in line.chars() {
-                if ch == '{' {
-                    brace_depth += 1;
-                } else if ch == '}' {
-                    brace_depth -= 1;
-                }
-            }
-
-            if brace_depth <= 0 {
-                skipping_block = false;
-            }
+            output.push_str(line);
             output.push('\n');
         }
 

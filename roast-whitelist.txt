@@ -20,8 +20,10 @@ roast/S02-literals/version.t
 roast/S02-magicals/78258.t
 roast/S02-magicals/args.t
 roast/S02-magicals/block.t
+roast/S02-magicals/DISTRO.t
 roast/S02-magicals/file_line.t
 roast/S02-magicals/GROUP.t
+roast/S02-magicals/PERL.t
 roast/S02-magicals/pid.t
 roast/S02-magicals/USER.t
 roast/S02-names/bare-sigil.t

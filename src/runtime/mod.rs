@@ -444,11 +444,51 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["DISTROnames", "compiler", "backend"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect(),
+                native_methods: [
+                    "DISTROnames",
+                    "compiler",
+                    "backend",
+                    "name",
+                    "auth",
+                    "version",
+                    "signature",
+                    "desc",
+                    "gist",
+                    "raku",
+                    "Str",
+                    "release",
+                    "codename",
+                    "id",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
                 mro: vec!["Perl".to_string()],
+            },
+        );
+        classes.insert(
+            "Compiler".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: [
+                    "name",
+                    "auth",
+                    "version",
+                    "signature",
+                    "desc",
+                    "gist",
+                    "raku",
+                    "Str",
+                    "release",
+                    "codename",
+                    "id",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                mro: vec!["Compiler".to_string()],
             },
         );
         let mut interpreter = Self {

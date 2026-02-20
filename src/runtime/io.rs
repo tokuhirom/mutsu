@@ -289,6 +289,20 @@ impl Interpreter {
 
     pub(super) fn make_perl_instance() -> Value {
         let mut attrs = HashMap::new();
+        attrs.insert("name".to_string(), Value::Str("Raku".to_string()));
+        attrs.insert(
+            "auth".to_string(),
+            Value::Str("The Perl Foundation".to_string()),
+        );
+        attrs.insert("version".to_string(), Value::Str("v6.d".to_string()));
+        attrs.insert(
+            "signature".to_string(),
+            Value::Array(vec![Value::Int(0)]), // Blob placeholder (non-empty)
+        );
+        attrs.insert(
+            "desc".to_string(),
+            Value::Str("Raku Programming Language".to_string()),
+        );
         attrs.insert(
             "DISTROnames".to_string(),
             Value::Array(vec![
