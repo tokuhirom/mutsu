@@ -322,3 +322,4 @@ Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang 
 - Write feature tests using prove (`t/*.t`).
 - Use Rust unit tests (`#[test]`) for internal components like parser and runtime helpers.
 - Every feature addition must include tests.
+- When implementing a temporary workaround or shortcut instead of the correct solution, always leave a `// TODO:` comment explaining what the correct approach would be and why the current implementation is insufficient. This ensures technical debt is visible and trackable.
