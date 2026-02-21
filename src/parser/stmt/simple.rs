@@ -613,6 +613,7 @@ pub(super) const KNOWN_CALLS: &[&str] = &[
     "warns-like",
     "doesn't-warn",
     "is-eqv",
+    "group-of",
     "fails-like",
     "force_todo",
     "force-todo",

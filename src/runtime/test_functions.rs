@@ -45,6 +45,7 @@ impl Interpreter {
             "warns-like" => self.test_fn_warns_like(args).map(Some),
             "doesn't-warn" => self.test_fn_doesnt_warn(args).map(Some),
             "is-eqv" => self.test_fn_is_eqv(args).map(Some),
+            "group-of" => self.test_fn_group_of(args).map(Some),
             _ => Ok(None),
         }
     }
@@ -845,6 +846,30 @@ impl Interpreter {
         let ctx = self.begin_subtest();
         let run_result = self.call_sub_value(block, vec![], true);
         self.finish_subtest(ctx, &label, run_result.map(|_| ()))?;
+        Ok(Value::Bool(true))
+    }
+
+    fn test_fn_group_of(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // group-of $plan => $desc => { ... }
+        // Pair(String, Box<Value>) where key is plan (as string), value is Pair(desc, block)
+        let (plan, desc, block) = if let Some(Value::Pair(plan_str, inner_val)) = args.first() {
+            if let Value::Pair(desc_str, block_val) = inner_val.as_ref() {
+                let plan: i64 = plan_str
+                    .parse()
+                    .map_err(|_| RuntimeError::new("group-of: plan must be an integer"))?;
+                (plan, desc_str.clone(), *block_val.clone())
+            } else {
+                return Err(RuntimeError::new(
+                    "group-of expects $plan => $desc => { ... }",
+                ));
+            }
+        } else {
+            return Err(RuntimeError::new("group-of expects a Pair argument"));
+        };
+        let ctx = self.begin_subtest();
+        self.test_fn_plan(&[Value::Int(plan)])?;
+        let run_result = self.call_sub_value(block, vec![], true);
+        self.finish_subtest(ctx, &desc, run_result.map(|_| ()))?;
         Ok(Value::Bool(true))
     }
 
