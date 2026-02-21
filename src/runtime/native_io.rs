@@ -62,6 +62,11 @@ impl Interpreter {
                     .first()
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
+                if child_name.contains('\0') || p.contains('\0') {
+                    return Err(RuntimeError::new(
+                        "X::IO::Null: Found null byte in pathname",
+                    ));
+                }
                 let joined = Self::stringify_path(&original.join(&child_name));
                 Ok(self.make_io_path_instance(&joined))
             }

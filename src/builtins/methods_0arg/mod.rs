@@ -510,6 +510,22 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 };
                 Some(Ok(Value::Str(format!("v{}{}", s, suffix))))
             }
+            Value::Str(s) => {
+                if method == "raku" || method == "perl" {
+                    // .raku wraps strings in quotes and escapes special chars
+                    let escaped = s
+                        .replace('\\', "\\\\")
+                        .replace('"', "\\\"")
+                        .replace('\n', "\\n")
+                        .replace('\t', "\\t")
+                        .replace('\r', "\\r")
+                        .replace('\0', "\\0");
+                    Some(Ok(Value::Str(format!("\"{}\"", escaped))))
+                } else {
+                    Some(Ok(Value::Str(s.clone())))
+                }
+            }
+            Value::Int(i) => Some(Ok(Value::Str(format!("{}", i)))),
             _ => Some(Ok(Value::Str(target.to_string_value()))),
         },
         "head" => match target {

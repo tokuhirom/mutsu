@@ -249,7 +249,10 @@ impl Interpreter {
         let filename = format!("{}.rakumod", module.replace("::", "/"));
         let mut candidates: Vec<std::path::PathBuf> = Vec::new();
         for base in &self.lib_paths {
-            candidates.push(Path::new(base).join(&filename));
+            let base_path = Path::new(base);
+            candidates.push(base_path.join(&filename));
+            // Also check lib/ subdirectory (Raku distribution layout)
+            candidates.push(base_path.join("lib").join(&filename));
         }
         if candidates.is_empty() {
             if let Some(path) = &self.program_path
@@ -272,7 +275,16 @@ impl Interpreter {
         let code =
             code.ok_or_else(|| RuntimeError::new(format!("Module not found: {}", module)))?;
         let preprocessed = Self::preprocess_roast_directives(&code);
-        let (stmts, _) = parse_dispatch::parse_source(&preprocessed)?;
+        let result = parse_dispatch::parse_source(&preprocessed);
+        let stmts = match result {
+            Ok((stmts, _)) => stmts,
+            Err(_) => {
+                // Fall back to partial parse: execute whatever was successfully
+                // parsed so that exported functions are still registered.
+                let (stmts, _) = parse_dispatch::parse_source_partial(&preprocessed);
+                stmts
+            }
+        };
         // Handle `unit class Foo;` — merge remaining stmts into the class body
         let stmts = Self::merge_unit_class(stmts);
         self.run_block(&stmts)?;

@@ -531,6 +531,65 @@ pub(super) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
     )
 }
 
+/// Parse `temp` statement — same semantics as `let` (save/restore at scope exit).
+pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("temp", input).ok_or_else(|| PError::expected("temp statement"))?;
+    let (rest, _) = ws1(rest)?;
+    // Parse sigil + optional twigil + var name
+    let sigil = rest
+        .chars()
+        .next()
+        .ok_or_else(|| PError::expected("variable after temp"))?;
+    if sigil != '$' && sigil != '@' && sigil != '%' {
+        return Err(PError::expected("variable after temp"));
+    }
+    let after_sigil = &rest[1..];
+    // Handle twigils: $*CWD, $?FILE, etc.
+    let (after_twigil, twigil) = if after_sigil.starts_with('*')
+        || after_sigil.starts_with('?')
+        || after_sigil.starts_with('!')
+    {
+        (&after_sigil[1..], &after_sigil[..1])
+    } else {
+        (after_sigil, "")
+    };
+    let (rest, var_name) = super::ident(after_twigil)?;
+    // Build full env key including twigil
+    let full_name = if sigil == '$' {
+        if twigil.is_empty() {
+            var_name.clone()
+        } else {
+            format!("{}{}", twigil, var_name)
+        }
+    } else {
+        format!("{}{}{}", sigil, twigil, var_name)
+    };
+    let (rest, _) = ws(rest)?;
+    // Check for assignment: temp $*CWD = expr
+    if rest.starts_with('=') && !rest.starts_with("==") {
+        let val_rest = &rest[1..];
+        let (val_rest, _) = ws(val_rest)?;
+        let (val_rest, val_expr) = expression(val_rest)?;
+        return parse_statement_modifier(
+            val_rest,
+            Stmt::Let {
+                name: full_name,
+                index: None,
+                value: Some(Box::new(val_expr)),
+            },
+        );
+    }
+    // Bare temp: temp $var
+    parse_statement_modifier(
+        rest,
+        Stmt::Let {
+            name: full_name,
+            index: None,
+            value: None,
+        },
+    )
+}
+
 /// Known function names that get Stmt::Call treatment at statement level.
 pub(super) const KNOWN_CALLS: &[&str] = &[
     "ok",

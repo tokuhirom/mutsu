@@ -179,6 +179,33 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
     result
 }
 
+/// Best-effort parse: returns all statements that could be parsed before the
+/// first error.  Used for loading `.rakumod` modules that may contain syntax
+/// mutsu does not yet support.
+pub(crate) fn parse_program_partial(input: &str) -> (Vec<Stmt>, Option<String>) {
+    let memo_enabled = parse_memo_enabled();
+    if memo_enabled {
+        expr::reset_expression_memo();
+        primary::reset_primary_memo();
+        stmt::reset_statement_memo();
+    }
+    stmt::reset_user_subs();
+    primary::set_original_source(input);
+    let (source, finish_content) = if let Some(idx) = input.find("\n=finish") {
+        let content = &input[idx + "\n=finish".len()..];
+        let content = if let Some(nl) = content.find('\n') {
+            &content[nl + 1..]
+        } else {
+            ""
+        };
+        (&input[..idx], Some(content.to_string()))
+    } else {
+        (input, None)
+    };
+    let (stmts, _) = stmt::stmt_list_partial(source);
+    (stmts, finish_content)
+}
+
 #[cfg(test)]
 mod tests {
     use super::parse_program;

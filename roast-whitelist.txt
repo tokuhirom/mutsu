@@ -114,6 +114,7 @@ roast/S15-nfg/cgj.t
 roast/S15-nfg/emoji-test.t
 roast/S15-nfg/grapheme-break.t
 roast/S15-nfg/many-combiners.t
+roast/S15-nfg/many-threads.t
 roast/S15-nfg/mass-roundtrip-nfc.t
 roast/S15-nfg/mass-roundtrip-nfd.t
 roast/S15-nfg/mass-roundtrip-nfkc.t
@@ -166,7 +167,6 @@ roast/S15-normalization/nfkd-7.t
 roast/S15-normalization/nfkd-8.t
 roast/S15-normalization/nfkd-9.t
 roast/S15-normalization/nfkd-sanity.t
-roast/S15-nfg/many-threads.t
 roast/S15-string-types/Str.t
 roast/S16-filehandles/misc.t
 roast/S16-filehandles/unlink.t
@@ -174,9 +174,9 @@ roast/S16-io/bare-say.t
 roast/S16-io/cwd.t
 roast/S16-io/supply.t
 roast/S16-unfiled/getpeername.t
+roast/S17-channel/stress.t
 roast/S17-channel/subscription-drain-in-react.t
 roast/S17-procasync/many-processes-no-close-stdin.t
-roast/S17-channel/stress.t
 roast/S17-procasync/no-runaway-file-limit.t
 roast/S17-promise/at.t
 roast/S17-promise/basic.t
@@ -203,6 +203,7 @@ roast/S29-context/exit-in-if.t
 roast/S32-array/bool.t
 roast/S32-hash/antipairs.t
 roast/S32-hash/invert.t
+roast/S32-io/null-char.t
 roast/S32-io/other-stress.t
 roast/S32-io/other.t
 roast/S32-list/cross.t
