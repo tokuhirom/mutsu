@@ -96,11 +96,25 @@ impl Interpreter {
         let left = Self::positional_value(args, 0);
         let right = Self::positional_value(args, 1);
         let ok = match (left, right) {
-            (Some(left), Some(right)) => left.to_string_value() == right.to_string_value(),
+            (Some(left), Some(right)) => {
+                self.stringify_test_value(left)? == self.stringify_test_value(right)?
+            }
             _ => false,
         };
         self.test_ok(ok, &desc, todo)?;
         Ok(Value::Bool(ok))
+    }
+
+    fn stringify_test_value(&mut self, value: &Value) -> Result<String, RuntimeError> {
+        match value {
+            Value::LazyList(list) => Ok(self
+                .force_lazy_list(list)?
+                .iter()
+                .map(|v| v.to_string_value())
+                .collect::<Vec<_>>()
+                .join(" ")),
+            _ => Ok(value.to_string_value()),
+        }
     }
 
     fn test_fn_isnt(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

@@ -472,6 +472,9 @@ pub(super) fn parse_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
 pub(super) fn return_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("return", input).ok_or_else(|| PError::expected("return statement"))?;
     let (rest, _) = ws(rest)?;
+    if is_stmt_modifier_keyword(rest) {
+        return parse_statement_modifier(rest, Stmt::Return(Expr::Literal(Value::Nil)));
+    }
     if rest.starts_with(';') || rest.is_empty() || rest.starts_with('}') {
         let (rest, _) = opt_char(rest, ';');
         return Ok((rest, Stmt::Return(Expr::Literal(Value::Nil))));

@@ -350,6 +350,7 @@ fn is_infix_word_op(name: &str) -> bool {
 
 /// Check if input starts with a statement modifier keyword.
 fn is_stmt_modifier_ahead(input: &str) -> bool {
+    let input = input.trim_start();
     for kw in &["if", "unless", "for", "while", "until", "given", "when"] {
         if input.starts_with(kw)
             && !input
@@ -955,13 +956,19 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         }
     }
 
+    let is_terminator = rest.starts_with(';')
+        || rest.starts_with('}')
+        || rest.starts_with(')')
+        || is_stmt_modifier_ahead(rest)
+        || rest.trim_start().is_empty();
+
+    // User-declared subs can be called with no args as bare words in statement position.
+    if crate::parser::stmt::simple::is_user_declared_sub(&name) && is_terminator {
+        return Ok((rest, Expr::Call { name, args: vec![] }));
+    }
+
     // Functions that can be called with no arguments as bare words
-    if matches!(name.as_str(), "await")
-        && (rest.starts_with(';')
-            || rest.starts_with('}')
-            || rest.starts_with(')')
-            || rest.trim_start().is_empty())
-    {
+    if matches!(name.as_str(), "await") && is_terminator {
         return Ok((rest, Expr::Call { name, args: vec![] }));
     }
 

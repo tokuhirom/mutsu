@@ -494,15 +494,30 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, cond) = expression(r)?;
         let (r, _) = ws(r)?;
+        let (r, (param, params)) = parse_for_params(r)?;
+        let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
+        let repeat_param = param.or_else(|| params.into_iter().next());
+        let init = repeat_param.as_ref().map(|name| {
+            Box::new(Stmt::VarDecl {
+                name: name.clone(),
+                expr: Expr::Literal(crate::value::Value::Nil),
+                type_constraint: None,
+                is_state: false,
+            })
+        });
+        let step = repeat_param.map(|name| Expr::AssignExpr {
+            name,
+            expr: Box::new(Expr::Literal(crate::value::Value::Bool(true))),
+        });
         return Ok((
             r,
             Stmt::Loop {
-                init: None,
+                init,
                 cond: Some(cond),
-                step: None,
+                step,
                 body,
                 repeat: true,
                 label: None,
@@ -513,18 +528,33 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, cond) = expression(r)?;
         let (r, _) = ws(r)?;
+        let (r, (param, params)) = parse_for_params(r)?;
+        let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
+        let repeat_param = param.or_else(|| params.into_iter().next());
+        let init = repeat_param.as_ref().map(|name| {
+            Box::new(Stmt::VarDecl {
+                name: name.clone(),
+                expr: Expr::Literal(crate::value::Value::Nil),
+                type_constraint: None,
+                is_state: false,
+            })
+        });
+        let step = repeat_param.map(|name| Expr::AssignExpr {
+            name,
+            expr: Box::new(Expr::Literal(crate::value::Value::Bool(true))),
+        });
         return Ok((
             r,
             Stmt::Loop {
-                init: None,
+                init,
                 cond: Some(Expr::Unary {
                     op: TokenKind::Bang,
                     expr: Box::new(cond),
                 }),
-                step: None,
+                step,
                 body,
                 repeat: true,
                 label: None,
@@ -572,7 +602,9 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
             },
         ));
     }
-    Err(PError::expected("while or until after repeat"))
+    Err(PError::fatal(
+        "X::Syntax::Missing: \"while\" or \"until\" required after repeat".to_string(),
+    ))
 }
 
 /// Parse `given`/`when`/`default`.
