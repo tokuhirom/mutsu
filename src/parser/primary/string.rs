@@ -228,12 +228,12 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
 
     // Check for qq forms
     let (after_prefix, is_qq) = if let Some(after_qq) = after_q.strip_prefix('q') {
-        if after_qq.starts_with('{')
-            || after_qq.starts_with('[')
-            || after_qq.starts_with('(')
-            || after_qq.starts_with('<')
-            || after_qq.starts_with('/')
-        {
+        // Accept any non-alphanumeric, non-whitespace character as qq delimiter
+        let is_qq_delim = after_qq
+            .chars()
+            .next()
+            .is_some_and(|c| !c.is_alphanumeric() && !c.is_whitespace());
+        if is_qq_delim {
             (after_qq, true)
         } else {
             (after_q, false)
@@ -269,6 +269,20 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
                     .ok_or_else(|| PError::expected("closing Unicode bracket"))?;
                 let content = &rest[..end];
                 let rest = &rest[end + close_char.len_utf8()..];
+                if is_qq {
+                    return Ok((rest, interpolate_string_content(content)));
+                }
+                let s = content.replace("\\'", "'").replace("\\\\", "\\");
+                return Ok((rest, Expr::Literal(Value::Str(s))));
+            }
+            // Non-bracket, non-/ delimiter (e.g. q|...|, q!...!) — symmetric delimiter
+            if !c.is_alphanumeric() && !c.is_whitespace() {
+                let rest = &after_prefix[c.len_utf8()..];
+                let end = rest
+                    .find(c)
+                    .ok_or_else(|| PError::expected(&format!("closing '{c}'")))?;
+                let content = &rest[..end];
+                let rest = &rest[end + c.len_utf8()..];
                 if is_qq {
                     return Ok((rest, interpolate_string_content(content)));
                 }

@@ -37,6 +37,7 @@ impl Interpreter {
             "is_run" => self.test_fn_is_run(args).map(Some),
             "make-temp-dir" => self.test_fn_make_temp_dir(args).map(Some),
             "make-temp-file" => self.test_fn_make_temp_file(args).map(Some),
+            "get_out" => self.test_fn_get_out(args).map(Some),
             "use-ok" => self.test_fn_use_ok(args).map(Some),
             "does-ok" => self.test_fn_does_ok(args).map(Some),
             "can-ok" => self.test_fn_can_ok(args).map(Some),
@@ -899,5 +900,45 @@ impl Interpreter {
         let run_result = self.call_sub_value(block, vec![], true);
         self.finish_subtest(ctx, &label, run_result.map(|_| ()))?;
         Ok(Value::Bool(true))
+    }
+
+    fn test_fn_get_out(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let program_val = Self::positional_value_required(args, 0, "get_out expects code")?;
+        let program = match program_val {
+            Value::Str(s) => s.clone(),
+            _ => return Err(RuntimeError::new("get_out expects string code")),
+        };
+        let mut nested = Interpreter::new();
+        if let Some(Value::Int(pid)) = self.env.get("*PID") {
+            nested.set_pid(pid.saturating_add(1));
+        }
+        nested.set_program_path("<get_out>");
+        let result = nested.run(&program);
+        let stderr_content = nested.stderr_output.clone();
+        let (out, err, status) = match result {
+            Ok(output) => {
+                let s = if nested.bailed_out { 255i64 } else { 0i64 };
+                let stdout_only = if stderr_content.is_empty() {
+                    output
+                } else {
+                    output.replace(&stderr_content, "")
+                };
+                (stdout_only, stderr_content, s)
+            }
+            Err(_) => {
+                let combined = nested.output.clone();
+                let stdout_only = if stderr_content.is_empty() {
+                    combined
+                } else {
+                    combined.replace(&stderr_content, "")
+                };
+                (stdout_only, stderr_content, 1i64)
+            }
+        };
+        let mut hash = std::collections::HashMap::new();
+        hash.insert("out".to_string(), Value::Str(out));
+        hash.insert("err".to_string(), Value::Str(err));
+        hash.insert("status".to_string(), Value::Int(status));
+        Ok(Value::Hash(std::sync::Arc::new(hash)))
     }
 }

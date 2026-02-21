@@ -36,7 +36,7 @@ impl VM {
         for v in &values {
             parts.push(runtime::gist_value(v));
         }
-        let line = parts.join(" ");
+        let line = parts.join("");
         self.interpreter
             .write_to_named_handle("$*OUT", &line, true)?;
         Ok(())

@@ -831,7 +831,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             loop {
                 let (r4, _) = ws(r3)?;
                 if !r4.starts_with(',') {
-                    return Ok((r4, Expr::Call { name, args }));
+                    return Ok((r3, Expr::Call { name, args }));
                 }
                 let r4 = &r4[1..];
                 let (r4, _) = ws(r4)?;
@@ -875,14 +875,23 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             let mut args = vec![arg.clone()];
             let mut rest_after = r2;
             if is_block_first_listop(&name) && is_block_expr(&arg) {
-                let (r3, _) = ws(rest_after)?;
-                if let Some(r3) = r3.strip_prefix(',') {
-                    let (r3, _) = ws(r3)?;
-                    if !r3.starts_with(';') && !r3.starts_with('}') && !r3.starts_with(')') {
-                        let (r3, rest_arg) = parse_listop_arg(r3)?;
-                        args.push(rest_arg);
-                        rest_after = r3;
+                loop {
+                    let (r3, _) = ws(rest_after)?;
+                    if !r3.starts_with(',') {
+                        break;
                     }
+                    let r3 = &r3[1..];
+                    let (r3, _) = ws(r3)?;
+                    if r3.starts_with(';')
+                        || r3.starts_with('}')
+                        || r3.starts_with(')')
+                        || r3.is_empty()
+                    {
+                        break;
+                    }
+                    let (r3, rest_arg) = parse_listop_arg(r3)?;
+                    args.push(rest_arg);
+                    rest_after = r3;
                 }
             }
             return Ok((rest_after, Expr::Call { name, args }));
