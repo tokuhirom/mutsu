@@ -240,6 +240,25 @@ impl Compiler {
                         self.code.patch_smart_match_rhs_end(sm_idx);
                         return;
                     }
+                    // Sequential metaoperators: S&, S|, S^
+                    TokenKind::Ident(op) if op == "S&" => {
+                        self.compile_expr(left);
+                        self.compile_expr(right);
+                        self.code.emit(OpCode::JunctionAll);
+                        return;
+                    }
+                    TokenKind::Ident(op) if op == "S|" => {
+                        self.compile_expr(left);
+                        self.compile_expr(right);
+                        self.code.emit(OpCode::JunctionAny);
+                        return;
+                    }
+                    TokenKind::Ident(op) if op == "S^" => {
+                        self.compile_expr(left);
+                        self.compile_expr(right);
+                        self.code.emit(OpCode::JunctionOne);
+                        return;
+                    }
                     _ => {}
                 }
 

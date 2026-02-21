@@ -380,7 +380,34 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 p.sub_signature = Some(sub_params);
                 p.named = named;
                 p.slurpy = slurpy;
-                return Ok((r3, p));
+                // Handle optional (?) / required (!) suffix after sub-signature
+                let mut rest = r3;
+                if rest.starts_with('?') || rest.starts_with('!') {
+                    rest = &rest[1..];
+                }
+                // Skip whitespace
+                let (rest, _) = ws(rest)?;
+                // Handle is copy, is rw, is readonly, is raw traits
+                let mut param_traits = Vec::new();
+                let (mut rest, _) = ws(rest)?;
+                while let Some(r) = keyword("is", rest) {
+                    let (r, _) = ws1(r)?;
+                    let (r, trait_name) = ident(r)?;
+                    param_traits.push(trait_name);
+                    let (r, _) = ws(r)?;
+                    rest = r;
+                }
+                p.traits = param_traits;
+                // Handle where constraint
+                let (rest, where_constraint) = if let Some(r) = keyword("where", rest) {
+                    let (r, _) = ws1(r)?;
+                    let (r, constraint) = expression(r)?;
+                    (r, Some(Box::new(constraint)))
+                } else {
+                    (rest, None)
+                };
+                p.where_constraint = where_constraint;
+                return Ok((rest, p));
             }
         }
 
@@ -499,7 +526,34 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 p.named = true;
                 p.slurpy = slurpy;
                 p.type_constraint = type_constraint;
-                return Ok((r3, p));
+                // Handle optional (?) / required (!) suffix after alias
+                let mut rest = r3;
+                if rest.starts_with('?') || rest.starts_with('!') {
+                    rest = &rest[1..];
+                }
+                // Skip whitespace
+                let (rest, _) = ws(rest)?;
+                // Handle is copy, is rw, is readonly, is raw traits
+                let mut param_traits = Vec::new();
+                let (mut rest, _) = ws(rest)?;
+                while let Some(r) = keyword("is", rest) {
+                    let (r, _) = ws1(r)?;
+                    let (r, trait_name) = ident(r)?;
+                    param_traits.push(trait_name);
+                    let (r, _) = ws(r)?;
+                    rest = r;
+                }
+                p.traits = param_traits;
+                // Handle where constraint
+                let (rest, where_constraint) = if let Some(r) = keyword("where", rest) {
+                    let (r, _) = ws1(r)?;
+                    let (r, constraint) = expression(r)?;
+                    (r, Some(Box::new(constraint)))
+                } else {
+                    (rest, None)
+                };
+                p.where_constraint = where_constraint;
+                return Ok((rest, p));
             }
             // Multiple params or complex: treat as sub-signature
             let mut p = make_param(format!("__{}", alias_name));
@@ -507,7 +561,34 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             p.slurpy = slurpy;
             p.type_constraint = type_constraint;
             p.sub_signature = Some(sub_params);
-            return Ok((r3, p));
+            // Handle optional (?) / required (!) suffix after sub-signature
+            let mut rest = r3;
+            if rest.starts_with('?') || rest.starts_with('!') {
+                rest = &rest[1..];
+            }
+            // Skip whitespace
+            let (rest, _) = ws(rest)?;
+            // Handle is copy, is rw, is readonly, is raw traits
+            let mut param_traits = Vec::new();
+            let (mut rest, _) = ws(rest)?;
+            while let Some(r) = keyword("is", rest) {
+                let (r, _) = ws1(r)?;
+                let (r, trait_name) = ident(r)?;
+                param_traits.push(trait_name);
+                let (r, _) = ws(r)?;
+                rest = r;
+            }
+            p.traits = param_traits;
+            // Handle where constraint
+            let (rest, where_constraint) = if let Some(r) = keyword("where", rest) {
+                let (r, _) = ws1(r)?;
+                let (r, constraint) = expression(r)?;
+                (r, Some(Box::new(constraint)))
+            } else {
+                (rest, None)
+            };
+            p.where_constraint = where_constraint;
+            return Ok((rest, p));
         }
     }
 
