@@ -283,18 +283,10 @@ impl Interpreter {
         crate::parser::set_parser_program_path(self.program_path.clone());
         let result = parse_dispatch::parse_source(&preprocessed);
         crate::parser::clear_parser_lib_paths();
-        let stmts = match result {
-            Ok((stmts, _)) => stmts,
-            Err(_) => {
-                // Fall back to partial parse: execute whatever was successfully
-                // parsed so that exported functions are still registered.
-                crate::parser::set_parser_lib_paths(self.lib_paths.clone());
-                crate::parser::set_parser_program_path(self.program_path.clone());
-                let (stmts, _) = parse_dispatch::parse_source_partial(&preprocessed);
-                crate::parser::clear_parser_lib_paths();
-                stmts
-            }
-        };
+        let stmts = result.map(|(stmts, _)| stmts).map_err(|mut err| {
+            err.message = format!("Failed to parse module '{}': {}", module, err.message);
+            err
+        })?;
         // Handle `unit class Foo;` — merge remaining stmts into the class body
         let stmts = Self::merge_unit_class(stmts);
         self.run_block(&stmts)?;

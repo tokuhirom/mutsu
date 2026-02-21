@@ -622,12 +622,15 @@ impl Interpreter {
         if module == "Test::Tap" {
             return Ok(());
         }
-        // Try to load Test:: submodules from source; fall back to no-op if unavailable
+        // Load Test:: submodules from source as regular modules.
+        // Parse errors should propagate like other `use` failures.
+        // Missing helper modules remain non-fatal for compatibility.
         if module.starts_with("Test::") {
-            if self.load_module(module).is_err() {
-                return Ok(());
-            }
-            return Ok(());
+            return match self.load_module(module) {
+                Ok(()) => Ok(()),
+                Err(err) if err.message.starts_with("Module not found:") => Ok(()),
+                Err(err) => Err(err),
+            };
         }
         self.load_module(module)
     }
@@ -765,6 +768,8 @@ impl TestState {
 #[cfg(test)]
 mod tests {
     use super::Interpreter;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn say_and_math() {
@@ -798,5 +803,26 @@ mod tests {
             .run("my $x = 0; while $x < 3 { say $x; $x = $x + 1; }")
             .unwrap();
         assert_eq!(output, "0\n1\n2\n");
+    }
+
+    #[test]
+    fn use_module_with_parse_error_raises_exception() {
+        let mut interp = Interpreter::new();
+        let uniq = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("mutsu-badmod-{}", uniq));
+        fs::create_dir_all(&dir).unwrap();
+        let mod_path = dir.join("Bad.rakumod");
+        fs::write(&mod_path, "unit module Bad;\nsub broken( { }\n").unwrap();
+
+        let program = format!("use lib '{}'; use Bad;", dir.to_string_lossy());
+        let err = interp.run(&program).unwrap_err();
+        assert!(err.message.contains("Failed to parse module 'Bad'"));
+        assert!(err.message.contains("parse error"));
+
+        let _ = fs::remove_file(mod_path);
+        let _ = fs::remove_dir(dir);
     }
 }
