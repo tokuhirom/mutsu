@@ -482,6 +482,16 @@ impl Interpreter {
                         }
                         return Err(err);
                     }
+                    // Replay deferred Proc::Async taps
+                    if let Value::Instance {
+                        ref class_name,
+                        ref attributes,
+                        ..
+                    } = result
+                        && class_name == "Proc"
+                    {
+                        self.replay_proc_taps(attributes);
+                    }
                     results.push(result);
                 }
                 // Backward compat: Instance-based Promise
