@@ -1,9 +1,9 @@
 [submodule "old-design-docs"]
 	path = old-design-docs
-	url = git@github.com:Raku/old-design-docs.git
+	url = https://github.com/Raku/old-design-docs.git
 [submodule "roast"]
 	path = roast
-	url = git@github.com:Raku/roast.git
+	url = https://github.com/Raku/roast.git
 [submodule "raku-doc"]
 	path = raku-doc
-	url = git@github.com:Raku/doc.git
+	url = https://github.com/Raku/doc.git
