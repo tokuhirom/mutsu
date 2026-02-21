@@ -66,6 +66,12 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     };
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
+    // Handle `use lib "path"` or `use lib $*PROGRAM.parent(N).add("path")` at parse time
+    if module == "lib"
+        && let Some(ref expr) = arg
+    {
+        super::simple::try_add_parse_time_lib_path(expr);
+    }
     // Register exported function names so they are recognized as calls without parens.
     super::simple::register_module_exports(&module);
     Ok((rest, Stmt::Use { module, arg }))

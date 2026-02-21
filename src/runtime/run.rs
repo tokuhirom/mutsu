@@ -138,7 +138,11 @@ impl Interpreter {
             .unwrap_or_else(|| "<unknown>".to_string());
         self.env.insert("?FILE".to_string(), Value::Str(file_name));
         self.env.insert("?LINE".to_string(), Value::Int(1));
-        let (stmts, finish_content) = crate::parse_dispatch::parse_source(&preprocessed)?;
+        crate::parser::set_parser_lib_paths(self.lib_paths.clone());
+        crate::parser::set_parser_program_path(self.program_path.clone());
+        let parse_result = crate::parse_dispatch::parse_source(&preprocessed);
+        crate::parser::clear_parser_lib_paths();
+        let (stmts, finish_content) = parse_result?;
         if let Some(content) = finish_content {
             self.env.insert("=finish".to_string(), Value::Str(content));
         }
@@ -275,13 +279,19 @@ impl Interpreter {
         let code =
             code.ok_or_else(|| RuntimeError::new(format!("Module not found: {}", module)))?;
         let preprocessed = Self::preprocess_roast_directives(&code);
+        crate::parser::set_parser_lib_paths(self.lib_paths.clone());
+        crate::parser::set_parser_program_path(self.program_path.clone());
         let result = parse_dispatch::parse_source(&preprocessed);
+        crate::parser::clear_parser_lib_paths();
         let stmts = match result {
             Ok((stmts, _)) => stmts,
             Err(_) => {
                 // Fall back to partial parse: execute whatever was successfully
                 // parsed so that exported functions are still registered.
+                crate::parser::set_parser_lib_paths(self.lib_paths.clone());
+                crate::parser::set_parser_program_path(self.program_path.clone());
                 let (stmts, _) = parse_dispatch::parse_source_partial(&preprocessed);
+                crate::parser::clear_parser_lib_paths();
                 stmts
             }
         };

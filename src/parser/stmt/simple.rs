@@ -20,6 +20,115 @@ thread_local! {
     /// `sub` declarations and `use` imports register names into the current (innermost) scope.
     /// Lookups search from innermost to outermost.
     static SCOPES: RefCell<Vec<LexicalScope>> = RefCell::new(vec![LexicalScope::default()]);
+
+    /// Library search paths set before parsing, mirroring the runtime's lib_paths.
+    static LIB_PATHS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+
+    /// Tracks which modules are currently being scanned to avoid infinite recursion.
+    static LOADING_MODULES: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+
+    /// Program file path, used to find modules relative to the script.
+    static PROGRAM_PATH: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+/// Set the library search paths for the parser (called before parsing).
+pub fn set_parser_lib_paths(paths: Vec<String>) {
+    LIB_PATHS.with(|p| {
+        *p.borrow_mut() = paths;
+    });
+}
+
+/// Set the program path for module resolution relative to the script.
+pub fn set_parser_program_path(path: Option<String>) {
+    PROGRAM_PATH.with(|p| {
+        *p.borrow_mut() = path;
+    });
+}
+
+/// Clear the library search paths (called after parsing).
+pub fn clear_parser_lib_paths() {
+    LIB_PATHS.with(|p| {
+        p.borrow_mut().clear();
+    });
+    LOADING_MODULES.with(|m| {
+        m.borrow_mut().clear();
+    });
+    PROGRAM_PATH.with(|p| {
+        *p.borrow_mut() = None;
+    });
+}
+
+/// Try to extract a library path from a `use lib` expression at parse time.
+/// Handles string literals and `$*PROGRAM.parent(N).add("path")` patterns.
+pub(in crate::parser) fn try_add_parse_time_lib_path(expr: &Expr) {
+    if let Some(path) = extract_lib_path(expr) {
+        LIB_PATHS.with(|p| {
+            let mut paths = p.borrow_mut();
+            if !paths.contains(&path) {
+                paths.push(path);
+            }
+        });
+    }
+}
+
+/// Extract a concrete path from a `use lib` expression.
+fn extract_lib_path(expr: &Expr) -> Option<String> {
+    match expr {
+        // use lib "some/path"
+        Expr::Literal(Value::Str(s)) => Some(s.clone()),
+        // use lib $*PROGRAM.parent(N).add("path")
+        Expr::MethodCall {
+            target, name, args, ..
+        } if name == "add" || name == "child" => {
+            // Extract the string argument to .add()
+            let add_arg = args.first().and_then(|a| {
+                if let Expr::Literal(Value::Str(s)) = a {
+                    Some(s.as_str())
+                } else {
+                    None
+                }
+            })?;
+            // Resolve the target chain ($*PROGRAM.parent(N))
+            let base = extract_program_parent(target)?;
+            let result = std::path::Path::new(&base).join(add_arg);
+            Some(result.to_string_lossy().into_owned())
+        }
+        _ => None,
+    }
+}
+
+/// Extract a directory path from `$*PROGRAM.parent(N)` or `$*PROGRAM.parent`.
+fn extract_program_parent(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::MethodCall {
+            target, name, args, ..
+        } if name == "parent" => {
+            // Get the base: should be $*PROGRAM or a chain
+            let base = match target.as_ref() {
+                Expr::Var(v) if v == "*PROGRAM" => PROGRAM_PATH.with(|p| p.borrow().clone())?,
+                other => extract_program_parent(other)?,
+            };
+            let levels = if let Some(Expr::Literal(Value::Int(n))) = args.first() {
+                *n as usize
+            } else {
+                1
+            };
+            let mut path = std::path::PathBuf::from(&base);
+            for _ in 0..levels {
+                path = path.parent()?.to_path_buf();
+            }
+            Some(path.to_string_lossy().into_owned())
+        }
+        Expr::MethodCall { target, name, .. } if name == "IO" => {
+            // .IO is a no-op for path resolution
+            match target.as_ref() {
+                Expr::Var(v) if v == "*PROGRAM" => PROGRAM_PATH.with(|p| p.borrow().clone()),
+                _ => None,
+            }
+        }
+        Expr::Var(v) if v == "*PROGRAM" => PROGRAM_PATH.with(|p| p.borrow().clone()),
+        _ => None,
+    }
 }
 
 /// Register a user-declared sub name so it can be recognized as a call without parens.
@@ -82,24 +191,131 @@ pub(crate) fn is_imported_function(name: &str) -> bool {
 
 /// Register exported function names for a module (called when parsing `use` statements).
 /// Exports are added to the current (innermost) lexical scope.
+///
+/// For `Test`, uses a hardcoded list (Test functions are implemented natively in Rust).
+/// For all other modules, dynamically scans the module file to extract `is export` subs.
 pub(in crate::parser) fn register_module_exports(module: &str) {
-    let exports: &[&str] = match module {
-        "Test" => TEST_EXPORTS,
-        "Test::Util" => TEST_UTIL_EXPORTS,
-        _ => return,
+    let exports: Vec<String> = if module == "Test" {
+        TEST_EXPORTS.iter().map(|s| (*s).to_string()).collect()
+    } else {
+        // Check for infinite recursion
+        let already_loading = LOADING_MODULES.with(|m| m.borrow().contains(module));
+        if already_loading {
+            return;
+        }
+        LOADING_MODULES.with(|m| {
+            m.borrow_mut().insert(module.to_string());
+        });
+        let result = find_and_extract_exports(module);
+        LOADING_MODULES.with(|m| {
+            m.borrow_mut().remove(module);
+        });
+        result
     };
+    if exports.is_empty() {
+        return;
+    }
     SCOPES.with(|s| {
         let mut scopes = s.borrow_mut();
         let current = scopes
             .last_mut()
             .expect("scope stack should never be empty");
-        for name in exports {
-            current.imported_functions.insert((*name).to_string());
+        for name in &exports {
+            current.imported_functions.insert(name.clone());
         }
     });
 }
 
+/// Find a module file and extract its exported function names.
+fn find_and_extract_exports(module: &str) -> Vec<String> {
+    let path = find_module_file(module);
+    match path {
+        Some(p) => {
+            if let Ok(source) = std::fs::read_to_string(&p) {
+                extract_exported_names(&source)
+            } else {
+                Vec::new()
+            }
+        }
+        None => Vec::new(),
+    }
+}
+
+/// Search lib_paths and program directory for a `.rakumod` file matching the module name.
+fn find_module_file(module: &str) -> Option<String> {
+    let filename = format!("{}.rakumod", module.replace("::", "/"));
+    // First, search configured lib paths
+    let result = LIB_PATHS.with(|paths| {
+        let paths = paths.borrow();
+        for base in paths.iter() {
+            let base_path = std::path::Path::new(base);
+            let candidate = base_path.join(&filename);
+            if candidate.exists() {
+                return Some(candidate.to_string_lossy().into_owned());
+            }
+            // Also check lib/ subdirectory
+            let candidate = base_path.join("lib").join(&filename);
+            if candidate.exists() {
+                return Some(candidate.to_string_lossy().into_owned());
+            }
+        }
+        None
+    });
+    if result.is_some() {
+        return result;
+    }
+    // Fall back: search relative to program file (same as runtime's load_module)
+    PROGRAM_PATH.with(|pp| {
+        let pp = pp.borrow();
+        if let Some(path) = pp.as_ref()
+            && let Some(parent) = std::path::Path::new(path).parent()
+        {
+            let candidate = parent.join(&filename);
+            if candidate.exists() {
+                return Some(candidate.to_string_lossy().into_owned());
+            }
+        }
+        // Last resort: current directory
+        let candidate = std::path::Path::new(".").join(&filename);
+        if candidate.exists() {
+            return Some(candidate.to_string_lossy().into_owned());
+        }
+        None
+    })
+}
+
+/// Parse module source and extract names of `is export` sub/proto declarations.
+/// Saves and restores the parser's scope state to avoid clobbering the caller's scopes.
+fn extract_exported_names(source: &str) -> Vec<String> {
+    // Save current scopes — parse_program_partial calls reset_user_subs which clears them
+    let saved_scopes = SCOPES.with(|s| s.borrow().clone());
+    let (stmts, _) = crate::parser::parse_program_partial(source);
+    // Restore scopes
+    SCOPES.with(|s| {
+        *s.borrow_mut() = saved_scopes;
+    });
+    let mut names = Vec::new();
+    for stmt in &stmts {
+        match stmt {
+            Stmt::SubDecl {
+                name, is_export, ..
+            } if *is_export => {
+                names.push(name.clone());
+            }
+            Stmt::ProtoDecl {
+                name, is_export, ..
+            } if *is_export => {
+                names.push(name.clone());
+            }
+            _ => {}
+        }
+    }
+    names
+}
+
 /// Functions exported by `use Test`.
+/// Test functions are implemented natively in Rust (`test_functions.rs`),
+/// not loaded from a `.rakumod` file, so they must be hardcoded here.
 const TEST_EXPORTS: &[&str] = &[
     "ok",
     "nok",
@@ -133,28 +349,6 @@ const TEST_EXPORTS: &[&str] = &[
     "force_todo",
     "force-todo",
     "tap-ok",
-];
-
-/// Functions exported by `use Test::Util`.
-/// These must match the `is export` subs in roast/packages/Test-Helpers/lib/Test/Util.rakumod.
-const TEST_UTIL_EXPORTS: &[&str] = &[
-    "group-of",
-    "is-path",
-    "is-deeply-junction",
-    "test-iter-opt",
-    "is-eqv",
-    "is_run",
-    "get_out",
-    "doesn't-hang",
-    "warns-like",
-    "doesn't-warn",
-    "make-temp-path",
-    "make-temp-file",
-    "make-temp-dir",
-    "no-fatal-throws-like",
-    "run-with-tty",
-    "throws-like-any",
-    "make-test-dist",
 ];
 
 use super::{

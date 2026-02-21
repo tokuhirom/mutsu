@@ -10,6 +10,8 @@ pub(crate) fn is_imported_function(name: &str) -> bool {
     stmt::simple::is_imported_function(name)
 }
 
+pub use stmt::simple::{clear_parser_lib_paths, set_parser_lib_paths, set_parser_program_path};
+
 use crate::ast::Stmt;
 use crate::value::RuntimeError;
 use crate::value::RuntimeErrorCode;
