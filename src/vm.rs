@@ -217,6 +217,10 @@ impl VM {
                 self.exec_get_bare_word_op(code, *name_idx, compiled_fns)?;
                 *ip += 1;
             }
+            OpCode::GetPseudoStash(name_idx) => {
+                self.exec_get_pseudo_stash_op(code, *name_idx);
+                *ip += 1;
+            }
             OpCode::SetGlobal(name_idx) => {
                 let name = match &code.constants[*name_idx as usize] {
                     Value::Str(s) => s.clone(),

@@ -19,6 +19,7 @@ pub(crate) enum OpCode {
     GetArrayVar(u32),
     GetHashVar(u32),
     GetBareWord(u32),
+    GetPseudoStash(u32),
 
     // -- Arithmetic --
     Add,

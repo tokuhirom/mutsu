@@ -437,6 +437,49 @@ impl VM {
         self.locals[idx] = val.clone();
         self.interpreter.env_mut().insert(name.clone(), val);
     }
+
+    pub(super) fn exec_get_pseudo_stash_op(&mut self, code: &CompiledCode, name_idx: u32) {
+        let _name = Self::const_str(code, name_idx);
+        // Currently only MY:: is supported; other pseudo-packages can be added later.
+        // Collect all variable names from the current scope (locals + env).
+        let mut entries: HashMap<String, Value> = HashMap::new();
+
+        // Add VM locals with sigil prefix
+        for (i, var_name) in code.locals.iter().enumerate() {
+            let val = self.locals[i].clone();
+            let key = Self::add_sigil_prefix(var_name);
+            entries.insert(key, val);
+        }
+
+        // Add interpreter env entries (these include imported subs, etc.)
+        for (key, val) in self.interpreter.env() {
+            let display_key = Self::add_sigil_prefix(key);
+            entries.entry(display_key).or_insert_with(|| val.clone());
+        }
+
+        // Build a Value::Hash from the entries
+        self.stack.push(Value::Hash(Arc::new(entries)));
+    }
+
+    /// Add a sigil prefix to a variable name for display in pseudo-stash.
+    /// Names starting with @, %, & already have sigils. Others get $ prefix.
+    fn add_sigil_prefix(name: &str) -> String {
+        if name.starts_with('$')
+            || name.starts_with('@')
+            || name.starts_with('%')
+            || name.starts_with('&')
+        {
+            name.to_string()
+        } else if name.starts_with('*') || name.starts_with('?') || name.starts_with('!') {
+            // Twigil variables like *CWD → $*CWD
+            format!("${}", name)
+        } else if name.chars().next().is_some_and(|c| c.is_uppercase()) {
+            // Type names, package names — no sigil
+            name.to_string()
+        } else {
+            format!("${}", name)
+        }
+    }
 }
 
 /// Extract (start, end, excl_start, excl_end) from a Range value.

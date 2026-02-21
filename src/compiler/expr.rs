@@ -57,6 +57,10 @@ impl Compiler {
                     self.code.emit(OpCode::GetBareWord(name_idx));
                 }
             }
+            Expr::PseudoStash(name) => {
+                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                self.code.emit(OpCode::GetPseudoStash(name_idx));
+            }
             Expr::Unary { op, expr } => match op {
                 TokenKind::Minus => {
                     self.compile_expr(expr);
