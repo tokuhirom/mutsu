@@ -1,4 +1,4 @@
-use super::super::parse_result::{PError, PResult, parse_char};
+use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 
 use crate::ast::{Expr, Stmt, make_anon_sub};
 use crate::value::Value;
@@ -10,6 +10,22 @@ use super::string::{double_quoted_string, single_quoted_string};
 use super::var::parse_ident_with_hyphens;
 
 use std::sync::atomic::{AtomicU64, Ordering};
+
+fn skip_pointy_return_type(mut r: &str) -> PResult<'_, ()> {
+    let (r2, _) = ws(r)?;
+    r = r2;
+    if let Some(after_arrow) = r.strip_prefix("-->") {
+        let (after_arrow, _) = ws(after_arrow)?;
+        // Keep this permissive for now: simple type-like names only.
+        let (after_arrow, _type_name) = take_while1(after_arrow, |c: char| {
+            c.is_alphanumeric() || c == '_' || c == ':'
+        })?;
+        let (after_arrow, _) = ws(after_arrow)?;
+        Ok((after_arrow, ()))
+    } else {
+        Ok((r, ()))
+    }
+}
 
 /// Known reduction operators (must be listed to distinguish from array literals).
 const REDUCTION_OPS: &[&str] = &[
@@ -90,7 +106,7 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
 }
 
 /// Parse colonpair expressions: :$var, :@var, :%var, :name(expr), :name, :!name
-pub(super) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
+pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
     let r = input
         .strip_prefix(':')
         .filter(|r| !r.starts_with(':'))
@@ -236,7 +252,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
         let (r, sub_params) = super::super::stmt::parse_param_list_pub(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
-        let (r, _) = ws(r)?;
+        let (r, _) = skip_pointy_return_type(r)?;
         let (r, body) = parse_block_body(r)?;
         let params: Vec<String> = sub_params.iter().map(|p| p.name.clone()).collect();
         return Ok((r, Expr::AnonSubParams { params, body }));
@@ -260,10 +276,12 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
             }
             r = r2;
         }
+        let (r, _) = skip_pointy_return_type(r)?;
         let (r, body) = parse_block_body(r)?;
         Ok((r, Expr::AnonSubParams { params, body }))
     } else {
         // Single param: -> $n { body }
+        let (r, _) = skip_pointy_return_type(r)?;
         let (r, body) = parse_block_body(r)?;
         Ok((r, Expr::Lambda { param: first, body }))
     }
@@ -312,7 +330,7 @@ pub(super) fn ws_inner(input: &str) -> (&str, ()) {
 }
 
 /// Parse a block body: { stmts }
-pub(super) fn parse_block_body(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>> {
+pub(in crate::parser) fn parse_block_body(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>> {
     let (r, _) = parse_char(input, '{')?;
     crate::parser::stmt::simple::push_scope();
     let result = (|| -> PResult<'_, Vec<crate::ast::Stmt>> {

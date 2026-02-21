@@ -1,6 +1,6 @@
 use super::super::helpers::{is_ident_char, ws};
 use super::super::parse_result::{PError, PResult, parse_char, take_while1};
-use super::super::primary::{parse_call_arg_list, primary};
+use super::super::primary::{colonpair_expr, parse_block_body, parse_call_arg_list, primary};
 
 use crate::ast::Expr;
 use crate::token_kind::TokenKind;
@@ -8,6 +8,38 @@ use crate::value::Value;
 
 use super::expression;
 use super::operators::{parse_postfix_update_op, parse_prefix_unary_op};
+
+fn supports_postfix_call_adverbs(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Call { .. }
+            | Expr::MethodCall { .. }
+            | Expr::CallOn { .. }
+            | Expr::HyperMethodCall { .. }
+    )
+}
+
+fn append_call_arg(expr: &mut Expr, arg: Expr) -> bool {
+    match expr {
+        Expr::Call { args, .. } => {
+            args.push(arg);
+            true
+        }
+        Expr::MethodCall { args, .. } => {
+            args.push(arg);
+            true
+        }
+        Expr::CallOn { args, .. } => {
+            args.push(arg);
+            true
+        }
+        Expr::HyperMethodCall { args, .. } => {
+            args.push(arg);
+            true
+        }
+        _ => false,
+    }
+}
 
 fn parse_quoted_method_name(input: &str) -> Option<(&str, String)> {
     let (open, close) = if input.starts_with('"') {
@@ -127,7 +159,12 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if input.starts_with('|')
         && !input.starts_with("||")
         && let Some(&c) = input.as_bytes().get(1)
-        && (c == b'@' || c == b'%' || c == b'$' || c.is_ascii_alphabetic() || c == b'_')
+        && (c == b'@'
+            || c == b'%'
+            || c == b'$'
+            || c == b'('
+            || c.is_ascii_alphabetic()
+            || c == b'_')
     {
         let rest = &input[1..];
         let (rest, expr) = postfix_expr(rest)?;
@@ -164,6 +201,13 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
     }
 
     loop {
+        // Allow whitespace before dotty postfix call in expression context:
+        // e.g. `^3 .map: { ... }`.
+        let (r_ws, _) = ws(rest)?;
+        if r_ws.starts_with('.') && !r_ws.starts_with("..") {
+            rest = r_ws;
+        }
+
         // Unspace: backslash + whitespace collapses to nothing, allowing
         // `foo\ .method` to parse as `foo.method`.
         if rest.starts_with('\\') {
@@ -379,28 +423,41 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
             let Some(end) = r.find('>') else {
                 return Err(PError::expected_at("closing '>'", r));
             };
-            let key = &r[..end];
-            if key.is_empty()
-                || !key.chars().all(|c| {
-                    c.is_alphanumeric()
-                        || c == '_'
-                        || c == '-'
-                        || c == '!'
-                        || c == '.'
-                        || c == '?'
-                        || c == '+'
-                        || c == '/'
+            let content = &r[..end];
+            let keys: Vec<&str> = content.split_whitespace().collect();
+            if keys.is_empty()
+                || keys.iter().any(|key| {
+                    key.is_empty()
+                        || !key.chars().all(|c| {
+                            c.is_alphanumeric()
+                                || c == '_'
+                                || c == '-'
+                                || c == '!'
+                                || c == '.'
+                                || c == '?'
+                                || c == '+'
+                                || c == '/'
+                        })
                 })
             {
                 return Err(PError::expected_at("angle index key", r));
             }
             let r = &r[end + 1..];
+            let index_expr = if keys.len() == 1 {
+                Expr::Literal(Value::Str(keys[0].to_string()))
+            } else {
+                Expr::ArrayLiteral(
+                    keys.into_iter()
+                        .map(|k| Expr::Literal(Value::Str(k.to_string())))
+                        .collect(),
+                )
+            };
             // Check for :exists / :!exists / :delete adverbs
             if r.starts_with(":exists") && !is_ident_char(r.as_bytes().get(7).copied()) {
                 let r = &r[7..];
                 expr = Expr::Exists(Box::new(Expr::Index {
                     target: Box::new(expr),
-                    index: Box::new(Expr::Literal(Value::Str(key.to_string()))),
+                    index: Box::new(index_expr),
                 }));
                 rest = r;
                 continue;
@@ -411,7 +468,7 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
                     op: TokenKind::Bang,
                     expr: Box::new(Expr::Exists(Box::new(Expr::Index {
                         target: Box::new(expr),
-                        index: Box::new(Expr::Literal(Value::Str(key.to_string()))),
+                        index: Box::new(index_expr),
                     }))),
                 };
                 rest = r;
@@ -419,7 +476,7 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
             }
             expr = Expr::Index {
                 target: Box::new(expr),
-                index: Box::new(Expr::Literal(Value::Str(key.to_string()))),
+                index: Box::new(index_expr),
             };
             rest = r;
             continue;
@@ -567,6 +624,28 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
                 expr: Box::new(expr),
             };
             continue;
+        }
+
+        // Postfix call adverbs: call():k, call():x(42), call():{ ... }
+        // Parse as additional arguments on the preceding call/method-call expression.
+        if supports_postfix_call_adverbs(&expr) {
+            let (r_adv, _) = ws(rest)?;
+            if r_adv.starts_with(':') && !r_adv.starts_with("::") {
+                let after_colon = &r_adv[1..];
+                let (after_colon, _) = ws(after_colon)?;
+                if after_colon.starts_with('{') {
+                    let (r_next, body) = parse_block_body(after_colon)?;
+                    if append_call_arg(&mut expr, Expr::AnonSub(body)) {
+                        rest = r_next;
+                        continue;
+                    }
+                } else if let Ok((r_next, adverb_expr)) = colonpair_expr(r_adv)
+                    && append_call_arg(&mut expr, adverb_expr)
+                {
+                    rest = r_next;
+                    continue;
+                }
+            }
         }
 
         // Postfix i (imaginary number): (expr)i → Complex(0, expr)

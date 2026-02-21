@@ -401,4 +401,97 @@ mod tests {
         let err = expression("$x<>").unwrap_err();
         assert!(err.message().contains("angle index key"));
     }
+
+    #[test]
+    fn parse_postfix_angle_index_multiple_keys() {
+        let (rest, expr) = expression("%h<a b c>").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Index { index, .. } => {
+                assert!(matches!(*index, Expr::ArrayLiteral(ref items) if items.len() == 3));
+            }
+            _ => panic!("expected index expression"),
+        }
+    }
+
+    #[test]
+    fn parse_postfix_call_adverb_block_as_arg() {
+        let (rest, expr) = expression("foo():{ 42 }").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "foo");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(args[0], Expr::AnonSub(_)));
+            }
+            _ => panic!("expected call expression"),
+        }
+    }
+
+    #[test]
+    fn parse_postfix_call_adverb_colonpairs_as_args() {
+        let (rest, expr) = expression("fiddle():x(\"a\"):y").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "fiddle");
+                assert_eq!(args.len(), 2);
+                assert!(matches!(args[0], Expr::Binary { .. }));
+                assert!(matches!(args[1], Expr::Binary { .. }));
+            }
+            _ => panic!("expected call expression"),
+        }
+    }
+
+    #[test]
+    fn parse_listop_block_then_colon_args() {
+        let (rest, expr) = expression("map { $_ * 2 }: @list").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "map");
+                assert_eq!(args.len(), 2);
+                assert!(matches!(args[0], Expr::AnonSub(_)));
+                assert!(matches!(args[1], Expr::ArrayVar(ref n) if n == "list"));
+            }
+            _ => panic!("expected call expression"),
+        }
+    }
+
+    #[test]
+    fn parse_method_colon_arg_pointy_with_return_type() {
+        let (rest, expr) = expression("@a.map: -> \\x --> Int { x }").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::MethodCall { name, args, .. } => {
+                assert_eq!(name, "map");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(args[0], Expr::Lambda { ref param, .. } if param == "x"));
+            }
+            _ => panic!("expected method call expression"),
+        }
+    }
+
+    #[test]
+    fn parse_paren_expr_with_space_dot_method_chain() {
+        let (rest, expr) = expression("(^3 .map: -> \\x --> Int { $i++ }).sink").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::MethodCall { name, .. } => assert_eq!(name, "sink"),
+            _ => panic!("expected outer method call"),
+        }
+    }
+
+    #[test]
+    fn parse_slip_prefix_with_parenthesized_expr() {
+        let (rest, expr) = expression("|(f)").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                ..
+            }
+        ));
+    }
 }

@@ -108,6 +108,10 @@ pub(super) fn big_q_string(input: &str) -> PResult<'_, Expr> {
     let rest = input
         .strip_prefix('Q')
         .ok_or_else(|| PError::expected("Q string"))?;
+    // Q:to/DELIM/ heredoc
+    if let Some(r) = rest.strip_prefix(":to/") {
+        return parse_to_heredoc(r);
+    }
     // Q:s form (interpolating) — e.g. Q:s|...|
     let (rest, is_scalar_interp) = if let Some(r) = rest.strip_prefix(":s") {
         (r, true)
@@ -143,6 +147,65 @@ pub(super) fn big_q_string(input: &str) -> PResult<'_, Expr> {
     Ok((after, Expr::Literal(Value::Str(content.to_string()))))
 }
 
+fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
+    // Find the delimiter name (e.g. END)
+    let delim_end = input
+        .find('/')
+        .ok_or_else(|| PError::expected("closing / for heredoc delimiter"))?;
+    let delimiter = &input[..delim_end];
+    let r = &input[delim_end + 1..];
+    // In Raku, heredoc content starts on the NEXT line.
+    // The rest of the current line (after q:to/DELIM/) continues as normal code.
+    // Find the next newline to split current-line remainder from heredoc body.
+    let (rest_of_line, heredoc_start) = if let Some(nl) = r.find('\n') {
+        (&r[..nl], &r[nl + 1..])
+    } else {
+        // No newline after heredoc declaration — no heredoc body
+        return Err(PError::expected("heredoc body after newline"));
+    };
+    // Find the terminator line in the heredoc body
+    let mut content_end = None;
+    let mut search_pos = 0;
+    while search_pos <= heredoc_start.len() {
+        if heredoc_start[search_pos..].starts_with(delimiter) {
+            let after_delim = &heredoc_start[search_pos + delimiter.len()..];
+            if after_delim.is_empty()
+                || after_delim.starts_with('\n')
+                || after_delim.starts_with('\r')
+                || after_delim.starts_with(';')
+            {
+                content_end = Some(search_pos);
+                break;
+            }
+        }
+        if let Some(nl) = heredoc_start[search_pos..].find('\n') {
+            search_pos += nl + 1;
+        } else {
+            break;
+        }
+    }
+    if let Some(end) = content_end {
+        let content = &heredoc_start[..end];
+        let after_terminator = &heredoc_start[end + delimiter.len()..];
+        // Skip optional newline after terminator
+        let after_terminator = after_terminator
+            .strip_prefix('\n')
+            .unwrap_or(after_terminator);
+        // Return rest_of_line + after_terminator as remaining input.
+        if rest_of_line.trim().is_empty() || rest_of_line.trim() == ";" {
+            return Ok((
+                after_terminator,
+                Expr::Literal(Value::Str(content.to_string())),
+            ));
+        }
+        // We cannot return a disjoint slice pair, so concatenate.
+        let combined = format!("{}\n{}", rest_of_line, after_terminator);
+        let leaked: &'static str = Box::leak(combined.into_boxed_str());
+        return Ok((leaked, Expr::Literal(Value::Str(content.to_string()))));
+    }
+    Err(PError::expected("heredoc terminator"))
+}
+
 /// Parse q{...}, q[...], q(...), q<...>, q/.../ quoting forms.
 pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
     if !input.starts_with('q') {
@@ -152,78 +215,14 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
 
     // q:to/DELIM/ or qq:to/DELIM/ heredoc
     if after_q.starts_with(":to/") || after_q.starts_with("q:to/") {
-        let (r, _is_qq) = if let Some(stripped) = after_q.strip_prefix("q:to/") {
-            (stripped, true)
+        let r = if let Some(stripped) = after_q.strip_prefix("q:to/") {
+            stripped
         } else if let Some(stripped) = after_q.strip_prefix(":to/") {
-            (stripped, false)
+            stripped
         } else {
             unreachable!()
         };
-        // Find the delimiter name (e.g. END)
-        let delim_end = r
-            .find('/')
-            .ok_or_else(|| PError::expected("closing / for heredoc delimiter"))?;
-        let delimiter = &r[..delim_end];
-        let r = &r[delim_end + 1..];
-        // In Raku, heredoc content starts on the NEXT line.
-        // The rest of the current line (after q:to/DELIM/) continues as normal code.
-        // Find the next newline to split current-line remainder from heredoc body.
-        let (rest_of_line, heredoc_start) = if let Some(nl) = r.find('\n') {
-            (&r[..nl], &r[nl + 1..])
-        } else {
-            // No newline after heredoc declaration — no heredoc body
-            return Err(PError::expected("heredoc body after newline"));
-        };
-        // Find the terminator line in the heredoc body
-        let mut content_end = None;
-        let mut search_pos = 0;
-        while search_pos <= heredoc_start.len() {
-            if heredoc_start[search_pos..].starts_with(delimiter) {
-                let after_delim = &heredoc_start[search_pos + delimiter.len()..];
-                if after_delim.is_empty()
-                    || after_delim.starts_with('\n')
-                    || after_delim.starts_with('\r')
-                    || after_delim.starts_with(';')
-                {
-                    content_end = Some(search_pos);
-                    break;
-                }
-            }
-            if let Some(nl) = heredoc_start[search_pos..].find('\n') {
-                search_pos += nl + 1;
-            } else {
-                break;
-            }
-        }
-        if let Some(end) = content_end {
-            let content = &heredoc_start[..end];
-            let after_terminator = &heredoc_start[end + delimiter.len()..];
-            // Skip optional newline after terminator
-            let after_terminator = after_terminator
-                .strip_prefix('\n')
-                .unwrap_or(after_terminator);
-            // Return rest_of_line + after_terminator as remaining input
-            // so the caller can continue parsing the current line's arguments.
-            // We need to concatenate, but since we can't create new string slices
-            // from two disjoint parts, we check if rest_of_line is empty first.
-            if rest_of_line.trim().is_empty() || rest_of_line.trim() == ";" {
-                return Ok((
-                    after_terminator,
-                    Expr::Literal(Value::Str(content.to_string())),
-                ));
-            }
-            // rest_of_line has content (e.g. ", 'description';") — we need to
-            // return it as remaining input. Since we can't concatenate slices,
-            // we use the fact that rest_of_line and after_terminator are part of
-            // the same original string. Build a combined view by finding the
-            // rest_of_line followed by after_terminator.
-            // Strategy: create a new string and leak it to get a &'static str.
-            // This is acceptable since parser runs once per program.
-            let combined = format!("{}\n{}", rest_of_line, after_terminator);
-            let leaked: &'static str = Box::leak(combined.into_boxed_str());
-            return Ok((leaked, Expr::Literal(Value::Str(content.to_string()))));
-        }
-        return Err(PError::expected("heredoc terminator"));
+        return parse_to_heredoc(r);
     }
 
     // Check for qq forms
