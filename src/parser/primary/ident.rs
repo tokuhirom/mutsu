@@ -323,6 +323,7 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
             | "eval-lives-ok"
             | "eval-dies-ok"
             | "throws-like"
+            | "warns-like"
             | "pass"
             | "flunk"
             | "skip"
