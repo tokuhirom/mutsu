@@ -494,4 +494,25 @@ mod tests {
             }
         ));
     }
+
+    #[test]
+    fn parse_parenthesized_sequence_with_following_smartmatch() {
+        let (rest, expr) = expression("(\"a\"...* ~~ / z /)").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Binary { .. }));
+    }
+
+    #[test]
+    fn parse_s_metaop_infix_and() {
+        let (rest, expr) = expression("1 S& 2").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Binary { .. }));
+    }
+
+    #[test]
+    fn parse_pair_lvalue_colonparen_form() {
+        let (rest, expr) = expression(":(:$a is raw)").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Binary { .. }));
+    }
 }

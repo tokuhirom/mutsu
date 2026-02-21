@@ -17,6 +17,75 @@ use super::super::helpers::ws;
 use super::misc::parse_block_body;
 use super::regex::parse_call_arg_list;
 
+fn parse_raw_braced_regex_body(input: &str) -> PResult<'_, String> {
+    let after_open = input
+        .strip_prefix('{')
+        .ok_or_else(|| PError::expected("regex body"))?;
+    let mut depth = 1u32;
+    let mut i = 0usize;
+    while i < after_open.len() {
+        let ch = after_open[i..]
+            .chars()
+            .next()
+            .ok_or_else(|| PError::expected("closing '}'"))?;
+        let len = ch.len_utf8();
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    let body = after_open[..i].trim().to_string();
+                    let rest = &after_open[i + len..];
+                    return Ok((rest, body));
+                }
+            }
+            '\\' => {
+                i += len;
+                if i < after_open.len() {
+                    let next_len = after_open[i..]
+                        .chars()
+                        .next()
+                        .map(|c| c.len_utf8())
+                        .unwrap_or(0);
+                    i += next_len;
+                    continue;
+                }
+            }
+            '\'' | '"' => {
+                let quote = ch;
+                i += len;
+                while i < after_open.len() {
+                    let c = after_open[i..]
+                        .chars()
+                        .next()
+                        .ok_or_else(|| PError::expected("string close"))?;
+                    let c_len = c.len_utf8();
+                    if c == '\\' {
+                        i += c_len;
+                        if i < after_open.len() {
+                            let n_len = after_open[i..]
+                                .chars()
+                                .next()
+                                .map(|n| n.len_utf8())
+                                .unwrap_or(0);
+                            i += n_len;
+                            continue;
+                        }
+                    }
+                    i += c_len;
+                    if c == quote {
+                        break;
+                    }
+                }
+                continue;
+            }
+            _ => {}
+        }
+        i += len;
+    }
+    Err(PError::expected("closing '}'"))
+}
+
 /// Parse `::Foo` class literal (type object reference) or `::($expr)` indirect type lookup.
 pub(super) fn class_literal(input: &str) -> PResult<'_, Expr> {
     if !input.starts_with("::") {
@@ -288,6 +357,7 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "die"
             | "fail"
             | "warn"
+            | "make"
             | "take"
             | "emit"
             | "split"
@@ -644,6 +714,14 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
             // sub not followed by { or ( in expression context — not valid
             return Err(PError::expected_at("anonymous sub body '{' or '('", r));
+        }
+        "token" | "rule" => {
+            // token/rule term literal: token { ... } / rule { ... }
+            let (r, _) = ws(rest)?;
+            if r.starts_with('{') {
+                let (r, pat) = parse_raw_braced_regex_body(r)?;
+                return Ok((r, Expr::Literal(Value::Regex(pat))));
+            }
         }
         "gather" => {
             let (r, _) = ws(rest)?;

@@ -1,11 +1,94 @@
 use super::super::helpers::{skip_balanced_parens, ws, ws1};
-use super::super::parse_result::{PError, PResult, opt_char, parse_char};
+use super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
 
 use crate::ast::Stmt;
 
 use super::{block, ident, keyword, qualified_ident};
 
 use super::{parse_param_list, parse_sub_traits};
+
+fn consume_raw_braced_body(input: &str) -> PResult<'_, Vec<Stmt>> {
+    if !input.starts_with('{') {
+        return Err(PError::expected("raw braced body"));
+    }
+    let mut depth = 0u32;
+    let mut i = 0usize;
+    while i < input.len() {
+        let ch = input[i..]
+            .chars()
+            .next()
+            .ok_or_else(|| PError::expected("closing '}'"))?;
+        let len = ch.len_utf8();
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    let rest = &input[i + len..];
+                    return Ok((rest, Vec::new()));
+                }
+            }
+            '\\' => {
+                i += len;
+                if i < input.len() {
+                    let next_len = input[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(0);
+                    i += next_len;
+                    continue;
+                }
+            }
+            '\'' | '"' => {
+                let quote = ch;
+                i += len;
+                while i < input.len() {
+                    let c = input[i..]
+                        .chars()
+                        .next()
+                        .ok_or_else(|| PError::expected("string close"))?;
+                    let c_len = c.len_utf8();
+                    if c == '\\' {
+                        i += c_len;
+                        if i < input.len() {
+                            let n_len =
+                                input[i..].chars().next().map(|n| n.len_utf8()).unwrap_or(0);
+                            i += n_len;
+                            continue;
+                        }
+                    }
+                    i += c_len;
+                    if c == quote {
+                        break;
+                    }
+                }
+                continue;
+            }
+            _ => {}
+        }
+        i += len;
+    }
+    Err(PError::expected("closing '}'"))
+}
+
+fn parse_token_like_name(input: &str) -> PResult<'_, String> {
+    let (mut rest, mut name) = ident(input)?;
+    loop {
+        if !rest.starts_with(':') {
+            break;
+        }
+        let r = &rest[1..];
+        let (r, part) = take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+        name.push(':');
+        name.push_str(part);
+        let mut r2 = r;
+        if r2.starts_with('<')
+            && let Some(end) = r2.find('>')
+        {
+            name.push_str(&r2[..=end]);
+            r2 = &r2[end + 1..];
+        }
+        rest = r2;
+    }
+    Ok((rest, name))
+}
 
 /// Parse `class` declaration.
 pub(crate) fn class_decl(input: &str) -> PResult<'_, Stmt> {
@@ -97,7 +180,10 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
         rest = r;
     }
 
-    let (rest, body) = block(rest)?;
+    let (rest, body) = match block(rest) {
+        Ok(ok) => ok,
+        Err(_) => consume_raw_braced_body(rest)?,
+    };
     Ok((rest, Stmt::RoleDecl { name, body }))
 }
 
@@ -105,7 +191,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
 pub(super) fn does_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("does", input).ok_or_else(|| PError::expected("does declaration"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, name) = ident(rest)?;
+    let (rest, name) = parse_token_like_name(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
     Ok((rest, Stmt::DoesDecl { name }))
@@ -118,7 +204,7 @@ pub(super) fn token_decl(input: &str) -> PResult<'_, Stmt> {
         .or_else(|| keyword("rule", input))
         .ok_or_else(|| PError::expected("token/rule declaration"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, name) = ident(rest)?;
+    let (rest, name) = parse_token_like_name(rest)?;
     let (rest, _) = ws(rest)?;
 
     // Optional params
@@ -135,7 +221,10 @@ pub(super) fn token_decl(input: &str) -> PResult<'_, Stmt> {
     };
 
     let (rest, _) = ws(rest)?;
-    let (rest, body) = block(rest)?;
+    let (rest, body) = match block(rest) {
+        Ok(ok) => ok,
+        Err(_) => consume_raw_braced_body(rest)?,
+    };
 
     if is_rule {
         Ok((
@@ -250,7 +339,10 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
     // May have {*} body or just semicolon
     if rest.starts_with('{') {
-        let (rest, _body) = block(rest)?;
+        let (rest, _body) = match block(rest) {
+            Ok(ok) => ok,
+            Err(_) => consume_raw_braced_body(rest)?,
+        };
         return Ok((
             rest,
             Stmt::ProtoDecl {

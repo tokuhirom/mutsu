@@ -4,7 +4,7 @@ use crate::ast::Expr;
 use crate::value::Value;
 
 use super::super::expr::expression;
-use super::super::helpers::ws;
+use super::super::helpers::{skip_balanced_parens, ws};
 
 /// Parse comma-separated call arguments inside parens.
 pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Expr>> {
@@ -390,21 +390,44 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
 
     // m/pattern/ or m{pattern} or m[pattern]
     // m with arbitrary delimiter: m/.../, m{...}, m[...], m^...^, m!...!, etc.
-    if let Some(after_m) = input.strip_prefix('m')
-        && let Some(open_ch) = after_m.chars().next()
-    {
-        let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
-        if is_delim {
-            let (close_ch, is_paired) = match open_ch {
-                '{' => ('}', true),
-                '[' => (']', true),
-                '(' => (')', true),
-                '<' => ('>', true),
-                other => (other, false),
-            };
-            let r = &after_m[open_ch.len_utf8()..];
-            if let Some((pattern, rest)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
-                return Ok((rest, Expr::Literal(Value::Regex(pattern.to_string()))));
+    // Also allow modifiers before delimiter: m:2x/.../, m:x(2)/.../, m:g:i/.../
+    if let Some(after_m) = input.strip_prefix('m') {
+        let mut spec = after_m;
+        loop {
+            if !spec.starts_with(':') {
+                break;
+            }
+            let mut r = &spec[1..];
+            while let Some(ch) = r.chars().next() {
+                if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+                    r = &r[ch.len_utf8()..];
+                } else {
+                    break;
+                }
+            }
+            if r.starts_with('(') {
+                let after = skip_balanced_parens(r);
+                if after == r {
+                    return Err(PError::expected("closing ')' in regex modifier"));
+                }
+                r = after;
+            }
+            spec = r;
+        }
+        if let Some(open_ch) = spec.chars().next() {
+            let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
+            if is_delim {
+                let (close_ch, is_paired) = match open_ch {
+                    '{' => ('}', true),
+                    '[' => (']', true),
+                    '(' => (')', true),
+                    '<' => ('>', true),
+                    other => (other, false),
+                };
+                let r = &spec[open_ch.len_utf8()..];
+                if let Some((pattern, rest)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
+                    return Ok((rest, Expr::Literal(Value::Regex(pattern.to_string()))));
+                }
             }
         }
     }

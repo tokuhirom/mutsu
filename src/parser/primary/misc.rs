@@ -111,6 +111,41 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         .strip_prefix(':')
         .filter(|r| !r.starts_with(':'))
         .ok_or_else(|| PError::expected("colonpair"))?;
+    // :(...): pair-list/lvalue form used in constructs like
+    // `:(:$a is raw) := \(:a($b))`.
+    if let Some(mut r) = r.strip_prefix('(') {
+        let (r2, _) = ws(r)?;
+        r = r2;
+        let mut items = Vec::new();
+        if r.starts_with(')') {
+            let (r, _) = parse_char(r, ')')?;
+            return Ok((r, Expr::ArrayLiteral(items)));
+        }
+        loop {
+            let (r_item, item) =
+                colonpair_expr(r).map_err(|_| PError::expected("colonpair in :(...)"))?;
+            let (mut r_next, _) = ws(r_item)?;
+            // Optional traits after a pair-lvalue item: `is raw`, etc.
+            while let Some(after_is) = keyword("is", r_next) {
+                let (after_is, _) = ws(after_is)?;
+                let (after_is, _trait_name) = parse_ident_with_hyphens(after_is)?;
+                let (after_is, _) = ws(after_is)?;
+                r_next = after_is;
+            }
+            items.push(item);
+            if r_next.starts_with(',') {
+                let (r_more, _) = parse_char(r_next, ',')?;
+                let (r_more, _) = ws(r_more)?;
+                r = r_more;
+                continue;
+            }
+            let (r_end, _) = parse_char(r_next, ')')?;
+            if items.len() == 1 {
+                return Ok((r_end, items.remove(0)));
+            }
+            return Ok((r_end, Expr::ArrayLiteral(items)));
+        }
+    }
     // :!name (negated boolean pair)
     if let Some(after_bang) = r.strip_prefix('!') {
         let (rest, name) = parse_ident_with_hyphens(after_bang)?;
@@ -417,6 +452,8 @@ fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
         pairs.push((key, Some(val)));
         let (r, _) = ws_inner(r);
         if let Some(stripped) = r.strip_prefix(',') {
+            rest = stripped;
+        } else if let Some(stripped) = r.strip_prefix(';') {
             rest = stripped;
         } else {
             rest = r;

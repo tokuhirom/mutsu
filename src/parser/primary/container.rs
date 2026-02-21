@@ -11,6 +11,7 @@ use super::super::stmt::keyword;
 pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '(')?;
     let (input, _) = ws(input)?;
+    let content_start = input;
     if let Ok((input, _)) = parse_char(input, ')') {
         // Empty parens = empty list
         return Ok((input, Expr::ArrayLiteral(Vec::new())));
@@ -75,6 +76,17 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         expression_no_sequence(input)?
     };
     let (input, _) = ws(input)?;
+    // If sequence syntax appears, try full expression parsing first.
+    // This avoids mis-parsing cases like ("a"...* ~~ / z /) where
+    // sequence is followed by another infix operator.
+    if input.starts_with("...")
+        && let Ok((r_full, full_expr)) = expression(content_start)
+    {
+        let (r_full_ws, _) = ws(r_full)?;
+        if let Ok((r_after, _)) = parse_char(r_full_ws, ')') {
+            return Ok((r_after, full_expr));
+        }
+    }
     // Check for inline statement modifier: ($_ with data), (expr if cond), etc.
     if let Some(result) = try_inline_modifier(input, first.clone()) {
         let (rest, modified_expr) = result?;

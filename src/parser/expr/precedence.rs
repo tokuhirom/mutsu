@@ -694,6 +694,21 @@ fn structural_expr(input: &str) -> PResult<'_, Expr> {
             rest = r;
             continue;
         }
+        // S-metaop variants used as infix operators (e.g. S&)
+        if r.starts_with("S&") && !is_ident_char(r.as_bytes().get(2).copied()) {
+            let r = &r[2..];
+            let (r, _) = ws(r)?;
+            let (r, right) = concat_expr(r).map_err(|err| {
+                enrich_expected_error(err, "expected expression after 'S&'", r.len())
+            })?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: TokenKind::Ident("S&".to_string()),
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
         // Set operators: (|), (&), (-), (^), (<=), (>=), (<), (>), (elem), (cont)
         if let Some((tok, len)) = parse_set_op(r) {
             let r = &r[len..];
