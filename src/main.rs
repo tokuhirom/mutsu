@@ -26,6 +26,21 @@ fn print_error(prefix: &str, err: &RuntimeError) {
     }
 }
 
+fn print_help(program: &str) {
+    println!("Usage: {} [OPTIONS] [FILE | -e CODE]", program);
+    println!();
+    println!("Options:");
+    println!("  -e CODE        Evaluate CODE");
+    println!("  -I PATH        Add PATH to the module search path");
+    println!("  --dump-ast     Dump the AST instead of executing");
+    println!("  --repl         Start the interactive REPL");
+    println!("  -h, --help     Show this help message");
+    println!();
+    println!("Environment variables:");
+    println!("  MUTSULIB       Colon-separated list of module search paths");
+    println!("                 (added before -I paths, so -I takes priority)");
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -35,7 +50,10 @@ fn main() {
     let mut filtered_args: Vec<String> = Vec::new();
     let mut iter = args[1..].iter();
     while let Some(arg) = iter.next() {
-        if arg == "--dump-ast" {
+        if arg == "--help" || arg == "-h" {
+            print_help(&args[0]);
+            return;
+        } else if arg == "--dump-ast" {
             dump_ast = true;
         } else if arg == "--repl" {
             repl_flag = true;
@@ -54,6 +72,18 @@ fn main() {
         } else {
             filtered_args.push(arg.clone());
         }
+    }
+
+    // MUTSULIB env var: colon-separated paths added before -I paths
+    // (so -I takes priority since later paths are searched first)
+    if let Ok(mutsulib) = env::var("MUTSULIB") {
+        let mut env_paths: Vec<String> = mutsulib
+            .split(':')
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect();
+        env_paths.append(&mut lib_paths);
+        lib_paths = env_paths;
     }
 
     if repl_flag || (filtered_args.is_empty() && io::stdin().is_terminal()) {

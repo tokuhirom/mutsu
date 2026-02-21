@@ -15,6 +15,10 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - Run a single roast test: `cargo build && prove -e 'target/debug/mutsu' roast/<path>.t`
 - Pre-commit hooks (lefthook): `cargo clippy -- -D warnings` and `cargo fmt` run automatically on commit.
 - Temporary test scripts: write to `tmp/` (gitignored) using the Write tool (not cat/heredoc). Build first, then run with `./target/debug/mutsu ./tmp/<file>`.
+- Module search paths: use `-I <path>` to add a module search path, or set the `MUTSULIB` environment variable (colon-separated paths). `-I` paths take priority over `MUTSULIB` paths.
+  - Example: `cargo run -- -I lib script.raku`
+  - Example: `MUTSULIB=/path/to/lib1:/path/to/lib2 cargo run -- script.raku`
+- Help: `cargo run -- --help`
 
 ## Architecture
 
