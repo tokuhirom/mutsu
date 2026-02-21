@@ -33,16 +33,22 @@ impl Interpreter {
             let key = target_var.to_string();
             match method {
                 "push" => {
-                    let mut items = match self.env.get(&key) {
-                        Some(Value::Array(existing)) => existing.to_vec(),
-                        _ => match target {
-                            Value::Array(v) => v.to_vec(),
-                            _ => Vec::new(),
-                        },
+                    // Check shared_vars first (for cross-thread array sharing)
+                    let mut items = if let Some(Value::Array(existing)) = self.get_shared_var(&key)
+                    {
+                        existing.to_vec()
+                    } else {
+                        match self.env.get(&key) {
+                            Some(Value::Array(existing)) => existing.to_vec(),
+                            _ => match target {
+                                Value::Array(v) => v.to_vec(),
+                                _ => Vec::new(),
+                            },
+                        }
                     };
                     items.extend(args);
                     let result = Value::array(items.clone());
-                    self.env.insert(key, Value::array(items));
+                    self.set_shared_var(&key, Value::array(items));
                     return Ok(result);
                 }
                 "append" => {

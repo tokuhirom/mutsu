@@ -376,9 +376,10 @@ impl Interpreter {
         Ok(Value::Int(-1))
     }
 
-    pub(super) fn builtin_sleep(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_sleep(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let duration = Self::duration_from_seconds(Self::seconds_from_value(args.first().cloned()));
         thread::sleep(duration);
+        self.sync_shared_vars_to_env();
         Ok(Value::Nil)
     }
 
@@ -477,6 +478,9 @@ impl Interpreter {
                 _ => results.push(arg.clone()),
             }
         }
+        // Sync shared variables back from child threads
+        self.sync_shared_vars_to_env();
+
         if results.len() == 1 {
             Ok(results.into_iter().next().unwrap())
         } else {

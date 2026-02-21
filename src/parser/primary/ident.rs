@@ -170,6 +170,18 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // now — returns current time as Instant (term)
+    if input.starts_with("now")
+        && !input[3..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
+    {
+        return Ok((
+            &input[3..],
+            Expr::Call {
+                name: "now".to_string(),
+                args: vec![],
+            },
+        ));
+    }
     if let Ok(r) = try_kw("pi", Value::Num(std::f64::consts::PI)) {
         return Ok(r);
     }
