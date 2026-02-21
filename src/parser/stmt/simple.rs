@@ -9,8 +9,15 @@ use crate::ast::{AssignOp, Expr, PhaserKind, Stmt};
 use crate::value::Value;
 
 thread_local! {
+    // TODO: USER_DECLARED_SUBS should also use a scope stack for proper lexical scoping.
+    // Currently it's a flat set, meaning sub declarations inside blocks are visible
+    // outside those blocks. This doesn't cause practical issues since user subs are
+    // typically declared at file scope, but it's technically incorrect.
     static USER_DECLARED_SUBS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
-    static IMPORTED_FUNCTIONS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+    /// Lexical scope stack for imported function names. Each `{ }` block pushes a new
+    /// scope. `use` statements register exports into the current (innermost) scope.
+    /// Lookups search from innermost to outermost scope.
+    static IMPORTED_SCOPES: RefCell<Vec<HashSet<String>>> = RefCell::new(vec![HashSet::new()]);
 }
 
 /// Register a user-declared sub name so it can be recognized as a call without parens.
@@ -20,13 +27,13 @@ pub(in crate::parser) fn register_user_sub(name: &str) {
     });
 }
 
-/// Reset declared sub names (called at parse start).
+/// Reset declared sub names and import scopes (called at parse start).
 pub(in crate::parser) fn reset_user_subs() {
     USER_DECLARED_SUBS.with(|s| {
         s.borrow_mut().clear();
     });
-    IMPORTED_FUNCTIONS.with(|s| {
-        s.borrow_mut().clear();
+    IMPORTED_SCOPES.with(|s| {
+        *s.borrow_mut() = vec![HashSet::new()];
     });
 }
 
@@ -34,22 +41,47 @@ pub(in crate::parser) fn is_user_declared_sub(name: &str) -> bool {
     USER_DECLARED_SUBS.with(|s| s.borrow().contains(name))
 }
 
+/// Push a new lexical scope for imports (called when entering a `{ }` block).
+pub(in crate::parser) fn push_import_scope() {
+    IMPORTED_SCOPES.with(|s| {
+        s.borrow_mut().push(HashSet::new());
+    });
+}
+
+/// Pop the current lexical scope for imports (called when leaving a `{ }` block).
+pub(in crate::parser) fn pop_import_scope() {
+    IMPORTED_SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        if scopes.len() > 1 {
+            scopes.pop();
+        }
+    });
+}
+
 /// Check if a function name was registered via `use` module import.
+/// Searches all scopes from innermost to outermost.
 pub(crate) fn is_imported_function(name: &str) -> bool {
-    IMPORTED_FUNCTIONS.with(|s| s.borrow().contains(name))
+    IMPORTED_SCOPES.with(|s| {
+        let scopes = s.borrow();
+        scopes.iter().rev().any(|scope| scope.contains(name))
+    })
 }
 
 /// Register exported function names for a module (called when parsing `use` statements).
+/// Exports are added to the current (innermost) lexical scope.
 pub(in crate::parser) fn register_module_exports(module: &str) {
     let exports: &[&str] = match module {
         "Test" => TEST_EXPORTS,
         "Test::Util" => TEST_UTIL_EXPORTS,
         _ => return,
     };
-    IMPORTED_FUNCTIONS.with(|s| {
-        let mut set = s.borrow_mut();
+    IMPORTED_SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let current = scopes
+            .last_mut()
+            .expect("scope stack should never be empty");
         for name in exports {
-            set.insert((*name).to_string());
+            current.insert((*name).to_string());
         }
     });
 }
