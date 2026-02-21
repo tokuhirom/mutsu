@@ -43,6 +43,7 @@ roast/S03-operators/basic-types.t
 roast/S03-operators/boolean-bitwise.t
 roast/S03-operators/brainos.t
 roast/S03-operators/comparison-simple.t
+roast/S03-operators/custom.t
 roast/S03-operators/gcd.t
 roast/S03-operators/infixed-function.t
 roast/S03-operators/lcm.t
@@ -173,6 +174,7 @@ roast/S16-unfiled/getpeername.t
 roast/S17-channel/subscription-drain-in-react.t
 roast/S17-procasync/many-processes-no-close-stdin.t
 roast/S17-procasync/no-runaway-file-limit.t
+roast/S17-promise/lock-async-stress2.t
 roast/S17-promise/stress.t
 roast/S17-supply/do.t
 roast/S17-supply/on-demand.t

@@ -8,10 +8,31 @@ impl VM {
         Ok(())
     }
 
-    pub(super) fn exec_sub_op(&mut self) {
+    pub(super) fn exec_sub_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack.push(crate::builtins::arith_sub(left, right));
+        if let Some(result) = self.try_user_infix("infix:<->", &left, &right)? {
+            self.stack.push(result);
+        } else {
+            self.stack.push(crate::builtins::arith_sub(left, right));
+        }
+        Ok(())
+    }
+
+    /// Try to dispatch a binary operation to a user-defined infix operator.
+    /// Returns Some(result) if a user-defined candidate matched, None otherwise.
+    pub(super) fn try_user_infix(
+        &mut self,
+        op_name: &str,
+        left: &Value,
+        right: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let args = vec![left.clone(), right.clone()];
+        if let Some(def) = self.interpreter.resolve_function_with_types(op_name, &args) {
+            let result = self.interpreter.call_function_def(&def, &args)?;
+            return Ok(Some(result));
+        }
+        Ok(None)
     }
 
     pub(super) fn exec_mul_op(&mut self) {

@@ -222,7 +222,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::Sub => {
-                self.exec_sub_op();
+                self.exec_sub_op()?;
                 *ip += 1;
             }
             OpCode::Mul => {
