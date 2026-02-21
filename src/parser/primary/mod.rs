@@ -105,6 +105,8 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         // ::Foo class literal (type object reference)
         try_primary!(ident::class_literal(input));
         try_primary!(misc::colonpair_expr(input));
+        // anonymous role: role { ... }
+        try_primary!(misc::anon_role_expr(input));
         // anonymous class: class { ... }
         try_primary!(misc::anon_class_expr(input));
 
@@ -214,6 +216,13 @@ mod tests {
         let (rest, expr) = primary("A::").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::PseudoStash(ref s) if s == "A::"));
+    }
+
+    #[test]
+    fn parse_anonymous_role_expr() {
+        let (rest, expr) = primary("role { method foo { 1 } }").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::DoStmt(_)));
     }
 
     #[test]

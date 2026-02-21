@@ -812,6 +812,15 @@ mod tests {
     }
 
     #[test]
+    fn parse_multi_sub_with_alternate_signature_chain() {
+        let src = "multi sub infix:<+> (Base $b, Exponent $e) | (Exponent $e, Base $b) { 1 }";
+        let (rest, stmts) = program(src).unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::SubDecl { multi: true, .. }));
+    }
+
+    #[test]
     fn parse_class_decl() {
         let (rest, stmts) = program("class Foo { has $.x; method bar { 42 } }").unwrap();
         assert_eq!(rest, "");

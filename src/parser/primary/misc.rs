@@ -400,6 +400,7 @@ fn is_hash_literal_start(input: &str) -> bool {
 }
 
 static ANON_CLASS_COUNTER: AtomicU64 = AtomicU64::new(0);
+static ANON_ROLE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Parse an anonymous class expression: `class { ... }`
 pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
@@ -420,6 +421,20 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             body,
         })),
     ))
+}
+
+/// Parse an anonymous role expression: `role { ... }`
+pub(super) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
+    let rest = keyword("role", input).ok_or_else(|| PError::expected("anonymous role"))?;
+    let (rest, _) = ws(rest)?;
+    // Must be followed by '{' (no name) to be an anonymous role
+    if !rest.starts_with('{') {
+        return Err(PError::expected("'{' for anonymous role"));
+    }
+    let id = ANON_ROLE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let name = format!("__ANON_ROLE_{id}__");
+    let (rest, body) = parse_block_body(rest)?;
+    Ok((rest, Expr::DoStmt(Box::new(Stmt::RoleDecl { name, body }))))
 }
 
 /// Parse hash literal body: key => val, key => val, ... }

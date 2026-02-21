@@ -626,6 +626,24 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
             continue;
         }
 
+        // Custom postfix operator call: $x! -> postfix:<!>($x)
+        if rest.starts_with('!') && !rest.starts_with("!=") {
+            let after = &rest[1..];
+            // Keep `!` as postfix only at expression boundary.
+            if after.is_empty()
+                || after.starts_with(|c: char| {
+                    c.is_whitespace() || c == ')' || c == '}' || c == ']' || c == ',' || c == ';'
+                })
+            {
+                expr = Expr::Call {
+                    name: "postfix:<!>".to_string(),
+                    args: vec![expr],
+                };
+                rest = after;
+                continue;
+            }
+        }
+
         // Postfix call adverbs: call():k, call():x(42), call():{ ... }
         // Parse as additional arguments on the preceding call/method-call expression.
         if supports_postfix_call_adverbs(&expr) {
