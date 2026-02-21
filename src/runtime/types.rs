@@ -257,9 +257,19 @@ impl Interpreter {
             }
             if let Some(constraint) = &pd.type_constraint
                 && let Some(arg) = args.get(i)
-                && !self.type_matches_value(constraint, arg)
             {
-                return false;
+                if pd.name == "__type_only__" {
+                    // Bare identifier param (e.g., enum value) — resolve from env and compare
+                    if let Some(expected_val) = self.env.get(constraint).cloned() {
+                        if *arg != expected_val {
+                            return false;
+                        }
+                    } else if !self.type_matches_value(constraint, arg) {
+                        return false;
+                    }
+                } else if !self.type_matches_value(constraint, arg) {
+                    return false;
+                }
             }
         }
         true
@@ -364,7 +374,8 @@ impl Interpreter {
                 // Positional param
                 if positional_idx < args.len() {
                     let value = args[positional_idx].clone();
-                    if let Some(constraint) = &pd.type_constraint
+                    if pd.name != "__type_only__"
+                        && let Some(constraint) = &pd.type_constraint
                         && !self.type_matches_value(constraint, &value)
                     {
                         return Err(RuntimeError::new(format!(
@@ -374,7 +385,7 @@ impl Interpreter {
                             super::value_type_name(&value)
                         )));
                     }
-                    if !pd.name.is_empty() {
+                    if !pd.name.is_empty() && pd.name != "__type_only__" {
                         self.env.insert(pd.name.clone(), value);
                     }
                     positional_idx += 1;

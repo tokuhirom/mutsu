@@ -41,7 +41,7 @@ impl Interpreter {
         self.resolve_function(name)
     }
 
-    pub(super) fn resolve_function_with_types(
+    pub(crate) fn resolve_function_with_types(
         &mut self,
         name: &str,
         arg_values: &[Value],

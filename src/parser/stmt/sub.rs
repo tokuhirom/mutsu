@@ -16,6 +16,17 @@ fn parse_sub_name(input: &str) -> PResult<'_, String> {
         "infix" | "prefix" | "postfix" | "circumfix" | "postcircumfix" | "trait_mod"
     );
     if is_op_category && rest.starts_with(":<") {
+        // Check for :<<...>> (French-quotes / double-angle-bracket) delimiter
+        // In Raku, <<>> is an alternate quoting form; the content is the operator symbol.
+        // e.g. infix:<< - >> is the same as infix:<->
+        if let Some(after_open) = rest.strip_prefix(":<<")
+            && let Some(end_pos) = after_open.find(">>")
+        {
+            let op_symbol = after_open[..end_pos].trim();
+            let after_close = &after_open[end_pos + 2..];
+            let full_name = format!("{}:<{}>", base, op_symbol);
+            return Ok((after_close, full_name));
+        }
         // Scan for matching '>' — handle nested <> pairs
         let after_open = &rest[2..];
         let mut depth = 1u32;
@@ -316,6 +327,14 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 named = true;
                 rest = &rest[1..];
             }
+        } else if r2.starts_with(')') || r2.starts_with(',') {
+            // Bare identifier as type-only parameter (e.g., enum values in multi dispatch)
+            // multi infix:<->(e1, e2) { ... }
+            let mut p = make_param("__type_only__".to_string());
+            p.type_constraint = Some(tc);
+            p.named = named;
+            p.slurpy = slurpy;
+            return Ok((r2, p));
         }
     }
 
