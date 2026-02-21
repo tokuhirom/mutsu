@@ -209,10 +209,21 @@ fn try_inline_modifier<'a>(input: &'a str, expr: Expr) -> Option<PResult<'a, Exp
     if !is_modifier {
         return None;
     }
-    // Wrap expr as Stmt::Expr, apply modifier, wrap result as Expr::DoStmt
+    // Wrap expr as Stmt::Expr, apply one or more chained modifiers,
+    // then wrap result as Expr::DoStmt.
     let stmt = Stmt::Expr(expr);
     let result = (|| {
-        let (rest, modified_stmt) = parse_statement_modifier(input, stmt)?;
+        let (mut rest, mut modified_stmt) = parse_statement_modifier(input, stmt)?;
+        loop {
+            let (r, _) = ws(rest)?;
+            if !modifier_keywords.iter().any(|kw| keyword(kw, r).is_some()) {
+                rest = r;
+                break;
+            }
+            let (r2, next_stmt) = parse_statement_modifier(r, modified_stmt)?;
+            rest = r2;
+            modified_stmt = next_stmt;
+        }
         Ok((rest, Expr::DoStmt(Box::new(modified_stmt))))
     })();
     Some(result)

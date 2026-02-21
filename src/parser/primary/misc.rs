@@ -150,6 +150,18 @@ pub(super) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // :name{ ... } (block-valued colonpair)
+    if rest.starts_with('{') {
+        let (r, body) = parse_block_body(rest)?;
+        return Ok((
+            r,
+            Expr::Binary {
+                left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(Expr::AnonSub(body)),
+            },
+        ));
+    }
     // :name<value> (angle-bracket colonpair, equivalent to :name("value"))
     if rest.starts_with('<') && !rest.starts_with("<<") && !rest.starts_with("<=") {
         let inner = &rest[1..];

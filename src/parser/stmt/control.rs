@@ -1,6 +1,6 @@
 use super::super::expr::expression;
 use super::super::helpers::{ws, ws1};
-use super::super::parse_result::{PError, PResult, opt_char, parse_char};
+use super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
 
 use crate::ast::{AssignOp, Expr, Stmt};
 use crate::token_kind::TokenKind;
@@ -178,7 +178,8 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
     // Label before `do` block: `A: do { ... }`
     if keyword("do", rest).is_some() {
         // Parse the rest as a statement and wrap with label
-        // For now, just treat it as a labeled block by parsing `do { ... }`
+        // TODO: Represent labeled `do { ... }` with a dedicated AST node instead of
+        // lowering it to a dummy `Stmt::For` carrying `Nil`.
         let r = keyword("do", rest).unwrap();
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
@@ -194,6 +195,8 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         ));
     }
     // Label before bare block: `A: { ... }`
+    // TODO: Represent labeled bare blocks directly instead of lowering to
+    // a dummy `Stmt::For` carrying `Nil`.
     if rest.starts_with('{') {
         let (r, body) = block(rest)?;
         return Ok((
@@ -213,8 +216,29 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
 
 /// Parse for loop parameters: -> $param or -> $a, $b
 pub(super) fn parse_for_params(input: &str) -> PResult<'_, (Option<String>, Vec<String>)> {
+    fn skip_pointy_return_type<'a>(mut r: &'a str) -> PResult<'a, ()> {
+        let (r2, _) = ws(r)?;
+        r = r2;
+        if let Some(after_arrow) = r.strip_prefix("-->") {
+            let (after_arrow, _) = ws(after_arrow)?;
+            // TODO: Parse full Raku type expressions for pointy return types.
+            // Current implementation accepts only simple identifier-like names.
+            let (after_arrow, _type_name) = take_while1(after_arrow, |c: char| {
+                c.is_alphanumeric() || c == '_' || c == ':'
+            })?;
+            let (after_arrow, _) = ws(after_arrow)?;
+            Ok((after_arrow, ()))
+        } else {
+            Ok((r, ()))
+        }
+    }
+
     if let Some(stripped) = input.strip_prefix("->") {
         let (r, _) = ws(stripped)?;
+        // Zero-parameter pointy block: for @a -> { ... }
+        if r.starts_with('{') {
+            return Ok((r, (None, Vec::new())));
+        }
         let (r, first) = parse_pointy_param(r)?;
         let (r, _) = ws(r)?;
         if r.starts_with(',') {
@@ -232,8 +256,10 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, (Option<String>, Vec<
                 }
                 r = r2;
             }
+            let (r, _) = skip_pointy_return_type(r)?;
             Ok((r, (None, params)))
         } else {
+            let (r, _) = skip_pointy_return_type(r)?;
             Ok((r, (Some(first), Vec::new())))
         }
     } else {
@@ -280,10 +306,15 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, String> {
         rest
     };
     let (rest, name) = var_name(rest)?;
+    // Optional marker on pointy params: $x? / $x!
+    let mut rest = if rest.starts_with('?') || rest.starts_with('!') {
+        &rest[1..]
+    } else {
+        rest
+    };
 
     // Optional parameter traits: `is rw`, `is copy`, ...
     // Keep parsing permissive here and ignore trait semantics for now.
-    let mut rest = rest;
     loop {
         let (r, _) = ws(rest)?;
         let Some(after_is) = keyword("is", r) else {
@@ -293,6 +324,18 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, String> {
         let (after_is, _) = ws1(after_is)?;
         let (after_is, _trait_name) = ident(after_is)?;
         rest = after_is;
+    }
+
+    // Optional default value: `$x = expr`
+    let (r, _) = ws(rest)?;
+    if let Some(after_eq) = r.strip_prefix('=')
+        && !after_eq.starts_with('>')
+    {
+        let (after_eq, _) = ws(after_eq)?;
+        let (after_default, _default_expr) = expression(after_eq)?;
+        rest = after_default;
+    } else {
+        rest = r;
     }
 
     Ok((rest, name))

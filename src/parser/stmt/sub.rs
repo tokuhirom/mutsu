@@ -466,6 +466,22 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         }
     }
 
+    // Anonymous optional scalar parameter: $?
+    if let Some(after_q) = rest.strip_prefix("$?")
+        && (after_q.is_empty()
+            || after_q.starts_with(',')
+            || after_q.starts_with(')')
+            || after_q.starts_with(' ')
+            || after_q.starts_with('\t')
+            || after_q.starts_with('\n'))
+    {
+        let mut p = make_param("__ANON_STATE__".to_string());
+        p.named = named;
+        p.slurpy = slurpy;
+        p.type_constraint = type_constraint;
+        return Ok((after_q, p));
+    }
+
     let (rest, name) = var_name(rest)?;
     // Optional (?) / required (!) suffix
     let rest = if rest.starts_with('?') || rest.starts_with('!') {
