@@ -822,14 +822,14 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         ));
     }
 
-    // Bareword followed by block { ... } and comma — function call with block arg
-    // e.g., map { $_ * 2 }, @arr  or  grep { $_ > 0 }, @arr
+    // Bareword followed by block { ... } and comma/colon — function call with block arg
+    // e.g., map { $_ * 2 }, @arr  or  map { $_ * 2 }: @arr
     if r.starts_with('{')
         && !is_keyword(&name)
         && let Ok((r2, block_body)) = parse_block_body(r)
     {
         let (r3, _) = ws(r2)?;
-        if let Some(r3) = r3.strip_prefix(',') {
+        if let Some(r3) = r3.strip_prefix(',').or_else(|| r3.strip_prefix(':')) {
             // Consume comma and remaining args
             let (r3, _) = ws(r3)?;
             let mut args = vec![make_anon_sub(block_body)];

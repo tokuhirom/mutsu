@@ -723,6 +723,22 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         return parse_statement_modifier(r, stmt);
     }
 
+    // Generic bind assignment on non-variable lhs (e.g. `($a, $b) := |(f)`).
+    // Keep this as a parse fallback so complex bind lvalues don't fail early.
+    if !matches!(expr, Expr::AssignExpr { .. }) && rest.starts_with(":=") {
+        let r = &rest[2..];
+        let (r, _) = ws(r)?;
+        let (r, rhs) = super::assign::parse_assign_expr_or_comma(r).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected right-hand expression after ':='",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(r.len())),
+        })?;
+        let stmt = Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)]);
+        return parse_statement_modifier(r, stmt);
+    }
+
     // Check for assignment after parenthesized assign expression: ($x = $y) = 5
     if let Expr::AssignExpr { ref name, .. } = expr {
         if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {

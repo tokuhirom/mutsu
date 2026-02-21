@@ -58,6 +58,7 @@ pub(super) fn primary_memo_stats() -> (usize, usize, usize) {
 }
 
 // Re-exports used by other modules
+pub(in crate::parser) use misc::{colonpair_expr, parse_block_body};
 pub(in crate::parser) use regex::parse_call_arg_list;
 
 pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
@@ -173,6 +174,14 @@ mod tests {
         let (rest, expr) = primary("\"hello $x world\"").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::StringInterpolation(_)));
+    }
+
+    #[test]
+    fn parse_big_q_to_heredoc() {
+        let src = "Q:to/END/\nhello\nEND\n";
+        let (rest, expr) = primary(src).unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "hello\n"));
     }
 
     #[test]

@@ -277,7 +277,10 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     let mut slurpy_sigil = None;
     if rest.starts_with('*')
         && rest.len() > 1
-        && (rest.as_bytes()[1] == b'@' || rest.as_bytes()[1] == b'%' || rest.as_bytes()[1] == b'$')
+        && (rest.as_bytes()[1] == b'@'
+            || rest.as_bytes()[1] == b'%'
+            || rest.as_bytes()[1] == b'$'
+            || rest.as_bytes()[1] == b'&')
     {
         slurpy = true;
         slurpy_sigil = Some(rest.as_bytes()[1] as char);
@@ -362,6 +365,12 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         if r2.starts_with('$')
             || r2.starts_with('@')
             || r2.starts_with('%')
+            || (r2.starts_with('*')
+                && r2.len() > 1
+                && (r2.as_bytes()[1] == b'$'
+                    || r2.as_bytes()[1] == b'@'
+                    || r2.as_bytes()[1] == b'%'
+                    || r2.as_bytes()[1] == b'&'))
             || r2.starts_with(':')
             || r2.starts_with('\\')
         {
@@ -381,6 +390,20 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             p.slurpy = slurpy;
             return Ok((r2, p));
         }
+    }
+
+    // Slurpy marker may appear after a type constraint:
+    // e.g. `Code *$block`, `Int *@xs`, `Hash *%h`.
+    if rest.starts_with('*')
+        && rest.len() > 1
+        && (rest.as_bytes()[1] == b'@'
+            || rest.as_bytes()[1] == b'%'
+            || rest.as_bytes()[1] == b'$'
+            || rest.as_bytes()[1] == b'&')
+    {
+        slurpy = true;
+        slurpy_sigil = Some(rest.as_bytes()[1] as char);
+        rest = &rest[1..];
     }
 
     // Handle literal value parameters: multi sub foo(0) { ... }

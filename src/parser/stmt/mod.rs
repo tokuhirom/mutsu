@@ -647,6 +647,14 @@ mod tests {
     }
 
     #[test]
+    fn parse_parenthesized_bind_lvalue_stmt() {
+        let (rest, stmts) = program("($rv1, $rv2) := |(t2);").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::Block(_)));
+    }
+
+    #[test]
     fn parse_for_loop_with_optional_pointy_param() {
         let (rest, stmts) = program("for 1..5 -> $x, $y? { say $x }").unwrap();
         assert_eq!(rest, "");
@@ -752,11 +760,46 @@ mod tests {
     }
 
     #[test]
+    fn parse_sub_decl_with_typed_slurpy_param() {
+        let (rest, stmts) = program("sub foo (Code *$block) { return $block.(); }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::SubDecl { param_defs, .. } = &stmts[0] {
+            assert_eq!(param_defs.len(), 1);
+            assert!(param_defs[0].slurpy);
+            assert_eq!(param_defs[0].type_constraint.as_deref(), Some("Code"));
+        } else {
+            panic!("expected SubDecl");
+        }
+    }
+
+    #[test]
+    fn parse_sub_decl_with_slurpy_code_param() {
+        let (rest, stmts) = program("sub bar (*&block) { return &block.(); }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::SubDecl { param_defs, .. } = &stmts[0] {
+            assert_eq!(param_defs.len(), 1);
+            assert!(param_defs[0].slurpy);
+        } else {
+            panic!("expected SubDecl");
+        }
+    }
+
+    #[test]
     fn parse_class_decl() {
         let (rest, stmts) = program("class Foo { has $.x; method bar { 42 } }").unwrap();
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
         assert!(matches!(&stmts[0], Stmt::ClassDecl { name, .. } if name == "Foo"));
+    }
+
+    #[test]
+    fn parse_role_decl_with_generics_and_does_clause() {
+        let (rest, stmts) = program("role R2[Cool ::T] does R1[T] is ok { }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::RoleDecl { name, .. } if name == "R2"));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use super::super::helpers::{ws, ws1};
+use super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, opt_char, parse_char};
 
 use crate::ast::Stmt;
@@ -52,10 +52,51 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
 
 /// Parse `role` declaration.
 pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
+    fn skip_optional_role_args(input: &str) -> PResult<'_, ()> {
+        let (mut r, _) = ws(input)?;
+        if !r.starts_with('[') {
+            return Ok((r, ()));
+        }
+        let mut depth = 0u32;
+        while let Some(ch) = r.chars().next() {
+            let len = ch.len_utf8();
+            if ch == '[' {
+                depth += 1;
+            } else if ch == ']' {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    r = &r[len..];
+                    break;
+                }
+            }
+            r = &r[len..];
+        }
+        let (r, _) = ws(r)?;
+        Ok((r, ()))
+    }
+
     let rest = keyword("role", input).ok_or_else(|| PError::expected("role declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
-    let (rest, _) = ws(rest)?;
+    let (mut rest, _) = skip_optional_role_args(rest)?;
+
+    // Optional `does Role[...]` clauses.
+    while let Some(r) = keyword("does", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, _role_name) = qualified_ident(r)?;
+        let (r, _) = skip_optional_role_args(r)?;
+        rest = r;
+    }
+
+    // Optional `is trait` clauses (ignore trait args for parse compatibility).
+    while let Some(r) = keyword("is", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, _trait_name) = ident(r)?;
+        let r = skip_balanced_parens(r);
+        let (r, _) = ws(r)?;
+        rest = r;
+    }
+
     let (rest, body) = block(rest)?;
     Ok((rest, Stmt::RoleDecl { name, body }))
 }
