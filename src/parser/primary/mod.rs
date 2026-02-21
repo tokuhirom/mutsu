@@ -185,6 +185,31 @@ mod tests {
     }
 
     #[test]
+    fn parse_match_regex_with_repetition_modifiers() {
+        let (rest1, expr1) = primary("m:2x/ab/").unwrap();
+        assert_eq!(rest1, "");
+        assert!(matches!(expr1, Expr::Literal(Value::Regex(ref s)) if s == "ab"));
+
+        let (rest2, expr2) = primary("m:x(2)/ab/").unwrap();
+        assert_eq!(rest2, "");
+        assert!(matches!(expr2, Expr::Literal(Value::Regex(ref s)) if s == "ab"));
+    }
+
+    #[test]
+    fn parse_hash_literal_with_semicolon_separator() {
+        let (rest, expr) = primary("{ out => \"x\"; }").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Hash(ref pairs) if pairs.len() == 1));
+    }
+
+    #[test]
+    fn parse_token_term_literal() {
+        let (rest, expr) = primary("token { <foo> }").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Literal(Value::Regex(ref s)) if s == "<foo>"));
+    }
+
+    #[test]
     fn primary_memo_reuses_result() {
         reset_primary_memo();
         let (rest, expr) = primary("42").unwrap();

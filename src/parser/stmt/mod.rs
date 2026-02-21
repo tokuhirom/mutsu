@@ -152,6 +152,10 @@ fn var_name(input: &str) -> PResult<'_, String> {
         {
             return Ok((&r[1..], "_".to_string()));
         }
+        // Handle $/ special
+        if input.starts_with('$') && r.starts_with('/') {
+            return Ok((&r[1..], "/".to_string()));
+        }
         // Handle bare $ (anonymous variable) — no name after sigil
         if let Ok((rest, name)) =
             take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
@@ -795,11 +799,46 @@ mod tests {
     }
 
     #[test]
+    fn parse_method_decl_with_match_var_param() {
+        let (rest, stmts) = program("class Foo { method TOP($/) { 1 } }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::ClassDecl { body, .. } = &stmts[0] {
+            assert!(matches!(&body[0], Stmt::MethodDecl { name, .. } if name == "TOP"));
+        } else {
+            panic!("expected ClassDecl");
+        }
+    }
+
+    #[test]
     fn parse_role_decl_with_generics_and_does_clause() {
         let (rest, stmts) = program("role R2[Cool ::T] does R1[T] is ok { }").unwrap();
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
         assert!(matches!(&stmts[0], Stmt::RoleDecl { name, .. } if name == "R2"));
+    }
+
+    #[test]
+    fn parse_token_decl_with_regex_like_body() {
+        let (rest, stmts) = program("token TOP { <fred>+ }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::TokenDecl { name, .. } if name == "TOP"));
+    }
+
+    #[test]
+    fn parse_token_decl_with_sym_variant_name() {
+        let (rest, stmts) = program("token fred:sym<foo> { <sym> \\d+ }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::TokenDecl { name, .. } if name == "fred:sym<foo>"));
+    }
+
+    #[test]
+    fn parse_make_with_token_term_in_array() {
+        let (rest, stmts) = program("make [token { \"bar\" }]").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
     }
 
     #[test]
