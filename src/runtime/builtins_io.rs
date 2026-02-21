@@ -75,7 +75,7 @@ impl Interpreter {
             })?;
             entries.push(Value::Str(entry.path().to_string_lossy().to_string()));
         }
-        Ok(Value::Array(entries))
+        Ok(Value::array(entries))
     }
 
     pub(super) fn builtin_copy(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -366,9 +366,9 @@ impl Interpreter {
                 }
                 lines.push(Value::Str(line));
             }
-            return Ok(Value::Array(lines));
+            return Ok(Value::array(lines));
         }
-        Ok(Value::Array(Vec::new()))
+        Ok(Value::array(Vec::new()))
     }
 
     pub(super) fn builtin_words(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -390,8 +390,8 @@ impl Interpreter {
                     words.push(Value::Str(token.to_string()));
                 }
             }
-            return Ok(Value::Array(words));
+            return Ok(Value::array(words));
         }
-        Ok(Value::Array(Vec::new()))
+        Ok(Value::array(Vec::new()))
     }
 }

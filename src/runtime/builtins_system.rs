@@ -85,14 +85,14 @@ impl Interpreter {
         };
         for value in args.iter().skip(skip) {
             if let Value::Hash(map) = value {
-                for (key, inner) in map {
+                for (key, inner) in map.iter() {
                     match key.as_str() {
                         "cwd" => {
                             opts.cwd = Some(inner.to_string_value());
                         }
                         "env" => {
                             if let Value::Hash(env_map) = inner {
-                                for (ek, ev) in env_map {
+                                for (ek, ev) in env_map.iter() {
                                     opts.env.insert(ek.clone(), ev.to_string_value());
                                 }
                             }
@@ -159,7 +159,7 @@ impl Interpreter {
         let rest_args = &positional[1..];
 
         // Build the command tuple for .command attribute
-        let command_val = Value::Array(positional.iter().map(|s| Value::Str(s.clone())).collect());
+        let command_val = Value::array(positional.iter().map(|s| Value::Str(s.clone())).collect());
 
         let mut cmd = Command::new(program);
         cmd.args(rest_args);
@@ -453,7 +453,7 @@ impl Interpreter {
                     results.push(result);
                 }
                 Value::Array(elems) => {
-                    for elem in elems {
+                    for elem in elems.iter() {
                         match elem {
                             Value::Promise(shared) => {
                                 let (result, output, stderr) = shared.wait();
@@ -480,7 +480,7 @@ impl Interpreter {
         if results.len() == 1 {
             Ok(results.into_iter().next().unwrap())
         } else {
-            Ok(Value::Array(results))
+            Ok(Value::array(results))
         }
     }
 }

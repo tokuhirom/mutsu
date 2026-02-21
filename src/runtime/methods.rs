@@ -62,7 +62,7 @@ impl Interpreter {
                         match arg {
                             Value::Promise(p) => promises.push(p.clone()),
                             Value::Array(arr) => {
-                                for elem in arr {
+                                for elem in arr.iter() {
                                     if let Value::Promise(p) = elem {
                                         promises.push(p.clone());
                                     }
@@ -89,7 +89,7 @@ impl Interpreter {
                         match arg {
                             Value::Promise(p) => promises.push(p.clone()),
                             Value::Array(arr) => {
-                                for elem in arr {
+                                for elem in arr.iter() {
                                     if let Value::Promise(p) = elem {
                                         promises.push(p.clone());
                                     }
@@ -170,7 +170,7 @@ impl Interpreter {
                     for (k, v) in variants {
                         map.insert(k.clone(), Value::Int(*v));
                     }
-                    return Ok(Value::Hash(map));
+                    return Ok(Value::hash(map));
                 }
             }
             "match" => {
@@ -211,7 +211,7 @@ impl Interpreter {
                         Value::Str(s)
                     })
                     .collect();
-                return Ok(Value::Array(result));
+                return Ok(Value::array(result));
             }
             "IO" if args.is_empty() => {
                 return Ok(self.make_io_path_instance(&target.to_string_value()));
@@ -225,7 +225,7 @@ impl Interpreter {
             "Seq" if args.is_empty() => {
                 return Ok(match target {
                     Value::Array(_) | Value::LazyList(_) => target,
-                    other => Value::Array(vec![other]),
+                    other => Value::array(vec![other]),
                 });
             }
             "Set" | "SetHash" if args.is_empty() => {
@@ -259,8 +259,8 @@ impl Interpreter {
                         Self::flat_into(arg, &mut values);
                     }
                     let mut attrs = HashMap::new();
-                    attrs.insert("values".to_string(), Value::Array(values));
-                    attrs.insert("taps".to_string(), Value::Array(Vec::new()));
+                    attrs.insert("values".to_string(), Value::array(values));
+                    attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     attrs.insert("live".to_string(), Value::Bool(false));
                     return Ok(Value::make_instance("Supply".to_string(), attrs));
                 }
@@ -271,8 +271,8 @@ impl Interpreter {
                 {
                     let callback = args.first().cloned().unwrap_or(Value::Nil);
                     let mut attrs = HashMap::new();
-                    attrs.insert("values".to_string(), Value::Array(Vec::new()));
-                    attrs.insert("taps".to_string(), Value::Array(Vec::new()));
+                    attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     attrs.insert("live".to_string(), Value::Bool(false));
                     attrs.insert("on_demand_callback".to_string(), callback);
                     return Ok(Value::make_instance("Supply".to_string(), attrs));
@@ -345,7 +345,7 @@ impl Interpreter {
                 }
                 "gist" | "Str" => return Ok(Value::Str(key.clone())),
                 "kv" => {
-                    return Ok(Value::Array(vec![
+                    return Ok(Value::array(vec![
                         Value::Str(key.clone()),
                         Value::Int(*value),
                     ]));
@@ -518,7 +518,7 @@ impl Interpreter {
                 return Ok(attributes.get("name").cloned().unwrap_or(Value::Nil));
             }
             if method == "clone" {
-                let mut attrs = attributes.clone();
+                let mut attrs: HashMap<String, Value> = (**attributes).clone();
                 for arg in &args {
                     if let Value::Pair(key, boxed) = arg {
                         attrs.insert(key.clone(), *boxed.clone());
@@ -543,7 +543,7 @@ impl Interpreter {
             }
             if self.has_user_method(class_name, method) {
                 let (result, _updated) =
-                    self.run_instance_method(class_name, attributes.clone(), method, args)?;
+                    self.run_instance_method(class_name, (**attributes).clone(), method, args)?;
                 return Ok(result);
             }
         }
@@ -639,14 +639,14 @@ impl Interpreter {
         match target {
             Value::Set(_) => return Ok(target),
             Value::Array(items) => {
-                for item in items {
+                for item in items.iter() {
                     elems.insert(item.to_string_value());
                 }
             }
             Value::Hash(items) => {
-                for (k, v) in items {
+                for (k, v) in items.iter() {
                     if v.truthy() {
-                        elems.insert(k);
+                        elems.insert(k.clone());
                     }
                 }
             }
@@ -664,7 +664,7 @@ impl Interpreter {
                 elems.insert(other.to_string_value());
             }
         }
-        Ok(Value::Set(elems))
+        Ok(Value::set(elems))
     }
 
     fn dispatch_to_bag(&self, target: Value) -> Result<Value, RuntimeError> {
@@ -672,25 +672,25 @@ impl Interpreter {
         match target {
             Value::Bag(_) => return Ok(target),
             Value::Array(items) => {
-                for item in items {
+                for item in items.iter() {
                     *counts.entry(item.to_string_value()).or_insert(0) += 1;
                 }
             }
             Value::Set(s) => {
-                for k in s {
-                    counts.insert(k, 1);
+                for k in s.iter() {
+                    counts.insert(k.clone(), 1);
                 }
             }
             Value::Mix(m) => {
-                for (k, v) in m {
-                    counts.insert(k, v as i64);
+                for (k, v) in m.iter() {
+                    counts.insert(k.clone(), *v as i64);
                 }
             }
             other => {
                 counts.insert(other.to_string_value(), 1);
             }
         }
-        Ok(Value::Bag(counts))
+        Ok(Value::bag(counts))
     }
 
     fn dispatch_to_mix(&self, target: Value) -> Result<Value, RuntimeError> {
@@ -698,25 +698,25 @@ impl Interpreter {
         match target {
             Value::Mix(_) => return Ok(target),
             Value::Array(items) => {
-                for item in items {
+                for item in items.iter() {
                     *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
                 }
             }
             Value::Set(s) => {
-                for k in s {
-                    weights.insert(k, 1.0);
+                for k in s.iter() {
+                    weights.insert(k.clone(), 1.0);
                 }
             }
             Value::Bag(b) => {
-                for (k, v) in b {
-                    weights.insert(k, v as f64);
+                for (k, v) in b.iter() {
+                    weights.insert(k.clone(), *v as f64);
                 }
             }
             other => {
                 weights.insert(other.to_string_value(), 1.0);
             }
         }
-        Ok(Value::Mix(weights))
+        Ok(Value::mix(weights))
     }
 
     fn dispatch_to_hash(&self, target: Value) -> Result<Value, RuntimeError> {
@@ -724,46 +724,46 @@ impl Interpreter {
             Value::Hash(_) => Ok(target),
             Value::Array(items) => {
                 let mut map = HashMap::new();
-                let mut iter = items.into_iter();
+                let mut iter = items.iter();
                 while let Some(item) = iter.next() {
                     match item {
                         Value::Pair(k, v) => {
-                            map.insert(k, *v);
+                            map.insert(k.clone(), *v.clone());
                         }
                         other => {
                             let key = other.to_string_value();
-                            let value = iter.next().unwrap_or(Value::Nil);
+                            let value = iter.next().cloned().unwrap_or(Value::Nil);
                             map.insert(key, value);
                         }
                     }
                 }
-                Ok(Value::Hash(map))
+                Ok(Value::hash(map))
             }
             Value::Set(s) => {
                 let mut map = HashMap::new();
-                for k in s {
-                    map.insert(k, Value::Bool(true));
+                for k in s.iter() {
+                    map.insert(k.clone(), Value::Bool(true));
                 }
-                Ok(Value::Hash(map))
+                Ok(Value::hash(map))
             }
             Value::Bag(b) => {
                 let mut map = HashMap::new();
-                for (k, v) in b {
-                    map.insert(k, Value::Int(v));
+                for (k, v) in b.iter() {
+                    map.insert(k.clone(), Value::Int(*v));
                 }
-                Ok(Value::Hash(map))
+                Ok(Value::hash(map))
             }
             Value::Mix(m) => {
                 let mut map = HashMap::new();
-                for (k, v) in m {
-                    map.insert(k, Value::Num(v));
+                for (k, v) in m.iter() {
+                    map.insert(k.clone(), Value::Num(*v));
                 }
-                Ok(Value::Hash(map))
+                Ok(Value::hash(map))
             }
             other => {
                 let mut map = HashMap::new();
                 map.insert(other.to_string_value(), Value::Bool(true));
-                Ok(Value::Hash(map))
+                Ok(Value::hash(map))
             }
         }
     }
@@ -803,21 +803,22 @@ impl Interpreter {
                     out.push(Value::Pair(idx.to_string(), Box::new(item.clone())));
                 }
             }
-            Value::Array(out)
+            Value::array(out)
         };
         Ok(match target {
             Value::Array(items) => to_pairs(&items),
-            other => Value::Array(vec![Value::Pair("0".to_string(), Box::new(other))]),
+            other => Value::array(vec![Value::Pair("0".to_string(), Box::new(other))]),
         })
     }
 
     fn dispatch_sort(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
         match target {
             Value::Array(mut items) => {
+                let items_mut = Arc::make_mut(&mut items);
                 if let Some(Value::Sub(data)) = args.first().cloned() {
                     let is_key_extractor = data.params.len() <= 1;
                     if is_key_extractor {
-                        items.sort_by(|a, b| {
+                        items_mut.sort_by(|a, b| {
                             let saved = self.env.clone();
                             for (k, v) in &data.env {
                                 self.env.insert(k.clone(), v.clone());
@@ -840,7 +841,7 @@ impl Interpreter {
                             key_a.to_string_value().cmp(&key_b.to_string_value())
                         });
                     } else {
-                        items.sort_by(|a, b| {
+                        items_mut.sort_by(|a, b| {
                             let saved = self.env.clone();
                             for (k, v) in &data.env {
                                 self.env.insert(k.clone(), v.clone());
@@ -864,17 +865,17 @@ impl Interpreter {
                         });
                     }
                 } else {
-                    items.sort_by(|a, b| compare_values(a, b).cmp(&0));
+                    items_mut.sort_by(|a, b| compare_values(a, b).cmp(&0));
                 }
                 Ok(Value::Array(items))
             }
             Value::Hash(map) => {
                 // Convert hash to list of pairs, then sort
                 let items: Vec<Value> = map
-                    .into_iter()
-                    .map(|(k, v)| Value::Pair(k, Box::new(v)))
+                    .iter()
+                    .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
                     .collect();
-                self.dispatch_sort(Value::Array(items), args)
+                self.dispatch_sort(Value::array(items), args)
             }
             other => Ok(other),
         }
@@ -902,7 +903,7 @@ impl Interpreter {
                             }
                         }
                     }
-                    return Ok(Value::Hash(map));
+                    return Ok(Value::hash(map));
                 }
                 "Uni" => {
                     let codepoints: Vec<Value> = args
@@ -915,7 +916,7 @@ impl Interpreter {
                             }
                         })
                         .collect();
-                    return Ok(Value::Array(codepoints));
+                    return Ok(Value::array(codepoints));
                 }
                 "Version" => {
                     let arg = args.first().cloned().unwrap_or(Value::Nil);
@@ -934,7 +935,7 @@ impl Interpreter {
                 "Supply" => return Ok(self.make_supply_instance()),
                 "Supplier" => {
                     let mut attrs = HashMap::new();
-                    attrs.insert("emitted".to_string(), Value::Array(Vec::new()));
+                    attrs.insert("emitted".to_string(), Value::array(Vec::new()));
                     attrs.insert("done".to_string(), Value::Bool(false));
                     return Ok(Value::make_instance(class_name.clone(), attrs));
                 }
@@ -943,7 +944,7 @@ impl Interpreter {
                 }
                 "Proc::Async" => {
                     let mut attrs = HashMap::new();
-                    attrs.insert("cmd".to_string(), Value::Array(args.clone()));
+                    attrs.insert("cmd".to_string(), Value::array(args.clone()));
                     attrs.insert("started".to_string(), Value::Bool(false));
                     attrs.insert("stdout".to_string(), self.make_supply_instance());
                     attrs.insert("stderr".to_string(), self.make_supply_instance());
@@ -961,12 +962,12 @@ impl Interpreter {
                         .iter()
                         .flat_map(|a| match a {
                             Value::Int(i) => vec![Value::Int(*i)],
-                            Value::Array(items) => items.clone(),
+                            Value::Array(items) => items.to_vec(),
                             _ => vec![],
                         })
                         .collect();
                     let mut attrs = HashMap::new();
-                    attrs.insert("bytes".to_string(), Value::Array(byte_vals));
+                    attrs.insert("bytes".to_string(), Value::array(byte_vals));
                     return Ok(Value::make_instance("Buf".to_string(), attrs));
                 }
                 "Rat" => {
@@ -998,7 +999,7 @@ impl Interpreter {
                             elems.insert(item.to_string_value());
                         }
                     }
-                    return Ok(Value::Set(elems));
+                    return Ok(Value::set(elems));
                 }
                 "Bag" | "BagHash" => {
                     let mut counts: HashMap<String, i64> = HashMap::new();
@@ -1007,7 +1008,7 @@ impl Interpreter {
                             *counts.entry(item.to_string_value()).or_insert(0) += 1;
                         }
                     }
-                    return Ok(Value::Bag(counts));
+                    return Ok(Value::bag(counts));
                 }
                 "Mix" | "MixHash" => {
                     let mut weights: HashMap<String, f64> = HashMap::new();
@@ -1016,7 +1017,7 @@ impl Interpreter {
                             *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
                         }
                     }
-                    return Ok(Value::Mix(weights));
+                    return Ok(Value::mix(weights));
                 }
                 "Complex" => {
                     let re = match args.first() {
@@ -1087,7 +1088,7 @@ impl Interpreter {
 
     fn dispatch_grep(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
         match target {
-            Value::Array(items) => self.eval_grep_over_items(args.first().cloned(), items),
+            Value::Array(items) => self.eval_grep_over_items(args.first().cloned(), items.to_vec()),
             Value::Range(a, b) => {
                 let items: Vec<Value> = (a..=b).map(Value::Int).collect();
                 self.eval_grep_over_items(args.first().cloned(), items)
@@ -1164,7 +1165,7 @@ impl Interpreter {
             }
         }
         result.push(f64_to_val(n));
-        Ok(Value::Array(result))
+        Ok(Value::array(result))
     }
 
     fn dispatch_tree(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -1179,10 +1180,10 @@ impl Interpreter {
             // .tree(0) — identity
             Value::Int(0) => Ok(target),
             // .tree(n) — tree to n levels
-            Value::Int(n) if *n > 0 => Ok(Value::Array(self.tree_depth(&items, *n as usize)?)),
+            Value::Int(n) if *n > 0 => Ok(Value::array(self.tree_depth(&items, *n as usize)?)),
             // .tree(*) — full depth (same as .tree()); * compiles to Inf
             Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
-                Ok(Value::Array(self.tree_depth(&items, usize::MAX)?))
+                Ok(Value::array(self.tree_depth(&items, usize::MAX)?))
             }
             // .tree([&first, *@rest]) — array of closures form
             Value::Array(closure_list) => {
@@ -1206,7 +1207,7 @@ impl Interpreter {
         for item in items {
             match item {
                 Value::Array(inner) if depth > 0 => {
-                    result.push(Value::Array(self.tree_depth(inner, depth - 1)?));
+                    result.push(Value::array(self.tree_depth(inner, depth - 1)?));
                 }
                 other => result.push(other.clone()),
             }
@@ -1238,7 +1239,7 @@ impl Interpreter {
                             false,
                         )?);
                     } else {
-                        processed.push(Value::Array(inner.clone()));
+                        processed.push(Value::Array(inner.clone())); // already Arc-wrapped
                     }
                 }
                 other => processed.push(other.clone()),
@@ -1246,9 +1247,9 @@ impl Interpreter {
         }
         // Apply the closure at this depth level
         if let Some(closure) = closures.get(depth) {
-            self.call_sub_value(closure.clone(), vec![Value::Array(processed)], false)
+            self.call_sub_value(closure.clone(), vec![Value::array(processed)], false)
         } else {
-            Ok(Value::Array(processed))
+            Ok(Value::array(processed))
         }
     }
 

@@ -34,64 +34,64 @@ impl Interpreter {
             match method {
                 "push" => {
                     let mut items = match self.env.get(&key) {
-                        Some(Value::Array(existing)) => existing.clone(),
+                        Some(Value::Array(existing)) => existing.to_vec(),
                         _ => match target {
-                            Value::Array(v) => v,
+                            Value::Array(v) => v.to_vec(),
                             _ => Vec::new(),
                         },
                     };
                     items.extend(args);
-                    let result = Value::Array(items.clone());
-                    self.env.insert(key, Value::Array(items));
+                    let result = Value::array(items.clone());
+                    self.env.insert(key, Value::array(items));
                     return Ok(result);
                 }
                 "append" => {
                     let mut items = match self.env.get(&key) {
-                        Some(Value::Array(existing)) => existing.clone(),
+                        Some(Value::Array(existing)) => existing.to_vec(),
                         _ => match target {
-                            Value::Array(v) => v,
+                            Value::Array(v) => v.to_vec(),
                             _ => Vec::new(),
                         },
                     };
                     for arg in args {
                         match arg {
-                            Value::Array(vals) => items.extend(vals),
+                            Value::Array(vals) => items.extend(vals.iter().cloned()),
                             other => items.push(other),
                         }
                     }
-                    self.env.insert(key, Value::Array(items));
+                    self.env.insert(key, Value::array(items));
                     return Ok(Value::Nil);
                 }
                 "unshift" | "prepend" => {
                     let items = match self.env.get(&key) {
-                        Some(Value::Array(existing)) => existing.clone(),
+                        Some(Value::Array(existing)) => existing.to_vec(),
                         _ => match target {
-                            Value::Array(v) => v,
+                            Value::Array(v) => v.to_vec(),
                             _ => Vec::new(),
                         },
                     };
                     let mut pref = args;
                     pref.extend(items);
-                    self.env.insert(key, Value::Array(pref));
+                    self.env.insert(key, Value::array(pref));
                     return Ok(Value::Nil);
                 }
                 "pop" => {
                     let mut items = match self.env.get(&key) {
-                        Some(Value::Array(existing)) => existing.clone(),
+                        Some(Value::Array(existing)) => existing.to_vec(),
                         _ => match target {
-                            Value::Array(v) => v,
+                            Value::Array(v) => v.to_vec(),
                             _ => Vec::new(),
                         },
                     };
                     let out = items.pop().unwrap_or(Value::Nil);
-                    self.env.insert(key, Value::Array(items));
+                    self.env.insert(key, Value::array(items));
                     return Ok(out);
                 }
                 "shift" => {
                     let mut items = match self.env.get(&key) {
-                        Some(Value::Array(existing)) => existing.clone(),
+                        Some(Value::Array(existing)) => existing.to_vec(),
                         _ => match target {
-                            Value::Array(v) => v,
+                            Value::Array(v) => v.to_vec(),
                             _ => Vec::new(),
                         },
                     };
@@ -100,14 +100,14 @@ impl Interpreter {
                     } else {
                         items.remove(0)
                     };
-                    self.env.insert(key, Value::Array(items));
+                    self.env.insert(key, Value::array(items));
                     return Ok(out);
                 }
                 "splice" => {
                     let mut items = match self.env.get(&key) {
-                        Some(Value::Array(existing)) => existing.clone(),
+                        Some(Value::Array(existing)) => existing.to_vec(),
                         _ => match target {
-                            Value::Array(v) => v,
+                            Value::Array(v) => v.to_vec(),
                             _ => Vec::new(),
                         },
                     };
@@ -138,14 +138,14 @@ impl Interpreter {
                             other => items.insert(start, other.clone()),
                         }
                     }
-                    self.env.insert(key, Value::Array(items));
-                    return Ok(Value::Array(removed));
+                    self.env.insert(key, Value::array(items));
+                    return Ok(Value::array(removed));
                 }
                 "squish" => {
                     let items = match self.env.get(&key) {
-                        Some(Value::Array(existing)) => existing.clone(),
+                        Some(Value::Array(existing)) => existing.to_vec(),
                         _ => match target {
-                            Value::Array(v) => v,
+                            Value::Array(v) => v.to_vec(),
                             _ => Vec::new(),
                         },
                     };
@@ -158,8 +158,8 @@ impl Interpreter {
                             squished.push(item);
                         }
                     }
-                    self.env.insert(key, Value::Array(squished.clone()));
-                    return Ok(Value::Array(squished));
+                    self.env.insert(key, Value::array(squished.clone()));
+                    return Ok(Value::array(squished));
                 }
                 _ => {}
             }
@@ -180,7 +180,7 @@ impl Interpreter {
                 // Try mutable dispatch first; if no mutable handler, fall back to immutable
                 match self.call_native_instance_method_mut(
                     &class_name,
-                    attributes.clone(),
+                    (*attributes).clone(),
                     method,
                     args.clone(),
                 ) {
@@ -203,7 +203,7 @@ impl Interpreter {
             }
             if self.has_user_method(&class_name, method) {
                 let (result, updated) =
-                    self.run_instance_method(&class_name, attributes, method, args)?;
+                    self.run_instance_method(&class_name, (*attributes).clone(), method, args)?;
                 self.env.insert(
                     target_var.to_string(),
                     Value::make_instance(class_name, updated),

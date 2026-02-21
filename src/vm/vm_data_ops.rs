@@ -8,11 +8,11 @@ impl VM {
         let mut elems = Vec::with_capacity(raw.len());
         for val in raw {
             match val {
-                Value::Slip(items) => elems.extend(items),
+                Value::Slip(items) => elems.extend(items.iter().cloned()),
                 other => elems.push(other),
             }
         }
-        self.stack.push(Value::Array(elems));
+        self.stack.push(Value::array(elems));
     }
 
     pub(super) fn exec_make_hash_op(&mut self, n: u32) {
@@ -25,7 +25,7 @@ impl VM {
             let val = pair[1].clone();
             map.insert(key, val);
         }
-        self.stack.push(Value::Hash(map));
+        self.stack.push(Value::hash(map));
     }
 
     pub(super) fn exec_say_op(&mut self, n: u32) -> Result<(), RuntimeError> {

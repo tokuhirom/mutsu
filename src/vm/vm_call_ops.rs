@@ -62,14 +62,14 @@ impl VM {
             Some("+") => {
                 // .+method: must succeed, wraps result in a list
                 let val = call_result?;
-                self.stack.push(Value::Array(vec![val]));
+                self.stack.push(Value::array(vec![val]));
                 self.sync_locals_from_env(code);
             }
             Some("*") => {
                 // .*method: wraps in list if found, empty list if not
                 match call_result {
-                    Ok(val) => self.stack.push(Value::Array(vec![val])),
-                    Err(_) => self.stack.push(Value::Array(vec![])),
+                    Ok(val) => self.stack.push(Value::array(vec![val])),
+                    Err(_) => self.stack.push(Value::array(vec![])),
                 }
             }
             _ => {
@@ -113,12 +113,12 @@ impl VM {
             }
             Some("+") => {
                 let val = call_result?;
-                self.stack.push(Value::Array(vec![val]));
+                self.stack.push(Value::array(vec![val]));
                 self.sync_locals_from_env(code);
             }
             Some("*") => match call_result {
-                Ok(val) => self.stack.push(Value::Array(vec![val])),
-                Err(_) => self.stack.push(Value::Array(vec![])),
+                Ok(val) => self.stack.push(Value::array(vec![val])),
+                Err(_) => self.stack.push(Value::array(vec![])),
             },
             _ => {
                 self.stack.push(call_result?);
@@ -204,7 +204,7 @@ impl VM {
                 };
             results.push(call_result);
         }
-        self.stack.push(Value::Array(results));
+        self.stack.push(Value::array(results));
         Ok(())
     }
 

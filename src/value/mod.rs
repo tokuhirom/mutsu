@@ -86,14 +86,14 @@ pub enum Value {
         excl_start: bool,
         excl_end: bool,
     },
-    Array(Vec<Value>),
-    Hash(HashMap<String, Value>),
+    Array(Arc<Vec<Value>>),
+    Hash(Arc<HashMap<String, Value>>),
     Rat(i64, i64),
     FatRat(i64, i64),
     Complex(f64, f64),
-    Set(HashSet<String>),
-    Bag(HashMap<String, i64>),
-    Mix(HashMap<String, f64>),
+    Set(Arc<HashSet<String>>),
+    Bag(Arc<HashMap<String, i64>>),
+    Mix(Arc<HashMap<String, f64>>),
     CompUnitDepSpec {
         short_name: String,
     },
@@ -116,14 +116,14 @@ pub enum Value {
     WeakSub(Weak<SubData>),
     Instance {
         class_name: String,
-        attributes: HashMap<String, Value>,
+        attributes: Arc<HashMap<String, Value>>,
         id: u64,
     },
     Junction {
         kind: JunctionKind,
-        values: Vec<Value>,
+        values: Arc<Vec<Value>>,
     },
-    Slip(Vec<Value>),
+    Slip(Arc<Vec<Value>>),
     LazyList(Arc<LazyList>),
     Version {
         parts: Vec<VersionPart>,
@@ -473,6 +473,32 @@ impl PartialEq for Value {
 }
 
 impl Value {
+    // ---- Arc-wrapping convenience constructors ----
+    pub fn array(items: Vec<Value>) -> Self {
+        Value::Array(Arc::new(items))
+    }
+    pub fn hash(map: HashMap<String, Value>) -> Self {
+        Value::Hash(Arc::new(map))
+    }
+    pub fn set(s: HashSet<String>) -> Self {
+        Value::Set(Arc::new(s))
+    }
+    pub fn bag(m: HashMap<String, i64>) -> Self {
+        Value::Bag(Arc::new(m))
+    }
+    pub fn mix(m: HashMap<String, f64>) -> Self {
+        Value::Mix(Arc::new(m))
+    }
+    pub fn slip(items: Vec<Value>) -> Self {
+        Value::Slip(Arc::new(items))
+    }
+    pub fn junction(kind: JunctionKind, values: Vec<Value>) -> Self {
+        Value::Junction {
+            kind,
+            values: Arc::new(values),
+        }
+    }
+
     /// Create a new Sub value wrapping the given SubData in an Arc.
     pub(crate) fn make_sub(
         package: String,
@@ -534,7 +560,7 @@ impl Value {
     pub(crate) fn make_instance(class_name: String, attributes: HashMap<String, Value>) -> Self {
         Value::Instance {
             class_name,
-            attributes,
+            attributes: Arc::new(attributes),
             id: next_instance_id(),
         }
     }
@@ -551,7 +577,7 @@ impl Value {
         attrs.insert("from".to_string(), Value::Int(from));
         attrs.insert("to".to_string(), Value::Int(to));
         let caps: Vec<Value> = positional.iter().map(|s| Value::Str(s.clone())).collect();
-        attrs.insert("list".to_string(), Value::Array(caps));
+        attrs.insert("list".to_string(), Value::array(caps));
         Value::make_instance("Match".to_string(), attrs)
     }
 

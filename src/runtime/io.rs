@@ -305,7 +305,7 @@ impl Interpreter {
             "signature".to_string(),
             Value::make_instance("Blob".to_string(), {
                 let mut a = HashMap::new();
-                a.insert("values".to_string(), Value::Array(vec![Value::Int(0)]));
+                a.insert("values".to_string(), Value::array(vec![Value::Int(0)]));
                 a
             }),
         );
@@ -315,7 +315,7 @@ impl Interpreter {
         );
         attrs.insert(
             "DISTROnames".to_string(),
-            Value::Array(vec![
+            Value::array(vec![
                 Value::Str("macos".to_string()),
                 Value::Str("linux".to_string()),
                 Value::Str("freebsd".to_string()),

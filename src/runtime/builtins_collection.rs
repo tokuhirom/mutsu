@@ -17,7 +17,7 @@ impl Interpreter {
         for arg in args {
             match arg {
                 Value::Array(items) => {
-                    for item in items {
+                    for item in items.iter() {
                         elems.insert(item.to_string_value());
                     }
                 }
@@ -26,7 +26,7 @@ impl Interpreter {
                 }
             }
         }
-        Ok(Value::Set(elems))
+        Ok(Value::set(elems))
     }
 
     pub(super) fn builtin_bag(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -34,7 +34,7 @@ impl Interpreter {
         for arg in args {
             match arg {
                 Value::Array(items) => {
-                    for item in items {
+                    for item in items.iter() {
                         *counts.entry(item.to_string_value()).or_insert(0) += 1;
                     }
                 }
@@ -43,7 +43,7 @@ impl Interpreter {
                 }
             }
         }
-        Ok(Value::Bag(counts))
+        Ok(Value::bag(counts))
     }
 
     pub(super) fn builtin_mix(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -51,7 +51,7 @@ impl Interpreter {
         for arg in args {
             match arg {
                 Value::Array(items) => {
-                    for item in items {
+                    for item in items.iter() {
                         *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
                     }
                 }
@@ -60,7 +60,7 @@ impl Interpreter {
                 }
             }
         }
-        Ok(Value::Mix(weights))
+        Ok(Value::mix(weights))
     }
 
     pub(super) fn builtin_hash(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -82,7 +82,7 @@ impl Interpreter {
                 }
             }
         }
-        Ok(Value::Hash(map))
+        Ok(Value::hash(map))
     }
 
     pub(super) fn builtin_junction(
@@ -99,14 +99,11 @@ impl Interpreter {
         let mut elems = Vec::new();
         for arg in args {
             match arg {
-                Value::Array(items) => elems.extend(items),
+                Value::Array(items) => elems.extend(items.iter().cloned()),
                 other => elems.push(other),
             }
         }
-        Ok(Value::Junction {
-            kind,
-            values: elems,
-        })
+        Ok(Value::junction(kind, elems))
     }
 
     pub(super) fn builtin_pair(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -122,17 +119,17 @@ impl Interpreter {
         let val = args.first().cloned();
         Ok(match val {
             Some(Value::Hash(items)) => {
-                Value::Array(items.keys().map(|k| Value::Str(k.clone())).collect())
+                Value::array(items.keys().map(|k| Value::Str(k.clone())).collect())
             }
-            _ => Value::Array(Vec::new()),
+            _ => Value::array(Vec::new()),
         })
     }
 
     pub(super) fn builtin_values(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let val = args.first().cloned();
         Ok(match val {
-            Some(Value::Hash(items)) => Value::Array(items.values().cloned().collect()),
-            _ => Value::Array(Vec::new()),
+            Some(Value::Hash(items)) => Value::array(items.values().cloned().collect()),
+            _ => Value::array(Vec::new()),
         })
     }
 
@@ -173,7 +170,7 @@ impl Interpreter {
                 if items.is_empty() {
                     Value::Nil
                 } else {
-                    items.remove(0)
+                    Arc::make_mut(&mut items).remove(0)
                 }
             }
             _ => Value::Nil,
@@ -182,7 +179,7 @@ impl Interpreter {
 
     pub(super) fn builtin_pop(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         Ok(match args.first().cloned() {
-            Some(Value::Array(mut items)) => items.pop().unwrap_or(Value::Nil),
+            Some(Value::Array(mut items)) => Arc::make_mut(&mut items).pop().unwrap_or(Value::Nil),
             _ => Value::Nil,
         })
     }
@@ -211,7 +208,7 @@ impl Interpreter {
         for arg in args {
             result.extend(Self::value_to_list(arg));
         }
-        Ok(Value::Array(result))
+        Ok(Value::array(result))
     }
 
     pub(super) fn builtin_flat(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -219,13 +216,13 @@ impl Interpreter {
         for arg in args {
             Self::flat_into(arg, &mut result);
         }
-        Ok(Value::Array(result))
+        Ok(Value::array(result))
     }
 
     pub(crate) fn flat_into(val: &Value, out: &mut Vec<Value>) {
         match val {
             Value::Array(items) => {
-                for item in items {
+                for item in items.iter() {
                     Self::flat_into(item, out);
                 }
             }
@@ -244,19 +241,19 @@ impl Interpreter {
         let mut items = Vec::new();
         for arg in args {
             match arg {
-                Value::Array(elems) => items.extend(elems.clone()),
-                Value::Slip(elems) => items.extend(elems.clone()),
+                Value::Array(elems) => items.extend(elems.iter().cloned()),
+                Value::Slip(elems) => items.extend(elems.iter().cloned()),
                 other => items.push(other.clone()),
             }
         }
-        Ok(Value::Slip(items))
+        Ok(Value::slip(items))
     }
 
     pub(super) fn builtin_reverse(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let val = args.first().cloned();
         Ok(match val {
             Some(Value::Array(mut items)) => {
-                items.reverse();
+                Arc::make_mut(&mut items).reverse();
                 Value::Array(items)
             }
             Some(Value::Str(s)) => Value::Str(s.chars().rev().collect()),
@@ -268,7 +265,7 @@ impl Interpreter {
         let val = args.first().cloned();
         Ok(match val {
             Some(Value::Array(mut items)) => {
-                items.sort_by_key(|a| a.to_string_value());
+                Arc::make_mut(&mut items).sort_by_key(|a| a.to_string_value());
                 Value::Array(items)
             }
             _ => Value::Nil,
@@ -280,7 +277,7 @@ impl Interpreter {
         let mut list_items = Vec::new();
         for arg in args.iter().skip(1) {
             match arg {
-                Value::Array(items) => list_items.extend(items.clone()),
+                Value::Array(items) => list_items.extend(items.iter().cloned()),
                 Value::Range(a, b) => list_items.extend((*a..=*b).map(Value::Int)),
                 Value::RangeExcl(a, b) => list_items.extend((*a..*b).map(Value::Int)),
                 Value::RangeExclStart(a, b) => list_items.extend((*a + 1..=*b).map(Value::Int)),
@@ -299,7 +296,7 @@ impl Interpreter {
         let mut list_items = Vec::new();
         for arg in args.iter().skip(1) {
             match arg {
-                Value::Array(items) => list_items.extend(items.clone()),
+                Value::Array(items) => list_items.extend(items.iter().cloned()),
                 Value::Range(a, b) => list_items.extend((*a..=*b).map(Value::Int)),
                 Value::RangeExcl(a, b) => list_items.extend((*a..*b).map(Value::Int)),
                 v if v.is_range() => {
@@ -318,12 +315,12 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let func = match args.first() {
             Some(value) => value.clone(),
-            None => return Ok(Value::Hash(HashMap::new())),
+            None => return Ok(Value::hash(HashMap::new())),
         };
         let mut buckets: HashMap<String, Vec<Value>> = HashMap::new();
         for item in args.iter().skip(1) {
             let keys = match self.call_lambda_with_arg(&func, item.clone()) {
-                Ok(Value::Array(values)) => values,
+                Ok(Value::Array(values)) => values.to_vec(),
                 Ok(value) => vec![value],
                 Err(_) => vec![Value::Nil],
             };
@@ -343,9 +340,9 @@ impl Interpreter {
         }
         let hash_map = buckets
             .into_iter()
-            .map(|(k, v)| (k, Value::Array(v)))
+            .map(|(k, v)| (k, Value::array(v)))
             .collect();
-        Ok(Value::Hash(hash_map))
+        Ok(Value::hash(hash_map))
     }
 
     /// `cross(@a, @b, ...)` — Cartesian product of lists.
@@ -366,7 +363,7 @@ impl Interpreter {
         }
 
         if lists.is_empty() {
-            return Ok(Value::Array(vec![]));
+            return Ok(Value::array(vec![]));
         }
 
         // Compute Cartesian product iteratively
@@ -390,11 +387,11 @@ impl Interpreter {
                 let val = self.call_sub_value(func.clone(), combo, false)?;
                 final_result.push(val);
             }
-            Ok(Value::Array(final_result))
+            Ok(Value::array(final_result))
         } else {
             // Return as list of lists (tuples)
-            let tuples: Vec<Value> = result.into_iter().map(Value::Array).collect();
-            Ok(Value::Array(tuples))
+            let tuples: Vec<Value> = result.into_iter().map(Value::array).collect();
+            Ok(Value::array(tuples))
         }
     }
 }

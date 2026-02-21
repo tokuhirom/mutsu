@@ -22,10 +22,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => Some(Ok(Value::Bool(false))),
         },
         "nude" => match target {
-            Value::Rat(n, d) => Some(Ok(Value::Array(vec![Value::Int(*n), Value::Int(*d)]))),
-            Value::FatRat(n, d) => Some(Ok(Value::Array(vec![Value::Int(*n), Value::Int(*d)]))),
-            Value::Int(i) => Some(Ok(Value::Array(vec![Value::Int(*i), Value::Int(1)]))),
-            _ => Some(Ok(Value::Array(vec![Value::Int(0), Value::Int(1)]))),
+            Value::Rat(n, d) => Some(Ok(Value::array(vec![Value::Int(*n), Value::Int(*d)]))),
+            Value::FatRat(n, d) => Some(Ok(Value::array(vec![Value::Int(*n), Value::Int(*d)]))),
+            Value::Int(i) => Some(Ok(Value::array(vec![Value::Int(*i), Value::Int(1)]))),
+            _ => Some(Ok(Value::array(vec![Value::Int(0), Value::Int(1)]))),
         },
         "is-prime" => match target {
             Value::Int(n) => {
@@ -69,25 +69,25 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => Some(Ok(Value::Complex(0.0, 0.0))),
         },
         "reals" => match target {
-            Value::Complex(r, i) => Some(Ok(Value::Array(vec![Value::Num(*r), Value::Num(*i)]))),
+            Value::Complex(r, i) => Some(Ok(Value::array(vec![Value::Num(*r), Value::Num(*i)]))),
             _ => None,
         },
         "polar" => match target {
             Value::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt();
                 let angle = i.atan2(*r);
-                Some(Ok(Value::Array(vec![Value::Num(mag), Value::Num(angle)])))
+                Some(Ok(Value::array(vec![Value::Num(mag), Value::Num(angle)])))
             }
             Value::Int(i) => {
                 let f = *i as f64;
                 let mag = f.abs();
                 let angle = if f < 0.0 { std::f64::consts::PI } else { 0.0 };
-                Some(Ok(Value::Array(vec![Value::Num(mag), Value::Num(angle)])))
+                Some(Ok(Value::array(vec![Value::Num(mag), Value::Num(angle)])))
             }
             Value::Num(f) => {
                 let mag = f.abs();
                 let angle = if *f < 0.0 { std::f64::consts::PI } else { 0.0 };
-                Some(Ok(Value::Array(vec![Value::Num(mag), Value::Num(angle)])))
+                Some(Ok(Value::array(vec![Value::Num(mag), Value::Num(angle)])))
             }
             _ => None,
         },
@@ -123,40 +123,40 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "Slip" => match target {
             Value::Array(items) => Some(Ok(Value::Slip(items.clone()))),
             Value::Slip(_) => Some(Ok(target.clone())),
-            _ => Some(Ok(Value::Slip(vec![target.clone()]))),
+            _ => Some(Ok(Value::slip(vec![target.clone()]))),
         },
         "list" | "Array" => match target {
             Value::Range(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
                     Some(Ok(target.clone()))
                 } else {
-                    Some(Ok(Value::Array((*a..=*b).map(Value::Int).collect())))
+                    Some(Ok(Value::array((*a..=*b).map(Value::Int).collect())))
                 }
             }
             Value::RangeExcl(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
                     Some(Ok(target.clone()))
                 } else {
-                    Some(Ok(Value::Array((*a..*b).map(Value::Int).collect())))
+                    Some(Ok(Value::array((*a..*b).map(Value::Int).collect())))
                 }
             }
             Value::RangeExclStart(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
                     Some(Ok(target.clone()))
                 } else {
-                    Some(Ok(Value::Array((a + 1..=*b).map(Value::Int).collect())))
+                    Some(Ok(Value::array((a + 1..=*b).map(Value::Int).collect())))
                 }
             }
             Value::RangeExclBoth(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
                     Some(Ok(target.clone()))
                 } else {
-                    Some(Ok(Value::Array((a + 1..*b).map(Value::Int).collect())))
+                    Some(Ok(Value::array((a + 1..*b).map(Value::Int).collect())))
                 }
             }
             Value::GenericRange { .. } => Some(Ok(target.clone())),
             Value::Array(_) => Some(Ok(target.clone())),
-            _ => Some(Ok(Value::Array(vec![target.clone()]))),
+            _ => Some(Ok(Value::array(vec![target.clone()]))),
         },
         "Range" => match target {
             Value::Array(items) => Some(Ok(Value::RangeExcl(0, items.len() as i64))),

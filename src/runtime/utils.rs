@@ -97,18 +97,18 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                     i += 2;
                 }
             }
-            Value::Hash(map)
+            Value::hash(map)
         }
         Value::Pair(k, v) => {
             let mut map = HashMap::new();
             map.insert(k, *v);
-            Value::Hash(map)
+            Value::hash(map)
         }
-        Value::Nil => Value::Hash(HashMap::new()),
+        Value::Nil => Value::hash(HashMap::new()),
         _ => {
             let mut map = HashMap::new();
             map.insert(value.to_string_value(), Value::Nil);
-            Value::Hash(map)
+            Value::hash(map)
         }
     }
 }
@@ -116,23 +116,23 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
 pub(crate) fn coerce_to_array(value: Value) -> Value {
     match value {
         Value::Array(_) => value,
-        Value::Nil => Value::Array(Vec::new()),
+        Value::Nil => Value::array(Vec::new()),
         Value::Range(a, b) if b == i64::MAX || a == i64::MIN => value,
-        Value::Range(a, b) => Value::Array((a..=b).map(Value::Int).collect()),
+        Value::Range(a, b) => Value::array((a..=b).map(Value::Int).collect()),
         Value::RangeExcl(a, b) if b == i64::MAX || a == i64::MIN => value,
-        Value::RangeExcl(a, b) => Value::Array((a..b).map(Value::Int).collect()),
+        Value::RangeExcl(a, b) => Value::array((a..b).map(Value::Int).collect()),
         Value::RangeExclStart(a, b) if b == i64::MAX || a == i64::MIN => value,
-        Value::RangeExclStart(a, b) => Value::Array((a + 1..=b).map(Value::Int).collect()),
+        Value::RangeExclStart(a, b) => Value::array((a + 1..=b).map(Value::Int).collect()),
         Value::RangeExclBoth(a, b) if b == i64::MAX || a == i64::MIN => value,
-        Value::RangeExclBoth(a, b) => Value::Array((a + 1..b).map(Value::Int).collect()),
+        Value::RangeExclBoth(a, b) => Value::array((a + 1..b).map(Value::Int).collect()),
         Value::GenericRange {
             ref start, ref end, ..
         } if matches!(start.as_ref(), Value::Str(_)) && matches!(end.as_ref(), Value::Str(_)) => {
-            Value::Array(value_to_list(&value))
+            Value::array(value_to_list(&value))
         }
         Value::GenericRange { .. } => value,
         Value::Slip(items) => Value::Array(items),
-        other => Value::Array(vec![other]),
+        other => Value::array(vec![other]),
     }
 }
 
@@ -269,7 +269,7 @@ pub(crate) fn char_idx_to_byte(text: &str, idx: usize) -> usize {
 
 pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
     match val {
-        Value::Array(items) => items.clone(),
+        Value::Array(items) => items.to_vec(),
         Value::Hash(items) => items
             .iter()
             .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
@@ -346,7 +346,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             .iter()
             .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Num(*v))))
             .collect(),
-        Value::Slip(items) => items.clone(),
+        Value::Slip(items) => items.to_vec(),
         Value::Nil => vec![],
         other => vec![other.clone()],
     }
@@ -381,7 +381,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
 
 pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
     match val {
-        Value::Set(s) => s.clone(),
+        Value::Set(s) => (**s).clone(),
         Value::Bag(b) => b.keys().cloned().collect(),
         Value::Mix(m) => m.keys().cloned().collect(),
         Value::Array(items) => items.iter().map(|v| v.to_string_value()).collect(),
@@ -537,7 +537,7 @@ pub(crate) fn merge_junction(kind: JunctionKind, left: Value, right: Value) -> V
     let mut values = Vec::new();
     push_junction_value(&kind, left, &mut values);
     push_junction_value(&kind, right, &mut values);
-    Value::Junction { kind, values }
+    Value::junction(kind, values)
 }
 
 fn push_junction_value(kind: &JunctionKind, value: Value, out: &mut Vec<Value>) {
@@ -545,7 +545,7 @@ fn push_junction_value(kind: &JunctionKind, value: Value, out: &mut Vec<Value>) 
         Value::Junction {
             kind: inner_kind,
             values,
-        } if &inner_kind == kind => out.extend(values),
+        } if &inner_kind == kind => out.extend(values.iter().cloned()),
         other => out.push(other),
     }
 }

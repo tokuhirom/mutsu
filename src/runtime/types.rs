@@ -294,7 +294,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         // Always set @_ for legacy Perl-style argument access
         self.env
-            .insert("@_".to_string(), Value::Array(args.to_vec()));
+            .insert("@_".to_string(), Value::array(args.to_vec()));
         if param_defs.is_empty() {
             // Legacy path: just bind by position
             for (i, param) in params.iter().enumerate() {
@@ -317,7 +317,7 @@ impl Interpreter {
                         }
                     }
                     if !pd.name.is_empty() {
-                        self.env.insert(pd.name.clone(), Value::Hash(hash_items));
+                        self.env.insert(pd.name.clone(), Value::hash(hash_items));
                     }
                 } else {
                     let mut items = Vec::new();
@@ -339,7 +339,7 @@ impl Interpreter {
                         } else {
                             format!("@{}", pd.name)
                         };
-                        self.env.insert(key, Value::Array(items));
+                        self.env.insert(key, Value::array(items));
                     }
                 }
             } else if pd.named {

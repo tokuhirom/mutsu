@@ -85,9 +85,9 @@ impl Interpreter {
             "send" => {
                 let value = args.first().cloned().unwrap_or(Value::Nil);
                 match attrs.get_mut("queue") {
-                    Some(Value::Array(items)) => items.push(value),
+                    Some(Value::Array(items)) => Arc::make_mut(items).push(value),
                     _ => {
-                        attrs.insert("queue".to_string(), Value::Array(vec![value]));
+                        attrs.insert("queue".to_string(), Value::array(vec![value]));
                     }
                 }
                 Ok((Value::Nil, attrs))
@@ -97,7 +97,7 @@ impl Interpreter {
                 if let Some(Value::Array(items)) = attrs.get_mut("queue")
                     && !items.is_empty()
                 {
-                    value = items.remove(0);
+                    value = Arc::make_mut(items).remove(0);
                 }
                 Ok((value, attrs))
             }
@@ -125,7 +125,7 @@ impl Interpreter {
                 let as_fn = Self::named_value(&args, "as");
                 let with_fn = Self::named_value(&args, "with");
                 let values = match attributes.get("values") {
-                    Some(Value::Array(items)) => items.clone(),
+                    Some(Value::Array(items)) => items.to_vec(),
                     _ => Vec::new(),
                 };
                 let mut seen_keys: Vec<Value> = Vec::new();
@@ -152,8 +152,8 @@ impl Interpreter {
                     }
                 }
                 let mut new_attrs = HashMap::new();
-                new_attrs.insert("values".to_string(), Value::Array(result));
-                new_attrs.insert("taps".to_string(), Value::Array(Vec::new()));
+                new_attrs.insert("values".to_string(), Value::array(result));
+                new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 new_attrs.insert("live".to_string(), Value::Bool(false));
                 Ok(Value::make_instance("Supply".to_string(), new_attrs))
             }
@@ -166,7 +166,7 @@ impl Interpreter {
                 let values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
                     let emitter = Value::make_instance("Supplier".to_string(), {
                         let mut a = HashMap::new();
-                        a.insert("emitted".to_string(), Value::Array(Vec::new()));
+                        a.insert("emitted".to_string(), Value::array(Vec::new()));
                         a.insert("done".to_string(), Value::Bool(false));
                         a
                     });
@@ -175,7 +175,7 @@ impl Interpreter {
                     let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
                     self.supply_emit_buffer.pop().unwrap_or_default()
                 } else if let Some(Value::Array(v)) = attributes.get("values") {
-                    v.clone()
+                    v.to_vec()
                 } else {
                     Vec::new()
                 };
@@ -183,7 +183,7 @@ impl Interpreter {
                 // Call do_callbacks and tap callback for each value
                 let do_cbs = attributes.get("do_callbacks").and_then(|v| {
                     if let Value::Array(a) = v {
-                        Some(a.clone())
+                        Some(a.to_vec())
                     } else {
                         None
                     }
@@ -209,24 +209,24 @@ impl Interpreter {
                 let values = attributes
                     .get("values")
                     .cloned()
-                    .unwrap_or(Value::Array(Vec::new()));
+                    .unwrap_or(Value::array(Vec::new()));
                 let live = attributes
                     .get("live")
                     .cloned()
                     .unwrap_or(Value::Bool(false));
                 let mut new_attrs = HashMap::new();
                 new_attrs.insert("values".to_string(), values);
-                new_attrs.insert("taps".to_string(), Value::Array(Vec::new()));
+                new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 new_attrs.insert("live".to_string(), live);
                 // Accumulate do_callbacks chain
                 let mut do_cbs =
                     if let Some(Value::Array(existing)) = attributes.get("do_callbacks") {
-                        existing.clone()
+                        existing.to_vec()
                     } else {
                         Vec::new()
                     };
                 do_cbs.push(callback);
-                new_attrs.insert("do_callbacks".to_string(), Value::Array(do_cbs));
+                new_attrs.insert("do_callbacks".to_string(), Value::array(do_cbs));
                 Ok(Value::make_instance("Supply".to_string(), new_attrs))
             }
             "Supply" | "supply" => {
@@ -234,7 +234,7 @@ impl Interpreter {
                 // Preserve the same id for === identity check
                 Ok(Value::Instance {
                     class_name: "Supply".to_string(),
-                    attributes: attributes.clone(),
+                    attributes: Arc::new(attributes.clone()),
                     id: 0, // placeholder — identity is checked via container, not id
                 })
             }
@@ -257,8 +257,8 @@ impl Interpreter {
             "Supply" => {
                 // Return a Supply backed by this Supplier
                 let mut supply_attrs = HashMap::new();
-                supply_attrs.insert("values".to_string(), Value::Array(Vec::new()));
-                supply_attrs.insert("taps".to_string(), Value::Array(Vec::new()));
+                supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 supply_attrs.insert(
                     "live".to_string(),
                     attributes.get("live").cloned().unwrap_or(Value::Bool(true)),
@@ -321,12 +321,12 @@ impl Interpreter {
             "emit" => {
                 let value = args.first().cloned().unwrap_or(Value::Nil);
                 if let Some(Value::Array(items)) = attrs.get_mut("values") {
-                    items.push(value.clone());
+                    Arc::make_mut(items).push(value.clone());
                 } else {
-                    attrs.insert("values".to_string(), Value::Array(vec![value.clone()]));
+                    attrs.insert("values".to_string(), Value::array(vec![value.clone()]));
                 }
                 if let Some(Value::Array(taps)) = attrs.get_mut("taps") {
-                    for tap in taps.clone() {
+                    for tap in taps.iter().cloned().collect::<Vec<_>>() {
                         let _ = self.call_sub_value(tap, vec![value.clone()], true);
                     }
                 }
@@ -340,7 +340,7 @@ impl Interpreter {
                 let values = if let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned() {
                     let emitter = Value::make_instance("Supplier".to_string(), {
                         let mut a = HashMap::new();
-                        a.insert("emitted".to_string(), Value::Array(Vec::new()));
+                        a.insert("emitted".to_string(), Value::array(Vec::new()));
                         a.insert("done".to_string(), Value::Bool(false));
                         a
                     });
@@ -349,12 +349,12 @@ impl Interpreter {
                     self.supply_emit_buffer.pop().unwrap_or_default()
                 } else {
                     if let Some(Value::Array(items)) = attrs.get_mut("taps") {
-                        items.push(tap_cb.clone());
+                        Arc::make_mut(items).push(tap_cb.clone());
                     } else {
-                        attrs.insert("taps".to_string(), Value::Array(vec![tap_cb.clone()]));
+                        attrs.insert("taps".to_string(), Value::array(vec![tap_cb.clone()]));
                     }
                     if let Some(Value::Array(values)) = attrs.get("values") {
-                        values.clone()
+                        values.to_vec()
                     } else {
                         Vec::new()
                     }
@@ -363,7 +363,7 @@ impl Interpreter {
                 // Call do_callbacks and tap callback for each value
                 let do_cbs = attrs.get("do_callbacks").and_then(|v| {
                     if let Value::Array(a) = v {
-                        Some(a.clone())
+                        Some(a.to_vec())
                     } else {
                         None
                     }
@@ -388,7 +388,7 @@ impl Interpreter {
                 let as_fn = Self::named_value(&args, "as");
                 let with_fn = Self::named_value(&args, "with");
                 let values = match attrs.get("values") {
-                    Some(Value::Array(items)) => items.clone(),
+                    Some(Value::Array(items)) => items.to_vec(),
                     _ => Vec::new(),
                 };
                 let mut seen_keys: Vec<Value> = Vec::new();
@@ -415,8 +415,8 @@ impl Interpreter {
                     }
                 }
                 let mut new_attrs = HashMap::new();
-                new_attrs.insert("values".to_string(), Value::Array(result));
-                new_attrs.insert("taps".to_string(), Value::Array(Vec::new()));
+                new_attrs.insert("values".to_string(), Value::array(result));
+                new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 new_attrs.insert("live".to_string(), Value::Bool(false));
                 Ok((Value::make_instance("Supply".to_string(), new_attrs), attrs))
             }
@@ -441,7 +441,7 @@ impl Interpreter {
 
                 // Extract command and args
                 let cmd_arr = match attrs.get("cmd") {
-                    Some(Value::Array(arr)) => arr.clone(),
+                    Some(Value::Array(arr)) => arr.to_vec(),
                     _ => Vec::new(),
                 };
                 let (program, cmd_args): (String, Vec<String>) = if cmd_arr.is_empty() {
@@ -482,7 +482,7 @@ impl Interpreter {
                                             stdout_supply
                                         && let Some(Value::Array(taps)) = attributes.get("taps")
                                     {
-                                        for tap in taps {
+                                        for tap in taps.iter() {
                                             let _ = thread_interp.call_sub_value(
                                                 tap.clone(),
                                                 vec![Value::Str(line.clone())],
@@ -577,7 +577,7 @@ impl Interpreter {
             "command" => attributes
                 .get("cmd")
                 .cloned()
-                .unwrap_or(Value::Array(Vec::new())),
+                .unwrap_or(Value::array(Vec::new())),
             "started" => attributes
                 .get("started")
                 .cloned()
@@ -692,7 +692,7 @@ impl Interpreter {
                     "signature".to_string(),
                     Value::make_instance("Blob".to_string(), {
                         let mut a = HashMap::new();
-                        a.insert("values".to_string(), Value::Array(vec![Value::Int(0)]));
+                        a.insert("values".to_string(), Value::array(vec![Value::Int(0)]));
                         a
                     }),
                 );

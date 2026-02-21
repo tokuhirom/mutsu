@@ -503,7 +503,7 @@ impl Interpreter {
             .iter()
             .map(|s| Value::Str(s.clone()))
             .collect();
-        env.insert("/".to_string(), Value::Array(match_list));
+        env.insert("/".to_string(), Value::array(match_list));
         // Set named captures
         for (k, v) in &caps.named {
             env.insert(format!("<{}>", k), Value::Str(v.clone()));
