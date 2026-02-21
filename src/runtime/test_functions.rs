@@ -43,6 +43,7 @@ impl Interpreter {
             "subtest" => self.test_fn_subtest(args).map(Some),
             "tap-ok" => self.test_fn_tap_ok(args).map(Some),
             "warns-like" => self.test_fn_warns_like(args).map(Some),
+            "doesn't-warn" => self.test_fn_doesnt_warn(args).map(Some),
             _ => Ok(None),
         }
     }
@@ -882,9 +883,9 @@ impl Interpreter {
         }
         nested.set_program_path("<warns-like>");
         let result = nested.run(&program);
-        let warn_message = nested.stderr_output.clone();
+        let warn_message = nested.warn_output.clone();
         let did_warn = !warn_message.is_empty();
-        let _ = result; // We don't care about the result, only warnings
+        let _ = result;
         let label = if desc.is_empty() {
             "warns-like".to_string()
         } else {
@@ -902,6 +903,33 @@ impl Interpreter {
         self.test_ok(matched, "warning message passes test", false)?;
         self.finish_subtest(ctx, &label, Ok(()))?;
         Ok(Value::Bool(did_warn && matched))
+    }
+
+    fn test_fn_doesnt_warn(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let program_val = Self::positional_value_required(args, 0, "doesn't-warn expects code")?;
+        let program = match program_val {
+            Value::Str(s) => s.clone(),
+            _ => return Err(RuntimeError::new("doesn't-warn expects string code")),
+        };
+        let desc = Self::positional_string(args, 1);
+        let mut nested = Interpreter::new();
+        if let Some(Value::Int(pid)) = self.env.get("*PID") {
+            nested.set_pid(pid.saturating_add(1));
+        }
+        nested.set_program_path("<doesn't-warn>");
+        let result = nested.run(&program);
+        let _ = result;
+        let warn_message = nested.warn_output.clone();
+        let did_warn = !warn_message.is_empty();
+        if did_warn {
+            let diag_msg = format!(
+                "code must not warn but it produced a warning: {}",
+                warn_message.trim_end()
+            );
+            self.output.push_str(&format!("# {}\n", diag_msg));
+        }
+        self.test_ok(!did_warn, &desc, false)?;
+        Ok(Value::Bool(!did_warn))
     }
 
     fn extract_run_output(
