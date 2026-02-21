@@ -465,9 +465,9 @@ pub(super) fn parse_junction_infix_op(input: &str) -> Option<(JunctionInfixOp, u
 }
 
 pub(super) fn parse_or_or_op(input: &str) -> Option<(LogicalOp, usize)> {
-    if input.starts_with("||") {
+    if input.starts_with("||") && !input.starts_with("||=") {
         Some((LogicalOp::OrOr, 2))
-    } else if input.starts_with("//") && !input.starts_with("///") {
+    } else if input.starts_with("//") && !input.starts_with("///") && !input.starts_with("//=") {
         Some((LogicalOp::DefinedOr, 2))
     } else if input.starts_with("min") && !is_ident_char(input.as_bytes().get(3).copied()) {
         Some((LogicalOp::Min, 3))
@@ -479,7 +479,7 @@ pub(super) fn parse_or_or_op(input: &str) -> Option<(LogicalOp, usize)> {
 }
 
 pub(super) fn parse_and_and_op(input: &str) -> Option<(LogicalOp, usize)> {
-    if input.starts_with("&&") {
+    if input.starts_with("&&") && !input.starts_with("&&=") {
         Some((LogicalOp::AndAnd, 2))
     } else {
         None

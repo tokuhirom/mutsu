@@ -517,6 +517,24 @@ pub(super) fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
     }
 }
 
+/// Parse smart single-quoted string literal: ‘...’ (no interpolation)
+pub(super) fn smart_single_quoted_string(input: &str) -> PResult<'_, Expr> {
+    let (input, _) = parse_char(input, '‘')?;
+    let mut rest = input;
+    let start = input;
+    loop {
+        if rest.is_empty() {
+            return Err(PError::expected("closing ’"));
+        }
+        if let Some(after_quote) = rest.strip_prefix('’') {
+            let content = &start[..start.len() - rest.len()];
+            return Ok((after_quote, Expr::Literal(Value::Str(content.to_string()))));
+        }
+        let ch = rest.chars().next().unwrap();
+        rest = &rest[ch.len_utf8()..];
+    }
+}
+
 /// Parse corner bracket string literal: ｢...｣ (no interpolation)
 pub(super) fn corner_bracket_string(input: &str) -> PResult<'_, Expr> {
     let rest = input

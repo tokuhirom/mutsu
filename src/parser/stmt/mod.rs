@@ -226,6 +226,15 @@ pub(super) fn my_decl_expr_pub(input: &str) -> PResult<'_, Stmt> {
     decl::my_decl_expr(input)
 }
 
+/// Public accessor for `for` statement parser (used by primary.rs for `for` expressions).
+pub(super) fn for_stmt_pub(input: &str) -> PResult<'_, Stmt> {
+    control::for_stmt(input)
+}
+
+pub(super) fn labeled_loop_stmt_pub(input: &str) -> PResult<'_, Stmt> {
+    control::labeled_loop_stmt(input)
+}
+
 /// Parse statements in best-effort mode: return all successfully parsed
 /// statements even if a parse error is encountered partway through.
 /// When a statement fails to parse, skip forward to the next statement
@@ -598,6 +607,140 @@ mod tests {
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
         assert!(matches!(&stmts[0], Stmt::For { .. }));
+    }
+
+    #[test]
+    fn parse_compound_assign_on_method_lhs() {
+        let (rest, stmts) = program("for @a -> { .key //= ++$i }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+    }
+
+    #[test]
+    fn parse_topic_method_assign_with_statement_modifier() {
+        let (rest, stmts) = program(".key = 1 for @a;").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+    }
+
+    #[test]
+    fn parse_parenthesized_assign_lvalue_stmt() {
+        let (rest, stmts) = program("($x = $y) = 5;").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        match &stmts[0] {
+            Stmt::Block(stmts) => {
+                assert_eq!(stmts.len(), 2);
+                assert!(matches!(
+                    &stmts[0],
+                    Stmt::Expr(Expr::AssignExpr { name, expr })
+                        if name == "x" && matches!(expr.as_ref(), Expr::Var(n) if n == "y")
+                ));
+                assert!(matches!(
+                    &stmts[1],
+                    Stmt::Assign { name, expr, .. }
+                        if name == "x" && matches!(expr, Expr::Literal(Value::Int(5)))
+                ));
+            }
+            other => panic!("expected block stmt, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_for_loop_with_optional_pointy_param() {
+        let (rest, stmts) = program("for 1..5 -> $x, $y? { say $x }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::For { .. }));
+    }
+
+    #[test]
+    fn parse_for_loop_with_default_pointy_param() {
+        let (rest, stmts) = program("for 1..5 -> $x, $y = 7 { say $x }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::For { .. }));
+    }
+
+    #[test]
+    fn parse_for_loop_with_pointy_return_type() {
+        let (rest, stmts) = program("for ^10 -> $_ --> List { take $_ }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::For { .. }));
+    }
+
+    #[test]
+    fn parse_chained_inline_modifiers_in_paren_expr() {
+        let (rest, stmts) = program("my @odd = ($_ * $_ if $_ % 2 for 0..10);").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::VarDecl { .. }));
+    }
+
+    #[test]
+    fn parse_for_expression_in_parens() {
+        let (rest, stmts) = program("my $x = (for ^2 { 41; 42 });").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::VarDecl { .. }));
+    }
+
+    #[test]
+    fn parse_topic_mutating_method_stmt() {
+        let (rest, stmts) = program(".=fmt('%03b');").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::Expr(Expr::MethodCall { .. })));
+    }
+
+    #[test]
+    fn parse_gather_for_expression() {
+        let (rest, stmts) = program("my $x = (gather for ^5 { take 1 });").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::VarDecl { .. }));
+    }
+
+    #[test]
+    fn parse_labeled_for_expression() {
+        let (rest, stmts) = program("my @x = (MEOW: for ^2 { 1 });").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::VarDecl { .. }));
+    }
+
+    #[test]
+    fn parse_sub_param_dollar_question() {
+        let (rest, stmts) = program("sub foo($?) { 1 }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::SubDecl { .. }));
+    }
+
+    #[test]
+    fn parse_topic_amp_call_inside_for_block() {
+        let (rest, stmts) = program("sub foo($?) { 1 }; for 1 { .&foo() };").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 2);
+        assert!(matches!(&stmts[0], Stmt::SubDecl { .. }));
+        assert!(matches!(&stmts[1], Stmt::For { .. }));
+    }
+
+    #[test]
+    fn parse_block_valued_colonpair() {
+        let (rest, stmts) = program("my $x = :out{ .contains('ok') };").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::VarDecl { .. }));
+    }
+
+    #[test]
+    fn parse_my_regex_decl() {
+        let (rest, stmts) = program("my regex rx { abc };").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::VarDecl { .. }));
     }
 
     #[test]

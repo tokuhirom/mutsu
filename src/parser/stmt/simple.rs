@@ -3,7 +3,9 @@ use std::collections::HashSet;
 
 use super::super::expr::expression;
 use super::super::helpers::{ws, ws1};
-use super::super::parse_result::{PError, PResult, merge_expected_messages, opt_char, parse_char};
+use super::super::parse_result::{
+    PError, PResult, merge_expected_messages, opt_char, parse_char, take_while1,
+};
 
 use crate::ast::{AssignOp, Expr, PhaserKind, Stmt};
 use crate::value::Value;
@@ -648,6 +650,31 @@ pub(super) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
 
 /// Parse an expression statement (fallback).
 pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
+    // Topic mutating method call: .=method(args)
+    if let Some(stripped) = input.strip_prefix(".=") {
+        let (rest, _) = ws(stripped)?;
+        let (rest, method_name) =
+            take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+        let method_name = method_name.to_string();
+        let (rest, args) = if rest.starts_with('(') {
+            let (r, _) = parse_char(rest, '(')?;
+            let (r, _) = ws(r)?;
+            let (r, args) = super::super::primary::parse_call_arg_list(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ')')?;
+            (r, args)
+        } else {
+            (rest, Vec::new())
+        };
+        let stmt = Stmt::Expr(Expr::MethodCall {
+            target: Box::new(Expr::Var("_".to_string())),
+            name: method_name,
+            args,
+            modifier: None,
+        });
+        return parse_statement_modifier(rest, stmt);
+    }
+
     let (rest, expr) = expression(input).map_err(|err| PError {
         messages: merge_expected_messages("expected expression statement", &err.messages),
         remaining_len: err.remaining_len.or(Some(input.len())),
@@ -673,6 +700,27 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             });
             return parse_statement_modifier(rest, stmt);
         }
+    }
+
+    // Generic assignment on non-variable lhs (e.g. `.key = 1`).
+    // TODO: Introduce a dedicated assignment AST form for arbitrary lvalues.
+    // Current fallback consumes `lhs = rhs` and preserves both sides as expressions.
+    if !matches!(expr, Expr::AssignExpr { .. })
+        && rest.starts_with('=')
+        && !rest.starts_with("==")
+        && !rest.starts_with("=>")
+    {
+        let r = &rest[1..];
+        let (r, _) = ws(r)?;
+        let (r, rhs) = super::assign::parse_assign_expr_or_comma(r).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected right-hand expression after '='",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(r.len())),
+        })?;
+        let stmt = Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)]);
+        return parse_statement_modifier(r, stmt);
     }
 
     // Check for assignment after parenthesized assign expression: ($x = $y) = 5
@@ -723,6 +771,28 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             ];
             return parse_statement_modifier(r, Stmt::Block(stmts));
         }
+    }
+
+    // Generic compound assignment on non-variable lhs (e.g. `.key //= ++$i`).
+    // TODO: Support proper compound assignment semantics for arbitrary lvalues.
+    // Current fallback desugars to a binary op expression so parsing can proceed.
+    if !matches!(expr, Expr::AssignExpr { .. })
+        && let Some((stripped, op)) = super::assign::parse_compound_assign_op(rest)
+    {
+        let (r, _) = ws(stripped)?;
+        let (r, rhs) = super::assign::parse_assign_expr_or_comma(r).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected right-hand expression after compound assignment",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(r.len())),
+        })?;
+        let stmt = Stmt::Expr(Expr::Binary {
+            left: Box::new(expr),
+            op: op.token_kind(),
+            right: Box::new(rhs),
+        });
+        return parse_statement_modifier(r, stmt);
     }
 
     // Check for comma-separated expressions (e.g., "1,2, until $++")

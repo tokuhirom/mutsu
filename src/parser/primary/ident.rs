@@ -600,6 +600,11 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 })),
             ));
         }
+        "for" => {
+            if let Ok((r, stmt)) = super::super::stmt::for_stmt_pub(input) {
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            }
+        }
         "my" | "our" | "state" => {
             // my/our/state declaration in expression context
             // e.g., (my $x = 5) or (state $x = 3)
@@ -644,6 +649,10 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if r.starts_with('{') {
                 let (r, body) = parse_block_body(r)?;
                 return Ok((r, Expr::Gather(body)));
+            }
+            // gather <statement> (e.g. `gather for ^5 { ... }`)
+            if let Ok((r, stmt)) = super::super::stmt::statement_pub(r) {
+                return Ok((r, Expr::Gather(vec![stmt])));
             }
         }
         "die" | "fail" => {
@@ -724,6 +733,16 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             ));
         }
         _ => {}
+    }
+
+    // Labeled loop in expression context, e.g. `MEOW: for ^10 { ... }`
+    if name.chars().all(|c| c.is_ascii_uppercase() || c == '_') {
+        let (r_ws, _) = ws(rest)?;
+        if r_ws.starts_with(':')
+            && let Ok((r, stmt)) = super::super::stmt::labeled_loop_stmt_pub(input)
+        {
+            return Ok((r, Expr::DoStmt(Box::new(stmt))));
+        }
     }
 
     // Check for :: qualified name (e.g. Foo::Bar, CORE::<&run>)

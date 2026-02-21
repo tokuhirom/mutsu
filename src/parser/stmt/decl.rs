@@ -125,6 +125,46 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         return subset_decl(r);
     }
+    // my regex Name { ... }
+    // TODO: Parse regex declarations into a dedicated regex AST instead of
+    // skipping the body and emitting `VarDecl = Nil`.
+    if let Some(r) = keyword("regex", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, name) = ident(r)?;
+        let (r, _) = ws(r)?;
+        if !r.starts_with('{') {
+            return Err(PError::expected("regex body"));
+        }
+        let mut depth = 0usize;
+        let mut end = None;
+        for (i, c) in r.char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        end = Some(i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(end) = end else {
+            return Err(PError::expected("closing } for regex body"));
+        };
+        let rest = &r[end + 1..];
+        let stmt = Stmt::VarDecl {
+            name,
+            expr: Expr::Literal(Value::Nil),
+            type_constraint: None,
+            is_state,
+        };
+        if apply_modifier {
+            return parse_statement_modifier(rest, stmt);
+        }
+        return Ok((rest, stmt));
+    }
 
     // Sigilless variable: my \name = expr
     if let Some(r) = rest.strip_prefix('\\') {
