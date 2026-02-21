@@ -919,8 +919,16 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !is_stmt_modifier_ahead(r)
     {
         let is_user_sub = crate::parser::stmt::simple::is_user_declared_sub(&name);
-        // Only trigger if next token starts a term (not an operator)
         let next = r.chars().next().unwrap();
+        let hyphen_forward_call =
+            !is_user_sub && name.contains('-') && (next.is_alphabetic() || next == '_');
+        if is_user_sub && let Ok((r2, expr)) = parse_expr_listop_args(r, name.clone()) {
+            return Ok((r2, expr));
+        }
+        if hyphen_forward_call && let Ok((r2, expr)) = parse_expr_listop_args(r, name.clone()) {
+            return Ok((r2, expr));
+        }
+        // Only trigger if next token starts a term (not an operator)
         if (next == '$'
             || next == '@'
             || next == '%'
@@ -929,6 +937,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || next == '"'
             || next == '('
             || next.is_ascii_digit()
+            || hyphen_forward_call
             || is_user_sub)
             && let Ok((r2, arg)) = parse_listop_arg(r)
         {

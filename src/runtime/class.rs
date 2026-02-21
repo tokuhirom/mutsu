@@ -173,7 +173,13 @@ impl Interpreter {
                 attributes.insert(attr_name, val.clone());
             }
         }
-        self.env = saved_env;
+        let mut merged_env = saved_env.clone();
+        for (k, v) in self.env.iter() {
+            if saved_env.contains_key(k) {
+                merged_env.insert(k.clone(), v.clone());
+            }
+        }
+        self.env = merged_env;
         result.map(|v| (v, attributes))
     }
 }

@@ -718,6 +718,22 @@ impl Interpreter {
             ..
         } = &target
         {
+            if method == "can" {
+                let method_name = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                if method_name.is_empty() {
+                    return Ok(Value::Bool(false));
+                }
+                let can = self.class_has_method(class_name, &method_name)
+                    || self.has_user_method(class_name, &method_name)
+                    || matches!(
+                        method_name.as_str(),
+                        "isa" | "gist" | "raku" | "perl" | "name" | "clone"
+                    );
+                return Ok(Value::Bool(can));
+            }
             if self.is_native_method(class_name, method) {
                 return self.call_native_instance_method(class_name, attributes, method, args);
             }
