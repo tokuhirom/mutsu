@@ -252,6 +252,23 @@ impl Interpreter {
             }
             (Value::Int(a), Value::Str(b)) => b.trim().parse::<f64>() == Ok(*a as f64),
             (Value::Nil, Value::Str(s)) => s.is_empty(),
+            // IO::Path ~~ IO::Path: compare by path string value
+            (
+                Value::Instance {
+                    class_name: cn_a,
+                    attributes: attrs_a,
+                    ..
+                },
+                Value::Instance {
+                    class_name: cn_b,
+                    attributes: attrs_b,
+                    ..
+                },
+            ) if cn_a == "IO::Path" && cn_b == "IO::Path" => {
+                let path_a = attrs_a.get("path").map(|v| v.to_string_value());
+                let path_b = attrs_b.get("path").map(|v| v.to_string_value());
+                path_a == path_b
+            }
             // Instance identity: two instances match iff they have the same id
             (Value::Instance { id: id_a, .. }, Value::Instance { id: id_b, .. }) => id_a == id_b,
             // When RHS is a Bool, result is that Bool

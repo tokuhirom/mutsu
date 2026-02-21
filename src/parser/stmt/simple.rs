@@ -136,13 +136,25 @@ const TEST_EXPORTS: &[&str] = &[
 ];
 
 /// Functions exported by `use Test::Util`.
+/// These must match the `is export` subs in roast/packages/Test-Helpers/lib/Test/Util.rakumod.
 const TEST_UTIL_EXPORTS: &[&str] = &[
+    "group-of",
+    "is-path",
+    "is-deeply-junction",
+    "test-iter-opt",
+    "is-eqv",
     "is_run",
     "get_out",
+    "doesn't-hang",
     "warns-like",
     "doesn't-warn",
-    "is-eqv",
-    "group-of",
+    "make-temp-path",
+    "make-temp-file",
+    "make-temp-dir",
+    "no-fatal-throws-like",
+    "run-with-tty",
+    "throws-like-any",
+    "make-test-dist",
 ];
 
 use super::{
