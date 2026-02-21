@@ -1,5 +1,65 @@
 use super::*;
 
+/// Parse a coercion type like "Int()" or "Int(Rat)".
+/// Returns Some((target_type, optional_source_type)) if it's a coercion type.
+fn parse_coercion_type(constraint: &str) -> Option<(&str, Option<&str>)> {
+    if let Some(open) = constraint.find('(')
+        && constraint.ends_with(')')
+    {
+        let target = &constraint[..open];
+        let source = &constraint[open + 1..constraint.len() - 1];
+        if source.is_empty() {
+            Some((target, None))
+        } else {
+            Some((target, Some(source)))
+        }
+    } else {
+        None
+    }
+}
+
+/// Coerce a value to the target type.
+fn coerce_value(target: &str, value: Value) -> Value {
+    match target {
+        "Int" => match &value {
+            Value::Int(_) => value,
+            Value::Num(n) => Value::Int(*n as i64),
+            Value::Rat(n, d) => Value::Int(n / d),
+            Value::Str(s) => Value::Int(s.parse::<i64>().unwrap_or(0)),
+            Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
+            _ => value,
+        },
+        "Num" => match &value {
+            Value::Num(_) => value,
+            Value::Int(n) => Value::Num(*n as f64),
+            Value::Rat(n, d) => Value::Num(*n as f64 / *d as f64),
+            Value::Str(s) => Value::Num(s.parse::<f64>().unwrap_or(0.0)),
+            _ => value,
+        },
+        "Str" => Value::Str(value.to_string_value()),
+        "Rat" => {
+            match &value {
+                Value::Rat(_, _) => value,
+                Value::Int(n) => Value::Rat(*n, 1),
+                Value::Num(n) => {
+                    // Simple float to rat conversion
+                    let denom = 1_000_000i64;
+                    let numer = (*n * denom as f64) as i64;
+                    let g = gcd_i64(numer.abs(), denom);
+                    Value::Rat(numer / g, denom / g)
+                }
+                _ => value,
+            }
+        }
+        "Bool" => Value::Bool(value.truthy()),
+        _ => value,
+    }
+}
+
+fn gcd_i64(a: i64, b: i64) -> i64 {
+    if b == 0 { a } else { gcd_i64(b, a % b) }
+}
+
 /// Strip a type smiley suffix (:U, :D, :_) from a constraint string.
 /// Returns (base_type, smiley) where smiley is Some(":U"), Some(":D"), Some(":_") or None.
 pub(crate) fn strip_type_smiley(constraint: &str) -> (&str, Option<&str>) {
@@ -183,6 +243,14 @@ impl Interpreter {
     }
 
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
+        // Handle coercion types: Int() matches anything, Int(Rat) matches Rat
+        if let Some((_, source)) = parse_coercion_type(constraint) {
+            return if let Some(src) = source {
+                self.type_matches_value(src, value)
+            } else {
+                true
+            };
+        }
         // Handle type smileys (:U, :D, :_)
         let (base_constraint, smiley) = strip_type_smiley(constraint);
         if let Some(smiley) = smiley {
@@ -373,17 +441,31 @@ impl Interpreter {
             } else {
                 // Positional param
                 if positional_idx < args.len() {
-                    let value = args[positional_idx].clone();
+                    let mut value = args[positional_idx].clone();
                     if pd.name != "__type_only__"
                         && let Some(constraint) = &pd.type_constraint
-                        && !self.type_matches_value(constraint, &value)
                     {
-                        return Err(RuntimeError::new(format!(
-                            "X::TypeCheck: Type check failed for {}: expected {}, got {}",
-                            pd.name,
-                            constraint,
-                            super::value_type_name(&value)
-                        )));
+                        if let Some((target, source)) = parse_coercion_type(constraint) {
+                            // Coercion type: check source type if specified, then coerce
+                            if let Some(src) = source
+                                && !self.type_matches_value(src, &value)
+                            {
+                                return Err(RuntimeError::new(format!(
+                                    "X::TypeCheck: Type check failed for {}: expected {}, got {}",
+                                    pd.name,
+                                    constraint,
+                                    super::value_type_name(&value)
+                                )));
+                            }
+                            value = coerce_value(target, value);
+                        } else if !self.type_matches_value(constraint, &value) {
+                            return Err(RuntimeError::new(format!(
+                                "X::TypeCheck: Type check failed for {}: expected {}, got {}",
+                                pd.name,
+                                constraint,
+                                super::value_type_name(&value)
+                            )));
+                        }
                     }
                     if !pd.name.is_empty() && pd.name != "__type_only__" {
                         self.env.insert(pd.name.clone(), value);

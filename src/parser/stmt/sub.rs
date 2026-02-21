@@ -294,24 +294,62 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         };
         let (r2, _) = ws(r)?;
 
-        // Check for sub-signature: Type (inner-params)
-        if r2.starts_with('(') {
-            // Parse sub-signature (destructuring)
-            let (r3, _) = parse_char(r2, '(')?;
-            let (r3, _) = ws(r3)?;
-            let (r3, sub_params) = parse_param_list(r3)?;
-            let (r3, _) = ws(r3)?;
-            let (r3, _) = parse_char(r3, ')')?;
-            let (r3, _) = ws(r3)?;
-
-            // After sub-signature, there may be more sub-signatures or the end
-            // For now we just build a param with the sub-signature
-            let mut p = make_param("__subsig__".to_string());
-            p.type_constraint = Some(tc);
-            p.sub_signature = Some(sub_params);
-            p.named = named;
-            p.slurpy = slurpy;
-            return Ok((r3, p));
+        // Check for coercion type: Int() or Int(Rat)
+        // Also handles sub-signature: Type (inner-params)
+        if let Some(after_open) = r2.strip_prefix('(') {
+            let (after_ws, _) = ws(after_open)?;
+            // Coercion type: Int() — empty parens
+            if let Some(r3) = after_ws.strip_prefix(')') {
+                let (r3, _) = ws(r3)?;
+                // This is a coercion type like Int()
+                type_constraint = Some(format!("{}()", tc));
+                rest = r3;
+                // Re-check named after type
+                if rest.starts_with(':') {
+                    named = true;
+                    rest = &rest[1..];
+                }
+            } else if let Ok((inner_r, source_type)) = qualified_ident(after_ws) {
+                let (inner_r, _) = ws(inner_r)?;
+                if let Some(r3) = inner_r.strip_prefix(')') {
+                    let (r3, _) = ws(r3)?;
+                    // This is a coercion type like Int(Rat)
+                    type_constraint = Some(format!("{}({})", tc, source_type));
+                    rest = r3;
+                    if rest.starts_with(':') {
+                        named = true;
+                        rest = &rest[1..];
+                    }
+                } else {
+                    // Fall through to sub-signature parsing
+                    let (r3, _) = parse_char(r2, '(')?;
+                    let (r3, _) = ws(r3)?;
+                    let (r3, sub_params) = parse_param_list(r3)?;
+                    let (r3, _) = ws(r3)?;
+                    let (r3, _) = parse_char(r3, ')')?;
+                    let (r3, _) = ws(r3)?;
+                    let mut p = make_param("__subsig__".to_string());
+                    p.type_constraint = Some(tc);
+                    p.sub_signature = Some(sub_params);
+                    p.named = named;
+                    p.slurpy = slurpy;
+                    return Ok((r3, p));
+                }
+            } else {
+                // Parse sub-signature (destructuring)
+                let (r3, _) = parse_char(r2, '(')?;
+                let (r3, _) = ws(r3)?;
+                let (r3, sub_params) = parse_param_list(r3)?;
+                let (r3, _) = ws(r3)?;
+                let (r3, _) = parse_char(r3, ')')?;
+                let (r3, _) = ws(r3)?;
+                let mut p = make_param("__subsig__".to_string());
+                p.type_constraint = Some(tc);
+                p.sub_signature = Some(sub_params);
+                p.named = named;
+                p.slurpy = slurpy;
+                return Ok((r3, p));
+            }
         }
 
         if r2.starts_with('$')
