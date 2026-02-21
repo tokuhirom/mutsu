@@ -66,6 +66,8 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     };
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
+    // Register exported function names so they are recognized as calls without parens.
+    super::simple::register_module_exports(&module);
     Ok((rest, Stmt::Use { module, arg }))
 }
 

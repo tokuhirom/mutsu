@@ -518,18 +518,18 @@ mod tests {
 
     #[test]
     fn parse_plan_call() {
-        let (rest, stmts) = program("plan 1;").unwrap();
+        let (rest, stmts) = program("use Test;\nplan 1;").unwrap();
         assert_eq!(rest, "");
-        assert_eq!(stmts.len(), 1);
-        assert!(matches!(&stmts[0], Stmt::Call { name, .. } if name == "plan"));
+        assert_eq!(stmts.len(), 2);
+        assert!(matches!(&stmts[1], Stmt::Call { name, .. } if name == "plan"));
     }
 
     #[test]
     fn parse_ok_call_with_named() {
-        let (rest, stmts) = program("ok 0, :todo(1);").unwrap();
+        let (rest, stmts) = program("use Test;\nok 0, :todo(1);").unwrap();
         assert_eq!(rest, "");
-        assert_eq!(stmts.len(), 1);
-        if let Stmt::Call { name, args } = &stmts[0] {
+        assert_eq!(stmts.len(), 2);
+        if let Stmt::Call { name, args } = &stmts[1] {
             assert_eq!(name, "ok");
             assert_eq!(args.len(), 2);
             assert!(matches!(&args[1], CallArg::Named { name, .. } if name == "todo"));
@@ -548,10 +548,10 @@ mod tests {
 
     #[test]
     fn parse_plan_skip_all() {
-        let (rest, stmts) = program("plan skip-all => \"msg\";").unwrap();
+        let (rest, stmts) = program("use Test;\nplan skip-all => \"msg\";").unwrap();
         assert_eq!(rest, "");
-        assert_eq!(stmts.len(), 1);
-        if let Stmt::Call { name, args } = &stmts[0] {
+        assert_eq!(stmts.len(), 2);
+        if let Stmt::Call { name, args } = &stmts[1] {
             assert_eq!(name, "plan");
             assert!(matches!(&args[0], CallArg::Named { name, .. } if name == "skip-all"));
         } else {
@@ -671,18 +671,21 @@ mod tests {
 
     #[test]
     fn known_call_stmt_reports_argument_parse_context() {
+        simple::register_module_exports("Test");
         let err = simple::known_call_stmt("ok ,").unwrap_err();
         assert!(err.message().contains("known call arguments"));
     }
 
     #[test]
     fn known_call_stmt_reports_missing_comma_argument() {
+        simple::register_module_exports("Test");
         let err = simple::known_call_stmt("ok(,)").unwrap_err();
         assert!(err.message().contains("known call arguments"));
     }
 
     #[test]
     fn known_call_stmt_reports_missing_named_argument_value() {
+        simple::register_module_exports("Test");
         let err = simple::known_call_stmt("ok :foo()").unwrap_err();
         assert!(err.message().contains("named argument value"));
     }
