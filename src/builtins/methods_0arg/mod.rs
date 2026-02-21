@@ -716,6 +716,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Array(items) => Some(Ok(Value::array(tree_recursive(items)))),
             _ => Some(Ok(target.clone())),
         },
+        "encode" => {
+            let s = target.to_string_value();
+            let bytes: Vec<Value> = s.as_bytes().iter().map(|&b| Value::Int(b as i64)).collect();
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("bytes".to_string(), Value::array(bytes));
+            Some(Ok(Value::make_instance("Buf".to_string(), attrs)))
+        }
         "sink" => Some(Ok(Value::Nil)),
         "item" => Some(Ok(target.clone())),
         "race" | "hyper" => {

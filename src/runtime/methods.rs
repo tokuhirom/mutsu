@@ -486,7 +486,18 @@ impl Interpreter {
                         Err(err)
                     } else {
                         // Planned blocks, Kept returns value
-                        Ok(shared.result_blocking())
+                        let result = shared.result_blocking();
+                        // Replay deferred taps for Proc::Async results
+                        if let Value::Instance {
+                            ref class_name,
+                            ref attributes,
+                            ..
+                        } = result
+                            && class_name == "Proc"
+                        {
+                            self.replay_proc_taps(attributes);
+                        }
+                        Ok(result)
                     }
                 }
                 "status" => Ok(Value::Str(shared.status())),
@@ -1225,11 +1236,43 @@ impl Interpreter {
                     return Ok(Value::make_instance(class_name.clone(), HashMap::new()));
                 }
                 "Proc::Async" => {
+                    let mut positional = Vec::new();
+                    let mut w_flag = false;
+                    for arg in &args {
+                        match arg {
+                            Value::Pair(key, value) if key == "w" => {
+                                w_flag = value.truthy();
+                            }
+                            _ => positional.push(arg.clone()),
+                        }
+                    }
+                    let stdout_id = super::native_methods::next_supply_id();
+                    let stderr_id = super::native_methods::next_supply_id();
+                    let mut stdout_supply_attrs = HashMap::new();
+                    stdout_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    stdout_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    stdout_supply_attrs
+                        .insert("supply_id".to_string(), Value::Int(stdout_id as i64));
+                    let mut stderr_supply_attrs = HashMap::new();
+                    stderr_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    stderr_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    stderr_supply_attrs
+                        .insert("supply_id".to_string(), Value::Int(stderr_id as i64));
+
                     let mut attrs = HashMap::new();
-                    attrs.insert("cmd".to_string(), Value::array(args.clone()));
+                    attrs.insert("cmd".to_string(), Value::array(positional));
                     attrs.insert("started".to_string(), Value::Bool(false));
-                    attrs.insert("stdout".to_string(), self.make_supply_instance());
-                    attrs.insert("stderr".to_string(), self.make_supply_instance());
+                    attrs.insert(
+                        "stdout".to_string(),
+                        Value::make_instance("Supply".to_string(), stdout_supply_attrs),
+                    );
+                    attrs.insert(
+                        "stderr".to_string(),
+                        Value::make_instance("Supply".to_string(), stderr_supply_attrs),
+                    );
+                    if w_flag {
+                        attrs.insert("w".to_string(), Value::Bool(true));
+                    }
                     return Ok(Value::make_instance(class_name.clone(), attrs));
                 }
                 "IO::Path" => {
@@ -1584,6 +1627,46 @@ impl Interpreter {
         attrs.insert("host".to_string(), Value::Str(host));
         attrs.insert("port".to_string(), Value::Int(port as i64));
         Ok(Value::make_instance("IO::Socket::INET".to_string(), attrs))
+    }
+
+    /// Replay deferred Proc::Async taps on the main thread.
+    /// Called when a Proc result is retrieved via .result or await.
+    pub(super) fn replay_proc_taps(&mut self, attributes: &Arc<HashMap<String, Value>>) {
+        let stdout_taps = match attributes.get("stdout_taps") {
+            Some(Value::Array(taps)) => taps.to_vec(),
+            _ => Vec::new(),
+        };
+        let stderr_taps = match attributes.get("stderr_taps") {
+            Some(Value::Array(taps)) => taps.to_vec(),
+            _ => Vec::new(),
+        };
+        let collected_stdout = match attributes.get("collected_stdout") {
+            Some(Value::Str(s)) => s.clone(),
+            _ => String::new(),
+        };
+        let collected_stderr = match attributes.get("collected_stderr") {
+            Some(Value::Str(s)) => s.clone(),
+            _ => String::new(),
+        };
+
+        if !collected_stdout.is_empty() && !stdout_taps.is_empty() {
+            for tap in &stdout_taps {
+                let _ = self.call_sub_value(
+                    tap.clone(),
+                    vec![Value::Str(collected_stdout.clone())],
+                    true,
+                );
+            }
+        }
+        if !collected_stderr.is_empty() && !stderr_taps.is_empty() {
+            for tap in &stderr_taps {
+                let _ = self.call_sub_value(
+                    tap.clone(),
+                    vec![Value::Str(collected_stderr.clone())],
+                    true,
+                );
+            }
+        }
     }
 
     /// Returns Some(class_name) if target is Promise or a Promise subclass package.

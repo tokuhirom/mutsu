@@ -1,4 +1,40 @@
 use super::*;
+use std::process::ChildStdin;
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+type StdinMap = std::sync::Mutex<HashMap<u32, Arc<std::sync::Mutex<Option<ChildStdin>>>>>;
+
+fn proc_stdin_map() -> &'static StdinMap {
+    static MAP: OnceLock<StdinMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+type SupplyTapsMap = std::sync::Mutex<HashMap<u64, Vec<Value>>>;
+
+fn supply_taps_map() -> &'static SupplyTapsMap {
+    static MAP: OnceLock<SupplyTapsMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+pub(super) fn next_supply_id() -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+    COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+pub(super) fn register_supply_tap(supply_id: u64, tap: Value) {
+    if let Ok(mut map) = supply_taps_map().lock() {
+        map.entry(supply_id).or_default().push(tap);
+    }
+}
+
+pub(super) fn get_supply_taps(supply_id: u64) -> Vec<Value> {
+    if let Ok(map) = supply_taps_map().lock() {
+        map.get(&supply_id).cloned().unwrap_or_default()
+    } else {
+        Vec::new()
+    }
+}
 
 impl Interpreter {
     /// Dispatch a mutable native instance method.
@@ -42,6 +78,7 @@ impl Interpreter {
             "Promise" => self.native_promise(attributes, method, args),
             "Channel" => Ok(self.native_channel(attributes, method)),
             "Proc::Async" => Ok(self.native_proc_async(attributes, method)),
+            "Proc" => Ok(self.native_proc(attributes, method)),
             "Supply" => self.native_supply(attributes, method, args),
             "Supplier" => self.native_supplier(attributes, method, args),
             _ => Err(RuntimeError::new(format!(
@@ -161,6 +198,12 @@ impl Interpreter {
                 // Immutable tap: emit all values and return a Tap instance
                 let tap_cb = args.first().cloned().unwrap_or(Value::Nil);
                 let done_cb = Self::named_value(&args, "done");
+
+                // If this Supply has a supply_id (belongs to Proc::Async),
+                // register tap in the global registry so .start can find it
+                if let Some(Value::Int(sid)) = attributes.get("supply_id") {
+                    register_supply_tap(*sid as u64, tap_cb.clone());
+                }
 
                 // For on-demand supplies, execute the callback to produce values
                 let values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
@@ -336,6 +379,12 @@ impl Interpreter {
                 let tap_cb = args.first().cloned().unwrap_or(Value::Nil);
                 let done_cb = Self::named_value(&args, "done");
 
+                // If this Supply has a supply_id (belongs to Proc::Async),
+                // register tap in the global registry so .start can find it
+                if let Some(Value::Int(sid)) = attrs.get("supply_id") {
+                    register_supply_tap(*sid as u64, tap_cb.clone());
+                }
+
                 // For on-demand supplies, execute the callback to produce values
                 let values = if let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned() {
                     let emitter = Value::make_instance("Supplier".to_string(), {
@@ -433,10 +482,13 @@ impl Interpreter {
         &mut self,
         mut attrs: HashMap<String, Value>,
         method: &str,
-        _args: Vec<Value>,
+        args: Vec<Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
         match method {
             "start" => {
+                use std::io::Read;
+                use std::process::{Command, Stdio};
+
                 attrs.insert("started".to_string(), Value::Bool(true));
 
                 // Extract command and args
@@ -452,68 +504,227 @@ impl Interpreter {
                     (prog, a)
                 };
 
+                // Get stdout/stderr taps from the global registry (populated by .tap)
+                let stdout_supply_id = attrs.get("stdout").and_then(|v| {
+                    if let Value::Instance { attributes, .. } = v
+                        && let Some(Value::Int(id)) = attributes.get("supply_id")
+                    {
+                        return Some(*id as u64);
+                    }
+                    None
+                });
+                let stderr_supply_id = attrs.get("stderr").and_then(|v| {
+                    if let Value::Instance { attributes, .. } = v
+                        && let Some(Value::Int(id)) = attributes.get("supply_id")
+                    {
+                        return Some(*id as u64);
+                    }
+                    None
+                });
+                let stdout_taps = stdout_supply_id.map(get_supply_taps).unwrap_or_default();
+                let stderr_taps = stderr_supply_id.map(get_supply_taps).unwrap_or_default();
+
+                // Check if :w flag is set (stdin should be piped)
+                let w_flag = attrs.get("w").map(|v| v.truthy()).unwrap_or(false);
+
+                // Spawn child process synchronously so we get the PID immediately
+                let mut cmd = Command::new(&program);
+                cmd.args(&cmd_args)
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped());
+                if w_flag {
+                    cmd.stdin(Stdio::piped());
+                }
+
+                let mut child = cmd.spawn().map_err(|e| {
+                    RuntimeError::new(format!("Failed to spawn '{}': {}", program, e))
+                })?;
+
+                let pid = child.id();
+                attrs.insert("pid".to_string(), Value::Int(pid as i64));
+
+                // Store stdin in global registry if piped
+                if let Some(stdin) = child.stdin.take() {
+                    let stdin_arc = Arc::new(std::sync::Mutex::new(Some(stdin)));
+                    if let Ok(mut map) = proc_stdin_map().lock() {
+                        map.insert(pid, stdin_arc);
+                    }
+                }
+
+                // Take stdout/stderr handles before moving child into thread
+                let child_stdout = child.stdout.take();
+                let child_stderr = child.stderr.take();
+
                 let promise = SharedPromise::new();
                 let ret = Value::Promise(promise.clone());
+                let cmd_arr_clone = cmd_arr.clone();
 
-                // Get stdout/stderr supply references for taps
-                let stdout_supply = attrs.get("stdout").cloned().unwrap_or(Value::Nil);
-                let _stderr_supply = attrs.get("stderr").cloned().unwrap_or(Value::Nil);
-
-                // Spawn the actual process in a thread
-                let mut thread_interp = self.clone_for_thread();
                 std::thread::spawn(move || {
-                    use std::io::BufRead;
-                    use std::process::{Command, Stdio};
-
-                    let child = Command::new(&program)
-                        .args(&cmd_args)
-                        .stdout(Stdio::piped())
-                        .stderr(Stdio::piped())
-                        .spawn();
-
-                    match child {
-                        Ok(mut child) => {
-                            // Read stdout
-                            if let Some(stdout) = child.stdout.take() {
-                                let reader = std::io::BufReader::new(stdout);
-                                for line in reader.lines() {
-                                    if let Ok(line) = line
-                                        && let Value::Instance { ref attributes, .. } =
-                                            stdout_supply
-                                        && let Some(Value::Array(taps)) = attributes.get("taps")
-                                    {
-                                        for tap in taps.iter() {
-                                            let _ = thread_interp.call_sub_value(
-                                                tap.clone(),
-                                                vec![Value::Str(line.clone())],
-                                                true,
-                                            );
-                                        }
+                    // Spawn stdout reader thread — collects all output as a string
+                    let stdout_handle = child_stdout.map(|stdout| {
+                        std::thread::spawn(move || {
+                            let mut reader = std::io::BufReader::new(stdout);
+                            let mut collected = String::new();
+                            let mut buf = [0u8; 4096];
+                            loop {
+                                match reader.read(&mut buf) {
+                                    Ok(0) => break,
+                                    Ok(n) => {
+                                        collected.push_str(&String::from_utf8_lossy(&buf[..n]));
                                     }
+                                    Err(_) => break,
                                 }
                             }
+                            collected
+                        })
+                    });
 
-                            let status = child.wait();
-                            let exit_code =
-                                status.map(|s| s.code().unwrap_or(-1)).unwrap_or(-1) as i64;
-                            let output = std::mem::take(&mut thread_interp.output);
-                            let stderr_out = std::mem::take(&mut thread_interp.stderr_output);
-                            promise.keep(Value::Int(exit_code), output, stderr_out);
+                    // Spawn stderr reader thread — collects all output as a string
+                    let stderr_handle = child_stderr.map(|stderr| {
+                        std::thread::spawn(move || {
+                            let mut reader = std::io::BufReader::new(stderr);
+                            let mut collected = String::new();
+                            let mut buf = [0u8; 4096];
+                            loop {
+                                match reader.read(&mut buf) {
+                                    Ok(0) => break,
+                                    Ok(n) => {
+                                        collected.push_str(&String::from_utf8_lossy(&buf[..n]));
+                                    }
+                                    Err(_) => break,
+                                }
+                            }
+                            collected
+                        })
+                    });
+
+                    // Wait for child to exit
+                    let status = child.wait();
+                    let exit_code = status
+                        .as_ref()
+                        .map(|s| s.code().unwrap_or(-1))
+                        .unwrap_or(-1) as i64;
+                    let signal = {
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::process::ExitStatusExt;
+                            status
+                                .as_ref()
+                                .map(|s| s.signal().unwrap_or(0))
+                                .unwrap_or(0) as i64
                         }
-                        Err(e) => {
-                            promise.break_with(
-                                Value::Str(format!("Failed to spawn '{}': {}", program, e)),
-                                String::new(),
-                                String::new(),
-                            );
+                        #[cfg(not(unix))]
+                        {
+                            0i64
                         }
+                    };
+
+                    // Join reader threads and collect output
+                    let collected_stdout = stdout_handle
+                        .and_then(|h| h.join().ok())
+                        .unwrap_or_default();
+                    let collected_stderr = stderr_handle
+                        .and_then(|h| h.join().ok())
+                        .unwrap_or_default();
+
+                    // Clean up stdin registry
+                    if let Ok(mut map) = proc_stdin_map().lock() {
+                        map.remove(&pid);
                     }
+
+                    // Fire stdout taps on the thread interpreter
+                    // (this runs in the spawned thread, but we pass
+                    // collected data and taps for replaying on .result)
+                    let mut proc_attrs = HashMap::new();
+                    proc_attrs.insert("exitcode".to_string(), Value::Int(exit_code));
+                    proc_attrs.insert("signal".to_string(), Value::Int(signal));
+                    proc_attrs.insert("command".to_string(), Value::array(cmd_arr_clone));
+                    proc_attrs.insert("pid".to_string(), Value::Int(pid as i64));
+                    // Store collected output and taps for deferred tap replay
+                    proc_attrs.insert("collected_stdout".to_string(), Value::Str(collected_stdout));
+                    proc_attrs.insert("collected_stderr".to_string(), Value::Str(collected_stderr));
+                    proc_attrs.insert("stdout_taps".to_string(), Value::array(stdout_taps));
+                    proc_attrs.insert("stderr_taps".to_string(), Value::array(stderr_taps));
+                    let proc_val = Value::make_instance("Proc".to_string(), proc_attrs);
+
+                    promise.keep(proc_val, String::new(), String::new());
                 });
 
                 Ok((ret, attrs))
             }
             "kill" => {
-                // For now, just return Nil — proper kill support would need process handle
+                if let Some(Value::Int(pid)) = attrs.get("pid") {
+                    let sig = args
+                        .first()
+                        .and_then(|v| match v {
+                            Value::Int(s) => Some(*s as i32),
+                            _ => None,
+                        })
+                        .unwrap_or(libc::SIGHUP);
+                    unsafe {
+                        libc::kill(*pid as i32, sig);
+                    }
+                }
+                Ok((Value::Nil, attrs))
+            }
+            "write" => {
+                // Write bytes (Buf) to the process's stdin
+                let data = args.first().cloned().unwrap_or(Value::Nil);
+                let bytes: Vec<u8> = match &data {
+                    Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } if class_name == "Buf" => {
+                        if let Some(Value::Array(items)) = attributes.get("bytes") {
+                            items
+                                .iter()
+                                .map(|v| match v {
+                                    Value::Int(i) => *i as u8,
+                                    _ => 0,
+                                })
+                                .collect()
+                        } else {
+                            Vec::new()
+                        }
+                    }
+                    Value::Str(s) => s.as_bytes().to_vec(),
+                    _ => Vec::new(),
+                };
+
+                if let Some(Value::Int(pid)) = attrs.get("pid") {
+                    let pid = *pid as u32;
+                    if let Ok(map) = proc_stdin_map().lock()
+                        && let Some(stdin_arc) = map.get(&pid).cloned()
+                    {
+                        drop(map);
+                        if let Ok(mut guard) = stdin_arc.lock()
+                            && let Some(ref mut stdin) = *guard
+                        {
+                            use std::io::Write;
+                            let _ = stdin.write_all(&bytes);
+                            let _ = stdin.flush();
+                        }
+                    }
+                }
+
+                // Return a kept Promise
+                let p = SharedPromise::new();
+                p.keep(Value::Bool(true), String::new(), String::new());
+                Ok((Value::Promise(p), attrs))
+            }
+            "close-stdin" => {
+                if let Some(Value::Int(pid)) = attrs.get("pid") {
+                    let pid = *pid as u32;
+                    if let Ok(map) = proc_stdin_map().lock()
+                        && let Some(stdin_arc) = map.get(&pid).cloned()
+                    {
+                        drop(map);
+                        if let Ok(mut guard) = stdin_arc.lock() {
+                            *guard = None; // Drop the ChildStdin to close it
+                        }
+                    }
+                }
                 Ok((Value::Nil, attrs))
             }
             _ => Err(RuntimeError::new(format!(
@@ -584,6 +795,39 @@ impl Interpreter {
                 .unwrap_or(Value::Bool(false)),
             "stdout" => attributes.get("stdout").cloned().unwrap_or(Value::Nil),
             "stderr" => attributes.get("stderr").cloned().unwrap_or(Value::Nil),
+            _ => Value::Nil,
+        }
+    }
+
+    // --- Proc immutable ---
+
+    fn native_proc(&self, attributes: &HashMap<String, Value>, method: &str) -> Value {
+        match method {
+            "exitcode" => attributes.get("exitcode").cloned().unwrap_or(Value::Nil),
+            "signal" => attributes.get("signal").cloned().unwrap_or(Value::Int(0)),
+            "command" => attributes
+                .get("command")
+                .cloned()
+                .unwrap_or(Value::array(Vec::new())),
+            "pid" => attributes.get("pid").cloned().unwrap_or(Value::Nil),
+            "Numeric" | "Int" => attributes
+                .get("exitcode")
+                .cloned()
+                .unwrap_or(Value::Int(-1)),
+            "Bool" => {
+                let exitcode = match attributes.get("exitcode") {
+                    Some(Value::Int(c)) => *c,
+                    _ => -1,
+                };
+                Value::Bool(exitcode == 0)
+            }
+            "Str" | "gist" => {
+                let exitcode = match attributes.get("exitcode") {
+                    Some(Value::Int(c)) => *c,
+                    _ => -1,
+                };
+                Value::Str(exitcode.to_string())
+            }
             _ => Value::Nil,
         }
     }

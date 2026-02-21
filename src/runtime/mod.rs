@@ -309,11 +309,35 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["start", "command", "started", "stdout", "stderr"]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect(),
+                native_methods: [
+                    "start",
+                    "command",
+                    "started",
+                    "stdout",
+                    "stderr",
+                    "kill",
+                    "write",
+                    "close-stdin",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
                 mro: vec!["Proc::Async".to_string()],
+            },
+        );
+        classes.insert(
+            "Proc".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: [
+                    "exitcode", "signal", "command", "pid", "Numeric", "Int", "Bool", "Str", "gist",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                mro: vec!["Proc".to_string()],
             },
         );
         classes.insert(
