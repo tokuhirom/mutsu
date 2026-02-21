@@ -37,8 +37,14 @@ impl VM {
         arity: u32,
         modifier_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        let method = Self::const_str(code, name_idx).to_string();
+        let method_raw = Self::const_str(code, name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
+        // For ^ (meta) modifier, prepend ^ to method name for dispatch
+        let method = if modifier.as_deref() == Some("^") {
+            format!("^{}", method_raw)
+        } else {
+            method_raw
+        };
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
             return Err(RuntimeError::new("VM stack underflow in CallMethod"));
@@ -88,9 +94,14 @@ impl VM {
         target_name_idx: u32,
         modifier_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        let method = Self::const_str(code, name_idx).to_string();
+        let method_raw = Self::const_str(code, name_idx).to_string();
         let target_name = Self::const_str(code, target_name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
+        let method = if modifier.as_deref() == Some("^") {
+            format!("^{}", method_raw)
+        } else {
+            method_raw
+        };
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
             return Err(RuntimeError::new("VM stack underflow in CallMethodMut"));

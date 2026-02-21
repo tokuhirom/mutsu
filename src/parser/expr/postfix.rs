@@ -318,13 +318,25 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
                 return Err(PError::expected_at("angle index key", r));
             }
             let r = &r[end + 1..];
-            // Check for :exists / :delete adverbs
+            // Check for :exists / :!exists / :delete adverbs
             if r.starts_with(":exists") && !is_ident_char(r.as_bytes().get(7).copied()) {
                 let r = &r[7..];
                 expr = Expr::Exists(Box::new(Expr::Index {
                     target: Box::new(expr),
                     index: Box::new(Expr::Literal(Value::Str(key.to_string()))),
                 }));
+                rest = r;
+                continue;
+            }
+            if r.starts_with(":!exists") && !is_ident_char(r.as_bytes().get(8).copied()) {
+                let r = &r[8..];
+                expr = Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(Expr::Exists(Box::new(Expr::Index {
+                        target: Box::new(expr),
+                        index: Box::new(Expr::Literal(Value::Str(key.to_string()))),
+                    }))),
+                };
                 rest = r;
                 continue;
             }
@@ -338,16 +350,25 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
 
         // Hash indexing with braces: %hash{"key"}, %hash{$var}, @a[0]{"key"}, etc.
         if rest.starts_with('{')
-            && matches!(&expr, Expr::HashVar(_) | Expr::Var(_) | Expr::Index { .. })
+            && matches!(
+                &expr,
+                Expr::HashVar(_)
+                    | Expr::Var(_)
+                    | Expr::Index { .. }
+                    | Expr::MethodCall { .. }
+                    | Expr::Call { .. }
+            )
         {
             let r = &rest[1..];
             let (r, _) = ws(r)?;
             let (r, index) = expression(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, '}')?;
-            // Check for :exists / :delete adverbs on curly-brace subscript
-            if r.starts_with(":exists") && !is_ident_char(r.as_bytes().get(7).copied()) {
-                let r = &r[7..];
+            // Allow whitespace before adverbs
+            let (r_adv, _) = ws(r)?;
+            // Check for :exists / :!exists / :delete adverbs on curly-brace subscript
+            if r_adv.starts_with(":exists") && !is_ident_char(r_adv.as_bytes().get(7).copied()) {
+                let r = &r_adv[7..];
                 expr = Expr::Exists(Box::new(Expr::Index {
                     target: Box::new(expr),
                     index: Box::new(index),
@@ -355,8 +376,20 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
                 rest = r;
                 continue;
             }
-            if r.starts_with(":delete") && !is_ident_char(r.as_bytes().get(7).copied()) {
-                let r = &r[7..];
+            if r_adv.starts_with(":!exists") && !is_ident_char(r_adv.as_bytes().get(8).copied()) {
+                let r = &r_adv[8..];
+                expr = Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(Expr::Exists(Box::new(Expr::Index {
+                        target: Box::new(expr),
+                        index: Box::new(index),
+                    }))),
+                };
+                rest = r;
+                continue;
+            }
+            if r_adv.starts_with(":delete") && !is_ident_char(r_adv.as_bytes().get(7).copied()) {
+                let r = &r_adv[7..];
                 // Use MethodCall as a proxy for delete operation
                 expr = Expr::MethodCall {
                     target: Box::new(Expr::Index {
@@ -376,6 +409,25 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
             };
             rest = r;
             continue;
+        }
+
+        // Adverbs on subscript expressions: :exists / :!exists / :delete
+        // These can appear with whitespace after ] or } subscripts
+        if matches!(&expr, Expr::Index { .. }) {
+            let (r_adv2, _) = ws(rest)?;
+            if r_adv2.starts_with(":exists") && !is_ident_char(r_adv2.as_bytes().get(7).copied()) {
+                rest = &r_adv2[7..];
+                expr = Expr::Exists(Box::new(expr));
+                continue;
+            }
+            if r_adv2.starts_with(":!exists") && !is_ident_char(r_adv2.as_bytes().get(8).copied()) {
+                rest = &r_adv2[8..];
+                expr = Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(Expr::Exists(Box::new(expr))),
+                };
+                continue;
+            }
         }
 
         // Hyper method call: »/>> followed by .method or method name

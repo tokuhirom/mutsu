@@ -469,9 +469,13 @@ impl VM {
                     return Err(e);
                 }
                 self.stack.truncate(saved_depth);
-                let mut exc_attrs = std::collections::HashMap::new();
-                exc_attrs.insert("message".to_string(), Value::Str(e.message.clone()));
-                let err_val = Value::make_instance("Exception".to_string(), exc_attrs);
+                let err_val = if let Some(ex) = e.exception.as_ref() {
+                    *ex.clone()
+                } else {
+                    let mut exc_attrs = std::collections::HashMap::new();
+                    exc_attrs.insert("message".to_string(), Value::Str(e.message.clone()));
+                    Value::make_instance("Exception".to_string(), exc_attrs)
+                };
                 let saved_topic = self.interpreter.env().get("_").cloned();
                 self.interpreter
                     .env_mut()

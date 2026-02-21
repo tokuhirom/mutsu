@@ -41,10 +41,38 @@ impl Interpreter {
                 // call_method_mut_with_values via target variable metadata.
                 return Ok(target);
             }
+            "start" => {
+                if let Some(cls) = self.promise_class_name(&target) {
+                    let block = args.into_iter().next().unwrap_or(Value::Nil);
+                    let promise = SharedPromise::new_with_class(cls);
+                    let ret = Value::Promise(promise.clone());
+                    let mut thread_interp = self.clone_for_thread();
+                    std::thread::spawn(move || {
+                        match thread_interp.call_sub_value(block, vec![], false) {
+                            Ok(result) => {
+                                let output = std::mem::take(&mut thread_interp.output);
+                                let stderr = std::mem::take(&mut thread_interp.stderr_output);
+                                promise.keep(result, output, stderr);
+                            }
+                            Err(e) => {
+                                let output = std::mem::take(&mut thread_interp.output);
+                                let stderr = std::mem::take(&mut thread_interp.stderr_output);
+                                let error_val = if let Some(ex) = e.exception {
+                                    *ex
+                                } else {
+                                    Value::Str(e.message)
+                                };
+                                promise.break_with(error_val, output, stderr);
+                            }
+                        }
+                    });
+                    return Ok(ret);
+                }
+            }
             "in" => {
-                if matches!(&target, Value::Package(name) if name == "Promise") {
+                if let Some(cls) = self.promise_class_name(&target) {
                     let secs = args.first().map(|v| v.to_f64()).unwrap_or(0.0).max(0.0);
-                    let promise = SharedPromise::new();
+                    let promise = SharedPromise::new_with_class(cls);
                     let ret = Value::Promise(promise.clone());
                     std::thread::spawn(move || {
                         if secs > 0.0 {
@@ -55,9 +83,47 @@ impl Interpreter {
                     return Ok(ret);
                 }
             }
+            "at" => {
+                if let Some(cls) = self.promise_class_name(&target) {
+                    let at_time = args.first().map(|v| v.to_f64()).unwrap_or(0.0);
+                    let now = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs_f64();
+                    let delay = (at_time - now).max(0.0);
+                    let promise = SharedPromise::new_with_class(cls);
+                    let ret = Value::Promise(promise.clone());
+                    std::thread::spawn(move || {
+                        if delay > 0.0 {
+                            std::thread::sleep(Duration::from_secs_f64(delay));
+                        }
+                        promise.keep(Value::Bool(true), String::new(), String::new());
+                    });
+                    return Ok(ret);
+                }
+            }
+            "kept" => {
+                if let Some(cls) = self.promise_class_name(&target) {
+                    let value = args.into_iter().next().unwrap_or(Value::Bool(true));
+                    let promise = SharedPromise::new_with_class(cls);
+                    promise.keep(value, String::new(), String::new());
+                    return Ok(Value::Promise(promise));
+                }
+            }
+            "broken" => {
+                if let Some(cls) = self.promise_class_name(&target) {
+                    let reason_val = args
+                        .into_iter()
+                        .next()
+                        .unwrap_or_else(|| Value::Str("Died".to_string()));
+                    let promise = SharedPromise::new_with_class(cls);
+                    promise.break_with(reason_val, String::new(), String::new());
+                    return Ok(Value::Promise(promise));
+                }
+            }
             "allof" => {
-                if matches!(&target, Value::Package(name) if name == "Promise") {
-                    let promise = SharedPromise::new();
+                if let Some(cls) = self.promise_class_name(&target) {
+                    let promise = SharedPromise::new_with_class(cls);
                     let ret = Value::Promise(promise.clone());
                     let mut promises = Vec::new();
                     for arg in &args {
@@ -83,8 +149,8 @@ impl Interpreter {
                 }
             }
             "anyof" => {
-                if matches!(&target, Value::Package(name) if name == "Promise") {
-                    let promise = SharedPromise::new();
+                if let Some(cls) = self.promise_class_name(&target) {
+                    let promise = SharedPromise::new_with_class(cls);
                     let ret = Value::Promise(promise.clone());
                     let mut promises = Vec::new();
                     for arg in &args {
@@ -157,10 +223,15 @@ impl Interpreter {
                 };
                 return Ok(Value::Package(type_name.to_string()));
             }
+            "WHO" if args.is_empty() => {
+                // Return package stash as a hash (empty for now)
+                return Ok(Value::Hash(Arc::new(HashMap::new())));
+            }
             "^name" if args.is_empty() => {
                 return Ok(Value::Str(match &target {
                     Value::Package(name) => name.clone(),
                     Value::Instance { class_name, .. } => class_name.clone(),
+                    Value::Promise(p) => p.class_name(),
                     other => value_type_name(other).to_string(),
                 }));
             }
@@ -391,12 +462,29 @@ impl Interpreter {
         // SharedPromise dispatch
         if let Value::Promise(ref shared) = target {
             return match method {
-                "result" => Ok(shared.result_blocking()),
+                "result" => {
+                    let status = shared.status();
+                    if status == "Broken" {
+                        // .result on a Broken promise throws the cause as X::AdHoc
+                        let (result, _, _) = shared.wait();
+                        let msg = result.to_string_value();
+                        let mut attrs = HashMap::new();
+                        attrs.insert("payload".to_string(), Value::Str(msg.clone()));
+                        attrs.insert("message".to_string(), Value::Str(msg.clone()));
+                        let ex = Value::make_instance("X::AdHoc".to_string(), attrs);
+                        let mut err = RuntimeError::new(msg);
+                        err.exception = Some(Box::new(ex));
+                        Err(err)
+                    } else {
+                        // Planned blocks, Kept returns value
+                        Ok(shared.result_blocking())
+                    }
+                }
                 "status" => Ok(Value::Str(shared.status())),
                 "then" => {
                     let block = args.into_iter().next().unwrap_or(Value::Nil);
                     let orig = shared.clone();
-                    let new_promise = SharedPromise::new();
+                    let new_promise = SharedPromise::new_with_class(shared.class_name());
                     let ret = Value::Promise(new_promise.clone());
                     let mut thread_interp = self.clone_for_thread();
                     std::thread::spawn(move || {
@@ -414,8 +502,13 @@ impl Interpreter {
                             Err(e) => {
                                 let out = std::mem::take(&mut thread_interp.output);
                                 let err = std::mem::take(&mut thread_interp.stderr_output);
+                                let error_val = if let Some(ex) = e.exception {
+                                    *ex
+                                } else {
+                                    Value::Str(e.message)
+                                };
                                 new_promise.break_with(
-                                    e.message,
+                                    error_val,
                                     format!("{}{}", output, out),
                                     format!("{}{}", stderr, err),
                                 );
@@ -425,34 +518,126 @@ impl Interpreter {
                     Ok(ret)
                 }
                 "keep" => {
-                    let value = args.into_iter().next().unwrap_or(Value::Nil);
-                    shared.keep(value, String::new(), String::new());
-                    Ok(Value::Nil)
-                }
-                "break" => {
-                    let reason = args
-                        .into_iter()
-                        .next()
-                        .unwrap_or(Value::Nil)
-                        .to_string_value();
-                    shared.break_with(reason, String::new(), String::new());
-                    Ok(Value::Nil)
-                }
-                "cause" => {
-                    let (result, _, _) = shared.wait();
-                    if shared.status() == "Broken" {
-                        Ok(result)
+                    let value = args.into_iter().next().unwrap_or(Value::Bool(true));
+                    if let Err(_status) = shared.try_keep(value) {
+                        let mut attrs = HashMap::new();
+                        attrs.insert(
+                            "message".to_string(),
+                            Value::Str(
+                                "Access denied to keep/break this Promise; already vowed"
+                                    .to_string(),
+                            ),
+                        );
+                        let ex = Value::make_instance("X::Promise::Vowed".to_string(), attrs);
+                        let mut err = RuntimeError::new(
+                            "Access denied to keep/break this Promise; already vowed".to_string(),
+                        );
+                        err.exception = Some(Box::new(ex));
+                        Err(err)
                     } else {
                         Ok(Value::Nil)
                     }
                 }
-                "Bool" => Ok(Value::Bool(true)),
-                "WHAT" => Ok(Value::Package("Promise".to_string())),
+                "break" => {
+                    let reason_val = args
+                        .into_iter()
+                        .next()
+                        .unwrap_or_else(|| Value::Str("Died".to_string()));
+                    if let Err(_status) = shared.try_break(reason_val) {
+                        let mut attrs = HashMap::new();
+                        attrs.insert(
+                            "message".to_string(),
+                            Value::Str(
+                                "Access denied to keep/break this Promise; already vowed"
+                                    .to_string(),
+                            ),
+                        );
+                        let ex = Value::make_instance("X::Promise::Vowed".to_string(), attrs);
+                        let mut err = RuntimeError::new(
+                            "Access denied to keep/break this Promise; already vowed".to_string(),
+                        );
+                        err.exception = Some(Box::new(ex));
+                        Err(err)
+                    } else {
+                        Ok(Value::Nil)
+                    }
+                }
+                "cause" => {
+                    let status = shared.status();
+                    if status != "Broken" {
+                        let mut attrs = HashMap::new();
+                        attrs.insert("status".to_string(), Value::Str(status.clone()));
+                        attrs.insert(
+                            "message".to_string(),
+                            Value::Str(format!(
+                                "Can only call '.cause' on a broken promise (status: {})",
+                                status
+                            )),
+                        );
+                        let ex = Value::make_instance(
+                            "X::Promise::CauseOnlyValidOnBroken".to_string(),
+                            attrs,
+                        );
+                        let mut err = RuntimeError::new(format!(
+                            "Can only call '.cause' on a broken promise (status: {})",
+                            status
+                        ));
+                        err.exception = Some(Box::new(ex));
+                        Err(err)
+                    } else {
+                        // Broken
+                        let (result, _, _) = shared.wait();
+                        // Wrap in X::AdHoc if it's a plain string
+                        let cause = match &result {
+                            Value::Instance { class_name, .. }
+                                if class_name.contains("Exception")
+                                    || class_name.starts_with("X::") =>
+                            {
+                                result
+                            }
+                            _ => {
+                                let mut attrs = HashMap::new();
+                                attrs.insert(
+                                    "payload".to_string(),
+                                    Value::Str(result.to_string_value()),
+                                );
+                                attrs.insert(
+                                    "message".to_string(),
+                                    Value::Str(result.to_string_value()),
+                                );
+                                Value::make_instance("X::AdHoc".to_string(), attrs)
+                            }
+                        };
+                        Ok(cause)
+                    }
+                }
+                "Bool" => Ok(Value::Bool(shared.is_resolved())),
+                "vow" => {
+                    // Return a simple Vow object
+                    let mut attrs = HashMap::new();
+                    attrs.insert("promise".to_string(), target.clone());
+                    Ok(Value::make_instance("Promise::Vow".to_string(), attrs))
+                }
+                "WHAT" => Ok(Value::Package(shared.class_name())),
                 "raku" | "perl" => Ok(Value::Str(format!(
                     "Promise.new(status => {})",
                     shared.status()
                 ))),
                 "Str" | "gist" => Ok(Value::Str(format!("Promise({})", shared.status()))),
+                "isa" => {
+                    let target_name = match args.first().cloned().unwrap_or(Value::Nil) {
+                        Value::Package(name) => name,
+                        Value::Str(name) => name,
+                        other => other.to_string_value(),
+                    };
+                    let cn = shared.class_name();
+                    let is_match = cn == target_name
+                        || target_name == "Promise"
+                        || target_name == "Any"
+                        || target_name == "Mu"
+                        || self.class_mro(&cn).contains(&target_name);
+                    Ok(Value::Bool(is_match))
+                }
                 _ => Err(RuntimeError::new(format!(
                     "No method '{}' on Promise",
                     method
@@ -505,6 +690,15 @@ impl Interpreter {
                 return Ok(Value::Bool(
                     self.class_mro(class_name).contains(&target_name),
                 ));
+            }
+            if method == "gist"
+                && args.is_empty()
+                && (class_name.starts_with("X::")
+                    || class_name == "Exception"
+                    || class_name.ends_with("Exception"))
+                && let Some(msg) = attributes.get("message")
+            {
+                return Ok(Value::Str(msg.to_string_value()));
             }
             if (method == "raku" || method == "perl") && args.is_empty() {
                 if class_name == "ObjAt" {
@@ -1299,5 +1493,21 @@ impl Interpreter {
         attrs.insert("host".to_string(), Value::Str(host));
         attrs.insert("port".to_string(), Value::Int(port as i64));
         Ok(Value::make_instance("IO::Socket::INET".to_string(), attrs))
+    }
+
+    /// Returns Some(class_name) if target is Promise or a Promise subclass package.
+    fn promise_class_name(&mut self, target: &Value) -> Option<String> {
+        match target {
+            Value::Package(name) => {
+                if name == "Promise" {
+                    Some("Promise".to_string())
+                } else if self.class_mro(name).contains(&"Promise".to_string()) {
+                    Some(name.clone())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
     }
 }

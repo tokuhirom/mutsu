@@ -44,6 +44,8 @@ pub struct RuntimeError {
     pub is_succeed: bool,
     pub is_fail: bool,
     pub label: Option<String>,
+    /// Structured exception object (e.g. X::AdHoc, X::Promise::Vowed)
+    pub exception: Option<Box<Value>>,
 }
 
 impl RuntimeError {
@@ -62,6 +64,7 @@ impl RuntimeError {
             is_succeed: false,
             is_fail: false,
             label: None,
+            exception: None,
         }
     }
 
@@ -85,6 +88,7 @@ impl RuntimeError {
             is_succeed: false,
             is_fail: false,
             label: None,
+            exception: None,
         }
     }
 
@@ -103,6 +107,7 @@ impl RuntimeError {
             is_succeed: false,
             is_fail: false,
             label: None,
+            exception: None,
         }
     }
 
@@ -121,6 +126,7 @@ impl RuntimeError {
             is_succeed: false,
             is_fail: false,
             label: None,
+            exception: None,
         }
     }
 
@@ -139,6 +145,7 @@ impl RuntimeError {
             is_succeed: false,
             is_fail: false,
             label: None,
+            exception: None,
         }
     }
 
@@ -157,6 +164,7 @@ impl RuntimeError {
             is_succeed: false,
             is_fail: false,
             label: None,
+            exception: None,
         }
     }
 
@@ -175,6 +183,7 @@ impl RuntimeError {
             is_succeed: true,
             is_fail: false,
             label: None,
+            exception: None,
         }
     }
 }
