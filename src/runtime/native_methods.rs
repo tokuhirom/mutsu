@@ -502,7 +502,7 @@ impl Interpreter {
                         }
                         Err(e) => {
                             promise.break_with(
-                                format!("Failed to spawn '{}': {}", program, e),
+                                Value::Str(format!("Failed to spawn '{}': {}", program, e)),
                                 String::new(),
                                 String::new(),
                             );

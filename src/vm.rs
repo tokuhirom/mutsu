@@ -889,6 +889,7 @@ impl VM {
                     is_succeed: false,
                     is_fail: false,
                     label: None,
+                    exception: None,
                 });
             }
 

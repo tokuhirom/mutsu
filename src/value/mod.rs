@@ -171,6 +171,7 @@ struct PromiseState {
     result: Value,
     output: String, // captured stdout from thread
     stderr_output: String,
+    class_name: String, // "Promise" or subclass name
 }
 
 #[derive(Debug, Clone)]
@@ -180,6 +181,10 @@ pub(crate) struct SharedPromise {
 
 impl SharedPromise {
     pub(crate) fn new() -> Self {
+        Self::new_with_class("Promise".to_string())
+    }
+
+    pub(crate) fn new_with_class(class_name: String) -> Self {
         Self {
             inner: Arc::new((
                 Mutex::new(PromiseState {
@@ -187,6 +192,7 @@ impl SharedPromise {
                     result: Value::Nil,
                     output: String::new(),
                     stderr_output: String::new(),
+                    class_name,
                 }),
                 Condvar::new(),
             )),
@@ -202,10 +208,16 @@ impl SharedPromise {
                     result,
                     output: String::new(),
                     stderr_output: String::new(),
+                    class_name: "Promise".to_string(),
                 }),
                 Condvar::new(),
             )),
         }
+    }
+
+    pub(crate) fn class_name(&self) -> String {
+        let (lock, _) = &*self.inner;
+        lock.lock().unwrap().class_name.clone()
     }
 
     pub(crate) fn keep(&self, result: Value, output: String, stderr: String) {
@@ -218,14 +230,46 @@ impl SharedPromise {
         cvar.notify_all();
     }
 
-    pub(crate) fn break_with(&self, error: String, output: String, stderr: String) {
+    /// Try to keep; returns Err(current_status) if already kept/broken.
+    pub(crate) fn try_keep(&self, result: Value) -> Result<(), String> {
+        let (lock, cvar) = &*self.inner;
+        let mut state = lock.lock().unwrap();
+        if state.status != "Planned" {
+            return Err(state.status.clone());
+        }
+        state.status = "Kept".to_string();
+        state.result = result;
+        cvar.notify_all();
+        Ok(())
+    }
+
+    pub(crate) fn break_with(&self, error: Value, output: String, stderr: String) {
         let (lock, cvar) = &*self.inner;
         let mut state = lock.lock().unwrap();
         state.status = "Broken".to_string();
-        state.result = Value::Str(error);
+        state.result = error;
         state.output = output;
         state.stderr_output = stderr;
         cvar.notify_all();
+    }
+
+    /// Try to break; returns Err(current_status) if already kept/broken.
+    pub(crate) fn try_break(&self, error: Value) -> Result<(), String> {
+        let (lock, cvar) = &*self.inner;
+        let mut state = lock.lock().unwrap();
+        if state.status != "Planned" {
+            return Err(state.status.clone());
+        }
+        state.status = "Broken".to_string();
+        state.result = error;
+        cvar.notify_all();
+        Ok(())
+    }
+
+    /// Check if promise is resolved (Kept or Broken).
+    pub(crate) fn is_resolved(&self) -> bool {
+        let (lock, _) = &*self.inner;
+        lock.lock().unwrap().status != "Planned"
     }
 
     pub(crate) fn status(&self) -> String {

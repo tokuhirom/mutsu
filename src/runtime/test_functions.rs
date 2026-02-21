@@ -469,28 +469,112 @@ impl Interpreter {
             .strip_prefix('(')
             .and_then(|s| s.strip_suffix(')'))
             .unwrap_or(&expected);
-        let ok = match result {
-            Ok(_) => false,
+
+        // Collect named attribute matchers from args (e.g., status => 'Kept')
+        let mut named_matchers: Vec<(String, Value)> = Vec::new();
+        for arg in args.iter().skip(2) {
+            if let Value::Pair(key, val) = arg {
+                named_matchers.push((key.clone(), *val.clone()));
+            }
+        }
+
+        let (type_ok, exception_val) = match &result {
+            Ok(_) => (false, None),
             Err(err) => {
-                if expected_normalized.is_empty() || expected_normalized == "Exception" {
-                    // Any exception matches the base Exception type
-                    true
-                } else if expected_normalized == "X::Comp"
-                    || expected_normalized == "X::Comp::Group"
-                {
-                    // X::Comp is a base class for all compile-time errors
-                    // X::Syntax::*, X::Undeclared, etc. are all X::Comp
-                    err.message.contains("X::Syntax")
-                        || err.message.contains("X::Comp")
-                        || err.message.contains("X::Undeclared")
-                        || err.message.contains("X::Obsolete")
-                } else {
-                    err.message.contains(expected_normalized)
-                }
+                // Check exception field first for structured exceptions
+                let ex_class = err.exception.as_ref().and_then(|ex| {
+                    if let Value::Instance { class_name, .. } = ex.as_ref() {
+                        Some(class_name.as_str())
+                    } else {
+                        None
+                    }
+                });
+                let type_matched =
+                    if expected_normalized.is_empty() || expected_normalized == "Exception" {
+                        true
+                    } else if let Some(cls) = ex_class {
+                        cls == expected_normalized
+                            || cls.starts_with(&format!("{}::", expected_normalized))
+                    } else if expected_normalized == "X::Comp"
+                        || expected_normalized == "X::Comp::Group"
+                    {
+                        err.message.contains("X::Syntax")
+                            || err.message.contains("X::Comp")
+                            || err.message.contains("X::Undeclared")
+                            || err.message.contains("X::Obsolete")
+                    } else if expected_normalized == "X::AdHoc" {
+                        // X::AdHoc matches any ad-hoc error
+                        true
+                    } else {
+                        err.message.contains(expected_normalized)
+                    };
+                (
+                    type_matched,
+                    err.exception.as_ref().map(|e| e.as_ref().clone()),
+                )
             }
         };
-        self.test_ok(ok, &desc, false)?;
-        Ok(Value::Bool(ok))
+
+        // Use subtest format when there are named matchers
+        if !named_matchers.is_empty() {
+            let ctx = self.begin_subtest();
+            let total = 2 + named_matchers.len();
+            let state = self.test_state.get_or_insert_with(TestState::new);
+            state.planned = Some(total);
+            self.output.push_str(&format!("1..{}\n", total));
+            self.test_ok(result.is_err(), "code dies", false)?;
+            self.test_ok(
+                type_ok,
+                &format!("right exception type ({})", expected_normalized),
+                false,
+            )?;
+            for (attr_name, expected_val) in &named_matchers {
+                let actual_val = exception_val.as_ref().and_then(|ex| {
+                    if let Value::Instance { attributes, .. } = ex {
+                        attributes.get(attr_name).cloned()
+                    } else {
+                        None
+                    }
+                });
+                let actual_str = actual_val
+                    .as_ref()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let matched = match expected_val {
+                    Value::Regex(pattern) => self
+                        .regex_match_with_captures(pattern, &actual_str)
+                        .is_some(),
+                    _ => actual_str == expected_val.to_string_value(),
+                };
+                let expected_display = match expected_val {
+                    Value::Regex(pattern) => format!("/{}/", pattern),
+                    _ => expected_val.to_string_value(),
+                };
+                self.test_ok(
+                    matched,
+                    &format!(".{} matches {}", attr_name, expected_display),
+                    false,
+                )?;
+            }
+            let all_ok = type_ok && result.is_err();
+            let label = if desc.is_empty() {
+                format!("did we throws-like {}?", expected_normalized)
+            } else {
+                desc.clone()
+            };
+            self.finish_subtest(
+                ctx,
+                &label,
+                if all_ok {
+                    Ok(())
+                } else {
+                    Err(RuntimeError::new(""))
+                },
+            )?;
+        } else {
+            self.test_ok(type_ok, &desc, false)?;
+        }
+        Ok(Value::Bool(type_ok))
     }
 
     fn test_fn_is_run(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

@@ -102,7 +102,7 @@ impl Value {
             },
             Value::Slip(items) => !items.is_empty(),
             Value::LazyList(_) => true,
-            Value::Promise(_) => true,
+            Value::Promise(p) => p.is_resolved(),
             Value::Channel(_) => true,
             Value::Regex(_) => true,
             Value::Version { .. } => true,
@@ -148,7 +148,17 @@ impl Value {
             Value::Junction { .. } => "Junction",
             Value::Version { .. } => "Version",
             Value::Slip(_) => "Slip",
-            Value::Promise(_) => "Promise",
+            Value::Promise(p) => {
+                let cn = p.class_name();
+                if cn != "Promise" && type_name == cn {
+                    return true;
+                }
+                // Also check if type_name is "Promise" (parent)
+                if type_name == "Promise" {
+                    return true;
+                }
+                "Promise"
+            }
             Value::Channel(_) => "Channel",
             Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
             Value::HyperWhatever => "HyperWhatever",
@@ -198,6 +208,20 @@ impl Value {
                     self,
                     Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
                 )
+            }
+            "Exception" => {
+                if let Value::Instance { class_name, .. } = self {
+                    class_name.starts_with("X::") || class_name == "Exception"
+                } else {
+                    false
+                }
+            }
+            "X::AdHoc" => {
+                if let Value::Instance { class_name, .. } = self {
+                    class_name == "X::AdHoc"
+                } else {
+                    false
+                }
             }
             "Seq" | "List" => matches!(self, Value::Array(_) | Value::LazyList(_) | Value::Slip(_)),
             "Positional" => matches!(self, Value::Array(_) | Value::LazyList(_)),

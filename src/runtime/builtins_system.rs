@@ -425,7 +425,12 @@ impl Interpreter {
                 Err(e) => {
                     let output = std::mem::take(&mut thread_interp.output);
                     let stderr = std::mem::take(&mut thread_interp.stderr_output);
-                    promise.break_with(e.message, output, stderr);
+                    let error_val = if let Some(ex) = e.exception {
+                        *ex
+                    } else {
+                        Value::Str(e.message)
+                    };
+                    promise.break_with(error_val, output, stderr);
                 }
             },
         );
@@ -435,6 +440,11 @@ impl Interpreter {
 
     /// `await` — block until Promise(s) resolve, then return their results.
     pub(super) fn builtin_await(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.is_empty() {
+            return Err(RuntimeError::new(
+                "Must specify a Promise or list of Promises to await",
+            ));
+        }
         let mut results = Vec::new();
         for arg in args {
             match arg {
@@ -442,6 +452,36 @@ impl Interpreter {
                     let (result, output, stderr) = shared.wait();
                     self.output.push_str(&output);
                     self.stderr_output.push_str(&stderr);
+                    if shared.status() == "Broken" {
+                        self.sync_shared_vars_to_env();
+                        let msg = result.to_string_value();
+                        let mut err = RuntimeError::new(msg);
+                        // Preserve exception object if it's already an exception instance
+                        match &result {
+                            Value::Instance { class_name, .. }
+                                if class_name.starts_with("X::")
+                                    || class_name == "Exception"
+                                    || class_name.ends_with("Exception") =>
+                            {
+                                err.exception = Some(Box::new(result));
+                            }
+                            _ => {
+                                // Wrap in X::AdHoc
+                                let mut attrs = std::collections::HashMap::new();
+                                attrs.insert(
+                                    "payload".to_string(),
+                                    Value::Str(result.to_string_value()),
+                                );
+                                attrs.insert(
+                                    "message".to_string(),
+                                    Value::Str(result.to_string_value()),
+                                );
+                                let ex = Value::make_instance("X::AdHoc".to_string(), attrs);
+                                err.exception = Some(Box::new(ex));
+                            }
+                        }
+                        return Err(err);
+                    }
                     results.push(result);
                 }
                 // Backward compat: Instance-based Promise
@@ -460,6 +500,11 @@ impl Interpreter {
                                 let (result, output, stderr) = shared.wait();
                                 self.output.push_str(&output);
                                 self.stderr_output.push_str(&stderr);
+                                if shared.status() == "Broken" {
+                                    self.sync_shared_vars_to_env();
+                                    let msg = result.to_string_value();
+                                    return Err(RuntimeError::new(msg));
+                                }
                                 results.push(result);
                             }
                             Value::Instance {
