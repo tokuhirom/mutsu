@@ -230,6 +230,14 @@ impl Interpreter {
         if constraint == "Stringy" && matches!(value_type, "Str") {
             return true;
         }
+        if matches!(constraint, "Callable" | "Code" | "Block")
+            && matches!(value_type, "Sub" | "Routine")
+        {
+            return true;
+        }
+        if constraint == "Routine" && matches!(value_type, "Sub" | "Routine") {
+            return true;
+        }
         // Role-like type relationships
         if constraint == "Positional" && matches!(value_type, "Array" | "List" | "Seq") {
             return true;

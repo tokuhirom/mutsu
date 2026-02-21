@@ -836,6 +836,21 @@ impl Interpreter {
         // Pairs are treated as named args by positional_value, so check raw args first
         let (label, block) = if let Some(Value::Pair(key, val)) = args.first() {
             (key.to_string(), *val.clone())
+        } else if let Some(first) = args.first() {
+            if matches!(
+                first,
+                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            ) {
+                let block = first.clone();
+                let label = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
+                (label, block)
+            } else {
+                let label = Self::positional_string(args, 0);
+                let block = Self::positional_value(args, 1)
+                    .cloned()
+                    .unwrap_or(Value::Nil);
+                (label, block)
+            }
         } else {
             let label = Self::positional_string(args, 0);
             let block = Self::positional_value(args, 1)

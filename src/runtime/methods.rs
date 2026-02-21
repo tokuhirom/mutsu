@@ -331,6 +331,16 @@ impl Interpreter {
             "Map" | "Hash" if args.is_empty() => {
                 return self.dispatch_to_hash(target);
             }
+            "any" | "all" | "one" | "none" if args.is_empty() => {
+                let kind = match method {
+                    "any" => JunctionKind::Any,
+                    "all" => JunctionKind::All,
+                    "one" => JunctionKind::One,
+                    _ => JunctionKind::None,
+                };
+                let values = Self::value_to_list(&target);
+                return Ok(Value::junction(kind, values));
+            }
             "map" => {
                 let items = Self::value_to_list(&target);
                 return self.eval_map_over_items(args.first().cloned(), items);
