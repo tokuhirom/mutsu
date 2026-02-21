@@ -179,6 +179,11 @@ impl VM {
                 let val = self
                     .get_env_with_main_alias(name)
                     .or_else(|| self.get_local_by_bare_name(code, name))
+                    .or_else(|| {
+                        // Fallback: check bare name in env (for closures capturing params)
+                        name.strip_prefix('@')
+                            .and_then(|bare| self.interpreter.env().get(bare).cloned())
+                    })
                     .unwrap_or(Value::Nil);
                 self.stack.push(val);
                 *ip += 1;
@@ -188,6 +193,10 @@ impl VM {
                 let val = self
                     .get_env_with_main_alias(name)
                     .or_else(|| self.get_local_by_bare_name(code, name))
+                    .or_else(|| {
+                        name.strip_prefix('%')
+                            .and_then(|bare| self.interpreter.env().get(bare).cloned())
+                    })
                     .unwrap_or(Value::Nil);
                 self.stack.push(val);
                 *ip += 1;

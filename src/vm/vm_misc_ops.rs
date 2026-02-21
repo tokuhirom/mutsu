@@ -265,6 +265,12 @@ impl VM {
         op_idx: u32,
     ) -> Result<(), RuntimeError> {
         let op = Self::const_str(code, op_idx).to_string();
+        // Handle negated reduction operators like [!after], [!before]
+        let (negate, base_op) = if let Some(stripped) = op.strip_prefix('!') {
+            (true, stripped.to_string())
+        } else {
+            (false, op.clone())
+        };
         let list_value = self.stack.pop().unwrap_or(Value::Nil);
         let list = if let Value::LazyList(ref ll) = list_value {
             self.interpreter.force_lazy_list_bridge(ll)?
@@ -272,15 +278,17 @@ impl VM {
             runtime::value_to_list(&list_value)
         };
         if list.is_empty() {
-            self.stack.push(runtime::reduction_identity(&op));
+            self.stack.push(runtime::reduction_identity(&base_op));
         } else {
             let is_comparison = matches!(
-                op.as_str(),
+                base_op.as_str(),
                 "eq" | "ne"
                     | "lt"
                     | "gt"
                     | "le"
                     | "ge"
+                    | "after"
+                    | "before"
                     | "=="
                     | "!="
                     | "<"
@@ -295,8 +303,9 @@ impl VM {
             if is_comparison {
                 let mut result = true;
                 for i in 0..list.len() - 1 {
-                    let v = Interpreter::apply_reduction_op(&op, &list[i], &list[i + 1])?;
-                    if !v.truthy() {
+                    let v = Interpreter::apply_reduction_op(&base_op, &list[i], &list[i + 1])?;
+                    let truthy = if negate { !v.truthy() } else { v.truthy() };
+                    if !truthy {
                         result = false;
                         break;
                     }
@@ -305,7 +314,8 @@ impl VM {
             } else {
                 let mut acc = list[0].clone();
                 for item in &list[1..] {
-                    acc = Interpreter::apply_reduction_op(&op, &acc, item)?;
+                    let v = Interpreter::apply_reduction_op(&base_op, &acc, item)?;
+                    acc = if negate { Value::Bool(!v.truthy()) } else { v };
                 }
                 self.stack.push(acc);
             }

@@ -145,6 +145,12 @@ impl Interpreter {
             "ge" => Ok(Value::Bool(
                 left.to_string_value() >= right.to_string_value(),
             )),
+            "after" => Ok(Value::Bool(
+                left.to_string_value() > right.to_string_value(),
+            )),
+            "before" => Ok(Value::Bool(
+                left.to_string_value() < right.to_string_value(),
+            )),
             "leg" => {
                 let ord = left.to_string_value().cmp(&right.to_string_value());
                 Ok(super::make_order(ord))
