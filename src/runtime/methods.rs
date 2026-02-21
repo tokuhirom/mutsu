@@ -43,11 +43,13 @@ impl Interpreter {
             }
             "in" => {
                 if matches!(&target, Value::Package(name) if name == "Promise") {
-                    let secs = args.first().map(|v| v.to_f64()).unwrap_or(0.0);
+                    let secs = args.first().map(|v| v.to_f64()).unwrap_or(0.0).max(0.0);
                     let promise = SharedPromise::new();
                     let ret = Value::Promise(promise.clone());
                     std::thread::spawn(move || {
-                        std::thread::sleep(Duration::from_secs_f64(secs));
+                        if secs > 0.0 {
+                            std::thread::sleep(Duration::from_secs_f64(secs));
+                        }
                         promise.keep(Value::Bool(true), String::new(), String::new());
                     });
                     return Ok(ret);

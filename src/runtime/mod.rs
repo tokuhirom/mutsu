@@ -10,7 +10,7 @@ use std::os::unix::fs::{self as unix_fs, PermissionsExt};
 use std::os::windows::fs as windows_fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -228,6 +228,9 @@ pub struct Interpreter {
     state_vars: HashMap<String, Value>,
     let_saves: Vec<(String, Value)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
+    /// Shared variables between threads. When `start` spawns a thread,
+    /// `@` variables are stored here so both parent and child can see mutations.
+    shared_vars: Arc<Mutex<HashMap<String, Value>>>,
 }
 
 pub(crate) struct SubtestContext {
@@ -549,6 +552,7 @@ impl Interpreter {
             state_vars: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
+            shared_vars: Arc::new(Mutex::new(HashMap::new())),
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -624,7 +628,19 @@ impl Interpreter {
 
     /// Create a lightweight clone of this interpreter for use in a spawned thread.
     /// Shares function/class/role/enum definitions but starts with fresh output and test state.
-    pub(crate) fn clone_for_thread(&self) -> Self {
+    /// Array (`@`) variables are shared between parent and child via `shared_vars`
+    /// so that mutations (push, pop, etc.) are visible across threads.
+    pub(crate) fn clone_for_thread(&mut self) -> Self {
+        // Copy @ variables into shared_vars so both parent and child see mutations
+        let shared = Arc::clone(&self.shared_vars);
+        {
+            let mut sv = shared.lock().unwrap();
+            for (key, val) in &self.env {
+                if key.starts_with('@') {
+                    sv.insert(key.clone(), val.clone());
+                }
+            }
+        }
         Self {
             env: self.env.clone(),
             output: String::new(),
@@ -656,6 +672,38 @@ impl Interpreter {
             state_vars: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
+            shared_vars: Arc::clone(&self.shared_vars),
+        }
+    }
+
+    /// Read a shared array variable. If the variable is in shared_vars, return
+    /// the shared version (which may have been mutated by another thread).
+    pub(crate) fn get_shared_var(&self, key: &str) -> Option<Value> {
+        if key.starts_with('@') {
+            let sv = self.shared_vars.lock().unwrap();
+            sv.get(key).cloned()
+        } else {
+            None
+        }
+    }
+
+    /// Write a shared array variable. Updates both the local env and shared_vars.
+    pub(crate) fn set_shared_var(&mut self, key: &str, value: Value) {
+        self.env.insert(key.to_string(), value.clone());
+        if key.starts_with('@') {
+            let mut sv = self.shared_vars.lock().unwrap();
+            if sv.contains_key(key) {
+                sv.insert(key.to_string(), value);
+            }
+        }
+    }
+
+    /// Sync shared variables back from shared_vars into the local env.
+    /// Called after await/sleep to pick up mutations from other threads.
+    pub(crate) fn sync_shared_vars_to_env(&mut self) {
+        let sv = self.shared_vars.lock().unwrap();
+        for (key, val) in sv.iter() {
+            self.env.insert(key.clone(), val.clone());
         }
     }
 }
