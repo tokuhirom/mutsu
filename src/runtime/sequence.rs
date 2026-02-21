@@ -9,7 +9,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let seeds_raw = Self::value_to_list(&left);
         if seeds_raw.is_empty() {
-            return Ok(Value::Array(vec![]));
+            return Ok(Value::array(vec![]));
         }
 
         // Separate seed values from generator closure
@@ -190,7 +190,7 @@ impl Interpreter {
                     result.push(s.clone());
                 }
                 result.extend(extra_rhs);
-                return Ok(Value::Array(result));
+                return Ok(Value::array(result));
             }
         }
 
@@ -222,7 +222,7 @@ impl Interpreter {
                         result.push(s.clone());
                     }
                     result.extend(extra_rhs);
-                    return Ok(Value::Array(result));
+                    return Ok(Value::array(result));
                 }
             } else {
                 // Alternating (negative ratio): check |value| against |endpoint|
@@ -251,7 +251,7 @@ impl Interpreter {
                             result.push(s.clone());
                         }
                         result.extend(extra_rhs);
-                        return Ok(Value::Array(result));
+                        return Ok(Value::array(result));
                     }
                 }
             }
@@ -304,7 +304,7 @@ impl Interpreter {
                         let end = if exclusive { i } else { i + 1 };
                         let mut result: Vec<Value> = seeds[..end].to_vec();
                         result.extend(extra_rhs);
-                        return Ok(Value::Array(result));
+                        return Ok(Value::array(result));
                     }
                 }
             }
@@ -315,7 +315,7 @@ impl Interpreter {
                         let end = if exclusive { i } else { i + 1 };
                         let mut result: Vec<Value> = seeds[..end].to_vec();
                         result.extend(extra_rhs);
-                        return Ok(Value::Array(result));
+                        return Ok(Value::array(result));
                     }
                 }
             }
@@ -337,11 +337,11 @@ impl Interpreter {
                     }
                     let mut result: Vec<Value> = seeds[..end].to_vec();
                     result.extend(extra_rhs);
-                    return Ok(Value::Array(result));
+                    return Ok(Value::array(result));
                 } else {
                     let mut result = seeds.clone();
                     result.extend(extra_rhs);
-                    return Ok(Value::Array(result));
+                    return Ok(Value::array(result));
                 }
             }
             // For geometric/alternating: also check if the endpoint matches earlier seeds
@@ -351,11 +351,11 @@ impl Interpreter {
                         if exclusive {
                             let mut result: Vec<Value> = seeds[..i].to_vec();
                             result.extend(extra_rhs);
-                            return Ok(Value::Array(result));
+                            return Ok(Value::array(result));
                         } else {
                             let mut result: Vec<Value> = seeds[..=i].to_vec();
                             result.extend(extra_rhs);
-                            return Ok(Value::Array(result));
+                            return Ok(Value::array(result));
                         }
                     }
                 }
@@ -448,7 +448,7 @@ impl Interpreter {
 
             if endpoint_kind.is_none() {
                 match next {
-                    Value::Slip(items) => result.extend(items),
+                    Value::Slip(items) => result.extend(items.iter().cloned()),
                     other => result.push(other),
                 }
                 continue;
@@ -599,6 +599,6 @@ impl Interpreter {
         }
 
         result.extend(extra_rhs);
-        Ok(Value::Array(result))
+        Ok(Value::array(result))
     }
 }

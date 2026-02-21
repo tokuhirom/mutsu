@@ -144,8 +144,8 @@ impl Interpreter {
 
     pub(super) fn make_supply_instance(&self) -> Value {
         let mut attrs = HashMap::new();
-        attrs.insert("values".to_string(), Value::Array(Vec::new()));
-        attrs.insert("taps".to_string(), Value::Array(Vec::new()));
+        attrs.insert("values".to_string(), Value::array(Vec::new()));
+        attrs.insert("taps".to_string(), Value::array(Vec::new()));
         Value::make_instance("Supply".to_string(), attrs)
     }
 
@@ -365,7 +365,7 @@ impl Interpreter {
                             .cloned()
                             .unwrap_or(Value::Nil);
                         match val {
-                            Value::Slip(elems) => result.extend(elems),
+                            Value::Slip(elems) => result.extend(elems.iter().cloned()),
                             v => result.push(v),
                         }
                     }
@@ -401,9 +401,9 @@ impl Interpreter {
                     }
                 }
             }
-            return Ok(Value::Array(result));
+            return Ok(Value::array(result));
         }
-        Ok(Value::Array(list_items))
+        Ok(Value::array(list_items))
     }
 
     pub(super) fn eval_grep_over_items(
@@ -494,8 +494,8 @@ impl Interpreter {
                     }
                 }
             }
-            return Ok(Value::Array(result));
+            return Ok(Value::array(result));
         }
-        Ok(Value::Array(list_items))
+        Ok(Value::array(list_items))
     }
 }

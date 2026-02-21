@@ -465,12 +465,12 @@ impl VM {
                 Ok(()) => break,
                 Err(e) if e.is_redo && Self::label_matches(&e.label, &label) => continue,
                 Err(e) if e.is_next && Self::label_matches(&e.label, &label) => {
-                    self.stack.push(Value::Array(vec![]));
+                    self.stack.push(Value::array(vec![]));
                     break;
                 }
                 Err(e) if e.is_last && Self::label_matches(&e.label, &label) => {
                     self.stack
-                        .push(e.return_value.unwrap_or(Value::Array(vec![])));
+                        .push(e.return_value.unwrap_or(Value::array(vec![])));
                     break;
                 }
                 Err(e) => return Err(e),

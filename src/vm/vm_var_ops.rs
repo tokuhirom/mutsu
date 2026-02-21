@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::Arc;
 
 impl VM {
     pub(super) fn exec_get_bare_word_op(
@@ -89,7 +90,7 @@ impl VM {
         let index = self.stack.pop().unwrap();
         let mut target = self.stack.pop().unwrap();
         if let Value::LazyList(ref ll) = target {
-            target = Value::Array(self.interpreter.force_lazy_list_bridge(ll)?);
+            target = Value::array(self.interpreter.force_lazy_list_bridge(ll)?);
         }
         let result = match (target, index) {
             (Value::Array(items), Value::Int(i)) => {
@@ -108,7 +109,7 @@ impl VM {
                     let end = end.min(items.len().saturating_sub(1));
                     items[start..=end].to_vec()
                 };
-                Value::Array(slice)
+                Value::array(slice)
             }
             (Value::Array(items), Value::RangeExcl(a, b)) => {
                 let start = a.max(0) as usize;
@@ -123,13 +124,13 @@ impl VM {
                         items[start..end_excl].to_vec()
                     }
                 };
-                Value::Array(slice)
+                Value::array(slice)
             }
             (Value::Hash(items), Value::Num(f)) if f.is_infinite() && f > 0.0 => {
-                Value::Array(items.values().cloned().collect())
+                Value::array(items.values().cloned().collect())
             }
             (Value::Hash(items), Value::Nil) => Value::Hash(items),
-            (Value::Hash(items), Value::Array(keys)) => Value::Array(
+            (Value::Hash(items), Value::Array(keys)) => Value::array(
                 keys.iter()
                     .map(|k| {
                         let key = k.to_string_value();
@@ -167,7 +168,7 @@ impl VM {
                     }
                     result.push(Value::Int(val));
                 }
-                Value::Array(result)
+                Value::array(result)
             }
             (ref range, Value::Range(a, b)) if range.is_range() => {
                 let (start, end, _excl_start, excl_end) = range_params(range);
@@ -180,7 +181,7 @@ impl VM {
                     }
                     result.push(Value::Int(val));
                 }
-                Value::Array(result)
+                Value::array(result)
             }
             (ref range, Value::Array(indices)) if range.is_range() => {
                 let (start, _end, _excl_start, _excl_end) = range_params(range);
@@ -191,7 +192,7 @@ impl VM {
                         _ => Value::Nil,
                     })
                     .collect();
-                Value::Array(result)
+                Value::array(result)
             }
             // WhateverCode index: @a[*-1] → evaluate the lambda with array length
             (Value::Array(ref items), Value::Sub(ref data)) => {
@@ -307,16 +308,17 @@ impl VM {
             _ => Value::Int(if increment { 1 } else { -1 }),
         };
         if let Some(container) = self.interpreter.env_mut().get_mut(&name) {
-            match container {
-                Value::Hash(h) => {
-                    h.insert(key, new_val);
+            match *container {
+                Value::Hash(ref mut h) => {
+                    Arc::make_mut(h).insert(key, new_val);
                 }
-                Value::Array(arr) => {
+                Value::Array(ref mut arr) => {
                     if let Ok(i) = idx_val.to_string_value().parse::<usize>() {
-                        while arr.len() <= i {
-                            arr.push(Value::Nil);
+                        let a = Arc::make_mut(arr);
+                        while a.len() <= i {
+                            a.push(Value::Nil);
                         }
-                        arr[i] = new_val;
+                        a[i] = new_val;
                     }
                 }
                 _ => {}
@@ -332,27 +334,30 @@ impl VM {
         match &idx {
             Value::Array(keys) => {
                 let vals = match &val {
-                    Value::Array(v) => v.clone(),
+                    Value::Array(v) => (**v).clone(),
                     _ => vec![val.clone()],
                 };
                 if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(&var_name) {
+                    let h = Arc::make_mut(hash);
                     for (i, key) in keys.iter().enumerate() {
                         let k = key.to_string_value();
                         let v = vals.get(i).cloned().unwrap_or(Value::Nil);
-                        hash.insert(k, v);
+                        h.insert(k, v);
                     }
                 }
             }
             _ => {
                 let key = idx.to_string_value();
-                if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(&var_name) {
-                    hash.insert(key, val.clone());
+                if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
+                    if let Value::Hash(ref mut hash) = *container {
+                        Arc::make_mut(hash).insert(key, val.clone());
+                    }
                 } else {
                     let mut hash = std::collections::HashMap::new();
                     hash.insert(key, val.clone());
                     self.interpreter
                         .env_mut()
-                        .insert(var_name, Value::Hash(hash));
+                        .insert(var_name, Value::hash(hash));
                 }
             }
         }
@@ -370,15 +375,16 @@ impl VM {
         if !self.interpreter.env().contains_key(&var_name) {
             self.interpreter.env_mut().insert(
                 var_name.clone(),
-                Value::Hash(std::collections::HashMap::new()),
+                Value::hash(std::collections::HashMap::new()),
             );
         }
         if let Some(Value::Hash(outer_hash)) = self.interpreter.env_mut().get_mut(&var_name) {
-            let inner_hash = outer_hash
+            let oh = Arc::make_mut(outer_hash);
+            let inner_hash = oh
                 .entry(inner_key)
-                .or_insert_with(|| Value::Hash(std::collections::HashMap::new()));
-            if let Value::Hash(h) = inner_hash {
-                h.insert(outer_key, val.clone());
+                .or_insert_with(|| Value::hash(std::collections::HashMap::new()));
+            if let Value::Hash(ref mut h) = *inner_hash {
+                Arc::make_mut(h).insert(outer_key, val.clone());
             }
         }
         self.stack.push(val);
@@ -398,7 +404,7 @@ impl VM {
         let name = &code.locals[idx];
         let val = if name.starts_with('@') {
             if let Value::LazyList(ref list) = val {
-                Value::Array(self.interpreter.force_lazy_list_bridge(list)?)
+                Value::array(self.interpreter.force_lazy_list_bridge(list)?)
             } else {
                 val
             }

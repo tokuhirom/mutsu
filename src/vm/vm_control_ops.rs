@@ -86,7 +86,7 @@ impl VM {
         let chunked_items: Vec<Value> = if arity > 1 {
             items
                 .chunks(arity)
-                .map(|chunk| Value::Array(chunk.to_vec()))
+                .map(|chunk| Value::array(chunk.to_vec()))
                 .collect()
         } else {
             items
@@ -157,7 +157,7 @@ impl VM {
             }
         }
         if let Some(coll) = collected {
-            self.stack.push(Value::Array(coll));
+            self.stack.push(Value::array(coll));
         }
         *ip = loop_end;
         Ok(())

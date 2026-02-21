@@ -10,6 +10,7 @@ use std::os::unix::fs::{self as unix_fs, PermissionsExt};
 use std::os::windows::fs as windows_fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -245,7 +246,7 @@ impl Interpreter {
     pub fn new() -> Self {
         let mut env = HashMap::new();
         env.insert("*PID".to_string(), Value::Int(std::process::id() as i64));
-        env.insert("@*ARGS".to_string(), Value::Array(Vec::new()));
+        env.insert("@*ARGS".to_string(), Value::array(Vec::new()));
         let mut classes = HashMap::new();
         classes.insert(
             "Promise".to_string(),
@@ -568,7 +569,7 @@ impl Interpreter {
     }
 
     pub fn set_args(&mut self, args: Vec<Value>) {
-        self.env.insert("@*ARGS".to_string(), Value::Array(args));
+        self.env.insert("@*ARGS".to_string(), Value::array(args));
     }
 
     pub fn add_lib_path(&mut self, path: String) {

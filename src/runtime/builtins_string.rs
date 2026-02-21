@@ -45,9 +45,9 @@ impl Interpreter {
                 .chars()
                 .map(|ch| Value::Int(ch as u32 as i64))
                 .collect();
-            return Ok(Value::Array(codes));
+            return Ok(Value::array(codes));
         }
-        Ok(Value::Array(Vec::new()))
+        Ok(Value::array(Vec::new()))
     }
 
     pub(super) fn builtin_flip(&self, args: &[Value]) -> Result<Value, RuntimeError> {

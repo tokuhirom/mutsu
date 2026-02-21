@@ -79,7 +79,7 @@ pub(crate) fn native_method_1arg(
             let s = target.to_string_value();
             let sep = arg.to_string_value();
             let parts: Vec<Value> = s.split(&sep).map(|p| Value::Str(p.to_string())).collect();
-            Some(Ok(Value::Array(parts)))
+            Some(Ok(Value::array(parts)))
         }
         "join" => match target {
             Value::Array(items) => {
@@ -99,7 +99,7 @@ pub(crate) fn native_method_1arg(
                     Value::Int(i) => *i as usize,
                     _ => return None,
                 };
-                Some(Ok(Value::Array(items[..n.min(items.len())].to_vec())))
+                Some(Ok(Value::array(items[..n.min(items.len())].to_vec())))
             }
             Value::Range(a, b) => {
                 let n = match arg {
@@ -107,7 +107,7 @@ pub(crate) fn native_method_1arg(
                     _ => return None,
                 };
                 let items: Vec<Value> = (*a..=*b).take(n).map(Value::Int).collect();
-                Some(Ok(Value::Array(items)))
+                Some(Ok(Value::array(items)))
             }
             _ => {
                 let n = match arg {
@@ -115,7 +115,7 @@ pub(crate) fn native_method_1arg(
                     _ => return None,
                 };
                 let items = runtime::value_to_list(target);
-                Some(Ok(Value::Array(items[..n.min(items.len())].to_vec())))
+                Some(Ok(Value::array(items[..n.min(items.len())].to_vec())))
             }
         },
         "tail" => match target {
@@ -125,7 +125,7 @@ pub(crate) fn native_method_1arg(
                     _ => return None,
                 };
                 let start = items.len().saturating_sub(n);
-                Some(Ok(Value::Array(items[start..].to_vec())))
+                Some(Ok(Value::array(items[start..].to_vec())))
             }
             _ => {
                 let n = match arg {
@@ -134,7 +134,7 @@ pub(crate) fn native_method_1arg(
                 };
                 let items = runtime::value_to_list(target);
                 let start = items.len().saturating_sub(n);
-                Some(Ok(Value::Array(items[start..].to_vec())))
+                Some(Ok(Value::array(items[start..].to_vec())))
             }
         },
         "rindex" => {
@@ -268,12 +268,12 @@ pub(crate) fn native_method_1arg(
                             % (i + 1);
                         items.swap(i, j);
                     }
-                    Value::Array(items)
+                    Value::array(items)
                 }
                 Value::Int(n) => {
                     let count = (*n).max(0) as usize;
                     if count == 0 || items.is_empty() {
-                        Value::Array(Vec::new())
+                        Value::array(Vec::new())
                     } else {
                         let mut result = Vec::with_capacity(count.min(items.len()));
                         for _ in 0..count.min(items.len()) {
@@ -282,7 +282,7 @@ pub(crate) fn native_method_1arg(
                                 % items.len();
                             result.push(items.swap_remove(idx));
                         }
-                        Value::Array(result)
+                        Value::array(result)
                     }
                 }
                 _ => return None,
@@ -296,7 +296,7 @@ pub(crate) fn native_method_1arg(
             };
             let items = runtime::value_to_list(target);
             if items.is_empty() || count == 0 {
-                return Some(Ok(Value::Array(Vec::new())));
+                return Some(Ok(Value::array(Vec::new())));
             }
             let mut result = Vec::with_capacity(count);
             for _ in 0..count {
@@ -306,7 +306,7 @@ pub(crate) fn native_method_1arg(
                 }
                 result.push(items[idx].clone());
             }
-            Some(Ok(Value::Array(result)))
+            Some(Ok(Value::array(result)))
         }
         "log" => {
             let base_val = match arg {

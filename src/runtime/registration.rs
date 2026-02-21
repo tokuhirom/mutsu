@@ -178,7 +178,7 @@ impl Interpreter {
             for (key, val) in &enum_variants {
                 map.insert(key.clone(), Value::Int(*val));
             }
-            Ok(Value::Hash(map))
+            Ok(Value::hash(map))
         } else {
             Ok(Value::Nil)
         }

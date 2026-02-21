@@ -314,7 +314,7 @@ pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
 
     let (rest, _) = opt_char(rest, ';');
     let expr = if is_array {
-        Expr::Literal(Value::Array(Vec::new()))
+        Expr::Literal(Value::array(Vec::new()))
     } else if is_hash {
         Expr::Hash(Vec::new())
     } else {

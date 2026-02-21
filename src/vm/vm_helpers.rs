@@ -159,23 +159,19 @@ impl VM {
     ) -> Result<Value, RuntimeError> {
         if let Value::Junction { kind, values } = left {
             let results: Result<Vec<Value>, RuntimeError> = values
-                .into_iter()
+                .iter()
+                .cloned()
                 .map(|v| self.eval_binary_with_junctions(v, right.clone(), f))
                 .collect();
-            return Ok(Value::Junction {
-                kind,
-                values: results?,
-            });
+            return Ok(Value::junction(kind, results?));
         }
         if let Value::Junction { kind, values } = right {
             let results: Result<Vec<Value>, RuntimeError> = values
-                .into_iter()
+                .iter()
+                .cloned()
                 .map(|v| self.eval_binary_with_junctions(left.clone(), v, f))
                 .collect();
-            return Ok(Value::Junction {
-                kind,
-                values: results?,
-            });
+            return Ok(Value::junction(kind, results?));
         }
         f(self, left, right)
     }

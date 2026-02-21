@@ -507,7 +507,7 @@ impl Interpreter {
         let mut expected_status: Option<i64> = None;
         let mut run_args: Option<Vec<Value>> = None;
         if let Value::Hash(expected_hash) = &expectations {
-            for (name, value) in expected_hash {
+            for (name, value) in expected_hash.iter() {
                 match name.as_str() {
                     "out" => expected_out = Some(value.clone()),
                     "err" => expected_err = Some(value.clone()),
@@ -521,7 +521,7 @@ impl Interpreter {
             }
         }
         if let Some(Value::Array(items)) = Self::named_value(args, "args") {
-            run_args = Some(items);
+            run_args = Some(items.to_vec());
         }
         let mut nested = Interpreter::new();
         if let Some(Value::Int(pid)) = self.env.get("*PID") {
@@ -710,7 +710,7 @@ impl Interpreter {
             if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
                 let emitter = Value::make_instance("Supplier".to_string(), {
                     let mut a = HashMap::new();
-                    a.insert("emitted".to_string(), Value::Array(Vec::new()));
+                    a.insert("emitted".to_string(), Value::array(Vec::new()));
                     a.insert("done".to_string(), Value::Bool(false));
                     a
                 });
@@ -722,7 +722,7 @@ impl Interpreter {
                     .get("values")
                     .and_then(|v| {
                         if let Value::Array(a) = v {
-                            Some(a.clone())
+                            Some(a.to_vec())
                         } else {
                             None
                         }
@@ -732,7 +732,7 @@ impl Interpreter {
                     .get("do_callbacks")
                     .and_then(|v| {
                         if let Value::Array(a) = v {
-                            Some(a.clone())
+                            Some(a.to_vec())
                         } else {
                             None
                         }
@@ -757,7 +757,7 @@ impl Interpreter {
         let expected_expanded = match &expected {
             Value::Array(items) => {
                 let mut expanded = Vec::new();
-                for item in items {
+                for item in items.iter() {
                     match item {
                         Value::Range(..)
                         | Value::RangeExcl(..)
@@ -767,16 +767,16 @@ impl Interpreter {
                             expanded.extend(Self::value_to_list(item));
                         }
                         Value::Array(sub) => {
-                            expanded.extend(sub.clone());
+                            expanded.extend(sub.iter().cloned());
                         }
                         _ => expanded.push(item.clone()),
                     }
                 }
-                Value::Array(expanded)
+                Value::array(expanded)
             }
             other => other.clone(),
         };
-        let collected_val = Value::Array(tap_values);
+        let collected_val = Value::array(tap_values);
         let ok = collected_val == expected_expanded;
         self.test_ok(ok, &desc, false)?;
 

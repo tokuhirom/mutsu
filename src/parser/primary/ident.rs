@@ -137,7 +137,7 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if input.starts_with('\u{2205}') {
         return Ok((
             &input['\u{2205}'.len_utf8()..],
-            Expr::Literal(Value::Set(std::collections::HashSet::new())),
+            Expr::Literal(Value::set(std::collections::HashSet::new())),
         ));
     }
     if let Ok(r) = try_kw("Inf", Value::Num(f64::INFINITY)) {

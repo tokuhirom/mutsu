@@ -67,11 +67,11 @@ impl VM {
     pub(super) fn exec_make_slip_op(&mut self) {
         let val = self.stack.pop().unwrap();
         let items = match val {
-            Value::Array(items) => items,
-            Value::Slip(items) => items,
+            Value::Array(items) => (*items).clone(),
+            Value::Slip(items) => (*items).clone(),
             other => vec![other],
         };
-        self.stack.push(Value::Slip(items));
+        self.stack.push(Value::slip(items));
     }
 
     pub(super) fn exec_not_op(&mut self) {
@@ -203,7 +203,7 @@ impl VM {
             _ => 0,
         };
         let items: Vec<Value> = std::iter::repeat_n(left, n).collect();
-        self.stack.push(Value::Array(items));
+        self.stack.push(Value::array(items));
     }
 
     pub(super) fn exec_function_compose_op(&mut self) {

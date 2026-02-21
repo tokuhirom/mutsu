@@ -116,7 +116,7 @@ impl Interpreter {
                 if lmap.len() != rmap.len() {
                     return false;
                 }
-                for (k, lv) in lmap {
+                for (k, lv) in lmap.iter() {
                     match rmap.get(k) {
                         Some(rv) => {
                             if !self.smart_match(lv, rv) {

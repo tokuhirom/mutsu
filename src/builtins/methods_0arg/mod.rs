@@ -192,7 +192,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "ords" => {
             let s = target.to_string_value();
             let ords: Vec<Value> = s.chars().map(|c| Value::Int(c as u32 as i64)).collect();
-            Some(Ok(Value::Array(ords)))
+            Some(Ok(Value::array(ords)))
         }
         "chr" => {
             let code = match target {
@@ -304,29 +304,29 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "flat" => match target {
             Value::Array(items) => {
                 let mut result = Vec::new();
-                for item in items {
+                for item in items.iter() {
                     match item {
                         Value::Array(inner) => result.extend(inner.iter().cloned()),
                         other => result.push(other.clone()),
                     }
                 }
-                Some(Ok(Value::Array(result)))
+                Some(Ok(Value::array(result)))
             }
             _ => None,
         },
         "sort" => match target {
             Value::Array(items) => {
-                let mut sorted = items.clone();
+                let mut sorted = (**items).clone();
                 sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
-                Some(Ok(Value::Array(sorted)))
+                Some(Ok(Value::array(sorted)))
             }
             _ => None,
         },
         "reverse" => match target {
             Value::Array(items) => {
-                let mut reversed = items.clone();
+                let mut reversed = (**items).clone();
                 reversed.reverse();
-                Some(Ok(Value::Array(reversed)))
+                Some(Ok(Value::array(reversed)))
             }
             Value::Str(s) => Some(Ok(Value::Str(s.chars().rev().collect()))),
             _ => None,
@@ -335,14 +335,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Array(items) => {
                 let mut seen = Vec::new();
                 let mut result = Vec::new();
-                for item in items {
+                for item in items.iter() {
                     let key = item.to_string_value();
                     if !seen.contains(&key) {
                         seen.push(key);
                         result.push(item.clone());
                     }
                 }
-                Some(Ok(Value::Array(result)))
+                Some(Ok(Value::array(result)))
             }
             _ => None,
         },
@@ -400,7 +400,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 .split_whitespace()
                 .map(|w| Value::Str(w.to_string()))
                 .collect();
-            Some(Ok(Value::Array(words)))
+            Some(Ok(Value::array(words)))
         }
         "codes" => {
             let s = target.to_string_value();
@@ -409,7 +409,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "lines" => {
             let s = target.to_string_value();
             let lines: Vec<Value> = s.lines().map(|l| Value::Str(l.to_string())).collect();
-            Some(Ok(Value::Array(lines)))
+            Some(Ok(Value::array(lines)))
         }
         "trim" => Some(Ok(Value::Str(target.to_string_value().trim().to_string()))),
         "trim-leading" => Some(Ok(Value::Str(
@@ -442,7 +442,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "comb" => {
             let s = target.to_string_value();
             let parts: Vec<Value> = s.chars().map(|c| Value::Str(c.to_string())).collect();
-            Some(Ok(Value::Array(parts)))
+            Some(Ok(Value::array(parts)))
         }
         "join" => match target {
             Value::Array(items) => {
@@ -671,7 +671,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             _ => Some(Ok(make_rat(0, 1))),
         },
         "tree" => match target {
-            Value::Array(items) => Some(Ok(Value::Array(tree_recursive(items)))),
+            Value::Array(items) => Some(Ok(Value::array(tree_recursive(items)))),
             _ => Some(Ok(target.clone())),
         },
         "sink" => Some(Ok(Value::Nil)),
@@ -679,7 +679,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "race" | "hyper" => {
             // Single-threaded: just materialize into an array
             let items = runtime::value_to_list(target);
-            Some(Ok(Value::Array(items)))
+            Some(Ok(Value::array(items)))
         }
         "NFC" | "NFD" | "NFKC" | "NFKD" => {
             use unicode_normalization::UnicodeNormalization;
@@ -691,7 +691,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 _ => s.nfkd().collect(),
             };
             let codepoints: Vec<Value> = normalized.chars().map(|c| Value::Int(c as i64)).collect();
-            Some(Ok(Value::Array(codepoints)))
+            Some(Ok(Value::array(codepoints)))
         }
         _ => None,
     }
@@ -702,7 +702,7 @@ fn tree_recursive(items: &[Value]) -> Vec<Value> {
     items
         .iter()
         .map(|v| match v {
-            Value::Array(inner) => Value::Array(tree_recursive(inner)),
+            Value::Array(inner) => Value::array(tree_recursive(inner)),
             other => other.clone(),
         })
         .collect()

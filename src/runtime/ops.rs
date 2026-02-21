@@ -219,7 +219,7 @@ impl Interpreter {
 
     pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         match val {
-            Value::Array(items) => items.clone(),
+            Value::Array(items) => items.to_vec(),
             Value::Hash(items) => items
                 .iter()
                 .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
@@ -252,7 +252,7 @@ impl Interpreter {
                 .iter()
                 .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Num(*v))))
                 .collect(),
-            Value::Slip(items) => items.clone(),
+            Value::Slip(items) => items.to_vec(),
             Value::Nil => vec![],
             other => vec![other.clone()],
         }
@@ -271,7 +271,7 @@ impl Interpreter {
         let right_len = right_list.len();
 
         if left_len == 0 && right_len == 0 {
-            return Ok(Value::Array(Vec::new()));
+            return Ok(Value::array(Vec::new()));
         }
 
         let result_len = if !dwim_left && !dwim_right {
@@ -304,7 +304,7 @@ impl Interpreter {
             };
             results.push(Self::apply_reduction_op(op, l, r)?);
         }
-        Ok(Value::Array(results))
+        Ok(Value::array(results))
     }
 
     pub(crate) fn compare(

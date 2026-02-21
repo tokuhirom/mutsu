@@ -380,7 +380,7 @@ impl Compiler {
         self.code.patch_jump(jump_else);
 
         if else_branch.is_empty() {
-            let empty_idx = self.code.add_constant(Value::Slip(vec![]));
+            let empty_idx = self.code.add_constant(Value::slip(vec![]));
             self.code.emit(OpCode::LoadConst(empty_idx));
         } else if else_branch.len() == 1 {
             if let Stmt::If {

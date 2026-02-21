@@ -169,7 +169,7 @@ impl VM {
                 if op.is_empty() || op == "," {
                     for l in &left_list {
                         for r in &right_list {
-                            results.push(Value::Array(vec![l.clone(), r.clone()]));
+                            results.push(Value::array(vec![l.clone(), r.clone()]));
                         }
                     }
                 } else {
@@ -179,7 +179,7 @@ impl VM {
                         }
                     }
                 }
-                Value::Array(results)
+                Value::array(results)
             }
             "Z" => {
                 let left_list = runtime::value_to_list(&left);
@@ -188,7 +188,7 @@ impl VM {
                 let mut results = Vec::new();
                 if op.is_empty() || op == "," {
                     for i in 0..len {
-                        results.push(Value::Array(vec![
+                        results.push(Value::array(vec![
                             left_list[i].clone(),
                             right_list[i].clone(),
                         ]));
@@ -207,7 +207,7 @@ impl VM {
                         )?);
                     }
                 }
-                Value::Array(results)
+                Value::array(results)
             }
             _ => {
                 return Err(RuntimeError::new(format!(

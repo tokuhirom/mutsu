@@ -91,7 +91,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 .split_whitespace()
                 .map(|p| Value::Str(p.to_string()))
                 .collect();
-            Some(Ok(Value::Array(parts)))
+            Some(Ok(Value::array(parts)))
         }
         "chars" => Some(Ok(Value::Int(
             arg.to_string_value().graphemes(true).count() as i64,
@@ -269,18 +269,18 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
         },
         "reverse" => Some(Ok(match arg {
             Value::Array(items) => {
-                let mut reversed = items.clone();
+                let mut reversed = (**items).clone();
                 reversed.reverse();
-                Value::Array(reversed)
+                Value::array(reversed)
             }
             Value::Str(s) => Value::Str(s.chars().rev().collect()),
             _ => Value::Nil,
         })),
         "sort" => Some(Ok(match arg {
             Value::Array(items) => {
-                let mut sorted = items.clone();
+                let mut sorted = (**items).clone();
                 sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
-                Value::Array(sorted)
+                Value::array(sorted)
             }
             _ => Value::Nil,
         })),
@@ -289,7 +289,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             fn flat_val(v: &Value, out: &mut Vec<Value>) {
                 match v {
                     Value::Array(items) => {
-                        for item in items {
+                        for item in items.iter() {
                             flat_val(item, out);
                         }
                     }
@@ -304,7 +304,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 }
             }
             flat_val(arg, &mut flat);
-            Some(Ok(Value::Array(flat)))
+            Some(Ok(Value::array(flat)))
         }
         "first" => Some(Ok(match arg {
             Value::Array(items) => items.first().cloned().unwrap_or(Value::Nil),
@@ -335,7 +335,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
         "ords" => {
             let s = arg.to_string_value();
             let codes: Vec<Value> = s.chars().map(|ch| Value::Int(ch as u32 as i64)).collect();
-            Some(Ok(Value::Array(codes)))
+            Some(Ok(Value::array(codes)))
         }
         "gist" => Some(Ok(Value::Str(arg.to_string_value()))),
         _ => None,
@@ -568,7 +568,7 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
             for arg in args {
                 match arg {
                     Value::Array(items) => {
-                        for item in items {
+                        for item in items.iter() {
                             push_chr(&mut result, item);
                         }
                     }
@@ -582,7 +582,7 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
             fn flat_val_deep(v: &Value, out: &mut Vec<Value>) {
                 match v {
                     Value::Array(items) => {
-                        for item in items {
+                        for item in items.iter() {
                             flat_val_deep(item, out);
                         }
                     }
@@ -599,7 +599,7 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
             for arg in args {
                 flat_val_deep(arg, &mut result);
             }
-            Some(Ok(Value::Array(result)))
+            Some(Ok(Value::array(result)))
         }
         _ => None,
     }

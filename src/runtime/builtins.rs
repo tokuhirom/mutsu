@@ -127,7 +127,7 @@ impl Interpreter {
             "join" => self.builtin_join(&args),
             "item" => Ok(args.first().cloned().unwrap_or(Value::Nil)),
             "list" => self.builtin_list(&args),
-            "lol" => Ok(Value::Array(args.clone())),
+            "lol" => Ok(Value::array(args.clone())),
             "flat" => self.builtin_flat(&args),
             "slip" => self.builtin_slip(&args),
             "reverse" => self.builtin_reverse(&args),

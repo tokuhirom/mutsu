@@ -31,37 +31,42 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = match (left, right) {
-            (Value::Set(mut a), Value::Set(b)) => {
-                for elem in b {
-                    a.insert(elem);
+            (Value::Set(a), Value::Set(b)) => {
+                let mut result = (*a).clone();
+                for elem in b.iter() {
+                    result.insert(elem.clone());
                 }
-                Value::Set(a)
+                Value::set(result)
             }
-            (Value::Bag(mut a), Value::Bag(b)) => {
-                for (k, v) in b {
-                    let e = a.entry(k).or_insert(0);
-                    *e = (*e).max(v);
+            (Value::Bag(a), Value::Bag(b)) => {
+                let mut result = (*a).clone();
+                for (k, v) in b.iter() {
+                    let e = result.entry(k.clone()).or_insert(0);
+                    *e = (*e).max(*v);
                 }
-                Value::Bag(a)
+                Value::bag(result)
             }
-            (Value::Mix(mut a), Value::Mix(b)) => {
-                for (k, v) in b {
-                    let e = a.entry(k).or_insert(0.0);
-                    *e = e.max(v);
+            (Value::Mix(a), Value::Mix(b)) => {
+                let mut result = (*a).clone();
+                for (k, v) in b.iter() {
+                    let e = result.entry(k.clone()).or_insert(0.0);
+                    *e = e.max(*v);
                 }
-                Value::Mix(a)
+                Value::mix(result)
             }
-            (Value::Set(a), Value::Bag(mut b)) => {
-                for elem in a {
-                    b.entry(elem).or_insert(1);
+            (Value::Set(a), Value::Bag(b)) => {
+                let mut result = (*b).clone();
+                for elem in a.iter() {
+                    result.entry(elem.clone()).or_insert(1);
                 }
-                Value::Bag(b)
+                Value::bag(result)
             }
-            (Value::Bag(mut a), Value::Set(b)) => {
-                for elem in b {
-                    a.entry(elem).or_insert(1);
+            (Value::Bag(a), Value::Set(b)) => {
+                let mut result = (*a).clone();
+                for elem in b.iter() {
+                    result.entry(elem.clone()).or_insert(1);
                 }
-                Value::Bag(a)
+                Value::bag(result)
             }
             (l, r) => {
                 let a = runtime::coerce_to_set(&l);
@@ -70,7 +75,7 @@ impl VM {
                 for elem in b {
                     result.insert(elem);
                 }
-                Value::Set(result)
+                Value::set(result)
             }
         };
         self.stack.push(result);
@@ -80,29 +85,29 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = match (left, right) {
-            (Value::Set(a), Value::Set(b)) => Value::Set(a.intersection(&b).cloned().collect()),
+            (Value::Set(a), Value::Set(b)) => Value::set(a.intersection(&b).cloned().collect()),
             (Value::Bag(a), Value::Bag(b)) => {
                 let mut result = HashMap::new();
-                for (k, v) in &a {
+                for (k, v) in a.iter() {
                     if let Some(bv) = b.get(k) {
                         result.insert(k.clone(), (*v).min(*bv));
                     }
                 }
-                Value::Bag(result)
+                Value::bag(result)
             }
             (Value::Mix(a), Value::Mix(b)) => {
                 let mut result = HashMap::new();
-                for (k, v) in &a {
+                for (k, v) in a.iter() {
                     if let Some(bv) = b.get(k) {
                         result.insert(k.clone(), v.min(*bv));
                     }
                 }
-                Value::Mix(result)
+                Value::mix(result)
             }
             (l, r) => {
                 let a = runtime::coerce_to_set(&l);
                 let b = runtime::coerce_to_set(&r);
-                Value::Set(a.intersection(&b).cloned().collect())
+                Value::set(a.intersection(&b).cloned().collect())
             }
         };
         self.stack.push(result);
@@ -112,31 +117,31 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = match (left, right) {
-            (Value::Set(a), Value::Set(b)) => Value::Set(a.difference(&b).cloned().collect()),
+            (Value::Set(a), Value::Set(b)) => Value::set(a.difference(&b).cloned().collect()),
             (Value::Bag(a), Value::Bag(b)) => {
                 let mut result = HashMap::new();
-                for (k, v) in a {
-                    let bv = b.get(&k).copied().unwrap_or(0);
-                    if v > bv {
-                        result.insert(k, v - bv);
+                for (k, v) in a.iter() {
+                    let bv = b.get(k).copied().unwrap_or(0);
+                    if *v > bv {
+                        result.insert(k.clone(), *v - bv);
                     }
                 }
-                Value::Bag(result)
+                Value::bag(result)
             }
             (Value::Mix(a), Value::Mix(b)) => {
                 let mut result = HashMap::new();
-                for (k, v) in a {
-                    let bv = b.get(&k).copied().unwrap_or(0.0);
-                    if v > bv {
-                        result.insert(k, v - bv);
+                for (k, v) in a.iter() {
+                    let bv = b.get(k).copied().unwrap_or(0.0);
+                    if *v > bv {
+                        result.insert(k.clone(), *v - bv);
                     }
                 }
-                Value::Mix(result)
+                Value::mix(result)
             }
             (l, r) => {
                 let a = runtime::coerce_to_set(&l);
                 let b = runtime::coerce_to_set(&r);
-                Value::Set(a.difference(&b).cloned().collect())
+                Value::set(a.difference(&b).cloned().collect())
             }
         };
         self.stack.push(result);
@@ -147,12 +152,12 @@ impl VM {
         let left = self.stack.pop().unwrap();
         let result = match (left, right) {
             (Value::Set(a), Value::Set(b)) => {
-                Value::Set(a.symmetric_difference(&b).cloned().collect())
+                Value::set(a.symmetric_difference(&b).cloned().collect())
             }
             (l, r) => {
                 let a = runtime::coerce_to_set(&l);
                 let b = runtime::coerce_to_set(&r);
-                Value::Set(a.symmetric_difference(&b).cloned().collect())
+                Value::set(a.symmetric_difference(&b).cloned().collect())
             }
         };
         self.stack.push(result);

@@ -45,7 +45,7 @@ impl Interpreter {
                 info.insert("package".to_string(), Value::Str(package.clone()));
                 info.insert("name".to_string(), Value::Str(name.clone()));
                 info.insert("depth".to_string(), Value::Int(depth as i64));
-                Value::Hash(info)
+                Value::hash(info)
             })
     }
 
@@ -97,10 +97,10 @@ impl Interpreter {
         let mut info = HashMap::new();
         info.insert("name".to_string(), Value::Str(name.clone()));
         info.insert("addr".to_string(), Value::Str(addresses[0].clone()));
-        info.insert("aliases".to_string(), Value::Array(Vec::new()));
+        info.insert("aliases".to_string(), Value::array(Vec::new()));
         let addrs_values = addresses.into_iter().map(Value::Str).collect();
-        info.insert("addrs".to_string(), Value::Array(addrs_values));
-        Value::Hash(info)
+        info.insert("addrs".to_string(), Value::array(addrs_values));
+        Value::hash(info)
     }
 
     pub(super) fn get_login_name() -> Option<String> {

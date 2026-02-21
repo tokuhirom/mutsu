@@ -60,14 +60,16 @@ impl Interpreter {
                 body.to_vec(),
                 self.env.clone(),
             );
-            let mut attrs = attributes.clone();
-            if let Some(Value::Array(items)) = attrs.get_mut("taps") {
-                items.push(tap_sub.clone());
+            let mut attrs = (*attributes).clone();
+            if let Some(Value::Array(items)) = attrs.get("taps") {
+                let mut new_items = items.to_vec();
+                new_items.push(tap_sub.clone());
+                attrs.insert("taps".to_string(), Value::array(new_items));
             } else {
-                attrs.insert("taps".to_string(), Value::Array(vec![tap_sub.clone()]));
+                attrs.insert("taps".to_string(), Value::array(vec![tap_sub.clone()]));
             }
             if let Some(Value::Array(values)) = attrs.get("values") {
-                for v in values {
+                for v in values.iter() {
                     let _ = self.call_sub_value(tap_sub.clone(), vec![v.clone()], true);
                 }
             }

@@ -168,7 +168,7 @@ impl Interpreter {
                     .lines()
                     .map(|line| Value::Str(line.to_string()))
                     .collect();
-                Ok(Value::Array(parts))
+                Ok(Value::array(parts))
             }
             "words" => {
                 let content = fs::read_to_string(&path_buf)
@@ -177,7 +177,7 @@ impl Interpreter {
                     .split_whitespace()
                     .map(|token| Value::Str(token.to_string()))
                     .collect();
-                Ok(Value::Array(parts))
+                Ok(Value::array(parts))
             }
             "slurp" => {
                 let content = fs::read_to_string(&path_buf).map_err(|err| {
@@ -261,7 +261,7 @@ impl Interpreter {
                     })?;
                     entries.push(Value::Str(entry.path().to_string_lossy().to_string()));
                 }
-                Ok(Value::Array(entries))
+                Ok(Value::array(entries))
             }
             "spurt" => {
                 let content = args
@@ -318,7 +318,7 @@ impl Interpreter {
                     }
                     lines.push(Value::Str(line));
                 }
-                Ok(Value::Array(lines))
+                Ok(Value::array(lines))
             }
             "words" => {
                 let mut words = Vec::new();
@@ -331,7 +331,7 @@ impl Interpreter {
                         words.push(Value::Str(token.to_string()));
                     }
                 }
-                Ok(Value::Array(words))
+                Ok(Value::array(words))
             }
             "read" => {
                 let count = args
@@ -474,7 +474,7 @@ impl Interpreter {
                     let byte_vals: Vec<Value> =
                         chunk.iter().map(|b| Value::Int(*b as i64)).collect();
                     let mut buf_attrs = HashMap::new();
-                    buf_attrs.insert("bytes".to_string(), Value::Array(byte_vals));
+                    buf_attrs.insert("bytes".to_string(), Value::array(byte_vals));
                     values.push(Value::make_instance("Buf".to_string(), buf_attrs));
                 }
                 if bytes.len() < size {
@@ -509,7 +509,7 @@ impl Interpreter {
 
         let mut supply_attrs = HashMap::new();
         supply_attrs.insert("live".to_string(), Value::Bool(false));
-        supply_attrs.insert("values".to_string(), Value::Array(values));
+        supply_attrs.insert("values".to_string(), Value::array(values));
         Ok(Value::make_instance("Supply".to_string(), supply_attrs))
     }
 
