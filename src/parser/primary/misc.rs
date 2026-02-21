@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 const REDUCTION_OPS: &[&str] = &[
     "+", "-", "*", "/", "~", "||", "&&", "//", "%%", "**", "+&", "+|", "+^", "?&", "?|", "?^",
     "==", "!=", "<", ">", "<=", ">=", "<=>", "===", "eq", "ne", "lt", "gt", "le", "ge", "leg",
-    "cmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",",
+    "cmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",", "after", "before",
 ];
 
 /// Parse a reduction operator: [+], [*], [~], [min], [max], [gcd], [lcm], [||], [&&], etc.
@@ -33,7 +33,9 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("operator in reduction"));
     }
     // Only accept known operators to avoid confusion with array literals
-    if !REDUCTION_OPS.contains(&op) {
+    // Also support negated operators like [!after], [!before], [!==], etc.
+    let base_op = op.strip_prefix('!').unwrap_or(op);
+    if !REDUCTION_OPS.contains(&base_op) {
         return Err(PError::expected("known reduction operator"));
     }
     let r = &r[end + 1..];

@@ -3,6 +3,8 @@ use super::super::parse_result::{PError, PResult, merge_expected_messages, parse
 use crate::ast::{Expr, Stmt, make_anon_sub};
 use crate::value::Value;
 
+use super::super::stmt::statement_pub;
+
 fn is_superscript_digit(c: char) -> bool {
     matches!(
         c,
@@ -703,6 +705,16 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     Expr::Call {
                         name: "start".to_string(),
                         args: vec![make_anon_sub(body)],
+                    },
+                ));
+            }
+            // start <statement> — wrap the next statement in a block
+            if let Ok((r, stmt)) = statement_pub(r) {
+                return Ok((
+                    r,
+                    Expr::Call {
+                        name: "start".to_string(),
+                        args: vec![make_anon_sub(vec![stmt])],
                     },
                 ));
             }
