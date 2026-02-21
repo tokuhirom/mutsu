@@ -81,6 +81,56 @@ pub(super) fn scan_to_delim(
                     None => return None,
                 }
             }
+        } else if c == '<' && !is_paired && !input[i + 1..].starts_with('[') {
+            // Track angle bracket nesting for non-paired delimiters (like /).
+            // This prevents / inside <:name(/:s .../)> from closing the regex.
+            let remaining = &input[i + 1..];
+            if remaining.starts_with("?{") || remaining.starts_with("!{") {
+                // Code assertion: <?{...}> or <!{...}>
+                // Skip the '?' or '!' and then the brace-delimited code block
+                chars.next(); // skip ? or !
+                chars.next(); // skip {
+                let mut brace_depth = 1u32;
+                loop {
+                    match chars.next() {
+                        Some((_, '{')) => brace_depth += 1,
+                        Some((_, '}')) => {
+                            brace_depth -= 1;
+                            if brace_depth == 0 {
+                                break;
+                            }
+                        }
+                        Some((_, '\\')) => {
+                            chars.next();
+                        }
+                        Some(_) => {}
+                        None => return None,
+                    }
+                }
+                // Consume the closing >
+                if let Some((_, '>')) = chars.next() {
+                    // done
+                }
+            } else {
+                // Named assertions, Unicode props, etc.: track <> depth
+                let mut angle_depth = 1u32;
+                loop {
+                    match chars.next() {
+                        Some((_, '<')) => angle_depth += 1,
+                        Some((_, '>')) => {
+                            angle_depth -= 1;
+                            if angle_depth == 0 {
+                                break;
+                            }
+                        }
+                        Some((_, '\\')) => {
+                            chars.next();
+                        }
+                        Some(_) => {}
+                        None => return None,
+                    }
+                }
+            }
         } else if c == '\'' {
             // Skip single-quoted string content in regex (e.g., '/' or '\\')
             loop {

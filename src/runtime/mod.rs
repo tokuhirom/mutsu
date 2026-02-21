@@ -58,7 +58,7 @@ pub(crate) mod utils;
 
 pub(crate) use utils::*;
 
-use self::unicode::check_unicode_property;
+use self::unicode::{check_unicode_property, check_unicode_property_with_args};
 
 #[derive(Clone)]
 struct ClassDef {
@@ -160,6 +160,7 @@ enum RegexAtom {
     UnicodeProp {
         name: String,
         negated: bool,
+        args: Option<String>,
     },
     UnicodePropAssert {
         name: String,

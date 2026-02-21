@@ -181,9 +181,23 @@ impl VM {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
-        Ok(Value::Bool(
-            self.interpreter.smart_match_values(&left, &right),
-        ))
+        let is_regex = matches!(&right, Value::Regex(_));
+        let matched = self.interpreter.smart_match_values(&left, &right);
+        if is_regex {
+            // For regex smartmatch, return the Match object (from $/) or Nil
+            if matched {
+                Ok(self
+                    .interpreter
+                    .env()
+                    .get("/")
+                    .cloned()
+                    .unwrap_or(Value::Nil))
+            } else {
+                Ok(Value::Nil)
+            }
+        } else {
+            Ok(Value::Bool(matched))
+        }
     }
 
     pub(super) fn not_smart_match_op(

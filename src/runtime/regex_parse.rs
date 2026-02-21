@@ -1,5 +1,15 @@
 use super::*;
 
+/// Split a property name like "NumericValue(0 ^..^ 1)" into ("NumericValue", Some("0 ^..^ 1")).
+fn split_prop_args(s: &str) -> (&str, Option<&str>) {
+    if let Some(open) = s.find('(')
+        && let Some(close) = s.rfind(')')
+    {
+        return (&s[..open], Some(&s[open + 1..close]));
+    }
+    (s, None)
+}
+
 impl Interpreter {
     pub(super) fn parse_regex(&self, pattern: &str) -> Option<RegexPattern> {
         let mut chars = pattern.chars().peekable();
@@ -294,15 +304,19 @@ impl Interpreter {
                         } else if trimmed.starts_with(":!") || trimmed.starts_with("-:") {
                             // <:!PropName> or <-:PropName> — negated Unicode property
                             let prop_name = &trimmed[2..];
+                            let (pname, pargs) = split_prop_args(prop_name);
                             RegexAtom::UnicodeProp {
-                                name: prop_name.to_string(),
+                                name: pname.to_string(),
                                 negated: true,
+                                args: pargs.map(|s| s.to_string()),
                             }
                         } else if let Some(prop_name) = trimmed.strip_prefix(':') {
                             // <:PropName> — Unicode property assertion
+                            let (pname, pargs) = split_prop_args(prop_name);
                             RegexAtom::UnicodeProp {
-                                name: prop_name.to_string(),
+                                name: pname.to_string(),
                                 negated: false,
+                                args: pargs.map(|s| s.to_string()),
                             }
                         } else if trimmed.starts_with('+') || trimmed.starts_with('-') {
                             // Combined character class: <+ xdigit - lower>

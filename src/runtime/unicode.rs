@@ -55,6 +55,162 @@ pub(super) fn check_unicode_property(name: &str, c: char) -> bool {
     })
 }
 
+/// Check a Unicode property with arguments, e.g. NumericValue(0 ^..^ 1) or name(/:s LATIN SMALL/).
+pub(super) fn check_unicode_property_with_args(prop: &str, args: &str, c: char) -> bool {
+    let prop_lower = prop.to_lowercase();
+    match prop_lower.as_str() {
+        "numericvalue" | "numeric_value" | "nv" => check_numeric_value_property(args, c),
+        "name" | "na" => check_name_property(args, c),
+        _ => {
+            // Fall back to simple property check (ignore args)
+            check_unicode_property(prop, c)
+        }
+    }
+}
+
+/// Check if a character's numeric value matches a range expression like "0 ^..^ 1".
+fn check_numeric_value_property(args: &str, c: char) -> bool {
+    let nv = match unicode_numeric_value(c) {
+        Some(v) => v,
+        None => return false,
+    };
+    // Parse range expression: "low ^..^ high", "low .. high", "low ^.. high", "low ..^ high"
+    let args = args.trim();
+    if let Some((low_str, rest)) = args.split_once("..") {
+        let exclude_low = low_str.trim().ends_with('^');
+        let exclude_high = rest.trim().starts_with('^');
+        let low_str = low_str.trim().trim_end_matches('^').trim();
+        let high_str = rest.trim().trim_start_matches('^').trim();
+        let low: f64 = low_str.parse().unwrap_or(0.0);
+        let high: f64 = high_str.parse().unwrap_or(0.0);
+        let low_ok = if exclude_low { nv > low } else { nv >= low };
+        let high_ok = if exclude_high { nv < high } else { nv <= high };
+        low_ok && high_ok
+    } else {
+        // Single value comparison
+        if let Ok(target) = args.parse::<f64>() {
+            (nv - target).abs() < f64::EPSILON
+        } else {
+            false
+        }
+    }
+}
+
+/// Get the Unicode numeric value of a character, if any.
+fn unicode_numeric_value(c: char) -> Option<f64> {
+    // Common fractions
+    match c {
+        '¼' => return Some(0.25),
+        '½' => return Some(0.5),
+        '¾' => return Some(0.75),
+        '⅐' => return Some(1.0 / 7.0),
+        '⅑' => return Some(1.0 / 9.0),
+        '⅒' => return Some(0.1),
+        '⅓' => return Some(1.0 / 3.0),
+        '⅔' => return Some(2.0 / 3.0),
+        '⅕' => return Some(0.2),
+        '⅖' => return Some(0.4),
+        '⅗' => return Some(0.6),
+        '⅘' => return Some(0.8),
+        '⅙' => return Some(1.0 / 6.0),
+        '⅚' => return Some(5.0 / 6.0),
+        '⅛' => return Some(0.125),
+        '⅜' => return Some(0.375),
+        '⅝' => return Some(0.625),
+        '⅞' => return Some(0.875),
+        '↉' => return Some(0.0),
+        '²' => return Some(2.0),
+        '³' => return Some(3.0),
+        '¹' => return Some(1.0),
+        '⁰' => return Some(0.0),
+        '⁴' => return Some(4.0),
+        '⁵' => return Some(5.0),
+        '⁶' => return Some(6.0),
+        '⁷' => return Some(7.0),
+        '⁸' => return Some(8.0),
+        '⁹' => return Some(9.0),
+        '₀' => return Some(0.0),
+        '₁' => return Some(1.0),
+        '₂' => return Some(2.0),
+        '₃' => return Some(3.0),
+        '₄' => return Some(4.0),
+        '₅' => return Some(5.0),
+        '₆' => return Some(6.0),
+        '₇' => return Some(7.0),
+        '₈' => return Some(8.0),
+        '₉' => return Some(9.0),
+        _ => {}
+    }
+    if c.is_ascii_digit() {
+        return Some((c as u32 - '0' as u32) as f64);
+    }
+    // Check various Unicode digit ranges
+    let cp = c as u32;
+    let digit_ranges: &[(u32, u32)] = &[
+        (0x0660, 0x0669),
+        (0x06F0, 0x06F9),
+        (0x0966, 0x096F),
+        (0x09E6, 0x09EF),
+        (0x0A66, 0x0A6F),
+        (0x0AE6, 0x0AEF),
+        (0x0B66, 0x0B6F),
+        (0x0BE6, 0x0BEF),
+        (0x0C66, 0x0C6F),
+        (0x0CE6, 0x0CEF),
+        (0x0D66, 0x0D6F),
+        (0x0E50, 0x0E59),
+        (0x0F20, 0x0F29),
+        (0x1040, 0x1049),
+        (0x17E0, 0x17E9),
+        (0x1810, 0x1819),
+        (0xFF10, 0xFF19),
+    ];
+    for &(start, end) in digit_ranges {
+        if (start..=end).contains(&cp) {
+            return Some((cp - start) as f64);
+        }
+    }
+    None
+}
+
+/// Check if a character's Unicode name matches a regex pattern.
+fn check_name_property(args: &str, c: char) -> bool {
+    let args = args.trim();
+    // The argument can be a regex like /:s LATIN SMALL LETTER/
+    let pattern = if let Some(inner) = args.strip_prefix('/') {
+        inner.strip_suffix('/').unwrap_or(inner)
+    } else {
+        args
+    };
+    // Get Unicode name of the character
+    let name = unicode_char_name(c);
+    if name.is_empty() {
+        return false;
+    }
+    // Handle :s (sigspace) flag — replace whitespace in pattern with \s+
+    let pattern = if let Some(rest) = pattern.strip_prefix(":s ") {
+        rest.split_whitespace().collect::<Vec<_>>().join(r"\s+")
+    } else if let Some(rest) = pattern.strip_prefix(":s\t") {
+        rest.split_whitespace().collect::<Vec<_>>().join(r"\s+")
+    } else {
+        pattern.split_whitespace().collect::<Vec<_>>().join(r"\s+")
+    };
+    // Match against the name using a regex
+    if let Ok(re) = regex::Regex::new(&pattern) {
+        re.is_match(&name)
+    } else {
+        false
+    }
+}
+
+/// Get the Unicode name of a character.
+fn unicode_char_name(c: char) -> String {
+    // Use the unicode_names2 crate if available, otherwise fall back to manual lookup
+    unicode_names2::name(c)
+        .map(|n| n.to_string())
+        .unwrap_or_default()
+}
+
 /// Check BiDi class of a character (regex crate doesn't support Bidi_Class).
 fn check_bidi_class(class: &str, c: char) -> bool {
     match class {
