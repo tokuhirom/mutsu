@@ -355,8 +355,16 @@ impl Interpreter {
             RegexAtom::Word => c.is_alphanumeric() || c == '_',
             RegexAtom::Space => c.is_whitespace(),
             RegexAtom::CharClass(class) => self.regex_match_class(class, c),
-            RegexAtom::UnicodeProp { name, negated } => {
-                let prop_match = check_unicode_property(name, c);
+            RegexAtom::UnicodeProp {
+                name,
+                negated,
+                args,
+            } => {
+                let prop_match = if let Some(arg_str) = args {
+                    check_unicode_property_with_args(name, arg_str, c)
+                } else {
+                    check_unicode_property(name, c)
+                };
                 if *negated { !prop_match } else { prop_match }
             }
             RegexAtom::CompositeClass { positive, negative } => {
