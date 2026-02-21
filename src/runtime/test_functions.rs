@@ -478,8 +478,8 @@ impl Interpreter {
             }
         }
 
-        let (type_ok, exception_val) = match &result {
-            Ok(_) => (false, None),
+        let (type_ok, exception_val, err_message) = match &result {
+            Ok(_) => (false, None, String::new()),
             Err(err) => {
                 // Check exception field first for structured exceptions
                 let ex_class = err.exception.as_ref().and_then(|ex| {
@@ -511,12 +511,20 @@ impl Interpreter {
                 (
                     type_matched,
                     err.exception.as_ref().map(|e| e.as_ref().clone()),
+                    err.message.clone(),
                 )
             }
         };
 
-        // Use subtest format when there are named matchers
-        if !named_matchers.is_empty() {
+        // Use subtest format only when we have a structured exception with attributes
+        let has_structured_exception = exception_val.as_ref().is_some_and(|ex| {
+            if let Value::Instance { class_name, .. } = ex {
+                class_name.starts_with("X::") || class_name != "Exception"
+            } else {
+                false
+            }
+        });
+        if !named_matchers.is_empty() && has_structured_exception {
             let ctx = self.begin_subtest();
             let total = 2 + named_matchers.len();
             let state = self.test_state.get_or_insert_with(TestState::new);
@@ -536,10 +544,17 @@ impl Interpreter {
                         None
                     }
                 });
+                // Fall back to err.message for "message" attribute
                 let actual_str = actual_val
                     .as_ref()
                     .map(|v| v.to_string_value())
-                    .unwrap_or_default();
+                    .unwrap_or_else(|| {
+                        if attr_name == "message" {
+                            err_message.clone()
+                        } else {
+                            String::new()
+                        }
+                    });
                 let matched = match expected_val {
                     Value::Regex(pattern) => self
                         .regex_match_with_captures(pattern, &actual_str)
