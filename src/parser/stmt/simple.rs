@@ -10,6 +10,7 @@ use crate::value::Value;
 
 thread_local! {
     static USER_DECLARED_SUBS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+    static IMPORTED_FUNCTIONS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
 }
 
 /// Register a user-declared sub name so it can be recognized as a call without parens.
@@ -24,11 +25,80 @@ pub(in crate::parser) fn reset_user_subs() {
     USER_DECLARED_SUBS.with(|s| {
         s.borrow_mut().clear();
     });
+    IMPORTED_FUNCTIONS.with(|s| {
+        s.borrow_mut().clear();
+    });
 }
 
 pub(in crate::parser) fn is_user_declared_sub(name: &str) -> bool {
     USER_DECLARED_SUBS.with(|s| s.borrow().contains(name))
 }
+
+/// Check if a function name was registered via `use` module import.
+pub(crate) fn is_imported_function(name: &str) -> bool {
+    IMPORTED_FUNCTIONS.with(|s| s.borrow().contains(name))
+}
+
+/// Register exported function names for a module (called when parsing `use` statements).
+pub(in crate::parser) fn register_module_exports(module: &str) {
+    let exports: &[&str] = match module {
+        "Test" => TEST_EXPORTS,
+        "Test::Util" => TEST_UTIL_EXPORTS,
+        _ => return,
+    };
+    IMPORTED_FUNCTIONS.with(|s| {
+        let mut set = s.borrow_mut();
+        for name in exports {
+            set.insert((*name).to_string());
+        }
+    });
+}
+
+/// Functions exported by `use Test`.
+const TEST_EXPORTS: &[&str] = &[
+    "ok",
+    "nok",
+    "is",
+    "isnt",
+    "is-deeply",
+    "is-approx",
+    "cmp-ok",
+    "like",
+    "unlike",
+    "isa-ok",
+    "does-ok",
+    "can-ok",
+    "lives-ok",
+    "dies-ok",
+    "eval-lives-ok",
+    "eval-dies-ok",
+    "throws-like",
+    "fails-like",
+    "pass",
+    "flunk",
+    "skip",
+    "skip-rest",
+    "todo",
+    "diag",
+    "plan",
+    "done-testing",
+    "bail-out",
+    "subtest",
+    "use-ok",
+    "force_todo",
+    "force-todo",
+    "tap-ok",
+];
+
+/// Functions exported by `use Test::Util`.
+const TEST_UTIL_EXPORTS: &[&str] = &[
+    "is_run",
+    "get_out",
+    "warns-like",
+    "doesn't-warn",
+    "is-eqv",
+    "group-of",
+];
 
 use super::{
     block, ident, is_stmt_modifier_keyword, keyword, parse_comma_or_expr, parse_statement_modifier,
@@ -591,65 +661,16 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Known function names that get Stmt::Call treatment at statement level.
+/// Test/Test::Util functions are NOT listed here — they are registered dynamically
+/// via `register_module_exports()` when `use Test` / `use Test::Util` is parsed.
 pub(super) const KNOWN_CALLS: &[&str] = &[
-    "ok",
-    "is",
-    "isnt",
-    "nok",
-    "pass",
-    "flunk",
-    "cmp-ok",
-    "like",
-    "unlike",
-    "is-deeply",
-    "is-approx",
-    "isa-ok",
-    "lives-ok",
-    "dies-ok",
-    "eval-lives-ok",
-    "eval-dies-ok",
-    "is_run",
-    "throws-like",
-    "warns-like",
-    "doesn't-warn",
-    "is-eqv",
-    "group-of",
-    "fails-like",
-    "force_todo",
-    "force-todo",
-    "plan",
-    "done-testing",
-    "bail-out",
-    "skip",
-    "skip-rest",
-    "diag",
-    "todo",
-    "does-ok",
-    "can-ok",
-    "use-ok",
-    "dd",
-    "exit",
-    "proceed",
-    "succeed",
-    "push",
-    "pop",
-    "shift",
-    "unshift",
-    "append",
-    "prepend",
-    "elems",
-    "chars",
-    "defined",
-    "warn",
-    "EVAL",
-    "EVALFILE",
-    "substr",
-    "tap-ok",
+    "dd", "exit", "proceed", "succeed", "push", "pop", "shift", "unshift", "append", "prepend",
+    "elems", "chars", "defined", "warn", "EVAL", "EVALFILE", "substr",
 ];
 
 /// Check if a name is a known statement-level function call.
 pub(super) fn is_known_call(name: &str) -> bool {
-    KNOWN_CALLS.contains(&name)
+    KNOWN_CALLS.contains(&name) || is_imported_function(name)
 }
 
 /// Parse a known function call as statement.

@@ -6,6 +6,10 @@ mod primary;
 mod stmt;
 use std::sync::OnceLock;
 
+pub(crate) fn is_imported_function(name: &str) -> bool {
+    stmt::simple::is_imported_function(name)
+}
+
 use crate::ast::Stmt;
 use crate::value::RuntimeError;
 use crate::value::RuntimeErrorCode;

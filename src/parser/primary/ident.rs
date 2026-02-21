@@ -304,48 +304,11 @@ pub(super) fn is_listop(name: &str) -> bool {
 
 /// Functions that take multiple comma-separated expression arguments in listop style.
 /// These are parsed with full expression arguments (not just primaries).
+/// Test/Test::Util functions are NOT listed here — they are registered dynamically
+/// via `register_module_exports()` when `use Test` / `use Test::Util` is parsed.
 pub(super) fn is_expr_listop(name: &str) -> bool {
-    matches!(
-        name,
-        "ok" | "nok"
-            | "is"
-            | "isnt"
-            | "is-deeply"
-            | "is-approx"
-            | "cmp-ok"
-            | "like"
-            | "unlike"
-            | "isa-ok"
-            | "does-ok"
-            | "can-ok"
-            | "lives-ok"
-            | "dies-ok"
-            | "eval-lives-ok"
-            | "eval-dies-ok"
-            | "throws-like"
-            | "warns-like"
-            | "doesn't-warn"
-            | "is-eqv"
-            | "group-of"
-            | "pass"
-            | "flunk"
-            | "skip"
-            | "todo"
-            | "diag"
-            | "plan"
-            | "done-testing"
-            | "bail-out"
-            | "subtest"
-            | "use-ok"
-            | "EVAL"
-            | "tap-ok"
-            | "flat"
-            | "is_run"
-            | "run"
-            | "shell"
-            | "cross"
-            | "await"
-    )
+    matches!(name, "EVAL" | "flat" | "run" | "shell" | "cross" | "await")
+        || crate::parser::stmt::simple::is_imported_function(name)
 }
 
 /// Check if a name is an infix word operator (should not be treated as a listop call).
