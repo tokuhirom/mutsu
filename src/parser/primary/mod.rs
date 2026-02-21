@@ -236,8 +236,9 @@ mod tests {
 
     #[test]
     fn primary_reports_invalid_qualified_identifier_tail() {
-        let err = primary("Foo::").unwrap_err();
-        assert!(err.message().contains("identifier after '::'"));
+        let (rest, expr) = primary("Foo::").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::PseudoStash(ref s) if s == "Foo::"));
     }
 
     #[test]
