@@ -132,7 +132,7 @@ impl Compiler {
 
     pub(super) fn expr_has_placeholder(expr: &Expr) -> bool {
         match expr {
-            Expr::Var(name) => name.starts_with("$^"),
+            Expr::Var(name) => name.starts_with('^'),
             Expr::Binary { left, right, .. } => {
                 Self::expr_has_placeholder(left) || Self::expr_has_placeholder(right)
             }

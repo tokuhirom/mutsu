@@ -398,8 +398,15 @@ impl VM {
             self.interpreter.pop_routine();
         }
 
+        let mut restored_env = saved_env;
+        let local_names: std::collections::HashSet<&String> = cf.code.locals.iter().collect();
+        for (k, v) in self.interpreter.env().iter() {
+            if restored_env.contains_key(k) && !local_names.contains(k) {
+                restored_env.insert(k.clone(), v.clone());
+            }
+        }
         self.locals = saved_locals;
-        *self.interpreter.env_mut() = saved_env;
+        *self.interpreter.env_mut() = restored_env;
 
         match result {
             Ok(()) => Ok(ret_val),

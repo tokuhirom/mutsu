@@ -182,7 +182,13 @@ impl VM {
             // -- Variables --
             OpCode::GetGlobal(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
-                let val = self.get_env_with_main_alias(name).unwrap_or(Value::Nil);
+                let val = self.get_env_with_main_alias(name).unwrap_or_else(|| {
+                    if name.starts_with('^') {
+                        Value::Bool(true)
+                    } else {
+                        Value::Nil
+                    }
+                });
                 self.stack.push(val);
                 *ip += 1;
             }
