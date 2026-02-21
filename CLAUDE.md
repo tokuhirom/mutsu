@@ -274,6 +274,25 @@ When the user says **"roast fix"**, execute this automated loop (serially, witho
 13. Repeat from step 1 with the next failing test.
 14. Continue this loop indefinitely until stopped by the user.
 
+## Test::Util function workout
+
+When the user says **"Test::Util workout"** (or similar), execute this workflow:
+
+1. Check `roast/packages/Test-Helpers/lib/Test/Util.rakumod` for the list of exported functions.
+2. Check `t/` for existing `test-util-*.t` and `is-run.t` etc. to see which functions already have tests.
+3. Pick **one** unimplemented or undertested function. Once chosen, do NOT switch to a different one.
+4. Write a test file `t/<function-name>.t` exercising the function with multiple cases (basic usage, edge cases, combined checks).
+5. Run the test with `timeout 30 target/debug/mutsu t/<function-name>.t` to see what fails.
+6. Fix the interpreter to make the test pass. When the spec is unclear, check behavior with `raku -e '<code>'` and consult `raku-doc/`.
+7. Run `make test` and `make roast` to ensure no regressions.
+8. Create a feature branch, commit, push, and open a PR (follow PR workflow above).
+9. Enable auto-merge: `gh pr merge --auto --squash <pr-number>`.
+
+Key rules:
+- The function implementation lives in `src/runtime/test_functions.rs` (not as a builtin).
+- If fixing the function requires adding a new language feature (e.g., `exit_code` support), implement it properly — no stubs or hacks.
+- Test::Util functions are defined in `roast/packages/Test-Helpers/lib/Test/Util.rakumod`. Always read the source to understand the expected behavior before implementing.
+
 ## Debugging guidelines
 
 - Do NOT use printf debugging (eprintln! → build → check → repeat). Rust builds are slow.
