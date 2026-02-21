@@ -43,6 +43,7 @@ pub struct RuntimeError {
     pub is_proceed: bool,
     pub is_succeed: bool,
     pub is_fail: bool,
+    pub is_warn: bool,
     pub label: Option<String>,
     /// Structured exception object (e.g. X::AdHoc, X::Promise::Vowed)
     pub exception: Option<Box<Value>>,
@@ -63,6 +64,7 @@ impl RuntimeError {
             is_proceed: false,
             is_succeed: false,
             is_fail: false,
+            is_warn: false,
             label: None,
             exception: None,
         }
@@ -87,6 +89,7 @@ impl RuntimeError {
             is_proceed: false,
             is_succeed: false,
             is_fail: false,
+            is_warn: false,
             label: None,
             exception: None,
         }
@@ -95,95 +98,46 @@ impl RuntimeError {
     pub(crate) fn last_signal() -> Self {
         Self {
             message: "X::ControlFlow".to_string(),
-            code: None,
-            line: None,
-            column: None,
-            hint: None,
-            return_value: None,
             is_last: true,
-            is_next: false,
-            is_redo: false,
-            is_proceed: false,
-            is_succeed: false,
-            is_fail: false,
-            label: None,
-            exception: None,
+            ..Self::new("")
         }
     }
 
     pub(crate) fn next_signal() -> Self {
         Self {
             message: "X::ControlFlow".to_string(),
-            code: None,
-            line: None,
-            column: None,
-            hint: None,
-            return_value: None,
-            is_last: false,
             is_next: true,
-            is_redo: false,
-            is_proceed: false,
-            is_succeed: false,
-            is_fail: false,
-            label: None,
-            exception: None,
+            ..Self::new("")
         }
     }
 
     pub(crate) fn redo_signal() -> Self {
         Self {
             message: "X::ControlFlow".to_string(),
-            code: None,
-            line: None,
-            column: None,
-            hint: None,
-            return_value: None,
-            is_last: false,
-            is_next: false,
             is_redo: true,
-            is_proceed: false,
-            is_succeed: false,
-            is_fail: false,
-            label: None,
-            exception: None,
+            ..Self::new("")
         }
     }
 
     pub(crate) fn proceed_signal() -> Self {
         Self {
-            message: String::new(),
-            code: None,
-            line: None,
-            column: None,
-            hint: None,
-            return_value: None,
-            is_last: false,
-            is_next: false,
-            is_redo: false,
             is_proceed: true,
-            is_succeed: false,
-            is_fail: false,
-            label: None,
-            exception: None,
+            ..Self::new("")
         }
     }
 
     pub(crate) fn succeed_signal() -> Self {
         Self {
-            message: String::new(),
-            code: None,
-            line: None,
-            column: None,
-            hint: None,
-            return_value: None,
-            is_last: false,
-            is_next: false,
-            is_redo: false,
-            is_proceed: false,
             is_succeed: true,
-            is_fail: false,
-            label: None,
-            exception: None,
+            ..Self::new("")
+        }
+    }
+
+    pub(crate) fn warn_signal(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            is_warn: true,
+            ..Self::new("")
         }
     }
 }

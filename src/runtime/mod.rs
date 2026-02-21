@@ -614,6 +614,12 @@ impl Interpreter {
         self.halted
     }
 
+    pub(crate) fn write_warn_to_stderr(&mut self, message: &str) {
+        let msg = format!("{}\n", message);
+        self.stderr_output.push_str(&msg);
+        eprint!("{}", msg);
+    }
+
     pub(crate) fn env(&self) -> &HashMap<String, Value> {
         &self.env
     }

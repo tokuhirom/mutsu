@@ -167,7 +167,8 @@ impl Interpreter {
             "link" => self.builtin_link(&args),
             "symlink" => self.builtin_symlink(&args),
             // I/O functions
-            "print" | "say" | "note" | "warn" => self.builtin_print(name, &args),
+            "warn" => self.builtin_warn(&args),
+            "print" | "say" | "note" => self.builtin_print(name, &args),
             "sink" => Ok(Value::Nil), // sink evaluates args (already done) and returns Nil
             "quietly" => {
                 // quietly suppresses warnings and returns the result
@@ -339,6 +340,14 @@ impl Interpreter {
         let mut err = RuntimeError::new(&msg);
         err.is_fail = true;
         Err(err)
+    }
+
+    fn builtin_warn(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let mut message = String::new();
+        for arg in args {
+            message.push_str(&arg.to_string_value());
+        }
+        Err(RuntimeError::warn_signal(message))
     }
 
     fn builtin_exit(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

@@ -66,6 +66,11 @@ impl VM {
         let mut ip = 0;
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
+                if e.is_warn {
+                    self.interpreter.write_warn_to_stderr(&e.message);
+                    ip += 1;
+                    continue;
+                }
                 return (self.interpreter, Err(e));
             }
             if self.interpreter.is_halted() {
@@ -94,7 +99,14 @@ impl VM {
         }
         let mut ip = 0;
         while ip < code.ops.len() {
-            self.exec_one(code, &mut ip, compiled_fns)?;
+            if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
+                if e.is_warn {
+                    self.interpreter.write_warn_to_stderr(&e.message);
+                    ip += 1;
+                    continue;
+                }
+                return Err(e);
+            }
             if self.interpreter.is_halted() {
                 break;
             }
@@ -899,20 +911,8 @@ impl VM {
             OpCode::Return => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
                 return Err(RuntimeError {
-                    message: String::new(),
-                    code: None,
-                    line: None,
-                    column: None,
-                    hint: None,
                     return_value: Some(val),
-                    is_last: false,
-                    is_next: false,
-                    is_redo: false,
-                    is_proceed: false,
-                    is_succeed: false,
-                    is_fail: false,
-                    label: None,
-                    exception: None,
+                    ..RuntimeError::new("")
                 });
             }
 

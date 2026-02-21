@@ -42,6 +42,7 @@ impl Interpreter {
             "todo" => self.test_fn_todo(args).map(Some),
             "subtest" => self.test_fn_subtest(args).map(Some),
             "tap-ok" => self.test_fn_tap_ok(args).map(Some),
+            "warns-like" => self.test_fn_warns_like(args).map(Some),
             _ => Ok(None),
         }
     }
@@ -863,6 +864,44 @@ impl Interpreter {
         hash.insert("err".to_string(), Value::Str(err));
         hash.insert("status".to_string(), Value::Int(status));
         Ok(Value::Hash(std::sync::Arc::new(hash)))
+    }
+
+    fn test_fn_warns_like(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let program_val = Self::positional_value_required(args, 0, "warns-like expects code")?;
+        let program = match program_val {
+            Value::Str(s) => s.clone(),
+            _ => return Err(RuntimeError::new("warns-like expects string code")),
+        };
+        let test_pattern = Self::positional_value(args, 1)
+            .cloned()
+            .unwrap_or(Value::Nil);
+        let desc = Self::positional_string(args, 2);
+        let mut nested = Interpreter::new();
+        if let Some(Value::Int(pid)) = self.env.get("*PID") {
+            nested.set_pid(pid.saturating_add(1));
+        }
+        nested.set_program_path("<warns-like>");
+        let result = nested.run(&program);
+        let warn_message = nested.stderr_output.clone();
+        let did_warn = !warn_message.is_empty();
+        let _ = result; // We don't care about the result, only warnings
+        let label = if desc.is_empty() {
+            "warns-like".to_string()
+        } else {
+            desc
+        };
+        let ctx = self.begin_subtest();
+        let test_state = self.test_state.as_mut().unwrap();
+        test_state.planned = Some(2);
+        self.output.push_str("1..2\n");
+        // Test 1: code threw a warning
+        self.test_ok(did_warn, "code threw a warning", false)?;
+        // Test 2: warning message matches test pattern
+        let msg_val = Value::Str(warn_message.trim_end().to_string());
+        let matched = self.smart_match(&msg_val, &test_pattern);
+        self.test_ok(matched, "warning message passes test", false)?;
+        self.finish_subtest(ctx, &label, Ok(()))?;
+        Ok(Value::Bool(did_warn && matched))
     }
 
     fn extract_run_output(

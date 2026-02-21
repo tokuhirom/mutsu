@@ -40,6 +40,32 @@ pub(crate) fn native_method_0arg(
 }
 
 fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
+    // CX::Warn methods: message, resume
+    if let Value::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target
+        && class_name == "CX::Warn"
+    {
+        match method {
+            "message" => {
+                return Some(Ok(attributes
+                    .get("message")
+                    .cloned()
+                    .unwrap_or(Value::Str(String::new()))));
+            }
+            "resume" => return Some(Ok(Value::Nil)),
+            "gist" | "Str" => {
+                return Some(Ok(attributes
+                    .get("message")
+                    .cloned()
+                    .unwrap_or(Value::Str(String::new()))));
+            }
+            _ => {}
+        }
+    }
+
     // Match object methods: from, to, Str, pos; delegates unknown to string
     if let Value::Instance {
         class_name,

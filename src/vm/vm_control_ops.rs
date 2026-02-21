@@ -449,15 +449,38 @@ impl VM {
                 Err(e)
             }
             Err(e)
-                if (e.is_last || e.is_next || e.is_redo || e.is_proceed || e.is_succeed)
+                if (e.is_last
+                    || e.is_next
+                    || e.is_redo
+                    || e.is_proceed
+                    || e.is_succeed
+                    || e.is_warn)
                     && control_begin < end =>
             {
                 self.interpreter.discard_let_saves(let_mark);
                 self.stack.truncate(saved_depth);
+                let saved_topic = self.interpreter.env().get("_").cloned();
+                if e.is_warn {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("message".to_string(), Value::Str(e.message.clone()));
+                    let warn_obj = Value::make_instance("CX::Warn".to_string(), attrs);
+                    self.interpreter.env_mut().insert("_".to_string(), warn_obj);
+                }
                 let saved_when = self.interpreter.when_matched();
                 self.interpreter.set_when_matched(false);
-                self.run_range(code, control_begin, end, compiled_fns)?;
+                match self.run_range(code, control_begin, end, compiled_fns) {
+                    Ok(()) => {}
+                    Err(e) if e.is_succeed => {}
+                    Err(e) => return Err(e),
+                }
                 self.interpreter.set_when_matched(saved_when);
+                if e.is_warn {
+                    if let Some(v) = saved_topic {
+                        self.interpreter.env_mut().insert("_".to_string(), v);
+                    } else {
+                        self.interpreter.env_mut().remove("_");
+                    }
+                }
                 *ip = end;
                 Ok(())
             }

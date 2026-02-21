@@ -135,6 +135,8 @@ impl VM {
                 | "Instant"
                 | "Buf"
                 | "Blob"
+                | "CX::Warn"
+                | "X::AdHoc"
         )
     }
 
