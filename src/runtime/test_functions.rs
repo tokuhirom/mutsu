@@ -44,6 +44,7 @@ impl Interpreter {
             "tap-ok" => self.test_fn_tap_ok(args).map(Some),
             "warns-like" => self.test_fn_warns_like(args).map(Some),
             "doesn't-warn" => self.test_fn_doesnt_warn(args).map(Some),
+            "is-eqv" => self.test_fn_is_eqv(args).map(Some),
             _ => Ok(None),
         }
     }
@@ -930,6 +931,35 @@ impl Interpreter {
         }
         self.test_ok(!did_warn, &desc, false)?;
         Ok(Value::Bool(!did_warn))
+    }
+
+    fn test_fn_is_eqv(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let got = Self::positional_value(args, 0)
+            .cloned()
+            .unwrap_or(Value::Nil);
+        let expected = Self::positional_value(args, 1)
+            .cloned()
+            .unwrap_or(Value::Nil);
+        let desc = Self::positional_string(args, 2);
+        let ok = got.eqv(&expected);
+        self.test_ok(ok, &desc, false)?;
+        if !ok {
+            let got_raku = Self::value_raku_repr(&got);
+            let expected_raku = Self::value_raku_repr(&expected);
+            self.output.push_str(&format!(
+                "# expected: {}\n#      got: {}\n",
+                expected_raku, got_raku
+            ));
+        }
+        Ok(Value::Bool(ok))
+    }
+
+    fn value_raku_repr(val: &Value) -> String {
+        if let Some(Ok(Value::Str(s))) = crate::builtins::native_method_0arg(val, "raku") {
+            s
+        } else {
+            val.to_string_value()
+        }
     }
 
     fn extract_run_output(

@@ -325,6 +325,7 @@ pub(super) fn is_expr_listop(name: &str) -> bool {
             | "throws-like"
             | "warns-like"
             | "doesn't-warn"
+            | "is-eqv"
             | "pass"
             | "flunk"
             | "skip"
