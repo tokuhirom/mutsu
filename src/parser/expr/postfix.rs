@@ -114,6 +114,23 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
 fn postfix_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut expr) = primary(input)?;
 
+    // Type smiley: Any:U, Int:D, Str:D etc.
+    // Consume and ignore — runtime doesn't use definedness constraints yet.
+    if matches!(expr, Expr::Literal(Value::Package(_)))
+        && (rest.starts_with(":U") || rest.starts_with(":D") || rest.starts_with(":_"))
+    {
+        let after = &rest[2..];
+        // Ensure it's a word boundary (not :Ufoo or :Dfoo)
+        if after.is_empty()
+            || !after
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphanumeric() || c == '_')
+        {
+            rest = after;
+        }
+    }
+
     loop {
         // Unspace: backslash + whitespace collapses to nothing, allowing
         // `foo\ .method` to parse as `foo.method`.

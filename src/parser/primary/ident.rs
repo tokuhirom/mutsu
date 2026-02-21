@@ -184,6 +184,18 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // time — returns current epoch time as Int (term)
+    if input.starts_with("time")
+        && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
+    {
+        return Ok((
+            &input[4..],
+            Expr::Call {
+                name: "time".to_string(),
+                args: vec![],
+            },
+        ));
+    }
     if let Ok(r) = try_kw("pi", Value::Num(std::f64::consts::PI)) {
         return Ok(r);
     }
@@ -286,8 +298,6 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "sum"
             | "pick"
             | "roll"
-            | "make-temp-dir"
-            | "make-temp-file"
             | "sleep"
     ) || is_expr_listop(name)
 }
@@ -626,7 +636,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         "my" | "our" | "state" => {
             // my/our/state declaration in expression context
             // e.g., (my $x = 5) or (state $x = 3)
-            if let Ok((r, stmt)) = super::super::stmt::my_decl_pub(input) {
+            if let Ok((r, stmt)) = super::super::stmt::my_decl_expr_pub(input) {
                 return Ok((r, Expr::DoStmt(Box::new(stmt))));
             }
         }

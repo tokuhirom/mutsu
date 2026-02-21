@@ -29,6 +29,13 @@ fn native_function_0arg(name: &str) -> Option<Result<Value, RuntimeError>> {
                 .unwrap_or(0.0);
             Some(Ok(Value::Num(secs)))
         }
+        "time" => {
+            let secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            Some(Ok(Value::Int(secs)))
+        }
         "srand" => {
             builtin_srand_auto();
             Some(Ok(Value::Nil))

@@ -39,8 +39,6 @@ impl Compiler {
                 | "force_todo"
                 | "force-todo"
                 | "is_run"
-                | "make-temp-dir"
-                | "make-temp-file"
         )
     }
 

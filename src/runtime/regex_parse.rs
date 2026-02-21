@@ -43,9 +43,30 @@ impl Interpreter {
                 '\\' => {
                     let esc = chars.next()?;
                     match esc {
-                        'd' => RegexAtom::Digit,
-                        'w' => RegexAtom::Word,
-                        's' => RegexAtom::Space,
+                        'd' => RegexAtom::CharClass(CharClass {
+                            negated: false,
+                            items: vec![ClassItem::Digit],
+                        }),
+                        'D' => RegexAtom::CharClass(CharClass {
+                            negated: true,
+                            items: vec![ClassItem::Digit],
+                        }),
+                        'w' => RegexAtom::CharClass(CharClass {
+                            negated: false,
+                            items: vec![ClassItem::Word],
+                        }),
+                        'W' => RegexAtom::CharClass(CharClass {
+                            negated: true,
+                            items: vec![ClassItem::Word],
+                        }),
+                        's' => RegexAtom::CharClass(CharClass {
+                            negated: false,
+                            items: vec![ClassItem::Space],
+                        }),
+                        'S' => RegexAtom::CharClass(CharClass {
+                            negated: true,
+                            items: vec![ClassItem::Space],
+                        }),
                         'n' => RegexAtom::Newline,
                         'N' => RegexAtom::NotNewline,
                         't' => RegexAtom::Literal('\t'),

@@ -268,6 +268,9 @@ impl Interpreter {
                 }
                 return Ok(Value::Nil);
             }
+            "subst" => {
+                return self.dispatch_subst(target, &args);
+            }
             "comb" if args.len() == 1 => {
                 let text = target.to_string_value();
                 let pattern = match &args[0] {
@@ -799,6 +802,71 @@ impl Interpreter {
                 "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
                 method
             ))),
+        }
+    }
+
+    fn dispatch_subst(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        let text = target.to_string_value();
+        let mut positional: Vec<Value> = Vec::new();
+        let mut global = false;
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                match key.as_str() {
+                    "g" | "global" => global = value.truthy(),
+                    _ => {}
+                }
+            } else {
+                positional.push(arg.clone());
+            }
+        }
+        let pattern = positional
+            .first()
+            .ok_or_else(|| RuntimeError::new("subst requires a pattern argument"))?;
+        let replacement = positional
+            .get(1)
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+
+        match pattern {
+            Value::Regex(pat) | Value::Str(pat) => {
+                if global {
+                    let matches = self.regex_find_all(pat, &text);
+                    if matches.is_empty() {
+                        return Ok(Value::Str(text));
+                    }
+                    let chars: Vec<char> = text.chars().collect();
+                    let mut result = String::new();
+                    let mut last_end = 0;
+                    for (start, end) in &matches {
+                        let prefix: String = chars[last_end..*start].iter().collect();
+                        result.push_str(&prefix);
+                        result.push_str(&replacement);
+                        last_end = *end;
+                    }
+                    let suffix: String = chars[last_end..].iter().collect();
+                    result.push_str(&suffix);
+                    Ok(Value::Str(result))
+                } else {
+                    // Replace first match only
+                    let matches = self.regex_find_all(pat, &text);
+                    if let Some((start, end)) = matches.first() {
+                        let chars: Vec<char> = text.chars().collect();
+                        let prefix: String = chars[..*start].iter().collect();
+                        let suffix: String = chars[*end..].iter().collect();
+                        Ok(Value::Str(format!("{}{}{}", prefix, replacement, suffix)))
+                    } else {
+                        Ok(Value::Str(text))
+                    }
+                }
+            }
+            _ => {
+                let pat_str = pattern.to_string_value();
+                if global {
+                    Ok(Value::Str(text.replace(&pat_str, &replacement)))
+                } else {
+                    Ok(Value::Str(text.replacen(&pat_str, &replacement, 1)))
+                }
+            }
         }
     }
 

@@ -250,14 +250,21 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     let mut slurpy = false;
     let mut type_constraint = None;
 
-    // Capture-all: (|) or (|$c)
+    // Capture-all: (|) or (|$c) or (|c)
     if let Some(stripped) = rest.strip_prefix('|') {
         let (r, _) = ws(stripped)?;
-        // Optional capture variable name
+        // Optional capture variable name with sigil
         if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') {
             let (r, name) = var_name(r)?;
             let mut p = make_param(name);
             p.slurpy = true;
+            return Ok((r, p));
+        }
+        // Sigilless capture variable name: |c, |args
+        if let Ok((r, name)) = ident(r) {
+            let mut p = make_param(name);
+            p.slurpy = true;
+            p.sigilless = true;
             return Ok((r, p));
         }
         // Bare |

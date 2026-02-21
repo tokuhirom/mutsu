@@ -148,30 +148,51 @@ impl Compiler {
                         return;
                     }
                     TokenKind::OrOr | TokenKind::OrWord => {
+                        // a || b: result is a if truthy, else b
                         self.compile_expr(left);
                         self.code.emit(OpCode::Dup);
-                        let jump_end = self.code.emit(OpCode::JumpIfTrue(0));
+                        let jump_cleanup = self.code.emit(OpCode::JumpIfTrue(0));
+                        // Falsy path: pop both copies, evaluate right
+                        self.code.emit(OpCode::Pop);
                         self.code.emit(OpCode::Pop);
                         self.compile_expr(right);
+                        let jump_end = self.code.emit(OpCode::Jump(0));
+                        // Truthy path: pop the dup, keep the original
+                        self.code.patch_jump(jump_cleanup);
+                        self.code.emit(OpCode::Pop);
                         self.code.patch_jump(jump_end);
                         return;
                     }
                     TokenKind::SlashSlash | TokenKind::OrElse => {
+                        // a // b: result is a if not nil, else b
                         self.compile_expr(left);
                         self.code.emit(OpCode::Dup);
-                        let jump_end = self.code.emit(OpCode::JumpIfNotNil(0));
+                        let jump_cleanup = self.code.emit(OpCode::JumpIfNotNil(0));
+                        // Nil path: pop both copies, evaluate right
+                        self.code.emit(OpCode::Pop);
                         self.code.emit(OpCode::Pop);
                         self.compile_expr(right);
+                        let jump_end = self.code.emit(OpCode::Jump(0));
+                        // Not-nil path: pop the dup, keep the original
+                        self.code.patch_jump(jump_cleanup);
+                        self.code.emit(OpCode::Pop);
                         self.code.patch_jump(jump_end);
                         return;
                     }
                     TokenKind::AndThen => {
+                        // a andthen b: result is b if a is defined, else a
                         self.compile_expr(left);
                         self.code.emit(OpCode::Dup);
-                        let jump_nil = self.code.emit(OpCode::JumpIfNil(0));
+                        let jump_cleanup = self.code.emit(OpCode::JumpIfNil(0));
+                        // Defined path: pop both copies, evaluate right
+                        self.code.emit(OpCode::Pop);
                         self.code.emit(OpCode::Pop);
                         self.compile_expr(right);
-                        self.code.patch_jump(jump_nil);
+                        let jump_end = self.code.emit(OpCode::Jump(0));
+                        // Nil path: pop the dup, keep the original nil
+                        self.code.patch_jump(jump_cleanup);
+                        self.code.emit(OpCode::Pop);
+                        self.code.patch_jump(jump_end);
                         return;
                     }
                     TokenKind::NotAndThen => {

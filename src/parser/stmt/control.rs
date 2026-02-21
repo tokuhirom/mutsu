@@ -2,7 +2,7 @@ use super::super::expr::expression;
 use super::super::helpers::{ws, ws1};
 use super::super::parse_result::{PError, PResult, opt_char, parse_char};
 
-use crate::ast::{Expr, Stmt};
+use crate::ast::{AssignOp, Expr, Stmt};
 use crate::token_kind::TokenKind;
 
 use super::{block, ident, keyword, parse_comma_or_expr, statement, var_name};
@@ -543,6 +543,15 @@ pub(super) fn default_stmt(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, Stmt::Default(body)))
 }
 
+/// Build a `$_ = <expr>` assignment statement for topicalization.
+fn topicalize(expr: &Expr) -> Stmt {
+    Stmt::Assign {
+        name: "_".to_string(),
+        op: AssignOp::Assign,
+        expr: expr.clone(),
+    }
+}
+
 /// Parse `with`/`without` statement.
 pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     let is_without = keyword("without", input).is_some();
@@ -550,12 +559,16 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         .or_else(|| keyword("without", input))
         .ok_or_else(|| PError::expected("with/without statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, cond) = expression(rest)?;
+    let (rest, cond_expr) = expression(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
 
+    // Prepend $_ = <cond_expr> to the body for topicalization
+    let mut with_body = vec![topicalize(&cond_expr)];
+    with_body.extend(body);
+
     let cond = Expr::MethodCall {
-        target: Box::new(cond),
+        target: Box::new(cond_expr),
         name: "defined".to_string(),
         args: Vec::new(),
         modifier: None,
@@ -574,11 +587,16 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, else_branch) = if keyword("orwith", rest).is_some() {
         let r = keyword("orwith", rest).unwrap();
         let (r, _) = ws1(r)?;
-        let (r, orwith_cond) = expression(r)?;
+        let (r, orwith_cond_expr) = expression(r)?;
         let (r, _) = ws(r)?;
         let (r, orwith_body) = block(r)?;
+
+        // Prepend $_ = <orwith_cond_expr> to the body
+        let mut orwith_with_body = vec![topicalize(&orwith_cond_expr)];
+        orwith_with_body.extend(orwith_body);
+
         let orwith_cond = Expr::MethodCall {
-            target: Box::new(orwith_cond),
+            target: Box::new(orwith_cond_expr),
             name: "defined".to_string(),
             args: Vec::new(),
             modifier: None,
@@ -596,7 +614,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             r,
             vec![Stmt::If {
                 cond: orwith_cond,
-                then_branch: orwith_body,
+                then_branch: orwith_with_body,
                 else_branch: orwith_else,
             }],
         )
@@ -613,7 +631,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         rest,
         Stmt::If {
             cond,
-            then_branch: body,
+            then_branch: with_body,
             else_branch,
         },
     ))
