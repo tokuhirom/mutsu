@@ -156,6 +156,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             Value::GenericRange { .. } => Some(Ok(target.clone())),
             Value::Array(_) => Some(Ok(target.clone())),
+            Value::Channel(_) => None, // fall through to runtime for drain
             _ => Some(Ok(Value::array(vec![target.clone()]))),
         },
         "Range" => match target {

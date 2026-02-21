@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::Arc;
 
 impl VM {
     pub(super) fn exec_call_func_op(
@@ -54,6 +55,32 @@ impl VM {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethod target".to_string())
         })?;
+        // Junction auto-threading: thread method calls over junction values
+        if let Value::Junction { kind, values } = &target
+            && !matches!(
+                method.as_str(),
+                "Bool" | "so" | "WHAT" | "^name" | "gist" | "Str" | "defined"
+            )
+        {
+            let kind = kind.clone();
+            let mut results = Vec::new();
+            for v in values.iter() {
+                let r = if let Some(nr) = Self::try_native_method(v, &method, &args) {
+                    nr?
+                } else {
+                    self.interpreter
+                        .call_method_with_values(v.clone(), &method, args.clone())?
+                };
+                results.push(r);
+            }
+            let junction_result = Value::Junction {
+                kind,
+                values: Arc::new(results),
+            };
+            self.stack.push(junction_result);
+            return Ok(());
+        }
+
         let call_result =
             if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
                 native_result

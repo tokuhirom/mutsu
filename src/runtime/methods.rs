@@ -659,6 +659,18 @@ impl Interpreter {
                     ch.close();
                     Ok(Value::Nil)
                 }
+                "list" | "List" | "Seq" => {
+                    // Drain the channel into a list (blocks until closed)
+                    let mut items = Vec::new();
+                    loop {
+                        let val = ch.receive();
+                        if val == Value::Nil && ch.closed() {
+                            break;
+                        }
+                        items.push(val);
+                    }
+                    Ok(Value::array(items))
+                }
                 "closed" => Ok(Value::Bool(ch.closed())),
                 "Bool" => Ok(Value::Bool(true)),
                 "WHAT" => Ok(Value::Package("Channel".to_string())),
