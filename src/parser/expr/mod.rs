@@ -515,4 +515,18 @@ mod tests {
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::Binary { .. }));
     }
+
+    #[test]
+    fn parse_custom_postfix_operator_call() {
+        let (rest, expr) = expression("$base!").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "postfix:<!>");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(args[0], Expr::Var(ref n) if n == "base"));
+            }
+            _ => panic!("expected postfix operator call"),
+        }
+    }
 }

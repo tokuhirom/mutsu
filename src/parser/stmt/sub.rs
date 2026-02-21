@@ -92,6 +92,28 @@ pub(super) fn sub_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
     // Parse traits (is test-assertion, is export, returns ..., etc.)
     let (rest, traits) = parse_sub_traits(rest)?;
     let (rest, _) = ws(rest)?;
+    let rest = if multi {
+        // Multi declarators can chain additional signatures with `| (...)`.
+        // Keep parse compatibility by accepting and skipping these alternatives.
+        let mut r = rest;
+        loop {
+            let (r2, _) = ws(r)?;
+            if !r2.starts_with('|') {
+                break r2;
+            }
+            let (r3, _) = ws(&r2[1..])?;
+            if !r3.starts_with('(') {
+                return Err(PError::expected("alternate signature after '|'"));
+            }
+            let r4 = skip_balanced_parens(r3);
+            if r4.len() == r3.len() {
+                return Err(PError::expected("closing ')' for alternate signature"));
+            }
+            r = r4;
+        }
+    } else {
+        rest
+    };
     // Detect `sub name;` without a block body — this is a unit-scoped sub declaration error
     if rest.starts_with(';') || rest.is_empty() {
         return Err(PError::raw(
