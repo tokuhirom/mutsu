@@ -182,9 +182,9 @@ fn var_name(input: &str) -> PResult<'_, String> {
 /// only affects that block and its children.
 fn block(input: &str) -> PResult<'_, Vec<Stmt>> {
     let (input, _) = parse_char(input, '{')?;
-    simple::push_import_scope();
+    simple::push_scope();
     let result = block_inner(input);
-    simple::pop_import_scope();
+    simple::pop_scope();
     result
 }
 
@@ -711,11 +711,11 @@ mod tests {
         // At top scope, "ok" is not imported
         assert!(!simple::is_imported_function("ok"));
         // Push a child scope and import Test
-        simple::push_import_scope();
+        simple::push_scope();
         simple::register_module_exports("Test");
         assert!(simple::is_imported_function("ok"));
         // Pop the child scope — "ok" should no longer be visible
-        simple::pop_import_scope();
+        simple::pop_scope();
         assert!(
             !simple::is_imported_function("ok"),
             "imported function should not be visible after scope pop"
@@ -729,14 +729,46 @@ mod tests {
         simple::register_module_exports("Test");
         assert!(simple::is_imported_function("ok"));
         // Push a child scope — parent imports should still be visible
-        simple::push_import_scope();
+        simple::push_scope();
         assert!(
             simple::is_imported_function("ok"),
             "parent scope imports should be visible in child"
         );
-        simple::pop_import_scope();
+        simple::pop_scope();
         // Still visible in parent
         assert!(simple::is_imported_function("ok"));
+        simple::reset_user_subs();
+    }
+
+    #[test]
+    fn user_sub_scope_is_lexical() {
+        simple::reset_user_subs();
+        assert!(!simple::is_user_declared_sub("my-func"));
+        // Declare a sub in a child scope
+        simple::push_scope();
+        simple::register_user_sub("my-func");
+        assert!(simple::is_user_declared_sub("my-func"));
+        // Pop — sub should no longer be visible
+        simple::pop_scope();
+        assert!(
+            !simple::is_user_declared_sub("my-func"),
+            "user sub should not be visible after scope pop"
+        );
+    }
+
+    #[test]
+    fn user_sub_scope_inherits_from_parent() {
+        simple::reset_user_subs();
+        simple::register_user_sub("outer-func");
+        assert!(simple::is_user_declared_sub("outer-func"));
+        // Child scope should see parent's subs
+        simple::push_scope();
+        assert!(
+            simple::is_user_declared_sub("outer-func"),
+            "parent sub should be visible in child scope"
+        );
+        simple::pop_scope();
+        assert!(simple::is_user_declared_sub("outer-func"));
         simple::reset_user_subs();
     }
 }

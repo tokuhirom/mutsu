@@ -277,7 +277,7 @@ pub(super) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
     }
 
     // Otherwise parse as a block (anonymous sub)
-    crate::parser::stmt::simple::push_import_scope();
+    crate::parser::stmt::simple::push_scope();
     let result = (|| -> PResult<'_, Expr> {
         let (r, stmts) = super::super::stmt::stmt_list_pub(r)?;
         let (r, _) = ws_inner(r);
@@ -287,7 +287,7 @@ pub(super) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
         let r = &r[1..];
         Ok((r, make_anon_sub(stmts)))
     })();
-    crate::parser::stmt::simple::pop_import_scope();
+    crate::parser::stmt::simple::pop_scope();
     result
 }
 
@@ -302,14 +302,14 @@ pub(super) fn ws_inner(input: &str) -> (&str, ()) {
 /// Parse a block body: { stmts }
 pub(super) fn parse_block_body(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>> {
     let (r, _) = parse_char(input, '{')?;
-    crate::parser::stmt::simple::push_import_scope();
+    crate::parser::stmt::simple::push_scope();
     let result = (|| -> PResult<'_, Vec<crate::ast::Stmt>> {
         let (r, stmts) = super::super::stmt::stmt_list_pub(r)?;
         let (r, _) = ws_inner(r);
         let (r, _) = parse_char(r, '}')?;
         Ok((r, stmts))
     })();
-    crate::parser::stmt::simple::pop_import_scope();
+    crate::parser::stmt::simple::pop_scope();
     result
 }
 
