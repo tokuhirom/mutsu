@@ -1371,6 +1371,12 @@ impl Interpreter {
                     };
                     return Ok(Value::Complex(re, im));
                 }
+                "Lock" => {
+                    let mut attrs = HashMap::new();
+                    let lock_id = super::native_methods::next_lock_id() as i64;
+                    attrs.insert("lock-id".to_string(), Value::Int(lock_id));
+                    return Ok(Value::make_instance("Lock".to_string(), attrs));
+                }
                 // Types that cannot be instantiated with .new
                 "HyperWhatever" | "Whatever" | "Junction" => {
                     return Err(RuntimeError::new(format!(

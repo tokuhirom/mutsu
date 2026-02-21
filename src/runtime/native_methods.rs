@@ -17,9 +17,30 @@ fn supply_taps_map() -> &'static SupplyTapsMap {
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+type LockMap = std::sync::Mutex<HashMap<u64, Arc<std::sync::Mutex<()>>>>;
+
+fn lock_map() -> &'static LockMap {
+    static MAP: OnceLock<LockMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
 pub(super) fn next_supply_id() -> u64 {
     static COUNTER: AtomicU64 = AtomicU64::new(1);
     COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+pub(super) fn next_lock_id() -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    if let Ok(mut map) = lock_map().lock() {
+        map.entry(id)
+            .or_insert_with(|| Arc::new(std::sync::Mutex::new(())));
+    }
+    id
+}
+
+fn lock_by_id(id: u64) -> Option<Arc<std::sync::Mutex<()>>> {
+    lock_map().lock().ok().and_then(|map| map.get(&id).cloned())
 }
 
 pub(super) fn register_supply_tap(supply_id: u64, tap: Value) {
@@ -91,12 +112,25 @@ impl Interpreter {
 
     fn native_lock(
         &mut self,
-        _attributes: &HashMap<String, Value>,
+        attributes: &HashMap<String, Value>,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         match method {
             "protect" => {
+                let lock_id = match attributes.get("lock-id") {
+                    Some(Value::Int(id)) if *id > 0 => *id as u64,
+                    _ => {
+                        return Err(RuntimeError::new(
+                            "Lock.protect called on Lock without lock-id",
+                        ));
+                    }
+                };
+                let lock = lock_by_id(lock_id)
+                    .ok_or_else(|| RuntimeError::new("Lock.protect could not find lock state"))?;
+                let _guard = lock
+                    .lock()
+                    .map_err(|_| RuntimeError::new("Lock.protect failed to acquire lock"))?;
                 let code = args.first().cloned().unwrap_or(Value::Nil);
                 self.call_sub_value(code, Vec::new(), false)
             }
