@@ -630,36 +630,7 @@ impl Interpreter {
         }
         nested.set_program_path("<is_run>");
         let result = nested.run(&program);
-        let stderr_content = nested.stderr_output.clone();
-        let (out, err, status) = match result {
-            Ok(output) => {
-                let s = if nested.bailed_out {
-                    255i64
-                } else {
-                    nested.exit_code
-                };
-                let stdout_only = if stderr_content.is_empty() {
-                    output
-                } else {
-                    output.replace(&stderr_content, "")
-                };
-                (stdout_only, stderr_content, s)
-            }
-            Err(_) => {
-                let combined = nested.output.clone();
-                let stdout_only = if stderr_content.is_empty() {
-                    combined
-                } else {
-                    combined.replace(&stderr_content, "")
-                };
-                let s = if nested.exit_code != 0 {
-                    nested.exit_code
-                } else {
-                    1i64
-                };
-                (stdout_only, stderr_content, s)
-            }
-        };
+        let (out, err, status) = Self::extract_run_output(&nested, result);
         let mut ok = true;
         if let Some(expected) = expected_out {
             ok &= self.smart_match(&Value::Str(out), &expected);
@@ -886,8 +857,20 @@ impl Interpreter {
         }
         nested.set_program_path("<get_out>");
         let result = nested.run(&program);
+        let (out, err, status) = Self::extract_run_output(&nested, result);
+        let mut hash = std::collections::HashMap::new();
+        hash.insert("out".to_string(), Value::Str(out));
+        hash.insert("err".to_string(), Value::Str(err));
+        hash.insert("status".to_string(), Value::Int(status));
+        Ok(Value::Hash(std::sync::Arc::new(hash)))
+    }
+
+    fn extract_run_output(
+        nested: &Interpreter,
+        result: Result<String, RuntimeError>,
+    ) -> (String, String, i64) {
         let stderr_content = nested.stderr_output.clone();
-        let (out, err, status) = match result {
+        match result {
             Ok(output) => {
                 let s = if nested.bailed_out {
                     255i64
@@ -901,25 +884,28 @@ impl Interpreter {
                 };
                 (stdout_only, stderr_content, s)
             }
-            Err(_) => {
+            Err(e) => {
                 let combined = nested.output.clone();
                 let stdout_only = if stderr_content.is_empty() {
                     combined
                 } else {
                     combined.replace(&stderr_content, "")
                 };
+                let mut err = stderr_content;
+                if !e.message.is_empty() {
+                    if !err.is_empty() && !err.ends_with('\n') {
+                        err.push('\n');
+                    }
+                    err.push_str(&e.message);
+                    err.push('\n');
+                }
                 let s = if nested.exit_code != 0 {
                     nested.exit_code
                 } else {
                     1i64
                 };
-                (stdout_only, stderr_content, s)
+                (stdout_only, err, s)
             }
-        };
-        let mut hash = std::collections::HashMap::new();
-        hash.insert("out".to_string(), Value::Str(out));
-        hash.insert("err".to_string(), Value::Str(err));
-        hash.insert("status".to_string(), Value::Int(status));
-        Ok(Value::Hash(std::sync::Arc::new(hash)))
+        }
     }
 }
