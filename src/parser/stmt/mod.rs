@@ -219,6 +219,11 @@ pub(super) fn parse_param_list_pub(input: &str) -> PResult<'_, Vec<crate::ast::P
     parse_param_list(input)
 }
 
+/// Public accessor for constant declaration parser (used by primary.rs in expression context).
+pub(super) fn constant_decl_pub(input: &str) -> PResult<'_, Stmt> {
+    decl::constant_decl(input)
+}
+
 /// Public accessor for statement (used by primary.rs for do-statement expressions).
 pub(super) fn statement_pub(input: &str) -> PResult<'_, Stmt> {
     statement(input)
@@ -683,6 +688,22 @@ mod tests {
     }
 
     #[test]
+    fn parse_for_with_typed_unpacking_param_signature() {
+        let (rest, stmts) = program("for a => 1 -> Pair $p (:$key, :$value) { $p }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::For { .. }));
+    }
+
+    #[test]
+    fn parse_for_with_anonymous_unpacking_param_signature() {
+        let (rest, stmts) = program("for A.new -> $ (:$x) { $x }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::For { .. }));
+    }
+
+    #[test]
     fn parse_chained_inline_modifiers_in_paren_expr() {
         let (rest, stmts) = program("my @odd = ($_ * $_ if $_ % 2 for 0..10);").unwrap();
         assert_eq!(rest, "");
@@ -837,6 +858,13 @@ mod tests {
     #[test]
     fn parse_make_with_token_term_in_array() {
         let (rest, stmts) = program("make [token { \"bar\" }]").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+    }
+
+    #[test]
+    fn parse_chained_constant_declarator_rhs() {
+        let (rest, stmts) = program("my $a = constant $b = 42;").unwrap();
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
     }

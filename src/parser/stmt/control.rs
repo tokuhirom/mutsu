@@ -1,5 +1,5 @@
 use super::super::expr::expression;
-use super::super::helpers::{ws, ws1};
+use super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
 
 use crate::ast::{AssignOp, Expr, Stmt};
@@ -334,6 +334,15 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, String> {
         let (after_eq, _) = ws(after_eq)?;
         let (after_default, _default_expr) = expression(after_eq)?;
         rest = after_default;
+    } else {
+        rest = r;
+    }
+
+    // Optional unpacking sub-signature: `-> Pair $p (:$key, :$value) { ... }`
+    // Keep parse permissive and skip details for now.
+    let (r, _) = ws(rest)?;
+    if r.starts_with('(') {
+        rest = skip_balanced_parens(r);
     } else {
         rest = r;
     }

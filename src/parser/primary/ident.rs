@@ -683,6 +683,12 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 return Ok((r, Expr::DoStmt(Box::new(stmt))));
             }
         }
+        "constant" => {
+            // constant declaration in expression context
+            if let Ok((r, stmt)) = super::super::stmt::constant_decl_pub(input) {
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            }
+        }
         "enum" => {
             // enum in expression context: enum < ... > or enum :: < ... >
             if let Ok((r, stmt)) = super::super::stmt::decl::enum_decl(input) {
@@ -844,17 +850,19 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 full_name.push_str("::");
                 full_name.push_str(part);
                 r = rest2;
-            } else if (super::var::is_pseudo_package(&full_name)
-                || full_name.split("::").all(super::var::is_pseudo_package))
-                && (after.starts_with('.')
-                    || after.is_empty()
-                    || after.starts_with(';')
-                    || after.starts_with(')')
-                    || after.starts_with(',')
-                    || after.starts_with(' '))
+            } else if after.starts_with('.')
+                || after.is_empty()
+                || after.starts_with(';')
+                || after.starts_with(')')
+                || after.starts_with(',')
+                || after.starts_with(' ')
             {
-                // MY::, OUR::, etc. followed by method call or end-of-expression → PseudoStash
-                return Ok((after, Expr::PseudoStash(full_name)));
+                // Trailing `::` stash lookup form (e.g. `A::`, `MY::`).
+                // Pseudo packages remain supported, and ordinary package stashes are accepted
+                // for parse compatibility.
+                let mut stash_name = full_name.clone();
+                stash_name.push_str("::");
+                return Ok((after, Expr::PseudoStash(stash_name)));
             } else {
                 return Err(PError::expected_at("identifier after '::'", after));
             }
