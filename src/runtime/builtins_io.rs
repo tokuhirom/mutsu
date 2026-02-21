@@ -244,13 +244,15 @@ impl Interpreter {
                 return Err(RuntimeError::new("tmpdir path must be a directory"));
             }
             let repr = Self::stringify_path(&path_buf);
-            self.env
-                .insert("$*TMPDIR".to_string(), Value::Str(repr.clone()));
-            return Ok(Value::Str(repr));
+            let val = self.make_io_path_instance(&repr);
+            self.env.insert("$*TMPDIR".to_string(), val.clone());
+            return Ok(val);
         }
-        Ok(Value::Str(
-            self.get_dynamic_string("$*TMPDIR").unwrap_or_default(),
-        ))
+        Ok(self
+            .env
+            .get("$*TMPDIR")
+            .cloned()
+            .unwrap_or_else(|| Value::Str(String::new())))
     }
 
     pub(super) fn builtin_homedir(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

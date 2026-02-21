@@ -6,7 +6,7 @@ use crate::token_kind::TokenKind;
 
 use super::operators::*;
 use super::postfix::prefix_expr;
-use super::{contains_whatever, expression, expression_no_sequence, replace_whatever};
+use super::{contains_whatever, replace_whatever};
 
 /// Ternary: expr ?? expr !! expr
 pub(super) fn ternary(input: &str) -> PResult<'_, Expr> {
@@ -18,17 +18,13 @@ pub(super) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (rest_ws, _) = ws(rest)?;
     if let Ok((input, _)) = parse_tag(rest_ws, "??") {
         let (input, _) = ws(input)?;
-        let expr_fn = if mode == ExprMode::Full {
-            expression
-        } else {
-            expression_no_sequence
-        };
+        // Parse then-expr at ternary precedence (stops before `!!`)
         let (input, then_expr) = if mode == ExprMode::Full {
-            expr_fn(input).map_err(|err| {
+            ternary_mode(input, mode).map_err(|err| {
                 enrich_expected_error(err, "expected then-expression after '??'", input.len())
             })?
         } else {
-            expr_fn(input)?
+            ternary_mode(input, mode)?
         };
         let (input, _) = ws(input)?;
         let (input, _) = if mode == ExprMode::Full {
@@ -39,12 +35,13 @@ pub(super) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             parse_tag(input, "!!")?
         };
         let (input, _) = ws(input)?;
+        // Parse else-expr at ternary precedence (allows nested ternary)
         let (input, else_expr) = if mode == ExprMode::Full {
-            expr_fn(input).map_err(|err| {
+            ternary_mode(input, mode).map_err(|err| {
                 enrich_expected_error(err, "expected else-expression after '!!'", input.len())
             })?
         } else {
-            expr_fn(input)?
+            ternary_mode(input, mode)?
         };
         return Ok((
             input,

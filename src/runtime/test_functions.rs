@@ -35,8 +35,6 @@ impl Interpreter {
             "throws-like" => self.test_fn_throws_like(args).map(Some),
             "fails-like" => self.test_fn_throws_like(args).map(Some),
             "is_run" => self.test_fn_is_run(args).map(Some),
-            "make-temp-dir" => self.test_fn_make_temp_dir(args).map(Some),
-            "make-temp-file" => self.test_fn_make_temp_file(args).map(Some),
             "get_out" => self.test_fn_get_out(args).map(Some),
             "use-ok" => self.test_fn_use_ok(args).map(Some),
             "does-ok" => self.test_fn_does_ok(args).map(Some),
@@ -665,41 +663,6 @@ impl Interpreter {
         }
         self.test_ok(ok, &desc, false)?;
         Ok(Value::Bool(ok))
-    }
-
-    fn test_fn_make_temp_dir(&self, _args: &[Value]) -> Result<Value, RuntimeError> {
-        let dir = std::env::temp_dir().join(format!("mutsu-tmp-{}", std::process::id()));
-        let unique = dir.join(format!("{}", crate::value::next_instance_id()));
-        std::fs::create_dir_all(&unique)
-            .map_err(|e| RuntimeError::new(format!("make-temp-dir: {}", e)))?;
-        Ok(self.make_io_path_instance(&unique.to_string_lossy()))
-    }
-
-    fn test_fn_make_temp_file(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let dir = std::env::temp_dir().join(format!("mutsu-tmp-{}", std::process::id()));
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| RuntimeError::new(format!("make-temp-file: {}", e)))?;
-        let file_path = dir.join(format!("tmp-{}", crate::value::next_instance_id()));
-
-        let mut content: Option<String> = None;
-        for arg in args {
-            if let Value::Pair(key, val) = arg
-                && key == "content"
-            {
-                content = Some(val.to_string_value());
-            }
-            if let Value::Hash(map) = arg
-                && let Some(val) = map.get("content")
-            {
-                content = Some(val.to_string_value());
-            }
-        }
-
-        let content_str = content.unwrap_or_default();
-        std::fs::write(&file_path, &content_str)
-            .map_err(|e| RuntimeError::new(format!("make-temp-file: {}", e)))?;
-
-        Ok(self.make_io_path_instance(&file_path.to_string_lossy()))
     }
 
     fn test_fn_use_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

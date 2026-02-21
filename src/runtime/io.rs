@@ -40,10 +40,9 @@ impl Interpreter {
         self.env.insert("*CWD".to_string(), cwd_val);
         let tmpdir = env::temp_dir();
         let tmpdir_str = tmpdir.to_string_lossy().to_string();
-        self.env
-            .insert("$*TMPDIR".to_string(), Value::Str(tmpdir_str.clone()));
-        self.env
-            .insert("*TMPDIR".to_string(), Value::Str(tmpdir_str));
+        let tmpdir_val = self.make_io_path_instance(&tmpdir_str);
+        self.env.insert("$*TMPDIR".to_string(), tmpdir_val.clone());
+        self.env.insert("*TMPDIR".to_string(), tmpdir_val);
         if let Ok(home) = env::var("HOME") {
             self.env
                 .insert("$*HOME".to_string(), Value::Str(home.clone()));

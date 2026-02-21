@@ -71,6 +71,17 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
 
 /// Parse `my`, `our`, or `state` variable declaration.
 pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
+    my_decl_inner(input, true)
+}
+
+/// Parse a `my`/`our`/`state` declaration in expression context (no statement modifier).
+/// This avoids consuming semicolons via `parse_statement_modifier` when called from
+/// within an expression (e.g., colon-arg: `@a.push: my \p = expr;`).
+pub(super) fn my_decl_expr(input: &str) -> PResult<'_, Stmt> {
+    my_decl_inner(input, false)
+}
+
+fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     let is_state = keyword("state", input).is_some();
     let rest = keyword("my", input)
         .or_else(|| keyword("our", input))
@@ -121,7 +132,10 @@ pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
                 type_constraint: None,
                 is_state,
             };
-            return parse_statement_modifier(r, stmt);
+            if apply_modifier {
+                return parse_statement_modifier(r, stmt);
+            }
+            return Ok((r, stmt));
         }
         return Ok((
             r,
@@ -169,7 +183,10 @@ pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
                 type_constraint,
                 is_state,
             };
-            return parse_statement_modifier(r, stmt);
+            if apply_modifier {
+                return parse_statement_modifier(r, stmt);
+            }
+            return Ok((r, stmt));
         }
         return Ok((
             r,
@@ -263,7 +280,10 @@ pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
             type_constraint,
             is_state,
         };
-        return parse_statement_modifier(rest, stmt);
+        if apply_modifier {
+            return parse_statement_modifier(rest, stmt);
+        }
+        return Ok((rest, stmt));
     }
     // Method-call-assign .= in declaration: my Type $var .= method(args)
     if let Some(stripped) = rest.strip_prefix(".=") {
@@ -297,7 +317,10 @@ pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
             type_constraint,
             is_state,
         };
-        return parse_statement_modifier(rest, stmt);
+        if apply_modifier {
+            return parse_statement_modifier(rest, stmt);
+        }
+        return Ok((rest, stmt));
     }
     // Binding :=
     if let Some(stripped) = rest.strip_prefix(":=") {
@@ -309,7 +332,10 @@ pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
             type_constraint,
             is_state,
         };
-        return parse_statement_modifier(rest, stmt);
+        if apply_modifier {
+            return parse_statement_modifier(rest, stmt);
+        }
+        return Ok((rest, stmt));
     }
 
     let (rest, _) = opt_char(rest, ';');

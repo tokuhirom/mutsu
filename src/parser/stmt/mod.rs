@@ -211,8 +211,10 @@ pub(super) fn statement_pub(input: &str) -> PResult<'_, Stmt> {
     statement(input)
 }
 
-pub(super) fn my_decl_pub(input: &str) -> PResult<'_, Stmt> {
-    decl::my_decl(input)
+/// Parse `my`/`our`/`state` in expression context — does not consume
+/// semicolons or apply statement modifiers.
+pub(super) fn my_decl_expr_pub(input: &str) -> PResult<'_, Stmt> {
+    decl::my_decl_expr(input)
 }
 
 /// Parse statements in best-effort mode: return all successfully parsed
@@ -250,30 +252,53 @@ pub(super) fn stmt_list_partial(input: &str) -> (Vec<Stmt>, Option<String>) {
 /// depth and stopping after a `;` or `}` at depth-0 that likely marks the
 /// end of the current statement.
 fn skip_to_next_statement(input: &str) -> Option<&str> {
-    let chars = input.char_indices();
+    let bytes = input.as_bytes();
+    let len = bytes.len();
     let mut brace_depth: i32 = 0;
     let mut paren_depth: i32 = 0;
     let mut in_single_quote = false;
     let mut in_double_quote = false;
     let mut prev_was_backslash = false;
-    for (i, c) in chars {
+    let mut i = 0;
+    while i < len {
+        let c = bytes[i] as char;
         if prev_was_backslash {
             prev_was_backslash = false;
+            i += 1;
             continue;
         }
         if c == '\\' && (in_single_quote || in_double_quote) {
             prev_was_backslash = true;
+            i += 1;
             continue;
         }
+        // Only treat ' as quote delimiter if it's not part of an identifier
+        // (e.g., "doesn't-hang" should not toggle quoting)
         if c == '\'' && !in_double_quote {
-            in_single_quote = !in_single_quote;
-            continue;
+            let is_identifier_apostrophe = if i > 0 {
+                let prev = bytes[i - 1];
+                prev.is_ascii_alphanumeric() || prev == b'-' || prev == b'_'
+            } else {
+                false
+            } && if i + 1 < len {
+                let next = bytes[i + 1];
+                next.is_ascii_alphanumeric() || next == b'-' || next == b'_'
+            } else {
+                false
+            };
+            if !is_identifier_apostrophe {
+                in_single_quote = !in_single_quote;
+                i += 1;
+                continue;
+            }
         }
         if c == '"' && !in_single_quote {
             in_double_quote = !in_double_quote;
+            i += 1;
             continue;
         }
         if in_single_quote || in_double_quote {
+            i += 1;
             continue;
         }
         match c {
@@ -301,6 +326,7 @@ fn skip_to_next_statement(input: &str) -> Option<&str> {
             }
             _ => {}
         }
+        i += 1;
     }
     None
 }
