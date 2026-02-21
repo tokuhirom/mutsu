@@ -633,7 +633,11 @@ impl Interpreter {
         let stderr_content = nested.stderr_output.clone();
         let (out, err, status) = match result {
             Ok(output) => {
-                let s = if nested.bailed_out { 255i64 } else { 0i64 };
+                let s = if nested.bailed_out {
+                    255i64
+                } else {
+                    nested.exit_code
+                };
                 let stdout_only = if stderr_content.is_empty() {
                     output
                 } else {
@@ -648,7 +652,12 @@ impl Interpreter {
                 } else {
                     combined.replace(&stderr_content, "")
                 };
-                (stdout_only, stderr_content, 1i64)
+                let s = if nested.exit_code != 0 {
+                    nested.exit_code
+                } else {
+                    1i64
+                };
+                (stdout_only, stderr_content, s)
             }
         };
         let mut ok = true;
@@ -880,7 +889,11 @@ impl Interpreter {
         let stderr_content = nested.stderr_output.clone();
         let (out, err, status) = match result {
             Ok(output) => {
-                let s = if nested.bailed_out { 255i64 } else { 0i64 };
+                let s = if nested.bailed_out {
+                    255i64
+                } else {
+                    nested.exit_code
+                };
                 let stdout_only = if stderr_content.is_empty() {
                     output
                 } else {
@@ -895,7 +908,12 @@ impl Interpreter {
                 } else {
                     combined.replace(&stderr_content, "")
                 };
-                (stdout_only, stderr_content, 1i64)
+                let s = if nested.exit_code != 0 {
+                    nested.exit_code
+                } else {
+                    1i64
+                };
+                (stdout_only, stderr_content, s)
             }
         };
         let mut hash = std::collections::HashMap::new();

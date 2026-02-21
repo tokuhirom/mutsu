@@ -342,11 +342,12 @@ impl Interpreter {
     }
 
     fn builtin_exit(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let _code = match args.first() {
+        let code = match args.first() {
             Some(Value::Int(i)) => *i,
             _ => 0,
         };
         self.halted = true;
+        self.exit_code = code;
         Ok(Value::Nil)
     }
 
