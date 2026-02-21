@@ -1,11 +1,23 @@
 use super::*;
 
+/// Check for NUL bytes in a path and return X::IO::Null error if found.
+fn check_null_in_path(path: &str) -> Result<(), RuntimeError> {
+    if path.contains('\0') {
+        Err(RuntimeError::new(
+            "X::IO::Null: Found null byte in pathname",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 impl Interpreter {
     pub(super) fn builtin_slurp(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let path = args
             .first()
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("slurp requires a path argument"))?;
+        check_null_in_path(&path)?;
         let content = fs::read_to_string(&path)
             .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
         Ok(Value::Str(content))
@@ -16,6 +28,7 @@ impl Interpreter {
             .first()
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("spurt requires a path argument"))?;
+        check_null_in_path(&path)?;
         let content = args
             .get(1)
             .map(|v| v.to_string_value())
@@ -45,6 +58,7 @@ impl Interpreter {
             .first()
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("open requires a path argument"))?;
+        check_null_in_path(&path)?;
         let (read, write, append, bin) = Self::parse_io_flags_values(&args[1..]);
         let path_buf = self.resolve_path(&path);
         self.open_file_handle(&path_buf, read, write, append, bin)
@@ -173,6 +187,7 @@ impl Interpreter {
             .first()
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("chdir requires a path"))?;
+        check_null_in_path(&path)?;
         let path_buf = self.resolve_path(&path);
         if !path_buf.is_dir() {
             return Err(RuntimeError::new(format!(

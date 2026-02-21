@@ -215,6 +215,96 @@ pub(super) fn my_decl_pub(input: &str) -> PResult<'_, Stmt> {
     decl::my_decl(input)
 }
 
+/// Parse statements in best-effort mode: return all successfully parsed
+/// statements even if a parse error is encountered partway through.
+/// When a statement fails to parse, skip forward to the next statement
+/// boundary and continue parsing. Used by `load_module` so that
+/// partially-parseable `.rakumod` files still export their functions.
+pub(super) fn stmt_list_partial(input: &str) -> (Vec<Stmt>, Option<String>) {
+    let mut stmts = Vec::new();
+    let mut rest = input;
+    while let Ok((r, _)) = ws(rest) {
+        let r = consume_semicolons(r);
+        let Ok((r, _)) = ws(r) else { break };
+        if r.is_empty() || r.starts_with('}') {
+            break;
+        }
+        match statement(r) {
+            Ok((r, stmt)) => {
+                stmts.push(stmt);
+                rest = r;
+            }
+            Err(_) => {
+                // Skip to next statement boundary and continue.
+                match skip_to_next_statement(r) {
+                    Some(next) => rest = next,
+                    None => break,
+                }
+            }
+        }
+    }
+    (stmts, None)
+}
+
+/// Advance past the current unparseable statement by tracking brace/paren
+/// depth and stopping after a `;` or `}` at depth-0 that likely marks the
+/// end of the current statement.
+fn skip_to_next_statement(input: &str) -> Option<&str> {
+    let chars = input.char_indices();
+    let mut brace_depth: i32 = 0;
+    let mut paren_depth: i32 = 0;
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut prev_was_backslash = false;
+    for (i, c) in chars {
+        if prev_was_backslash {
+            prev_was_backslash = false;
+            continue;
+        }
+        if c == '\\' && (in_single_quote || in_double_quote) {
+            prev_was_backslash = true;
+            continue;
+        }
+        if c == '\'' && !in_double_quote {
+            in_single_quote = !in_single_quote;
+            continue;
+        }
+        if c == '"' && !in_single_quote {
+            in_double_quote = !in_double_quote;
+            continue;
+        }
+        if in_single_quote || in_double_quote {
+            continue;
+        }
+        match c {
+            '{' => brace_depth += 1,
+            '}' => {
+                if brace_depth > 0 {
+                    brace_depth -= 1;
+                }
+                if brace_depth == 0 && paren_depth == 0 {
+                    // End of a block — skip past it
+                    let after = &input[i + 1..];
+                    let after = after.trim_start();
+                    // Consume optional trailing semicolons
+                    return Some(consume_semicolons(after));
+                }
+            }
+            '(' => paren_depth += 1,
+            ')' => {
+                if paren_depth > 0 {
+                    paren_depth -= 1;
+                }
+            }
+            ';' if brace_depth == 0 && paren_depth == 0 => {
+                return Some(&input[i + 1..]);
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Parse a list of statements (inside a block or at program level).
 fn stmt_list(input: &str) -> PResult<'_, Vec<Stmt>> {
     let mut stmts = Vec::new();
@@ -324,6 +414,7 @@ const STMT_PARSERS: &[StmtParser] = &[
     control::whenever_stmt,
     class::package_decl,
     simple::let_stmt,
+    simple::temp_stmt,
     simple::known_call_stmt,
     assign_stmt,
     simple::block_stmt,

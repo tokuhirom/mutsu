@@ -287,7 +287,13 @@ impl Interpreter {
                 return Ok(Value::array(result));
             }
             "IO" if args.is_empty() => {
-                return Ok(self.make_io_path_instance(&target.to_string_value()));
+                let s = target.to_string_value();
+                if s.contains('\0') {
+                    return Err(RuntimeError::new(
+                        "X::IO::Null: Found null byte in pathname",
+                    ));
+                }
+                return Ok(self.make_io_path_instance(&s));
             }
             "contains" => {
                 return self.dispatch_contains(target, &args);
@@ -1163,6 +1169,11 @@ impl Interpreter {
                         .first()
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
+                    if path.contains('\0') {
+                        return Err(RuntimeError::new(
+                            "X::IO::Null: Found null byte in pathname",
+                        ));
+                    }
                     return Ok(self.make_io_path_instance(&path));
                 }
                 "Buf" => {

@@ -634,10 +634,11 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
     let rest =
         keyword("constant", input).ok_or_else(|| PError::expected("constant declaration"))?;
     let (rest, _) = ws1(rest)?;
-    // The name can be $var or bare identifier
-    let (rest, name) = if rest.starts_with('$') {
+    // The name can be $var, @var, %var, or bare identifier
+    let (rest, name) = if rest.starts_with('$') || rest.starts_with('@') || rest.starts_with('%') {
+        let sigil = rest.chars().next().unwrap();
         let (r, n) = var_name(rest)?;
-        (r, format!("${}", n))
+        (r, format!("{}{}", sigil, n))
     } else {
         ident(rest)?
     };
