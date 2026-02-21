@@ -136,6 +136,20 @@ impl Compiler {
                 }
             },
             Expr::Binary { left, op, right } => {
+                // Detect `funcname |capture` pattern (listop call with capture slip)
+                if *op == TokenKind::Pipe
+                    && matches!(right.as_ref(), Expr::BareWord(_))
+                    && let Expr::BareWord(name) = left.as_ref()
+                {
+                    // Compile the slip arg (the capture variable)
+                    self.compile_expr(right);
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::CallFuncSlip {
+                        name_idx,
+                        regular_arity: 0,
+                    });
+                    return;
+                }
                 // Short-circuit operators
                 match op {
                     TokenKind::AndAnd => {
@@ -336,12 +350,55 @@ impl Compiler {
                         self.compile_expr(&method_call);
                         return;
                     }
-                    let arity = args.len() as u32;
-                    for arg in args {
-                        self.compile_expr(arg);
+                    // Check for capture slip args (|c)
+                    let has_slip = args.iter().any(|arg| {
+                        matches!(
+                            arg,
+                            Expr::Unary {
+                                op: TokenKind::Pipe,
+                                ..
+                            }
+                        )
+                    });
+                    if has_slip {
+                        // Compile regular args first, then the slip arg
+                        let mut regular_count = 0u32;
+                        for arg in args {
+                            if let Expr::Unary {
+                                op: TokenKind::Pipe,
+                                ..
+                            } = arg
+                            {
+                                // skip slip args in first pass
+                            } else {
+                                self.compile_expr(arg);
+                                regular_count += 1;
+                            }
+                        }
+                        // Compile the slip arg (only the inner expr)
+                        for arg in args {
+                            if let Expr::Unary {
+                                op: TokenKind::Pipe,
+                                expr,
+                            } = arg
+                            {
+                                self.compile_expr(expr);
+                                break; // only one slip supported
+                            }
+                        }
+                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        self.code.emit(OpCode::CallFuncSlip {
+                            name_idx,
+                            regular_arity: regular_count,
+                        });
+                    } else {
+                        let arity = args.len() as u32;
+                        for arg in args {
+                            self.compile_expr(arg);
+                        }
+                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        self.code.emit(OpCode::CallFunc { name_idx, arity });
                     }
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                    self.code.emit(OpCode::CallFunc { name_idx, arity });
                 }
             }
             // Method call on mutable variable target (needs writeback)

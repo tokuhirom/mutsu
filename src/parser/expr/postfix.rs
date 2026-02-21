@@ -92,10 +92,11 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    // |@array or |%hash or |$scalar — slip/flatten prefix
+    // |@array or |%hash or |$scalar or |ident — slip/flatten prefix
     if input.starts_with('|')
+        && !input.starts_with("||")
         && let Some(&c) = input.as_bytes().get(1)
-        && (c == b'@' || c == b'%' || c == b'$')
+        && (c == b'@' || c == b'%' || c == b'$' || c.is_ascii_alphabetic() || c == b'_')
     {
         let rest = &input[1..];
         let (rest, expr) = postfix_expr(rest)?;

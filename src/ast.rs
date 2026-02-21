@@ -192,7 +192,12 @@ pub(crate) enum ControlFlowKind {
 #[derive(Debug, Clone)]
 pub(crate) enum CallArg {
     Positional(Expr),
-    Named { name: String, value: Option<Expr> },
+    Named {
+        name: String,
+        value: Option<Expr>,
+    },
+    /// Capture slip: `|c` — flatten a capture variable into the argument list
+    Slip(Expr),
 }
 
 #[derive(Debug, Clone)]

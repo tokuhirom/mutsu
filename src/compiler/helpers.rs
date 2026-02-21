@@ -70,6 +70,7 @@ impl Compiler {
                     name: name.clone(),
                     value: value.clone(),
                 },
+                CallArg::Slip(expr) => CallArg::Slip(expr.clone()),
             })
             .collect()
     }
