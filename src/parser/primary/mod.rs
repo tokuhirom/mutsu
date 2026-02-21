@@ -210,6 +210,13 @@ mod tests {
     }
 
     #[test]
+    fn parse_package_stash_lookup_term() {
+        let (rest, expr) = primary("A::").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::PseudoStash(ref s) if s == "A::"));
+    }
+
+    #[test]
     fn primary_memo_reuses_result() {
         reset_primary_memo();
         let (rest, expr) = primary("42").unwrap();
@@ -229,8 +236,9 @@ mod tests {
 
     #[test]
     fn primary_reports_invalid_qualified_identifier_tail() {
-        let err = primary("Foo::").unwrap_err();
-        assert!(err.message().contains("identifier after '::'"));
+        let (rest, expr) = primary("Foo::").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::PseudoStash(ref s) if s == "Foo::"));
     }
 
     #[test]
