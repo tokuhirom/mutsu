@@ -746,7 +746,8 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 full_name.push_str("::");
                 full_name.push_str(part);
                 r = rest2;
-            } else if super::var::is_pseudo_package(&full_name)
+            } else if (super::var::is_pseudo_package(&full_name)
+                || full_name.split("::").all(super::var::is_pseudo_package))
                 && (after.starts_with('.')
                     || after.is_empty()
                     || after.starts_with(';')

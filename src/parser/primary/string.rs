@@ -655,3 +655,74 @@ pub(super) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
 
     Ok((rest, finalize_interpolation(parts, current)))
 }
+
+/// Parse a Unicode smart-quoted string `“...”` with interpolation support.
+pub(super) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
+    let (input, _) = parse_char(input, '“')?;
+    let mut parts: Vec<Expr> = Vec::new();
+    let mut current = String::new();
+    let mut rest = input;
+
+    loop {
+        if rest.is_empty() {
+            return Err(PError::expected("closing ”"));
+        }
+        if rest.starts_with('”') {
+            rest = &rest['”'.len_utf8()..];
+            break;
+        }
+        if rest.starts_with('\\') && rest.len() > 1 {
+            if let Some((r, needs_continue)) =
+                process_escape_sequence(rest, &mut current, &['”', '{', '}'])
+            {
+                rest = r;
+                if needs_continue {
+                    continue;
+                }
+            } else {
+                let c = rest.as_bytes()[1] as char;
+                current.push('\\');
+                current.push(c);
+                rest = &rest[2..];
+            }
+            continue;
+        }
+        if let Some(r) = try_interpolate_var(rest, &mut parts, &mut current) {
+            rest = r;
+            continue;
+        }
+        if rest.starts_with('{') {
+            if !current.is_empty() {
+                parts.push(Expr::Literal(Value::Str(std::mem::take(&mut current))));
+            }
+            let mut depth = 0;
+            let mut end = 0;
+            for (i, c) in rest.char_indices() {
+                match c {
+                    '{' => depth += 1,
+                    '}' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            end = i;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if end > 0 {
+                let block_src = &rest[1..end];
+                if let Ok((_rest, expr)) = expression(block_src) {
+                    parts.push(expr);
+                }
+                rest = &rest[end + 1..];
+                continue;
+            }
+        }
+        let ch = rest.chars().next().unwrap();
+        current.push(ch);
+        rest = &rest[ch.len_utf8()..];
+    }
+
+    Ok((rest, finalize_interpolation(parts, current)))
+}

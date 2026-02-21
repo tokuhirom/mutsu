@@ -593,6 +593,14 @@ mod tests {
     }
 
     #[test]
+    fn parse_for_loop_with_rw_param_trait() {
+        let (rest, stmts) = program("for @a -> $x is rw { $x++ }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::For { .. }));
+    }
+
+    #[test]
     fn parse_sub_decl() {
         let (rest, stmts) = program("sub foo($x) { return $x; }").unwrap();
         assert_eq!(rest, "");

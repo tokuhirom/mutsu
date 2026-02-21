@@ -280,6 +280,21 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, String> {
         rest
     };
     let (rest, name) = var_name(rest)?;
+
+    // Optional parameter traits: `is rw`, `is copy`, ...
+    // Keep parsing permissive here and ignore trait semantics for now.
+    let mut rest = rest;
+    loop {
+        let (r, _) = ws(rest)?;
+        let Some(after_is) = keyword("is", r) else {
+            rest = r;
+            break;
+        };
+        let (after_is, _) = ws1(after_is)?;
+        let (after_is, _trait_name) = ident(after_is)?;
+        rest = after_is;
+    }
+
     Ok((rest, name))
 }
 
