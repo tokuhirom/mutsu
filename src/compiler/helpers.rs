@@ -37,6 +37,7 @@ impl Compiler {
                 | "eval-dies-ok"
                 | "throws-like"
                 | "warns-like"
+                | "doesn't-warn"
                 | "force_todo"
                 | "force-todo"
                 | "is_run"
@@ -46,7 +47,7 @@ impl Compiler {
     pub(super) fn rewrite_stmt_call_args(name: &str, args: &[CallArg]) -> Vec<CallArg> {
         let rewrites_needed = matches!(
             name,
-            "lives-ok" | "dies-ok" | "throws-like" | "warns-like" | "is_run"
+            "lives-ok" | "dies-ok" | "throws-like" | "warns-like" | "doesn't-warn" | "is_run"
         );
         if !rewrites_needed {
             return args.to_vec();
@@ -55,19 +56,20 @@ impl Compiler {
         args.iter()
             .map(|arg| match arg {
                 CallArg::Positional(expr) => {
-                    let rewritten =
-                        if matches!(name, "lives-ok" | "dies-ok" | "throws-like" | "warns-like")
-                            && positional_index == 0
-                        {
-                            match expr {
-                                Expr::Block(body) => make_anon_sub(body.clone()),
-                                _ => expr.clone(),
-                            }
-                        } else if name == "is_run" && positional_index == 1 {
-                            Self::rewrite_hash_block_values(expr)
-                        } else {
-                            expr.clone()
-                        };
+                    let rewritten = if matches!(
+                        name,
+                        "lives-ok" | "dies-ok" | "throws-like" | "warns-like" | "doesn't-warn"
+                    ) && positional_index == 0
+                    {
+                        match expr {
+                            Expr::Block(body) => make_anon_sub(body.clone()),
+                            _ => expr.clone(),
+                        }
+                    } else if name == "is_run" && positional_index == 1 {
+                        Self::rewrite_hash_block_values(expr)
+                    } else {
+                        expr.clone()
+                    };
                     positional_index += 1;
                     CallArg::Positional(rewritten)
                 }

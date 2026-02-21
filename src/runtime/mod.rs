@@ -199,6 +199,7 @@ pub struct Interpreter {
     env: HashMap<String, Value>,
     output: String,
     stderr_output: String,
+    warn_output: String,
     test_state: Option<TestState>,
     halted: bool,
     exit_code: i64,
@@ -524,6 +525,7 @@ impl Interpreter {
             env,
             output: String::new(),
             stderr_output: String::new(),
+            warn_output: String::new(),
             test_state: None,
             halted: false,
             exit_code: 0,
@@ -617,6 +619,7 @@ impl Interpreter {
     pub(crate) fn write_warn_to_stderr(&mut self, message: &str) {
         let msg = format!("{}\n", message);
         self.stderr_output.push_str(&msg);
+        self.warn_output.push_str(&msg);
         eprint!("{}", msg);
     }
 
@@ -651,6 +654,7 @@ impl Interpreter {
             env: self.env.clone(),
             output: String::new(),
             stderr_output: String::new(),
+            warn_output: String::new(),
             test_state: None,
             halted: false,
             exit_code: 0,
