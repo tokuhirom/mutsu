@@ -44,6 +44,7 @@ TOTAL=${#TEST_FILES[@]}
 PASS=0
 FAIL=0
 ERROR=0
+PARSE_ERROR=0
 TIMEDOUT=0
 PANICKED=0
 TOTAL_SUBTESTS=0
@@ -53,6 +54,7 @@ PASSED_SUBTESTS=0
 > "$OUTDIR/roast-pass.txt"
 > "$OUTDIR/roast-fail.txt"
 > "$OUTDIR/roast-error.txt"
+> "$OUTDIR/roast-parse-error.txt"
 > "$OUTDIR/roast-timeout.txt"
 > "$OUTDIR/roast-panic.txt"
 
@@ -86,7 +88,13 @@ for f in "${TEST_FILES[@]}"; do
   PLAN=$(echo "$PLAN" | grep -oE '^[0-9]+$' || true)
   if [ -z "$PLAN" ]; then
     ERROR=$((ERROR + 1))
-    echo "$f" >> "$OUTDIR/roast-error.txt"
+    # Check if it's a parse error (kind=parse in metadata)
+    if echo "$STDERR_CONTENT" | grep -q 'kind=parse'; then
+      PARSE_ERROR=$((PARSE_ERROR + 1))
+      echo "$f" >> "$OUTDIR/roast-parse-error.txt"
+    else
+      echo "$f" >> "$OUTDIR/roast-error.txt"
+    fi
     continue
   fi
 
@@ -118,17 +126,19 @@ echo "Files:      $TOTAL"
 echo "Pass:       $PASS"
 echo "Fail:       $FAIL"
 echo "Error:      $ERROR"
+echo "ParseError: $PARSE_ERROR"
 echo "Panic:      $PANICKED"
 echo "Timeout:    $TIMEDOUT"
 echo "Subtests:   $PASSED_SUBTESTS / $TOTAL_SUBTESTS"
 
 echo ""
 echo "=== Category files ==="
-echo "  $OUTDIR/roast-pass.txt     ($(wc -l < "$OUTDIR/roast-pass.txt") files)"
-echo "  $OUTDIR/roast-fail.txt     ($(wc -l < "$OUTDIR/roast-fail.txt") files)"
-echo "  $OUTDIR/roast-error.txt    ($(wc -l < "$OUTDIR/roast-error.txt") files)"
-echo "  $OUTDIR/roast-panic.txt    ($(wc -l < "$OUTDIR/roast-panic.txt") files)"
-echo "  $OUTDIR/roast-timeout.txt  ($(wc -l < "$OUTDIR/roast-timeout.txt") files)"
+echo "  $OUTDIR/roast-pass.txt        ($(wc -l < "$OUTDIR/roast-pass.txt") files)"
+echo "  $OUTDIR/roast-fail.txt        ($(wc -l < "$OUTDIR/roast-fail.txt") files)"
+echo "  $OUTDIR/roast-error.txt       ($(wc -l < "$OUTDIR/roast-error.txt") files)"
+echo "  $OUTDIR/roast-parse-error.txt  ($(wc -l < "$OUTDIR/roast-parse-error.txt") files)"
+echo "  $OUTDIR/roast-panic.txt       ($(wc -l < "$OUTDIR/roast-panic.txt") files)"
+echo "  $OUTDIR/roast-timeout.txt     ($(wc -l < "$OUTDIR/roast-timeout.txt") files)"
 
 # Create header if file doesn't exist
 if [ ! -f "$HISTORY" ]; then
