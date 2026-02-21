@@ -31,6 +31,48 @@ impl VM {
         Ok(())
     }
 
+    /// Expression-level call with capture slip: regular args + 1 slip arg on stack.
+    /// The slip arg is flattened into the argument list, result is pushed.
+    pub(super) fn exec_call_func_slip_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        regular_arity: u32,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
+        let name = Self::const_str(code, name_idx).to_string();
+        let total = regular_arity as usize + 1; // +1 for the slip value
+        if self.stack.len() < total {
+            return Err(RuntimeError::new("VM stack underflow in CallFuncSlip"));
+        }
+        // Pop slip value (top of stack), then regular args
+        let slip_val = self.stack.pop().unwrap();
+        let regular_start = self.stack.len() - regular_arity as usize;
+        let mut args: Vec<Value> = self.stack.drain(regular_start..).collect();
+        // Flatten the slip value into args
+        match &slip_val {
+            Value::Array(elements) => {
+                args.extend(elements.iter().cloned());
+            }
+            _ => {
+                args.push(slip_val);
+            }
+        }
+        if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
+            let pkg = self.interpreter.current_package().to_string();
+            let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
+            self.stack.push(result);
+            self.sync_locals_from_env(code);
+        } else if let Some(native_result) = Self::try_native_function(&name, &args) {
+            self.stack.push(native_result?);
+        } else {
+            let result = self.interpreter.call_function(&name, args)?;
+            self.stack.push(result);
+            self.sync_locals_from_env(code);
+        }
+        Ok(())
+    }
+
     pub(super) fn exec_call_method_op(
         &mut self,
         code: &CompiledCode,
@@ -286,6 +328,38 @@ impl VM {
         }
         let start = self.stack.len() - arity;
         let args: Vec<Value> = self.stack.drain(start..).collect();
+        self.interpreter.exec_call_pairs_values(&name, args)?;
+        self.sync_locals_from_env(code);
+        Ok(())
+    }
+
+    /// Execute a call with capture slip: regular args + 1 slip arg on stack.
+    /// The slip arg is flattened into the argument list.
+    pub(super) fn exec_exec_call_slip_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        regular_arity: u32,
+    ) -> Result<(), RuntimeError> {
+        let name = Self::const_str(code, name_idx).to_string();
+        let total = regular_arity as usize + 1; // +1 for the slip value
+        if self.stack.len() < total {
+            return Err(RuntimeError::new("VM stack underflow in ExecCallSlip"));
+        }
+        // Pop slip value (top of stack), then regular args
+        let slip_val = self.stack.pop().unwrap();
+        let regular_start = self.stack.len() - regular_arity as usize;
+        let mut args: Vec<Value> = self.stack.drain(regular_start..).collect();
+        // Flatten the slip value into args
+        match &slip_val {
+            Value::Array(elements) => {
+                args.extend(elements.iter().cloned());
+            }
+            _ => {
+                // Single value — just pass it as a positional arg
+                args.push(slip_val);
+            }
+        }
         self.interpreter.exec_call_pairs_values(&name, args)?;
         self.sync_locals_from_env(code);
         Ok(())

@@ -283,6 +283,54 @@ impl Compiler {
                     return;
                 }
 
+                // Check for capture slip args (|var)
+                let has_slip = rewritten_args
+                    .iter()
+                    .any(|arg| matches!(arg, CallArg::Slip(_)));
+                if has_slip {
+                    // Compile non-slip args first, then slip arg
+                    let mut regular_count = 0u32;
+                    for arg in &rewritten_args {
+                        match arg {
+                            CallArg::Positional(expr) => {
+                                self.compile_expr(expr);
+                                regular_count += 1;
+                            }
+                            CallArg::Named {
+                                name: n,
+                                value: Some(expr),
+                            } => {
+                                self.compile_expr(&Expr::Literal(Value::Str(n.clone())));
+                                self.compile_expr(expr);
+                                self.code.emit(OpCode::MakePair);
+                                regular_count += 1;
+                            }
+                            CallArg::Named {
+                                name: n,
+                                value: None,
+                            } => {
+                                self.compile_expr(&Expr::Literal(Value::Str(n.clone())));
+                                self.compile_expr(&Expr::Literal(Value::Bool(true)));
+                                self.code.emit(OpCode::MakePair);
+                                regular_count += 1;
+                            }
+                            CallArg::Slip(_) => {} // handled below
+                        }
+                    }
+                    // Compile the slip expression (last one wins if multiple)
+                    for arg in &rewritten_args {
+                        if let CallArg::Slip(expr) = arg {
+                            self.compile_expr(expr);
+                        }
+                    }
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::ExecCallSlip {
+                        name_idx,
+                        regular_arity: regular_count,
+                    });
+                    return;
+                }
+
                 // Statement-level call with named args: compile values and encode
                 // named args as Pair(name => value), then dispatch without stmt_pool.
                 for arg in &rewritten_args {
@@ -301,6 +349,7 @@ impl Compiler {
                             self.compile_expr(&Expr::Literal(Value::Bool(true)));
                             self.code.emit(OpCode::MakePair);
                         }
+                        CallArg::Slip(_) => unreachable!(),
                     }
                 }
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));

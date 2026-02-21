@@ -171,6 +171,12 @@ pub(crate) enum OpCode {
         name_idx: u32,
         arity: u32,
     },
+    /// Expression-level function call with capture slip: pop 1 slip + `regular_arity` args,
+    /// flatten the slip into the argument list, call name, push result.
+    CallFuncSlip {
+        name_idx: u32,
+        regular_arity: u32,
+    },
     /// Method call: pop `arity` args + target, call method, push result.
     CallMethod {
         name_idx: u32,
@@ -193,6 +199,13 @@ pub(crate) enum OpCode {
     ExecCallPairs {
         name_idx: u32,
         arity: u32,
+    },
+    /// Call with capture slip: `regular_arity` normal args + 1 slip arg on stack.
+    /// The slip arg (top of stack) is an Array whose elements are flattened into
+    /// the argument list before the call.
+    ExecCallSlip {
+        name_idx: u32,
+        regular_arity: u32,
     },
     BlockScope {
         enter_end: u32,

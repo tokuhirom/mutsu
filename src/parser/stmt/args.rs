@@ -120,6 +120,15 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
 
 /// Parse a single call argument (named or positional).
 pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
+    // Capture slip: |var — flatten a capture into the argument list
+    if input.starts_with('|') && !input.starts_with("||") {
+        let after_pipe = &input[1..];
+        // Must be followed by an identifier (sigilless capture variable)
+        if let Ok((r, name)) = ident(after_pipe) {
+            return Ok((r, CallArg::Slip(Expr::BareWord(name))));
+        }
+    }
+
     // Colon pair: :name(expr) or :name or :!name or :name[...]
     if input.starts_with(':') && !input.starts_with("::") {
         let r = &input[1..];

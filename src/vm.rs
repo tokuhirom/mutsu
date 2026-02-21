@@ -651,6 +651,13 @@ impl VM {
                 self.exec_call_func_op(code, *name_idx, *arity, compiled_fns)?;
                 *ip += 1;
             }
+            OpCode::CallFuncSlip {
+                name_idx,
+                regular_arity,
+            } => {
+                self.exec_call_func_slip_op(code, *name_idx, *regular_arity, compiled_fns)?;
+                *ip += 1;
+            }
             OpCode::CallMethod {
                 name_idx,
                 arity,
@@ -688,6 +695,13 @@ impl VM {
             }
             OpCode::ExecCallPairs { name_idx, arity } => {
                 self.exec_exec_call_pairs_op(code, *name_idx, *arity)?;
+                *ip += 1;
+            }
+            OpCode::ExecCallSlip {
+                name_idx,
+                regular_arity,
+            } => {
+                self.exec_exec_call_slip_op(code, *name_idx, *regular_arity)?;
                 *ip += 1;
             }
 

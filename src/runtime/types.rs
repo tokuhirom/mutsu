@@ -386,7 +386,19 @@ impl Interpreter {
         for pd in param_defs {
             if pd.slurpy {
                 let is_hash_slurpy = pd.name.starts_with('%');
-                if is_hash_slurpy {
+                if pd.sigilless {
+                    // |c — capture parameter: collect ALL remaining args
+                    // (positional + named Pairs) into an array, stored as
+                    // sigilless variable (no sigil prefix)
+                    let mut items = Vec::new();
+                    while positional_idx < args.len() {
+                        items.push(args[positional_idx].clone());
+                        positional_idx += 1;
+                    }
+                    if !pd.name.is_empty() {
+                        self.env.insert(pd.name.clone(), Value::array(items));
+                    }
+                } else if is_hash_slurpy {
                     // *%hash — collect Pair arguments into a hash
                     let mut hash_items = std::collections::HashMap::new();
                     for arg in args.iter() {
