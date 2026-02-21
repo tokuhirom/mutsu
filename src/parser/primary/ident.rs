@@ -746,6 +746,16 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 full_name.push_str("::");
                 full_name.push_str(part);
                 r = rest2;
+            } else if super::var::is_pseudo_package(&full_name)
+                && (after.starts_with('.')
+                    || after.is_empty()
+                    || after.starts_with(';')
+                    || after.starts_with(')')
+                    || after.starts_with(',')
+                    || after.starts_with(' '))
+            {
+                // MY::, OUR::, etc. followed by method call or end-of-expression → PseudoStash
+                return Ok((after, Expr::PseudoStash(full_name)));
             } else {
                 return Err(PError::expected_at("identifier after '::'", after));
             }

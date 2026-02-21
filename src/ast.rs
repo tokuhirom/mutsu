@@ -180,6 +180,7 @@ pub(crate) enum Expr {
         package: Box<Expr>,
         name: String,
     },
+    PseudoStash(String),
 }
 
 #[derive(Debug, Clone)]

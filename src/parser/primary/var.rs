@@ -201,7 +201,7 @@ pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
 }
 
 /// Check if an identifier is a known pseudo-package name.
-fn is_pseudo_package(name: &str) -> bool {
+pub(crate) fn is_pseudo_package(name: &str) -> bool {
     matches!(
         name,
         "SETTING" | "CALLER" | "OUTER" | "CORE" | "GLOBAL" | "MY" | "OUR" | "DYNAMIC" | "UNIT"
