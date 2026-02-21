@@ -83,6 +83,15 @@ impl Interpreter {
                     return Ok(ret);
                 }
             }
+            "THREAD" => {
+                if let Value::Junction { values, .. } = &target {
+                    let code = args.first().cloned().unwrap_or(Value::Nil);
+                    for value in values.iter() {
+                        self.call_sub_value(code.clone(), vec![value.clone()], false)?;
+                    }
+                    return Ok(Value::Nil);
+                }
+            }
             "at" => {
                 if let Some(cls) = self.promise_class_name(&target) {
                     let at_time = args.first().map(|v| v.to_f64()).unwrap_or(0.0);
@@ -1361,6 +1370,12 @@ impl Interpreter {
                         _ => 0.0,
                     };
                     return Ok(Value::Complex(re, im));
+                }
+                "Lock" => {
+                    let mut attrs = HashMap::new();
+                    let lock_id = super::native_methods::next_lock_id() as i64;
+                    attrs.insert("lock-id".to_string(), Value::Int(lock_id));
+                    return Ok(Value::make_instance("Lock".to_string(), attrs));
                 }
                 // Types that cannot be instantiated with .new
                 "HyperWhatever" | "Whatever" | "Junction" => {

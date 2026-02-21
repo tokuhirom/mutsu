@@ -371,6 +371,32 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "Lock".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["protect", "lock", "unlock", "condition"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                mro: vec!["Lock".to_string()],
+            },
+        );
+        classes.insert(
+            "Lock::ConditionVariable".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["wait", "signal", "signal_all"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                mro: vec!["Lock::ConditionVariable".to_string()],
+            },
+        );
+        classes.insert(
             "IO::Path".to_string(),
             ClassDef {
                 parents: Vec::new(),

@@ -17,7 +17,109 @@ fn supply_taps_map() -> &'static SupplyTapsMap {
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+#[derive(Debug, Default)]
+struct LockState {
+    owner: Option<String>,
+    recursion: u64,
+}
+
+#[derive(Debug, Default)]
+struct LockRuntime {
+    state: std::sync::Mutex<LockState>,
+    lock_cv: std::sync::Condvar,
+    condvars: std::sync::Mutex<HashMap<u64, Arc<std::sync::Condvar>>>,
+}
+
+type LockStateMap = std::sync::Mutex<HashMap<u64, Arc<LockRuntime>>>;
+
+fn lock_state_map() -> &'static LockStateMap {
+    static MAP: OnceLock<LockStateMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
 pub(super) fn next_supply_id() -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+    COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+pub(super) fn next_lock_id() -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    if let Ok(mut map) = lock_state_map().lock() {
+        map.entry(id)
+            .or_insert_with(|| Arc::new(LockRuntime::default()));
+    }
+    id
+}
+
+fn lock_runtime_by_id(id: u64) -> Option<Arc<LockRuntime>> {
+    lock_state_map()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&id).cloned())
+}
+
+fn current_thread_key() -> String {
+    format!("{:?}", std::thread::current().id())
+}
+
+fn acquire_lock(runtime: &LockRuntime, me: &str) -> Result<(), RuntimeError> {
+    let mut state = runtime
+        .state
+        .lock()
+        .map_err(|_| RuntimeError::new("Lock state is poisoned"))?;
+    loop {
+        match &state.owner {
+            None => {
+                state.owner = Some(me.to_string());
+                state.recursion = 1;
+                return Ok(());
+            }
+            Some(owner) if owner == me => {
+                state.recursion += 1;
+                return Ok(());
+            }
+            Some(_) => {
+                state = runtime
+                    .lock_cv
+                    .wait(state)
+                    .map_err(|_| RuntimeError::new("Lock wait failed"))?;
+            }
+        }
+    }
+}
+
+fn release_lock(runtime: &LockRuntime, me: &str) -> Result<(), RuntimeError> {
+    let mut state = runtime
+        .state
+        .lock()
+        .map_err(|_| RuntimeError::new("Lock state is poisoned"))?;
+    match &state.owner {
+        Some(owner) if owner == me => {
+            if state.recursion > 1 {
+                state.recursion -= 1;
+            } else {
+                state.recursion = 0;
+                state.owner = None;
+                runtime.lock_cv.notify_one();
+            }
+            Ok(())
+        }
+        _ => Err(RuntimeError::new(
+            "Cannot unlock a Lock not owned by current thread",
+        )),
+    }
+}
+
+fn ensure_condition(runtime: &LockRuntime, cond_id: u64) -> Option<Arc<std::sync::Condvar>> {
+    runtime.condvars.lock().ok().map(|mut map| {
+        map.entry(cond_id)
+            .or_insert_with(|| Arc::new(std::sync::Condvar::new()))
+            .clone()
+    })
+}
+
+fn next_condition_id() -> u64 {
     static COUNTER: AtomicU64 = AtomicU64::new(1);
     COUNTER.fetch_add(1, Ordering::Relaxed)
 }
@@ -72,6 +174,8 @@ impl Interpreter {
             "IO::Handle" => self.native_io_handle(attributes, method, args),
             "IO::Socket::INET" => self.native_socket_inet(attributes, method, args),
             "IO::Pipe" => self.native_io_pipe(attributes, method),
+            "Lock" => self.native_lock(attributes, method, args),
+            "Lock::ConditionVariable" => self.native_condition_variable(attributes, method, args),
             "Distro" => self.native_distro(attributes, method),
             "Perl" => Ok(self.native_perl(attributes, method)),
             "Compiler" => Ok(self.native_perl(attributes, method)),
@@ -84,6 +188,172 @@ impl Interpreter {
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on '{}'",
                 method, class_name
+            ))),
+        }
+    }
+
+    fn native_lock(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        match method {
+            "protect" => {
+                let lock_id = match attributes.get("lock-id") {
+                    Some(Value::Int(id)) if *id > 0 => *id as u64,
+                    _ => {
+                        return Err(RuntimeError::new(
+                            "Lock.protect called on Lock without lock-id",
+                        ));
+                    }
+                };
+                let lock = lock_runtime_by_id(lock_id)
+                    .ok_or_else(|| RuntimeError::new("Lock.protect could not find lock state"))?;
+                let me = current_thread_key();
+                acquire_lock(&lock, &me)?;
+                let code = args.first().cloned().unwrap_or(Value::Nil);
+                let result = self.call_sub_value(code, Vec::new(), false);
+                let _ = release_lock(&lock, &me);
+                result
+            }
+            "lock" => {
+                let lock_id = match attributes.get("lock-id") {
+                    Some(Value::Int(id)) if *id > 0 => *id as u64,
+                    _ => {
+                        return Err(RuntimeError::new("Lock.lock called on invalid Lock"));
+                    }
+                };
+                let lock = lock_runtime_by_id(lock_id)
+                    .ok_or_else(|| RuntimeError::new("Lock.lock could not find lock state"))?;
+                let me = current_thread_key();
+                acquire_lock(&lock, &me)?;
+                Ok(Value::Nil)
+            }
+            "unlock" => {
+                let lock_id = match attributes.get("lock-id") {
+                    Some(Value::Int(id)) if *id > 0 => *id as u64,
+                    _ => {
+                        return Err(RuntimeError::new("Lock.unlock called on invalid Lock"));
+                    }
+                };
+                let lock = lock_runtime_by_id(lock_id)
+                    .ok_or_else(|| RuntimeError::new("Lock.unlock could not find lock state"))?;
+                let me = current_thread_key();
+                release_lock(&lock, &me)?;
+                Ok(Value::Nil)
+            }
+            "condition" => {
+                let lock_id = match attributes.get("lock-id") {
+                    Some(Value::Int(id)) if *id > 0 => *id as u64,
+                    _ => return Err(RuntimeError::new("Lock.condition called on invalid Lock")),
+                };
+                let lock = lock_runtime_by_id(lock_id)
+                    .ok_or_else(|| RuntimeError::new("Lock.condition could not find lock state"))?;
+                let cond_id = next_condition_id();
+                let _ = ensure_condition(&lock, cond_id).ok_or_else(|| {
+                    RuntimeError::new("Lock.condition failed to create condition")
+                })?;
+                let mut attrs = HashMap::new();
+                attrs.insert("lock-id".to_string(), Value::Int(lock_id as i64));
+                attrs.insert("cond-id".to_string(), Value::Int(cond_id as i64));
+                Ok(Value::make_instance(
+                    "Lock::ConditionVariable".to_string(),
+                    attrs,
+                ))
+            }
+            _ => Err(RuntimeError::new(format!(
+                "No native method '{}' on Lock",
+                method
+            ))),
+        }
+    }
+
+    fn native_condition_variable(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let lock_id = match attributes.get("lock-id") {
+            Some(Value::Int(id)) if *id > 0 => *id as u64,
+            _ => return Err(RuntimeError::new("Condition variable has invalid lock-id")),
+        };
+        let cond_id = match attributes.get("cond-id") {
+            Some(Value::Int(id)) if *id > 0 => *id as u64,
+            _ => return Err(RuntimeError::new("Condition variable has invalid cond-id")),
+        };
+        let lock = lock_runtime_by_id(lock_id)
+            .ok_or_else(|| RuntimeError::new("Condition variable lock state not found"))?;
+        let cond = ensure_condition(&lock, cond_id)
+            .ok_or_else(|| RuntimeError::new("Condition variable state not found"))?;
+        match method {
+            "signal" => {
+                cond.notify_one();
+                Ok(Value::Nil)
+            }
+            "signal_all" => {
+                cond.notify_all();
+                Ok(Value::Nil)
+            }
+            "wait" => {
+                let maybe_test = args.first().cloned();
+                let me = current_thread_key();
+                let mut state = lock
+                    .state
+                    .lock()
+                    .map_err(|_| RuntimeError::new("Lock state is poisoned"))?;
+                match &state.owner {
+                    Some(owner) if owner == &me => {}
+                    _ => {
+                        return Err(RuntimeError::new(
+                            "Condition.wait requires the current thread to hold the lock",
+                        ));
+                    }
+                }
+                if let Some(test) = maybe_test.clone()
+                    && self.call_sub_value(test, Vec::new(), false)?.truthy()
+                {
+                    return Ok(Value::Nil);
+                }
+                let held_recursion = state.recursion;
+                state.owner = None;
+                state.recursion = 0;
+                lock.lock_cv.notify_one();
+                loop {
+                    state = cond
+                        .wait(state)
+                        .map_err(|_| RuntimeError::new("Condition wait failed"))?;
+                    while state.owner.is_some() && state.owner.as_deref() != Some(&me) {
+                        state = lock
+                            .lock_cv
+                            .wait(state)
+                            .map_err(|_| RuntimeError::new("Lock reacquire wait failed"))?;
+                    }
+                    state.owner = Some(me.clone());
+                    state.recursion = held_recursion.max(1);
+                    drop(state);
+
+                    let predicate_ok = if let Some(test) = maybe_test.clone() {
+                        self.call_sub_value(test, Vec::new(), false)?.truthy()
+                    } else {
+                        true
+                    };
+                    if predicate_ok {
+                        return Ok(Value::Nil);
+                    }
+                    state = lock
+                        .state
+                        .lock()
+                        .map_err(|_| RuntimeError::new("Lock state is poisoned"))?;
+                    state.owner = None;
+                    state.recursion = 0;
+                    lock.lock_cv.notify_one();
+                }
+            }
+            _ => Err(RuntimeError::new(format!(
+                "No native method '{}' on Lock::ConditionVariable",
+                method
             ))),
         }
     }
