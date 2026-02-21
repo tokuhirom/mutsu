@@ -240,7 +240,14 @@ impl PrefixUnaryOp {
     }
 
     pub(super) fn consumes_ws(self) -> bool {
-        matches!(self, PrefixUnaryOp::Not | PrefixUnaryOp::Boolify)
+        matches!(
+            self,
+            PrefixUnaryOp::Not
+                | PrefixUnaryOp::Boolify
+                | PrefixUnaryOp::Negate
+                | PrefixUnaryOp::Positive
+                | PrefixUnaryOp::Stringify
+        )
     }
 
     pub(super) fn parses_postfix_target(self) -> bool {
@@ -312,6 +319,7 @@ impl JunctiveOp {
 }
 
 pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize)> {
+    let next_non_ws = |s: &str| s.trim_start().chars().next();
     if input.starts_with('!')
         && !input.starts_with("!!")
         && !input.starts_with("!~~")
@@ -335,7 +343,7 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
     } else if input.starts_with('-')
         && !input.starts_with("--")
         && !input.starts_with("->")
-        && let Some(c) = input[1..].chars().next()
+        && let Some(c) = next_non_ws(&input[1..])
         && (c == '$'
             || c == '@'
             || c == '%'
@@ -355,29 +363,29 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
         Some((PrefixUnaryOp::IntBitNeg, 2))
     } else if input.starts_with('+')
         && !input.starts_with("++")
-        && let Some(&c) = input.as_bytes().get(1)
-        && (c == b'$'
-            || c == b'@'
-            || c == b'%'
-            || c == b'('
-            || c == b'"'
-            || c == b'\''
-            || c == b'*'
+        && let Some(c) = next_non_ws(&input[1..])
+        && (c == '$'
+            || c == '@'
+            || c == '%'
+            || c == '('
+            || c == '"'
+            || c == '\''
+            || c == '*'
             || c.is_ascii_digit()
             || c.is_ascii_alphabetic())
     {
         Some((PrefixUnaryOp::Positive, 1))
     } else if input.starts_with('~')
         && !input.starts_with("~~")
-        && let Some(&c) = input.as_bytes().get(1)
-        && (c == b'$'
-            || c == b'@'
-            || c == b'%'
-            || c == b'&'
-            || c == b'('
-            || c == b'"'
-            || c == b'\''
-            || c == b'*'
+        && let Some(c) = next_non_ws(&input[1..])
+        && (c == '$'
+            || c == '@'
+            || c == '%'
+            || c == '&'
+            || c == '('
+            || c == '"'
+            || c == '\''
+            || c == '*'
             || c.is_ascii_digit()
             || c.is_ascii_alphabetic())
     {

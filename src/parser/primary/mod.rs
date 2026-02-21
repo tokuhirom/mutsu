@@ -80,6 +80,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(number::integer(input));
         try_primary!(string::single_quoted_string(input));
         try_primary!(string::double_quoted_string(input));
+        try_primary!(string::smart_double_quoted_string(input));
         try_primary!(string::big_q_string(input));
         try_primary!(string::q_string(input));
         try_primary!(string::corner_bracket_string(input));
