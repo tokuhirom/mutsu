@@ -105,6 +105,7 @@ impl VM {
                 | "Block"
                 | "Routine"
                 | "Sub"
+                | "Callable"
                 | "Method"
                 | "IO"
                 | "Proc"
