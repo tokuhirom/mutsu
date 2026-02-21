@@ -14,9 +14,9 @@ pub(super) fn ternary(input: &str) -> PResult<'_, Expr> {
 }
 
 pub(super) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
-    let (input, cond) = or_expr_mode(input, mode)?;
-    let (input, _) = ws(input)?;
-    if let Ok((input, _)) = parse_tag(input, "??") {
+    let (rest, cond) = or_expr_mode(input, mode)?;
+    let (rest_ws, _) = ws(rest)?;
+    if let Ok((input, _)) = parse_tag(rest_ws, "??") {
         let (input, _) = ws(input)?;
         let expr_fn = if mode == ExprMode::Full {
             expression
@@ -55,7 +55,7 @@ pub(super) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             },
         ));
     }
-    Ok((input, cond))
+    Ok((rest, cond))
 }
 
 /// Low-precedence: or / orelse
