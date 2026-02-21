@@ -72,6 +72,7 @@ impl Interpreter {
             "IO::Handle" => self.native_io_handle(attributes, method, args),
             "IO::Socket::INET" => self.native_socket_inet(attributes, method, args),
             "IO::Pipe" => self.native_io_pipe(attributes, method),
+            "Lock" => self.native_lock(attributes, method, args),
             "Distro" => self.native_distro(attributes, method),
             "Perl" => Ok(self.native_perl(attributes, method)),
             "Compiler" => Ok(self.native_perl(attributes, method)),
@@ -84,6 +85,24 @@ impl Interpreter {
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on '{}'",
                 method, class_name
+            ))),
+        }
+    }
+
+    fn native_lock(
+        &mut self,
+        _attributes: &HashMap<String, Value>,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        match method {
+            "protect" => {
+                let code = args.first().cloned().unwrap_or(Value::Nil);
+                self.call_sub_value(code, Vec::new(), false)
+            }
+            _ => Err(RuntimeError::new(format!(
+                "No native method '{}' on Lock",
+                method
             ))),
         }
     }
