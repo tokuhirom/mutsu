@@ -420,6 +420,7 @@ impl Interpreter {
         let value = positionals.first().copied().unwrap_or(&Value::Nil);
         let type_name = match positionals.get(1) {
             Some(Value::Package(name)) => name.clone(),
+            Some(Value::Nil) => "Nil".to_string(),
             Some(v) => v.to_string_value(),
             None => String::new(),
         };

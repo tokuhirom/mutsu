@@ -319,6 +319,15 @@ impl Interpreter {
             "contains" => {
                 return self.dispatch_contains(target, &args);
             }
+            "index" => {
+                return self.dispatch_index(target, &args);
+            }
+            "substr-eq" => {
+                return self.dispatch_substr_eq(target, &args);
+            }
+            "substr" => {
+                return self.dispatch_substr(target, &args);
+            }
             "trans" => {
                 return self.dispatch_trans(target, &args);
             }
@@ -1050,6 +1059,209 @@ impl Interpreter {
             hay.contains(&needle)
         };
         Ok(Value::Bool(ok))
+    }
+
+    fn dispatch_index(&self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        // Type objects (Package) as needle are not allowed
+        if let Some(Value::Package(type_name)) = args.first() {
+            return Err(RuntimeError::new(format!(
+                "Cannot resolve caller index({}:U)",
+                type_name
+            )));
+        }
+        let mut positional: Vec<Value> = Vec::new();
+        let mut ignore_case = false;
+        let mut ignore_mark = false;
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                match key.as_str() {
+                    "i" | "ignorecase" => ignore_case = value.truthy(),
+                    "m" | "ignoremark" => ignore_mark = value.truthy(),
+                    _ => {}
+                }
+            } else {
+                positional.push(arg.clone());
+            }
+        }
+        // Handle list of needles: \(<a o>) passes an Array as first arg
+        let needles: Vec<String> = if let Some(Value::Array(items)) = positional.first() {
+            items.iter().map(|v| v.to_string_value()).collect()
+        } else {
+            vec![
+                positional
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default(),
+            ]
+        };
+        let start = if let Some(pos) = positional.get(1) {
+            self.value_to_position(pos)?
+        } else {
+            0
+        };
+        let text = target.to_string_value();
+        let len = text.chars().count() as i64;
+        if start < 0 {
+            return Err(RuntimeError::new("X::OutOfRange"));
+        }
+        if start > len {
+            return Ok(Value::Nil);
+        }
+        let hay: String = text.chars().skip(start as usize).collect();
+        let mut best: Option<usize> = None;
+        for needle in &needles {
+            let pos = if ignore_case && ignore_mark {
+                self.index_ignorecase_ignoremark(&hay, needle)
+            } else if ignore_case {
+                self.index_ignorecase(&hay, needle)
+            } else if ignore_mark {
+                self.index_ignoremark(&hay, needle)
+            } else {
+                hay.find(needle.as_str()).map(|p| hay[..p].chars().count())
+            };
+            if let Some(char_pos) = pos {
+                best = Some(match best {
+                    Some(prev) => prev.min(char_pos),
+                    None => char_pos,
+                });
+            }
+        }
+        match best {
+            Some(char_pos) => Ok(Value::Int(char_pos as i64 + start)),
+            None => Ok(Value::Nil),
+        }
+    }
+
+    fn index_ignorecase(&self, hay: &str, needle: &str) -> Option<usize> {
+        let hay_lower = hay.to_lowercase();
+        let needle_lower = needle.to_lowercase();
+        hay_lower
+            .find(&needle_lower)
+            .map(|byte_pos| hay_lower[..byte_pos].chars().count())
+    }
+
+    fn index_ignoremark(&self, hay: &str, needle: &str) -> Option<usize> {
+        let hay_stripped = self.strip_marks(hay);
+        let needle_stripped = self.strip_marks(needle);
+        hay_stripped
+            .find(&needle_stripped)
+            .map(|byte_pos| hay_stripped[..byte_pos].chars().count())
+    }
+
+    fn index_ignorecase_ignoremark(&self, hay: &str, needle: &str) -> Option<usize> {
+        let hay_stripped = self.strip_marks(hay).to_lowercase();
+        let needle_stripped = self.strip_marks(needle).to_lowercase();
+        hay_stripped
+            .find(&needle_stripped)
+            .map(|byte_pos| hay_stripped[..byte_pos].chars().count())
+    }
+
+    fn strip_marks(&self, s: &str) -> String {
+        use unicode_normalization::UnicodeNormalization;
+        s.nfd()
+            .filter(|c| !unicode_normalization::char::is_combining_mark(*c))
+            .collect()
+    }
+
+    fn value_to_position(&self, pos: &Value) -> Result<i64, RuntimeError> {
+        match pos {
+            Value::Int(i) => Ok(*i),
+            Value::Num(f) => {
+                if f.abs() > i64::MAX as f64 {
+                    Err(RuntimeError::new("X::OutOfRange"))
+                } else {
+                    Ok(*f as i64)
+                }
+            }
+            Value::Str(s) => Ok(s.parse::<i64>().unwrap_or(0)),
+            Value::BigInt(b) => {
+                if b > &num_bigint::BigInt::from(i64::MAX) {
+                    Err(RuntimeError::new("X::OutOfRange"))
+                } else {
+                    Ok(b.to_string().parse::<i64>().unwrap_or(0))
+                }
+            }
+            _ => Ok(0),
+        }
+    }
+
+    fn dispatch_substr_eq(&self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.is_empty() {
+            return Err(RuntimeError::new(
+                "Too few positionals passed to 'substr-eq'",
+            ));
+        }
+        let text = target.to_string_value();
+        let needle = args[0].to_string_value();
+        let start = if let Some(pos) = args.get(1) {
+            self.value_to_position(pos)?
+        } else {
+            0
+        };
+        let len = text.chars().count() as i64;
+        if start < 0 || start > len {
+            return Err(RuntimeError::new("X::OutOfRange"));
+        }
+        let substr: String = text
+            .chars()
+            .skip(start as usize)
+            .take(needle.len())
+            .collect();
+        Ok(Value::Bool(substr == needle))
+    }
+
+    fn dispatch_substr(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        let s = target.to_string_value();
+        let chars: Vec<char> = s.chars().collect();
+        let total_len = chars.len();
+
+        // First arg: start position
+        let start = if let Some(pos) = args.first() {
+            match pos {
+                Value::Int(i) => {
+                    let i = *i;
+                    if i < 0 {
+                        (total_len as i64 + i).max(0) as usize
+                    } else {
+                        i as usize
+                    }
+                }
+                other => other.to_string_value().parse::<i64>().unwrap_or(0).max(0) as usize,
+            }
+        } else {
+            0
+        };
+
+        // Second arg: length (can be Int, WhateverCode/Sub, or absent)
+        let end = if let Some(len_val) = args.get(1) {
+            match len_val {
+                Value::Int(i) => {
+                    let len = (*i).max(0) as usize;
+                    (start + len).min(total_len)
+                }
+                Value::Sub { .. } => {
+                    // WhateverCode: call with remaining length to get actual length
+                    let remaining = if start <= total_len {
+                        (total_len - start) as i64
+                    } else {
+                        0
+                    };
+                    let result =
+                        self.eval_call_on_value(len_val.clone(), vec![Value::Int(remaining)])?;
+                    let len = match &result {
+                        Value::Int(i) => (*i).max(0) as usize,
+                        _ => 0,
+                    };
+                    (start + len).min(total_len)
+                }
+                _ => total_len, // default: take rest
+            }
+        } else {
+            total_len // no length: take rest
+        };
+
+        let start = start.min(total_len);
+        Ok(Value::Str(chars[start..end].iter().collect()))
     }
 
     fn dispatch_to_set(&self, target: Value) -> Result<Value, RuntimeError> {

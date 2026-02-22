@@ -56,6 +56,11 @@ pub(crate) fn native_method_1arg(
             Some(Ok(Value::Bool(s.ends_with(&suffix))))
         }
         "index" => {
+            // Fall through to runtime dispatch for type objects, named args (Pairs),
+            // array of needles, and multi-arg calls handled by dispatch_index
+            if matches!(arg, Value::Package(_) | Value::Pair(..) | Value::Array(_)) {
+                return None;
+            }
             let s = target.to_string_value();
             let needle = arg.to_string_value();
             match s.find(&needle) {

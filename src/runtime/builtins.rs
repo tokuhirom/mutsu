@@ -137,6 +137,30 @@ impl Interpreter {
             "grep" => self.builtin_grep(&args),
             "classify" | "categorize" => self.builtin_classify(name, &args),
             // String functions
+            "index" => {
+                if args.is_empty() {
+                    return Err(RuntimeError::new("Too few positionals passed to 'index'"));
+                }
+                let target = args[0].clone();
+                let method_args = args[1..].to_vec();
+                // Junction auto-threading on first argument
+                if let Value::Junction { kind, values } = &target {
+                    let kind = kind.clone();
+                    let mut results = Vec::new();
+                    for v in values.iter() {
+                        results.push(self.call_method_with_values(
+                            v.clone(),
+                            "index",
+                            method_args.clone(),
+                        )?);
+                    }
+                    return Ok(Value::Junction {
+                        kind,
+                        values: std::sync::Arc::new(results),
+                    });
+                }
+                self.call_method_with_values(target, "index", method_args)
+            }
             "chrs" => self.builtin_chrs(&args),
             "chr" => self.builtin_chr(&args),
             "ord" => self.builtin_ord(&args),
