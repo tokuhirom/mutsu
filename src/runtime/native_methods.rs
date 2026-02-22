@@ -185,6 +185,9 @@ impl Interpreter {
             "Proc" => Ok(self.native_proc(attributes, method)),
             "Supply" => self.native_supply(attributes, method, args),
             "Supplier" => self.native_supplier(attributes, method, args),
+            "Encoding::Builtin" => Ok(Self::native_encoding_builtin(attributes, method)),
+            "Encoding::Encoder" => Ok(Self::native_encoding_encoder(attributes, method, &args)),
+            "Encoding::Decoder" => Ok(Self::native_encoding_decoder(attributes, method, &args)),
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on '{}'",
                 method, class_name
@@ -1299,6 +1302,85 @@ impl Interpreter {
                 "No method '{}' on IO::Socket::INET",
                 method
             ))),
+        }
+    }
+
+    fn native_encoding_builtin(attributes: &HashMap<String, Value>, method: &str) -> Value {
+        match method {
+            "name" => attributes
+                .get("name")
+                .cloned()
+                .unwrap_or(Value::Str(String::new())),
+            "alternative-names" => attributes
+                .get("alternative-names")
+                .cloned()
+                .unwrap_or_else(|| Value::array(Vec::new())),
+            "encoder" => {
+                // Return a stub encoder object that supports encode-chars
+                let enc_name = attributes
+                    .get("name")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let mut attrs = HashMap::new();
+                attrs.insert("encoding".to_string(), Value::Str(enc_name));
+                Value::make_instance("Encoding::Encoder".to_string(), attrs)
+            }
+            "decoder" => {
+                let enc_name = attributes
+                    .get("name")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let mut attrs = HashMap::new();
+                attrs.insert("encoding".to_string(), Value::Str(enc_name));
+                Value::make_instance("Encoding::Decoder".to_string(), attrs)
+            }
+            "gist" | "Str" => {
+                let name = attributes
+                    .get("name")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                Value::Str(format!("Encoding::Builtin<{}>", name))
+            }
+            "WHAT" => Value::Package("Encoding::Builtin".to_string()),
+            _ => Value::Nil,
+        }
+    }
+
+    fn native_encoding_encoder(
+        _attributes: &HashMap<String, Value>,
+        method: &str,
+        args: &[Value],
+    ) -> Value {
+        match method {
+            "encode-chars" => {
+                // Stub: encode the string as UTF-8 bytes and return a Buf
+                let input = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let bytes: Vec<Value> = input.bytes().map(|b| Value::Int(b as i64)).collect();
+                Value::array(bytes)
+            }
+            "WHAT" => Value::Package("Encoding::Encoder".to_string()),
+            _ => Value::Nil,
+        }
+    }
+
+    fn native_encoding_decoder(
+        _attributes: &HashMap<String, Value>,
+        method: &str,
+        args: &[Value],
+    ) -> Value {
+        match method {
+            "decode-chars" => {
+                let input = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                Value::Str(input)
+            }
+            "WHAT" => Value::Package("Encoding::Decoder".to_string()),
+            _ => Value::Nil,
         }
     }
 }

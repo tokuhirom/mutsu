@@ -387,6 +387,20 @@ impl Interpreter {
                     ));
                 }
             }
+            "find" => {
+                if let Value::Package(ref class_name) = target
+                    && class_name == "Encoding::Registry"
+                {
+                    return self.dispatch_encoding_registry_find(&args);
+                }
+            }
+            "register" => {
+                if let Value::Package(ref class_name) = target
+                    && class_name == "Encoding::Registry"
+                {
+                    return self.dispatch_encoding_registry_register(&args);
+                }
+            }
             "connect" => {
                 if let Value::Package(ref class_name) = target
                     && class_name == "IO::Socket::INET"
@@ -1824,6 +1838,79 @@ impl Interpreter {
                 }
             }
             _ => None,
+        }
+    }
+
+    fn dispatch_encoding_registry_find(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let name = args
+            .first()
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        if let Some(entry) = self.find_encoding(&name) {
+            if let Some(ref user_type) = entry.user_type {
+                // User-registered encoding: return an instance of the user's type
+                return Ok(user_type.clone());
+            }
+            // Built-in encoding: create an Encoding::Builtin instance
+            let mut attrs = HashMap::new();
+            attrs.insert("name".to_string(), Value::Str(entry.name.clone()));
+            let alt_names: Vec<Value> = entry
+                .alternative_names
+                .iter()
+                .map(|s| Value::Str(s.clone()))
+                .collect();
+            attrs.insert("alternative-names".to_string(), Value::array(alt_names));
+            Ok(Value::make_instance("Encoding::Builtin".to_string(), attrs))
+        } else {
+            // Throw X::Encoding::Unknown
+            let mut ex_attrs = HashMap::new();
+            ex_attrs.insert("name".to_string(), Value::Str(name.clone()));
+            let ex = Value::make_instance("X::Encoding::Unknown".to_string(), ex_attrs);
+            let mut err = RuntimeError::new(format!("Unknown encoding '{}'", name));
+            err.exception = Some(Box::new(ex));
+            Err(err)
+        }
+    }
+
+    fn dispatch_encoding_registry_register(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let encoding_val = args.first().cloned().unwrap_or(Value::Nil);
+        // The encoding is a type object (Package) or class instance.
+        // We need to call .name and .alternative-names on it to get registration info.
+        let enc_name = self.call_method_with_values(encoding_val.clone(), "name", vec![])?;
+        let enc_name_str = enc_name.to_string_value();
+
+        let alt_names_val = self
+            .call_method_with_values(encoding_val.clone(), "alternative-names", vec![])
+            .unwrap_or(Value::array(Vec::new()));
+        let alt_names: Vec<String> = match alt_names_val {
+            Value::Array(items) => items.iter().map(|v| v.to_string_value()).collect(),
+            Value::Slip(items) => items.iter().map(|v| v.to_string_value()).collect(),
+            _ => Vec::new(),
+        };
+
+        let entry = super::EncodingEntry {
+            name: enc_name_str.clone(),
+            alternative_names: alt_names,
+            user_type: Some(encoding_val),
+        };
+
+        match self.register_encoding(entry) {
+            Ok(()) => Ok(Value::Nil),
+            Err(conflicting_name) => {
+                let mut ex_attrs = HashMap::new();
+                ex_attrs.insert("name".to_string(), Value::Str(conflicting_name.clone()));
+                let ex =
+                    Value::make_instance("X::Encoding::AlreadyRegistered".to_string(), ex_attrs);
+                let mut err = RuntimeError::new(format!(
+                    "Encoding '{}' is already registered",
+                    conflicting_name
+                ));
+                err.exception = Some(Box::new(ex));
+                Err(err)
+            }
         }
     }
 }

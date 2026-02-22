@@ -231,6 +231,20 @@ pub struct Interpreter {
     /// Shared variables between threads. When `start` spawns a thread,
     /// `@` variables are stored here so both parent and child can see mutations.
     shared_vars: Arc<Mutex<HashMap<String, Value>>>,
+    /// Registry of encodings (both built-in and user-registered).
+    /// Each entry maps a canonical name to an EncodingEntry.
+    encoding_registry: Vec<EncodingEntry>,
+}
+
+/// An entry in the encoding registry.
+#[derive(Debug, Clone)]
+pub(crate) struct EncodingEntry {
+    /// Canonical encoding name.
+    pub name: String,
+    /// Alternative names for this encoding.
+    pub alternative_names: Vec<String>,
+    /// If Some, this is a user-registered encoding (the Value is the type object).
+    pub user_type: Option<Value>,
 }
 
 pub(crate) struct SubtestContext {
@@ -573,6 +587,49 @@ impl Interpreter {
                 mro: vec!["Compiler".to_string()],
             },
         );
+        classes.insert(
+            "Encoding::Builtin".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["name", "alternative-names", "encoder", "decoder"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                mro: vec!["Encoding::Builtin".to_string()],
+            },
+        );
+        classes.insert(
+            "Encoding::Encoder".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["encode-chars"].iter().map(|s| s.to_string()).collect(),
+                mro: vec!["Encoding::Encoder".to_string()],
+            },
+        );
+        classes.insert(
+            "Encoding::Decoder".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["decode-chars"].iter().map(|s| s.to_string()).collect(),
+                mro: vec!["Encoding::Decoder".to_string()],
+            },
+        );
+        classes.insert(
+            "Encoding::Registry".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["find", "register"].iter().map(|s| s.to_string()).collect(),
+                mro: vec!["Encoding::Registry".to_string()],
+            },
+        );
         let mut interpreter = Self {
             env,
             output: String::new(),
@@ -596,7 +653,17 @@ impl Interpreter {
             gather_items: Vec::new(),
             enum_types: HashMap::new(),
             classes,
-            roles: HashMap::new(),
+            roles: {
+                let mut roles = HashMap::new();
+                roles.insert(
+                    "Encoding".to_string(),
+                    RoleDef {
+                        attributes: Vec::new(),
+                        methods: HashMap::new(),
+                    },
+                );
+                roles
+            },
             subsets: HashMap::new(),
             proto_subs: HashSet::new(),
             proto_tokens: HashSet::new(),
@@ -607,12 +674,118 @@ impl Interpreter {
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
             shared_vars: Arc::new(Mutex::new(HashMap::new())),
+            encoding_registry: Self::builtin_encodings(),
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
         interpreter.init_endian_enum();
         interpreter.env.insert("Any".to_string(), Value::Nil);
         interpreter
+    }
+
+    fn builtin_encodings() -> Vec<EncodingEntry> {
+        vec![
+            EncodingEntry {
+                name: "utf-8".to_string(),
+                alternative_names: vec!["utf8".to_string()],
+                user_type: None,
+            },
+            EncodingEntry {
+                name: "ascii".to_string(),
+                alternative_names: Vec::new(),
+                user_type: None,
+            },
+            EncodingEntry {
+                name: "iso-8859-1".to_string(),
+                alternative_names: vec!["latin-1".to_string()],
+                user_type: None,
+            },
+            EncodingEntry {
+                name: "utf-16".to_string(),
+                alternative_names: vec!["utf16".to_string()],
+                user_type: None,
+            },
+            EncodingEntry {
+                name: "utf-16le".to_string(),
+                alternative_names: vec![
+                    "utf16le".to_string(),
+                    "utf16-le".to_string(),
+                    "utf-16-le".to_string(),
+                ],
+                user_type: None,
+            },
+            EncodingEntry {
+                name: "utf-16be".to_string(),
+                alternative_names: vec![
+                    "utf16be".to_string(),
+                    "utf16-be".to_string(),
+                    "utf-16-be".to_string(),
+                ],
+                user_type: None,
+            },
+            EncodingEntry {
+                name: "windows-932".to_string(),
+                alternative_names: vec!["windows932".to_string()],
+                user_type: None,
+            },
+            EncodingEntry {
+                name: "windows-1251".to_string(),
+                alternative_names: vec!["windows1251".to_string()],
+                user_type: None,
+            },
+            EncodingEntry {
+                name: "windows-1252".to_string(),
+                alternative_names: vec!["windows1252".to_string()],
+                user_type: None,
+            },
+        ]
+    }
+
+    /// Find an encoding by name (case-insensitive). Returns the entry index if found.
+    pub(crate) fn find_encoding(&self, name: &str) -> Option<&EncodingEntry> {
+        let name_fc = name.to_lowercase();
+        self.encoding_registry.iter().find(|e| {
+            e.name.to_lowercase() == name_fc
+                || e.alternative_names
+                    .iter()
+                    .any(|alt| alt.to_lowercase() == name_fc)
+        })
+    }
+
+    /// Register a user-defined encoding. Returns Ok(()) on success,
+    /// or the conflicting name on failure.
+    pub(crate) fn register_encoding(&mut self, entry: EncodingEntry) -> Result<(), String> {
+        // Check for conflicts
+        let name_fc = entry.name.to_lowercase();
+        for existing in &self.encoding_registry {
+            if existing.name.to_lowercase() == name_fc {
+                return Err(entry.name.clone());
+            }
+            if existing
+                .alternative_names
+                .iter()
+                .any(|alt| alt.to_lowercase() == name_fc)
+            {
+                return Err(entry.name.clone());
+            }
+        }
+        for alt in &entry.alternative_names {
+            let alt_fc = alt.to_lowercase();
+            for existing in &self.encoding_registry {
+                if existing.name.to_lowercase() == alt_fc {
+                    return Err(alt.clone());
+                }
+                if existing
+                    .alternative_names
+                    .iter()
+                    .any(|a| a.to_lowercase() == alt_fc)
+                {
+                    return Err(alt.clone());
+                }
+            }
+        }
+        self.encoding_registry.push(entry);
+        Ok(())
     }
 
     pub fn set_pid(&mut self, pid: i64) {
@@ -740,6 +913,7 @@ impl Interpreter {
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
             shared_vars: Arc::clone(&self.shared_vars),
+            encoding_registry: self.encoding_registry.clone(),
         }
     }
 

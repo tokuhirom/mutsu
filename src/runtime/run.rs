@@ -51,6 +51,29 @@ impl Interpreter {
                 continue;
             }
 
+            // #?rakudo.moar emit <code> — include code only for moar backend.
+            // mutsu treats itself as moar-compatible, so emit the code.
+            // #?rakudo.jvm emit and #?rakudo.js emit are ignored.
+            if trimmed.starts_with("#?rakudo.moar emit ")
+                || trimmed.starts_with("#?rakudo.moar emit\t")
+            {
+                let code = trimmed
+                    .strip_prefix("#?rakudo.moar emit")
+                    .unwrap()
+                    .trim_start();
+                output.push_str(code);
+                output.push('\n');
+                continue;
+            }
+            if (trimmed.starts_with("#?rakudo.jvm emit")
+                || trimmed.starts_with("#?rakudo.js emit")
+                || trimmed.starts_with("#?rakudo.js.browser emit"))
+                && !trimmed.contains(".moar")
+            {
+                output.push('\n');
+                continue;
+            }
+
             // #?rakudo todo 'reason' — mark the next test as todo.
             // Although mutsu is not rakudo, we honor todo directives because
             // they indicate known spec issues that also affect mutsu.

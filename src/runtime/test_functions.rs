@@ -97,7 +97,28 @@ impl Interpreter {
         let right = Self::positional_value(args, 1);
         let ok = match (left, right) {
             (Some(left), Some(right)) => {
-                self.stringify_test_value(left)? == self.stringify_test_value(right)?
+                // Handle Junction on the left side (auto-threading)
+                if let Value::Junction { kind, values } = left {
+                    let right_str = self.stringify_test_value(right)?;
+                    let results: Vec<bool> = values
+                        .iter()
+                        .map(|v| {
+                            self.stringify_test_value(v)
+                                .map(|s| s == right_str)
+                                .unwrap_or(false)
+                        })
+                        .collect();
+                    match kind {
+                        crate::value::JunctionKind::Any => results.iter().any(|&b| b),
+                        crate::value::JunctionKind::All => results.iter().all(|&b| b),
+                        crate::value::JunctionKind::One => {
+                            results.iter().filter(|&&b| b).count() == 1
+                        }
+                        crate::value::JunctionKind::None => results.iter().all(|&b| !b),
+                    }
+                } else {
+                    self.stringify_test_value(left)? == self.stringify_test_value(right)?
+                }
             }
             _ => false,
         };

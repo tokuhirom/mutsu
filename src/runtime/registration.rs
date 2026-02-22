@@ -246,7 +246,10 @@ impl Interpreter {
             "Supplier",
         ];
         for parent in parents {
-            if !self.classes.contains_key(parent) && !BUILTIN_TYPES.contains(&parent.as_str()) {
+            if !self.classes.contains_key(parent)
+                && !BUILTIN_TYPES.contains(&parent.as_str())
+                && !self.roles.contains_key(parent)
+            {
                 return Err(RuntimeError::new(format!(
                     "X::Inheritance::UnknownParent: class '{}' specifies unknown parent class '{}'",
                     name, parent
