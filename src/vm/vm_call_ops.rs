@@ -126,7 +126,7 @@ impl VM {
         if let Value::Junction { kind, values } = &target
             && !matches!(
                 method.as_str(),
-                "Bool" | "so" | "WHAT" | "^name" | "gist" | "Str" | "defined"
+                "Bool" | "so" | "WHAT" | "^name" | "gist" | "Str" | "defined" | "THREAD"
             )
         {
             let kind = kind.clone();
@@ -209,7 +209,7 @@ impl VM {
         if let Value::Junction { kind, values } = &target
             && !matches!(
                 method.as_str(),
-                "Bool" | "so" | "WHAT" | "^name" | "gist" | "Str" | "defined"
+                "Bool" | "so" | "WHAT" | "^name" | "gist" | "Str" | "defined" | "THREAD"
             )
         {
             let kind = kind.clone();
