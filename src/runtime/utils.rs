@@ -236,6 +236,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::Promise(_) => "Promise",
         Value::Channel(_) => "Channel",
         Value::HyperWhatever => "HyperWhatever",
+        Value::Capture { .. } => "Capture",
         Value::Mixin(inner, _) => value_type_name(inner),
     }
 }

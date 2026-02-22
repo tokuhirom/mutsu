@@ -130,6 +130,9 @@ struct RegexPattern {
 struct RegexCaptures {
     named: HashMap<String, String>,
     positional: Vec<String>,
+    matched: String,
+    from: usize,
+    to: usize,
 }
 
 #[derive(Clone)]
@@ -580,6 +583,7 @@ impl Interpreter {
                     "release",
                     "codename",
                     "id",
+                    "backend",
                 ]
                 .iter()
                 .map(|s| s.to_string())

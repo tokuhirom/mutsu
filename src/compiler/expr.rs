@@ -300,6 +300,15 @@ impl Compiler {
                 }
                 self.code.emit(OpCode::MakeArray(elems.len() as u32));
             }
+            Expr::CaptureLiteral(items) => {
+                // Compile all items onto the stack. At runtime, MakeCapture
+                // separates Pair values (named) from non-Pair (positional).
+                // Slip (|expr) items are compiled with a special marker.
+                for item in items {
+                    self.compile_expr(item);
+                }
+                self.code.emit(OpCode::MakeCapture(items.len() as u32));
+            }
             // Expression-level function call
             Expr::Call { name, args } => {
                 // Rewrite undefine($var) → $var = Nil (assign Nil to the variable)

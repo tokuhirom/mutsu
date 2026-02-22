@@ -90,6 +90,17 @@ impl VM {
         let items = match val {
             Value::Array(items) => (*items).clone(),
             Value::Slip(items) => (*items).clone(),
+            Value::Capture { positional, named } => {
+                let mut items = positional;
+                for (k, v) in named {
+                    items.push(Value::Pair(k, Box::new(v)));
+                }
+                items
+            }
+            Value::Hash(map) => map
+                .iter()
+                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                .collect(),
             other => vec![other],
         };
         self.stack.push(Value::slip(items));

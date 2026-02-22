@@ -28,6 +28,41 @@ impl VM {
         self.stack.push(Value::hash(map));
     }
 
+    pub(super) fn exec_make_capture_op(&mut self, n: u32) {
+        let n = n as usize;
+        let start = self.stack.len() - n;
+        let raw: Vec<Value> = self.stack.drain(start..).collect();
+        let mut positional = Vec::new();
+        let mut named = HashMap::new();
+        for val in raw {
+            match val {
+                Value::Pair(k, v) => {
+                    named.insert(k, *v);
+                }
+                Value::Capture {
+                    positional: p,
+                    named: n,
+                } => {
+                    // Flatten inner capture (from |capture slip)
+                    positional.extend(p);
+                    named.extend(n);
+                }
+                Value::Slip(items) => {
+                    for item in items.iter() {
+                        match item {
+                            Value::Pair(k, v) => {
+                                named.insert(k.clone(), *v.clone());
+                            }
+                            other => positional.push(other.clone()),
+                        }
+                    }
+                }
+                other => positional.push(other),
+            }
+        }
+        self.stack.push(Value::Capture { positional, named });
+    }
+
     pub(super) fn exec_say_op(&mut self, n: u32) -> Result<(), RuntimeError> {
         let n = n as usize;
         let start = self.stack.len() - n;

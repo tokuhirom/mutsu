@@ -76,12 +76,20 @@ impl Interpreter {
         if parsed.anchor_start {
             return self
                 .regex_match_end_from_caps_in_pkg(&parsed, &chars, 0, &pkg)
-                .map(|(_, caps)| caps);
+                .map(|(end, mut caps)| {
+                    caps.from = 0;
+                    caps.to = end;
+                    caps.matched = chars[0..end].iter().collect();
+                    caps
+                });
         }
         for start in 0..=chars.len() {
-            if let Some((_, caps)) =
+            if let Some((end, mut caps)) =
                 self.regex_match_end_from_caps_in_pkg(&parsed, &chars, start, &pkg)
             {
+                caps.from = start;
+                caps.to = end;
+                caps.matched = chars[start..end].iter().collect();
                 return Some(caps);
             }
         }

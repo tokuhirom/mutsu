@@ -137,6 +137,11 @@ pub enum Value {
     /// A value with mixin overrides from the `but` operator.
     /// Inner value is the original; the HashMap maps type names (e.g. "Bool") to override values.
     Mixin(Box<Value>, HashMap<String, Value>),
+    /// A Capture: positional args + named args
+    Capture {
+        positional: Vec<Value>,
+        named: HashMap<String, Value>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

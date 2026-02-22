@@ -264,8 +264,7 @@ pub(super) fn capture_literal(input: &str) -> PResult<'_, Expr> {
     let (r, items) = super::parse_call_arg_list(r)?;
     let (r, _) = ws(r)?;
     let (r, _) = parse_char(r, ')')?;
-    // Represent as ArrayLiteral for now (Capture is not in the AST)
-    Ok((r, Expr::ArrayLiteral(items)))
+    Ok((r, Expr::CaptureLiteral(items)))
 }
 
 /// Parse `-> $param { body }` or `-> $a, $b { body }` arrow lambda.

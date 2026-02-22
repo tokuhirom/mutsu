@@ -685,6 +685,10 @@ impl VM {
                 self.exec_make_hash_op(*n);
                 *ip += 1;
             }
+            OpCode::MakeCapture(n) => {
+                self.exec_make_capture_op(*n);
+                *ip += 1;
+            }
 
             // -- I/O --
             OpCode::Say(n) => {

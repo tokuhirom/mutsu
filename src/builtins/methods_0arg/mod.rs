@@ -27,6 +27,10 @@ pub(crate) fn native_method_0arg(
         }
         return native_method_0arg(inner, method);
     }
+    // Capture methods
+    if let Value::Capture { positional, named } = target {
+        return dispatch_capture(positional, named, method);
+    }
     // Try core string/numeric/array methods first
     if let result @ Some(_) = dispatch_core(target, method) {
         return result;
@@ -37,6 +41,83 @@ pub(crate) fn native_method_0arg(
     }
     // Then type coercion and specialized methods
     coercion::dispatch(target, method)
+}
+
+fn dispatch_capture(
+    positional: &[Value],
+    named: &std::collections::HashMap<String, Value>,
+    method: &str,
+) -> Option<Result<Value, RuntimeError>> {
+    match method {
+        "hash" => {
+            let mut map = std::collections::HashMap::new();
+            for (k, v) in named {
+                map.insert(k.clone(), v.clone());
+            }
+            Some(Ok(Value::hash(map)))
+        }
+        "list" => Some(Ok(Value::array(positional.to_vec()))),
+        "elems" => Some(Ok(Value::Int(positional.len() as i64))),
+        "keys" => Some(Ok(Value::array(
+            named.keys().map(|k| Value::Str(k.clone())).collect(),
+        ))),
+        "values" => Some(Ok(Value::array(named.values().cloned().collect()))),
+        "pairs" => Some(Ok(Value::array(
+            named
+                .iter()
+                .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                .collect(),
+        ))),
+        "raku" | "perl" => {
+            let mut parts = Vec::new();
+            for v in positional {
+                parts.push(raku_value(v));
+            }
+            for (k, v) in named {
+                if let Value::Bool(true) = v {
+                    parts.push(format!(":{}", k));
+                } else if let Value::Bool(false) = v {
+                    parts.push(format!(":!{}", k));
+                } else {
+                    parts.push(format!(":{}({})", k, raku_value(v)));
+                }
+            }
+            Some(Ok(Value::Str(format!("\\({})", parts.join(", ")))))
+        }
+        "gist" | "Str" => {
+            let target = Value::Capture {
+                positional: positional.to_vec(),
+                named: named.clone(),
+            };
+            Some(Ok(Value::Str(target.to_string_value())))
+        }
+        "Bool" => Some(Ok(Value::Bool(!positional.is_empty() || !named.is_empty()))),
+        "WHAT" => Some(Ok(Value::Package("Capture".to_string()))),
+        _ => None,
+    }
+}
+
+/// Helper for .raku representation of a value
+fn raku_value(v: &Value) -> String {
+    match v {
+        Value::Str(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
+        Value::Int(i) => i.to_string(),
+        Value::Bool(b) => if *b { "True" } else { "False" }.to_string(),
+        Value::Num(f) => {
+            if f.is_nan() {
+                "NaN".to_string()
+            } else if f.is_infinite() {
+                if *f > 0.0 {
+                    "Inf".to_string()
+                } else {
+                    "-Inf".to_string()
+                }
+            } else {
+                format!("{}", f)
+            }
+        }
+        other => other.to_string_value(),
+    }
 }
 
 fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {

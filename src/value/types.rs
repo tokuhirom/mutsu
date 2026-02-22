@@ -108,6 +108,7 @@ impl Value {
             Value::Version { .. } => true,
             Value::Nil => false,
             Value::HyperWhatever => true,
+            Value::Capture { positional, .. } => !positional.is_empty(),
             Value::Mixin(inner, mixins) => {
                 if let Some(bool_val) = mixins.get("Bool") {
                     bool_val.truthy()
@@ -162,6 +163,7 @@ impl Value {
             Value::Channel(_) => "Channel",
             Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
             Value::HyperWhatever => "HyperWhatever",
+            Value::Capture { .. } => "Capture",
             Value::Mixin(inner, _) => return inner.isa_check(type_name),
         };
         if my_type == type_name {

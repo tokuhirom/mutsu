@@ -226,6 +226,21 @@ impl VM {
                     _ => Value::Nil,
                 }
             }
+            // Capture indexing: $capture<key> (named) or $capture[idx] (positional)
+            (
+                Value::Capture {
+                    positional: _,
+                    named,
+                },
+                Value::Str(key),
+            ) => named.get(&key).cloned().unwrap_or(Value::Nil),
+            (Value::Capture { positional, .. }, Value::Int(i)) => {
+                if i < 0 {
+                    Value::Nil
+                } else {
+                    positional.get(i as usize).cloned().unwrap_or(Value::Nil)
+                }
+            }
             // Type parameterization: e.g. Buf[uint8] → returns the type unchanged
             (pkg @ Value::Package(_), _) => pkg,
             _ => Value::Nil,
