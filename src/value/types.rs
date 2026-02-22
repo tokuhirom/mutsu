@@ -233,7 +233,20 @@ impl Value {
 
     /// Check if this value does (composes) the given role name.
     pub(crate) fn does_check(&self, role_name: &str) -> bool {
-        // For now, delegate to isa_check since we don't track roles separately
+        // Check built-in role compositions
+        if role_name == "Encoding" {
+            if let Value::Instance { class_name, .. } = self
+                && class_name == "Encoding::Builtin"
+            {
+                return true;
+            }
+            if let Value::Package(name) = self
+                && name == "Encoding::Builtin"
+            {
+                return true;
+            }
+        }
+        // Delegate to isa_check for other cases (roles are stored as parents)
         self.isa_check(role_name)
     }
 }
