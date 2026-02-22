@@ -332,9 +332,10 @@ impl Interpreter {
                 return self.dispatch_trans(target, &args);
             }
             // Trig methods on user-defined types: coerce via .Numeric or .Bridge
-            "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sec" | "cosec" | "cotan"
-            | "asec" | "acosec" | "acotan" | "sinh" | "cosh" | "tanh" | "sech" | "cosech"
-            | "cotanh" | "asinh" | "acosh" | "atanh" | "asech" | "acosech" | "acotanh"
+            "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "atan2" | "sec" | "cosec"
+            | "cotan" | "asec" | "acosec" | "acotan" | "sinh" | "cosh" | "tanh" | "sech"
+            | "cosech" | "cotanh" | "asinh" | "acosh" | "atanh" | "asech" | "acosech"
+            | "acotanh"
                 if matches!(target, Value::Instance { .. }) =>
             {
                 // Try .Numeric first, then .Bridge
@@ -352,6 +353,13 @@ impl Interpreter {
                     )));
                 };
                 return self.call_method_with_values(coerced, method, args);
+            }
+            // .atan2(Instance) — coerce Instance arg
+            "atan2" if args.len() == 1 && matches!(&args[0], Value::Instance { .. }) => {
+                let coerced_arg = self
+                    .call_method_with_values(args[0].clone(), "Numeric", vec![])
+                    .or_else(|_| self.call_method_with_values(args[0].clone(), "Bridge", vec![]))?;
+                return self.call_method_with_values(target, "atan2", vec![coerced_arg]);
             }
             "Seq" if args.is_empty() => {
                 return Ok(match target {

@@ -276,6 +276,14 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             };
             Some(Ok(Value::Num(result)))
         }
+        "atan2" => {
+            // atan2(y) — defaults to x=1
+            if matches!(arg, Value::Instance { .. }) {
+                return None;
+            }
+            let y = runtime::to_float_value(arg).unwrap_or(0.0);
+            Some(Ok(Value::Num(y.atan2(1.0))))
+        }
         "cis" => {
             let x = runtime::to_float_value(arg).unwrap_or(f64::NAN);
             Some(Ok(Value::Complex(x.cos(), x.sin())))
@@ -384,6 +392,15 @@ fn native_function_2arg(
     arg2: &Value,
 ) -> Option<Result<Value, RuntimeError>> {
     match name {
+        "atan2" => {
+            // atan2(y, x)
+            if matches!(arg1, Value::Instance { .. }) || matches!(arg2, Value::Instance { .. }) {
+                return None;
+            }
+            let y = runtime::to_float_value(arg1).unwrap_or(0.0);
+            let x = runtime::to_float_value(arg2).unwrap_or(0.0);
+            Some(Ok(Value::Num(y.atan2(x))))
+        }
         "chop" => {
             // Type objects (Package) should throw
             if let Value::Package(type_name) = arg1 {
@@ -451,11 +468,6 @@ fn native_function_2arg(
             Some(Ok(Value::Str(
                 chars[start.min(chars.len())..].iter().collect(),
             )))
-        }
-        "atan2" => {
-            let y = runtime::to_float_value(arg1).unwrap_or(0.0);
-            let x = runtime::to_float_value(arg2).unwrap_or(0.0);
-            Some(Ok(Value::Num(y.atan2(x))))
         }
         "log" => {
             let x = runtime::to_float_value(arg1).unwrap_or(f64::NAN);

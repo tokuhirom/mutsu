@@ -774,6 +774,21 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             _ => Some(Ok(Value::Num(f64::NAN))),
         },
+        "atan2" => {
+            // .atan2 with no args defaults to x=1
+            let y = match target {
+                Value::Int(i) => *i as f64,
+                Value::Num(f) => *f,
+                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                Value::FatRat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                Value::Str(s) => match s.parse::<f64>() {
+                    Ok(f) => f,
+                    Err(_) => return Some(Ok(Value::Num(f64::NAN))),
+                },
+                _ => return None, // fall through to runtime for user types
+            };
+            Some(Ok(Value::Num(y.atan2(1.0))))
+        }
         "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sec" | "cosec" | "cotan" | "asec"
         | "acosec" | "acotan" | "sinh" | "cosh" | "tanh" | "sech" | "cosech" | "cotanh"
         | "asinh" | "acosh" | "atanh" | "asech" | "acosech" | "acotanh" => {
