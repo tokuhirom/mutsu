@@ -85,6 +85,30 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
 }
 
 impl Interpreter {
+    pub(super) fn init_endian_enum(&mut self) {
+        let variants = vec![
+            ("NativeEndian".to_string(), 0i64),
+            ("LittleEndian".to_string(), 1i64),
+            ("BigEndian".to_string(), 2i64),
+        ];
+        self.enum_types
+            .insert("Endian".to_string(), variants.clone());
+        self.env
+            .insert("Endian".to_string(), Value::Str("Endian".to_string()));
+        for (index, (key, val)) in variants.iter().enumerate() {
+            let enum_val = Value::Enum {
+                enum_type: "Endian".to_string(),
+                key: key.clone(),
+                value: *val,
+                index,
+            };
+            // Register as both Endian::NativeEndian and bare NativeEndian
+            self.env
+                .insert(format!("Endian::{}", key), enum_val.clone());
+            self.env.insert(key.clone(), enum_val);
+        }
+    }
+
     pub(super) fn init_order_enum(&mut self) {
         let variants = vec![
             ("Less".to_string(), -1i64),

@@ -610,6 +610,7 @@ impl Interpreter {
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
+        interpreter.init_endian_enum();
         interpreter.env.insert("Any".to_string(), Value::Nil);
         interpreter
     }
