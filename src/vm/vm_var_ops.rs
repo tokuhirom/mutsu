@@ -142,6 +142,12 @@ impl VM {
             (Value::Hash(items), Value::Int(key)) => {
                 items.get(&key.to_string()).cloned().unwrap_or(Value::Nil)
             }
+            (Value::Str(_), Value::Str(key)) => self
+                .interpreter
+                .env()
+                .get(&format!("<{}>", key))
+                .cloned()
+                .unwrap_or(Value::Nil),
             (Value::Set(s), Value::Str(key)) => Value::Bool(s.contains(&key)),
             (Value::Set(s), idx) => Value::Bool(s.contains(&idx.to_string_value())),
             (Value::Bag(b), Value::Str(key)) => Value::Int(*b.get(&key).unwrap_or(&0)),

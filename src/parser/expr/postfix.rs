@@ -434,6 +434,7 @@ fn postfix_expr(input: &str) -> PResult<'_, Expr> {
                                 || c == '-'
                                 || c == '!'
                                 || c == '.'
+                                || c == ':'
                                 || c == '?'
                                 || c == '+'
                                 || c == '/'

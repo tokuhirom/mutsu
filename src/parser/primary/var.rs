@@ -66,7 +66,7 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     // Handle $<name> (named capture variable)
     if let Some(after_lt) = input.strip_prefix('<')
         && let Ok((after_name, name)) = take_while1(after_lt, |c: char| {
-            c.is_alphanumeric() || c == '_' || c == '-'
+            c.is_alphanumeric() || c == '_' || c == '-' || c == ':'
         })
         && let Some(after_gt) = after_name.strip_prefix('>')
     {
