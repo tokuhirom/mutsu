@@ -1018,6 +1018,26 @@ impl Interpreter {
                 Value::Package(_) => Ok(Value::Str(String::new())),
                 _ => Ok(Value::Str(target.to_string_value())),
             },
+            // Metamodel::*HOW methods
+            "new_type" if matches!(&target, Value::Package(n) if n.starts_with("Metamodel::")) => {
+                // Metamodel::PackageHOW.new_type(name => 'Foo')
+                // Returns a type object (Package) with the given name
+                let name = args
+                    .iter()
+                    .find_map(|a| {
+                        if let Value::Pair(k, v) = a {
+                            if k == "name" {
+                                Some(v.to_string_value())
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_else(|| "Anon".to_string());
+                Ok(Value::Package(name))
+            }
             _ => Err(RuntimeError::new(format!(
                 "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
                 method

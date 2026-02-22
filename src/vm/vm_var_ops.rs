@@ -81,6 +81,9 @@ impl VM {
             Value::Num(f64::INFINITY)
         } else if name == "Empty" {
             Value::Slip(std::sync::Arc::new(vec![]))
+        } else if name.starts_with("Metamodel::") {
+            // Meta-object protocol type objects
+            Value::Package(name.to_string())
         } else {
             Value::Str(name.to_string())
         };
