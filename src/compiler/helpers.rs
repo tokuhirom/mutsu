@@ -153,9 +153,9 @@ impl Compiler {
             Expr::Index { target, index } | Expr::IndexAssign { target, index, .. } => {
                 Self::expr_has_placeholder(target) || Self::expr_has_placeholder(index)
             }
-            Expr::StringInterpolation(parts) | Expr::ArrayLiteral(parts) => {
-                parts.iter().any(Self::expr_has_placeholder)
-            }
+            Expr::StringInterpolation(parts)
+            | Expr::ArrayLiteral(parts)
+            | Expr::CaptureLiteral(parts) => parts.iter().any(Self::expr_has_placeholder),
             _ => false,
         }
     }

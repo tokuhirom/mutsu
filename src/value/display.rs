@@ -361,6 +361,22 @@ impl Value {
             Value::Channel(_) => "Channel".to_string(),
             Value::Nil => String::new(),
             Value::HyperWhatever => "**".to_string(),
+            Value::Capture { positional, named } => {
+                let mut parts = Vec::new();
+                for v in positional {
+                    parts.push(v.to_string_value());
+                }
+                for (k, v) in named {
+                    if let Value::Bool(true) = v {
+                        parts.push(format!(":{}", k));
+                    } else if let Value::Bool(false) = v {
+                        parts.push(format!(":!{}", k));
+                    } else {
+                        parts.push(format!(":{}({})", k, v.to_string_value()));
+                    }
+                }
+                format!("\\({})", parts.join(", "))
+            }
             Value::Mixin(inner, mixins) => {
                 if let Some(str_val) = mixins.get("Str") {
                     str_val.to_string_value()

@@ -226,6 +226,7 @@ impl Interpreter {
                     Value::Promise(_) => "Promise",
                     Value::Channel(_) => "Channel",
                     Value::HyperWhatever => "HyperWhatever",
+                    Value::Capture { .. } => "Capture",
                     Value::Mixin(inner, _) => {
                         return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
                     }
@@ -261,15 +262,23 @@ impl Interpreter {
                     return match pattern {
                         Value::Regex(pat) | Value::Str(pat) => {
                             if let Some(captures) = self.regex_match_with_captures(pat, &text) {
+                                let matched = captures.matched.clone();
+                                let from = captures.from as i64;
+                                let to = captures.to as i64;
                                 for (i, v) in captures.positional.iter().enumerate() {
                                     self.env.insert(i.to_string(), Value::Str(v.clone()));
                                 }
                                 for (k, v) in &captures.named {
                                     self.env.insert(format!("<{}>", k), Value::Str(v.clone()));
                                 }
-                                Ok(Value::Bool(true))
+                                Ok(Value::make_match_object_with_captures(
+                                    matched,
+                                    from,
+                                    to,
+                                    &captures.positional,
+                                ))
                             } else {
-                                Ok(Value::Bool(false))
+                                Ok(Value::Nil)
                             }
                         }
                         _ => Ok(Value::Nil),
