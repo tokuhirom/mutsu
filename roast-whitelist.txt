@@ -38,8 +38,8 @@ roast/S02-types/unicode.t
 roast/S02-types/version-stress.t
 roast/S02-types/version.t
 roast/S03-buf/read-num.t
-roast/S03-operators/assign-is-not-binding.t
 roast/S03-operators/also.t
+roast/S03-operators/assign-is-not-binding.t
 roast/S03-operators/basic-types.t
 roast/S03-operators/boolean-bitwise.t
 roast/S03-operators/brainos.t
@@ -174,8 +174,8 @@ roast/S15-normalization/nfkd-sanity.t
 roast/S15-string-types/Str.t
 roast/S16-filehandles/misc.t
 roast/S16-filehandles/unlink.t
-roast/S16-io/say-and-ref.t
 roast/S16-io/cwd.t
+roast/S16-io/say-and-ref.t
 roast/S16-io/supply.t
 roast/S16-unfiled/getpeername.t
 roast/S17-channel/stress.t
@@ -200,8 +200,8 @@ roast/S29-any/cmp.t
 roast/S29-context/exit-in-if.t
 roast/S29-context/exit.t
 roast/S32-array/bool.t
-roast/S32-hash/antipairs.t
 roast/S32-encoding/registry.t
+roast/S32-hash/antipairs.t
 roast/S32-hash/invert.t
 roast/S32-io/dir.t
 roast/S32-io/null-char.t
@@ -227,6 +227,16 @@ roast/S32-str/tclc.t
 roast/S32-str/tc.t
 roast/S32-str/trim.t
 roast/S32-str/uc.t
+roast/S32-trig/cosech.t
+roast/S32-trig/cosec.t
+roast/S32-trig/cos.t
+roast/S32-trig/cotanh.t
+roast/S32-trig/cotan.t
 roast/S32-trig/e.t
 roast/S32-trig/pi.t
+roast/S32-trig/sech.t
+roast/S32-trig/sec.t
 roast/S32-trig/simple.t
+roast/S32-trig/sin.t
+roast/S32-trig/tanh.t
+roast/S32-trig/tan.t

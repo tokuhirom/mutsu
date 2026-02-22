@@ -247,6 +247,21 @@ impl Interpreter {
         if let Some(native_result) = crate::builtins::native_function(name, args) {
             return native_result;
         }
+        // Coerce user-defined types for builtin functions via .Numeric/.Bridge
+        if args.len() == 1
+            && matches!(&args[0], Value::Instance { .. })
+            && Self::is_builtin_function(name)
+        {
+            let coerced = self
+                .call_method_with_values(args[0].clone(), "Numeric", vec![])
+                .or_else(|_| self.call_method_with_values(args[0].clone(), "Bridge", vec![]));
+            if let Ok(val) = coerced {
+                let coerced_args = [val];
+                if let Some(native_result) = crate::builtins::native_function(name, &coerced_args) {
+                    return native_result;
+                }
+            }
+        }
         if let Some(def) = self.resolve_function_with_alias(name, args) {
             let saved_env = self.env.clone();
             self.bind_function_args_values(&def.param_defs, &def.params, args)?;
@@ -501,6 +516,24 @@ impl Interpreter {
                 | "asin"
                 | "acos"
                 | "atan"
+                | "sec"
+                | "cosec"
+                | "cotan"
+                | "asec"
+                | "acosec"
+                | "acotan"
+                | "sinh"
+                | "cosh"
+                | "tanh"
+                | "sech"
+                | "cosech"
+                | "cotanh"
+                | "asinh"
+                | "acosh"
+                | "atanh"
+                | "asech"
+                | "acosech"
+                | "acotanh"
                 | "chr"
                 | "ord"
                 | "chars"

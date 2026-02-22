@@ -121,3 +121,42 @@ pub(super) fn decimal(input: &str) -> PResult<'_, Expr> {
     }
     Ok((rest, Expr::Literal(Value::Num(n))))
 }
+
+/// Parse a decimal literal starting with `.` (e.g., `.5`, `.5i`, `.123e2`).
+pub(super) fn dot_decimal(input: &str) -> PResult<'_, Expr> {
+    let (rest, _) = parse_char(input, '.')?;
+    // Must be followed by a digit
+    let (rest, _frac) = take_while1(rest, |c: char| c.is_ascii_digit() || c == '_')?;
+    let num_str = &input[..input.len() - rest.len()];
+
+    // Check for scientific notation
+    let (rest, exp_part) = if rest.starts_with('e') || rest.starts_with('E') {
+        let exp_start = rest;
+        let r = &rest[1..];
+        let r = if r.starts_with('+') || r.starts_with('-') {
+            &r[1..]
+        } else {
+            r
+        };
+        if let Ok((r, _)) = take_while1(r, |c: char| c.is_ascii_digit()) {
+            (r, Some(&exp_start[..exp_start.len() - r.len()]))
+        } else {
+            (rest, None)
+        }
+    } else {
+        (rest, None)
+    };
+
+    let full = if let Some(exp) = exp_part {
+        format!("0{}{}", num_str, exp)
+    } else {
+        format!("0{}", num_str)
+    };
+    let clean: String = full.chars().filter(|c| *c != '_').collect();
+    let n: f64 = clean.parse().unwrap_or(0.0);
+    // Check for imaginary suffix
+    if rest.starts_with('i') && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_') {
+        return Ok((&rest[1..], Expr::Literal(Value::Complex(0.0, n))));
+    }
+    Ok((rest, Expr::Literal(Value::Num(n))))
+}

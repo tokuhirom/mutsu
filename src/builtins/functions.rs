@@ -234,7 +234,18 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 Some(Ok(Value::Num(x.log10())))
             }
         },
-        "sin" | "cos" | "tan" | "asin" | "acos" | "atan" => {
+        "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sec" | "cosec" | "cotan" | "asec"
+        | "acosec" | "acotan" | "sinh" | "cosh" | "tanh" | "sech" | "cosech" | "cotanh"
+        | "asinh" | "acosh" | "atanh" | "asech" | "acosech" | "acotanh" => {
+            // Complex arguments use complex trig
+            if let Value::Complex(re, im) = arg {
+                let result = crate::builtins::methods_0arg::complex_trig(name, *re, *im);
+                return Some(Ok(Value::Complex(result.0, result.1)));
+            }
+            // User-defined types need runtime coercion via .Numeric/.Bridge
+            if matches!(arg, Value::Instance { .. }) {
+                return None;
+            }
             let x = runtime::to_float_value(arg).unwrap_or(0.0);
             let result = match name {
                 "sin" => x.sin(),
@@ -243,6 +254,24 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 "asin" => x.asin(),
                 "acos" => x.acos(),
                 "atan" => x.atan(),
+                "sec" => 1.0 / x.cos(),
+                "cosec" => 1.0 / x.sin(),
+                "cotan" => 1.0 / x.tan(),
+                "asec" => (1.0 / x).acos(),
+                "acosec" => (1.0 / x).asin(),
+                "acotan" => (1.0 / x).atan(),
+                "sinh" => x.sinh(),
+                "cosh" => x.cosh(),
+                "tanh" => x.tanh(),
+                "sech" => 1.0 / x.cosh(),
+                "cosech" => 1.0 / x.sinh(),
+                "cotanh" => 1.0 / x.tanh(),
+                "asinh" => x.asinh(),
+                "acosh" => x.acosh(),
+                "atanh" => x.atanh(),
+                "asech" => (1.0 / x).acosh(),
+                "acosech" => (1.0 / x).asinh(),
+                "acotanh" => (1.0 / x).atanh(),
                 _ => 0.0,
             };
             Some(Ok(Value::Num(result)))

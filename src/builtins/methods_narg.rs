@@ -55,6 +55,45 @@ pub(crate) fn native_method_1arg(
             let suffix = arg.to_string_value();
             Some(Ok(Value::Bool(s.ends_with(&suffix))))
         }
+        "Rat" => {
+            // .Rat(epsilon) — just ignore epsilon and convert like .Rat
+            let result = match target {
+                Value::Rat(_, _) => target.clone(),
+                Value::Int(i) => Value::Rat(*i, 1),
+                Value::Num(f) => {
+                    let denom = 1_000_000i64;
+                    let numer = (f * denom as f64).round() as i64;
+                    Value::Rat(numer, denom)
+                }
+                Value::FatRat(n, d) => Value::Rat(*n, *d),
+                Value::Str(s) => {
+                    if let Ok(f) = s.parse::<f64>() {
+                        let denom = 1_000_000i64;
+                        let numer = (f * denom as f64).round() as i64;
+                        Value::Rat(numer, denom)
+                    } else {
+                        Value::Rat(0, 1)
+                    }
+                }
+                _ => Value::Rat(0, 1),
+            };
+            Some(Ok(result))
+        }
+        "FatRat" => {
+            // .FatRat or .FatRat(epsilon) — convert to FatRat
+            let result = match target {
+                Value::FatRat(_, _) => target.clone(),
+                Value::Int(i) => Value::FatRat(*i, 1),
+                Value::Rat(n, d) => Value::FatRat(*n, *d),
+                Value::Num(f) => {
+                    let denom = 1_000_000i64;
+                    let numer = (f * denom as f64).round() as i64;
+                    Value::FatRat(numer, denom)
+                }
+                _ => Value::FatRat(0, 1),
+            };
+            Some(Ok(result))
+        }
         "index" => {
             // Fall through to runtime dispatch for type objects, named args (Pairs),
             // array of needles, and multi-arg calls handled by dispatch_index
