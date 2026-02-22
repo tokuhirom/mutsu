@@ -68,6 +68,7 @@ roast/S03-smartmatch/regex-hash.t
 roast/S03-smartmatch/scalar-hash.t
 roast/S04-exception-handlers/top-level.t
 roast/S04-exceptions/control_across_runloop.t
+roast/S04-exceptions/exceptions-alternatives.t
 roast/S04-statement-modifiers/until.t
 roast/S04-statement-modifiers/values_in_bool_context.t
 roast/S04-statement-modifiers/while.t
@@ -79,6 +80,7 @@ roast/S04-statements/repeat.t
 roast/S04-statements/unless.t
 roast/S04-statements/until.t
 roast/S05-grammar/namespace-6e.t
+roast/S05-grammar/ws.t
 roast/S05-mass/charsets.t
 roast/S05-mass/named-chars.t
 roast/S05-mass/properties-block.t
@@ -174,6 +176,7 @@ roast/S15-string-types/Str.t
 roast/S16-filehandles/misc.t
 roast/S16-filehandles/unlink.t
 roast/S16-io/bare-say.t
+roast/S16-io/say-and-ref.t
 roast/S16-io/cwd.t
 roast/S16-io/supply.t
 roast/S16-unfiled/getpeername.t
@@ -203,6 +206,7 @@ roast/S28-named-variables/cwd.t
 roast/S28-named-variables/slangs.t
 roast/S29-any/cmp.t
 roast/S29-context/exit-in-if.t
+roast/S29-context/exit.t
 roast/S32-array/bool.t
 roast/S32-hash/antipairs.t
 roast/S32-hash/invert.t

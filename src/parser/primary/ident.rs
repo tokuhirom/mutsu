@@ -201,6 +201,9 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if let Ok(r) = try_kw("Nil", Value::Nil) {
         return Ok(r);
     }
+    if let Ok(r) = try_kw("Empty", Value::Slip(std::sync::Arc::new(vec![]))) {
+        return Ok(r);
+    }
     if let Ok(r) = try_kw("Any", Value::Package("Any".to_string())) {
         return Ok(r);
     }

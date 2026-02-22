@@ -198,28 +198,32 @@ impl Compiler {
                         return;
                     }
                     TokenKind::AndThen => {
-                        // a andthen b: result is b if a is defined, else a
+                        // a andthen b: result is b if a.defined, else a
                         self.compile_expr(left);
                         self.code.emit(OpCode::Dup);
-                        let jump_cleanup = self.code.emit(OpCode::JumpIfNil(0));
-                        // Defined path: pop both copies, evaluate right
-                        self.code.emit(OpCode::Pop);
+                        self.code.emit(OpCode::CallDefined);
+                        let jump_undef = self.code.emit(OpCode::JumpIfFalse(0));
+                        // Defined path: pop original, evaluate right
                         self.code.emit(OpCode::Pop);
                         self.compile_expr(right);
                         let jump_end = self.code.emit(OpCode::Jump(0));
-                        // Nil path: pop the dup, keep the original nil
-                        self.code.patch_jump(jump_cleanup);
-                        self.code.emit(OpCode::Pop);
+                        // Undefined path: keep original
+                        self.code.patch_jump(jump_undef);
                         self.code.patch_jump(jump_end);
                         return;
                     }
                     TokenKind::NotAndThen => {
+                        // a notandthen b: result is b if a is NOT defined, else Nil
                         self.compile_expr(left);
-                        let jump_eval_right = self.code.emit(OpCode::JumpIfNil(0));
+                        self.code.emit(OpCode::Dup);
+                        self.code.emit(OpCode::CallDefined);
+                        let jump_undef = self.code.emit(OpCode::JumpIfFalse(0));
+                        // Defined path: pop original, push Nil
                         self.code.emit(OpCode::Pop);
                         self.code.emit(OpCode::LoadNil);
                         let jump_end = self.code.emit(OpCode::Jump(0));
-                        self.code.patch_jump(jump_eval_right);
+                        // Undefined path: pop original, evaluate right
+                        self.code.patch_jump(jump_undef);
                         self.code.emit(OpCode::Pop);
                         self.compile_expr(right);
                         self.code.patch_jump(jump_end);

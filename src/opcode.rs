@@ -142,10 +142,13 @@ pub(crate) enum OpCode {
     Jump(i32),
     JumpIfFalse(i32),
     JumpIfTrue(i32),
-    /// Jump if top of stack is nil (without popping)
+    /// Jump if top of stack is nil/undefined (without popping)
+    #[allow(dead_code)]
     JumpIfNil(i32),
-    /// Jump if top of stack is not nil (without popping)
+    /// Jump if top of stack is not nil/defined (without popping)
     JumpIfNotNil(i32),
+    /// Call .defined on top of stack, replace with Bool result
+    CallDefined,
 
     // -- Stack manipulation --
     Dup,
