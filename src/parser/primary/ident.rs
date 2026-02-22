@@ -369,6 +369,7 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "pick"
             | "roll"
             | "sleep"
+            | "dir"
     ) || is_expr_listop(name)
 }
 
@@ -377,8 +378,10 @@ pub(super) fn is_listop(name: &str) -> bool {
 /// Test/Test::Util functions are NOT listed here — they are registered dynamically
 /// via `register_module_exports()` when `use Test` / `use Test::Util` is parsed.
 pub(super) fn is_expr_listop(name: &str) -> bool {
-    matches!(name, "EVAL" | "flat" | "run" | "shell" | "cross" | "await")
-        || crate::parser::stmt::simple::is_imported_function(name)
+    matches!(
+        name,
+        "EVAL" | "flat" | "run" | "shell" | "cross" | "await" | "dir"
+    ) || crate::parser::stmt::simple::is_imported_function(name)
 }
 
 /// Check if a name is an infix word operator (should not be treated as a listop call).

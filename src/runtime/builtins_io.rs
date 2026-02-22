@@ -12,6 +12,56 @@ fn check_null_in_path(path: &str) -> Result<(), RuntimeError> {
 }
 
 impl Interpreter {
+    fn dir_test_matches(&mut self, test: &Value, entry_name: &str, dir_path: &Path) -> bool {
+        if let Value::Bool(b) = test {
+            return *b;
+        }
+
+        let saved_cwd = self.env.get("$*CWD").cloned();
+        let saved_cwd_star = self.env.get("*CWD").cloned();
+        let saved_topic = self.env.get("_").cloned();
+        let saved_dollar_topic = self.env.get("$_").cloned();
+
+        let cwd_val = self.make_io_path_instance(&Self::stringify_path(dir_path));
+        self.env.insert("$*CWD".to_string(), cwd_val.clone());
+        self.env.insert("*CWD".to_string(), cwd_val);
+        self.env
+            .insert("_".to_string(), Value::Str(entry_name.to_string()));
+        self.env
+            .insert("$_".to_string(), Value::Str(entry_name.to_string()));
+
+        let matched = match test {
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => self
+                .call_sub_value(test.clone(), vec![Value::Str(entry_name.to_string())], true)
+                .map(|v| v.truthy())
+                .unwrap_or(false),
+            _ => self.smart_match(&Value::Str(entry_name.to_string()), test),
+        };
+
+        if let Some(v) = saved_cwd {
+            self.env.insert("$*CWD".to_string(), v);
+        } else {
+            self.env.remove("$*CWD");
+        }
+        if let Some(v) = saved_cwd_star {
+            self.env.insert("*CWD".to_string(), v);
+        } else {
+            self.env.remove("*CWD");
+        }
+        if let Some(v) = saved_topic {
+            self.env.insert("_".to_string(), v);
+        } else {
+            self.env.remove("_");
+        }
+        if let Some(v) = saved_dollar_topic {
+            self.env.insert("$_".to_string(), v);
+        } else {
+            self.env.remove("$_");
+        }
+
+        matched
+    }
+
     pub(super) fn builtin_slurp(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let path = args
             .first()
@@ -71,23 +121,89 @@ impl Interpreter {
         Ok(Value::Bool(self.close_handle_value(handle)?))
     }
 
-    pub(super) fn builtin_dir(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let requested = args
-            .first()
-            .map(|v| v.to_string_value())
-            .unwrap_or_else(|| {
-                self.get_dynamic_string("$*CWD")
-                    .unwrap_or_else(|| ".".to_string())
-            });
-        let path_buf = self.resolve_path(&requested);
+    pub(super) fn builtin_dir(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let mut requested_opt: Option<String> = None;
+        let mut requested_cwd_opt: Option<String> = None;
+        let mut test_opt: Option<Value> = None;
+        for arg in args {
+            if let Value::Pair(key, val) = arg
+                && key == "test"
+            {
+                test_opt = Some((**val).clone());
+                continue;
+            }
+            if requested_opt.is_none() {
+                if let Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } = arg
+                    && class_name == "IO::Path"
+                {
+                    requested_opt = Some(
+                        attributes
+                            .get("path")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default(),
+                    );
+                    requested_cwd_opt = attributes.get("cwd").map(|v| v.to_string_value());
+                } else {
+                    requested_opt = Some(arg.to_string_value());
+                }
+            }
+        }
+        let requested = requested_opt.unwrap_or_else(|| {
+            self.get_dynamic_string("$*CWD")
+                .unwrap_or_else(|| ".".to_string())
+        });
+        let path_buf = if Path::new(&requested).is_absolute() {
+            self.resolve_path(&requested)
+        } else if let Some(cwd) = &requested_cwd_opt {
+            self.apply_chroot(PathBuf::from(cwd).join(Path::new(&requested)))
+        } else {
+            self.resolve_path(&requested)
+        };
+        let requested_path = PathBuf::from(&requested);
+        let requested_is_absolute = requested_path.is_absolute();
         let mut entries = Vec::new();
+        let mut push_entry = |basename: &str| {
+            if let Some(test) = &test_opt
+                && !self.dir_test_matches(test, basename, &path_buf)
+            {
+                return;
+            }
+            let out_path = if requested_is_absolute {
+                path_buf.join(basename)
+            } else if requested == "." {
+                PathBuf::from(basename)
+            } else {
+                requested_path.join(basename)
+            };
+            let mut attrs = HashMap::new();
+            attrs.insert(
+                "path".to_string(),
+                Value::Str(Self::stringify_path(&out_path)),
+            );
+            if let Some(cwd) = &requested_cwd_opt
+                && !out_path.is_absolute()
+            {
+                attrs.insert("cwd".to_string(), Value::Str(cwd.clone()));
+            }
+            entries.push(Value::make_instance("IO::Path".to_string(), attrs));
+        };
+
+        if test_opt.is_some() {
+            push_entry(".");
+            push_entry("..");
+        }
         for entry in fs::read_dir(&path_buf).map_err(|err| {
             RuntimeError::new(format!("Failed to read dir '{}': {}", requested, err))
         })? {
             let entry = entry.map_err(|err| {
                 RuntimeError::new(format!("Failed to read dir entry '{}': {}", requested, err))
             })?;
-            entries.push(Value::Str(entry.path().to_string_lossy().to_string()));
+            let basename = entry.file_name().to_string_lossy().to_string();
+            push_entry(&basename);
         }
         Ok(Value::array(entries))
     }

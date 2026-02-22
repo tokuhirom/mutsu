@@ -407,6 +407,7 @@ impl Interpreter {
                     "gist",
                     "IO",
                     "basename",
+                    "dirname",
                     "parent",
                     "sibling",
                     "child",
@@ -443,6 +444,7 @@ impl Interpreter {
                     "dir",
                     "spurt",
                     "unlink",
+                    "starts-with",
                 ]
                 .iter()
                 .map(|s| s.to_string())

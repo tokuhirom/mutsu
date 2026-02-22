@@ -1311,16 +1311,43 @@ impl Interpreter {
                     return Ok(Value::make_instance(class_name.clone(), attrs));
                 }
                 "IO::Path" => {
-                    let path = args
-                        .first()
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default();
+                    let mut path = String::new();
+                    let mut cwd_attr: Option<String> = None;
+                    for arg in &args {
+                        match arg {
+                            Value::Pair(key, value) if key == "CWD" => {
+                                cwd_attr = Some(value.to_string_value());
+                            }
+                            Value::Instance {
+                                class_name,
+                                attributes,
+                                ..
+                            } if path.is_empty() && class_name == "IO::Path" => {
+                                path = attributes
+                                    .get("path")
+                                    .map(|v| v.to_string_value())
+                                    .unwrap_or_default();
+                                if cwd_attr.is_none() {
+                                    cwd_attr = attributes.get("cwd").map(|v| v.to_string_value());
+                                }
+                            }
+                            _ if path.is_empty() => {
+                                path = arg.to_string_value();
+                            }
+                            _ => {}
+                        }
+                    }
                     if path.contains('\0') {
                         return Err(RuntimeError::new(
                             "X::IO::Null: Found null byte in pathname",
                         ));
                     }
-                    return Ok(self.make_io_path_instance(&path));
+                    let mut attrs = HashMap::new();
+                    attrs.insert("path".to_string(), Value::Str(path));
+                    if let Some(cwd) = cwd_attr {
+                        attrs.insert("cwd".to_string(), Value::Str(cwd));
+                    }
+                    return Ok(Value::make_instance("IO::Path".to_string(), attrs));
                 }
                 "Buf" => {
                     let byte_vals: Vec<Value> = args
