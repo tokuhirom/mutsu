@@ -304,6 +304,28 @@ impl Value {
                 .get("exitcode")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_else(|| format!("{}()", class_name)),
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Buf" || class_name == "Blob" => {
+                if let Some(Value::Array(bytes)) = attributes.get("bytes") {
+                    if bytes.is_empty() {
+                        format!("{}()", class_name)
+                    } else {
+                        let hex: Vec<String> = bytes
+                            .iter()
+                            .map(|b| match b {
+                                Value::Int(i) => format!("{:02X}", *i as u8),
+                                _ => "00".to_string(),
+                            })
+                            .collect();
+                        format!("{}:0x<{}>", class_name, hex.join(" "))
+                    }
+                } else {
+                    format!("{}()", class_name)
+                }
+            }
             Value::Instance { class_name, .. } => format!("{}()", class_name),
             Value::Junction { kind, values } => {
                 let kind_str = match kind {

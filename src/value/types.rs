@@ -59,7 +59,7 @@ impl Value {
             Value::Bool(b) => *b,
             Value::Int(i) => *i != 0,
             Value::BigInt(n) => !n.is_zero(),
-            Value::Num(f) => *f != 0.0 && !f.is_nan(),
+            Value::Num(f) => *f != 0.0 || f.is_nan(),
             Value::Str(s) => !s.is_empty(),
             Value::Range(_, _) => true,
             Value::RangeExcl(_, _) => true,

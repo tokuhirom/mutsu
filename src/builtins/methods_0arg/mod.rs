@@ -95,6 +95,23 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
         }
     }
+    // Kernel type object methods
+    if let Value::Package(name) = target
+        && name == "Kernel"
+        && method == "endian"
+    {
+        return Some(Ok(Value::Enum {
+            enum_type: "Endian".to_string(),
+            key: if cfg!(target_endian = "little") {
+                "LittleEndian"
+            } else {
+                "BigEndian"
+            }
+            .to_string(),
+            value: if cfg!(target_endian = "little") { 1 } else { 2 },
+            index: if cfg!(target_endian = "little") { 1 } else { 2 },
+        }));
+    }
     match method {
         "defined" => Some(Ok(Value::Bool(match target {
             Value::Nil | Value::Package(_) => false,
@@ -267,6 +284,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Value::Bag(items) => Value::Int(items.len() as i64),
                 Value::Mix(items) => Value::Int(items.len() as i64),
                 Value::Junction { values, .. } => Value::Int(values.len() as i64),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Buf" || class_name == "Blob" => {
+                    if let Some(Value::Array(bytes)) = attributes.get("bytes") {
+                        Value::Int(bytes.len() as i64)
+                    } else {
+                        Value::Int(0)
+                    }
+                }
                 _ => Value::Int(1),
             };
             Some(Ok(result))

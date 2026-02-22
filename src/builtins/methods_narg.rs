@@ -391,7 +391,100 @@ pub(crate) fn native_method_1arg(
             };
             Some(Ok(Value::Num(y.atan2(x))))
         }
+        // Buf/Blob read-num methods (1 arg: offset, uses NativeEndian)
+        "read-num32" | "read-num64" => {
+            if let Value::Package(type_name) = target {
+                return Some(Err(RuntimeError::new(format!(
+                    "Cannot resolve caller {}({}:U)",
+                    method, type_name,
+                ))));
+            }
+            let bytes = buf_get_bytes(target)?;
+            let offset_i64 = to_int_val(arg);
+            let size: usize = if method == "read-num32" { 4 } else { 8 };
+            if offset_i64 < 0
+                || (offset_i64 as usize)
+                    .checked_add(size)
+                    .is_none_or(|end| end > bytes.len())
+            {
+                return Some(Err(RuntimeError::new(format!(
+                    "read from out of range. Is: {}, should be in 0..{}",
+                    offset_i64,
+                    bytes.len()
+                ))));
+            }
+            let offset = offset_i64 as usize;
+            let result = if size == 4 {
+                read_f32_ne(&bytes[offset..offset + 4])
+            } else {
+                read_f64_ne(&bytes[offset..offset + 8])
+            };
+            Some(Ok(Value::Num(result)))
+        }
         _ => None,
+    }
+}
+
+/// Extract byte array from a Buf/Blob instance.
+fn buf_get_bytes(target: &Value) -> Option<Vec<u8>> {
+    if let Value::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target
+        && (class_name == "Buf" || class_name == "Blob")
+        && let Some(Value::Array(items)) = attributes.get("bytes")
+    {
+        return Some(
+            items
+                .iter()
+                .map(|v| match v {
+                    Value::Int(i) => *i as u8,
+                    _ => 0,
+                })
+                .collect(),
+        );
+    }
+    None
+}
+
+fn to_int_val(v: &Value) -> i64 {
+    match v {
+        Value::Int(i) => *i,
+        Value::Num(f) => *f as i64,
+        _ => 0,
+    }
+}
+
+fn read_f32_ne(bytes: &[u8]) -> f64 {
+    let arr: [u8; 4] = [bytes[0], bytes[1], bytes[2], bytes[3]];
+    f32::from_ne_bytes(arr) as f64
+}
+
+fn read_f64_ne(bytes: &[u8]) -> f64 {
+    let arr: [u8; 8] = [
+        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+    ];
+    f64::from_ne_bytes(arr)
+}
+
+fn read_f32_endian(bytes: &[u8], endian_val: i64) -> f64 {
+    let arr: [u8; 4] = [bytes[0], bytes[1], bytes[2], bytes[3]];
+    match endian_val {
+        1 => f32::from_le_bytes(arr) as f64, // LittleEndian
+        2 => f32::from_be_bytes(arr) as f64, // BigEndian
+        _ => f32::from_ne_bytes(arr) as f64, // NativeEndian
+    }
+}
+
+fn read_f64_endian(bytes: &[u8], endian_val: i64) -> f64 {
+    let arr: [u8; 8] = [
+        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+    ];
+    match endian_val {
+        1 => f64::from_le_bytes(arr), // LittleEndian
+        2 => f64::from_be_bytes(arr), // BigEndian
+        _ => f64::from_ne_bytes(arr), // NativeEndian
     }
 }
 
@@ -451,6 +544,41 @@ pub(crate) fn native_method_2arg(
                 Value::Rat(n, d) => Some(Ok(Value::Str(rat_to_base(*n, *d, radix, Some(digits))))),
                 _ => None,
             }
+        }
+        // Buf/Blob read-num methods (2 args: offset + endian)
+        "read-num32" | "read-num64" => {
+            if let Value::Package(type_name) = target {
+                return Some(Err(RuntimeError::new(format!(
+                    "Cannot resolve caller {}({}:U)",
+                    method, type_name,
+                ))));
+            }
+            let bytes = buf_get_bytes(target)?;
+            let offset_i64 = to_int_val(arg1);
+            let endian_val = match arg2 {
+                Value::Enum { value, .. } => *value,
+                Value::Int(i) => *i,
+                _ => 0, // NativeEndian
+            };
+            let size: usize = if method == "read-num32" { 4 } else { 8 };
+            if offset_i64 < 0
+                || (offset_i64 as usize)
+                    .checked_add(size)
+                    .is_none_or(|end| end > bytes.len())
+            {
+                return Some(Err(RuntimeError::new(format!(
+                    "read from out of range. Is: {}, should be in 0..{}",
+                    offset_i64,
+                    bytes.len()
+                ))));
+            }
+            let offset = offset_i64 as usize;
+            let result = if size == 4 {
+                read_f32_endian(&bytes[offset..offset + 4], endian_val)
+            } else {
+                read_f64_endian(&bytes[offset..offset + 8], endian_val)
+            };
+            Some(Ok(Value::Num(result)))
         }
         _ => None,
     }

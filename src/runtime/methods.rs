@@ -1349,18 +1349,25 @@ impl Interpreter {
                     }
                     return Ok(Value::make_instance("IO::Path".to_string(), attrs));
                 }
-                "Buf" => {
+                "Buf" | "buf8" | "Buf[uint8]" | "Blob" | "blob8" | "Blob[uint8]" | "buf16"
+                | "buf32" | "buf64" | "blob16" | "blob32" | "blob64" => {
                     let byte_vals: Vec<Value> = args
                         .iter()
                         .flat_map(|a| match a {
                             Value::Int(i) => vec![Value::Int(*i)],
                             Value::Array(items) => items.to_vec(),
+                            Value::Range(start, end) => (*start..=*end).map(Value::Int).collect(),
+                            Value::RangeExcl(start, end) => {
+                                (*start..*end).map(Value::Int).collect()
+                            }
                             _ => vec![],
                         })
                         .collect();
+                    let is_blob = class_name.starts_with("Blob") || class_name.starts_with("blob");
+                    let type_name = if is_blob { "Blob" } else { "Buf" }.to_string();
                     let mut attrs = HashMap::new();
                     attrs.insert("bytes".to_string(), Value::array(byte_vals));
-                    return Ok(Value::make_instance("Buf".to_string(), attrs));
+                    return Ok(Value::make_instance(type_name, attrs));
                 }
                 "Rat" => {
                     let a = match args.first() {
