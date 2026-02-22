@@ -57,6 +57,16 @@ impl Interpreter {
                 self.env.insert("/".to_string(), Value::Nil);
                 false
             }
+            (_, Value::Junction { kind, values }) => match kind {
+                crate::value::JunctionKind::Any => values.iter().any(|v| self.smart_match(left, v)),
+                crate::value::JunctionKind::All => values.iter().all(|v| self.smart_match(left, v)),
+                crate::value::JunctionKind::One => {
+                    values.iter().filter(|v| self.smart_match(left, v)).count() == 1
+                }
+                crate::value::JunctionKind::None => {
+                    values.iter().all(|v| !self.smart_match(left, v))
+                }
+            },
             // IO::Path/Str ~~ Pair(:e), :d, :f, :r, :w, :x file tests
             (_, Value::Pair(key, val))
                 if val.truthy()

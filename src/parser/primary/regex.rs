@@ -131,14 +131,17 @@ pub(super) fn scan_to_delim(
                     }
                 }
             }
-        } else if c == '\'' {
-            // Skip single-quoted string content in regex (e.g., '/' or '\\')
+        } else if c == '\'' || c == '"' {
+            // Skip quoted string content in regex (e.g., '/' or '\\').
+            // This prevents delimiters inside string atoms like m/ "/" ** 2 /
+            // from prematurely ending the regex literal.
+            let quote = c;
             loop {
                 match chars.next() {
                     Some((_, '\\')) => {
                         chars.next(); // skip escaped char
                     }
-                    Some((_, '\'')) => break,
+                    Some((_, ch)) if ch == quote => break,
                     Some(_) => {}
                     None => return None,
                 }

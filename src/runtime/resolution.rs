@@ -496,6 +496,15 @@ impl Interpreter {
             }
             return Ok(Value::array(result));
         }
+        if let Some(pattern) = func {
+            let mut result = Vec::new();
+            for item in list_items {
+                if self.smart_match(&item, &pattern) {
+                    result.push(item);
+                }
+            }
+            return Ok(Value::array(result));
+        }
         Ok(Value::array(list_items))
     }
 }

@@ -1,6 +1,7 @@
 use super::super::expr::expression;
 use super::super::helpers::ws;
 use super::super::parse_result::{PError, PResult, merge_expected_messages, parse_char};
+use super::super::primary::parse_block_body;
 
 use crate::ast::{CallArg, Expr};
 use crate::value::Value;
@@ -239,6 +240,17 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                         CallArg::Named {
                             name,
                             value: Some(Expr::ArrayLiteral(items)),
+                        },
+                    ));
+                }
+                // :name{ ... } (block-valued named argument)
+                if r.starts_with('{') {
+                    let (r, body) = parse_block_body(r)?;
+                    return Ok((
+                        r,
+                        CallArg::Named {
+                            name,
+                            value: Some(Expr::AnonSub(body)),
                         },
                     ));
                 }

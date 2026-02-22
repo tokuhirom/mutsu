@@ -11,7 +11,14 @@ impl Interpreter {
             .get("path")
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        let path_buf = self.resolve_path(&p);
+        let instance_cwd = attributes.get("cwd").map(|v| v.to_string_value());
+        let path_buf = if Path::new(&p).is_absolute() {
+            self.resolve_path(&p)
+        } else if let Some(cwd) = &instance_cwd {
+            self.apply_chroot(PathBuf::from(cwd).join(Path::new(&p)))
+        } else {
+            self.resolve_path(&p)
+        };
         let cwd_path = self.get_cwd_path();
         let original = Path::new(&p);
         match method {
@@ -21,11 +28,26 @@ impl Interpreter {
                 attributes.clone(),
             )),
             "basename" => {
-                let bname = original
-                    .file_name()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_default();
+                let bname = if p == "." || p == ".." {
+                    p.clone()
+                } else if p.ends_with("/.") || p.ends_with("\\.") {
+                    ".".to_string()
+                } else if p.ends_with("/..") || p.ends_with("\\..") {
+                    "..".to_string()
+                } else {
+                    original
+                        .file_name()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_default()
+                };
                 Ok(Value::Str(bname))
+            }
+            "dirname" => {
+                let dname = original
+                    .parent()
+                    .map(Self::stringify_path)
+                    .unwrap_or_else(|| ".".to_string());
+                Ok(Value::Str(dname))
             }
             "parent" => {
                 let mut levels = 1i64;
@@ -82,11 +104,22 @@ impl Interpreter {
                 Ok(Value::Str(absolute))
             }
             "relative" => {
+                let rel_base = instance_cwd
+                    .as_ref()
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| cwd_path.clone());
                 let rel = path_buf
-                    .strip_prefix(&cwd_path)
+                    .strip_prefix(&rel_base)
                     .map(Self::stringify_path)
                     .unwrap_or_else(|_| Self::stringify_path(&path_buf));
                 Ok(Value::Str(rel))
+            }
+            "starts-with" => {
+                let prefix = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                Ok(Value::Bool(p.starts_with(&prefix)))
             }
             "resolve" => {
                 let canonical = fs::canonicalize(&path_buf).map_err(|err| {
@@ -248,7 +281,10 @@ impl Interpreter {
                 fs::create_dir_all(&path_buf).map_err(|err| {
                     RuntimeError::new(format!("Failed to mkdir '{}': {}", p, err))
                 })?;
-                Ok(Value::Bool(true))
+                Ok(Value::make_instance(
+                    "IO::Path".to_string(),
+                    attributes.clone(),
+                ))
             }
             "rmdir" => {
                 fs::remove_dir(&path_buf).map_err(|err| {
@@ -258,13 +294,36 @@ impl Interpreter {
             }
             "dir" => {
                 let mut entries = Vec::new();
+                let requested = PathBuf::from(&p);
+                let requested_is_absolute = requested.is_absolute();
+                let make_entry = |out_path: PathBuf| {
+                    let mut attrs = HashMap::new();
+                    attrs.insert(
+                        "path".to_string(),
+                        Value::Str(Self::stringify_path(&out_path)),
+                    );
+                    if let Some(cwd) = &instance_cwd
+                        && !out_path.is_absolute()
+                    {
+                        attrs.insert("cwd".to_string(), Value::Str(cwd.clone()));
+                    }
+                    Value::make_instance("IO::Path".to_string(), attrs)
+                };
                 for entry in fs::read_dir(&path_buf).map_err(|err| {
                     RuntimeError::new(format!("Failed to read dir '{}': {}", p, err))
                 })? {
                     let entry = entry.map_err(|err| {
                         RuntimeError::new(format!("Failed to read dir entry '{}': {}", p, err))
                     })?;
-                    entries.push(Value::Str(entry.path().to_string_lossy().to_string()));
+                    let file_name = entry.file_name();
+                    let out_path = if requested_is_absolute {
+                        path_buf.join(&file_name)
+                    } else if p == "." {
+                        PathBuf::from(&file_name)
+                    } else {
+                        requested.join(&file_name)
+                    };
+                    entries.push(make_entry(out_path));
                 }
                 Ok(Value::array(entries))
             }
