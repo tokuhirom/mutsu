@@ -20,12 +20,20 @@ while getopts "n:" opt; do
     esac
 done
 
+RAKU_PASS="$OUTDIR/roast-raku-pass.txt"
+
 CATEGORIES=(
     "panic:$OUTDIR/roast-panic.txt"
     "timeout:$OUTDIR/roast-timeout.txt"
     "error:$OUTDIR/roast-error.txt"
     "fail:$OUTDIR/roast-fail.txt"
 )
+
+# Show filter status
+if [[ -f "$RAKU_PASS" ]]; then
+    echo "(raku-filtered: only showing tests listed in spectest.data)"
+    echo ""
+fi
 
 found=0
 
@@ -37,9 +45,17 @@ for entry in "${CATEGORIES[@]}"; do
         continue
     fi
 
-    candidates=$(comm -23 <(sort "$file") <(sort "$WHITELIST") \
+    # Remove whitelisted tests
+    filtered=$(comm -23 <(sort "$file") <(sort "$WHITELIST"))
+
+    # If raku pass list exists, further filter to only tests that pass on raku
+    if [[ -f "$RAKU_PASS" ]]; then
+        filtered=$(comm -12 <(echo "$filtered" | sort) <(sort "$RAKU_PASS"))
+    fi
+
+    candidates=$(echo "$filtered" \
         | while read -r f; do
-            if [[ -f "$f" ]]; then
+            if [[ -n "$f" ]] && [[ -f "$f" ]]; then
                 echo "$(wc -l < "$f") $f"
             fi
         done \
@@ -60,5 +76,8 @@ done
 
 if [[ "$found" -eq 0 ]]; then
     echo "No failing tests found. Run ./scripts/roast-history.sh first." >&2
+    if [[ -f "$RAKU_PASS" ]]; then
+        echo "Note: raku filter is active ($RAKU_PASS). Remove it to see all candidates." >&2
+    fi
     exit 1
 fi

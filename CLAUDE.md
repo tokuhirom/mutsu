@@ -219,6 +219,7 @@ Per-type method documentation — consult when implementing methods on specific 
   - `tmp/roast-fail.txt` — some subtests failing
   - `tmp/roast-pass.txt` — fully passing
 - Priority order: panic → timeout → error/fail.
+- **Raku filter**: Run `./scripts/roast-raku-check.sh` to generate `tmp/roast-raku-pass.txt` (tests listed in `roast/spectest.data`). When this file exists, `pick-next-roast.sh` only shows tests that are expected to pass on Rakudo, skipping tests that raku itself cannot pass. The file is cached — re-run the script to refresh.
 - **ALWAYS use `./scripts/pick-next-roast.sh -n N` to select the next test(s).** Do NOT manually browse, scan, or read roast test files to choose which test to work on. The script's selection is final — work on whatever it returns, regardless of perceived difficulty.
 - Do NOT skip a test because it looks hard or requires implementing a complex feature. If `pick-next-roast.sh` returns it, work on it.
 - Do NOT run multiple roast tests to "assess" which one is closest to passing. This is cherry-picking and is forbidden.
@@ -256,23 +257,24 @@ Before writing any code, always investigate the test in this order:
 
 When the user says **"roast fix"**, execute this automated loop (serially, without sub-agents):
 
-1. Run `scripts/pick-next-roast.sh -n 1` to find the next failing roast test.
-2. Ensure you are on `main` and up to date: `git checkout main && git pull`.
-3. Create a feature branch: `git checkout -b <branch-name>`.
-4. Investigate the test (see "Investigating a failing roast test" above).
-5. Fix the interpreter so the roast test passes. **Implement ALL features required to pass the test, no matter how many or how complex.** Do NOT skip the test or move on because it requires multiple new features. This is the core work of the project.
-6. Run `cargo build && timeout 30 target/debug/mutsu <roast-test-path>` to verify.
-7. Append the test path to `roast-whitelist.txt` (sorted).
-8. **Before committing**: run `make test` and `make roast` to ensure no regressions.
-9. Commit, push the branch, and create a PR with `gh pr create`.
-10. Enable auto-merge: `gh pr merge --auto --squash <pr-number>`.
-11. Poll PR CI status every 60 seconds with `gh pr checks <pr-number>`:
+1. If `tmp/roast-raku-pass.txt` does not exist, run `./scripts/roast-raku-check.sh` to generate it.
+2. Run `scripts/pick-next-roast.sh -n 1` to find the next failing roast test.
+3. Ensure you are on `main` and up to date: `git checkout main && git pull`.
+4. Create a feature branch: `git checkout -b <branch-name>`.
+5. Investigate the test (see "Investigating a failing roast test" above).
+6. Fix the interpreter so the roast test passes. **Implement ALL features required to pass the test, no matter how many or how complex.** Do NOT skip the test or move on because it requires multiple new features. This is the core work of the project.
+7. Run `cargo build && timeout 30 target/debug/mutsu <roast-test-path>` to verify.
+8. Append the test path to `roast-whitelist.txt` (sorted).
+9. **Before committing**: run `make test` and `make roast` to ensure no regressions.
+10. Commit, push the branch, and create a PR with `gh pr create`.
+11. Enable auto-merge: `gh pr merge --auto --squash <pr-number>`.
+12. Poll PR CI status every 60 seconds with `gh pr checks <pr-number>`:
     - If CI fails: read the failure log, push fix commits, and retry.
     - If PR has conflicts: rebase onto main (`git pull --rebase origin main`), force push, and wait for CI again.
     - If CI passes and PR is merged: proceed to next step.
-12. Switch back to main and pull: `git checkout main && git pull`.
-13. Repeat from step 1 with the next failing test.
-14. Continue this loop indefinitely until stopped by the user.
+13. Switch back to main and pull: `git checkout main && git pull`.
+14. Repeat from step 1 with the next failing test.
+15. Continue this loop indefinitely until stopped by the user.
 
 ## Test::Util function workout
 
