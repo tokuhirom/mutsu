@@ -350,7 +350,7 @@ impl Interpreter {
                             // Check for named character classes
                             match trimmed {
                                 "alpha" | "upper" | "lower" | "digit" | "xdigit" | "space"
-                                | "ws" | "alnum" | "blank" | "cntrl" | "punct" => {
+                                | "alnum" | "blank" | "cntrl" | "punct" => {
                                     RegexAtom::CharClass(CharClass {
                                         items: vec![ClassItem::NamedBuiltin(trimmed.to_string())],
                                         negated: false,
