@@ -331,6 +331,28 @@ impl Interpreter {
             "trans" => {
                 return self.dispatch_trans(target, &args);
             }
+            // Trig methods on user-defined types: coerce via .Numeric or .Bridge
+            "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sec" | "cosec" | "cotan"
+            | "asec" | "acosec" | "acotan" | "sinh" | "cosh" | "tanh" | "sech" | "cosech"
+            | "cotanh" | "asinh" | "acosh" | "atanh" | "asech" | "acosech" | "acotanh"
+                if matches!(target, Value::Instance { .. }) =>
+            {
+                // Try .Numeric first, then .Bridge
+                let coerced = if let Ok(v) =
+                    self.call_method_with_values(target.clone(), "Numeric", vec![])
+                {
+                    v
+                } else if let Ok(v) = self.call_method_with_values(target.clone(), "Bridge", vec![])
+                {
+                    v
+                } else {
+                    return Err(RuntimeError::new(format!(
+                        "Cannot coerce to numeric for {}",
+                        method
+                    )));
+                };
+                return self.call_method_with_values(coerced, method, args);
+            }
             "Seq" if args.is_empty() => {
                 return Ok(match target {
                     Value::Array(_) | Value::LazyList(_) => target,
@@ -428,6 +450,51 @@ impl Interpreter {
             }
             "new" => {
                 return self.dispatch_new(target, args);
+            }
+            "bless" => {
+                // self.bless(:attr1($val1), :attr2($val2), ...)
+                // Creates a new instance of the invocant's class with attributes from named args
+                let class_name = match &target {
+                    Value::Package(name) => name.clone(),
+                    Value::Instance { class_name, .. } => class_name.clone(),
+                    _ => {
+                        return Err(RuntimeError::new(
+                            "bless can only be called on a class or instance",
+                        ));
+                    }
+                };
+                // Initialize with default attribute values
+                let mut attributes = HashMap::new();
+                if self.classes.contains_key(&class_name) {
+                    for (attr_name, _is_public, default) in
+                        self.collect_class_attributes(&class_name)
+                    {
+                        let val = if let Some(expr) = default {
+                            self.eval_block_value(&[Stmt::Expr(expr)])?
+                        } else {
+                            Value::Nil
+                        };
+                        attributes.insert(attr_name, val);
+                    }
+                }
+                // Override with named args from bless call
+                for arg in &args {
+                    if let Value::Pair(key, value) = arg {
+                        attributes.insert(key.clone(), *value.clone());
+                    }
+                }
+                // Run BUILD/TWEAK if defined
+                if self.class_has_method(&class_name, "BUILD") {
+                    let (_v, updated) =
+                        self.run_instance_method(&class_name, attributes, "BUILD", Vec::new())?;
+                    attributes = updated;
+                }
+                if self.class_has_method(&class_name, "TWEAK") {
+                    let (_v, updated) =
+                        self.run_instance_method(&class_name, attributes, "TWEAK", Vec::new())?;
+                    attributes = updated;
+                }
+                return Ok(Value::make_instance(class_name, attributes));
             }
             "now" if args.is_empty() => {
                 if let Value::Package(ref class_name) = target
@@ -1749,6 +1816,13 @@ impl Interpreter {
                 _ => {}
             }
             if self.classes.contains_key(class_name) {
+                // Check for user-defined .new method first
+                if self.has_user_method(class_name, "new") {
+                    let empty_attrs = HashMap::new();
+                    let (result, _updated) =
+                        self.run_instance_method(class_name, empty_attrs, "new", args)?;
+                    return Ok(result);
+                }
                 let mut attrs = HashMap::new();
                 for (attr_name, _is_public, default) in self.collect_class_attributes(class_name) {
                     let val = if let Some(expr) = default {

@@ -90,6 +90,8 @@ impl Value {
                     } else {
                         "-Inf".to_string()
                     }
+                } else if *f == 0.0 && f.is_sign_negative() {
+                    "-0".to_string()
                 } else if f.fract() == 0.0 && f.is_finite() {
                     format!("{}", *f as i64)
                 } else {
