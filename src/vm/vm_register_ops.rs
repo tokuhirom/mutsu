@@ -121,10 +121,10 @@ impl VM {
         } = stmt
         {
             self.interpreter
-                .register_sub_decl(name, params, param_defs, body, *multi);
+                .register_sub_decl(name, params, param_defs, body, *multi)?;
             if *is_export {
                 self.interpreter
-                    .register_sub_decl_as_global(name, params, param_defs, body, *multi);
+                    .register_sub_decl_as_global(name, params, param_defs, body, *multi)?;
             }
             self.sync_locals_from_env(code);
             Ok(())
@@ -175,13 +175,15 @@ impl VM {
             name,
             params,
             param_defs,
+            body,
             is_export,
         } = stmt
         {
-            let _ = (params.len(), param_defs.len());
-            self.interpreter.register_proto_decl(name);
+            self.interpreter
+                .register_proto_decl(name, params, param_defs, body)?;
             if *is_export {
-                self.interpreter.register_proto_decl_as_global(name);
+                self.interpreter
+                    .register_proto_decl_as_global(name, params, param_defs, body)?;
             }
             self.sync_locals_from_env(code);
             Ok(())

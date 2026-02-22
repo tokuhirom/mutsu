@@ -349,13 +349,17 @@ impl Interpreter {
         args: &[Value],
         param_defs: &[ParamDef],
     ) -> bool {
-        let positional_params: Vec<&ParamDef> = param_defs
-            .iter()
-            .filter(|p| !p.slurpy && !p.named)
-            .collect();
-        for (i, pd) in positional_params.iter().enumerate() {
+        let positional_params: Vec<&ParamDef> = param_defs.iter().filter(|p| !p.named).collect();
+        let mut i = 0usize;
+        for pd in positional_params {
+            let is_capture_param = pd.name == "_capture";
+            let arg_for_checks: Option<Value> = if pd.slurpy || is_capture_param {
+                Some(Value::array(args[i..].to_vec()))
+            } else {
+                args.get(i).cloned()
+            };
             if let Some(literal) = &pd.literal_value {
-                if let Some(arg) = args.get(i) {
+                if let Some(arg) = arg_for_checks.as_ref() {
                     if arg != literal {
                         return false;
                     }
@@ -364,12 +368,12 @@ impl Interpreter {
                 }
             }
             if let Some(constraint) = &pd.type_constraint
-                && let Some(arg) = args.get(i)
+                && let Some(arg) = arg_for_checks.as_ref()
             {
                 if pd.name == "__type_only__" {
                     // Bare identifier param (e.g., enum value) — resolve from env and compare
                     if let Some(expected_val) = self.env.get(constraint).cloned() {
-                        if *arg != expected_val {
+                        if arg != &expected_val {
                             return false;
                         }
                     } else if !self.type_matches_value(constraint, arg) {
@@ -378,6 +382,32 @@ impl Interpreter {
                 } else if !self.type_matches_value(constraint, arg) {
                     return false;
                 }
+            }
+            if let Some(where_expr) = &pd.where_constraint {
+                let Some(arg) = arg_for_checks.as_ref() else {
+                    return false;
+                };
+                let saved = self.env.clone();
+                self.env.insert("_".to_string(), arg.clone());
+                let ok = match where_expr.as_ref() {
+                    Expr::AnonSub(body) => self
+                        .eval_block_value(body)
+                        .map(|v| v.truthy())
+                        .unwrap_or(false),
+                    expr => self
+                        .eval_block_value(&[Stmt::Expr(expr.clone())])
+                        .map(|v| v.truthy())
+                        .unwrap_or(false),
+                };
+                self.env = saved;
+                if !ok {
+                    return false;
+                }
+            }
+            if is_capture_param {
+                i = args.len();
+            } else if !pd.slurpy {
+                i += 1;
             }
         }
         true
@@ -503,7 +533,7 @@ impl Interpreter {
                                 && !self.type_matches_value(src, &value)
                             {
                                 return Err(RuntimeError::new(format!(
-                                    "X::TypeCheck: Type check failed for {}: expected {}, got {}",
+                                    "X::TypeCheck::Argument: Type check failed for {}: expected {}, got {}",
                                     pd.name,
                                     constraint,
                                     super::value_type_name(&value)
@@ -512,7 +542,7 @@ impl Interpreter {
                             value = coerce_value(target, value);
                         } else if !self.type_matches_value(constraint, &value) {
                             return Err(RuntimeError::new(format!(
-                                "X::TypeCheck: Type check failed for {}: expected {}, got {}",
+                                "X::TypeCheck::Argument: Type check failed for {}: expected {}, got {}",
                                 pd.name,
                                 constraint,
                                 super::value_type_name(&value)

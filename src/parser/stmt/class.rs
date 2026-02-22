@@ -6,6 +6,7 @@ use crate::value::Value;
 
 use super::{block, ident, keyword, qualified_ident};
 
+use super::sub::parse_sub_name;
 use super::{parse_param_list, parse_sub_traits};
 
 fn consume_raw_braced_body(input: &str) -> PResult<'_, Vec<Stmt>> {
@@ -480,7 +481,7 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
     } else {
         rest
     };
-    let (rest, name) = ident(rest)?;
+    let (rest, name) = parse_sub_name(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, param_defs) = if rest.starts_with('(') {
         let (r, _) = parse_char(rest, '(')?;
@@ -497,18 +498,21 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
     // Parse traits (is export, etc.)
     let (rest, traits) = parse_sub_traits(rest)?;
     let (rest, _) = ws(rest)?;
-    // May have {*} body or just semicolon
+    // May have body or just semicolon
+    let mut body = Vec::new();
     if rest.starts_with('{') {
-        let (rest, _body) = match block(rest) {
+        let (rest, parsed_body) = match block(rest) {
             Ok(ok) => ok,
             Err(_) => consume_raw_braced_body(rest)?,
         };
+        body = parsed_body;
         return Ok((
             rest,
             Stmt::ProtoDecl {
                 name,
                 params,
                 param_defs,
+                body,
                 is_export: traits.is_export,
             },
         ));
@@ -520,6 +524,7 @@ pub(super) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
             name,
             params,
             param_defs,
+            body,
             is_export: traits.is_export,
         },
     ))

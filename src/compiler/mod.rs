@@ -30,6 +30,10 @@ impl Compiler {
         }
     }
 
+    pub(crate) fn set_current_package(&mut self, package: String) {
+        self.current_package = package;
+    }
+
     fn alloc_local(&mut self, name: &str) -> u32 {
         if let Some(&slot) = self.local_map.get(name) {
             return slot;

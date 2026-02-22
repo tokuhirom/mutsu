@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::super::expr::expression;
 use super::super::helpers::{ws, ws1};
@@ -32,6 +33,8 @@ thread_local! {
     /// Program file path, used to find modules relative to the script.
     static PROGRAM_PATH: RefCell<Option<String>> = const { RefCell::new(None) };
 }
+
+static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 /// Set the library search paths for the parser (called before parsing).
 pub fn set_parser_lib_paths(paths: Vec<String>) {
@@ -848,6 +851,50 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
         })?;
+        if let Expr::Index { target, index } = &expr {
+            let tmp_idx = format!(
+                "__mutsu_idx_{}",
+                TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
+            );
+            let tmp_idx_expr = Expr::Var(tmp_idx.clone());
+            let lhs_expr = Expr::Index {
+                target: target.clone(),
+                index: Box::new(tmp_idx_expr.clone()),
+            };
+            let assigned_value = if matches!(op, super::assign::CompoundAssignOp::DefinedOr) {
+                Expr::Ternary {
+                    cond: Box::new(Expr::Call {
+                        name: "defined".to_string(),
+                        args: vec![lhs_expr.clone()],
+                    }),
+                    then_expr: Box::new(lhs_expr.clone()),
+                    else_expr: Box::new(rhs),
+                }
+            } else {
+                Expr::Binary {
+                    left: Box::new(lhs_expr.clone()),
+                    op: op.token_kind(),
+                    right: Box::new(rhs),
+                }
+            };
+            let stmt = Stmt::Expr(Expr::DoBlock {
+                body: vec![
+                    Stmt::VarDecl {
+                        name: tmp_idx.clone(),
+                        expr: (*index.clone()),
+                        type_constraint: None,
+                        is_state: false,
+                    },
+                    Stmt::Expr(Expr::IndexAssign {
+                        target: target.clone(),
+                        index: Box::new(tmp_idx_expr),
+                        value: Box::new(assigned_value),
+                    }),
+                ],
+                label: None,
+            });
+            return parse_statement_modifier(r, stmt);
+        }
         let stmt = Stmt::Expr(Expr::Binary {
             left: Box::new(expr),
             op: op.token_kind(),

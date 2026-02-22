@@ -24,7 +24,9 @@ impl VM {
                 other => args.push(other),
             }
         }
-        if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
+        if !self.interpreter.has_proto(&name)
+            && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
+        {
             let pkg = self.interpreter.current_package().to_string();
             let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
             self.stack.push(result);
@@ -75,7 +77,9 @@ impl VM {
                 args.push(other);
             }
         }
-        if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
+        if !self.interpreter.has_proto(&name)
+            && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
+        {
             let pkg = self.interpreter.current_package().to_string();
             let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
             self.stack.push(result);

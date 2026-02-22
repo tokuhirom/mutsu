@@ -103,7 +103,7 @@ impl Compiler {
                 }
                 let slot = self.alloc_local(name);
                 if *is_state {
-                    let key = format!("__state_{}", STATE_COUNTER.fetch_add(1, Ordering::Relaxed));
+                    let key = format!("__state_{}::{}::{}", self.current_package, name, slot);
                     let key_idx = self.code.add_constant(Value::Str(key.clone()));
                     self.code.state_locals.push((slot as usize, key.clone()));
                     self.code.emit(OpCode::StateVarInit(slot, key_idx));
@@ -566,9 +566,12 @@ impl Compiler {
                 self.code.emit(OpCode::RegisterToken(idx));
             }
             Stmt::ProtoDecl {
-                params, param_defs, ..
+                params,
+                param_defs,
+                body,
+                ..
             } => {
-                let _ = (params.len(), param_defs.len());
+                let _ = (params.len(), param_defs.len(), body.len());
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterProtoSub(idx));
             }

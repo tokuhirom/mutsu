@@ -8,7 +8,7 @@ use super::{block, ident, keyword, qualified_ident, var_name};
 
 /// Parse a sub name, which can be a regular identifier or an operator-style name
 /// like `infix:<+>`, `prefix:<->`, `postfix:<++>`, `circumfix:<[ ]>`.
-fn parse_sub_name(input: &str) -> PResult<'_, String> {
+pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
     let (rest, base) = ident(input)?;
     // Check for operator category names followed by :<...>
     let is_op_category = matches!(
@@ -272,9 +272,24 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     let mut slurpy = false;
     let mut type_constraint = None;
 
-    // Capture-all: (|) or (|$c) or (|c)
+    // Capture-all: (|), (|$c), (|c), or capture sub-signature forms like | ($x)
     if let Some(stripped) = rest.strip_prefix('|') {
         let (r, _) = ws(stripped)?;
+        if r.starts_with('(') {
+            let (r, _) = parse_char(r, '(')?;
+            let (r, _) = ws(r)?;
+            let (r, sub_params) = parse_param_list(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ')')?;
+            let (r, _) = ws(r)?;
+            if sub_params.len() == 1 {
+                return Ok((r, sub_params[0].clone()));
+            }
+            let mut p = make_param("__subsig__".to_string());
+            p.sub_signature = Some(sub_params);
+            return Ok((r, p));
+        }
+        let (r, _) = ws(r)?;
         // Optional capture variable name with sigil
         if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') {
             let (r, name) = var_name(r)?;
@@ -283,15 +298,36 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             return Ok((r, p));
         }
         // Sigilless capture variable name: |c, |args
-        if let Ok((r, name)) = ident(r) {
+        if let Ok((r_ident, name)) = ident(r)
+            && !matches!(name.as_str(), "where" | "is")
+        {
             let mut p = make_param(name);
             p.slurpy = true;
             p.sigilless = true;
-            return Ok((r, p));
+            return Ok((r_ident, p));
         }
-        // Bare |
+        // Bare |, possibly followed by traits/where
         let mut p = make_param("_capture".to_string());
         p.slurpy = true;
+        let (r, _) = ws(r)?;
+        let mut param_traits = Vec::new();
+        let (mut r, _) = ws(r)?;
+        while let Some(r2) = keyword("is", r) {
+            let (r2, _) = ws1(r2)?;
+            let (r2, trait_name) = ident(r2)?;
+            param_traits.push(trait_name);
+            let (r2, _) = ws(r2)?;
+            r = r2;
+        }
+        let (r, where_constraint) = if let Some(r2) = keyword("where", r) {
+            let (r2, _) = ws1(r2)?;
+            let (r2, constraint) = expression(r2)?;
+            (r2, Some(Box::new(constraint)))
+        } else {
+            (r, None)
+        };
+        p.traits = param_traits;
+        p.where_constraint = where_constraint;
         return Ok((r, p));
     }
 

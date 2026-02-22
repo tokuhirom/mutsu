@@ -26,6 +26,10 @@ impl Interpreter {
         arity: usize,
     ) -> Option<FunctionDef> {
         if name.contains("::") {
+            let multi_key = format!("{}/{}", name, arity);
+            if let Some(def) = self.functions.get(&multi_key) {
+                return Some(def.clone());
+            }
             return self.functions.get(name).cloned();
         }
         // Try multi-dispatch with arity first
@@ -46,10 +50,36 @@ impl Interpreter {
         name: &str,
         arg_values: &[Value],
     ) -> Option<FunctionDef> {
+        let arity = arg_values.len();
         if name.contains("::") {
+            let type_sig: Vec<&str> = arg_values
+                .iter()
+                .map(|v| super::value_type_name(v))
+                .collect();
+            let typed_key = format!("{}/{}:{}", name, arity, type_sig.join(","));
+            if let Some(def) = self.functions.get(&typed_key) {
+                return Some(def.clone());
+            }
+            let prefix = format!("{}/{arity}:", name);
+            let candidates: Vec<FunctionDef> = self
+                .functions
+                .iter()
+                .filter(|(key, _)| key.starts_with(&prefix))
+                .map(|(_, def)| def.clone())
+                .collect();
+            for def in candidates {
+                if self.args_match_param_types(arg_values, &def.param_defs) {
+                    return Some(def);
+                }
+            }
+            let untyped_key = format!("{}/{}", name, arity);
+            if let Some(def) = self.functions.get(&untyped_key).cloned()
+                && self.args_match_param_types(arg_values, &def.param_defs)
+            {
+                return Some(def);
+            }
             return self.functions.get(name).cloned();
         }
-        let arity = arg_values.len();
         let type_sig: Vec<&str> = arg_values
             .iter()
             .map(|v| super::value_type_name(v))
@@ -79,6 +109,19 @@ impl Interpreter {
             .collect();
         for def in candidates {
             if self.args_match_param_types(arg_values, &def.param_defs) {
+                return Some(def);
+            }
+        }
+        // If there is an untyped-arity slot candidate for this arity, check it too.
+        // This covers catch-all multis and where-constrained captures.
+        let generic_keys = [
+            format!("{}::{}/{}", self.current_package, name, arity),
+            format!("GLOBAL::{}/{}", name, arity),
+        ];
+        for key in generic_keys {
+            if let Some(def) = self.functions.get(&key).cloned()
+                && self.args_match_param_types(arg_values, &def.param_defs)
+            {
                 return Some(def);
             }
         }
@@ -158,7 +201,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn has_proto(&self, name: &str) -> bool {
+    pub(crate) fn has_proto(&self, name: &str) -> bool {
         if name.contains("::") {
             return self.proto_subs.contains(name);
         }
@@ -167,5 +210,371 @@ impl Interpreter {
             return true;
         }
         self.proto_subs.contains(&format!("GLOBAL::{}", name))
+    }
+
+    pub(super) fn resolve_proto_function_with_alias(
+        &self,
+        name: &str,
+    ) -> Option<(String, FunctionDef)> {
+        if let Some(def) = self.resolve_proto_function(name) {
+            return Some((name.to_string(), def));
+        }
+        if name.contains(':') || name.contains("::") {
+            return None;
+        }
+        for alias in [format!("prefix:<{name}>"), format!("postfix:<{name}>")] {
+            if let Some(def) = self.resolve_proto_function(&alias) {
+                return Some((alias, def));
+            }
+        }
+        None
+    }
+
+    fn resolve_proto_function(&self, name: &str) -> Option<FunctionDef> {
+        if name.contains("::") {
+            return self.proto_functions.get(name).cloned();
+        }
+        let local = format!("{}::{}", self.current_package, name);
+        if let Some(def) = self.proto_functions.get(&local) {
+            return Some(def.clone());
+        }
+        self.proto_functions
+            .get(&format!("GLOBAL::{}", name))
+            .cloned()
+    }
+
+    pub(super) fn call_proto_function(
+        &mut self,
+        proto_name: &str,
+        def: &FunctionDef,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let saved_env = self.env.clone();
+        self.bind_function_args_values(&def.param_defs, &def.params, args)?;
+        self.routine_stack
+            .push((def.package.clone(), def.name.clone()));
+        self.proto_dispatch_stack
+            .push((proto_name.to_string(), args.to_vec()));
+        let result = if def.body.is_empty() {
+            // Bodyless proto behaves as implicit {*} dispatch.
+            self.call_proto_dispatch()
+        } else {
+            let rewritten = Self::rewrite_proto_dispatch_stmts(&def.body);
+            self.eval_block_value(&rewritten)
+        };
+        self.proto_dispatch_stack.pop();
+        self.routine_stack.pop();
+        self.restore_env_preserving_existing(&saved_env, &def.params);
+        match result {
+            Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
+            other => other,
+        }
+    }
+
+    pub(super) fn call_proto_dispatch(&mut self) -> Result<Value, RuntimeError> {
+        let (proto_name, args) = self
+            .proto_dispatch_stack
+            .last()
+            .cloned()
+            .ok_or_else(|| RuntimeError::new("{*} used outside proto".to_string()))?;
+        let Some(def) = self.resolve_proto_candidate_with_types(&proto_name, &args) else {
+            return Err(RuntimeError::new(format!(
+                "No matching candidates for proto sub: {}",
+                proto_name
+            )));
+        };
+        let saved_env = self.env.clone();
+        self.bind_function_args_values(&def.param_defs, &def.params, &args)?;
+        self.routine_stack
+            .push((def.package.clone(), def.name.clone()));
+        let result = self.run_block(&def.body);
+        self.routine_stack.pop();
+        let implicit_return = self.env.get("_").cloned().unwrap_or(Value::Nil);
+        self.restore_env_preserving_existing(&saved_env, &def.params);
+        match result {
+            Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
+            Err(e) => Err(e),
+            Ok(()) => Ok(implicit_return),
+        }
+    }
+
+    fn rewrite_proto_dispatch_stmts(body: &[Stmt]) -> Vec<Stmt> {
+        body.iter().map(Self::rewrite_proto_dispatch_stmt).collect()
+    }
+
+    fn resolve_proto_candidate_with_types(
+        &mut self,
+        name: &str,
+        arg_values: &[Value],
+    ) -> Option<FunctionDef> {
+        let arity = arg_values.len();
+        if name.contains("::") {
+            let type_sig: Vec<&str> = arg_values
+                .iter()
+                .map(|v| super::value_type_name(v))
+                .collect();
+            let typed_key = format!("{}/{}:{}", name, arity, type_sig.join(","));
+            if let Some(def) = self.functions.get(&typed_key) {
+                return Some(def.clone());
+            }
+            let prefix = format!("{}/{arity}:", name);
+            let candidates: Vec<FunctionDef> = self
+                .functions
+                .iter()
+                .filter(|(key, _)| key.starts_with(&prefix))
+                .map(|(_, def)| def.clone())
+                .collect();
+            for def in candidates {
+                if self.args_match_param_types(arg_values, &def.param_defs) {
+                    return Some(def);
+                }
+            }
+            let untyped_key = format!("{}/{}", name, arity);
+            if let Some(def) = self.functions.get(&untyped_key).cloned()
+                && self.args_match_param_types(arg_values, &def.param_defs)
+            {
+                return Some(def);
+            }
+            return None;
+        }
+        self.resolve_function_with_types(name, arg_values)
+    }
+
+    fn rewrite_proto_dispatch_stmt(stmt: &Stmt) -> Stmt {
+        match stmt {
+            Stmt::Expr(Expr::Whatever) => Stmt::Expr(Expr::Call {
+                name: "__PROTO_DISPATCH__".to_string(),
+                args: Vec::new(),
+            }),
+            Stmt::Expr(expr) => Stmt::Expr(Self::rewrite_proto_dispatch_expr(expr)),
+            Stmt::Return(expr) => Stmt::Return(Self::rewrite_proto_dispatch_expr(expr)),
+            Stmt::Take(expr) => Stmt::Take(Self::rewrite_proto_dispatch_expr(expr)),
+            Stmt::Die(expr) => Stmt::Die(Self::rewrite_proto_dispatch_expr(expr)),
+            Stmt::Fail(expr) => Stmt::Fail(Self::rewrite_proto_dispatch_expr(expr)),
+            Stmt::VarDecl {
+                name,
+                expr,
+                type_constraint,
+                is_state,
+            } => Stmt::VarDecl {
+                name: name.clone(),
+                expr: Self::rewrite_proto_dispatch_expr(expr),
+                type_constraint: type_constraint.clone(),
+                is_state: *is_state,
+            },
+            Stmt::Assign { name, expr, op } => Stmt::Assign {
+                name: name.clone(),
+                expr: Self::rewrite_proto_dispatch_expr(expr),
+                op: *op,
+            },
+            Stmt::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => Stmt::If {
+                cond: Self::rewrite_proto_dispatch_expr(cond),
+                then_branch: Self::rewrite_proto_dispatch_stmts(then_branch),
+                else_branch: Self::rewrite_proto_dispatch_stmts(else_branch),
+            },
+            Stmt::While { cond, body, label } => Stmt::While {
+                cond: Self::rewrite_proto_dispatch_expr(cond),
+                body: Self::rewrite_proto_dispatch_stmts(body),
+                label: label.clone(),
+            },
+            Stmt::For {
+                iterable,
+                body,
+                label,
+                param,
+                params,
+            } => Stmt::For {
+                iterable: Self::rewrite_proto_dispatch_expr(iterable),
+                body: Self::rewrite_proto_dispatch_stmts(body),
+                label: label.clone(),
+                param: param.clone(),
+                params: params.clone(),
+            },
+            Stmt::Loop {
+                init,
+                cond,
+                step,
+                body,
+                label,
+                repeat,
+            } => Stmt::Loop {
+                init: init
+                    .as_ref()
+                    .map(|s| Box::new(Self::rewrite_proto_dispatch_stmt(s))),
+                cond: cond.as_ref().map(Self::rewrite_proto_dispatch_expr),
+                step: step.as_ref().map(Self::rewrite_proto_dispatch_expr),
+                body: Self::rewrite_proto_dispatch_stmts(body),
+                label: label.clone(),
+                repeat: *repeat,
+            },
+            Stmt::Block(stmts) => Stmt::Block(Self::rewrite_proto_dispatch_stmts(stmts)),
+            other => other.clone(),
+        }
+    }
+
+    fn rewrite_proto_dispatch_expr(expr: &Expr) -> Expr {
+        match expr {
+            Expr::AnonSub(body)
+                if body.len() == 1 && matches!(body[0], Stmt::Expr(Expr::Whatever)) =>
+            {
+                Expr::Call {
+                    name: "__PROTO_DISPATCH__".to_string(),
+                    args: Vec::new(),
+                }
+            }
+            Expr::Unary { op, expr } => Expr::Unary {
+                op: op.clone(),
+                expr: Box::new(Self::rewrite_proto_dispatch_expr(expr)),
+            },
+            Expr::PostfixOp { op, expr } => Expr::PostfixOp {
+                op: op.clone(),
+                expr: Box::new(Self::rewrite_proto_dispatch_expr(expr)),
+            },
+            Expr::Binary { left, op, right } => Expr::Binary {
+                left: Box::new(Self::rewrite_proto_dispatch_expr(left)),
+                op: op.clone(),
+                right: Box::new(Self::rewrite_proto_dispatch_expr(right)),
+            },
+            Expr::Ternary {
+                cond,
+                then_expr,
+                else_expr,
+            } => Expr::Ternary {
+                cond: Box::new(Self::rewrite_proto_dispatch_expr(cond)),
+                then_expr: Box::new(Self::rewrite_proto_dispatch_expr(then_expr)),
+                else_expr: Box::new(Self::rewrite_proto_dispatch_expr(else_expr)),
+            },
+            Expr::Call { name, args } => Expr::Call {
+                name: name.clone(),
+                // Keep call arguments intact so closure literals like `{*}`
+                // used as callbacks are not treated as proto dispatch.
+                args: args.to_vec(),
+            },
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier,
+            } => Expr::MethodCall {
+                target: Box::new(Self::rewrite_proto_dispatch_expr(target)),
+                name: name.clone(),
+                // Same rule as Expr::Call: don't rewrite callback arguments.
+                args: args.to_vec(),
+                modifier: *modifier,
+            },
+            Expr::ArrayLiteral(items) => Expr::ArrayLiteral(
+                items
+                    .iter()
+                    .map(Self::rewrite_proto_dispatch_expr)
+                    .collect(),
+            ),
+            Expr::Index { target, index } => Expr::Index {
+                target: Box::new(Self::rewrite_proto_dispatch_expr(target)),
+                index: Box::new(Self::rewrite_proto_dispatch_expr(index)),
+            },
+            Expr::IndexAssign {
+                target,
+                index,
+                value,
+            } => Expr::IndexAssign {
+                target: Box::new(Self::rewrite_proto_dispatch_expr(target)),
+                index: Box::new(Self::rewrite_proto_dispatch_expr(index)),
+                value: Box::new(Self::rewrite_proto_dispatch_expr(value)),
+            },
+            Expr::AssignExpr { name, expr } => Expr::AssignExpr {
+                name: name.clone(),
+                expr: Box::new(Self::rewrite_proto_dispatch_expr(expr)),
+            },
+            Expr::Block(stmts) => Expr::Block(Self::rewrite_proto_dispatch_stmts(stmts)),
+            Expr::DoBlock { body, label } => Expr::DoBlock {
+                body: Self::rewrite_proto_dispatch_stmts(body),
+                label: label.clone(),
+            },
+            Expr::Try { body, catch } => Expr::Try {
+                body: Self::rewrite_proto_dispatch_stmts(body),
+                catch: catch
+                    .as_ref()
+                    .map(|b| Self::rewrite_proto_dispatch_stmts(b)),
+            },
+            Expr::Gather(body) => Expr::Gather(Self::rewrite_proto_dispatch_stmts(body)),
+            Expr::HyperOp {
+                op,
+                left,
+                right,
+                dwim_left,
+                dwim_right,
+            } => Expr::HyperOp {
+                op: op.clone(),
+                left: Box::new(Self::rewrite_proto_dispatch_expr(left)),
+                right: Box::new(Self::rewrite_proto_dispatch_expr(right)),
+                dwim_left: *dwim_left,
+                dwim_right: *dwim_right,
+            },
+            Expr::MetaOp {
+                meta,
+                op,
+                left,
+                right,
+            } => Expr::MetaOp {
+                meta: meta.clone(),
+                op: op.clone(),
+                left: Box::new(Self::rewrite_proto_dispatch_expr(left)),
+                right: Box::new(Self::rewrite_proto_dispatch_expr(right)),
+            },
+            Expr::Reduction { op, expr } => Expr::Reduction {
+                op: op.clone(),
+                expr: Box::new(Self::rewrite_proto_dispatch_expr(expr)),
+            },
+            Expr::InfixFunc {
+                name,
+                left,
+                right,
+                modifier,
+            } => Expr::InfixFunc {
+                name: name.clone(),
+                left: Box::new(Self::rewrite_proto_dispatch_expr(left)),
+                right: right
+                    .iter()
+                    .map(Self::rewrite_proto_dispatch_expr)
+                    .collect(),
+                modifier: modifier.clone(),
+            },
+            Expr::CallOn { target, args } => Expr::CallOn {
+                target: Box::new(Self::rewrite_proto_dispatch_expr(target)),
+                args: args.to_vec(),
+            },
+            Expr::Lambda { param, body } => Expr::Lambda {
+                param: param.clone(),
+                body: Self::rewrite_proto_dispatch_stmts(body),
+            },
+            Expr::AnonSub(body) => Expr::AnonSub(Self::rewrite_proto_dispatch_stmts(body)),
+            Expr::AnonSubParams { params, body } => Expr::AnonSubParams {
+                params: params.clone(),
+                body: Self::rewrite_proto_dispatch_stmts(body),
+            },
+            other => other.clone(),
+        }
+    }
+
+    fn restore_env_preserving_existing(
+        &mut self,
+        saved_env: &std::collections::HashMap<String, Value>,
+        params: &[String],
+    ) {
+        let current = self.env.clone();
+        let mut restored = saved_env.clone();
+        for key in saved_env.keys() {
+            if params.iter().any(|p| p == key) || key == "@_" {
+                continue;
+            }
+            if let Some(v) = current.get(key) {
+                restored.insert(key.clone(), v.clone());
+            }
+        }
+        self.env = restored;
     }
 }
