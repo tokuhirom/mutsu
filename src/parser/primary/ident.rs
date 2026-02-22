@@ -364,6 +364,7 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "take"
             | "emit"
             | "split"
+            | "index"
             | "join"
             | "reverse"
             | "min"

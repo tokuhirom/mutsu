@@ -393,6 +393,10 @@ fn native_function_2arg(
             }
         }
         "index" => {
+            // Skip native path for junctions — fall through to interpreter for auto-threading
+            if matches!(arg1, Value::Junction { .. }) {
+                return None;
+            }
             let s = arg1.to_string_value();
             let needle = arg2.to_string_value();
             Some(Ok(match s.find(&needle) {

@@ -4,7 +4,7 @@ plan 26;
 # --- Junction construction ---
 my $a = any(1, 2, 3);
 is $a.WHAT, "(Junction)", "any() returns a Junction";
-is $a.elems, 3, "any() junction has 3 elements";
+is $a.elems.WHAT, "(Junction)", "any() junction .elems auto-threads to Junction";
 
 my $b = all(1, 2, 3);
 is $b.WHAT, "(Junction)", "all() returns a Junction";

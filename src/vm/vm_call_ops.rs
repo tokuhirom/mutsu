@@ -15,7 +15,15 @@ impl VM {
             return Err(RuntimeError::new("VM stack underflow in CallFunc"));
         }
         let start = self.stack.len() - arity;
-        let args: Vec<Value> = self.stack.drain(start..).collect();
+        let raw_args: Vec<Value> = self.stack.drain(start..).collect();
+        // Flatten any Slip values in the argument list (from |capture slipping)
+        let mut args = Vec::new();
+        for arg in raw_args {
+            match arg {
+                Value::Slip(items) => args.extend(items.iter().cloned()),
+                other => args.push(other),
+            }
+        }
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
             let pkg = self.interpreter.current_package().to_string();
             let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
@@ -50,12 +58,21 @@ impl VM {
         let regular_start = self.stack.len() - regular_arity as usize;
         let mut args: Vec<Value> = self.stack.drain(regular_start..).collect();
         // Flatten the slip value into args
-        match &slip_val {
+        match slip_val {
             Value::Array(elements) => {
                 args.extend(elements.iter().cloned());
             }
-            _ => {
-                args.push(slip_val);
+            Value::Capture { positional, named } => {
+                args.extend(positional);
+                for (k, v) in named {
+                    args.push(Value::Pair(k, Box::new(v)));
+                }
+            }
+            Value::Slip(items) => {
+                args.extend(items.iter().cloned());
+            }
+            other => {
+                args.push(other);
             }
         }
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
@@ -109,7 +126,7 @@ impl VM {
         if let Value::Junction { kind, values } = &target
             && !matches!(
                 method.as_str(),
-                "Bool" | "so" | "WHAT" | "^name" | "gist" | "Str" | "defined"
+                "Bool" | "so" | "WHAT" | "^name" | "gist" | "Str" | "defined" | "THREAD"
             )
         {
             let kind = kind.clone();
@@ -188,6 +205,31 @@ impl VM {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethodMut target".to_string())
         })?;
+        // Junction auto-threading: thread method calls over junction values
+        if let Value::Junction { kind, values } = &target
+            && !matches!(
+                method.as_str(),
+                "Bool" | "so" | "WHAT" | "^name" | "gist" | "Str" | "defined" | "THREAD"
+            )
+        {
+            let kind = kind.clone();
+            let mut results = Vec::new();
+            for v in values.iter() {
+                let r = if let Some(nr) = Self::try_native_method(v, &method, &args) {
+                    nr?
+                } else {
+                    self.interpreter
+                        .call_method_with_values(v.clone(), &method, args.clone())?
+                };
+                results.push(r);
+            }
+            let junction_result = Value::Junction {
+                kind,
+                values: Arc::new(results),
+            };
+            self.stack.push(junction_result);
+            return Ok(());
+        }
         let call_result =
             if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
                 native_result
@@ -226,7 +268,15 @@ impl VM {
             return Err(RuntimeError::new("VM stack underflow in CallOnValue"));
         }
         let start = self.stack.len() - arity;
-        let args: Vec<Value> = self.stack.drain(start..).collect();
+        let raw_args: Vec<Value> = self.stack.drain(start..).collect();
+        // Flatten any Slip values in the argument list (from |capture slipping)
+        let mut args = Vec::new();
+        for arg in raw_args {
+            match arg {
+                Value::Slip(items) => args.extend(items.iter().cloned()),
+                other => args.push(other),
+            }
+        }
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallOnValue target".to_string())
         })?;
@@ -309,7 +359,15 @@ impl VM {
             return Err(RuntimeError::new("VM stack underflow in ExecCall"));
         }
         let start = self.stack.len() - arity;
-        let args: Vec<Value> = self.stack.drain(start..).collect();
+        let raw_args: Vec<Value> = self.stack.drain(start..).collect();
+        // Flatten any Slip values in the argument list (from |capture slipping)
+        let mut args = Vec::new();
+        for arg in raw_args {
+            match arg {
+                Value::Slip(items) => args.extend(items.iter().cloned()),
+                other => args.push(other),
+            }
+        }
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
             let pkg = self.interpreter.current_package().to_string();
             let _result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
@@ -359,13 +417,21 @@ impl VM {
         let regular_start = self.stack.len() - regular_arity as usize;
         let mut args: Vec<Value> = self.stack.drain(regular_start..).collect();
         // Flatten the slip value into args
-        match &slip_val {
+        match slip_val {
             Value::Array(elements) => {
                 args.extend(elements.iter().cloned());
             }
-            _ => {
-                // Single value — just pass it as a positional arg
-                args.push(slip_val);
+            Value::Capture { positional, named } => {
+                args.extend(positional);
+                for (k, v) in named {
+                    args.push(Value::Pair(k, Box::new(v)));
+                }
+            }
+            Value::Slip(items) => {
+                args.extend(items.iter().cloned());
+            }
+            other => {
+                args.push(other);
             }
         }
         self.interpreter.exec_call_pairs_values(&name, args)?;
