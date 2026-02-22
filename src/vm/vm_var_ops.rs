@@ -79,6 +79,8 @@ impl VM {
             Value::Num(f64::NAN)
         } else if name == "Inf" {
             Value::Num(f64::INFINITY)
+        } else if name == "Empty" {
+            Value::Slip(std::sync::Arc::new(vec![]))
         } else {
             Value::Str(name.to_string())
         };

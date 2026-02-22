@@ -600,7 +600,7 @@ impl VM {
             }
             OpCode::JumpIfNil(target) => {
                 let val = self.stack.last().unwrap();
-                if matches!(val, Value::Nil) {
+                if !runtime::types::value_is_defined(val) {
                     *ip = *target as usize;
                 } else {
                     *ip += 1;
@@ -608,11 +608,43 @@ impl VM {
             }
             OpCode::JumpIfNotNil(target) => {
                 let val = self.stack.last().unwrap();
-                if !matches!(val, Value::Nil) {
+                if runtime::types::value_is_defined(val) {
                     *ip = *target as usize;
                 } else {
                     *ip += 1;
                 }
+            }
+
+            OpCode::CallDefined => {
+                let val = self.stack.pop().unwrap();
+                // Check if the value has a user-defined .defined method
+                let class_name = match &val {
+                    Value::Package(name) => Some(name.clone()),
+                    Value::Instance { class_name, .. } => Some(class_name.clone()),
+                    _ => None,
+                };
+                let has_user_defined = class_name
+                    .as_ref()
+                    .is_some_and(|cn| self.interpreter.has_user_method(cn, "defined"));
+                let defined = if has_user_defined {
+                    // Call user method directly, bypassing native method dispatch
+                    let cn = class_name.unwrap();
+                    let attrs = match &val {
+                        Value::Instance { attributes, .. } => (**attributes).clone(),
+                        _ => std::collections::HashMap::new(),
+                    };
+                    match self
+                        .interpreter
+                        .run_instance_method(&cn, attrs, "defined", Vec::new())
+                    {
+                        Ok((result, _)) => result,
+                        Err(_) => Value::Bool(runtime::types::value_is_defined(&val)),
+                    }
+                } else {
+                    Value::Bool(runtime::types::value_is_defined(&val))
+                };
+                self.stack.push(defined);
+                *ip += 1;
             }
 
             // -- Stack manipulation --

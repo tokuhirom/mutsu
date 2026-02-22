@@ -77,7 +77,11 @@ pub(crate) fn strip_type_smiley(constraint: &str) -> (&str, Option<&str>) {
 /// Check if a value is "defined" in the Raku sense.
 /// Type objects (Package) are undefined; concrete values and instances are defined.
 pub(crate) fn value_is_defined(value: &Value) -> bool {
-    !matches!(value, Value::Package(_) | Value::Nil)
+    match value {
+        Value::Nil | Value::Package(_) => false,
+        Value::Slip(items) if items.is_empty() => false,
+        _ => true,
+    }
 }
 
 impl Interpreter {

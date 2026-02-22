@@ -259,11 +259,44 @@ impl Interpreter {
     }
 
     fn call_infix_routine(&mut self, op: &str, args: &[Value]) -> Result<Value, RuntimeError> {
+        // 1-arg Iterable gets flattened (like +@foo slurpy)
+        let args: Vec<Value> = if args.len() == 1 {
+            match &args[0] {
+                Value::Array(items) => items.to_vec(),
+                _ => return Ok(args[0].clone()),
+            }
+        } else {
+            args.to_vec()
+        };
         if args.is_empty() {
             return Ok(reduction_identity(op));
         }
         if args.len() == 1 {
             return Ok(args[0].clone());
+        }
+        // Short-circuit operators need special handling
+        match op {
+            "andthen" => {
+                let mut acc = args[0].clone();
+                for rhs in &args[1..] {
+                    if !crate::runtime::types::value_is_defined(&acc) {
+                        return Ok(acc);
+                    }
+                    acc = rhs.clone();
+                }
+                return Ok(acc);
+            }
+            "notandthen" => {
+                let mut acc = args[0].clone();
+                for rhs in &args[1..] {
+                    if crate::runtime::types::value_is_defined(&acc) {
+                        return Ok(Value::Nil);
+                    }
+                    acc = rhs.clone();
+                }
+                return Ok(acc);
+            }
+            _ => {}
         }
         let mut acc = args[0].clone();
         for rhs in &args[1..] {

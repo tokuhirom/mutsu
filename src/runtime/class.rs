@@ -97,7 +97,7 @@ impl Interpreter {
         false
     }
 
-    pub(super) fn has_user_method(&mut self, class_name: &str, method_name: &str) -> bool {
+    pub(crate) fn has_user_method(&mut self, class_name: &str, method_name: &str) -> bool {
         let mro = self.class_mro(class_name);
         for cn in mro {
             if let Some(class_def) = self.classes.get(&cn)
@@ -128,7 +128,7 @@ impl Interpreter {
         attrs
     }
 
-    pub(super) fn run_instance_method(
+    pub(crate) fn run_instance_method(
         &mut self,
         class_name: &str,
         mut attributes: HashMap<String, Value>,
