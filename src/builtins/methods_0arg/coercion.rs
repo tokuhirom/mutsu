@@ -121,7 +121,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => None,
         },
         "Slip" => match target {
-            Value::Array(items) => Some(Ok(Value::Slip(items.clone()))),
+            Value::Array(items, ..) => Some(Ok(Value::Slip(items.clone()))),
             Value::Slip(_) => Some(Ok(target.clone())),
             _ => Some(Ok(Value::slip(vec![target.clone()]))),
         },
@@ -155,12 +155,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
             }
             Value::GenericRange { .. } => Some(Ok(target.clone())),
-            Value::Array(_) => Some(Ok(target.clone())),
+            Value::Array(..) => Some(Ok(target.clone())),
             Value::Channel(_) => None, // fall through to runtime for drain
             _ => Some(Ok(Value::array(vec![target.clone()]))),
         },
         "Range" => match target {
-            Value::Array(items) => Some(Ok(Value::RangeExcl(0, items.len() as i64))),
+            Value::Array(items, ..) => Some(Ok(Value::RangeExcl(0, items.len() as i64))),
             Value::Str(s) => Some(Ok(Value::RangeExcl(0, s.chars().count() as i64))),
             Value::Range(_, _)
             | Value::RangeExcl(_, _)

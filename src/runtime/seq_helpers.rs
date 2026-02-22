@@ -139,7 +139,7 @@ impl Interpreter {
                 true
             }
             // Array ~~ Hash: check if any element exists as a key in the hash
-            (Value::Array(items), Value::Hash(map)) => items.iter().any(|item| {
+            (Value::Array(items, ..), Value::Hash(map)) => items.iter().any(|item| {
                 let key = item.to_string_value();
                 map.contains_key(&key)
             }),

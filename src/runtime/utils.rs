@@ -79,7 +79,7 @@ pub(crate) fn version_cmp_parts(
 pub(crate) fn coerce_to_hash(value: Value) -> Value {
     match value {
         Value::Hash(_) => value,
-        Value::Array(items) => {
+        Value::Array(items, ..) => {
             let mut map = HashMap::new();
             let mut i = 0;
             while i < items.len() {
@@ -115,7 +115,7 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
 
 pub(crate) fn coerce_to_array(value: Value) -> Value {
     match value {
-        Value::Array(_) => value,
+        Value::Array(..) => value,
         Value::Nil => Value::array(Vec::new()),
         Value::Range(a, b) if b == i64::MAX || a == i64::MIN => value,
         Value::Range(a, b) => Value::array((a..=b).map(Value::Int).collect()),
@@ -131,7 +131,7 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
             Value::array(value_to_list(&value))
         }
         Value::GenericRange { .. } => value,
-        Value::Slip(items) => Value::Array(items),
+        Value::Slip(items) => Value::Array(items, false),
         other => Value::array(vec![other]),
     }
 }
@@ -166,7 +166,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
                 }
             }
         }
-        Value::Array(items) => format!(
+        Value::Array(items, ..) => format!(
             "[{}]",
             items.iter().map(gist_value).collect::<Vec<_>>().join(" ")
         ),
@@ -207,7 +207,8 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::Num(_) => "Num",
         Value::Str(_) => "Str",
         Value::Bool(_) => "Bool",
-        Value::Array(_) => "Array",
+        Value::Array(_, true) => "Array",
+        Value::Array(_, false) => "List",
         Value::LazyList(_) => "Array",
         Value::Hash(_) => "Hash",
         Value::Range(_, _)
@@ -270,7 +271,7 @@ pub(crate) fn char_idx_to_byte(text: &str, idx: usize) -> usize {
 
 pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
     match val {
-        Value::Array(items) => items.to_vec(),
+        Value::Array(items, ..) => items.to_vec(),
         Value::Hash(items) => items
             .iter()
             .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
@@ -374,7 +375,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
                 Value::Int(0)
             }
         }
-        Value::Array(items) => Value::Int(items.len() as i64),
+        Value::Array(items, ..) => Value::Int(items.len() as i64),
         Value::Nil => Value::Int(0),
         _ => Value::Int(0),
     }
@@ -385,7 +386,7 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
         Value::Set(s) => (**s).clone(),
         Value::Bag(b) => b.keys().cloned().collect(),
         Value::Mix(m) => m.keys().cloned().collect(),
-        Value::Array(items) => items.iter().map(|v| v.to_string_value()).collect(),
+        Value::Array(items, ..) => items.iter().map(|v| v.to_string_value()).collect(),
         _ => {
             let mut s = HashSet::new();
             let sv = val.to_string_value();

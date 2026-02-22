@@ -86,7 +86,8 @@ pub enum Value {
         excl_start: bool,
         excl_end: bool,
     },
-    Array(Arc<Vec<Value>>),
+    /// The bool flag distinguishes Array (`true`, from `[...]`) from List (`false`, from `(,)`).
+    Array(Arc<Vec<Value>>, bool),
     Hash(Arc<HashMap<String, Value>>),
     Rat(i64, i64),
     FatRat(i64, i64),
@@ -409,7 +410,7 @@ impl PartialEq for Value {
                     excl_end: ee2,
                 },
             ) => es1 == es2 && ee1 == ee2 && s1 == s2 && e1 == e2,
-            (Value::Array(a), Value::Array(b)) => a == b,
+            (Value::Array(a, ..), Value::Array(b, ..)) => a == b,
             (Value::Hash(a), Value::Hash(b)) => a == b,
             (Value::Rat(a1, b1), Value::Rat(a2, b2)) => {
                 if *b1 == 0 && *b2 == 0 && *a1 == 0 && *a2 == 0 {
@@ -524,7 +525,11 @@ impl PartialEq for Value {
 impl Value {
     // ---- Arc-wrapping convenience constructors ----
     pub fn array(items: Vec<Value>) -> Self {
-        Value::Array(Arc::new(items))
+        Value::Array(Arc::new(items), false)
+    }
+    /// Create a true Array value (from [...] literals).
+    pub fn real_array(items: Vec<Value>) -> Self {
+        Value::Array(Arc::new(items), true)
     }
     pub fn hash(map: HashMap<String, Value>) -> Self {
         Value::Hash(Arc::new(map))

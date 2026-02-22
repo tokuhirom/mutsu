@@ -225,7 +225,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "Str" | "Stringy" => match target {
             Value::Package(_) | Value::Instance { .. } => None,
             Value::Str(s) if s == "IO::Special" => Some(Ok(Value::Str(String::new()))),
-            Value::Array(items) if items.iter().all(|v| matches!(v, Value::Int(_))) => {
+            Value::Array(items, ..) if items.iter().all(|v| matches!(v, Value::Int(_))) => {
                 // Uni-like array: convert codepoints to string
                 let s: String = items
                     .iter()
@@ -346,7 +346,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
             };
             let items: Vec<i64> = match target {
-                Value::Array(items) => items.iter().map(&val_to_i64).collect(),
+                Value::Array(items, ..) => items.iter().map(&val_to_i64).collect(),
                 Value::Range(a, b) => (*a..=*b).collect(),
                 Value::RangeExcl(a, b) => (*a..*b).collect(),
                 _ => vec![val_to_i64(target)],
@@ -359,7 +359,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
         "elems" => {
             let result = match target {
-                Value::Array(items) => Value::Int(items.len() as i64),
+                Value::Array(items, ..) => Value::Int(items.len() as i64),
                 Value::Hash(items) => Value::Int(items.len() as i64),
                 Value::Set(items) => Value::Int(items.len() as i64),
                 Value::Bag(items) => Value::Int(items.len() as i64),
@@ -370,7 +370,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     attributes,
                     ..
                 } if class_name == "Buf" || class_name == "Blob" => {
-                    if let Some(Value::Array(bytes)) = attributes.get("bytes") {
+                    if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
                         Value::Int(bytes.len() as i64)
                     } else {
                         Value::Int(0)
@@ -433,15 +433,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Some(Ok(result))
         }
         "end" => match target {
-            Value::Array(items) => Some(Ok(Value::Int(items.len() as i64 - 1))),
+            Value::Array(items, ..) => Some(Ok(Value::Int(items.len() as i64 - 1))),
             _ => None,
         },
         "flat" => match target {
-            Value::Array(items) => {
+            Value::Array(items, ..) => {
                 let mut result = Vec::new();
                 for item in items.iter() {
                     match item {
-                        Value::Array(inner) => result.extend(inner.iter().cloned()),
+                        Value::Array(inner, ..) => result.extend(inner.iter().cloned()),
                         other => result.push(other.clone()),
                     }
                 }
@@ -450,7 +450,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             _ => None,
         },
         "sort" => match target {
-            Value::Array(items) => {
+            Value::Array(items, ..) => {
                 let mut sorted = (**items).clone();
                 sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
                 Some(Ok(Value::array(sorted)))
@@ -458,7 +458,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             _ => None,
         },
         "reverse" => match target {
-            Value::Array(items) => {
+            Value::Array(items, ..) => {
                 let mut reversed = (**items).clone();
                 reversed.reverse();
                 Some(Ok(Value::array(reversed)))
@@ -467,7 +467,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             _ => None,
         },
         "unique" => match target {
-            Value::Array(items) => {
+            Value::Array(items, ..) => {
                 let mut seen = Vec::new();
                 let mut result = Vec::new();
                 for item in items.iter() {
@@ -580,7 +580,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Some(Ok(Value::array(parts)))
         }
         "join" => match target {
-            Value::Array(items) => {
+            Value::Array(items, ..) => {
                 let joined = items
                     .iter()
                     .map(|v| v.to_string_value())
@@ -664,25 +664,25 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             _ => Some(Ok(Value::Str(target.to_string_value()))),
         },
         "head" => match target {
-            Value::Array(items) => Some(Ok(items.first().cloned().unwrap_or(Value::Nil))),
+            Value::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::Nil))),
             _ => {
                 let items = runtime::value_to_list(target);
                 Some(Ok(items.first().cloned().unwrap_or(Value::Nil)))
             }
         },
         "tail" => match target {
-            Value::Array(items) => Some(Ok(items.last().cloned().unwrap_or(Value::Nil))),
+            Value::Array(items, ..) => Some(Ok(items.last().cloned().unwrap_or(Value::Nil))),
             _ => {
                 let items = runtime::value_to_list(target);
                 Some(Ok(items.last().cloned().unwrap_or(Value::Nil)))
             }
         },
         "first" => match target {
-            Value::Array(items) => Some(Ok(items.first().cloned().unwrap_or(Value::Nil))),
+            Value::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::Nil))),
             _ => None,
         },
         "min" => match target {
-            Value::Array(items) => Some(Ok(items
+            Value::Array(items, ..) => Some(Ok(items
                 .iter()
                 .cloned()
                 .min_by(|a, b| match (a, b) {
@@ -693,7 +693,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             _ => Some(Ok(target.clone())),
         },
         "max" => match target {
-            Value::Array(items) => Some(Ok(items
+            Value::Array(items, ..) => Some(Ok(items
                 .iter()
                 .cloned()
                 .max_by(|a, b| match (a, b) {
@@ -871,7 +871,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             _ => Some(Ok(Value::FatRat(0, 1))),
         },
         "tree" => match target {
-            Value::Array(items) => Some(Ok(Value::array(tree_recursive(items)))),
+            Value::Array(items, ..) => Some(Ok(Value::array(tree_recursive(items)))),
             _ => Some(Ok(target.clone())),
         },
         "encode" => {
@@ -909,7 +909,7 @@ fn tree_recursive(items: &[Value]) -> Vec<Value> {
     items
         .iter()
         .map(|v| match v {
-            Value::Array(inner) => Value::array(tree_recursive(inner)),
+            Value::Array(inner, ..) => Value::array(tree_recursive(inner)),
             other => other.clone(),
         })
         .collect()
@@ -919,7 +919,7 @@ fn tree_recursive(items: &[Value]) -> Vec<Value> {
 /// If the value is an Array of Int (Uni-like), convert codepoints to a string.
 fn uni_or_str(target: &Value) -> String {
     match target {
-        Value::Array(items) if items.iter().all(|v| matches!(v, Value::Int(_))) => items
+        Value::Array(items, ..) if items.iter().all(|v| matches!(v, Value::Int(_))) => items
             .iter()
             .filter_map(|v| match v {
                 Value::Int(cp) => char::from_u32(*cp as u32),

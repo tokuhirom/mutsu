@@ -658,12 +658,12 @@ impl Interpreter {
                 }
             }
         }
-        if let Some(Value::Array(items)) = Self::named_value(args, "args") {
+        if let Some(Value::Array(items, ..)) = Self::named_value(args, "args") {
             run_args = Some(items.to_vec());
         }
         // Check for :compiler-args
         let compiler_args: Vec<String> =
-            if let Some(Value::Array(items)) = Self::named_value(args, "compiler-args") {
+            if let Some(Value::Array(items, ..)) = Self::named_value(args, "compiler-args") {
                 items.iter().map(|v| v.to_string_value()).collect()
             } else {
                 Vec::new()
@@ -819,7 +819,7 @@ impl Interpreter {
                 let values = attributes
                     .get("values")
                     .and_then(|v| {
-                        if let Value::Array(a) = v {
+                        if let Value::Array(a, ..) = v {
                             Some(a.to_vec())
                         } else {
                             None
@@ -829,7 +829,7 @@ impl Interpreter {
                 let do_cbs = attributes
                     .get("do_callbacks")
                     .and_then(|v| {
-                        if let Value::Array(a) = v {
+                        if let Value::Array(a, ..) = v {
                             Some(a.to_vec())
                         } else {
                             None
@@ -853,7 +853,7 @@ impl Interpreter {
 
         // 6. Compare collected values with expected using is-deeply
         let expected_expanded = match &expected {
-            Value::Array(items) => {
+            Value::Array(items, ..) => {
                 let mut expanded = Vec::new();
                 for item in items.iter() {
                     match item {
@@ -864,7 +864,7 @@ impl Interpreter {
                         | Value::GenericRange { .. } => {
                             expanded.extend(Self::value_to_list(item));
                         }
-                        Value::Array(sub) => {
+                        Value::Array(sub, ..) => {
                             expanded.extend(sub.iter().cloned());
                         }
                         _ => expanded.push(item.clone()),

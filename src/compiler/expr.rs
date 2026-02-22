@@ -300,6 +300,12 @@ impl Compiler {
                 }
                 self.code.emit(OpCode::MakeArray(elems.len() as u32));
             }
+            Expr::BracketArray(elems) => {
+                for elem in elems {
+                    self.compile_expr(elem);
+                }
+                self.code.emit(OpCode::MakeRealArray(elems.len() as u32));
+            }
             Expr::CaptureLiteral(items) => {
                 // Compile all items onto the stack. At runtime, MakeCapture
                 // separates Pair values (named) from non-Pair (positional).

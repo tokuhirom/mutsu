@@ -34,18 +34,18 @@ impl Interpreter {
             match method {
                 "push" => {
                     // Check shared_vars first (for cross-thread array sharing)
-                    let mut items = if let Some(Value::Array(existing)) = self.get_shared_var(&key)
-                    {
-                        existing.to_vec()
-                    } else {
-                        match self.env.get(&key) {
-                            Some(Value::Array(existing)) => existing.to_vec(),
-                            _ => match target {
-                                Value::Array(v) => v.to_vec(),
-                                _ => Vec::new(),
-                            },
-                        }
-                    };
+                    let mut items =
+                        if let Some(Value::Array(existing, ..)) = self.get_shared_var(&key) {
+                            existing.to_vec()
+                        } else {
+                            match self.env.get(&key) {
+                                Some(Value::Array(existing, ..)) => existing.to_vec(),
+                                _ => match target {
+                                    Value::Array(v, ..) => v.to_vec(),
+                                    _ => Vec::new(),
+                                },
+                            }
+                        };
                     items.extend(args);
                     let result = Value::array(items.clone());
                     self.set_shared_var(&key, Value::array(items));
@@ -53,15 +53,15 @@ impl Interpreter {
                 }
                 "append" => {
                     let mut items = match self.env.get(&key) {
-                        Some(Value::Array(existing)) => existing.to_vec(),
+                        Some(Value::Array(existing, ..)) => existing.to_vec(),
                         _ => match target {
-                            Value::Array(v) => v.to_vec(),
+                            Value::Array(v, ..) => v.to_vec(),
                             _ => Vec::new(),
                         },
                     };
                     for arg in args {
                         match arg {
-                            Value::Array(vals) => items.extend(vals.iter().cloned()),
+                            Value::Array(vals, ..) => items.extend(vals.iter().cloned()),
                             other => items.push(other),
                         }
                     }
@@ -70,9 +70,9 @@ impl Interpreter {
                 }
                 "unshift" | "prepend" => {
                     let items = match self.env.get(&key) {
-                        Some(Value::Array(existing)) => existing.to_vec(),
+                        Some(Value::Array(existing, ..)) => existing.to_vec(),
                         _ => match target {
-                            Value::Array(v) => v.to_vec(),
+                            Value::Array(v, ..) => v.to_vec(),
                             _ => Vec::new(),
                         },
                     };
@@ -83,9 +83,9 @@ impl Interpreter {
                 }
                 "pop" => {
                     let mut items = match self.env.get(&key) {
-                        Some(Value::Array(existing)) => existing.to_vec(),
+                        Some(Value::Array(existing, ..)) => existing.to_vec(),
                         _ => match target {
-                            Value::Array(v) => v.to_vec(),
+                            Value::Array(v, ..) => v.to_vec(),
                             _ => Vec::new(),
                         },
                     };
@@ -95,9 +95,9 @@ impl Interpreter {
                 }
                 "shift" => {
                     let mut items = match self.env.get(&key) {
-                        Some(Value::Array(existing)) => existing.to_vec(),
+                        Some(Value::Array(existing, ..)) => existing.to_vec(),
                         _ => match target {
-                            Value::Array(v) => v.to_vec(),
+                            Value::Array(v, ..) => v.to_vec(),
                             _ => Vec::new(),
                         },
                     };
@@ -111,9 +111,9 @@ impl Interpreter {
                 }
                 "splice" => {
                     let mut items = match self.env.get(&key) {
-                        Some(Value::Array(existing)) => existing.to_vec(),
+                        Some(Value::Array(existing, ..)) => existing.to_vec(),
                         _ => match target {
-                            Value::Array(v) => v.to_vec(),
+                            Value::Array(v, ..) => v.to_vec(),
                             _ => Vec::new(),
                         },
                     };
@@ -136,7 +136,7 @@ impl Interpreter {
                     let removed: Vec<Value> = items.drain(start..end).collect();
                     if let Some(new_val) = args.get(2) {
                         match new_val {
-                            Value::Array(new_items) => {
+                            Value::Array(new_items, ..) => {
                                 for (i, item) in new_items.iter().enumerate() {
                                     items.insert(start + i, item.clone());
                                 }
@@ -149,9 +149,9 @@ impl Interpreter {
                 }
                 "squish" => {
                     let items = match self.env.get(&key) {
-                        Some(Value::Array(existing)) => existing.to_vec(),
+                        Some(Value::Array(existing, ..)) => existing.to_vec(),
                         _ => match target {
-                            Value::Array(v) => v.to_vec(),
+                            Value::Array(v, ..) => v.to_vec(),
                             _ => Vec::new(),
                         },
                     };

@@ -59,7 +59,7 @@ impl VM {
         let mut args: Vec<Value> = self.stack.drain(regular_start..).collect();
         // Flatten the slip value into args
         match slip_val {
-            Value::Array(elements) => {
+            Value::Array(elements, ..) => {
                 args.extend(elements.iter().cloned());
             }
             Value::Capture { positional, named } => {
@@ -418,7 +418,7 @@ impl VM {
         let mut args: Vec<Value> = self.stack.drain(regular_start..).collect();
         // Flatten the slip value into args
         match slip_val {
-            Value::Array(elements) => {
+            Value::Array(elements, ..) => {
                 args.extend(elements.iter().cloned());
             }
             Value::Capture { positional, named } => {

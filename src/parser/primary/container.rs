@@ -245,7 +245,7 @@ pub(super) fn array_literal(input: &str) -> PResult<'_, Expr> {
     let (input, _) = ws(input)?;
     let mut items = Vec::new();
     if let Ok((input, _)) = parse_char(input, ']') {
-        return Ok((input, Expr::ArrayLiteral(items)));
+        return Ok((input, Expr::BracketArray(items)));
     }
     let (mut rest, first) = expression(input)?;
     items.push(first);
@@ -254,7 +254,7 @@ pub(super) fn array_literal(input: &str) -> PResult<'_, Expr> {
         if let Ok((r, _)) = parse_char(r, ',') {
             let (r, _) = ws(r)?;
             if let Ok((r, _)) = parse_char(r, ']') {
-                return Ok((r, Expr::ArrayLiteral(items)));
+                return Ok((r, Expr::BracketArray(items)));
             }
             let (r, next) = expression(r)?;
             items.push(next);
@@ -262,7 +262,7 @@ pub(super) fn array_literal(input: &str) -> PResult<'_, Expr> {
         } else {
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ']')?;
-            return Ok((r, Expr::ArrayLiteral(items)));
+            return Ok((r, Expr::BracketArray(items)));
         }
     }
 }

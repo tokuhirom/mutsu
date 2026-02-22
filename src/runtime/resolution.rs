@@ -174,7 +174,8 @@ impl Interpreter {
                     new_env.entry(k.clone()).or_insert(v.clone());
                     continue;
                 }
-                if matches!(new_env.get(k), Some(Value::Array(_))) && matches!(v, Value::Array(_)) {
+                if matches!(new_env.get(k), Some(Value::Array(..))) && matches!(v, Value::Array(..))
+                {
                     continue;
                 }
                 new_env.insert(k.clone(), v.clone());
@@ -238,7 +239,7 @@ impl Interpreter {
                 }
             } else {
                 for (k, v) in self.env.iter() {
-                    if matches!(v, Value::Array(_)) {
+                    if matches!(v, Value::Array(..)) {
                         merged.insert(k.clone(), v.clone());
                     }
                 }

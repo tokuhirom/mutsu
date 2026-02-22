@@ -142,7 +142,7 @@ impl Value {
                     end.to_string_value()
                 )
             }
-            Value::Array(items) => items
+            Value::Array(items, ..) => items
                 .iter()
                 .map(|v| v.to_string_value())
                 .collect::<Vec<_>>()
@@ -311,7 +311,7 @@ impl Value {
                 attributes,
                 ..
             } if class_name == "Buf" || class_name == "Blob" => {
-                if let Some(Value::Array(bytes)) = attributes.get("bytes") {
+                if let Some(Value::Array(bytes, ..)) = attributes.get("bytes") {
                     if bytes.is_empty() {
                         format!("{}()", class_name)
                     } else {

@@ -190,7 +190,7 @@ impl Interpreter {
                 .get("@*ARGS")
                 .cloned()
                 .unwrap_or_else(|| Value::array(Vec::new()));
-            let args_list = if let Value::Array(items) = args_val {
+            let args_list = if let Value::Array(items, ..) = args_val {
                 items.to_vec()
             } else {
                 Vec::new()

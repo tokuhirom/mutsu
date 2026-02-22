@@ -138,7 +138,7 @@ impl Interpreter {
                     for arg in &args {
                         match arg {
                             Value::Promise(p) => promises.push(p.clone()),
-                            Value::Array(arr) => {
+                            Value::Array(arr, ..) => {
                                 for elem in arr.iter() {
                                     if let Value::Promise(p) = elem {
                                         promises.push(p.clone());
@@ -165,7 +165,7 @@ impl Interpreter {
                     for arg in &args {
                         match arg {
                             Value::Promise(p) => promises.push(p.clone()),
-                            Value::Array(arr) => {
+                            Value::Array(arr, ..) => {
                                 for elem in arr.iter() {
                                     if let Value::Promise(p) = elem {
                                         promises.push(p.clone());
@@ -202,7 +202,8 @@ impl Interpreter {
                     | Value::RangeExclStart(_, _)
                     | Value::RangeExclBoth(_, _)
                     | Value::GenericRange { .. } => "Range",
-                    Value::Array(_) => "Array",
+                    Value::Array(_, true) => "Array",
+                    Value::Array(_, false) => "List",
                     Value::LazyList(_) => "Array",
                     Value::Hash(_) => "Hash",
                     Value::Rat(_, _) => "Rat",
@@ -363,7 +364,7 @@ impl Interpreter {
             }
             "Seq" if args.is_empty() => {
                 return Ok(match target {
-                    Value::Array(_) | Value::LazyList(_) => target,
+                    Value::Array(..) | Value::LazyList(_) => target,
                     other => Value::array(vec![other]),
                 });
             }
@@ -842,7 +843,7 @@ impl Interpreter {
                         let parts: Vec<String> = args
                             .iter()
                             .map(|a| {
-                                if let Value::Array(items) = a {
+                                if let Value::Array(items, ..) = a {
                                     items
                                         .iter()
                                         .map(|v| v.to_string_value())
@@ -860,7 +861,7 @@ impl Interpreter {
                         let parts: Vec<String> = args
                             .iter()
                             .map(|a| {
-                                if let Value::Array(items) = a {
+                                if let Value::Array(items, ..) = a {
                                     items
                                         .iter()
                                         .map(|v| v.to_string_value())
@@ -1179,7 +1180,7 @@ impl Interpreter {
             }
         }
         // Handle list of needles: \(<a o>) passes an Array as first arg
-        let needles: Vec<String> = if let Some(Value::Array(items)) = positional.first() {
+        let needles: Vec<String> = if let Some(Value::Array(items, ..)) = positional.first() {
             items.iter().map(|v| v.to_string_value()).collect()
         } else {
             vec![
@@ -1363,7 +1364,7 @@ impl Interpreter {
         let mut elems = HashSet::new();
         match target {
             Value::Set(_) => return Ok(target),
-            Value::Array(items) => {
+            Value::Array(items, ..) => {
                 for item in items.iter() {
                     elems.insert(item.to_string_value());
                 }
@@ -1396,7 +1397,7 @@ impl Interpreter {
         let mut counts: HashMap<String, i64> = HashMap::new();
         match target {
             Value::Bag(_) => return Ok(target),
-            Value::Array(items) => {
+            Value::Array(items, ..) => {
                 for item in items.iter() {
                     *counts.entry(item.to_string_value()).or_insert(0) += 1;
                 }
@@ -1422,7 +1423,7 @@ impl Interpreter {
         let mut weights: HashMap<String, f64> = HashMap::new();
         match target {
             Value::Mix(_) => return Ok(target),
-            Value::Array(items) => {
+            Value::Array(items, ..) => {
                 for item in items.iter() {
                     *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
                 }
@@ -1447,7 +1448,7 @@ impl Interpreter {
     fn dispatch_to_hash(&self, target: Value) -> Result<Value, RuntimeError> {
         match target {
             Value::Hash(_) => Ok(target),
-            Value::Array(items) => {
+            Value::Array(items, ..) => {
                 let mut map = HashMap::new();
                 let mut iter = items.iter();
                 while let Some(item) = iter.next() {
@@ -1531,14 +1532,14 @@ impl Interpreter {
             Value::array(out)
         };
         Ok(match target {
-            Value::Array(items) => to_pairs(&items),
+            Value::Array(items, ..) => to_pairs(&items),
             other => Value::array(vec![Value::Pair("0".to_string(), Box::new(other))]),
         })
     }
 
     fn dispatch_sort(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
         match target {
-            Value::Array(mut items) => {
+            Value::Array(mut items, ..) => {
                 let items_mut = Arc::make_mut(&mut items);
                 if let Some(Value::Sub(data)) = args.first().cloned() {
                     let is_key_extractor = data.params.len() <= 1;
@@ -1592,7 +1593,7 @@ impl Interpreter {
                 } else {
                     items_mut.sort_by(|a, b| compare_values(a, b).cmp(&0));
                 }
-                Ok(Value::Array(items))
+                Ok(Value::Array(items, false))
             }
             Value::Hash(map) => {
                 // Convert hash to list of pairs, then sort
@@ -1752,7 +1753,7 @@ impl Interpreter {
                         .iter()
                         .flat_map(|a| match a {
                             Value::Int(i) => vec![Value::Int(*i)],
-                            Value::Array(items) => items.to_vec(),
+                            Value::Array(items, ..) => items.to_vec(),
                             Value::Range(start, end) => (*start..=*end).map(Value::Int).collect(),
                             Value::RangeExcl(start, end) => {
                                 (*start..*end).map(Value::Int).collect()
@@ -1897,7 +1898,9 @@ impl Interpreter {
 
     fn dispatch_grep(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
         match target {
-            Value::Array(items) => self.eval_grep_over_items(args.first().cloned(), items.to_vec()),
+            Value::Array(items, ..) => {
+                self.eval_grep_over_items(args.first().cloned(), items.to_vec())
+            }
             Value::Range(a, b) => {
                 let items: Vec<Value> = (a..=b).map(Value::Int).collect();
                 self.eval_grep_over_items(args.first().cloned(), items)
@@ -1952,7 +1955,7 @@ impl Interpreter {
         let mut divisors = Vec::new();
         for arg in args {
             match arg {
-                Value::Array(items) => divisors.extend(items.iter().cloned()),
+                Value::Array(items, ..) => divisors.extend(items.iter().cloned()),
                 _ => divisors.push(arg.clone()),
             }
         }
@@ -1980,7 +1983,7 @@ impl Interpreter {
     fn dispatch_tree(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
         // Non-iterable: .tree(anything) returns self
         let items = match &target {
-            Value::Array(items) => items.clone(),
+            Value::Array(items, ..) => items.clone(),
             _ => return Ok(target),
         };
 
@@ -1995,7 +1998,7 @@ impl Interpreter {
                 Ok(Value::array(self.tree_depth(&items, usize::MAX)?))
             }
             // .tree([&first, *@rest]) — array of closures form
-            Value::Array(closure_list) => {
+            Value::Array(closure_list, ..) => {
                 if closure_list.is_empty() {
                     return Ok(target);
                 }
@@ -2015,7 +2018,7 @@ impl Interpreter {
         let mut result = Vec::new();
         for item in items {
             match item {
-                Value::Array(inner) if depth > 0 => {
+                Value::Array(inner, ..) if depth > 0 => {
                     result.push(Value::array(self.tree_depth(inner, depth - 1)?));
                 }
                 other => result.push(other.clone()),
@@ -2033,22 +2036,22 @@ impl Interpreter {
         let mut processed = Vec::new();
         for item in items {
             match item {
-                Value::Array(inner) if closures.len() > depth + 1 => {
+                Value::Array(inner, ..) if closures.len() > depth + 1 => {
                     let sub_result = self.tree_with_closures(inner, closures, depth + 1)?;
                     processed.push(sub_result);
                 }
-                Value::Array(inner) => {
+                Value::Array(inner, ..) => {
                     // Apply the last closure to leaf arrays
                     if let Some(closure) = closures.last()
                         && closures.len() > 1
                     {
                         processed.push(self.call_sub_value(
                             closure.clone(),
-                            vec![Value::Array(inner.clone())],
+                            vec![Value::Array(inner.clone(), false)],
                             false,
                         )?);
                     } else {
-                        processed.push(Value::Array(inner.clone())); // already Arc-wrapped
+                        processed.push(Value::Array(inner.clone(), false)); // already Arc-wrapped
                     }
                 }
                 other => processed.push(other.clone()),
@@ -2112,11 +2115,11 @@ impl Interpreter {
     /// Called when a Proc result is retrieved via .result or await.
     pub(super) fn replay_proc_taps(&mut self, attributes: &Arc<HashMap<String, Value>>) {
         let stdout_taps = match attributes.get("stdout_taps") {
-            Some(Value::Array(taps)) => taps.to_vec(),
+            Some(Value::Array(taps, ..)) => taps.to_vec(),
             _ => Vec::new(),
         };
         let stderr_taps = match attributes.get("stderr_taps") {
-            Some(Value::Array(taps)) => taps.to_vec(),
+            Some(Value::Array(taps, ..)) => taps.to_vec(),
             _ => Vec::new(),
         };
         let collected_stdout = match attributes.get("collected_stdout") {
@@ -2209,7 +2212,7 @@ impl Interpreter {
             .call_method_with_values(encoding_val.clone(), "alternative-names", vec![])
             .unwrap_or(Value::array(Vec::new()));
         let alt_names: Vec<String> = match alt_names_val {
-            Value::Array(items) => items.iter().map(|v| v.to_string_value()).collect(),
+            Value::Array(items, ..) => items.iter().map(|v| v.to_string_value()).collect(),
             Value::Slip(items) => items.iter().map(|v| v.to_string_value()).collect(),
             _ => Vec::new(),
         };

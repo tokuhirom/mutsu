@@ -19,7 +19,8 @@ impl Interpreter {
             let saved_env = self.env.clone();
             let mut new_env = saved_env.clone();
             for (k, v) in &data.env {
-                if matches!(new_env.get(k), Some(Value::Array(_))) && matches!(v, Value::Array(_)) {
+                if matches!(new_env.get(k), Some(Value::Array(..))) && matches!(v, Value::Array(..))
+                {
                     continue;
                 }
                 new_env.insert(k.clone(), v.clone());
@@ -63,7 +64,7 @@ impl Interpreter {
             self.routine_stack.pop();
             let mut merged = saved_env;
             for (k, v) in self.env.iter() {
-                if matches!(v, Value::Array(_)) {
+                if matches!(v, Value::Array(..)) {
                     merged.insert(k.clone(), v.clone());
                 }
             }
@@ -314,7 +315,7 @@ impl Interpreter {
         // 1-arg Iterable gets flattened (like +@foo slurpy)
         let args: Vec<Value> = if args.len() == 1 {
             match &args[0] {
-                Value::Array(items) => items.to_vec(),
+                Value::Array(items, ..) => items.to_vec(),
                 _ => return Ok(args[0].clone()),
             }
         } else {

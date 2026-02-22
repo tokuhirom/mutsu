@@ -162,6 +162,8 @@ pub(crate) enum OpCode {
 
     // -- Composite --
     MakeArray(u32),
+    /// Like MakeArray but creates a true Array (from [...] literals) instead of a List.
+    MakeRealArray(u32),
     MakeHash(u32),
     /// Create a Capture from `count` items on stack. Pair values become named args,
     /// non-Pair values become positional args. Slip values are flattened.
