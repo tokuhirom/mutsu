@@ -248,18 +248,31 @@ impl Interpreter {
             return native_result;
         }
         // Coerce user-defined types for builtin functions via .Numeric/.Bridge
-        if args.len() == 1
-            && matches!(&args[0], Value::Instance { .. })
-            && Self::is_builtin_function(name)
+        if Self::is_builtin_function(name)
+            && args.iter().any(|a| matches!(a, Value::Instance { .. }))
         {
-            let coerced = self
-                .call_method_with_values(args[0].clone(), "Numeric", vec![])
-                .or_else(|_| self.call_method_with_values(args[0].clone(), "Bridge", vec![]));
-            if let Ok(val) = coerced {
-                let coerced_args = [val];
-                if let Some(native_result) = crate::builtins::native_function(name, &coerced_args) {
-                    return native_result;
+            let mut coerced_args: Vec<Value> = Vec::with_capacity(args.len());
+            let mut all_ok = true;
+            for arg in args {
+                if matches!(arg, Value::Instance { .. }) {
+                    let coerced = self
+                        .call_method_with_values(arg.clone(), "Numeric", vec![])
+                        .or_else(|_| self.call_method_with_values(arg.clone(), "Bridge", vec![]));
+                    match coerced {
+                        Ok(val) => coerced_args.push(val),
+                        Err(_) => {
+                            all_ok = false;
+                            break;
+                        }
+                    }
+                } else {
+                    coerced_args.push(arg.clone());
                 }
+            }
+            if all_ok
+                && let Some(native_result) = crate::builtins::native_function(name, &coerced_args)
+            {
+                return native_result;
             }
         }
         if let Some(def) = self.resolve_function_with_alias(name, args) {
@@ -574,6 +587,7 @@ impl Interpreter {
                 | "so"
                 | "not"
                 | "truncate"
+                | "atan2"
         )
     }
 

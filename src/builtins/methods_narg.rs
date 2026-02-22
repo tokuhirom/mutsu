@@ -421,18 +421,12 @@ pub(crate) fn native_method_1arg(
             Some(Ok(Value::Complex(mag * angle.cos(), mag * angle.sin())))
         }
         "atan2" => {
-            let y = match target {
-                Value::Int(i) => *i as f64,
-                Value::Num(f) => *f,
-                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                _ => return None,
-            };
-            let x = match arg {
-                Value::Int(i) => *i as f64,
-                Value::Num(f) => *f,
-                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                _ => return None,
-            };
+            // User-defined types need runtime coercion via .Numeric/.Bridge
+            if matches!(target, Value::Instance { .. }) || matches!(arg, Value::Instance { .. }) {
+                return None;
+            }
+            let y = runtime::to_float_value(target).unwrap_or(0.0);
+            let x = runtime::to_float_value(arg).unwrap_or(0.0);
             Some(Ok(Value::Num(y.atan2(x))))
         }
         // Buf/Blob read-num methods (1 arg: offset, uses NativeEndian)
