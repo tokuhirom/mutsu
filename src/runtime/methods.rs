@@ -728,6 +728,73 @@ impl Interpreter {
             ..
         } = &target
         {
+            // IO::Spec methods
+            if class_name == "IO::Spec" {
+                match method {
+                    "catdir" => {
+                        let parts: Vec<String> = args
+                            .iter()
+                            .map(|a| {
+                                if let Value::Array(items) = a {
+                                    items
+                                        .iter()
+                                        .map(|v| v.to_string_value())
+                                        .collect::<Vec<_>>()
+                                        .join("/")
+                                } else {
+                                    a.to_string_value()
+                                }
+                            })
+                            .collect();
+                        let joined = parts.join("/");
+                        return Ok(Value::Str(joined));
+                    }
+                    "catfile" => {
+                        let parts: Vec<String> = args
+                            .iter()
+                            .map(|a| {
+                                if let Value::Array(items) = a {
+                                    items
+                                        .iter()
+                                        .map(|v| v.to_string_value())
+                                        .collect::<Vec<_>>()
+                                        .join("/")
+                                } else {
+                                    a.to_string_value()
+                                }
+                            })
+                            .collect();
+                        let joined = parts.join("/");
+                        return Ok(Value::Str(joined));
+                    }
+                    "catpath" => {
+                        let vol = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let dir = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
+                        let file = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
+                        let mut result = String::new();
+                        if !vol.is_empty() {
+                            result.push_str(&vol);
+                        }
+                        if !dir.is_empty() {
+                            if !result.is_empty() && !result.ends_with('/') {
+                                result.push('/');
+                            }
+                            result.push_str(&dir);
+                        }
+                        if !file.is_empty() {
+                            if !result.is_empty() && !result.ends_with('/') {
+                                result.push('/');
+                            }
+                            result.push_str(&file);
+                        }
+                        return Ok(Value::Str(result));
+                    }
+                    _ => {}
+                }
+            }
             if method == "can" {
                 let method_name = args
                     .first()

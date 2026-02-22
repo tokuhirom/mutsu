@@ -396,6 +396,49 @@ fn is_hash_literal_start(input: &str) -> bool {
             return true;
         }
     }
+    // Colon pair: :name(expr) or :name or :!name or :Nname — indicates a hash literal
+    if input.starts_with(':') && !input.starts_with("::") {
+        let r = &input[1..];
+        // :!name
+        if r.starts_with('!') && super::super::stmt::ident_pub(&r[1..]).is_ok() {
+            return true;
+        }
+        // :Nname — numeric colon pair (e.g., :1status)
+        if let Some(first) = r.chars().next()
+            && first.is_ascii_digit()
+        {
+            let digit_end = r.find(|c: char| !c.is_ascii_digit()).unwrap_or(r.len());
+            if digit_end < r.len() && super::super::stmt::ident_pub(&r[digit_end..]).is_ok() {
+                return true;
+            }
+        }
+        // :$var / :@var / :%var
+        if (r.starts_with('$') || r.starts_with('@') || r.starts_with('%'))
+            && super::super::stmt::ident_pub(&r[1..]).is_ok()
+        {
+            return true;
+        }
+        // :name or :name(expr) or :name[expr]
+        if let Ok((_r, name)) = super::super::stmt::ident_pub(r)
+            && !matches!(
+                name.as_str(),
+                "my" | "our"
+                    | "has"
+                    | "if"
+                    | "unless"
+                    | "for"
+                    | "while"
+                    | "until"
+                    | "loop"
+                    | "given"
+                    | "when"
+                    | "return"
+            )
+            && !name.starts_with(|c: char| c.is_ascii_digit())
+        {
+            return true;
+        }
+    }
     false
 }
 
@@ -437,7 +480,7 @@ pub(super) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
     Ok((rest, Expr::DoStmt(Box::new(Stmt::RoleDecl { name, body }))))
 }
 
-/// Parse hash literal body: key => val, key => val, ... }
+/// Parse hash literal body: key => val, :name(val), ... }
 fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
     let mut pairs = Vec::new();
     let mut rest = input;
@@ -446,6 +489,22 @@ fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
         if let Some(rest) = r.strip_prefix('}') {
             return Ok((rest, Expr::Hash(pairs)));
         }
+
+        // Try colon pair syntax: :name(expr), :name, :!name, :$var, etc.
+        if r.starts_with(':') && !r.starts_with("::") {
+            let (r, (key, val)) = parse_colon_pair_entry(r)?;
+            pairs.push((key, val));
+            let (r, _) = ws_inner(r);
+            if let Some(stripped) = r.strip_prefix(',') {
+                rest = stripped;
+            } else if let Some(stripped) = r.strip_prefix(';') {
+                rest = stripped;
+            } else {
+                rest = r;
+            }
+            continue;
+        }
+
         // Parse key as identifier or string
         let (r, key) = if let Ok((r, name)) = super::super::stmt::ident_pub(r) {
             (r, name)
@@ -474,4 +533,103 @@ fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
             rest = r;
         }
     }
+}
+
+/// Parse a colon pair entry inside a hash literal: :name(expr), :name, :!name, :Nname
+fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
+    let r = input
+        .strip_prefix(':')
+        .ok_or_else(|| PError::expected("':'"))?;
+
+    // :!name
+    if let Some(r) = r.strip_prefix('!') {
+        let (r, name) = super::super::stmt::ident_pub(r)?;
+        return Ok((r, (name, Some(Expr::Literal(Value::Bool(false))))));
+    }
+
+    // :Nname — numeric colon pair, e.g., :1status means status => 1
+    if let Some(first) = r.chars().next()
+        && first.is_ascii_digit()
+    {
+        let digit_end = r.find(|c: char| !c.is_ascii_digit()).unwrap_or(r.len());
+        let digits = &r[..digit_end];
+        let after_digits = &r[digit_end..];
+        if let Ok((r, name)) = super::super::stmt::ident_pub(after_digits) {
+            let num: i64 = digits.parse().unwrap_or(0);
+            return Ok((r, (name, Some(Expr::Literal(Value::Int(num))))));
+        }
+    }
+
+    // :$var / :@var / :%var
+    if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') {
+        let sigil = &r[..1];
+        let (r, name) = super::super::stmt::ident_pub(&r[1..])?;
+        let expr = match sigil {
+            "$" => Expr::Var(name.clone()),
+            "@" => Expr::ArrayVar(name.clone()),
+            "%" => Expr::HashVar(name.clone()),
+            _ => unreachable!(),
+        };
+        return Ok((r, (name, Some(expr))));
+    }
+
+    // :name or :name(expr) or :name[items]
+    let (r, name) = super::super::stmt::ident_pub(r)?;
+
+    // :name(expr)
+    if r.starts_with('(') {
+        let (r, _) = parse_char(r, '(')?;
+        let (r, _) = ws_inner(r);
+        let (r, val) = super::super::expr::expression(r)?;
+        let (r, _) = ws_inner(r);
+        let (r, _) = parse_char(r, ')')?;
+        return Ok((r, (name, Some(val))));
+    }
+
+    // :name[items]
+    if r.starts_with('[') {
+        let (r, _) = parse_char(r, '[')?;
+        let (r, _) = ws_inner(r);
+        let mut items = Vec::new();
+        let mut r = r;
+        while !r.starts_with(']') {
+            let (r2, item) = super::super::expr::expression(r)?;
+            items.push(item);
+            let (r2, _) = ws_inner(r2);
+            if r2.starts_with(',') {
+                let (r2, _) = parse_char(r2, ',')?;
+                let (r2, _) = ws_inner(r2);
+                r = r2;
+            } else {
+                r = r2;
+            }
+        }
+        let (r, _) = parse_char(r, ']')?;
+        return Ok((r, (name, Some(Expr::ArrayLiteral(items)))));
+    }
+
+    // :name<word> or :name<words> (angle bracket form)
+    if r.starts_with('<') && !r.starts_with("<<") {
+        let (r, _) = parse_char(r, '<')?;
+        let end = r
+            .find('>')
+            .ok_or_else(|| PError::expected("'>' closing angle bracket"))?;
+        let content = &r[..end];
+        let r = &r[end + 1..];
+        let words: Vec<&str> = content.split_whitespace().collect();
+        if words.len() == 1 {
+            return Ok((
+                r,
+                (name, Some(Expr::Literal(Value::Str(words[0].to_string())))),
+            ));
+        }
+        let items = words
+            .iter()
+            .map(|w| Expr::Literal(Value::Str(w.to_string())))
+            .collect();
+        return Ok((r, (name, Some(Expr::ArrayLiteral(items)))));
+    }
+
+    // :name (boolean true)
+    Ok((r, (name, None)))
 }

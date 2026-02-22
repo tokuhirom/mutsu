@@ -254,6 +254,36 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                         },
                     ));
                 }
+                // :name<word> or :name<words> (angle bracket form)
+                if r.starts_with('<') && !r.starts_with("<<") {
+                    let (r, _) = parse_char(r, '<')?;
+                    let end = r
+                        .find('>')
+                        .ok_or_else(|| PError::expected("'>' closing angle bracket"))?;
+                    let content = &r[..end];
+                    let r = &r[end + 1..];
+                    let words: Vec<&str> = content.split_whitespace().collect();
+                    if words.len() == 1 {
+                        return Ok((
+                            r,
+                            CallArg::Named {
+                                name,
+                                value: Some(Expr::Literal(Value::Str(words[0].to_string()))),
+                            },
+                        ));
+                    }
+                    let items = words
+                        .iter()
+                        .map(|w| Expr::Literal(Value::Str(w.to_string())))
+                        .collect();
+                    return Ok((
+                        r,
+                        CallArg::Named {
+                            name,
+                            value: Some(Expr::ArrayLiteral(items)),
+                        },
+                    ));
+                }
                 // :name (boolean true)
                 return Ok((r, CallArg::Named { name, value: None }));
             }

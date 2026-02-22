@@ -168,7 +168,7 @@ impl Interpreter {
             "symlink" => self.builtin_symlink(&args),
             // I/O functions
             "warn" => self.builtin_warn(&args),
-            "print" | "say" | "note" => self.builtin_print(name, &args),
+            "print" | "say" | "put" | "note" => self.builtin_print(name, &args),
             "sink" => Ok(Value::Nil), // sink evaluates args (already done) and returns Nil
             "quietly" => {
                 // quietly suppresses warnings and returns the result

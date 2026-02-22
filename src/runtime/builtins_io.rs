@@ -453,7 +453,7 @@ impl Interpreter {
         }
         let (handle, newline) = match name {
             "print" => ("$*OUT", false),
-            "say" => ("$*OUT", true),
+            "say" | "put" => ("$*OUT", true),
             _ => ("$*ERR", true),
         };
         self.write_to_named_handle(handle, &content, newline)?;

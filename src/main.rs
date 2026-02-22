@@ -33,6 +33,7 @@ fn print_help(program: &str) {
     println!("  -e CODE        Evaluate CODE");
     println!("  -I PATH        Add PATH to the module search path");
     println!("  --dump-ast     Dump the AST instead of executing");
+    println!("  --doc          Render Pod documentation from the source");
     println!("  --repl         Start the interactive REPL");
     println!("  -h, --help     Show this help message");
     println!();
@@ -45,6 +46,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     let mut dump_ast = false;
+    let mut doc_mode = false;
     let mut repl_flag = false;
     let mut lib_paths: Vec<String> = Vec::new();
     let mut filtered_args: Vec<String> = Vec::new();
@@ -55,6 +57,8 @@ fn main() {
             return;
         } else if arg == "--dump-ast" {
             dump_ast = true;
+        } else if arg == "--doc" {
+            doc_mode = true;
         } else if arg == "--repl" {
             repl_flag = true;
         } else if arg.starts_with("--parser=") {
@@ -120,6 +124,12 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        return;
+    }
+
+    if doc_mode {
+        let output = mutsu::doc_mode::render_doc(&input);
+        print!("{}", output);
         return;
     }
 
