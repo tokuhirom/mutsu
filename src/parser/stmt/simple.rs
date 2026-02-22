@@ -78,22 +78,64 @@ fn extract_lib_path(expr: &Expr) -> Option<String> {
     match expr {
         // use lib "some/path"
         Expr::Literal(Value::Str(s)) => Some(s.clone()),
-        // use lib $*PROGRAM.parent(N).add("path")
+        // use lib $*PROGRAM.parent(N).add("path") or .add($*SPEC.catdir(<...>))
         Expr::MethodCall {
             target, name, args, ..
         } if name == "add" || name == "child" => {
             // Extract the string argument to .add()
-            let add_arg = args.first().and_then(|a| {
-                if let Expr::Literal(Value::Str(s)) = a {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })?;
+            let add_arg = args.first().and_then(extract_static_string)?;
             // Resolve the target chain ($*PROGRAM.parent(N))
             let base = extract_program_parent(target)?;
-            let result = std::path::Path::new(&base).join(add_arg);
+            let result = std::path::Path::new(&base).join(&add_arg);
             Some(result.to_string_lossy().into_owned())
+        }
+        _ => None,
+    }
+}
+
+/// Try to statically evaluate an expression to a string.
+/// Handles string literals and `$*SPEC.catdir(<word list>)`.
+fn extract_static_string(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Literal(Value::Str(s)) => Some(s.clone()),
+        // $*SPEC.catdir(<packages Test-Helpers lib>) → "packages/Test-Helpers/lib"
+        Expr::MethodCall {
+            target, name, args, ..
+        } if name == "catdir" || name == "catfile" => {
+            // Target should be $*SPEC
+            if let Expr::Var(v) = target.as_ref()
+                && v == "*SPEC"
+            {
+                let parts: Vec<String> = args
+                    .iter()
+                    .filter_map(|a| match a {
+                        Expr::Literal(Value::Str(s)) => Some(s.clone()),
+                        Expr::ArrayLiteral(items) => {
+                            let strs: Vec<String> = items
+                                .iter()
+                                .filter_map(|i| {
+                                    if let Expr::Literal(Value::Str(s)) = i {
+                                        Some(s.clone())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
+                            if strs.is_empty() {
+                                None
+                            } else {
+                                Some(strs.join("/"))
+                            }
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                if parts.is_empty() {
+                    return None;
+                }
+                return Some(parts.join("/"));
+            }
+            None
         }
         _ => None,
     }

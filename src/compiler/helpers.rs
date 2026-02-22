@@ -633,6 +633,11 @@ impl Compiler {
             Expr::HashVar(name) => Some(format!("%{}", name)),
             Expr::ArrayVar(name) => Some(format!("@{}", name)),
             Expr::Var(name) => Some(name.clone()),
+            // (temp %hash){key} = value → treat as %hash{key} = value
+            // TODO: implement proper temp save/restore semantics
+            Expr::Call { name, args } if name == "temp" => {
+                args.first().and_then(Self::index_assign_target_name)
+            }
             _ => None,
         }
     }

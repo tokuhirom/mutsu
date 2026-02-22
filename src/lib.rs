@@ -1,6 +1,7 @@
 mod ast;
 mod builtins;
 mod compiler;
+pub mod doc_mode;
 mod interpreter;
 mod opcode;
 mod parse_dispatch;

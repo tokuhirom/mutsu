@@ -639,16 +639,31 @@ impl Interpreter {
         if let Some(Value::Array(items)) = Self::named_value(args, "args") {
             run_args = Some(items.to_vec());
         }
-        let mut nested = Interpreter::new();
-        if let Some(Value::Int(pid)) = self.env.get("*PID") {
-            nested.set_pid(pid.saturating_add(1));
-        }
-        if let Some(items) = run_args {
-            nested.set_args(items);
-        }
-        nested.set_program_path("<is_run>");
-        let result = nested.run(&program);
-        let (out, err, status) = Self::extract_run_output(&nested, result);
+        // Check for :compiler-args
+        let compiler_args: Vec<String> =
+            if let Some(Value::Array(items)) = Self::named_value(args, "compiler-args") {
+                items.iter().map(|v| v.to_string_value()).collect()
+            } else {
+                Vec::new()
+            };
+        let is_doc_mode = compiler_args.iter().any(|a| a == "--doc");
+
+        let (out, err, status) = if is_doc_mode {
+            // In --doc mode, render Pod documentation instead of executing
+            let doc_output = crate::doc_mode::render_doc(&program);
+            (doc_output, String::new(), 0i64)
+        } else {
+            let mut nested = Interpreter::new();
+            if let Some(Value::Int(pid)) = self.env.get("*PID") {
+                nested.set_pid(pid.saturating_add(1));
+            }
+            if let Some(items) = run_args {
+                nested.set_args(items);
+            }
+            nested.set_program_path("<is_run>");
+            let result = nested.run(&program);
+            Self::extract_run_output(&nested, result)
+        };
         let mut ok = true;
         if let Some(expected) = expected_out {
             ok &= self.smart_match(&Value::Str(out), &expected);
