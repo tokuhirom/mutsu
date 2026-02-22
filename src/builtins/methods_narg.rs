@@ -97,7 +97,7 @@ pub(crate) fn native_method_1arg(
         "index" => {
             // Fall through to runtime dispatch for type objects, named args (Pairs),
             // array of needles, and multi-arg calls handled by dispatch_index
-            if matches!(arg, Value::Package(_) | Value::Pair(..) | Value::Array(_)) {
+            if matches!(arg, Value::Package(_) | Value::Pair(..) | Value::Array(..)) {
                 return None;
             }
             let s = target.to_string_value();
@@ -126,7 +126,7 @@ pub(crate) fn native_method_1arg(
             Some(Ok(Value::array(parts)))
         }
         "join" => match target {
-            Value::Array(items) => {
+            Value::Array(items, ..) => {
                 let sep = arg.to_string_value();
                 let joined = items
                     .iter()
@@ -138,7 +138,7 @@ pub(crate) fn native_method_1arg(
             _ => None,
         },
         "head" => match target {
-            Value::Array(items) => {
+            Value::Array(items, ..) => {
                 let n = match arg {
                     Value::Int(i) => *i as usize,
                     _ => return None,
@@ -163,7 +163,7 @@ pub(crate) fn native_method_1arg(
             }
         },
         "tail" => match target {
-            Value::Array(items) => {
+            Value::Array(items, ..) => {
                 let n = match arg {
                     Value::Int(i) => *i as usize,
                     _ => return None,
@@ -471,7 +471,7 @@ fn buf_get_bytes(target: &Value) -> Option<Vec<u8>> {
         ..
     } = target
         && (class_name == "Buf" || class_name == "Blob")
-        && let Some(Value::Array(items)) = attributes.get("bytes")
+        && let Some(Value::Array(items, ..)) = attributes.get("bytes")
     {
         return Some(
             items

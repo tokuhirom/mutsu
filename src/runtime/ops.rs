@@ -225,7 +225,7 @@ impl Interpreter {
 
     pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         match val {
-            Value::Array(items) => items.to_vec(),
+            Value::Array(items, ..) => items.to_vec(),
             Value::Hash(items) => items
                 .iter()
                 .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))

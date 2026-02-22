@@ -678,7 +678,11 @@ impl VM {
 
             // -- Composite --
             OpCode::MakeArray(n) => {
-                self.exec_make_array_op(*n);
+                self.exec_make_array_op(*n, false);
+                *ip += 1;
+            }
+            OpCode::MakeRealArray(n) => {
+                self.exec_make_array_op(*n, true);
                 *ip += 1;
             }
             OpCode::MakeHash(n) => {

@@ -1,7 +1,7 @@
 use super::*;
 
 impl VM {
-    pub(super) fn exec_make_array_op(&mut self, n: u32) {
+    pub(super) fn exec_make_array_op(&mut self, n: u32, is_real_array: bool) {
         let n = n as usize;
         let start = self.stack.len() - n;
         let raw: Vec<Value> = self.stack.drain(start..).collect();
@@ -12,7 +12,11 @@ impl VM {
                 other => elems.push(other),
             }
         }
-        self.stack.push(Value::array(elems));
+        if is_real_array {
+            self.stack.push(Value::real_array(elems));
+        } else {
+            self.stack.push(Value::array(elems));
+        }
     }
 
     pub(super) fn exec_make_hash_op(&mut self, n: u32) {

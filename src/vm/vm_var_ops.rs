@@ -98,14 +98,14 @@ impl VM {
             target = Value::array(self.interpreter.force_lazy_list_bridge(ll)?);
         }
         let result = match (target, index) {
-            (Value::Array(items), Value::Int(i)) => {
+            (Value::Array(items, ..), Value::Int(i)) => {
                 if i < 0 {
                     Value::Nil
                 } else {
                     items.get(i as usize).cloned().unwrap_or(Value::Nil)
                 }
             }
-            (Value::Array(items), Value::Range(a, b)) => {
+            (Value::Array(items, ..), Value::Range(a, b)) => {
                 let start = a.max(0) as usize;
                 let end = b.max(-1) as usize;
                 let slice = if start >= items.len() {
@@ -116,7 +116,7 @@ impl VM {
                 };
                 Value::array(slice)
             }
-            (Value::Array(items), Value::RangeExcl(a, b)) => {
+            (Value::Array(items, ..), Value::RangeExcl(a, b)) => {
                 let start = a.max(0) as usize;
                 let end_excl = b.max(0) as usize;
                 let slice = if start >= items.len() {
@@ -135,7 +135,7 @@ impl VM {
                 Value::array(items.values().cloned().collect())
             }
             (Value::Hash(items), Value::Nil) => Value::Hash(items),
-            (Value::Hash(items), Value::Array(keys)) => Value::array(
+            (Value::Hash(items), Value::Array(keys, ..)) => Value::array(
                 keys.iter()
                     .map(|k| {
                         let key = k.to_string_value();
@@ -194,7 +194,7 @@ impl VM {
                 }
                 Value::array(result)
             }
-            (ref range, Value::Array(indices)) if range.is_range() => {
+            (ref range, Value::Array(indices, ..)) if range.is_range() => {
                 let (start, _end, _excl_start, _excl_end) = range_params(range);
                 let result: Vec<Value> = indices
                     .iter()
@@ -206,7 +206,7 @@ impl VM {
                 Value::array(result)
             }
             // WhateverCode index: @a[*-1] → evaluate the lambda with array length
-            (Value::Array(ref items), Value::Sub(ref data)) => {
+            (Value::Array(ref items, ..), Value::Sub(ref data)) => {
                 let len = items.len() as i64;
                 let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
                 let mut sub_env = data.env.clone();
@@ -306,7 +306,7 @@ impl VM {
         let current = if let Some(container) = self.interpreter.env().get(&name) {
             match container {
                 Value::Hash(h) => h.get(&key).cloned().unwrap_or(Value::Nil),
-                Value::Array(arr) => {
+                Value::Array(arr, ..) => {
                     if let Ok(i) = key.parse::<usize>() {
                         arr.get(i).cloned().unwrap_or(Value::Nil)
                     } else {
@@ -338,7 +338,7 @@ impl VM {
                 Value::Hash(ref mut h) => {
                     Arc::make_mut(h).insert(key, new_val);
                 }
-                Value::Array(ref mut arr) => {
+                Value::Array(ref mut arr, ..) => {
                     if let Ok(i) = idx_val.to_string_value().parse::<usize>() {
                         let a = Arc::make_mut(arr);
                         while a.len() <= i {
@@ -358,9 +358,9 @@ impl VM {
         let idx = self.stack.pop().unwrap_or(Value::Nil);
         let val = self.stack.pop().unwrap_or(Value::Nil);
         match &idx {
-            Value::Array(keys) => {
+            Value::Array(keys, ..) => {
                 let vals = match &val {
-                    Value::Array(v) => (**v).clone(),
+                    Value::Array(v, ..) => (**v).clone(),
                     _ => vec![val.clone()],
                 };
                 if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(&var_name) {

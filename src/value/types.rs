@@ -7,7 +7,7 @@ impl Value {
     pub(crate) fn eqv(&self, other: &Self) -> bool {
         match (self, other) {
             // Arrays: recursively use eqv for elements
-            (Value::Array(a), Value::Array(b)) => {
+            (Value::Array(a, ..), Value::Array(b, ..)) => {
                 a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
             }
             // Hashes: recursively use eqv for values
@@ -66,7 +66,7 @@ impl Value {
             Value::RangeExclStart(_, _) => true,
             Value::RangeExclBoth(_, _) => true,
             Value::GenericRange { .. } => true,
-            Value::Array(items) => !items.is_empty(),
+            Value::Array(items, ..) => !items.is_empty(),
             Value::Hash(items) => !items.is_empty(),
             Value::Rat(n, _) => *n != 0,
             Value::FatRat(n, _) => !n.is_zero(),
@@ -129,7 +129,7 @@ impl Value {
             Value::Rat(_, _) => "Rat",
             Value::FatRat(_, _) => "FatRat",
             Value::Complex(_, _) => "Complex",
-            Value::Array(_) | Value::LazyList(_) => "Array",
+            Value::Array(..) | Value::LazyList(_) => "Array",
             Value::Hash(_) => "Hash",
             Value::Set(_) => "Set",
             Value::Bag(_) => "Bag",
@@ -183,7 +183,7 @@ impl Value {
                     | Value::Rat(_, _)
                     | Value::FatRat(_, _)
                     | Value::Complex(_, _)
-                    | Value::Array(_)
+                    | Value::Array(..)
                     | Value::Hash(_)
             ),
             "Numeric" => matches!(
@@ -225,10 +225,12 @@ impl Value {
                     false
                 }
             }
-            "Seq" | "List" => matches!(self, Value::Array(_) | Value::LazyList(_) | Value::Slip(_)),
-            "Positional" => matches!(self, Value::Array(_) | Value::LazyList(_)),
+            "Seq" | "List" => {
+                matches!(self, Value::Array(..) | Value::LazyList(_) | Value::Slip(_))
+            }
+            "Positional" => matches!(self, Value::Array(..) | Value::LazyList(_)),
             "Map" | "Associative" => matches!(self, Value::Hash(_)),
-            "Iterable" => matches!(self, Value::Array(_) | Value::LazyList(_) | Value::Hash(_)),
+            "Iterable" => matches!(self, Value::Array(..) | Value::LazyList(_) | Value::Hash(_)),
             _ => false,
         }
     }

@@ -4,7 +4,7 @@ impl Interpreter {
     pub(super) fn builtin_elems(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let val = args.first().cloned();
         Ok(match val {
-            Some(Value::Array(items)) => Value::Int(items.len() as i64),
+            Some(Value::Array(items, ..)) => Value::Int(items.len() as i64),
             Some(Value::LazyList(list)) => Value::Int(self.force_lazy_list(&list)?.len() as i64),
             Some(Value::Hash(items)) => Value::Int(items.len() as i64),
             Some(Value::Str(s)) => Value::Int(s.chars().count() as i64),
@@ -16,7 +16,7 @@ impl Interpreter {
         let mut elems = HashSet::new();
         for arg in args {
             match arg {
-                Value::Array(items) => {
+                Value::Array(items, ..) => {
                     for item in items.iter() {
                         elems.insert(item.to_string_value());
                     }
@@ -33,7 +33,7 @@ impl Interpreter {
         let mut counts: HashMap<String, i64> = HashMap::new();
         for arg in args {
             match arg {
-                Value::Array(items) => {
+                Value::Array(items, ..) => {
                     for item in items.iter() {
                         *counts.entry(item.to_string_value()).or_insert(0) += 1;
                     }
@@ -50,7 +50,7 @@ impl Interpreter {
         let mut weights: HashMap<String, f64> = HashMap::new();
         for arg in args {
             match arg {
-                Value::Array(items) => {
+                Value::Array(items, ..) => {
                     for item in items.iter() {
                         *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
                     }
@@ -99,7 +99,7 @@ impl Interpreter {
         let mut elems = Vec::new();
         for arg in args {
             match arg {
-                Value::Array(items) => elems.extend(items.iter().cloned()),
+                Value::Array(items, ..) => elems.extend(items.iter().cloned()),
                 other => elems.push(other),
             }
         }
@@ -166,7 +166,7 @@ impl Interpreter {
 
     pub(super) fn builtin_shift(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         Ok(match args.first().cloned() {
-            Some(Value::Array(mut items)) => {
+            Some(Value::Array(mut items, ..)) => {
                 if items.is_empty() {
                     Value::Nil
                 } else {
@@ -179,7 +179,9 @@ impl Interpreter {
 
     pub(super) fn builtin_pop(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         Ok(match args.first().cloned() {
-            Some(Value::Array(mut items)) => Arc::make_mut(&mut items).pop().unwrap_or(Value::Nil),
+            Some(Value::Array(mut items, ..)) => {
+                Arc::make_mut(&mut items).pop().unwrap_or(Value::Nil)
+            }
             _ => Value::Nil,
         })
     }
@@ -191,7 +193,7 @@ impl Interpreter {
             .unwrap_or_default();
         let list = args.get(1).cloned();
         Ok(match list {
-            Some(Value::Array(items)) => {
+            Some(Value::Array(items, ..)) => {
                 let joined = items
                     .iter()
                     .map(|v| v.to_string_value())
@@ -221,7 +223,7 @@ impl Interpreter {
 
     pub(crate) fn flat_into(val: &Value, out: &mut Vec<Value>) {
         match val {
-            Value::Array(items) => {
+            Value::Array(items, ..) => {
                 for item in items.iter() {
                     Self::flat_into(item, out);
                 }
@@ -241,7 +243,7 @@ impl Interpreter {
         let mut items = Vec::new();
         for arg in args {
             match arg {
-                Value::Array(elems) => items.extend(elems.iter().cloned()),
+                Value::Array(elems, ..) => items.extend(elems.iter().cloned()),
                 Value::Slip(elems) => items.extend(elems.iter().cloned()),
                 other => items.push(other.clone()),
             }
@@ -252,9 +254,9 @@ impl Interpreter {
     pub(super) fn builtin_reverse(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let val = args.first().cloned();
         Ok(match val {
-            Some(Value::Array(mut items)) => {
+            Some(Value::Array(mut items, ..)) => {
                 Arc::make_mut(&mut items).reverse();
-                Value::Array(items)
+                Value::Array(items, false)
             }
             Some(Value::Str(s)) => Value::Str(s.chars().rev().collect()),
             _ => Value::Nil,
@@ -264,9 +266,9 @@ impl Interpreter {
     pub(super) fn builtin_sort(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let val = args.first().cloned();
         Ok(match val {
-            Some(Value::Array(mut items)) => {
+            Some(Value::Array(mut items, ..)) => {
                 Arc::make_mut(&mut items).sort_by_key(|a| a.to_string_value());
-                Value::Array(items)
+                Value::Array(items, false)
             }
             _ => Value::Nil,
         })
@@ -277,7 +279,7 @@ impl Interpreter {
         let mut list_items = Vec::new();
         for arg in args.iter().skip(1) {
             match arg {
-                Value::Array(items) => list_items.extend(items.iter().cloned()),
+                Value::Array(items, ..) => list_items.extend(items.iter().cloned()),
                 Value::Range(a, b) => list_items.extend((*a..=*b).map(Value::Int)),
                 Value::RangeExcl(a, b) => list_items.extend((*a..*b).map(Value::Int)),
                 Value::RangeExclStart(a, b) => list_items.extend((*a + 1..=*b).map(Value::Int)),
@@ -296,7 +298,7 @@ impl Interpreter {
         let mut list_items = Vec::new();
         for arg in args.iter().skip(1) {
             match arg {
-                Value::Array(items) => list_items.extend(items.iter().cloned()),
+                Value::Array(items, ..) => list_items.extend(items.iter().cloned()),
                 Value::Range(a, b) => list_items.extend((*a..=*b).map(Value::Int)),
                 Value::RangeExcl(a, b) => list_items.extend((*a..*b).map(Value::Int)),
                 v if v.is_range() => {
@@ -320,7 +322,7 @@ impl Interpreter {
         let mut buckets: HashMap<String, Vec<Value>> = HashMap::new();
         for item in args.iter().skip(1) {
             let keys = match self.call_lambda_with_arg(&func, item.clone()) {
-                Ok(Value::Array(values)) => values.to_vec(),
+                Ok(Value::Array(values, ..)) => values.to_vec(),
                 Ok(value) => vec![value],
                 Err(_) => vec![Value::Nil],
             };

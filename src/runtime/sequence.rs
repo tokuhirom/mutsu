@@ -37,7 +37,7 @@ impl Interpreter {
         }
         let (endpoint, endpoint_kind, extra_rhs) = match &right {
             Value::Num(f) if f.is_infinite() => (None, None, vec![]),
-            Value::Array(items) => {
+            Value::Array(items, ..) => {
                 if items.is_empty() {
                     return Err(RuntimeError::new(
                         "Cannot use an empty list as endpoint of a sequence".to_string(),

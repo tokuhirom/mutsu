@@ -388,7 +388,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 
     let (rest, _) = opt_char(rest, ';');
     let expr = if is_array {
-        Expr::Literal(Value::array(Vec::new()))
+        Expr::Literal(Value::real_array(Vec::new()))
     } else if is_hash {
         Expr::Hash(Vec::new())
     } else {

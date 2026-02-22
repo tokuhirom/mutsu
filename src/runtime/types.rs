@@ -270,6 +270,10 @@ impl Interpreter {
         if constraint == "Positional" && matches!(value_type, "Array" | "List" | "Seq") {
             return true;
         }
+        // Array is-a List in Raku type hierarchy
+        if constraint == "List" && matches!(value_type, "Array" | "List" | "Seq") {
+            return true;
+        }
         if constraint == "Associative"
             && matches!(value_type, "Hash" | "Map" | "Bag" | "Set" | "Mix")
         {
@@ -450,7 +454,7 @@ impl Interpreter {
                     while positional_idx < args.len() {
                         // *@ (flattening slurpy): flatten array/list args
                         match &args[positional_idx] {
-                            Value::Array(arr) => {
+                            Value::Array(arr, ..) => {
                                 items.extend(arr.iter().cloned());
                             }
                             other => {

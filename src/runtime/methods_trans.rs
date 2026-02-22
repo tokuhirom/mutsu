@@ -47,7 +47,7 @@ fn expand_trans_spec(spec: &str) -> Vec<char> {
 /// Convert a Value to a list of strings (for array-based trans pairs).
 fn value_to_string_list(v: &Value) -> Vec<String> {
     match v {
-        Value::Array(items) => items.iter().map(|i| i.to_string_value()).collect(),
+        Value::Array(items, ..) => items.iter().map(|i| i.to_string_value()).collect(),
         Value::Str(s) => {
             let expanded = expand_trans_spec(s);
             expanded.into_iter().map(|c| c.to_string()).collect()

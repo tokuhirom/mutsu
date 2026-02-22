@@ -113,7 +113,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 let mut result = Vec::new();
                 for (k, v) in items.iter() {
                     match v {
-                        Value::Array(arr) => {
+                        Value::Array(arr, ..) => {
                             for item in arr.iter() {
                                 result.push(Value::Pair(
                                     item.to_string_value(),
@@ -140,7 +140,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => None,
         },
         "minmax" => match target {
-            Value::Array(items) if !items.is_empty() => {
+            Value::Array(items, ..) if !items.is_empty() => {
                 let mut min = &items[0];
                 let mut max = &items[0];
                 for item in &items[1..] {
@@ -161,7 +161,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => None,
         },
         "sum" => match target {
-            Value::Array(items) => {
+            Value::Array(items, ..) => {
                 let has_float = items
                     .iter()
                     .any(|v| matches!(v, Value::Num(_) | Value::Rat(_, _)));
@@ -179,7 +179,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => None,
         },
         "squish" => match target {
-            Value::Array(items) => {
+            Value::Array(items, ..) => {
                 let mut result = Vec::new();
                 let mut last: Option<String> = None;
                 for item in items.iter() {

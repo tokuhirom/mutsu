@@ -102,6 +102,8 @@ pub(crate) enum Expr {
         body: Vec<Stmt>,
     },
     ArrayLiteral(Vec<Expr>),
+    /// Array constructed with [...] (reports as "Array" type vs "List" for comma lists).
+    BracketArray(Vec<Expr>),
     /// Capture literal: \(positional..., named...) — mixed exprs separated at compile time
     CaptureLiteral(Vec<Expr>),
     Index {
@@ -535,7 +537,10 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             collect_ph_expr(else_expr, out);
         }
         Expr::AssignExpr { expr, .. } | Expr::Exists(expr) => collect_ph_expr(expr, out),
-        Expr::ArrayLiteral(es) | Expr::StringInterpolation(es) | Expr::CaptureLiteral(es) => {
+        Expr::ArrayLiteral(es)
+        | Expr::BracketArray(es)
+        | Expr::StringInterpolation(es)
+        | Expr::CaptureLiteral(es) => {
             for e in es {
                 collect_ph_expr(e, out);
             }

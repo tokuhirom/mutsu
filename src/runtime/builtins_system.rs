@@ -503,7 +503,7 @@ impl Interpreter {
                     let result = attributes.get("result").cloned().unwrap_or(Value::Nil);
                     results.push(result);
                 }
-                Value::Array(elems) => {
+                Value::Array(elems, ..) => {
                     for elem in elems.iter() {
                         match elem {
                             Value::Promise(shared) => {

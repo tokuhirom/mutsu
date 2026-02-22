@@ -110,7 +110,7 @@ impl VM {
             Value::Int(i) => Value::Int(i),
             Value::Num(f) => Value::Num(f),
             Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
-            Value::Array(items) => Value::Int(items.len() as i64),
+            Value::Array(items, ..) => Value::Int(items.len() as i64),
             Value::Rat(n, d) => {
                 if d == 0 {
                     if n > 0 {

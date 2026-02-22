@@ -88,7 +88,7 @@ impl VM {
     pub(super) fn exec_make_slip_op(&mut self) {
         let val = self.stack.pop().unwrap();
         let items = match val {
-            Value::Array(items) => (*items).clone(),
+            Value::Array(items, ..) => (*items).clone(),
             Value::Slip(items) => (*items).clone(),
             Value::Capture { positional, named } => {
                 let mut items = positional;
