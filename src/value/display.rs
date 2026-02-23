@@ -354,7 +354,7 @@ impl Value {
                     s
                 }
             }
-            Value::Slip(items) => items
+            Value::Seq(items) | Value::Slip(items) => items
                 .iter()
                 .map(|v| v.to_string_value())
                 .collect::<Vec<_>>()

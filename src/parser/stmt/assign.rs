@@ -260,14 +260,14 @@ pub(super) fn parse_comma_or_expr(input: &str) -> PResult<'_, Expr> {
         loop {
             let (r2, _) = ws(r)?;
             if !r2.starts_with(',') {
-                let items = lift_meta_ops_in_list(items);
-                return Ok((r2, Expr::ArrayLiteral(items)));
+                let items = merge_sequence_seeds(lift_meta_ops_in_list(items));
+                return Ok((r2, finalize_list(items)));
             }
             let (r2, _) = parse_char(r2, ',')?;
             let (r2, _) = ws(r2)?;
             if r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') {
-                let items = lift_meta_ops_in_list(items);
-                return Ok((r2, Expr::ArrayLiteral(items)));
+                let items = merge_sequence_seeds(lift_meta_ops_in_list(items));
+                return Ok((r2, finalize_list(items)));
             }
             let (r2, next) = expression(r2)?;
             items.push(next);
@@ -275,6 +275,42 @@ pub(super) fn parse_comma_or_expr(input: &str) -> PResult<'_, Expr> {
         }
     }
     Ok((rest, first))
+}
+
+/// If the list has exactly one item, return it directly instead of wrapping
+/// in an ArrayLiteral.
+fn finalize_list(items: Vec<Expr>) -> Expr {
+    if items.len() == 1 {
+        items.into_iter().next().unwrap()
+    } else {
+        Expr::ArrayLiteral(items)
+    }
+}
+
+/// In a comma-separated list, if the last item is a sequence expression
+/// (Binary { ..., DotDotDot/DotDotDotCaret, ... }), merge all preceding
+/// items into the sequence LHS.
+/// E.g. `[0, 1, (*+* ... *)]` → `[ArrayLiteral([0, 1, *+*]) ... *]`
+fn merge_sequence_seeds(items: Vec<Expr>) -> Vec<Expr> {
+    if items.len() < 2 {
+        return items;
+    }
+    let last = items.last().unwrap();
+    if let Expr::Binary { left, op, right } = last
+        && matches!(op, TokenKind::DotDotDot | TokenKind::DotDotDotCaret)
+    {
+        // Merge preceding items + sequence LHS into a new ArrayLiteral
+        let mut seeds: Vec<Expr> = items[..items.len() - 1].to_vec();
+        seeds.push(*left.clone());
+        let merged = Expr::Binary {
+            left: Box::new(Expr::ArrayLiteral(seeds)),
+            op: op.clone(),
+            right: right.clone(),
+        };
+        vec![merged]
+    } else {
+        items
+    }
 }
 
 /// In a comma-separated list, if an item is a MetaOp (X+, Z-, etc.), merge

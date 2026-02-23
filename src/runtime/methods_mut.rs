@@ -171,6 +171,67 @@ impl Interpreter {
             }
         }
 
+        // Handle push/append/pop/shift/unshift on sigilless array bindings
+        if !target_var.starts_with('@') && matches!(&target, Value::Array(..)) {
+            let key = target_var.to_string();
+            match method {
+                "push" | "append" => {
+                    let mut items = match &target {
+                        Value::Array(v, ..) => v.to_vec(),
+                        _ => Vec::new(),
+                    };
+                    if method == "append" {
+                        for arg in &args {
+                            match arg {
+                                Value::Array(inner, ..) => items.extend(inner.iter().cloned()),
+                                other => items.push(other.clone()),
+                            }
+                        }
+                    } else {
+                        items.extend(args);
+                    }
+                    let result = Value::array(items.clone());
+                    self.env.insert(key, Value::array(items));
+                    return Ok(result);
+                }
+                "pop" => {
+                    let mut items = match &target {
+                        Value::Array(v, ..) => v.to_vec(),
+                        _ => Vec::new(),
+                    };
+                    let out = items.pop().unwrap_or(Value::Nil);
+                    self.env.insert(key, Value::array(items));
+                    return Ok(out);
+                }
+                "unshift" | "prepend" => {
+                    let mut items = match &target {
+                        Value::Array(v, ..) => v.to_vec(),
+                        _ => Vec::new(),
+                    };
+                    for (i, arg) in args.iter().enumerate() {
+                        items.insert(i, arg.clone());
+                    }
+                    let result = Value::array(items.clone());
+                    self.env.insert(key, Value::array(items));
+                    return Ok(result);
+                }
+                "shift" => {
+                    let mut items = match &target {
+                        Value::Array(v, ..) => v.to_vec(),
+                        _ => Vec::new(),
+                    };
+                    let out = if items.is_empty() {
+                        Value::Nil
+                    } else {
+                        items.remove(0)
+                    };
+                    self.env.insert(key, Value::array(items));
+                    return Ok(out);
+                }
+                _ => {}
+            }
+        }
+
         // SharedPromise/SharedChannel are internally mutable — delegate to immutable dispatch
         if matches!(target, Value::Promise(_) | Value::Channel(_)) {
             return self.call_method_with_values(target, method, args);

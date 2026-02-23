@@ -83,11 +83,12 @@ pub(super) fn integer(input: &str) -> PResult<'_, Expr> {
 }
 
 /// Parse a decimal number literal.
+/// In Raku, decimal literals without exponent are Rat, with exponent are Num.
 pub(super) fn decimal(input: &str) -> PResult<'_, Expr> {
     let start = input;
-    let (rest, _) = take_while1(input, |c: char| c.is_ascii_digit() || c == '_')?;
+    let (rest, int_part) = take_while1(input, |c: char| c.is_ascii_digit() || c == '_')?;
     let (rest, _) = parse_char(rest, '.')?;
-    let (rest, _) = take_while1(rest, |c: char| c.is_ascii_digit() || c == '_')?;
+    let (rest, frac_part) = take_while1(rest, |c: char| c.is_ascii_digit() || c == '_')?;
     let num_str = &start[..start.len() - rest.len()];
 
     // Check for scientific notation
@@ -108,25 +109,44 @@ pub(super) fn decimal(input: &str) -> PResult<'_, Expr> {
         (rest, None)
     };
 
-    let full = if let Some(exp) = exp_part {
-        format!("{}{}", num_str, exp)
+    // With scientific notation → Num; without → Rat
+    if let Some(exp) = exp_part {
+        let full = format!("{}{}", num_str, exp);
+        let clean: String = full.chars().filter(|c| *c != '_').collect();
+        let n: f64 = clean.parse().unwrap_or(0.0);
+        if rest.starts_with('i')
+            && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
+        {
+            return Ok((&rest[1..], Expr::Literal(Value::Complex(0.0, n))));
+        }
+        Ok((rest, Expr::Literal(Value::Num(n))))
     } else {
-        num_str.to_string()
-    };
-    let clean: String = full.chars().filter(|c| *c != '_').collect();
-    let n: f64 = clean.parse().unwrap_or(0.0);
-    // Check for imaginary suffix
-    if rest.starts_with('i') && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_') {
-        return Ok((&rest[1..], Expr::Literal(Value::Complex(0.0, n))));
+        // Check for imaginary suffix first
+        let clean_full: String = num_str.chars().filter(|c| *c != '_').collect();
+        let n: f64 = clean_full.parse().unwrap_or(0.0);
+        if rest.starts_with('i')
+            && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
+        {
+            return Ok((&rest[1..], Expr::Literal(Value::Complex(0.0, n))));
+        }
+        // Produce Rat: numerator = int_part * 10^frac_digits + frac_part, denominator = 10^frac_digits
+        let int_clean: String = int_part.chars().filter(|c| *c != '_').collect();
+        let frac_clean: String = frac_part.chars().filter(|c| *c != '_').collect();
+        let frac_digits = frac_clean.len() as u32;
+        let denom = 10i64.pow(frac_digits);
+        let int_val: i64 = int_clean.parse().unwrap_or(0);
+        let frac_val: i64 = frac_clean.parse().unwrap_or(0);
+        let numer = int_val * denom + frac_val;
+        Ok((rest, Expr::Literal(crate::value::make_rat(numer, denom))))
     }
-    Ok((rest, Expr::Literal(Value::Num(n))))
 }
 
 /// Parse a decimal literal starting with `.` (e.g., `.5`, `.5i`, `.123e2`).
+/// Without exponent → Rat; with exponent → Num.
 pub(super) fn dot_decimal(input: &str) -> PResult<'_, Expr> {
     let (rest, _) = parse_char(input, '.')?;
     // Must be followed by a digit
-    let (rest, _frac) = take_while1(rest, |c: char| c.is_ascii_digit() || c == '_')?;
+    let (rest, frac) = take_while1(rest, |c: char| c.is_ascii_digit() || c == '_')?;
     let num_str = &input[..input.len() - rest.len()];
 
     // Check for scientific notation
@@ -147,16 +167,27 @@ pub(super) fn dot_decimal(input: &str) -> PResult<'_, Expr> {
         (rest, None)
     };
 
-    let full = if let Some(exp) = exp_part {
-        format!("0{}{}", num_str, exp)
+    if let Some(exp) = exp_part {
+        let full = format!("0{}{}", num_str, exp);
+        let clean: String = full.chars().filter(|c| *c != '_').collect();
+        let n: f64 = clean.parse().unwrap_or(0.0);
+        if rest.starts_with('i')
+            && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
+        {
+            return Ok((&rest[1..], Expr::Literal(Value::Complex(0.0, n))));
+        }
+        Ok((rest, Expr::Literal(Value::Num(n))))
     } else {
-        format!("0{}", num_str)
-    };
-    let clean: String = full.chars().filter(|c| *c != '_').collect();
-    let n: f64 = clean.parse().unwrap_or(0.0);
-    // Check for imaginary suffix
-    if rest.starts_with('i') && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_') {
-        return Ok((&rest[1..], Expr::Literal(Value::Complex(0.0, n))));
+        let frac_clean: String = frac.chars().filter(|c| *c != '_').collect();
+        let n: f64 = format!("0.{}", frac_clean).parse().unwrap_or(0.0);
+        if rest.starts_with('i')
+            && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
+        {
+            return Ok((&rest[1..], Expr::Literal(Value::Complex(0.0, n))));
+        }
+        let frac_digits = frac_clean.len() as u32;
+        let denom = 10i64.pow(frac_digits);
+        let numer: i64 = frac_clean.parse().unwrap_or(0);
+        Ok((rest, Expr::Literal(crate::value::make_rat(numer, denom))))
     }
-    Ok((rest, Expr::Literal(Value::Num(n))))
 }

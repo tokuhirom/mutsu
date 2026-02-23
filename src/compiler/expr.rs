@@ -451,7 +451,11 @@ impl Compiler {
                 modifier,
             } if matches!(
                 target.as_ref(),
-                Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::CodeVar(_)
+                Expr::Var(_)
+                    | Expr::ArrayVar(_)
+                    | Expr::HashVar(_)
+                    | Expr::CodeVar(_)
+                    | Expr::BareWord(_)
             ) || Self::is_dostmt_vardecl(target) =>
             {
                 let target_name = match target.as_ref() {
@@ -459,6 +463,7 @@ impl Compiler {
                     Expr::ArrayVar(n) => format!("@{}", n),
                     Expr::HashVar(n) => format!("%{}", n),
                     Expr::CodeVar(n) => format!("&{}", n),
+                    Expr::BareWord(n) => n.clone(),
                     Expr::DoStmt(stmt) => {
                         if let Stmt::VarDecl { name, .. } = stmt.as_ref() {
                             name.clone()

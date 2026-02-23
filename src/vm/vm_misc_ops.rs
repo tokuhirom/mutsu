@@ -36,6 +36,13 @@ impl VM {
                 excl_start: false,
                 excl_end: false,
             },
+            // WhateverCode endpoint: e.g. 0..*-2
+            (_, Value::Sub(_)) | (Value::Sub(_), _) => Value::GenericRange {
+                start: Box::new(left),
+                end: Box::new(right),
+                excl_start: false,
+                excl_end: false,
+            },
             _ => Value::Nil,
         };
         self.stack.push(result);

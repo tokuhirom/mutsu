@@ -1,7 +1,7 @@
 use Test;
 plan 8;
 
-is 3.14.WHAT, "(Num)", "float literal type";
+is 3.14.WHAT, "(Rat)", "decimal literal type is Rat";
 ok 1.5 + 2.5 == 4, "float addition";
 ok 3.0 * 2.0 == 6, "float multiplication";
 ok 1.5 < 2.5, "float less than";

@@ -39,8 +39,8 @@ pub struct SubData {
 }
 
 fn gcd(mut a: i64, mut b: i64) -> i64 {
-    a = a.abs();
-    b = b.abs();
+    a = a.wrapping_abs();
+    b = b.wrapping_abs();
     while b != 0 {
         let t = b;
         b = a % b;
@@ -124,6 +124,7 @@ pub enum Value {
         kind: JunctionKind,
         values: Arc<Vec<Value>>,
     },
+    Seq(Arc<Vec<Value>>),
     Slip(Arc<Vec<Value>>),
     LazyList(Arc<LazyList>),
     Version {

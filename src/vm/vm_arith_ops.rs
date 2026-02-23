@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::Arc;
 
 impl VM {
     pub(super) fn exec_add_op(&mut self) -> Result<(), RuntimeError> {
@@ -90,6 +91,7 @@ impl VM {
         let items = match val {
             Value::Array(items, ..) => (*items).clone(),
             Value::Slip(items) => (*items).clone(),
+            Value::Seq(items) => (*items).clone(),
             Value::Capture { positional, named } => {
                 let mut items = positional;
                 for (k, v) in named {
@@ -234,8 +236,17 @@ impl VM {
             Value::Int(n) => n.max(0) as usize,
             _ => 0,
         };
-        let items: Vec<Value> = std::iter::repeat_n(left, n).collect();
-        self.stack.push(Value::array(items));
+        // When repeating a Slip, flatten its items into the result
+        if let Value::Slip(ref slip_items) = left {
+            let mut items = Vec::with_capacity(slip_items.len() * n);
+            for _ in 0..n {
+                items.extend(slip_items.iter().cloned());
+            }
+            self.stack.push(Value::Seq(Arc::new(items)));
+        } else {
+            let items: Vec<Value> = std::iter::repeat_n(left, n).collect();
+            self.stack.push(Value::Seq(Arc::new(items)));
+        }
     }
 
     pub(super) fn exec_function_compose_op(&mut self) {

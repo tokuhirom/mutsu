@@ -58,6 +58,7 @@ fn dispatch_capture(
         }
         "list" => Some(Ok(Value::array(positional.to_vec()))),
         "elems" => Some(Ok(Value::Int(positional.len() as i64))),
+        "is-lazy" => Some(Ok(Value::Bool(false))),
         "keys" => Some(Ok(Value::array(
             named.keys().map(|k| Value::Str(k.clone())).collect(),
         ))),
@@ -102,6 +103,40 @@ fn raku_value(v: &Value) -> String {
     match v {
         Value::Str(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
         Value::Int(i) => i.to_string(),
+        Value::Rat(n, d) => {
+            if *d == 0 {
+                if *n == 0 {
+                    "NaN".to_string()
+                } else if *n > 0 {
+                    "Inf".to_string()
+                } else {
+                    "-Inf".to_string()
+                }
+            } else if *n % *d == 0 {
+                format!("{}.0", *n / *d)
+            } else {
+                // Non-integer rat: check if it's a simple decimal
+                let whole = *n as f64 / *d as f64;
+                let mut dd = d.abs();
+                while dd % 2 == 0 {
+                    dd /= 2;
+                }
+                while dd % 5 == 0 {
+                    dd /= 5;
+                }
+                if dd == 1 {
+                    let s = format!("{}", whole);
+                    if s.contains('.') {
+                        s
+                    } else {
+                        format!("{}.0", whole)
+                    }
+                } else {
+                    format!("<{}/{}>", n, d)
+                }
+            }
+        }
+        Value::FatRat(n, d) => format!("<{}/{}>", n, d),
         Value::Bool(b) => if *b { "True" } else { "False" }.to_string(),
         Value::Num(f) => {
             if f.is_nan() {
@@ -359,7 +394,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
         "elems" => {
             let result = match target {
-                Value::Array(items, ..) => Value::Int(items.len() as i64),
+                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                    Value::Int(items.len() as i64)
+                }
                 Value::Hash(items) => Value::Int(items.len() as i64),
                 Value::Set(items) => Value::Int(items.len() as i64),
                 Value::Bag(items) => Value::Int(items.len() as i64),
@@ -515,7 +552,19 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::Num(*f))),
             Value::Num(f) => Some(Ok(Value::Int(f.round() as i64))),
             Value::Int(i) => Some(Ok(Value::Int(*i))),
+            Value::Rat(n, d) if *d != 0 => {
+                let f = *n as f64 / *d as f64;
+                Some(Ok(Value::Int(f.round() as i64)))
+            }
             _ => None,
+        },
+        "narrow" => match target {
+            Value::Int(i) => Some(Ok(Value::Int(*i))),
+            Value::Rat(n, d) if *d != 0 && *n % *d == 0 => Some(Ok(Value::Int(*n / *d))),
+            Value::Rat(n, d) => Some(Ok(Value::Rat(*n, *d))),
+            Value::Num(f) if *f == f.floor() && f.is_finite() => Some(Ok(Value::Int(*f as i64))),
+            Value::Num(f) => Some(Ok(Value::Num(*f))),
+            _ => Some(Ok(target.clone())),
         },
         "sqrt" => match target {
             Value::Int(i) => Some(Ok(Value::Num((*i as f64).sqrt()))),
@@ -560,6 +609,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
         "so" => Some(Ok(Value::Bool(target.truthy()))),
         "not" => Some(Ok(Value::Bool(!target.truthy()))),
+        "is-lazy" => Some(Ok(Value::Bool(false))),
         "chomp" => Some(Ok(Value::Str(
             target.to_string_value().trim_end_matches('\n').to_string(),
         ))),
@@ -580,7 +630,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Some(Ok(Value::array(parts)))
         }
         "join" => match target {
-            Value::Array(items, ..) => {
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
                 let joined = items
                     .iter()
                     .map(|v| v.to_string_value())
@@ -613,8 +663,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         Some(Ok(Value::Str("-Inf".to_string())))
                     }
                 } else if *n % *d == 0 {
-                    // Exact integer: Rat(10, 2) => "5"
-                    Some(Ok(Value::Str(format!("{}", *n / *d))))
+                    if method == "raku" || method == "perl" {
+                        // .raku on Rat always shows decimal: 27.0, not 27
+                        Some(Ok(Value::Str(format!("{}.0", *n / *d))))
+                    } else {
+                        Some(Ok(Value::Str(format!("{}", *n / *d))))
+                    }
                 } else {
                     let mut dd = *d;
                     while dd % 2 == 0 {

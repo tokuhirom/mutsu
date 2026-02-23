@@ -131,7 +131,7 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
             Value::array(value_to_list(&value))
         }
         Value::GenericRange { .. } => value,
-        Value::Slip(items) => Value::Array(items, false),
+        Value::Slip(items) | Value::Seq(items) => Value::Array(items, false),
         other => Value::array(vec![other]),
     }
 }
@@ -233,6 +233,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::Junction { .. } => "Junction",
         Value::Regex(_) => "Regex",
         Value::Version { .. } => "Version",
+        Value::Seq(_) => "Seq",
         Value::Slip(_) => "Slip",
         Value::Promise(_) => "Promise",
         Value::Channel(_) => "Channel",
@@ -272,6 +273,7 @@ pub(crate) fn char_idx_to_byte(text: &str, idx: usize) -> usize {
 pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
     match val {
         Value::Array(items, ..) => items.to_vec(),
+        Value::Seq(items) => items.to_vec(),
         Value::Hash(items) => items
             .iter()
             .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
@@ -336,7 +338,32 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                     result
                 }
             } else {
-                vec![val.clone()]
+                // Numeric GenericRange: expand using integer steps
+                let s_f = start.to_f64();
+                let e_f = end.to_f64();
+                if s_f.is_infinite() || e_f.is_infinite() || s_f.is_nan() || e_f.is_nan() {
+                    vec![val.clone()]
+                } else {
+                    let s_i = if *excl_start {
+                        s_f as i64 + 1
+                    } else {
+                        s_f as i64
+                    };
+                    let e_i = if *excl_end {
+                        e_f as i64 - 1
+                    } else {
+                        e_f as i64
+                    };
+                    let end_capped = e_i.min(s_i + MAX_RANGE_EXPAND);
+                    // Preserve type of start endpoint
+                    match start.as_ref() {
+                        Value::Num(_) => (s_i..=end_capped).map(|i| Value::Num(i as f64)).collect(),
+                        Value::Rat(_, d) => (s_i..=end_capped)
+                            .map(|i| crate::value::make_rat(i * d, *d))
+                            .collect(),
+                        _ => (s_i..=end_capped).map(Value::Int).collect(),
+                    }
+                }
             }
         }
         Value::Set(items) => items.iter().map(|s| Value::Str(s.clone())).collect(),
