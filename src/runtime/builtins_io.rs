@@ -241,12 +241,8 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_chmod(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let path = args
-            .first()
-            .map(|v| v.to_string_value())
-            .ok_or_else(|| RuntimeError::new("chmod requires a path"))?;
         let mode_value = args
-            .get(1)
+            .first()
             .cloned()
             .ok_or_else(|| RuntimeError::new("chmod requires a mode"))?;
         let mode_int = match mode_value {
@@ -259,18 +255,24 @@ impl Interpreter {
                 )));
             }
         };
-        let path_buf = self.resolve_path(&path);
-        #[cfg(unix)]
-        {
-            let perms = PermissionsExt::from_mode(mode_int);
-            fs::set_permissions(&path_buf, perms)
-                .map_err(|err| RuntimeError::new(format!("Failed to chmod '{}': {}", path, err)))?;
+        let mut changed = Vec::new();
+        for path_value in args.iter().skip(1) {
+            let path = path_value.to_string_value();
+            let path_buf = self.resolve_path(&path);
+            #[cfg(unix)]
+            {
+                let perms = PermissionsExt::from_mode(mode_int);
+                fs::set_permissions(&path_buf, perms).map_err(|err| {
+                    RuntimeError::new(format!("Failed to chmod '{}': {}", path, err))
+                })?;
+            }
+            #[cfg(not(unix))]
+            {
+                return Err(RuntimeError::new("chmod not supported on this platform"));
+            }
+            changed.push(path_value.clone());
         }
-        #[cfg(not(unix))]
-        {
-            return Err(RuntimeError::new("chmod not supported on this platform"));
-        }
-        Ok(Value::Bool(true))
+        Ok(Value::Array(changed.into(), false))
     }
 
     pub(super) fn builtin_mkdir(&self, args: &[Value]) -> Result<Value, RuntimeError> {

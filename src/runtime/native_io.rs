@@ -160,6 +160,24 @@ impl Interpreter {
                     .unwrap_or(false);
                 Ok(Value::Bool(executable))
             }
+            "mode" => {
+                let metadata = fs::metadata(&path_buf)
+                    .map_err(|err| RuntimeError::new(format!("Failed to stat '{}': {}", p, err)))?;
+                #[cfg(unix)]
+                {
+                    let mode = metadata.permissions().mode() & 0o777;
+                    Ok(Value::Str(format!("{:04o}", mode)))
+                }
+                #[cfg(not(unix))]
+                {
+                    let mode = if metadata.permissions().readonly() {
+                        "0444"
+                    } else {
+                        "0666"
+                    };
+                    Ok(Value::Str(mode.to_string()))
+                }
+            }
             "s" => {
                 let size = fs::metadata(&path_buf)
                     .map(|meta| meta.len())
