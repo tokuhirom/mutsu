@@ -124,6 +124,26 @@ impl Interpreter {
                     .insert(key, value);
                 Ok(Value::Nil)
             }
+            "__mutsu_set_newline" => {
+                let pair = args.first().cloned().unwrap_or(Value::Nil);
+                let Value::Pair(name, value) = pair else {
+                    return Err(RuntimeError::new(
+                        "use newline expects a colonpair argument",
+                    ));
+                };
+                if !value.truthy() {
+                    return Err(RuntimeError::new("use newline expects a true mode adverb"));
+                }
+                self.newline_mode = match name.as_str() {
+                    "lf" => NewlineMode::Lf,
+                    "cr" => NewlineMode::Cr,
+                    "crlf" => NewlineMode::Crlf,
+                    _ => {
+                        return Err(RuntimeError::new(format!("Unknown newline mode: {}", name)));
+                    }
+                };
+                Ok(Value::Nil)
+            }
             "BEGIN" => {
                 let Some(first) = args.first().cloned() else {
                     return Ok(Value::Nil);

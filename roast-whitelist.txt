@@ -194,6 +194,7 @@ roast/S16-filehandles/misc.t
 roast/S16-filehandles/mode.t
 roast/S16-filehandles/unlink.t
 roast/S16-io/cwd.t
+roast/S16-io/newline.t
 roast/S16-io/say-and-ref.t
 roast/S16-io/supply.t
 roast/S16-unfiled/getpeername.t
