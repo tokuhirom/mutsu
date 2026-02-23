@@ -92,7 +92,11 @@ After implementing:
 - enable auto merge
 EOF_PROMPT
 )
-CMD=(ai-sandbox "$FILE" "$AGENT" exec "$PROMPT")
+if [[ "$AGENT" == "codex" ]]; then
+    CMD=(ai-sandbox "$FILE" codex exec "$PROMPT")
+else
+    CMD=(ai-sandbox "$FILE" claude -p "$PROMPT")
+fi
 
 echo "Selected file: $FILE"
 echo "Running: ${CMD[*]}"
