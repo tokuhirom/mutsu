@@ -757,11 +757,19 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
     let rest =
         keyword("constant", input).ok_or_else(|| PError::expected("constant declaration"))?;
     let (rest, _) = ws1(rest)?;
-    // The name can be $var, @var, %var, or bare identifier
-    // var_name() already strips the sigil, so don't re-add it
-    let (rest, name) = if rest.starts_with('$') || rest.starts_with('@') || rest.starts_with('%') {
+    // The name can be $var, @var, %var, &var, or bare identifier.
+    // Keep the sigil in the stored name so lookup semantics match normal
+    // declarations (`my @x` stores `@x`, not bare `x`).
+    let sigil = rest.as_bytes().first().copied().unwrap_or(0);
+    let (rest, name) = if matches!(sigil, b'$' | b'@' | b'%' | b'&') {
+        let prefix = match sigil {
+            b'@' => "@",
+            b'%' => "%",
+            b'&' => "&",
+            _ => "",
+        };
         let (r, n) = var_name(rest)?;
-        (r, n.to_string())
+        (r, format!("{prefix}{n}"))
     } else {
         ident(rest)?
     };

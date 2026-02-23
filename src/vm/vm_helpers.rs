@@ -28,7 +28,8 @@ impl VM {
     pub(super) fn get_local_by_bare_name(&self, code: &CompiledCode, name: &str) -> Option<Value> {
         // Strip the leading sigil (@, %)
         let bare = name.strip_prefix('@').or_else(|| name.strip_prefix('%'))?;
-        let idx = code.locals.iter().position(|n| n == bare)?;
+        // Respect lexical shadowing by resolving the most recently-declared local.
+        let idx = code.locals.iter().rposition(|n| n == bare)?;
         Some(self.locals.get(idx)?.clone())
     }
 
