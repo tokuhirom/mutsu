@@ -1773,6 +1773,10 @@ impl Interpreter {
                 "Channel" => {
                     return Ok(Value::Channel(SharedChannel::new()));
                 }
+                "Stash" => {
+                    // Stash is essentially a Hash but with type Stash
+                    return Ok(Value::make_instance("Stash".to_string(), HashMap::new()));
+                }
                 "Supply" => return Ok(self.make_supply_instance()),
                 "Supplier" => {
                     let mut attrs = HashMap::new();
