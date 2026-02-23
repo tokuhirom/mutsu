@@ -128,6 +128,11 @@ pub(crate) fn native_method_1arg(
             Some(Ok(Value::Str(result)))
         }
         "split" => {
+            if let Value::Instance { class_name, .. } = target
+                && class_name == "Supply"
+            {
+                return None;
+            }
             let s = target.to_string_value();
             let sep = arg.to_string_value();
             let parts: Vec<Value> = s.split(&sep).map(|p| Value::Str(p.to_string())).collect();
