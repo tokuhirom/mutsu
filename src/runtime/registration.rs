@@ -375,9 +375,22 @@ impl Interpreter {
             native_methods: HashSet::new(),
             mro: Vec::new(),
         };
+        // Detect stub class: `class Foo { ... }` — body is just a die("Stub code executed").
+        // Register the class but skip body execution.
+        let is_stub = body.len() == 1
+            && matches!(&body[0], Stmt::Expr(Expr::Call { name: fn_name, args })
+                if fn_name == "die"
+                    && args.len() == 1
+                    && matches!(&args[0], Expr::Literal(Value::Str(s)) if s == "Stub code executed"));
         // Make the class visible while its body executes so introspection calls
         // like `A.^add_method(...)` inside the declaration can resolve `A`.
         self.classes.insert(name.to_string(), class_def.clone());
+        if is_stub {
+            self.classes.insert(name.to_string(), class_def);
+            let mut stack = Vec::new();
+            let _ = self.compute_class_mro(name, &mut stack)?;
+            return Ok(());
+        }
         for stmt in body {
             match stmt {
                 Stmt::HasDecl {
