@@ -21,6 +21,7 @@ impl Interpreter {
         self.functions.keys().any(|k| k.starts_with(&fq_slash))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn register_sub_decl(
         &mut self,
         name: &str,
@@ -28,6 +29,7 @@ impl Interpreter {
         param_defs: &[ParamDef],
         body: &[Stmt],
         multi: bool,
+        is_test_assertion: bool,
         supersede: bool,
     ) -> Result<(), RuntimeError> {
         let new_def = FunctionDef {
@@ -36,6 +38,7 @@ impl Interpreter {
             params: params.to_vec(),
             param_defs: param_defs.to_vec(),
             body: body.to_vec(),
+            is_test_assertion,
         };
         let single_key = format!("{}::{}", self.current_package, name);
         let multi_prefix = format!("{}::{}/", self.current_package, name);
@@ -141,6 +144,7 @@ impl Interpreter {
             params: params.to_vec(),
             param_defs: param_defs.to_vec(),
             body: body.to_vec(),
+            is_test_assertion: false,
         };
         self.insert_token_def(name, def, multi);
     }
@@ -175,12 +179,14 @@ impl Interpreter {
                 params: params.to_vec(),
                 param_defs: param_defs.to_vec(),
                 body: body.to_vec(),
+                is_test_assertion: false,
             },
         );
         Ok(())
     }
 
     /// Register a sub under GLOBAL:: (used for `is export` trait).
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn register_sub_decl_as_global(
         &mut self,
         name: &str,
@@ -188,6 +194,7 @@ impl Interpreter {
         param_defs: &[ParamDef],
         body: &[Stmt],
         multi: bool,
+        is_test_assertion: bool,
         supersede: bool,
     ) -> Result<(), RuntimeError> {
         let def = FunctionDef {
@@ -196,6 +203,7 @@ impl Interpreter {
             params: params.to_vec(),
             param_defs: param_defs.to_vec(),
             body: body.to_vec(),
+            is_test_assertion,
         };
         let single_key = format!("GLOBAL::{}", name);
         let multi_prefix = format!("GLOBAL::{}/", name);
@@ -313,6 +321,7 @@ impl Interpreter {
                 params: params.to_vec(),
                 param_defs: param_defs.to_vec(),
                 body: body.to_vec(),
+                is_test_assertion: false,
             },
         );
         Ok(())

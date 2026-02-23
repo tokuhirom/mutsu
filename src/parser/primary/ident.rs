@@ -14,8 +14,31 @@ fn is_superscript_digit(c: char) -> bool {
 
 use super::super::expr::{expression, or_expr_pub};
 use super::super::helpers::ws;
+use super::current_line_number;
 use super::misc::parse_block_body;
 use super::regex::parse_call_arg_list;
+
+const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
+
+fn attach_test_callsite_line(name: &str, input: &str, mut args: Vec<Expr>) -> Vec<Expr> {
+    if crate::parser::stmt::simple::is_test_assertion_callable(name) {
+        args.push(Expr::Binary {
+            left: Box::new(Expr::Literal(Value::Str(
+                TEST_CALLSITE_LINE_KEY.to_string(),
+            ))),
+            op: crate::token_kind::TokenKind::FatArrow,
+            right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
+        });
+    }
+    args
+}
+
+fn make_call_expr(name: String, input: &str, args: Vec<Expr>) -> Expr {
+    Expr::Call {
+        name: name.clone(),
+        args: attach_test_callsite_line(&name, input, args),
+    }
+}
 
 fn parse_raw_braced_regex_body(input: &str) -> PResult<'_, String> {
     let after_open = input
@@ -488,7 +511,7 @@ fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
         args.push(arg);
         r = r2;
     }
-    Ok((r, Expr::Call { name, args }))
+    Ok((r, make_call_expr(name, input, args)))
 }
 
 fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
@@ -896,7 +919,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         let (rest, args) = parse_call_arg_list(rest)?;
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
-        return Ok((rest, Expr::Call { name, args }));
+        return Ok((rest, make_call_expr(name, input, args)));
     }
 
     // Bareword followed by => — Pair constructor (higher precedence than operators)
@@ -925,10 +948,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         if name == "BEGIN" {
             return Ok((
                 r2,
-                Expr::Call {
-                    name,
-                    args: vec![make_anon_sub(block_body)],
-                },
+                make_call_expr(name, input, vec![make_anon_sub(block_body)]),
             ));
         }
         let (r3, _) = ws(r2)?;
@@ -941,12 +961,12 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             loop {
                 let (r4, _) = ws(r3)?;
                 if !r4.starts_with(',') {
-                    return Ok((r3, Expr::Call { name, args }));
+                    return Ok((r3, make_call_expr(name, input, args)));
                 }
                 let r4 = &r4[1..];
                 let (r4, _) = ws(r4)?;
                 if r4.starts_with(';') || r4.is_empty() || r4.starts_with('}') {
-                    return Ok((r4, Expr::Call { name, args }));
+                    return Ok((r4, make_call_expr(name, input, args)));
                 }
                 let (r4, next_arg) = expression(r4)?;
                 args.push(next_arg);
@@ -1000,7 +1020,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 args.push(rest_arg);
                 rest_after = r3;
             }
-            return Ok((rest_after, Expr::Call { name, args }));
+            return Ok((rest_after, make_call_expr(name, input, args)));
         }
     }
 
@@ -1065,7 +1085,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 args.push(next_arg);
                 rest_after = r3;
             }
-            return Ok((rest_after, Expr::Call { name, args }));
+            return Ok((rest_after, make_call_expr(name, input, args)));
         }
     }
 
@@ -1077,12 +1097,12 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 
     // User-declared subs can be called with no args as bare words in statement position.
     if crate::parser::stmt::simple::is_user_declared_sub(&name) && is_terminator {
-        return Ok((rest, Expr::Call { name, args: vec![] }));
+        return Ok((rest, make_call_expr(name, input, vec![])));
     }
 
     // Functions that can be called with no arguments as bare words
     if matches!(name.as_str(), "await") && is_terminator {
-        return Ok((rest, Expr::Call { name, args: vec![] }));
+        return Ok((rest, make_call_expr(name, input, vec![])));
     }
 
     // Method-like: .new, .elems etc. is handled at expression level

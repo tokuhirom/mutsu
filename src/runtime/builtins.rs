@@ -85,6 +85,8 @@ impl Interpreter {
         name: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        let (args, callsite_line) = self.sanitize_call_args(&args);
+        self.test_pending_callsite_line = callsite_line;
         crate::trace::trace_log!("call", "call_function: {} ({} args)", name, args.len());
         match name {
             // Error / control flow
@@ -339,10 +341,12 @@ impl Interpreter {
         if let Some(def) = self.resolve_function_with_alias(name, args) {
             let saved_env = self.env.clone();
             self.bind_function_args_values(&def.param_defs, &def.params, args)?;
+            let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
             self.routine_stack
                 .push((def.package.clone(), def.name.clone()));
             let result = self.eval_block_value(&def.body);
             self.routine_stack.pop();
+            self.pop_test_assertion_context(pushed_assertion);
             self.env = saved_env;
             return match result {
                 Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),

@@ -560,8 +560,11 @@ mod tests {
         assert_eq!(stmts.len(), 2);
         if let Stmt::Call { name, args } = &stmts[1] {
             assert_eq!(name, "ok");
-            assert_eq!(args.len(), 2);
-            assert!(matches!(&args[1], CallArg::Named { name, .. } if name == "todo"));
+            assert!(args.len() >= 2);
+            assert!(
+                args.iter()
+                    .any(|arg| matches!(arg, CallArg::Named { name, .. } if name == "todo"))
+            );
         } else {
             panic!("Expected Call");
         }

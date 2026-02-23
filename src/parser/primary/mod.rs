@@ -30,7 +30,7 @@ pub(super) fn set_original_source(source: &str) {
 }
 
 /// Compute the 1-based line number of `input` within the original source.
-fn current_line_number(input: &str) -> i64 {
+pub(in crate::parser) fn current_line_number(input: &str) -> i64 {
     ORIGINAL_SOURCE.with(|s| {
         let (src_ptr, src_len) = *s.borrow();
         if src_ptr == 0 {

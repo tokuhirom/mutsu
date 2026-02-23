@@ -97,6 +97,9 @@ pub(super) fn sub_decl_body(input: &str, multi: bool, supersede: bool) -> PResul
     let (rest, _) = ws(rest)?;
     // Parse traits (is test-assertion, is export, returns ..., etc.)
     let (rest, traits) = parse_sub_traits(rest)?;
+    if traits.is_test_assertion {
+        super::simple::register_user_test_assertion_sub(&name);
+    }
     let (rest, _) = ws(rest)?;
     let rest = if multi {
         // Multi declarators can chain additional signatures with `| (...)`.
@@ -139,24 +142,33 @@ pub(super) fn sub_decl_body(input: &str, multi: bool, supersede: bool) -> PResul
             body,
             multi,
             is_export: traits.is_export,
+            is_test_assertion: traits.is_test_assertion,
             supersede,
         },
     ))
 }
 
-/// Result of parsing sub traits — captures whether `is export` was present.
+/// Result of parsing sub traits.
 pub(super) struct SubTraits {
     pub is_export: bool,
+    pub is_test_assertion: bool,
 }
 
 /// Parse sub/method traits like `is test-assertion`, `is export`, `returns Str`, etc.
 /// Returns `SubTraits` indicating which traits were found.
 pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
     let mut is_export = false;
+    let mut is_test_assertion = false;
     loop {
         let (r, _) = ws(input)?;
         if r.starts_with('{') || r.is_empty() {
-            return Ok((r, SubTraits { is_export }));
+            return Ok((
+                r,
+                SubTraits {
+                    is_export,
+                    is_test_assertion,
+                },
+            ));
         }
         if let Some(r) = keyword("is", r) {
             let (r, _) = ws(r)?;
@@ -165,6 +177,8 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
             if trait_name == "export" {
                 is_export = true;
+            } else if trait_name == "test-assertion" {
+                is_test_assertion = true;
             }
             // Skip optional parenthesized trait args: is export(:DEFAULT)
             let r = skip_balanced_parens(r);
@@ -185,7 +199,13 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             input = r;
             continue;
         }
-        return Ok((r, SubTraits { is_export }));
+        return Ok((
+            r,
+            SubTraits {
+                is_export,
+                is_test_assertion,
+            },
+        ));
     }
 }
 
