@@ -109,6 +109,7 @@ roast/S06-traits/as.t
 roast/S06-traits/is-readonly.t
 roast/S06-traits/native-is-copy.t
 roast/S07-hyperrace/stress.t
+roast/S10-packages/joined-namespaces.t
 roast/S11-compunit/compunit-dependencyspecification.t
 roast/S11-compunit/rt126904.t
 roast/S11-modules/module-file.t
