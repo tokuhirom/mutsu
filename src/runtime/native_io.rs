@@ -56,16 +56,25 @@ impl Interpreter {
                 }
                 let mut path = p.clone();
                 for _ in 0..levels {
-                    if let Some(par) = Path::new(&path).parent() {
+                    if path == "." {
+                        // "." → ".."
+                        path = "..".to_string();
+                    } else if path == ".." || path.ends_with("/..") || path.ends_with("\\..") {
+                        // ".." chain → append "/.."
+                        path = format!("{}/..", path);
+                    } else if path == "/" {
+                        // Filesystem root has no parent in Raku; stays at "/"
+                        break;
+                    } else if let Some(par) = Path::new(&path).parent() {
                         let s = par.to_string_lossy().to_string();
                         if s.is_empty() {
+                            // bare filename like "foo" → parent is "."
                             path = ".".to_string();
-                            break;
+                        } else {
+                            path = s;
                         }
-                        path = s;
                     } else {
                         path = ".".to_string();
-                        break;
                     }
                 }
                 Ok(self.make_io_path_instance(&path))
