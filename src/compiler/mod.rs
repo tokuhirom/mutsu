@@ -34,6 +34,14 @@ impl Compiler {
         self.current_package = package;
     }
 
+    pub(crate) fn qualify_package_name(&self, name: &str) -> String {
+        if self.current_package == "GLOBAL" || name.contains("::") {
+            name.to_string()
+        } else {
+            format!("{}::{}", self.current_package, name)
+        }
+    }
+
     fn alloc_local(&mut self, name: &str) -> u32 {
         if let Some(&slot) = self.local_map.get(name) {
             return slot;

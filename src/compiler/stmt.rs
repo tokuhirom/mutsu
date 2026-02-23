@@ -523,14 +523,15 @@ impl Compiler {
 
             // --- Package scope ---
             Stmt::Package { name, body } => {
+                let qualified_name = self.qualify_package_name(name);
                 if body.is_empty() {
                     // unit module/package — set package for the rest of the scope
-                    self.current_package = name.clone();
+                    self.current_package = qualified_name.clone();
                     // Register the package name so it's accessible as a value
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let name_idx = self.code.add_constant(Value::Str(qualified_name.clone()));
                     self.code.emit(OpCode::RegisterPackage { name_idx });
                 } else {
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let name_idx = self.code.add_constant(Value::Str(qualified_name.clone()));
                     // Non-unit package declarations also produce a type object value.
                     self.code.emit(OpCode::RegisterPackage { name_idx });
                     let pkg_idx = self.code.emit(OpCode::PackageScope {
@@ -538,7 +539,7 @@ impl Compiler {
                         body_end: 0,
                     });
                     let saved_package = self.current_package.clone();
-                    self.current_package = name.clone();
+                    self.current_package = qualified_name;
                     for s in body {
                         self.compile_stmt(s);
                     }
