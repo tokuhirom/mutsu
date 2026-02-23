@@ -150,6 +150,14 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         return subset_decl(r);
     }
+    // my constant $x = ...
+    if keyword("constant", rest).is_some() {
+        let (r, stmt) = constant_decl(rest)?;
+        if apply_modifier {
+            return parse_statement_modifier(r, stmt);
+        }
+        return Ok((r, stmt));
+    }
     // my regex Name { ... }
     // TODO: Parse regex declarations into a dedicated regex AST instead of
     // skipping the body and emitting `VarDecl = Nil`.
