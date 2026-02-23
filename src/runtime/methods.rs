@@ -17,6 +17,26 @@ impl Interpreter {
             return result;
         }
 
+        if let Some(meta_method) = method.strip_prefix('^')
+            && meta_method != "name"
+        {
+            let how = self.call_method_with_values(target.clone(), "HOW", vec![])?;
+            let mut how_args = Vec::with_capacity(args.len() + 1);
+            how_args.push(target.clone());
+            how_args.extend(args.clone());
+            return self.call_method_with_values(how, meta_method, how_args);
+        }
+
+        if let Value::Instance { class_name, .. } = &target
+            && class_name == "Perl6::Metamodel::ClassHOW"
+            && matches!(
+                method,
+                "can" | "isa" | "lookup" | "find_method" | "add_method" | "name" | "ver" | "auth"
+            )
+        {
+            return self.dispatch_classhow_method(method, args);
+        }
+
         // Primary method dispatch by name
         match method {
             "say" if args.is_empty() => {
@@ -235,7 +255,12 @@ impl Interpreter {
                 };
                 return Ok(Value::Package(type_name.to_string()));
             }
-            "HOW" if args.is_empty() => {
+            "HOW" => {
+                if !args.is_empty() {
+                    return Err(RuntimeError::new(
+                        "X::Syntax::Argument::MOPMacro: HOW does not take arguments",
+                    ));
+                }
                 // Return a meta-object (ClassHOW) for any value
                 let type_name = match &target {
                     Value::Package(name) => name.clone(),
@@ -1063,6 +1088,12 @@ impl Interpreter {
                 Value::Sub(data) => Ok(Value::Str(data.name.clone())),
                 _ => Ok(Value::Nil),
             },
+            "REPR" if args.is_empty() => match target {
+                Value::Package(name) if self.classes.contains_key(&name) => {
+                    Ok(Value::Str("P6opaque".to_string()))
+                }
+                _ => Ok(Value::Str("P6opaque".to_string())),
+            },
             "Str" | "Stringy" if args.is_empty() => match target {
                 Value::Package(_) => Ok(Value::Str(String::new())),
                 _ => Ok(Value::Str(target.to_string_value())),
@@ -1138,6 +1169,175 @@ impl Interpreter {
                     method
                 )))
             }
+        }
+    }
+
+    fn classhow_lookup(&self, invocant: &Value, method_name: &str) -> Option<Value> {
+        let Value::Package(class_name) = invocant else {
+            return None;
+        };
+        let class_def = self.classes.get(class_name)?;
+        let defs = class_def.methods.get(method_name)?;
+        let def = defs.first()?;
+        Some(Value::make_sub(
+            class_name.clone(),
+            method_name.to_string(),
+            def.params.clone(),
+            def.body.clone(),
+            HashMap::new(),
+        ))
+    }
+
+    fn classhow_find_method(&self, invocant: &Value, method_name: &str) -> Option<Value> {
+        if let Some(value) = self.classhow_lookup(invocant, method_name) {
+            return Some(value);
+        }
+        if let Value::Package(class_name) = invocant
+            && let Some(class_def) = self.classes.get(class_name)
+            && class_def.native_methods.contains(method_name)
+        {
+            return Some(Value::Str(method_name.to_string()));
+        }
+        None
+    }
+
+    fn dispatch_classhow_method(
+        &mut self,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        match method {
+            "name" if args.len() == 1 => Ok(Value::Str(match &args[0] {
+                Value::Package(name) => name.clone(),
+                Value::Instance { class_name, .. } => class_name.clone(),
+                other => value_type_name(other).to_string(),
+            })),
+            "ver" if args.len() == 1 => {
+                let invocant_name = match &args[0] {
+                    Value::Package(name) => name.clone(),
+                    Value::Instance { class_name, .. } => class_name.clone(),
+                    _ => {
+                        return Err(RuntimeError::new(
+                            "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
+                        ));
+                    }
+                };
+                let Some(meta) = self.type_metadata.get(&invocant_name) else {
+                    return Err(RuntimeError::new(
+                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
+                    ));
+                };
+                let Some(value) = meta.get("ver").cloned() else {
+                    return Err(RuntimeError::new(
+                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
+                    ));
+                };
+                Ok(Self::version_from_value(value))
+            }
+            "auth" if args.len() == 1 => {
+                let invocant_name = match &args[0] {
+                    Value::Package(name) => name.clone(),
+                    Value::Instance { class_name, .. } => class_name.clone(),
+                    _ => {
+                        return Err(RuntimeError::new(
+                            "X::Method::NotFound: Unknown method value dispatch (fallback disabled): auth",
+                        ));
+                    }
+                };
+                let Some(meta) = self.type_metadata.get(&invocant_name) else {
+                    return Err(RuntimeError::new(
+                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): auth",
+                    ));
+                };
+                let Some(value) = meta.get("auth").cloned() else {
+                    return Err(RuntimeError::new(
+                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): auth",
+                    ));
+                };
+                Ok(Value::Str(value.to_string_value()))
+            }
+            "isa" if args.len() == 2 => {
+                let Value::Package(class_name) = &args[0] else {
+                    return Ok(Value::Bool(false));
+                };
+                let Value::Package(other_name) = &args[1] else {
+                    return Ok(Value::Bool(false));
+                };
+                let is_same = class_name == other_name;
+                if is_same {
+                    return Ok(Value::Bool(true));
+                }
+                let mro = self.class_mro(class_name);
+                Ok(Value::Bool(mro.iter().any(|p| p == other_name)))
+            }
+            "can" if args.len() >= 2 => {
+                let invocant = &args[0];
+                let method_name = args[1].to_string_value();
+                if let Some(value) = self.classhow_find_method(invocant, &method_name) {
+                    return Ok(Value::array(vec![value]));
+                }
+                Ok(Value::array(Vec::new()))
+            }
+            "lookup" if args.len() >= 2 => {
+                let invocant = &args[0];
+                let method_name = args[1].to_string_value();
+                Ok(self
+                    .classhow_lookup(invocant, &method_name)
+                    .unwrap_or(Value::Nil))
+            }
+            "find_method" if args.len() >= 2 => {
+                let invocant = &args[0];
+                let method_name = args[1].to_string_value();
+                Ok(self
+                    .classhow_find_method(invocant, &method_name)
+                    .unwrap_or(Value::Nil))
+            }
+            "add_method" if args.len() >= 3 => {
+                let class_name = match &args[0] {
+                    Value::Package(name) => name.clone(),
+                    Value::Str(name) => name.clone(),
+                    _ => {
+                        return Err(RuntimeError::new("add_method target must be a type object"));
+                    }
+                };
+                let method_name = args[1].to_string_value();
+                let method_value = args[2].clone();
+                let Value::Sub(sub_data) = method_value else {
+                    return Ok(Value::Nil);
+                };
+                let def = MethodDef {
+                    params: sub_data.params.clone(),
+                    param_defs: sub_data
+                        .params
+                        .iter()
+                        .map(|name| ParamDef {
+                            name: name.clone(),
+                            default: None,
+                            named: false,
+                            slurpy: false,
+                            sigilless: false,
+                            type_constraint: None,
+                            literal_value: None,
+                            sub_signature: None,
+                            where_constraint: None,
+                            traits: Vec::new(),
+                        })
+                        .collect(),
+                    body: sub_data.body.clone(),
+                };
+                if let Some(class_def) = self.classes.get_mut(&class_name) {
+                    class_def.methods.insert(method_name, vec![def]);
+                    return Ok(Value::Nil);
+                }
+                Err(RuntimeError::new(format!(
+                    "Unknown class for add_method: {}",
+                    class_name
+                )))
+            }
+            _ => Err(RuntimeError::new(format!(
+                "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
+                method
+            ))),
         }
     }
 

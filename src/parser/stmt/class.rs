@@ -9,6 +9,48 @@ use super::{block, ident, keyword, qualified_ident};
 use super::sub::parse_sub_name;
 use super::{parse_param_list, parse_sub_traits};
 
+fn parse_declarator_traits(input: &str) -> PResult<'_, Vec<(String, Value)>> {
+    let mut traits = Vec::new();
+    let (mut rest, _) = ws(input)?;
+    loop {
+        if !rest.starts_with(':') || rest.starts_with("::") {
+            break;
+        }
+        rest = &rest[1..];
+        let (r, name) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+        rest = r;
+        let mut value = Value::Bool(true);
+        if let Some(inner) = rest.strip_prefix('<') {
+            if let Some(end) = inner.find('>') {
+                value = Value::Str(inner[..end].to_string());
+                rest = &inner[end + 1..];
+            } else {
+                return Err(PError::expected("closing '>' in trait value"));
+            }
+        } else if rest.starts_with('(') {
+            let after = skip_balanced_parens(rest);
+            let body = &rest[1..rest.len() - after.len() - 1];
+            value = Value::Str(body.trim().to_string());
+            rest = after;
+        }
+        traits.push((name.to_string(), value));
+        let (r, _) = ws(rest)?;
+        rest = r;
+    }
+    Ok((rest, traits))
+}
+
+fn meta_setter_stmt(type_name: &str, key: &str, value: Value) -> Stmt {
+    Stmt::Expr(Expr::Call {
+        name: "__MUTSU_SET_META__".to_string(),
+        args: vec![
+            Expr::Literal(Value::Str(type_name.to_string())),
+            Expr::Literal(Value::Str(key.to_string())),
+            Expr::Literal(value),
+        ],
+    })
+}
+
 fn consume_raw_braced_body(input: &str) -> PResult<'_, Vec<Stmt>> {
     if !input.starts_with('{') {
         return Err(PError::expected("raw braced body"));
@@ -258,6 +300,7 @@ pub(crate) fn class_decl(input: &str) -> PResult<'_, Stmt> {
 /// Parse the body of a class declaration (after `class` keyword and whitespace).
 pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
     let (rest, name) = qualified_ident(input)?;
+    let (rest, traits) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
 
     // Parent classes: is Parent
@@ -281,14 +324,22 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
     }
 
     let (rest, body) = block(r)?;
-    Ok((
-        rest,
-        Stmt::ClassDecl {
-            name,
-            parents,
-            body,
-        },
-    ))
+    let class_stmt = Stmt::ClassDecl {
+        name: name.clone(),
+        parents,
+        body,
+    };
+    let mut stmts = Vec::new();
+    for (trait_name, trait_value) in traits {
+        if trait_name == "ver" || trait_name == "auth" {
+            stmts.push(meta_setter_stmt(&name, &trait_name, trait_value));
+        }
+    }
+    if stmts.is_empty() {
+        return Ok((rest, class_stmt));
+    }
+    stmts.push(class_stmt);
+    Ok((rest, Stmt::Block(stmts)))
 }
 
 /// Parse `role` declaration.
@@ -427,9 +478,24 @@ pub(super) fn module_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("module", input).ok_or_else(|| PError::expected("module declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
+    let (rest, traits) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
-    Ok((rest, Stmt::Package { name, body }))
+    let mut stmts = Vec::new();
+    for (trait_name, trait_value) in traits {
+        if trait_name == "ver" || trait_name == "auth" {
+            stmts.push(meta_setter_stmt(&name, &trait_name, trait_value));
+        }
+    }
+    let package_stmt = Stmt::Package {
+        name: name.clone(),
+        body,
+    };
+    if stmts.is_empty() {
+        return Ok((rest, package_stmt));
+    }
+    stmts.push(package_stmt);
+    Ok((rest, Stmt::Block(stmts)))
 }
 
 /// Parse `unit module` or `unit class` statement.
@@ -470,6 +536,7 @@ pub(super) fn package_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("package", input).ok_or_else(|| PError::expected("package declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
+    let (rest, _traits) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
     Ok((rest, Stmt::Package { name, body }))

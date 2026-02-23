@@ -369,6 +369,9 @@ impl Interpreter {
             native_methods: HashSet::new(),
             mro: Vec::new(),
         };
+        // Make the class visible while its body executes so introspection calls
+        // like `A.^add_method(...)` inside the declaration can resolve `A`.
+        self.classes.insert(name.to_string(), class_def.clone());
         for stmt in body {
             match stmt {
                 Stmt::HasDecl {
@@ -422,9 +425,14 @@ impl Interpreter {
                     }
                 }
                 _ => {
+                    self.classes.insert(name.to_string(), class_def.clone());
                     self.run_block_raw(std::slice::from_ref(stmt))?;
+                    if let Some(updated) = self.classes.get(name).cloned() {
+                        class_def = updated;
+                    }
                 }
             }
+            self.classes.insert(name.to_string(), class_def.clone());
         }
         self.classes.insert(name.to_string(), class_def);
         let mut stack = Vec::new();
