@@ -576,6 +576,37 @@ impl Interpreter {
                     return Ok(Value::Int(days as i64));
                 }
             }
+            "grab" => {
+                if let Value::Instance {
+                    ref class_name,
+                    ref attributes,
+                    ..
+                } = target
+                    && class_name == "Supply"
+                {
+                    let values = match attributes.get("values") {
+                        Some(Value::Array(items, ..)) => items.to_vec(),
+                        _ => Vec::new(),
+                    };
+                    let func = args.first().cloned().unwrap_or(Value::Nil);
+                    let values_list = Value::array(values);
+                    let result = self.eval_call_on_value(func, vec![values_list])?;
+                    let result_values = Self::value_to_list(&result);
+                    let mut attrs = HashMap::new();
+                    attrs.insert("values".to_string(), Value::array(result_values));
+                    attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    attrs.insert("live".to_string(), Value::Bool(false));
+                    return Ok(Value::make_instance("Supply".to_string(), attrs));
+                }
+                // Class-level Supply.grab should die
+                if let Value::Package(ref class_name) = target
+                    && class_name == "Supply"
+                {
+                    return Err(RuntimeError::new(
+                        "Cannot call .grab on a Supply type object",
+                    ));
+                }
+            }
             "grep" => {
                 return self.dispatch_grep(target, &args);
             }
