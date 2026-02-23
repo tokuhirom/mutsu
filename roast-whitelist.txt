@@ -91,6 +91,7 @@ roast/S05-metasyntax/assertions.t
 roast/S05-metasyntax/delimiters.t
 roast/S05-metasyntax/null.t
 roast/S05-metasyntax/unicode-property-pair.t
+roast/S05-substitution/67222.t
 roast/S05-transliteration/79778.t
 roast/S06-multi/compile-time.t
 roast/S06-operator-overloading/semicolon.t
