@@ -61,13 +61,17 @@ impl Interpreter {
             "/" => {
                 if let (Value::Int(a), Value::Int(b)) = (left, right) {
                     if *b == 0 {
-                        // Rat with zero denominator (numifies to Inf/-Inf/NaN)
-                        Ok(Value::Rat(*a, 0))
+                        Ok(crate::value::make_rat(*a, 0))
                     } else {
                         Ok(crate::value::make_rat(*a, *b))
                     }
                 } else {
-                    Ok(Value::Num(to_num(left) / to_num(right)))
+                    let denom = to_num(right);
+                    if denom == 0.0 {
+                        Err(RuntimeError::numeric_divide_by_zero())
+                    } else {
+                        Ok(Value::Num(to_num(left) / denom))
+                    }
                 }
             }
             "%" => {

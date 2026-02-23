@@ -1,4 +1,5 @@
 use super::Value;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeErrorCode {
@@ -139,6 +140,18 @@ impl RuntimeError {
             is_warn: true,
             ..Self::new("")
         }
+    }
+
+    pub(crate) fn numeric_divide_by_zero() -> Self {
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            Value::Str("Attempt to divide by zero".to_string()),
+        );
+        let ex = Value::make_instance("X::Numeric::DivideByZero".to_string(), attrs);
+        let mut err = Self::new("X::Numeric::DivideByZero");
+        err.exception = Some(Box::new(ex));
+        err
     }
 }
 
