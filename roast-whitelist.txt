@@ -189,6 +189,7 @@ roast/S15-normalization/nfkd-9.t
 roast/S15-normalization/nfkd-sanity.t
 roast/S15-string-types/Str.t
 roast/S16-filehandles/misc.t
+roast/S16-filehandles/mode.t
 roast/S16-filehandles/unlink.t
 roast/S16-io/cwd.t
 roast/S16-io/say-and-ref.t
