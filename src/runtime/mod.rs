@@ -272,6 +272,7 @@ impl Interpreter {
         let mut env = HashMap::new();
         env.insert("*PID".to_string(), Value::Int(std::process::id() as i64));
         env.insert("@*ARGS".to_string(), Value::array(Vec::new()));
+        env.insert("*INIT-INSTANT".to_string(), Value::make_instant_now());
         let mut classes = HashMap::new();
         classes.insert(
             "Promise".to_string(),

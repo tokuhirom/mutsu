@@ -404,6 +404,11 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
         }
         Value::Array(items, ..) => Value::Int(items.len() as i64),
         Value::Nil => Value::Int(0),
+        Value::Instance {
+            ref class_name,
+            ref attributes,
+            ..
+        } if class_name == "Instant" => attributes.get("value").cloned().unwrap_or(Value::Num(0.0)),
         _ => Value::Int(0),
     }
 }
@@ -490,6 +495,11 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
         Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
         Value::Str(s) => s.parse::<f64>().ok(),
         Value::Nil => Some(0.0),
+        Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "Instant" => attributes.get("value").and_then(to_float_value),
         _ => None,
     }
 }

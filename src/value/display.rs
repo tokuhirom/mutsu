@@ -328,6 +328,14 @@ impl Value {
                     format!("{}()", class_name)
                 }
             }
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Instant" => {
+                let val = attributes.get("value").map(|v| v.to_f64()).unwrap_or(0.0);
+                format!("Instant:{}", val)
+            }
             Value::Instance { class_name, .. } => format!("{}()", class_name),
             Value::Junction { kind, values } => {
                 let kind_str = match kind {
