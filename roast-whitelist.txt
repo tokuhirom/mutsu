@@ -216,6 +216,7 @@ roast/S32-io/dir.t
 roast/S32-io/null-char.t
 roast/S32-io/other-stress.t
 roast/S32-io/other.t
+roast/S32-list/batch.t
 roast/S32-list/cross.t
 roast/S32-num/abs.t
 roast/S32-num/exp.t

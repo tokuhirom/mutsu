@@ -379,8 +379,13 @@ impl Interpreter {
             }
             "Seq" if args.is_empty() => {
                 return Ok(match target {
-                    Value::Array(..) | Value::LazyList(_) => target,
-                    other => Value::array(vec![other]),
+                    Value::Seq(_) => target,
+                    Value::Array(items, ..) => Value::Seq(items),
+                    Value::LazyList(ll) => {
+                        let items = Self::value_to_list(&Value::LazyList(ll));
+                        Value::Seq(std::sync::Arc::new(items))
+                    }
+                    other => Value::Seq(std::sync::Arc::new(vec![other])),
                 });
             }
             "Set" | "SetHash" if args.is_empty() => {

@@ -84,6 +84,16 @@ impl VM {
         } else if name.starts_with("Metamodel::") {
             // Meta-object protocol type objects
             Value::Package(name.to_string())
+        } else if name.chars().count() == 1 {
+            // Single unicode character — check for vulgar fractions etc.
+            let ch = name.chars().next().unwrap();
+            if let Some((n, d)) = crate::builtins::unicode::unicode_rat_value(ch) {
+                Value::Rat(n, d)
+            } else if let Some(val) = crate::builtins::unicode::unicode_numeric_int_value(ch) {
+                Value::Int(val)
+            } else {
+                Value::Str(name.to_string())
+            }
         } else {
             Value::Str(name.to_string())
         };

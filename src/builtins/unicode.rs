@@ -29,6 +29,49 @@ pub(crate) fn titlecase_string(s: &str) -> String {
     result
 }
 
+/// Return the Rat (numerator, denominator) for a Unicode vulgar fraction character.
+pub(crate) fn unicode_rat_value(c: char) -> Option<(i64, i64)> {
+    match c {
+        '¼' => Some((1, 4)),
+        '½' => Some((1, 2)),
+        '¾' => Some((3, 4)),
+        '⅐' => Some((1, 7)),
+        '⅑' => Some((1, 9)),
+        '⅒' => Some((1, 10)),
+        '⅓' => Some((1, 3)),
+        '⅔' => Some((2, 3)),
+        '⅕' => Some((1, 5)),
+        '⅖' => Some((2, 5)),
+        '⅗' => Some((3, 5)),
+        '⅘' => Some((4, 5)),
+        '⅙' => Some((1, 6)),
+        '⅚' => Some((5, 6)),
+        '⅛' => Some((1, 8)),
+        '⅜' => Some((3, 8)),
+        '⅝' => Some((5, 8)),
+        '⅞' => Some((7, 8)),
+        '↉' => Some((0, 1)),
+        _ => None,
+    }
+}
+
+/// Return the integer value for a Unicode numeric character (superscripts, subscripts, etc.).
+pub(crate) fn unicode_numeric_int_value(c: char) -> Option<i64> {
+    match c {
+        '²' => Some(2),
+        '³' => Some(3),
+        '¹' => Some(1),
+        '⁰' => Some(0),
+        '⁴' => Some(4),
+        '⁵' => Some(5),
+        '⁶' => Some(6),
+        '⁷' => Some(7),
+        '⁸' => Some(8),
+        '⁹' => Some(9),
+        _ => None,
+    }
+}
+
 /// Return Unicode character name for a given character
 /// Basic implementation covering ASCII and common Latin-1 characters
 pub(crate) fn unicode_char_name(ch: char) -> String {
