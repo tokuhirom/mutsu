@@ -199,6 +199,7 @@ roast/S17-supply/on-demand.t
 roast/S17-supply/repeated.t
 roast/S17-supply/reverse.t
 roast/S17-supply/watch-path.t
+roast/S19-command-line/help.t
 roast/S19-command-line-options/03-dash-p.t
 roast/S24-testing/0-compile.t
 roast/S24-testing/11-plan-skip-all.t
