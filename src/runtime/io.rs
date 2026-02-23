@@ -1,6 +1,140 @@
 use super::*;
 
 impl Interpreter {
+    fn make_pod_block(contents: Vec<Value>) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("contents".to_string(), Value::array(contents));
+        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+        Value::make_instance("Pod::Block".to_string(), attrs)
+    }
+
+    fn make_pod_comment(content: String) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "contents".to_string(),
+            Value::array(vec![Value::Str(content)]),
+        );
+        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+        Value::make_instance("Pod::Block::Comment".to_string(), attrs)
+    }
+
+    fn collect_paragraph(lines: &[&str], mut idx: usize) -> (String, usize) {
+        let mut text = String::new();
+        while idx < lines.len() {
+            let trimmed = lines[idx].trim_start();
+            if trimmed.is_empty() || trimmed.starts_with('=') {
+                break;
+            }
+            text.push_str(lines[idx]);
+            text.push('\n');
+            idx += 1;
+        }
+        (text, idx)
+    }
+
+    pub(super) fn collect_pod_blocks(&mut self, input: &str) {
+        let lines: Vec<&str> = input.lines().collect();
+        let mut entries = Vec::new();
+        let mut idx = 0usize;
+
+        while idx < lines.len() {
+            let trimmed = lines[idx].trim_start();
+            let mut words = trimmed.split_whitespace();
+            let first = words.next();
+            let second = words.next();
+
+            if first == Some("=comment") {
+                let (text, next_idx) = Self::collect_paragraph(&lines, idx + 1);
+                entries.push(Self::make_pod_comment(text));
+                idx = next_idx;
+                continue;
+            }
+
+            if first == Some("=for") && second == Some("comment") {
+                let inline = trimmed
+                    .strip_prefix("=for")
+                    .map(str::trim_start)
+                    .and_then(|rest| rest.strip_prefix("comment"))
+                    .map(str::trim_start)
+                    .unwrap_or_default();
+                let mut text = String::new();
+                if !inline.is_empty() {
+                    text.push_str(inline);
+                    text.push('\n');
+                }
+                let (tail, next_idx) = Self::collect_paragraph(&lines, idx + 1);
+                text.push_str(&tail);
+                entries.push(Self::make_pod_comment(text));
+                idx = next_idx;
+                continue;
+            }
+
+            if first == Some("=begin") && second == Some("comment") {
+                idx += 1;
+                let mut raw = String::new();
+                while idx < lines.len() {
+                    let end_trimmed = lines[idx].trim_start();
+                    let mut end_words = end_trimmed.split_whitespace();
+                    if end_words.next() == Some("=end") && end_words.next() == Some("comment") {
+                        idx += 1;
+                        break;
+                    }
+                    raw.push_str(lines[idx]);
+                    raw.push('\n');
+                    idx += 1;
+                }
+                entries.push(Self::make_pod_block(vec![Value::Str(raw)]));
+                continue;
+            }
+
+            if first == Some("=begin") && second == Some("pod") {
+                idx += 1;
+                let mut contents = Vec::new();
+                while idx < lines.len() {
+                    let inner = lines[idx].trim_start();
+                    let mut inner_words = inner.split_whitespace();
+                    let inner_first = inner_words.next();
+                    let inner_second = inner_words.next();
+                    if inner_first == Some("=end") && inner_second == Some("pod") {
+                        idx += 1;
+                        break;
+                    }
+                    if inner_first == Some("=comment") {
+                        let (text, next_idx) = Self::collect_paragraph(&lines, idx + 1);
+                        contents.push(Self::make_pod_comment(text));
+                        idx = next_idx;
+                        continue;
+                    }
+                    if inner_first == Some("=for") && inner_second == Some("comment") {
+                        let inline = inner
+                            .strip_prefix("=for")
+                            .map(str::trim_start)
+                            .and_then(|rest| rest.strip_prefix("comment"))
+                            .map(str::trim_start)
+                            .unwrap_or_default();
+                        let mut text = String::new();
+                        if !inline.is_empty() {
+                            text.push_str(inline);
+                            text.push('\n');
+                        }
+                        let (tail, next_idx) = Self::collect_paragraph(&lines, idx + 1);
+                        text.push_str(&tail);
+                        contents.push(Self::make_pod_comment(text));
+                        idx = next_idx;
+                        continue;
+                    }
+                    idx += 1;
+                }
+                entries.push(Self::make_pod_block(contents));
+                continue;
+            }
+
+            idx += 1;
+        }
+
+        self.env.insert("=pod".to_string(), Value::array(entries));
+    }
+
     pub(super) fn init_io_environment(&mut self) {
         let stdout = self.create_handle(
             IoHandleTarget::Stdout,

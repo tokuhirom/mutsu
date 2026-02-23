@@ -656,6 +656,26 @@ impl Interpreter {
                 mro: vec!["Encoding::Registry".to_string()],
             },
         );
+        classes.insert(
+            "Pod::Block".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Pod::Block".to_string()],
+            },
+        );
+        classes.insert(
+            "Pod::Block::Comment".to_string(),
+            ClassDef {
+                parents: vec!["Pod::Block".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Pod::Block::Comment".to_string(), "Pod::Block".to_string()],
+            },
+        );
         let mut interpreter = Self {
             env,
             output: String::new(),
