@@ -237,6 +237,11 @@ impl Value {
             "Positional" => matches!(self, Value::Array(..) | Value::LazyList(_)),
             "Map" | "Associative" => matches!(self, Value::Hash(_)),
             "Iterable" => matches!(self, Value::Array(..) | Value::LazyList(_) | Value::Hash(_)),
+            "Pod::Block" => matches!(
+                self,
+                Value::Instance { class_name, .. }
+                    if class_name == "Pod::Block" || class_name == "Pod::Block::Comment"
+            ),
             _ => false,
         }
     }

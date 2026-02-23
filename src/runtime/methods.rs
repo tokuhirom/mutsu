@@ -1451,7 +1451,7 @@ impl Interpreter {
         };
 
         match pattern {
-            Value::Regex(pat) | Value::Str(pat) => {
+            Value::Regex(pat) => {
                 let matches = self.regex_find_all(pat, &text);
                 if matches.is_empty() {
                     return Ok(Value::Str(text));
@@ -1492,6 +1492,13 @@ impl Interpreter {
                     } else {
                         Ok(Value::Str(text))
                     }
+                }
+            }
+            Value::Str(pat) => {
+                if global {
+                    Ok(Value::Str(text.replace(pat, &replacement_str)))
+                } else {
+                    Ok(Value::Str(text.replacen(pat, &replacement_str, 1)))
                 }
             }
             _ => {
