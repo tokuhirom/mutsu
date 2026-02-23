@@ -531,6 +531,8 @@ impl Compiler {
                     self.code.emit(OpCode::RegisterPackage { name_idx });
                 } else {
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    // Non-unit package declarations also produce a type object value.
+                    self.code.emit(OpCode::RegisterPackage { name_idx });
                     let pkg_idx = self.code.emit(OpCode::PackageScope {
                         name_idx,
                         body_end: 0,

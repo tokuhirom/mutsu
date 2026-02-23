@@ -165,6 +165,7 @@ impl Interpreter {
                     }
                 }
                 RegexQuant::ZeroOrOne => {
+                    stack.push((idx + 1, pos));
                     if let Some(next) = self.regex_match_atom_in_pkg(
                         &token.atom,
                         chars,
@@ -174,7 +175,6 @@ impl Interpreter {
                     ) {
                         stack.push((idx + 1, next));
                     }
-                    stack.push((idx + 1, pos));
                 }
                 RegexQuant::ZeroOrMore => {
                     let mut positions = Vec::new();
@@ -267,6 +267,7 @@ impl Interpreter {
                     }
                 }
                 RegexQuant::ZeroOrOne => {
+                    stack.push((idx + 1, pos, caps.clone()));
                     if let Some((next, new_caps)) = self.regex_match_atom_with_capture_in_pkg(
                         &token.atom,
                         chars,
@@ -277,7 +278,6 @@ impl Interpreter {
                     ) {
                         stack.push((idx + 1, next, new_caps));
                     }
-                    stack.push((idx + 1, pos, caps.clone()));
                 }
                 RegexQuant::ZeroOrMore => {
                     let mut positions = Vec::new();
@@ -377,6 +377,7 @@ impl Interpreter {
                     }
                 }
                 RegexQuant::ZeroOrOne => {
+                    stack.push((idx + 1, pos));
                     if let Some(next) = self.regex_match_atom_in_pkg(
                         &token.atom,
                         chars,
@@ -386,7 +387,6 @@ impl Interpreter {
                     ) {
                         stack.push((idx + 1, next));
                     }
-                    stack.push((idx + 1, pos));
                 }
                 RegexQuant::ZeroOrMore => {
                     let mut positions = Vec::new();
