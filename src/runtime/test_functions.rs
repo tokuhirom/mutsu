@@ -50,6 +50,21 @@ impl Interpreter {
         }
     }
 
+    /// Get a diagnostic string for a value, trying .gist then .raku,
+    /// falling back to basic string representation.
+    fn value_for_diag(&mut self, val: &Value) -> String {
+        // For instances, try .gist first, then .raku
+        if matches!(val, Value::Instance { .. } | Value::Package(_)) {
+            if let Ok(result) = self.call_method_with_values(val.clone(), "gist", vec![]) {
+                return result.to_string_value();
+            }
+            if let Ok(result) = self.call_method_with_values(val.clone(), "raku", vec![]) {
+                return result.to_string_value();
+            }
+        }
+        val.to_string_value()
+    }
+
     fn test_fn_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let desc = Self::positional_string(args, 1);
         let todo = Self::named_bool(args, "todo");
@@ -248,6 +263,10 @@ impl Interpreter {
             .unwrap_or(Value::Nil);
         let desc = Self::positional_string(args, 3);
         let todo = Self::named_bool(args, "todo");
+        // Clone values before they might be consumed by callable operator
+        let left_diag = left.clone();
+        let right_diag = right.clone();
+        let op_diag = op_val.to_string_value();
         let ok = match &op_val {
             Value::Str(op) => match op.as_str() {
                 "~~" => self.smart_match(&left, &right),
@@ -279,6 +298,16 @@ impl Interpreter {
             }
         };
         self.test_ok(ok, &desc, todo)?;
+        if !ok {
+            let got_str = self.value_for_diag(&left_diag);
+            let expected_str = self.value_for_diag(&right_diag);
+            let diag = format!(
+                "# Failed test '{}'\n# expected: {}\n#      got: {}\n# matcher: {}\n",
+                desc, expected_str, got_str, op_diag
+            );
+            self.stderr_output.push_str(&diag);
+            eprint!("{}", diag);
+        }
         Ok(Value::Bool(ok))
     }
 
