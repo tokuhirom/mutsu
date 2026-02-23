@@ -370,6 +370,10 @@ pub(crate) enum OpCode {
         name_idx: u32,
         body_end: u32,
     },
+    /// Register a package name so it's accessible as a Package value.
+    RegisterPackage {
+        name_idx: u32,
+    },
 
     // -- Phaser --
     PhaserEnd(u32),

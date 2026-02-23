@@ -1026,6 +1026,13 @@ impl VM {
             OpCode::PackageScope { name_idx, body_end } => {
                 self.exec_package_scope_op(code, *name_idx, *body_end, ip, compiled_fns)?;
             }
+            OpCode::RegisterPackage { name_idx } => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                self.interpreter
+                    .env_mut()
+                    .insert(name.clone(), Value::Package(name));
+                *ip += 1;
+            }
 
             // -- Phaser END --
             OpCode::PhaserEnd(idx) => {
