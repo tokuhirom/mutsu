@@ -139,7 +139,13 @@ fn main() {
     }
     interpreter.set_program_path(&program_name);
     match interpreter.run(&input) {
-        Ok(output) => print!("{}", output),
+        Ok(output) => {
+            print!("{}", output);
+            let code = interpreter.exit_code();
+            if code != 0 {
+                std::process::exit(code as i32);
+            }
+        }
         Err(err) => {
             print_error("Runtime error", &err);
             let output_buf = interpreter.output();
@@ -148,7 +154,8 @@ fn main() {
                 print!("{}", output_buf);
                 eprintln!("--- end buffered TAP output ---");
             }
-            std::process::exit(1);
+            let code = interpreter.exit_code();
+            std::process::exit(if code != 0 { code as i32 } else { 1 });
         }
     }
 }

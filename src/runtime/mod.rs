@@ -862,6 +862,10 @@ impl Interpreter {
         &self.output
     }
 
+    pub fn exit_code(&self) -> i64 {
+        self.exit_code
+    }
+
     pub(crate) fn is_halted(&self) -> bool {
         self.halted
     }
