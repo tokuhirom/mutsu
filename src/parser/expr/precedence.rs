@@ -378,13 +378,10 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         } else {
             junctive_expr_mode(r, mode)?
         };
+        if matches!(op, ComparisonOp::SmartMatch | ComparisonOp::SmartNotMatch) {
+            right = wrap_smartmatch_rhs(right);
+        }
         if mode == ExprMode::Full {
-            // For smartmatch (~~ / !~~), transform WhateverCode on the RHS into a Lambda
-            if matches!(op, ComparisonOp::SmartMatch | ComparisonOp::SmartNotMatch)
-                && contains_whatever(&right)
-            {
-                right = wrap_whatevercode(&right);
-            }
             let mut result = Expr::Binary {
                 left: Box::new(left),
                 op: op.token_kind(),
@@ -435,6 +432,35 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     }
 
     Ok((rest, left))
+}
+
+fn wrap_smartmatch_rhs(right: Expr) -> Expr {
+    match right {
+        // Keep Pair shape for `%hash ~~ key => !*.foo` by wrapping only value side.
+        Expr::Binary {
+            left,
+            op: TokenKind::FatArrow,
+            right,
+        } => {
+            let value = if contains_whatever(&right) && !matches!(&*right, Expr::Whatever) {
+                wrap_whatevercode(&right)
+            } else {
+                *right
+            };
+            Expr::Binary {
+                left,
+                op: TokenKind::FatArrow,
+                right: Box::new(value),
+            }
+        }
+        other => {
+            if contains_whatever(&other) && !matches!(&other, Expr::Whatever) {
+                wrap_whatevercode(&other)
+            } else {
+                other
+            }
+        }
+    }
 }
 
 /// Extract a comparison operator from the start of the input, returning the op and its length.

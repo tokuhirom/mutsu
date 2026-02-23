@@ -11,12 +11,11 @@ impl Interpreter {
             // call it with no arguments (simple closure truth).
             (_, Value::Sub(data)) => {
                 let func = right.clone();
-                let args = if data.params.is_empty() {
-                    vec![]
-                } else {
-                    vec![left.clone()]
-                };
-                match self.call_sub_value(func, args, false) {
+                let _ = data; // keep pattern match shape explicit for callable RHS
+                if let Ok(result) = self.call_sub_value(func.clone(), vec![left.clone()], false) {
+                    return result.truthy();
+                }
+                match self.call_sub_value(func, vec![], false) {
                     Ok(result) => result.truthy(),
                     Err(_) => false,
                 }
@@ -69,7 +68,7 @@ impl Interpreter {
             },
             // IO::Path/Str ~~ Pair(:e), :d, :f, :r, :w, :x file tests
             (_, Value::Pair(key, val))
-                if val.truthy()
+                if matches!(val.as_ref(), Value::Bool(true))
                     && matches!(key.as_str(), "e" | "d" | "f" | "r" | "w" | "x" | "s" | "z") =>
             {
                 let path_str = match left {
@@ -117,8 +116,8 @@ impl Interpreter {
                 if let Some(hash_val) = map.get(key.as_str()) {
                     self.smart_match(hash_val, val)
                 } else {
-                    // Key not in hash: check if the pair value matches Nil/Any
-                    self.smart_match(&Value::Nil, val)
+                    // Key not in hash: compare against an undefined type object.
+                    self.smart_match(&Value::Package("Mu".to_string()), val)
                 }
             }
             // Hash ~~ Hash: structural equality (eqv)
