@@ -171,6 +171,31 @@ impl Compiler {
         multi: bool,
     ) {
         let mut sub_compiler = Compiler::new();
+        let arity = param_defs
+            .iter()
+            .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
+            .count();
+        let state_scope = if multi {
+            let type_sig: Vec<String> = param_defs
+                .iter()
+                .filter(|pd| !pd.named && (!pd.slurpy || pd.name == "_capture"))
+                .map(|pd| pd.type_constraint.clone().unwrap_or_default())
+                .collect();
+            if !type_sig.is_empty() {
+                format!(
+                    "{}::&{}/{}:{}",
+                    self.current_package,
+                    name,
+                    arity,
+                    type_sig.join(",")
+                )
+            } else {
+                format!("{}::&{}/{}", self.current_package, name, arity)
+            }
+        } else {
+            format!("{}::&{}/{}", self.current_package, name, arity)
+        };
+        sub_compiler.set_current_package(state_scope);
         // Pre-allocate locals for parameters
         for param in params {
             sub_compiler.alloc_local(param);
@@ -200,10 +225,10 @@ impl Compiler {
             }
         }
 
-        let arity = param_defs.iter().filter(|p| !p.slurpy && !p.named).count();
         let key = if multi {
             let type_sig: Vec<String> = param_defs
                 .iter()
+                .filter(|pd| !pd.named && (!pd.slurpy || pd.name == "_capture"))
                 .map(|pd| pd.type_constraint.clone().unwrap_or_default())
                 .collect();
             format!(

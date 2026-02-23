@@ -91,6 +91,7 @@ impl Interpreter {
             "die" => self.builtin_die(&args),
             "fail" => self.builtin_fail(&args),
             "exit" => self.builtin_exit(&args),
+            "__PROTO_DISPATCH__" => self.call_proto_dispatch(),
             // Type coercion
             "Int" | "Num" | "Str" | "Bool" => self.builtin_coerce(name, &args),
             // Grammar helpers
@@ -297,6 +298,9 @@ impl Interpreter {
             {
                 return native_result;
             }
+        }
+        if let Some((proto_name, proto_def)) = self.resolve_proto_function_with_alias(name) {
+            return self.call_proto_function(&proto_name, &proto_def, args);
         }
         if let Some(def) = self.resolve_function_with_alias(name, args) {
             let saved_env = self.env.clone();

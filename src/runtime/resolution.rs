@@ -258,7 +258,13 @@ impl Interpreter {
         if body.is_empty() {
             return Ok(Value::Nil);
         }
-        let compiler = crate::compiler::Compiler::new();
+        let mut compiler = crate::compiler::Compiler::new();
+        let scope = if let Some((pkg, routine)) = self.routine_stack.last() {
+            format!("{}::&{}", pkg, routine)
+        } else {
+            self.current_package.clone()
+        };
+        compiler.set_current_package(scope);
         let (code, compiled_fns) = compiler.compile(body);
         self.run_compiled_block(&code, &compiled_fns)
     }
@@ -271,7 +277,15 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let interp = std::mem::take(self);
         let vm = crate::vm::VM::new(interp);
-        let (interp, result) = vm.run(code, compiled_fns);
+        let (mut interp, result) = vm.run(code, compiled_fns);
+        // Persist state variables for top-level compiled blocks too.
+        for (slot, key) in &code.state_locals {
+            if let Some(name) = code.locals.get(*slot)
+                && let Some(val) = interp.env().get(name).cloned()
+            {
+                interp.set_state_var(key.clone(), val);
+            }
+        }
         let value = interp.env().get("_").cloned().unwrap_or(Value::Nil);
         *self = interp;
         result.map(|_| value)

@@ -6,7 +6,9 @@ use crate::ast::{Expr, Stmt};
 use crate::value::Value;
 
 use super::{
-    ident, keyword, parse_assign_expr_or_comma, parse_statement_modifier, qualified_ident, var_name,
+    class::{package_decl, proto_decl},
+    ident, keyword, parse_assign_expr_or_comma, parse_statement_modifier, qualified_ident,
+    var_name,
 };
 
 use super::super::parse_result::take_while_opt;
@@ -103,6 +105,11 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         return parse_enum_decl_body(r);
     }
 
+    // my/our proto ...
+    if keyword("proto", rest).is_some() {
+        return proto_decl(rest);
+    }
+
     // my sub name(...) { ... }
     if let Some(r) = keyword("sub", rest) {
         let (r, _) = ws1(r)?;
@@ -119,6 +126,10 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     if let Some(r) = keyword("class", rest) {
         let (r, _) = ws1(r)?;
         return class_decl_body(r);
+    }
+    // my package Name { ... }
+    if keyword("package", rest).is_some() {
+        return package_decl(rest);
     }
     // my subset Name of BaseType where ...
     if let Some(r) = keyword("subset", rest) {

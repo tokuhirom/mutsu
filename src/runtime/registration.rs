@@ -19,19 +19,57 @@ impl Interpreter {
         param_defs: &[ParamDef],
         body: &[Stmt],
         multi: bool,
-    ) {
-        let def = FunctionDef {
+    ) -> Result<(), RuntimeError> {
+        let new_def = FunctionDef {
             package: self.current_package.clone(),
             name: name.to_string(),
             params: params.to_vec(),
             param_defs: param_defs.to_vec(),
             body: body.to_vec(),
         };
+        let single_key = format!("{}::{}", self.current_package, name);
+        let multi_prefix = format!("{}::{}/", self.current_package, name);
+        let has_single = self.functions.contains_key(&single_key);
+        let has_multi = self.functions.keys().any(|k| k.starts_with(&multi_prefix));
+        let has_proto = self.proto_subs.contains(&single_key);
+        if self.env.contains_key(&format!("&{}", name)) {
+            return Err(RuntimeError::new(format!(
+                "X::Redeclaration: '{}' already declared as code variable",
+                name
+            )));
+        }
+        if let Some(existing) = self.functions.get(&single_key) {
+            let same = existing.package == new_def.package
+                && existing.name == new_def.name
+                && existing.params == new_def.params
+                && format!("{:?}", existing.param_defs) == format!("{:?}", new_def.param_defs)
+                && format!("{:?}", existing.body) == format!("{:?}", new_def.body);
+            if same {
+                return Ok(());
+            }
+        }
         if multi {
-            let arity = param_defs.iter().filter(|p| !p.slurpy && !p.named).count();
+            if has_single && !has_proto {
+                return Err(RuntimeError::new(format!(
+                    "X::Redeclaration: '{}' already declared as non-multi",
+                    name
+                )));
+            }
+        } else if has_multi && !has_proto {
+            return Err(RuntimeError::new(format!(
+                "X::Redeclaration: '{}' already declared",
+                name
+            )));
+        }
+        let def = new_def;
+        if multi {
+            let arity = param_defs
+                .iter()
+                .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
+                .count();
             let type_sig: Vec<&str> = param_defs
                 .iter()
-                .filter(|p| !p.slurpy && !p.named)
+                .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
                 .map(|p| p.type_constraint.as_deref().unwrap_or("Any"))
                 .collect();
             let has_types = type_sig.iter().any(|t| *t != "Any");
@@ -55,6 +93,7 @@ impl Interpreter {
             let fq = format!("{}::{}", self.current_package, name);
             self.functions.insert(fq, def);
         }
+        Ok(())
     }
 
     pub(crate) fn register_token_decl(
@@ -75,9 +114,39 @@ impl Interpreter {
         self.insert_token_def(name, def, multi);
     }
 
-    pub(crate) fn register_proto_decl(&mut self, name: &str) {
+    pub(crate) fn register_proto_decl(
+        &mut self,
+        name: &str,
+        params: &[String],
+        param_defs: &[ParamDef],
+        body: &[Stmt],
+    ) -> Result<(), RuntimeError> {
         let key = format!("{}::{}", self.current_package, name);
+        if self.functions.contains_key(&key) {
+            return Err(RuntimeError::new(format!(
+                "X::Redeclaration: '{}' already declared",
+                name
+            )));
+        }
+        if self.proto_subs.contains(&key) {
+            return Err(RuntimeError::new(format!(
+                "X::Redeclaration: '{}' already declared as proto",
+                name
+            )));
+        }
         self.proto_subs.insert(key);
+        let fq = format!("{}::{}", self.current_package, name);
+        self.proto_functions.insert(
+            fq,
+            FunctionDef {
+                package: self.current_package.clone(),
+                name: name.to_string(),
+                params: params.to_vec(),
+                param_defs: param_defs.to_vec(),
+                body: body.to_vec(),
+            },
+        );
+        Ok(())
     }
 
     /// Register a sub under GLOBAL:: (used for `is export` trait).
@@ -88,7 +157,7 @@ impl Interpreter {
         param_defs: &[ParamDef],
         body: &[Stmt],
         multi: bool,
-    ) {
+    ) -> Result<(), RuntimeError> {
         let def = FunctionDef {
             package: "GLOBAL".to_string(),
             name: name.to_string(),
@@ -97,10 +166,13 @@ impl Interpreter {
             body: body.to_vec(),
         };
         if multi {
-            let arity = param_defs.iter().filter(|p| !p.slurpy && !p.named).count();
+            let arity = param_defs
+                .iter()
+                .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
+                .count();
             let type_sig: Vec<&str> = param_defs
                 .iter()
-                .filter(|p| !p.slurpy && !p.named)
+                .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
                 .map(|p| p.type_constraint.as_deref().unwrap_or("Any"))
                 .collect();
             let has_types = type_sig.iter().any(|t| *t != "Any");
@@ -118,12 +190,46 @@ impl Interpreter {
             let fq = format!("GLOBAL::{}", name);
             self.functions.insert(fq, def);
         }
+        Ok(())
     }
 
     /// Register a proto sub under GLOBAL:: (used for `is export` trait).
-    pub(crate) fn register_proto_decl_as_global(&mut self, name: &str) {
+    pub(crate) fn register_proto_decl_as_global(
+        &mut self,
+        name: &str,
+        params: &[String],
+        param_defs: &[ParamDef],
+        body: &[Stmt],
+    ) -> Result<(), RuntimeError> {
         let key = format!("GLOBAL::{}", name);
-        self.proto_subs.insert(key);
+        if self.functions.contains_key(&key) {
+            return Err(RuntimeError::new(format!(
+                "X::Redeclaration: '{}' already declared",
+                name
+            )));
+        }
+        if self.proto_subs.contains(&key) {
+            if self.current_package == "GLOBAL" {
+                // `is export` on a GLOBAL proto hits both local/global registration paths.
+                return Ok(());
+            }
+            return Err(RuntimeError::new(format!(
+                "X::Redeclaration: '{}' already declared as proto",
+                name
+            )));
+        }
+        self.proto_subs.insert(key.clone());
+        self.proto_functions.insert(
+            key,
+            FunctionDef {
+                package: "GLOBAL".to_string(),
+                name: name.to_string(),
+                params: params.to_vec(),
+                param_defs: param_defs.to_vec(),
+                body: body.to_vec(),
+            },
+        );
+        Ok(())
     }
 
     pub(crate) fn register_proto_token_decl(&mut self, name: &str) {

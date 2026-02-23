@@ -360,6 +360,7 @@ pub(crate) enum Stmt {
         name: String,
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
+        body: Vec<Stmt>,
         is_export: bool,
     },
     Let {

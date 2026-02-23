@@ -499,6 +499,16 @@ impl Interpreter {
                 if let Some(Value::Int(pid)) = self.env.get("*PID") {
                     nested.set_pid(pid.saturating_add(1));
                 }
+                nested.lib_paths = self.lib_paths.clone();
+                for (k, v) in &self.env {
+                    if k.contains("::") {
+                        continue;
+                    }
+                    if matches!(v, Value::Sub(_) | Value::Routine { .. }) {
+                        continue;
+                    }
+                    nested.env.insert(k.clone(), v.clone());
+                }
                 nested.run(code).map(|_| Value::Nil)
             }
             _ => Ok(Value::Nil),
