@@ -813,40 +813,38 @@ impl Compiler {
                         self.code.state_locals.push((slot as usize, key.clone()));
                         self.code.emit(OpCode::StateVarInit(slot, key_idx));
                         self.code.emit(OpCode::GetLocal(slot));
-                    } else {
-                        if name.starts_with('@') || name.starts_with('%') {
-                            let marker_name = format!(
-                                "__do_decl_init_{}",
-                                STATE_COUNTER.fetch_add(1, Ordering::Relaxed)
-                            );
-                            let marker_slot = self.alloc_local(&marker_name);
-                            // Container declarations in expression position (`my @a`) should
-                            // initialize once per declaration site and then keep using the
-                            // current lexical value on repeated evaluation (e.g. in loops).
-                            self.code.emit(OpCode::GetLocal(marker_slot));
-                            let jump_have_value = self.code.emit(OpCode::JumpIfNotNil(0));
-                            self.code.emit(OpCode::Pop);
-                            self.compile_expr(expr);
-                            self.code.emit(OpCode::Dup);
-                            let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                            self.code.emit(OpCode::SetGlobal(name_idx));
-                            self.code.emit(OpCode::Dup);
-                            self.code.emit(OpCode::SetLocal(marker_slot));
-                            let jump_end = self.code.emit(OpCode::Jump(0));
-                            self.code.patch_jump(jump_have_value);
-                            self.code.emit(OpCode::Pop);
-                            let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                            if name.starts_with('@') {
-                                self.code.emit(OpCode::GetArrayVar(name_idx));
-                            } else {
-                                self.code.emit(OpCode::GetHashVar(name_idx));
-                            }
-                            self.code.patch_jump(jump_end);
+                    } else if name.starts_with('@') || name.starts_with('%') {
+                        let marker_name = format!(
+                            "__do_decl_init_{}",
+                            STATE_COUNTER.fetch_add(1, Ordering::Relaxed)
+                        );
+                        let marker_slot = self.alloc_local(&marker_name);
+                        // Container declarations in expression position (`my @a`) should
+                        // initialize once per declaration site and then keep using the
+                        // current lexical value on repeated evaluation (e.g. in loops).
+                        self.code.emit(OpCode::GetLocal(marker_slot));
+                        let jump_have_value = self.code.emit(OpCode::JumpIfNotNil(0));
+                        self.code.emit(OpCode::Pop);
+                        self.compile_expr(expr);
+                        self.code.emit(OpCode::Dup);
+                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        self.code.emit(OpCode::SetGlobal(name_idx));
+                        self.code.emit(OpCode::Dup);
+                        self.code.emit(OpCode::SetLocal(marker_slot));
+                        let jump_end = self.code.emit(OpCode::Jump(0));
+                        self.code.patch_jump(jump_have_value);
+                        self.code.emit(OpCode::Pop);
+                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        if name.starts_with('@') {
+                            self.code.emit(OpCode::GetArrayVar(name_idx));
                         } else {
-                            self.compile_expr(expr);
-                            self.code.emit(OpCode::Dup);
-                            self.emit_set_named_var(name);
+                            self.code.emit(OpCode::GetHashVar(name_idx));
                         }
+                        self.code.patch_jump(jump_end);
+                    } else {
+                        self.compile_expr(expr);
+                        self.code.emit(OpCode::Dup);
+                        self.emit_set_named_var(name);
                     }
                 }
                 Stmt::Expr(inner_expr) => {
