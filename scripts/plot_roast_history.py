@@ -120,7 +120,9 @@ def render_svg(rows, output_path: str, total_files: int | None = None):
         lines.append(
             f'<line x1="{x:.2f}" y1="{top + chart_height}" x2="{x:.2f}" y2="{top + chart_height + 6}" stroke="#333" stroke-width="1"/>'
         )
-        escaped_date = html.escape(date)
+        # Show date part only on x-axis label (strip time after 'T')
+        display_date = date.split("T")[0] if "T" in date else date
+        escaped_date = html.escape(display_date)
         lines.append(
             f'<text x="{x:.2f}" y="{top + chart_height + 24}" text-anchor="end" font-size="11" fill="#111" transform="rotate(-40 {x:.2f},{top + chart_height + 24})" font-family="sans-serif">{escaped_date}</text>'
         )
