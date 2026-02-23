@@ -55,7 +55,7 @@ impl Interpreter {
                     name
                 )));
             }
-        } else if has_single || (has_multi && !has_proto) {
+        } else if has_multi && !has_proto {
             return Err(RuntimeError::new(format!(
                 "X::Redeclaration: '{}' already declared",
                 name
