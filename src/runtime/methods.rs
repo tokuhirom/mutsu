@@ -1736,6 +1736,29 @@ impl Interpreter {
                 "ThreadPoolScheduler" | "CurrentThreadScheduler" | "Tap" => {
                     return Ok(Value::make_instance(class_name.clone(), HashMap::new()));
                 }
+                "CompUnit::DependencySpecification" => {
+                    // Extract :short-name from named args
+                    let mut short_name: Option<String> = None;
+                    for arg in &args {
+                        if let Value::Pair(key, value) = arg
+                            && key == "short-name"
+                        {
+                            if let Value::Str(s) = value.as_ref() {
+                                short_name = Some(s.clone());
+                            } else {
+                                return Err(RuntimeError::new(
+                                    "CompUnit::DependencySpecification.new: :short-name must be a Str",
+                                ));
+                            }
+                        }
+                    }
+                    let short_name = short_name.ok_or_else(|| {
+                        RuntimeError::new(
+                            "CompUnit::DependencySpecification.new: :short-name is required",
+                        )
+                    })?;
+                    return Ok(Value::CompUnitDepSpec { short_name });
+                }
                 "Proc::Async" => {
                     let mut positional = Vec::new();
                     let mut w_flag = false;
