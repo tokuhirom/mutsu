@@ -99,7 +99,9 @@ impl VM {
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
                 if e.is_warn {
-                    self.interpreter.write_warn_to_stderr(&e.message);
+                    if !self.interpreter.warning_suppressed() {
+                        self.interpreter.write_warn_to_stderr(&e.message);
+                    }
                     ip += 1;
                     continue;
                 }
@@ -133,7 +135,9 @@ impl VM {
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
                 if e.is_warn {
-                    self.interpreter.write_warn_to_stderr(&e.message);
+                    if !self.interpreter.warning_suppressed() {
+                        self.interpreter.write_warn_to_stderr(&e.message);
+                    }
                     ip += 1;
                     continue;
                 }

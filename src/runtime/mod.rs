@@ -204,6 +204,7 @@ pub struct Interpreter {
     output: String,
     stderr_output: String,
     warn_output: String,
+    warn_suppression_depth: usize,
     test_state: Option<TestState>,
     subtest_depth: usize,
     halted: bool,
@@ -683,6 +684,7 @@ impl Interpreter {
             output: String::new(),
             stderr_output: String::new(),
             warn_output: String::new(),
+            warn_suppression_depth: 0,
             test_state: None,
             subtest_depth: 0,
             halted: false,
@@ -938,6 +940,18 @@ impl Interpreter {
         eprint!("{}", msg);
     }
 
+    pub(crate) fn push_warn_suppression(&mut self) {
+        self.warn_suppression_depth += 1;
+    }
+
+    pub(crate) fn pop_warn_suppression(&mut self) {
+        self.warn_suppression_depth = self.warn_suppression_depth.saturating_sub(1);
+    }
+
+    pub(crate) fn warning_suppressed(&self) -> bool {
+        self.warn_suppression_depth > 0
+    }
+
     pub(crate) fn env(&self) -> &HashMap<String, Value> {
         &self.env
     }
@@ -970,6 +984,7 @@ impl Interpreter {
             output: String::new(),
             stderr_output: String::new(),
             warn_output: String::new(),
+            warn_suppression_depth: 0,
             test_state: None,
             subtest_depth: 0,
             halted: false,

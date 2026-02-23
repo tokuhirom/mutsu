@@ -785,9 +785,25 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
-        "quietly" | "sink" => {
+        "quietly" => {
             let (r, _) = ws(rest)?;
-            // quietly/sink expr — wrap in a Call
+            // quietly expr — defer evaluation so quietly can control warning behavior
+            let (r, expr) = expression(r)?;
+            let wrapped = match expr {
+                Expr::AnonSub(_) | Expr::AnonSubParams { .. } => expr,
+                other => make_anon_sub(vec![Stmt::Expr(other)]),
+            };
+            return Ok((
+                r,
+                Expr::Call {
+                    name: name.clone(),
+                    args: vec![wrapped],
+                },
+            ));
+        }
+        "sink" => {
+            let (r, _) = ws(rest)?;
+            // sink expr — evaluate expression and discard result
             let (r, expr) = expression(r)?;
             return Ok((
                 r,
