@@ -1153,6 +1153,10 @@ impl VM {
                 self.exec_use_module_op(code, *name_idx)?;
                 *ip += 1;
             }
+            OpCode::NeedModule(name_idx) => {
+                self.exec_need_module_op(code, *name_idx)?;
+                *ip += 1;
+            }
             OpCode::UseLibPath => {
                 self.exec_use_lib_path_op(code);
                 *ip += 1;

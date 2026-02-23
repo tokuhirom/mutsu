@@ -422,12 +422,14 @@ type StmtParser = fn(&str) -> PResult<'_, Stmt>;
 /// Order is critical — do not reorder without careful consideration.
 const STMT_PARSERS: &[StmtParser] = &[
     decl::use_stmt,
+    decl::need_stmt,
     class::unit_module_stmt,
     decl::my_decl,
     decl::constant_decl,
     class::class_decl,
     class::role_decl,
     class::grammar_decl,
+    class::module_decl,
     decl::subset_decl,
     decl::anon_enum_decl,
     decl::enum_decl,

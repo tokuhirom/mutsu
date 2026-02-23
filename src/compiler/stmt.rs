@@ -603,6 +603,10 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::Str(module.clone()));
                 self.code.emit(OpCode::UseModule(name_idx));
             }
+            Stmt::Need { module } => {
+                let name_idx = self.code.add_constant(Value::Str(module.clone()));
+                self.code.emit(OpCode::NeedModule(name_idx));
+            }
             Stmt::EnumDecl { .. } => {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterEnum(idx));

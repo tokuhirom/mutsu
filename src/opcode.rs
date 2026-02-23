@@ -438,6 +438,8 @@ pub(crate) enum OpCode {
         target_var_idx: Option<u32>,
     },
     UseModule(u32),
+    /// `need Module;` — load module without importing exports.
+    NeedModule(u32),
     UseLibPath,
 
     // -- Type checking --
