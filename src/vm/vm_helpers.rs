@@ -278,8 +278,10 @@ impl VM {
             .map(|def| {
                 crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body)
             });
-        let matches_resolved =
-            |cf: &CompiledFunction| expected_fingerprint.is_none_or(|fp| fp == cf.fingerprint);
+        // If runtime resolution fails, avoid reusing stale compiled cache entries.
+        // This can happen across repeated EVAL calls that redefine the same routine name.
+        let expected_fingerprint = expected_fingerprint?;
+        let matches_resolved = |cf: &CompiledFunction| cf.fingerprint == expected_fingerprint;
         let pkg = self.interpreter.current_package();
         let arity = args.len();
         let type_sig: Vec<String> = args
