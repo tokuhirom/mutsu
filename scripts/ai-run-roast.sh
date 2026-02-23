@@ -2,13 +2,15 @@
 set -euo pipefail
 
 DRY_RUN=0
+AGENT="codex"
 
 usage() {
     cat <<USAGE
-Usage: $0 [--dry-run] <roast-file>
+Usage: $0 [--dry-run] [--agent codex|claude] <roast-file>
 
 Options:
   --dry-run       Print the ai-sandbox command without executing it
+  --agent <name>  Agent to run in ai-sandbox (codex|claude, default: codex)
 USAGE
 }
 
@@ -17,6 +19,15 @@ while [[ $# -gt 0 ]]; do
         --dry-run)
             DRY_RUN=1
             shift
+            ;;
+        --agent)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --agent requires a value" >&2
+                usage
+                exit 1
+            fi
+            AGENT="$2"
+            shift 2
             ;;
         -h|--help)
             usage
@@ -44,6 +55,12 @@ if [[ $# -ne 1 ]]; then
 fi
 
 FILE="$1"
+
+if [[ "$AGENT" != "codex" && "$AGENT" != "claude" ]]; then
+    echo "Error: --agent must be codex or claude" >&2
+    usage
+    exit 1
+fi
 
 if [[ ! -f "$FILE" ]]; then
     echo "Error: file not found: $FILE" >&2
@@ -75,7 +92,7 @@ After implementing:
 - enable auto merge
 EOF_PROMPT
 )
-CMD=(ai-sandbox "$FILE" codex exec "$PROMPT")
+CMD=(ai-sandbox "$FILE" "$AGENT" exec "$PROMPT")
 
 echo "Selected file: $FILE"
 echo "Running: ${CMD[*]}"

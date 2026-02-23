@@ -6,10 +6,11 @@ START_LINE=20
 END_LINE=300
 DRY_RUN=0
 SEQUENTIAL=0
+AGENT="codex"
 
 usage() {
     cat <<USAGE
-Usage: $0 [-n count] [-s start_line] [-e end_line] [--sequential] [--dry-run]
+Usage: $0 [-n count] [-s start_line] [-e end_line] [--sequential] [--agent codex|claude] [--dry-run]
 
 Options:
   -n <count>      Passed to ./scripts/pick-next-roast.sh (default: 300)
@@ -18,6 +19,7 @@ Options:
   --start <n>     Same as -s
   --end <n>       Same as -e
   --sequential    Process all selected candidates from -s to -e in order
+  --agent <name>  Agent to run in ai-sandbox (codex|claude, default: codex)
   --dry-run       Print commands without executing ai-sandbox
 USAGE
 }
@@ -74,6 +76,15 @@ while [[ $# -gt 0 ]]; do
             SEQUENTIAL=1
             shift
             ;;
+        --agent)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --agent requires a value" >&2
+                usage
+                exit 1
+            fi
+            AGENT="$2"
+            shift 2
+            ;;
         --dry-run)
             DRY_RUN=1
             shift
@@ -92,6 +103,12 @@ done
 
 if (( START_LINE > END_LINE )); then
     echo "Error: start line must be less than or equal to end line" >&2
+    usage
+    exit 1
+fi
+
+if [[ "$AGENT" != "codex" && "$AGENT" != "claude" ]]; then
+    echo "Error: --agent must be codex or claude" >&2
     usage
     exit 1
 fi
@@ -115,9 +132,9 @@ if [[ "$SEQUENTIAL" -eq 1 ]]; then
         fi
 
         if [[ "$DRY_RUN" -eq 1 ]]; then
-            ./scripts/ai-run-roast.sh --dry-run "$file"
+            ./scripts/ai-run-roast.sh --agent "$AGENT" --dry-run "$file"
         else
-            if ! ./scripts/ai-run-roast.sh "$file"; then
+            if ! ./scripts/ai-run-roast.sh --agent "$AGENT" "$file"; then
                 echo "Failed: $file" >&2
                 failed=$((failed + 1))
             fi
@@ -140,7 +157,7 @@ if [[ -z "$FILE" || "$FILE" == "$SELECTED_LINE" ]]; then
 fi
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
-    ./scripts/ai-run-roast.sh --dry-run "$FILE"
+    ./scripts/ai-run-roast.sh --agent "$AGENT" --dry-run "$FILE"
 else
-    ./scripts/ai-run-roast.sh "$FILE"
+    ./scripts/ai-run-roast.sh --agent "$AGENT" "$FILE"
 fi
