@@ -431,6 +431,131 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         match method {
+            "split" => {
+                let needle = Self::positional_value_required(&args, 0, "split requires a needle")?;
+                let limit = Self::positional_value(&args, 1);
+                let skip_empty = Self::named_bool(&args, "skip-empty");
+
+                let max_parts = match limit {
+                    None => None,
+                    Some(Value::Int(i)) => {
+                        if *i <= 0 {
+                            return Ok(Value::make_instance("Supply".to_string(), {
+                                let mut attrs = HashMap::new();
+                                attrs.insert("values".to_string(), Value::array(Vec::new()));
+                                attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                                attrs.insert("live".to_string(), Value::Bool(false));
+                                attrs
+                            }));
+                        }
+                        Some(*i as usize)
+                    }
+                    Some(Value::Num(f)) if f.is_infinite() && f.is_sign_positive() => None,
+                    Some(Value::Num(f)) => {
+                        if *f <= 0.0 {
+                            return Ok(Value::make_instance("Supply".to_string(), {
+                                let mut attrs = HashMap::new();
+                                attrs.insert("values".to_string(), Value::array(Vec::new()));
+                                attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                                attrs.insert("live".to_string(), Value::Bool(false));
+                                attrs
+                            }));
+                        }
+                        Some(*f as usize)
+                    }
+                    Some(Value::Str(s)) => {
+                        let t = s.trim();
+                        if t.eq_ignore_ascii_case("inf") {
+                            None
+                        } else if t.eq_ignore_ascii_case("-inf") {
+                            return Ok(Value::make_instance("Supply".to_string(), {
+                                let mut attrs = HashMap::new();
+                                attrs.insert("values".to_string(), Value::array(Vec::new()));
+                                attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                                attrs.insert("live".to_string(), Value::Bool(false));
+                                attrs
+                            }));
+                        } else {
+                            match t.parse::<i64>() {
+                                Ok(n) if n > 0 => Some(n as usize),
+                                _ => {
+                                    return Ok(Value::make_instance("Supply".to_string(), {
+                                        let mut attrs = HashMap::new();
+                                        attrs
+                                            .insert("values".to_string(), Value::array(Vec::new()));
+                                        attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                                        attrs.insert("live".to_string(), Value::Bool(false));
+                                        attrs
+                                    }));
+                                }
+                            }
+                        }
+                    }
+                    Some(other) => {
+                        let n = other.to_f64();
+                        if n <= 0.0 {
+                            return Ok(Value::make_instance("Supply".to_string(), {
+                                let mut attrs = HashMap::new();
+                                attrs.insert("values".to_string(), Value::array(Vec::new()));
+                                attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                                attrs.insert("live".to_string(), Value::Bool(false));
+                                attrs
+                            }));
+                        }
+                        Some(n as usize)
+                    }
+                };
+
+                let source = match attributes.get("values") {
+                    Some(Value::Array(items, ..)) => items
+                        .iter()
+                        .map(|v| v.to_string_value())
+                        .collect::<Vec<_>>()
+                        .join(""),
+                    _ => String::new(),
+                };
+
+                let mut parts: Vec<Value> = match needle {
+                    Value::Regex(pat) => {
+                        let matches = self.regex_find_all(pat, &source);
+                        if matches.is_empty() {
+                            vec![Value::Str(source)]
+                        } else {
+                            let chars: Vec<char> = source.chars().collect();
+                            let mut out = Vec::new();
+                            let mut last_end = 0usize;
+                            for (start, end) in matches {
+                                let piece: String = chars[last_end..start].iter().collect();
+                                out.push(Value::Str(piece));
+                                last_end = end;
+                            }
+                            let tail: String = chars[last_end..].iter().collect();
+                            out.push(Value::Str(tail));
+                            out
+                        }
+                    }
+                    other => {
+                        let sep = other.to_string_value();
+                        source
+                            .split(&sep)
+                            .map(|s| Value::Str(s.to_string()))
+                            .collect()
+                    }
+                };
+
+                if skip_empty {
+                    parts.retain(|v| !v.to_string_value().is_empty());
+                }
+                if let Some(limit) = max_parts {
+                    parts.truncate(limit);
+                }
+
+                let mut new_attrs = HashMap::new();
+                new_attrs.insert("values".to_string(), Value::array(parts));
+                new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                new_attrs.insert("live".to_string(), Value::Bool(false));
+                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+            }
             "reverse" => {
                 let values = match attributes.get("values") {
                     Some(Value::Array(items, ..)) => {
