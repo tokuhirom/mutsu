@@ -352,6 +352,12 @@ impl Interpreter {
             "Supplier",
         ];
         for parent in parents {
+            if parent == name {
+                return Err(RuntimeError::new(format!(
+                    "X::Inheritance::SelfInherit: class '{}' cannot inherit from itself",
+                    name
+                )));
+            }
             if !self.classes.contains_key(parent)
                 && !BUILTIN_TYPES.contains(&parent.as_str())
                 && !self.roles.contains_key(parent)

@@ -375,7 +375,13 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     // Optional `does Role[...]` clauses.
     while let Some(r) = keyword("does", rest) {
         let (r, _) = ws1(r)?;
-        let (r, _role_name) = qualified_ident(r)?;
+        let (r, role_name) = qualified_ident(r)?;
+        if role_name == name {
+            return Err(PError::fatal(format!(
+                "X::InvalidType: role '{}' cannot compose itself",
+                name
+            )));
+        }
         let (r, _) = skip_optional_role_args(r)?;
         rest = r;
     }
