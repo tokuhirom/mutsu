@@ -124,6 +124,8 @@ Constraints:
 After implementing:
 - Verify with cargo build && timeout 30 target/debug/mutsu $FILE
 - Add regression tests under t/ if needed
+- Run cargo clippy -- -D warnings and fix any warnings
+- Run cargo fmt to format the code
 - Run make test and make roast to check regressions
 - If it passes, append to roast-whitelist.txt while keeping sort order
 - commit, push, and open a PR with gh pr create
