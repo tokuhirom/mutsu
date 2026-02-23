@@ -212,6 +212,7 @@ roast/S26-documentation/module-comment.t
 roast/S28-named-variables/cwd.t
 roast/S28-named-variables/slangs.t
 roast/S29-any/cmp.t
+roast/S29-context/die.t
 roast/S29-context/exit-in-if.t
 roast/S29-context/exit.t
 roast/S32-array/bool.t

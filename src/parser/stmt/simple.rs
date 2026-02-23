@@ -580,11 +580,12 @@ pub(super) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
     if rest.starts_with(';') || rest.is_empty() || rest.starts_with('}') {
         let (rest, _) = opt_char(rest, ';');
-        let default_msg = if is_fail { "Failed" } else { "Died" };
+        // `die`/`fail` with no argument should reuse current `$!` when present.
+        // A later runtime fallback handles Nil -> default text.
         let stmt = if is_fail {
-            Stmt::Fail(Expr::Literal(Value::Str(default_msg.to_string())))
+            Stmt::Fail(Expr::Var("!".to_string()))
         } else {
-            Stmt::Die(Expr::Literal(Value::Str(default_msg.to_string())))
+            Stmt::Die(Expr::Var("!".to_string()))
         };
         return Ok((rest, stmt));
     }

@@ -41,6 +41,38 @@ pub(crate) struct VM {
 }
 
 impl VM {
+    fn runtime_error_from_exception_value(
+        value: Value,
+        default_message: &str,
+        is_fail: bool,
+    ) -> RuntimeError {
+        if matches!(value, Value::Nil) {
+            let mut err = RuntimeError::new(default_message);
+            err.is_fail = is_fail;
+            return err;
+        }
+
+        let message = if let Value::Instance { attributes, .. } = &value {
+            attributes
+                .get("message")
+                .map(|v| v.to_string_value())
+                .unwrap_or_else(|| value.to_string_value())
+        } else {
+            value.to_string_value()
+        };
+
+        let mut err = RuntimeError::new(message);
+        err.is_fail = is_fail;
+        if let Value::Instance { class_name, .. } = &value
+            && (class_name == "Exception"
+                || class_name.starts_with("X::")
+                || class_name.starts_with("CX::"))
+        {
+            err.exception = Some(Box::new(value));
+        }
+        err
+    }
+
     pub(crate) fn new(interpreter: Interpreter) -> Self {
         Self {
             interpreter,
@@ -950,13 +982,13 @@ impl VM {
             // -- Error handling --
             OpCode::Die => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
-                return Err(RuntimeError::new(val.to_string_value()));
+                return Err(Self::runtime_error_from_exception_value(val, "Died", false));
             }
             OpCode::Fail => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
-                let mut err = RuntimeError::new(val.to_string_value());
-                err.is_fail = true;
-                return Err(err);
+                return Err(Self::runtime_error_from_exception_value(
+                    val, "Failed", true,
+                ));
             }
             OpCode::Return => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
