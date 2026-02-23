@@ -39,6 +39,20 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, module) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
 
+    // `use newline :lf|:cr|:crlf` uses a colonpair argument and must be preserved.
+    if module == "newline" && rest.starts_with(':') && !rest.starts_with("::") {
+        let (rest, arg) = super::super::primary::colonpair_expr(rest)?;
+        let (rest, _) = ws(rest)?;
+        let (rest, _) = opt_char(rest, ';');
+        return Ok((
+            rest,
+            Stmt::Use {
+                module,
+                arg: Some(arg),
+            },
+        ));
+    }
+
     // Skip adverbs/colonpairs on use (e.g. `use Foo :ALL`, `use Foo :tag1 :tag2`)
     let mut rest = rest;
     while rest.starts_with(':') && !rest.starts_with("::") {

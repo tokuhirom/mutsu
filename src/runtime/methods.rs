@@ -53,6 +53,48 @@ impl Interpreter {
                 self.write_to_named_handle("$*ERR", &content, false)?;
                 return Ok(Value::Nil);
             }
+            "encode" => {
+                let encoding = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|| "utf-8".to_string());
+                let input = target.to_string_value();
+                let translated = self.translate_newlines_for_encode(&input);
+                let bytes = self.encode_with_encoding(&translated, &encoding)?;
+                let bytes_vals: Vec<Value> =
+                    bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
+                let mut attrs = HashMap::new();
+                attrs.insert("bytes".to_string(), Value::array(bytes_vals));
+                return Ok(Value::make_instance("Buf".to_string(), attrs));
+            }
+            "decode" => {
+                if let Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } = &target
+                    && (class_name == "Buf" || class_name == "Blob")
+                {
+                    let encoding = args
+                        .first()
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|| "utf-8".to_string());
+                    let bytes = if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                        items
+                            .iter()
+                            .map(|v| match v {
+                                Value::Int(i) => *i as u8,
+                                _ => 0,
+                            })
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
+                    let decoded = self.decode_with_encoding(&bytes, &encoding)?;
+                    let normalized = self.translate_newlines_for_decode(&decoded);
+                    return Ok(Value::Str(normalized));
+                }
+            }
             "polymod" => {
                 return self.method_polymod(&target, &args);
             }
@@ -1263,6 +1305,86 @@ impl Interpreter {
                     method
                 )))
             }
+        }
+    }
+
+    fn translate_newlines_for_encode(&self, input: &str) -> String {
+        match self.newline_mode {
+            NewlineMode::Lf => input.to_string(),
+            NewlineMode::Cr => input.replace('\n', "\r"),
+            NewlineMode::Crlf => input.replace('\n', "\r\n"),
+        }
+    }
+
+    fn translate_newlines_for_decode(&self, input: &str) -> String {
+        match self.newline_mode {
+            NewlineMode::Lf => input.to_string(),
+            NewlineMode::Cr => input.replace('\r', "\n"),
+            NewlineMode::Crlf => input.replace("\r\n", "\n"),
+        }
+    }
+
+    fn encode_with_encoding(
+        &self,
+        input: &str,
+        encoding_name: &str,
+    ) -> Result<Vec<u8>, RuntimeError> {
+        let encoding = self
+            .find_encoding(encoding_name)
+            .map(|e| e.name.as_str())
+            .unwrap_or(encoding_name)
+            .to_lowercase();
+
+        match encoding.as_str() {
+            "ascii" => Ok(input
+                .chars()
+                .map(|c| if (c as u32) <= 0x7F { c as u8 } else { b'?' })
+                .collect()),
+            "utf-16" | "utf-16le" => {
+                Ok(input.encode_utf16().flat_map(|u| u.to_le_bytes()).collect())
+            }
+            "utf-16be" => Ok(input.encode_utf16().flat_map(|u| u.to_be_bytes()).collect()),
+            _ => Ok(input.as_bytes().to_vec()),
+        }
+    }
+
+    fn decode_with_encoding(
+        &self,
+        bytes: &[u8],
+        encoding_name: &str,
+    ) -> Result<String, RuntimeError> {
+        let encoding = self
+            .find_encoding(encoding_name)
+            .map(|e| e.name.as_str())
+            .unwrap_or(encoding_name)
+            .to_lowercase();
+
+        match encoding.as_str() {
+            "ascii" => Ok(bytes
+                .iter()
+                .map(|b| if *b <= 0x7F { *b as char } else { '\u{FFFD}' })
+                .collect()),
+            "utf-16" | "utf-16le" => {
+                if !bytes.len().is_multiple_of(2) {
+                    return Err(RuntimeError::new("Invalid utf-16 byte length"));
+                }
+                let units: Vec<u16> = bytes
+                    .chunks_exact(2)
+                    .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+                    .collect();
+                Ok(String::from_utf16_lossy(&units))
+            }
+            "utf-16be" => {
+                if !bytes.len().is_multiple_of(2) {
+                    return Err(RuntimeError::new("Invalid utf-16be byte length"));
+                }
+                let units: Vec<u16> = bytes
+                    .chunks_exact(2)
+                    .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+                    .collect();
+                Ok(String::from_utf16_lossy(&units))
+            }
+            _ => Ok(String::from_utf8_lossy(bytes).into_owned()),
         }
     }
 

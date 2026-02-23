@@ -610,6 +610,15 @@ impl Compiler {
                 }
             }
             Stmt::Use { module, arg } if module == "lib" && arg.is_none() => {}
+            Stmt::Use { module, arg } if module == "newline" => {
+                if let Some(expr) = arg {
+                    self.compile_expr(expr);
+                    let name_idx = self
+                        .code
+                        .add_constant(Value::Str("__mutsu_set_newline".to_string()));
+                    self.code.emit(OpCode::ExecCall { name_idx, arity: 1 });
+                }
+            }
             Stmt::Use { module, .. }
                 if module == "v6"
                     || module == "customtrait"

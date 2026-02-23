@@ -237,9 +237,10 @@ pub struct Interpreter {
     loaded_modules: HashSet<String>,
     /// When true, `is export` trait is ignored (used by `need` to load without importing).
     pub(crate) suppress_exports: bool,
+    pub(crate) newline_mode: NewlineMode,
     /// Stack of snapshots for lexical import scoping.
-    /// Each entry saves (function_keys, class_names) before a block with `use`.
-    import_scope_stack: Vec<(HashSet<String>, HashSet<String>)>,
+    /// Each entry saves (function_keys, class_names, newline_mode) before a block with `use`.
+    import_scope_stack: Vec<(HashSet<String>, HashSet<String>, NewlineMode)>,
     state_vars: HashMap<String, Value>,
     let_saves: Vec<(String, Value)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
@@ -260,6 +261,13 @@ pub(crate) struct EncodingEntry {
     pub alternative_names: Vec<String>,
     /// If Some, this is a user-registered encoding (the Value is the type object).
     pub user_type: Option<Value>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NewlineMode {
+    Lf,
+    Cr,
+    Crlf,
 }
 
 pub(crate) struct SubtestContext {
@@ -725,6 +733,7 @@ impl Interpreter {
             chroot_root: None,
             loaded_modules: HashSet::new(),
             suppress_exports: false,
+            newline_mode: NewlineMode::Lf,
             import_scope_stack: Vec::new(),
             state_vars: HashMap::new(),
             let_saves: Vec::new(),
@@ -870,15 +879,17 @@ impl Interpreter {
     pub(crate) fn push_import_scope(&mut self) {
         let func_keys: HashSet<String> = self.functions.keys().cloned().collect();
         let class_keys: HashSet<String> = self.classes.keys().cloned().collect();
-        self.import_scope_stack.push((func_keys, class_keys));
+        self.import_scope_stack
+            .push((func_keys, class_keys, self.newline_mode));
     }
 
     /// Restore function/class registries to the last saved snapshot,
     /// removing any entries added since the push.
     pub(crate) fn pop_import_scope(&mut self) {
-        if let Some((func_snapshot, class_snapshot)) = self.import_scope_stack.pop() {
+        if let Some((func_snapshot, class_snapshot, newline_mode)) = self.import_scope_stack.pop() {
             self.functions.retain(|key, _| func_snapshot.contains(key));
             self.classes.retain(|key, _| class_snapshot.contains(key));
+            self.newline_mode = newline_mode;
         }
     }
 
@@ -887,7 +898,13 @@ impl Interpreter {
         if module == "Test"
             || matches!(
                 module,
-                "strict" | "warnings" | "MONKEY-SEE-NO-EVAL" | "MONKEY-TYPING" | "nqp" | "MONKEY"
+                "strict"
+                    | "warnings"
+                    | "MONKEY-SEE-NO-EVAL"
+                    | "MONKEY-TYPING"
+                    | "nqp"
+                    | "MONKEY"
+                    | "newline"
             )
         {
             return Ok(());
@@ -1002,6 +1019,7 @@ impl Interpreter {
             chroot_root: self.chroot_root.clone(),
             loaded_modules: self.loaded_modules.clone(),
             suppress_exports: false,
+            newline_mode: self.newline_mode,
             import_scope_stack: Vec::new(),
             state_vars: HashMap::new(),
             let_saves: Vec::new(),
