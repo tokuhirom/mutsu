@@ -79,6 +79,16 @@ pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, Stmt::Use { module, arg }))
 }
 
+/// Parse `need Module;` — load module without importing its exports.
+pub(super) fn need_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("need", input).ok_or_else(|| PError::expected("need statement"))?;
+    let (rest, _) = ws1(rest)?;
+    let (rest, module) = qualified_ident(rest)?;
+    let (rest, _) = ws(rest)?;
+    let (rest, _) = opt_char(rest, ';');
+    Ok((rest, Stmt::Need { module }))
+}
+
 /// Parse `my`, `our`, or `state` variable declaration.
 pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
     my_decl_inner(input, true)

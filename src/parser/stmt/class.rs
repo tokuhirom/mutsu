@@ -422,6 +422,16 @@ pub(super) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, Stmt::Package { name, body }))
 }
 
+/// Parse `module Name { ... }` declaration (non-unit form).
+pub(super) fn module_decl(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("module", input).ok_or_else(|| PError::expected("module declaration"))?;
+    let (rest, _) = ws1(rest)?;
+    let (rest, name) = qualified_ident(rest)?;
+    let (rest, _) = ws(rest)?;
+    let (rest, body) = block(rest)?;
+    Ok((rest, Stmt::Package { name, body }))
+}
+
 /// Parse `unit module` or `unit class` statement.
 pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("unit", input).ok_or_else(|| PError::expected("unit statement"))?;

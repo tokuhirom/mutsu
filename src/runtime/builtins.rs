@@ -332,7 +332,7 @@ impl Interpreter {
         }
 
         Err(RuntimeError::new(format!(
-            "X::Undeclared: Unknown function (call_function fallback disabled): {}",
+            "X::Undeclared::Symbols: Unknown function: {}",
             name
         )))
     }

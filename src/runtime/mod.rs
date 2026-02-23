@@ -230,6 +230,8 @@ pub struct Interpreter {
     end_phasers: Vec<(Vec<Stmt>, HashMap<String, Value>)>,
     chroot_root: Option<PathBuf>,
     loaded_modules: HashSet<String>,
+    /// When true, `is export` trait is ignored (used by `need` to load without importing).
+    pub(crate) suppress_exports: bool,
     state_vars: HashMap<String, Value>,
     let_saves: Vec<(String, Value)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
@@ -678,6 +680,7 @@ impl Interpreter {
             end_phasers: Vec::new(),
             chroot_root: None,
             loaded_modules: HashSet::new(),
+            suppress_exports: false,
             state_vars: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
@@ -845,6 +848,16 @@ impl Interpreter {
         self.load_module(module)
     }
 
+    /// Load a module without importing its exports (Raku `need` keyword).
+    pub(crate) fn need_module(&mut self, module: &str) -> Result<(), RuntimeError> {
+        self.loaded_modules.insert(module.to_string());
+        let saved = self.suppress_exports;
+        self.suppress_exports = true;
+        let result = self.load_module(module);
+        self.suppress_exports = saved;
+        result
+    }
+
     pub fn output(&self) -> &str {
         &self.output
     }
@@ -919,6 +932,7 @@ impl Interpreter {
             end_phasers: Vec::new(),
             chroot_root: self.chroot_root.clone(),
             loaded_modules: self.loaded_modules.clone(),
+            suppress_exports: false,
             state_vars: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),

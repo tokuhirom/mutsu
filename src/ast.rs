@@ -267,6 +267,10 @@ pub(crate) enum Stmt {
         module: String,
         arg: Option<Expr>,
     },
+    /// `need Module;` — load module without importing exports
+    Need {
+        module: String,
+    },
     Subtest {
         name: Expr,
         body: Vec<Stmt>,

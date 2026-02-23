@@ -122,7 +122,7 @@ impl VM {
         {
             self.interpreter
                 .register_sub_decl(name, params, param_defs, body, *multi)?;
-            if *is_export {
+            if *is_export && !self.interpreter.suppress_exports {
                 self.interpreter
                     .register_sub_decl_as_global(name, params, param_defs, body, *multi)?;
             }
@@ -214,6 +214,17 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let module = Self::const_str(code, name_idx);
         self.interpreter.use_module(module)?;
+        self.sync_locals_from_env(code);
+        Ok(())
+    }
+
+    pub(super) fn exec_need_module_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let module = Self::const_str(code, name_idx);
+        self.interpreter.need_module(module)?;
         self.sync_locals_from_env(code);
         Ok(())
     }
