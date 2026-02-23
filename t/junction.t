@@ -1,5 +1,5 @@
 use Test;
-plan 26;
+plan 30;
 
 # --- Junction construction ---
 my $a = any(1, 2, 3);
@@ -45,6 +45,12 @@ nok any("a", "b", "c") eq "z", 'any("a","b","c") eq "z" is False';
 # --- Smartmatch ---
 ok 2 ~~ any(1, 2, 3), "2 ~~ any(1,2,3) is True";
 nok 5 ~~ any(1, 2, 3), "5 ~~ any(1,2,3) is False";
+
+# --- Arithmetic auto-threading ---
+is (1 + any(2, 3)).WHAT, "(Junction)", "junction arithmetic keeps junction type";
+ok 1 + any(2, 3) == 4, "addition threads over RHS junction";
+ok 6 % any(2, 3) == 0, "modulo threads over RHS junction";
+ok all(4, 6) % 2 == 0, "modulo threads over LHS junction";
 
 # --- if / boolean collapse ---
 my $result = "";

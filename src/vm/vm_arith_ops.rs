@@ -5,18 +5,23 @@ impl VM {
     pub(super) fn exec_add_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack.push(crate::builtins::arith_add(left, right)?);
+        let result = self
+            .eval_binary_with_junctions(left, right, |_, l, r| crate::builtins::arith_add(l, r))?;
+        self.stack.push(result);
         Ok(())
     }
 
     pub(super) fn exec_sub_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        if let Some(result) = self.try_user_infix("infix:<->", &left, &right)? {
-            self.stack.push(result);
-        } else {
-            self.stack.push(crate::builtins::arith_sub(left, right));
-        }
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            if let Some(result) = vm.try_user_infix("infix:<->", &l, &r)? {
+                Ok(result)
+            } else {
+                Ok(crate::builtins::arith_sub(l, r))
+            }
+        })?;
+        self.stack.push(result);
         Ok(())
     }
 
@@ -36,30 +41,42 @@ impl VM {
         Ok(None)
     }
 
-    pub(super) fn exec_mul_op(&mut self) {
+    pub(super) fn exec_mul_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack.push(crate::builtins::arith_mul(left, right));
+        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+            Ok(crate::builtins::arith_mul(l, r))
+        })?;
+        self.stack.push(result);
+        Ok(())
     }
 
     pub(super) fn exec_div_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack.push(crate::builtins::arith_div(left, right)?);
+        let result = self
+            .eval_binary_with_junctions(left, right, |_, l, r| crate::builtins::arith_div(l, r))?;
+        self.stack.push(result);
         Ok(())
     }
 
     pub(super) fn exec_mod_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack.push(crate::builtins::arith_mod(left, right)?);
+        let result = self
+            .eval_binary_with_junctions(left, right, |_, l, r| crate::builtins::arith_mod(l, r))?;
+        self.stack.push(result);
         Ok(())
     }
 
-    pub(super) fn exec_pow_op(&mut self) {
+    pub(super) fn exec_pow_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack.push(crate::builtins::arith_pow(left, right));
+        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+            Ok(crate::builtins::arith_pow(l, r))
+        })?;
+        self.stack.push(result);
+        Ok(())
     }
 
     pub(super) fn exec_negate_op(&mut self) -> Result<(), RuntimeError> {
@@ -131,31 +148,34 @@ impl VM {
     pub(super) fn exec_int_div_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = match (&left, &right) {
-            (Value::Int(a), Value::Int(b)) if *b != 0 => Value::Int(a.div_euclid(*b)),
-            (Value::Int(_), Value::Int(_)) => {
-                return Err(RuntimeError::new("Division by zero"));
-            }
-            (Value::BigInt(a), Value::BigInt(b)) if *b != num_bigint::BigInt::from(0i64) => {
-                Value::from_bigint(num_integer::Integer::div_floor(a, b))
-            }
-            (Value::BigInt(a), Value::Int(b)) if *b != 0 => {
-                let bb = num_bigint::BigInt::from(*b);
-                Value::from_bigint(num_integer::Integer::div_floor(a, &bb))
-            }
-            (Value::Int(a), Value::BigInt(b)) if *b != num_bigint::BigInt::from(0i64) => {
-                let aa = num_bigint::BigInt::from(*a);
-                Value::from_bigint(num_integer::Integer::div_floor(&aa, b))
-            }
-            _ => {
-                let a = runtime::to_int(&left);
-                let b = runtime::to_int(&right);
-                if b == 0 {
+        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+            let val = match (&l, &r) {
+                (Value::Int(a), Value::Int(b)) if *b != 0 => Value::Int(a.div_euclid(*b)),
+                (Value::Int(_), Value::Int(_)) => {
                     return Err(RuntimeError::new("Division by zero"));
                 }
-                Value::Int(a.div_euclid(b))
-            }
-        };
+                (Value::BigInt(a), Value::BigInt(b)) if *b != num_bigint::BigInt::from(0i64) => {
+                    Value::from_bigint(num_integer::Integer::div_floor(a, b))
+                }
+                (Value::BigInt(a), Value::Int(b)) if *b != 0 => {
+                    let bb = num_bigint::BigInt::from(*b);
+                    Value::from_bigint(num_integer::Integer::div_floor(a, &bb))
+                }
+                (Value::Int(a), Value::BigInt(b)) if *b != num_bigint::BigInt::from(0i64) => {
+                    let aa = num_bigint::BigInt::from(*a);
+                    Value::from_bigint(num_integer::Integer::div_floor(&aa, b))
+                }
+                _ => {
+                    let a = runtime::to_int(&l);
+                    let b = runtime::to_int(&r);
+                    if b == 0 {
+                        return Err(RuntimeError::new("Division by zero"));
+                    }
+                    Value::Int(a.div_euclid(b))
+                }
+            };
+            Ok(val)
+        })?;
         self.stack.push(result);
         Ok(())
     }
@@ -163,20 +183,23 @@ impl VM {
     pub(super) fn exec_int_mod_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = match (&left, &right) {
-            (Value::Int(a), Value::Int(b)) if *b != 0 => Value::Int(a.rem_euclid(*b)),
-            (Value::Int(_), Value::Int(_)) => {
-                return Err(RuntimeError::new("Modulo by zero"));
-            }
-            _ => {
-                let a = runtime::to_int(&left);
-                let b = runtime::to_int(&right);
-                if b == 0 {
+        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+            let val = match (&l, &r) {
+                (Value::Int(a), Value::Int(b)) if *b != 0 => Value::Int(a.rem_euclid(*b)),
+                (Value::Int(_), Value::Int(_)) => {
                     return Err(RuntimeError::new("Modulo by zero"));
                 }
-                Value::Int(a.rem_euclid(b))
-            }
-        };
+                _ => {
+                    let a = runtime::to_int(&l);
+                    let b = runtime::to_int(&r);
+                    if b == 0 {
+                        return Err(RuntimeError::new("Modulo by zero"));
+                    }
+                    Value::Int(a.rem_euclid(b))
+                }
+            };
+            Ok(val)
+        })?;
         self.stack.push(result);
         Ok(())
     }

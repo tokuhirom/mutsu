@@ -53,6 +53,7 @@ roast/S03-operators/scalar-assign.t
 roast/S03-operators/so.t
 roast/S03-operators/spaceship-and-containers.t
 roast/S03-operators/subscript-vs-lt.t
+roast/S03-sequence/arity-2-or-more.t
 roast/S03-sequence/exhaustive.t
 roast/S03-smartmatch/any-any.t
 roast/S03-smartmatch/any-bool.t
