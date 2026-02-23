@@ -202,6 +202,7 @@ roast/S17-supply/grab.t
 roast/S17-supply/on-demand.t
 roast/S17-supply/repeated.t
 roast/S17-supply/reverse.t
+roast/S17-supply/skip.t
 roast/S17-supply/watch-path.t
 roast/S19-command-line/help.t
 roast/S19-command-line/repl.t

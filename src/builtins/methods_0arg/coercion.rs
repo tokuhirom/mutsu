@@ -240,6 +240,25 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             | Value::GenericRange { .. } => Some(Ok(target.clone())),
             _ => None,
         },
+        "Supply" => {
+            // .Supply on an existing Supply is a noop — return self
+            if let Value::Instance { class_name, .. } = target
+                && class_name == "Supply"
+            {
+                return Some(Ok(target.clone()));
+            }
+            let values = match target {
+                Value::Array(items, ..) => items.to_vec(),
+                Value::Range(a, b) => (*a..=*b).map(Value::Int).collect(),
+                Value::RangeExcl(a, b) => (*a..*b).map(Value::Int).collect(),
+                _ => vec![target.clone()],
+            };
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("values".to_string(), Value::array(values));
+            attrs.insert("taps".to_string(), Value::array(Vec::new()));
+            attrs.insert("live".to_string(), Value::Bool(false));
+            Some(Ok(Value::make_instance("Supply".to_string(), attrs)))
+        }
         _ => None,
     }
 }
