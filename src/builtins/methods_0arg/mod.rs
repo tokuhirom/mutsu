@@ -603,7 +603,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
         "lines" => {
             let s = target.to_string_value();
-            let lines: Vec<Value> = s.lines().map(|l| Value::Str(l.to_string())).collect();
+            let lines: Vec<Value> = crate::builtins::split_lines_chomped(&s)
+                .into_iter()
+                .map(Value::Str)
+                .collect();
             Some(Ok(Value::array(lines)))
         }
         "trim" => Some(Ok(Value::Str(target.to_string_value().trim().to_string()))),

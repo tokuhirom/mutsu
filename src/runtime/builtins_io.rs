@@ -486,6 +486,44 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_lines(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if let Some(first) = args.first()
+            && Self::handle_id_from_value(first).is_none()
+        {
+            let text = first.to_string_value();
+            let mut limit: Option<usize> = None;
+            let mut chomp = true;
+            for arg in &args[1..] {
+                match arg {
+                    Value::Pair(key, value) if key == "chomp" => {
+                        chomp = value.truthy();
+                    }
+                    Value::Int(i) => {
+                        limit = Some((*i).max(0) as usize);
+                    }
+                    Value::BigInt(bi) => {
+                        use num_traits::ToPrimitive;
+                        limit = Some(bi.to_usize().unwrap_or(usize::MAX));
+                    }
+                    Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
+                        limit = None;
+                    }
+                    Value::Num(f) if *f >= 0.0 => {
+                        limit = Some(*f as usize);
+                    }
+                    Value::Rat(n, d) if *d == 0 && *n > 0 => {
+                        limit = None;
+                    }
+                    _ => {}
+                }
+            }
+            let mut lines = crate::builtins::split_lines_with_chomp(&text, chomp);
+            if let Some(n) = limit {
+                lines.truncate(n);
+            }
+            let values = lines.into_iter().map(Value::Str).collect();
+            return Ok(Value::array(values));
+        }
+
         let handle = args
             .first()
             .cloned()
