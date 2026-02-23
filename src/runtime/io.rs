@@ -417,44 +417,127 @@ impl Interpreter {
     pub(super) fn collect_doc_comments(&mut self, input: &str) {
         self.doc_comments.clear();
         let mut pending_before: Option<String> = None;
-        let mut last_unit_module: Option<String> = None;
+        // The last declaration that can receive trailing #= comments
+        let mut last_declarant: Option<String> = None;
+        // Whether trailing #= has already been started for last_declarant
+        let mut trailing_started = false;
+        // Track the current class scope for method doc keys
+        let mut current_class: Option<String> = None;
+
+        fn extract_ident(s: &str) -> String {
+            s.trim_start()
+                .split(|c: char| !c.is_alphanumeric() && c != '_' && c != '-' && c != ':')
+                .next()
+                .unwrap_or("")
+                .to_string()
+        }
+
         for line in input.lines() {
             let trimmed = line.trim_start();
+
+            // Leading doc comment (#|)
             if let Some(rest) = trimmed.strip_prefix("#|") {
-                pending_before = Some(rest.trim().to_string());
-                continue;
-            }
-            if let Some(rest) = trimmed.strip_prefix("unit module") {
-                let name = rest
-                    .trim_start()
-                    .split(|c: char| c.is_whitespace() || c == ';')
-                    .next()
-                    .unwrap_or("")
-                    .to_string();
-                if !name.is_empty() {
-                    if let Some(before) = pending_before.take()
-                        && !before.is_empty()
-                    {
-                        self.doc_comments.insert(name.clone(), before);
+                let text = rest.trim();
+                pending_before = Some(match pending_before.take() {
+                    Some(mut prev) => {
+                        prev.push(' ');
+                        prev.push_str(text);
+                        prev
                     }
-                    last_unit_module = Some(name);
-                }
+                    None => text.to_string(),
+                });
+                last_declarant = None;
                 continue;
             }
-            if let Some(rest) = trimmed.strip_prefix("#=")
-                && let Some(name) = last_unit_module.take()
-            {
+
+            // Trailing doc comment (#=)
+            if let Some(rest) = trimmed.strip_prefix("#=") {
                 let after = rest.trim();
-                if !after.is_empty() {
-                    let entry = self.doc_comments.entry(name).or_default();
+                if !after.is_empty()
+                    && let Some(ref name) = last_declarant
+                {
+                    let entry = self.doc_comments.entry(name.clone()).or_default();
                     if entry.is_empty() {
                         entry.push_str(after);
+                    } else if trailing_started {
+                        // Consecutive #= lines: join with space
+                        entry.push(' ');
+                        entry.push_str(after);
                     } else {
+                        // First #= after leading #|: join with newline
                         entry.push('\n');
                         entry.push_str(after);
                     }
+                    trailing_started = true;
                 }
+                continue;
             }
+
+            // Not a doc comment line — check for declarations
+            last_declarant = None;
+            trailing_started = false;
+
+            // Skip empty lines and plain comments
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+
+            // unit module
+            if let Some(rest) = trimmed.strip_prefix("unit module") {
+                let name = extract_ident(rest);
+                if !name.is_empty() {
+                    if let Some(before) = pending_before.take() {
+                        self.doc_comments.insert(name.clone(), before);
+                    }
+                    last_declarant = Some(name);
+                }
+                continue;
+            }
+
+            // class declaration
+            let class_rest = trimmed
+                .strip_prefix("my ")
+                .or(Some(trimmed))
+                .and_then(|s| s.strip_prefix("class "));
+            if let Some(rest) = class_rest {
+                let name = extract_ident(rest);
+                if !name.is_empty() {
+                    if let Some(before) = pending_before.take() {
+                        self.doc_comments.insert(name.clone(), before);
+                    }
+                    last_declarant = Some(name.clone());
+                    current_class = Some(name);
+                }
+                continue;
+            }
+
+            // method/submethod declaration
+            let method_rest = trimmed
+                .strip_prefix("multi method ")
+                .or_else(|| trimmed.strip_prefix("method "))
+                .or_else(|| trimmed.strip_prefix("submethod "));
+            if let Some(rest) = method_rest {
+                let name = extract_ident(rest);
+                if !name.is_empty() {
+                    let full_name = if let Some(ref class) = current_class {
+                        format!("{}::{}", class, name)
+                    } else {
+                        name
+                    };
+                    if let Some(before) = pending_before.take() {
+                        self.doc_comments.insert(full_name.clone(), before);
+                    }
+                    last_declarant = Some(full_name);
+                }
+                continue;
+            }
+
+            // Closing brace exits class scope
+            if trimmed == "}" {
+                current_class = None;
+            }
+
+            pending_before = None;
         }
     }
 }
