@@ -1193,6 +1193,14 @@ impl VM {
                 self.exec_use_lib_path_op(code);
                 *ip += 1;
             }
+            OpCode::PushImportScope => {
+                self.interpreter.push_import_scope();
+                *ip += 1;
+            }
+            OpCode::PopImportScope => {
+                self.interpreter.pop_import_scope();
+                *ip += 1;
+            }
             OpCode::RegisterEnum(idx) => {
                 self.exec_register_enum_op(code, *idx)?;
                 *ip += 1;

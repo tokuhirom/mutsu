@@ -526,6 +526,11 @@ impl Compiler {
         false
     }
 
+    /// Check if a block directly contains a `use` statement (non-recursive).
+    pub(super) fn has_use_stmt(stmts: &[Stmt]) -> bool {
+        stmts.iter().any(|s| matches!(s, Stmt::Use { .. }))
+    }
+
     pub(super) fn expr_has_let_deep(expr: &Expr) -> bool {
         match expr {
             Expr::DoBlock { body, .. } => Self::has_let_deep(body),

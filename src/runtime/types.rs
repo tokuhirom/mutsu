@@ -282,6 +282,13 @@ impl Interpreter {
         false
     }
 
+    /// Check if a type name is known (either a class, role, or enum).
+    pub(crate) fn has_type(&self, name: &str) -> bool {
+        self.classes.contains_key(name)
+            || self.roles.contains_key(name)
+            || self.enum_types.contains_key(name)
+    }
+
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
         // Handle coercion types: Int() matches anything, Int(Rat) matches Rat
         if let Some((_, source)) = parse_coercion_type(constraint) {

@@ -1,5 +1,68 @@
 use super::*;
 
+/// Check if a type name is a core Raku type that should always be accepted.
+fn is_core_raku_type(name: &str) -> bool {
+    matches!(
+        name,
+        "Mu" | "Any"
+            | "Cool"
+            | "Junction"
+            | "Pair"
+            | "List"
+            | "Seq"
+            | "Range"
+            | "Map"
+            | "Slip"
+            | "Set"
+            | "Bag"
+            | "Mix"
+            | "SetHash"
+            | "BagHash"
+            | "MixHash"
+            | "Capture"
+            | "Signature"
+            | "Parameter"
+            | "Block"
+            | "Code"
+            | "Sub"
+            | "Method"
+            | "Routine"
+            | "Regex"
+            | "Match"
+            | "Grammar"
+            | "IO"
+            | "Proc"
+            | "Promise"
+            | "Supply"
+            | "Channel"
+            | "Instant"
+            | "Duration"
+            | "Version"
+            | "Exception"
+            | "Failure"
+            | "Nil"
+            | "Whatever"
+            | "HyperWhatever"
+            | "WhateverCode"
+            | "Stash"
+            | "Scalar"
+            | "Numeric"
+            | "Real"
+            | "Stringy"
+            | "Callable"
+            | "Positional"
+            | "Associative"
+            | "Iterable"
+            | "Iterator"
+            | "Dateish"
+            | "Date"
+            | "DateTime"
+            | "Buf"
+            | "Blob"
+            | "utf8"
+    )
+}
+
 impl VM {
     pub(super) fn exec_make_range_op(&mut self) {
         let right = self.stack.pop().unwrap();
@@ -392,20 +455,26 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let constraint = Self::const_str(code, tc_idx);
         let value = self.stack.last().expect("TypeCheck: empty stack");
-        if !matches!(value, Value::Nil)
-            && runtime::is_known_type_constraint(constraint)
-            && !self.interpreter.type_matches_value(constraint, value)
-        {
-            // Try to coerce the value to the target type instead of erroring
-            let coerced = match constraint {
-                "Str" => Some(Value::Str(value.to_string_value())),
-                _ => None,
-            };
-            if let Some(new_val) = coerced {
-                *self.stack.last_mut().unwrap() = new_val;
-            } else {
-                return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
+        if runtime::is_known_type_constraint(constraint) {
+            if !matches!(value, Value::Nil)
+                && !self.interpreter.type_matches_value(constraint, value)
+            {
+                let coerced = match constraint {
+                    "Str" => Some(Value::Str(value.to_string_value())),
+                    _ => None,
+                };
+                if let Some(new_val) = coerced {
+                    *self.stack.last_mut().unwrap() = new_val;
+                } else {
+                    return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
+                }
             }
+        } else if !self.interpreter.has_type(constraint) && !is_core_raku_type(constraint) {
+            // Unknown user-defined type — reject it
+            return Err(RuntimeError::new(format!(
+                "Type '{}' is not declared",
+                constraint
+            )));
         }
         Ok(())
     }

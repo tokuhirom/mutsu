@@ -441,6 +441,10 @@ pub(crate) enum OpCode {
     /// `need Module;` — load module without importing exports.
     NeedModule(u32),
     UseLibPath,
+    /// Save current function/class registries for lexical import scoping.
+    PushImportScope,
+    /// Restore function/class registries to the last saved snapshot.
+    PopImportScope,
 
     // -- Type checking --
     /// Check that the value on top of stack matches the given type constraint.

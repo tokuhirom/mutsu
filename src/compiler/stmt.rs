@@ -72,6 +72,14 @@ impl Compiler {
                         }
                     }
                     self.code.patch_let_block_end(idx);
+                } else if Self::has_use_stmt(stmts) {
+                    // Block contains `use` — wrap with import scope save/restore
+                    // so imports are lexically scoped to this block
+                    self.code.emit(OpCode::PushImportScope);
+                    for s in stmts {
+                        self.compile_stmt(s);
+                    }
+                    self.code.emit(OpCode::PopImportScope);
                 } else {
                     for s in stmts {
                         self.compile_stmt(s);
