@@ -652,18 +652,14 @@ impl Interpreter {
         let desc = Self::positional_string(args, 2);
         let mut expected_out: Option<Value> = None;
         let mut expected_err: Option<Value> = None;
-        let mut expected_status: Option<i64> = None;
+        let mut expected_status: Option<Value> = None;
         let mut run_args: Option<Vec<Value>> = None;
         if let Value::Hash(expected_hash) = &expectations {
             for (name, value) in expected_hash.iter() {
                 match name.as_str() {
                     "out" => expected_out = Some(value.clone()),
                     "err" => expected_err = Some(value.clone()),
-                    "status" => {
-                        if let Value::Int(i) = value {
-                            expected_status = Some(*i);
-                        }
-                    }
+                    "status" => expected_status = Some(value.clone()),
                     _ => {}
                 }
             }
@@ -703,8 +699,8 @@ impl Interpreter {
         if let Some(expected) = expected_err {
             ok &= self.smart_match(&Value::Str(err), &expected);
         }
-        if let Some(expect) = expected_status {
-            ok &= status == expect;
+        if let Some(expected) = expected_status {
+            ok &= self.smart_match(&Value::Int(status), &expected);
         }
         self.test_ok(ok, &desc, false)?;
         Ok(Value::Bool(ok))
