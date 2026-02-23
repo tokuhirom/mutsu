@@ -175,18 +175,40 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
             Value::Num(f) => Value::Int(f.floor() as i64),
             Value::Int(i) => Value::Int(*i),
+            Value::Rat(n, d) if *d != 0 => {
+                let q = *n / *d;
+                let r = *n % *d;
+                if r != 0 && (*n < 0) != (*d < 0) {
+                    Value::Int(q - 1)
+                } else {
+                    Value::Int(q)
+                }
+            }
             _ => Value::Int(0),
         })),
         "ceiling" | "ceil" => Some(Ok(match arg {
             Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
             Value::Num(f) => Value::Int(f.ceil() as i64),
             Value::Int(i) => Value::Int(*i),
+            Value::Rat(n, d) if *d != 0 => {
+                let q = *n / *d;
+                let r = *n % *d;
+                if r != 0 && (*n < 0) == (*d < 0) {
+                    Value::Int(q + 1)
+                } else {
+                    Value::Int(q)
+                }
+            }
             _ => Value::Int(0),
         })),
         "round" => Some(Ok(match arg {
             Value::Num(f) if f.is_nan() || f.is_infinite() => Value::Num(*f),
             Value::Num(f) => Value::Int(f.round() as i64),
             Value::Int(i) => Value::Int(*i),
+            Value::Rat(n, d) if *d != 0 => {
+                let f = *n as f64 / *d as f64;
+                Value::Int(f.round() as i64)
+            }
             _ => Value::Int(0),
         })),
         "exp" => Some(Ok(match arg {

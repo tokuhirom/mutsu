@@ -35,7 +35,11 @@ impl Interpreter {
     }
 
     pub(crate) fn resolve_code_var(&self, name: &str) -> Value {
-        if name.starts_with("infix:<") && name.ends_with('>') {
+        if (name.starts_with("infix:<")
+            || name.starts_with("prefix:<")
+            || name.starts_with("postfix:<"))
+            && name.ends_with('>')
+        {
             return Value::Routine {
                 package: "GLOBAL".to_string(),
                 name: name.to_string(),

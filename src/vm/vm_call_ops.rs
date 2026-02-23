@@ -201,7 +201,15 @@ impl VM {
             return Err(RuntimeError::new("VM stack underflow in CallMethodMut"));
         }
         let start = self.stack.len() - arity;
-        let args: Vec<Value> = self.stack.drain(start..).collect();
+        let raw_args: Vec<Value> = self.stack.drain(start..).collect();
+        // Flatten any Slip values in the argument list (from |capture slipping)
+        let mut args = Vec::new();
+        for arg in raw_args {
+            match arg {
+                Value::Slip(items) => args.extend(items.iter().cloned()),
+                other => args.push(other),
+            }
+        }
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallMethodMut target".to_string())
         })?;

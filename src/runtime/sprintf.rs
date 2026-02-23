@@ -53,6 +53,7 @@ pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
         let int_val = || match arg {
             Some(Value::Int(i)) => *i,
             Some(Value::Num(f)) => *f as i64,
+            Some(Value::Rat(n, d)) if *d != 0 => *n / *d,
             Some(Value::Str(s)) => s.trim().parse::<i64>().unwrap_or(0),
             Some(Value::Bool(b)) => {
                 if *b {
@@ -66,6 +67,7 @@ pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
         let float_val = || match arg {
             Some(Value::Int(i)) => *i as f64,
             Some(Value::Num(f)) => *f,
+            Some(Value::Rat(n, d)) if *d != 0 => *n as f64 / *d as f64,
             Some(Value::Str(s)) => s.trim().parse::<f64>().unwrap_or(0.0),
             _ => 0.0,
         };

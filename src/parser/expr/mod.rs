@@ -57,11 +57,7 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
         }
         // Wrap WhateverCode expressions in a lambda, but not bare * (Whatever)
         if contains_whatever(&expr) && !is_whatever(&expr) {
-            let body_expr = replace_whatever(&expr);
-            expr = Expr::Lambda {
-                param: "_".to_string(),
-                body: vec![Stmt::Expr(body_expr)],
-            };
+            expr = wrap_whatevercode(&expr);
         }
         Ok((rest, expr))
     })();
@@ -91,11 +87,7 @@ pub(super) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {
         ));
     }
     if contains_whatever(&expr) {
-        let body_expr = replace_whatever(&expr);
-        expr = Expr::Lambda {
-            param: "_".to_string(),
-            body: vec![Stmt::Expr(body_expr)],
-        };
+        expr = wrap_whatevercode(&expr);
     }
     Ok((rest, expr))
 }
@@ -124,23 +116,93 @@ fn contains_whatever(expr: &Expr) -> bool {
         } => false,
         Expr::Binary { left, right, .. } => contains_whatever(left) || contains_whatever(right),
         Expr::Unary { expr, .. } => contains_whatever(expr),
+        // Pseudo-methods (.WHAT, .WHO, .HOW, etc.) are always evaluated immediately
+        // on Whatever, they don't create WhateverCode. e.g. *.WHAT returns (Whatever).
+        Expr::MethodCall { target, name, .. }
+            if matches!(
+                name.as_str(),
+                "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "DEFINITE" | "VAR"
+            ) && is_whatever(target) =>
+        {
+            false
+        }
         Expr::MethodCall { target, .. } => contains_whatever(target),
-        Expr::Index { target, index } => contains_whatever(target) || contains_whatever(index),
+        // Only check target, not index: @a[*-1] should NOT make the whole expr a WhateverCode.
+        // The [*-1] subscript handles its own WhateverCode wrapping.
+        Expr::Index { target, .. } => contains_whatever(target),
         _ => false,
     }
 }
 
-fn replace_whatever(expr: &Expr) -> Expr {
+/// Count the number of distinct Whatever (`*`) placeholders in an expression.
+fn count_whatever(expr: &Expr) -> usize {
     match expr {
-        e if is_whatever(e) => Expr::Var("_".to_string()),
+        e if is_whatever(e) => 1,
+        Expr::Binary {
+            op:
+                TokenKind::DotDot
+                | TokenKind::DotDotCaret
+                | TokenKind::CaretDotDot
+                | TokenKind::CaretDotDotCaret
+                | TokenKind::DotDotDot
+                | TokenKind::DotDotDotCaret,
+            ..
+        } => 0,
+        Expr::Binary { left, right, .. } => count_whatever(left) + count_whatever(right),
+        Expr::Unary { expr, .. } => count_whatever(expr),
+        Expr::MethodCall { target, .. } => count_whatever(target),
+        // Only check target, not index (subscript handles its own WhateverCode)
+        Expr::Index { target, .. } => count_whatever(target),
+        _ => 0,
+    }
+}
+
+/// Replace Whatever expressions with numbered parameter variables.
+/// `counter` tracks the next parameter index to assign.
+fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
+    match expr {
+        e if is_whatever(e) => {
+            let var_name = format!("__wc_{}", counter);
+            *counter += 1;
+            Expr::Var(var_name)
+        }
+        // Unwrap a nested WhateverCode lambda: reuse its body with renumbered params
+        Expr::Lambda { param, body } if param == "_" => {
+            // Single-param WhateverCode: rename $_ to the next numbered param
+            let var_name = format!("__wc_{}", counter);
+            *counter += 1;
+            if let Some(Stmt::Expr(e)) = body.first() {
+                rename_var(e, "_", &var_name)
+            } else {
+                Expr::Var(var_name)
+            }
+        }
+        Expr::AnonSubParams { params, body } if params.iter().all(|p| p.starts_with("__wc_")) => {
+            // Multi-param WhateverCode: renumber all params
+            let mut renames = Vec::new();
+            for old_name in params {
+                let new_name = format!("__wc_{}", counter);
+                *counter += 1;
+                renames.push((old_name.clone(), new_name));
+            }
+            let mut body_expr = if let Some(Stmt::Expr(e)) = body.first() {
+                e.clone()
+            } else {
+                return expr.clone();
+            };
+            for (old, new) in &renames {
+                body_expr = rename_var(&body_expr, old, new);
+            }
+            body_expr
+        }
         Expr::Binary { left, op, right } => Expr::Binary {
-            left: Box::new(replace_whatever(left)),
+            left: Box::new(replace_whatever_numbered(left, counter)),
             op: op.clone(),
-            right: Box::new(replace_whatever(right)),
+            right: Box::new(replace_whatever_numbered(right, counter)),
         },
         Expr::Unary { op, expr } => Expr::Unary {
             op: op.clone(),
-            expr: Box::new(replace_whatever(expr)),
+            expr: Box::new(replace_whatever_numbered(expr, counter)),
         },
         Expr::MethodCall {
             target,
@@ -148,14 +210,113 @@ fn replace_whatever(expr: &Expr) -> Expr {
             args,
             modifier,
         } => Expr::MethodCall {
-            target: Box::new(replace_whatever(target)),
+            target: Box::new(replace_whatever_numbered(target, counter)),
             name: name.clone(),
             args: args.clone(),
             modifier: *modifier,
         },
         Expr::Index { target, index } => Expr::Index {
-            target: Box::new(replace_whatever(target)),
-            index: Box::new(replace_whatever(index)),
+            target: Box::new(replace_whatever_numbered(target, counter)),
+            index: index.clone(),
+        },
+        _ => expr.clone(),
+    }
+}
+
+/// Rename a variable in an expression tree.
+fn rename_var(expr: &Expr, old_name: &str, new_name: &str) -> Expr {
+    match expr {
+        Expr::Var(name) if name == old_name => Expr::Var(new_name.to_string()),
+        Expr::Binary { left, op, right } => Expr::Binary {
+            left: Box::new(rename_var(left, old_name, new_name)),
+            op: op.clone(),
+            right: Box::new(rename_var(right, old_name, new_name)),
+        },
+        Expr::Unary { op, expr } => Expr::Unary {
+            op: op.clone(),
+            expr: Box::new(rename_var(expr, old_name, new_name)),
+        },
+        Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier,
+        } => Expr::MethodCall {
+            target: Box::new(rename_var(target, old_name, new_name)),
+            name: name.clone(),
+            args: args
+                .iter()
+                .map(|a| rename_var(a, old_name, new_name))
+                .collect(),
+            modifier: *modifier,
+        },
+        Expr::Index { target, index } => Expr::Index {
+            target: Box::new(rename_var(target, old_name, new_name)),
+            index: Box::new(rename_var(index, old_name, new_name)),
+        },
+        _ => expr.clone(),
+    }
+}
+
+/// Build a WhateverCode lambda from an expression containing Whatever placeholders.
+fn wrap_whatevercode(expr: &Expr) -> Expr {
+    let wc_count = count_whatever(expr);
+
+    if wc_count <= 1 {
+        // Single-arg: use Lambda with param "_" for backward compat
+        // Use a special single-arg replacer that maps * and nested single-arg WC to $_
+        let body_expr = replace_whatever_single(expr);
+        Expr::Lambda {
+            param: "_".to_string(),
+            body: vec![Stmt::Expr(body_expr)],
+        }
+    } else {
+        // Multi-arg: use AnonSubParams with numbered params
+        let mut counter = 0;
+        let body_expr = replace_whatever_numbered(expr, &mut counter);
+        let params: Vec<String> = (0..counter).map(|i| format!("__wc_{}", i)).collect();
+        Expr::AnonSubParams {
+            params,
+            body: vec![Stmt::Expr(body_expr)],
+        }
+    }
+}
+
+/// Replace Whatever and nested single-arg WhateverCode with $_ (for single-arg wrapping).
+fn replace_whatever_single(expr: &Expr) -> Expr {
+    match expr {
+        e if is_whatever(e) => Expr::Var("_".to_string()),
+        // A nested single-arg WhateverCode: unwrap and reuse body (already uses $_)
+        Expr::Lambda { param, body } if param == "_" => {
+            if let Some(Stmt::Expr(e)) = body.first() {
+                e.clone()
+            } else {
+                Expr::Var("_".to_string())
+            }
+        }
+        Expr::Binary { left, op, right } => Expr::Binary {
+            left: Box::new(replace_whatever_single(left)),
+            op: op.clone(),
+            right: Box::new(replace_whatever_single(right)),
+        },
+        Expr::Unary { op, expr } => Expr::Unary {
+            op: op.clone(),
+            expr: Box::new(replace_whatever_single(expr)),
+        },
+        Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier,
+        } => Expr::MethodCall {
+            target: Box::new(replace_whatever_single(target)),
+            name: name.clone(),
+            args: args.clone(),
+            modifier: *modifier,
+        },
+        Expr::Index { target, index } => Expr::Index {
+            target: Box::new(replace_whatever_single(target)),
+            index: index.clone(),
         },
         _ => expr.clone(),
     }

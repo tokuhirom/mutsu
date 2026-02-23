@@ -229,6 +229,54 @@ impl VM {
                     _ => Value::Nil,
                 }
             }
+            // GenericRange with WhateverCode endpoint: @a[0..*-2]
+            (
+                Value::Array(ref items, ..),
+                Value::GenericRange {
+                    ref start,
+                    ref end,
+                    excl_start,
+                    excl_end,
+                },
+            ) => {
+                let len = items.len() as i64;
+                let mut resolve_endpoint = |val: &Value| -> i64 {
+                    match val {
+                        Value::Int(i) => *i,
+                        Value::Sub(data) => {
+                            let param = data.params.first().map(|s| s.as_str()).unwrap_or("_");
+                            let mut sub_env = data.env.clone();
+                            sub_env.insert(param.to_string(), Value::Int(len));
+                            let saved_env = std::mem::take(self.interpreter.env_mut());
+                            *self.interpreter.env_mut() = sub_env;
+                            let result = self
+                                .interpreter
+                                .eval_block_value(&data.body)
+                                .unwrap_or(Value::Nil);
+                            *self.interpreter.env_mut() = saved_env;
+                            match result {
+                                Value::Int(i) => i,
+                                _ => 0,
+                            }
+                        }
+                        _ => match val {
+                            Value::Num(f) => *f as i64,
+                            _ => 0,
+                        },
+                    }
+                };
+                let s = resolve_endpoint(start);
+                let e = resolve_endpoint(end);
+                let actual_start = if excl_start { s + 1 } else { s }.max(0) as usize;
+                let actual_end = if excl_end { e } else { e + 1 }.max(0) as usize;
+                let actual_end = actual_end.min(items.len());
+                let slice = if actual_start >= actual_end {
+                    Vec::new()
+                } else {
+                    items[actual_start..actual_end].to_vec()
+                };
+                Value::array(slice)
+            }
             // Capture indexing: $capture<key> (named) or $capture[idx] (positional)
             (
                 Value::Capture {

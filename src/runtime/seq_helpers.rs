@@ -484,7 +484,30 @@ impl Interpreter {
         }
     }
 
+    /// Check if a value matches a type name for sequence type endpoints.
+    /// Handles the Num→Rat mapping since mutsu uses Num for decimal values.
+    pub(super) fn seq_type_matches(val: &Value, type_name: &str) -> bool {
+        let actual = super::value_type_name(val);
+        if actual == type_name {
+            return true;
+        }
+        // Special case: Num values with non-integer values match "Rat"
+        if type_name == "Rat"
+            && let Value::Num(f) = val
+        {
+            return *f != f.floor(); // non-integer Num matches Rat
+        }
+        false
+    }
+
     pub(super) fn seq_values_equal(a: &Value, b: &Value) -> bool {
+        // Junction endpoint: check if a matches any junction value
+        if let Value::Junction { values, .. } = b {
+            return values.iter().any(|v| Self::seq_values_equal(a, v));
+        }
+        if let Value::Junction { values, .. } = a {
+            return values.iter().any(|v| Self::seq_values_equal(v, b));
+        }
         match (a, b) {
             (Value::Int(x), Value::Int(y)) => x == y,
             (Value::Str(x), Value::Str(y)) => x == y,
@@ -555,6 +578,61 @@ impl Interpreter {
         chars.into_iter().collect()
     }
 
+    // Compute the predecessor of a string (decrement the last character)
+    pub(super) fn string_pred(s: &str) -> String {
+        if s.is_empty() {
+            return String::new();
+        }
+        let mut chars: Vec<char> = s.chars().collect();
+        // For single-char strings, just decrement the codepoint
+        if chars.len() == 1 {
+            let ch = chars[0];
+            if let Some(prev) = char::from_u32(ch as u32 - 1) {
+                return prev.to_string();
+            }
+            return s.to_string();
+        }
+        // Multi-char: decrement from end with borrow
+        let mut borrow = true;
+        for ch in chars.iter_mut().rev() {
+            if !borrow {
+                break;
+            }
+            if ch.is_ascii_lowercase() {
+                if *ch == 'a' {
+                    *ch = 'z';
+                } else {
+                    *ch = (*ch as u8 - 1) as char;
+                    borrow = false;
+                }
+            } else if ch.is_ascii_uppercase() {
+                if *ch == 'A' {
+                    *ch = 'Z';
+                } else {
+                    *ch = (*ch as u8 - 1) as char;
+                    borrow = false;
+                }
+            } else if ch.is_ascii_digit() {
+                if *ch == '0' {
+                    *ch = '9';
+                } else {
+                    *ch = (*ch as u8 - 1) as char;
+                    borrow = false;
+                }
+            } else {
+                if let Some(prev) = char::from_u32(*ch as u32 - 1) {
+                    *ch = prev;
+                }
+                borrow = false;
+            }
+        }
+        if borrow && chars.len() > 1 {
+            // Remove leading character on borrow
+            chars.remove(0);
+        }
+        chars.into_iter().collect()
+    }
+
     // Add step to a sequence value, preserving type where possible
     pub(super) fn seq_add(val: &Value, step: f64) -> Value {
         match val {
@@ -574,6 +652,32 @@ impl Interpreter {
                 }
             }
             _ => Value::Num(Self::seq_value_to_f64(val).unwrap_or(0.0) + step),
+        }
+    }
+
+    // Multiply a sequence value by a rational ratio (num/den), preserving Rat type
+    pub(super) fn seq_mul_rat(val: &Value, num: i64, den: i64) -> Value {
+        match val {
+            Value::Int(i) => {
+                // In geometric sequences with rational ratio, always produce Rat
+                if let Some(product) = i.checked_mul(num) {
+                    make_rat(product, den)
+                } else {
+                    Value::Num(*i as f64 * num as f64 / den as f64)
+                }
+            }
+            Value::Num(f) => {
+                let result = *f * num as f64 / den as f64;
+                Value::Num(result)
+            }
+            Value::Rat(n, d) => {
+                if let (Some(new_num), Some(new_den)) = (n.checked_mul(num), d.checked_mul(den)) {
+                    make_rat(new_num, new_den)
+                } else {
+                    Value::Num(*n as f64 / *d as f64 * num as f64 / den as f64)
+                }
+            }
+            _ => Self::seq_mul(val, num as f64 / den as f64),
         }
     }
 

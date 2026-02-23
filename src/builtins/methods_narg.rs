@@ -126,7 +126,7 @@ pub(crate) fn native_method_1arg(
             Some(Ok(Value::array(parts)))
         }
         "join" => match target {
-            Value::Array(items, ..) => {
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
                 let sep = arg.to_string_value();
                 let joined = items
                     .iter()
@@ -288,18 +288,27 @@ pub(crate) fn native_method_1arg(
             let scale = match arg {
                 Value::Int(i) => *i as f64,
                 Value::Num(f) => *f,
+                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
                 _ => return None,
             };
             let x = match target {
                 Value::Int(i) => *i as f64,
                 Value::Num(f) => *f,
+                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
                 _ => return None,
             };
             if scale == 0.0 {
                 return Some(Ok(Value::Int(x.round() as i64)));
             }
             let factor = (1.0 / scale).abs();
-            Some(Ok(Value::Num((x * factor).round() / factor)))
+            // Return Rat when the result has a fractional part matching the scale
+            let result = (x * factor).round() / factor;
+            if result == result.floor() {
+                Some(Ok(Value::Int(result as i64)))
+            } else {
+                let (n, d) = f64_to_rat(result);
+                Some(Ok(Value::Rat(n, d)))
+            }
         }
         "pick" => {
             let mut items = runtime::value_to_list(target);

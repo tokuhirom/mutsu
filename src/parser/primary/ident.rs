@@ -384,7 +384,7 @@ pub(super) fn is_listop(name: &str) -> bool {
 pub(super) fn is_expr_listop(name: &str) -> bool {
     matches!(
         name,
-        "EVAL" | "flat" | "run" | "shell" | "cross" | "await" | "dir"
+        "EVAL" | "flat" | "slip" | "run" | "shell" | "cross" | "await" | "dir"
     ) || crate::parser::stmt::simple::is_imported_function(name)
 }
 

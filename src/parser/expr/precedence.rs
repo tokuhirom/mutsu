@@ -1,12 +1,12 @@
 use super::super::helpers::{is_ident_char, ws};
 use super::super::parse_result::{PError, PResult, merge_expected_messages, parse_tag};
 
-use crate::ast::{Expr, Stmt};
+use crate::ast::Expr;
 use crate::token_kind::TokenKind;
 
 use super::operators::*;
 use super::postfix::prefix_expr;
-use super::{contains_whatever, replace_whatever};
+use super::{contains_whatever, wrap_whatevercode};
 
 /// Ternary: expr ?? expr !! expr
 pub(super) fn ternary(input: &str) -> PResult<'_, Expr> {
@@ -288,13 +288,23 @@ fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
 
 /// Sequence: ... and ...^
 fn sequence_expr(input: &str) -> PResult<'_, Expr> {
-    let (rest, left) = range_expr(input)?;
+    let (rest, mut left) = range_expr(input)?;
     let (r, _) = ws(rest)?;
+
+    // Helper: wrap LHS WhateverCode before building the sequence node.
+    // E.g. `*+* ... *` → the `*+*` should be a WhateverCode generator.
+    fn maybe_wrap_lhs(left: &mut Expr) {
+        if contains_whatever(left) && !matches!(left, Expr::Whatever) {
+            *left = wrap_whatevercode(left);
+        }
+    }
+
     if let Some(r) = r.strip_prefix("...^") {
         let (r, _) = ws(r)?;
         let (r, right) = range_expr(r).map_err(|err| {
             enrich_expected_error(err, "expected expression after '...^'", r.len())
         })?;
+        maybe_wrap_lhs(&mut left);
         return Ok((
             r,
             Expr::Binary {
@@ -310,6 +320,7 @@ fn sequence_expr(input: &str) -> PResult<'_, Expr> {
         let (r, right) = range_expr(r).map_err(|err| {
             enrich_expected_error(err, "expected expression after '...'", r.len())
         })?;
+        maybe_wrap_lhs(&mut left);
         return Ok((
             r,
             Expr::Binary {
@@ -372,11 +383,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             if matches!(op, ComparisonOp::SmartMatch | ComparisonOp::SmartNotMatch)
                 && contains_whatever(&right)
             {
-                let body_expr = replace_whatever(&right);
-                right = Expr::Lambda {
-                    param: "_".to_string(),
-                    body: vec![Stmt::Expr(body_expr)],
-                };
+                right = wrap_whatevercode(&right);
             }
             let mut result = Expr::Binary {
                 left: Box::new(left),
@@ -513,6 +520,16 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, left) = structural_expr(input)?;
     let (r, _) = ws(rest)?;
 
+    // Helper: wrap WhateverCode expressions in range endpoints.
+    // `*-2` should become a WhateverCode lambda, but bare `*` should stay as Whatever.
+    fn maybe_wrap_range_endpoint(expr: Expr) -> Expr {
+        if contains_whatever(&expr) && !matches!(&expr, Expr::Whatever) {
+            wrap_whatevercode(&expr)
+        } else {
+            expr
+        }
+    }
+
     if let Some(stripped) = r.strip_prefix("^..^") {
         let (r, _) = ws(stripped)?;
         let (r, right) = structural_expr(r).map_err(|err| {
@@ -523,7 +540,7 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Binary {
                 left: Box::new(left),
                 op: TokenKind::CaretDotDotCaret,
-                right: Box::new(right),
+                right: Box::new(maybe_wrap_range_endpoint(right)),
             },
         ));
     }
@@ -536,7 +553,7 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Binary {
                 left: Box::new(left),
                 op: TokenKind::CaretDotDot,
-                right: Box::new(right),
+                right: Box::new(maybe_wrap_range_endpoint(right)),
             },
         ));
     }
@@ -549,7 +566,7 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Binary {
                 left: Box::new(left),
                 op: TokenKind::DotDotCaret,
-                right: Box::new(right),
+                right: Box::new(maybe_wrap_range_endpoint(right)),
             },
         ));
     }
@@ -563,7 +580,7 @@ pub(super) fn range_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Binary {
                 left: Box::new(left),
                 op: TokenKind::DotDot,
-                right: Box::new(right),
+                right: Box::new(maybe_wrap_range_endpoint(right)),
             },
         ));
     }

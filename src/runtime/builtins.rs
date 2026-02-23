@@ -236,6 +236,28 @@ impl Interpreter {
         {
             return self.call_infix_routine(op, args);
         }
+        if let Some(op) = name
+            .strip_prefix("prefix:<")
+            .and_then(|s| s.strip_suffix('>'))
+        {
+            if args.is_empty() {
+                return Ok(Value::Nil);
+            }
+            let arg = &args[0];
+            return match op {
+                "!" => Ok(Value::Bool(!arg.truthy())),
+                "+" => Ok(Value::Int(crate::runtime::to_int(arg))),
+                "-" => crate::builtins::arith_negate(arg.clone()),
+                "~" => Ok(Value::Str(arg.to_string_value())),
+                "?" => Ok(Value::Bool(arg.truthy())),
+                "so" => Ok(Value::Bool(arg.truthy())),
+                "not" => Ok(Value::Bool(!arg.truthy())),
+                _ => Err(RuntimeError::new(format!(
+                    "Unknown prefix operator: {}",
+                    op
+                ))),
+            };
+        }
         if (self.loaded_modules.contains("Test")
             || self.loaded_modules.iter().any(|m| m.starts_with("Test::")))
             && let Some(result) = self.call_test_function(name, args)?
@@ -327,6 +349,41 @@ impl Interpreter {
         if args.len() == 1 {
             return Ok(args[0].clone());
         }
+        // Sequence operators: dispatch directly to eval_sequence
+        match op {
+            "..." | "...^" | "^..." | "^...^" => {
+                let exclude_end = op == "...^" || op == "^...^";
+                let exclude_start = op.starts_with('^');
+
+                let mut result = if args.len() > 2 {
+                    // Chained sequence: multiple waypoints
+                    // args = [seed, waypoint1, waypoint2, ..., endpoint]
+                    // Each waypoint can be a list: first element is endpoint for
+                    // previous segment, whole list is seed for next segment.
+                    self.eval_chained_sequence(&args, exclude_end)?
+                } else {
+                    let left = args[0].clone();
+                    let right = args.last().cloned().unwrap_or(Value::Nil);
+                    self.eval_sequence(left, right, exclude_end)?
+                };
+
+                if exclude_start {
+                    // Remove the first element
+                    if let Value::Array(items, is_real) = &result
+                        && !items.is_empty()
+                    {
+                        let new_items = items[1..].to_vec();
+                        result = if *is_real {
+                            Value::real_array(new_items)
+                        } else {
+                            Value::array(new_items)
+                        };
+                    }
+                }
+                return Ok(result);
+            }
+            _ => {}
+        }
         // Short-circuit operators need special handling
         match op {
             "andthen" => {
@@ -406,6 +463,9 @@ impl Interpreter {
             "(^)" | "⊖" => TokenKind::SetSymDiff,
             "(elem)" | "∈" => TokenKind::SetElem,
             "(cont)" | "∋" => TokenKind::SetCont,
+            "..." => TokenKind::DotDotDot,
+            "...^" => TokenKind::DotDotDotCaret,
+            ".." => TokenKind::DotDot,
             _ => TokenKind::Ident(op.to_string()),
         }
     }

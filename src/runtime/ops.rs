@@ -226,6 +226,7 @@ impl Interpreter {
     pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         match val {
             Value::Array(items, ..) => items.to_vec(),
+            Value::Seq(items) => items.to_vec(),
             Value::Hash(items) => items
                 .iter()
                 .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
@@ -352,7 +353,13 @@ impl Interpreter {
                 let ord = a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal) as i32;
                 Ok(Value::Bool(f(ord)))
             }
-            _ => Ok(Value::Bool(f(0))),
+            (ref left_val, ref right_val) => {
+                // Fallback: convert both to f64 for cross-type comparisons (e.g. Num vs Rat)
+                let a = super::to_float_value(left_val).unwrap_or(0.0);
+                let b = super::to_float_value(right_val).unwrap_or(0.0);
+                let ord = a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal) as i32;
+                Ok(Value::Bool(f(ord)))
+            }
         }
     }
 }

@@ -224,6 +224,7 @@ impl Interpreter {
                     Value::Regex(_) => "Regex",
                     Value::Version { .. } => "Version",
                     Value::Slip(_) => "Slip",
+                    Value::Seq(_) => "Seq",
                     Value::Promise(_) => "Promise",
                     Value::Channel(_) => "Channel",
                     Value::HyperWhatever => "HyperWhatever",

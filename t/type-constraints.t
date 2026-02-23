@@ -8,12 +8,12 @@ multi sub describe(Str $x) { "string $x" }
 is describe(42), 'integer 42', 'multi dispatch selects Int variant';
 is describe('hello'), 'string hello', 'multi dispatch selects Str variant';
 
-# Type constraints with Num
+# Type constraints with Rat
 multi sub numtype(Int $x) { "int" }
-multi sub numtype(Num $x) { "num" }
+multi sub numtype(Rat $x) { "rat" }
 
 is numtype(5), 'int', 'Int matches Int constraint';
-is numtype(3.14), 'num', 'Num matches Num constraint';
+is numtype(3.14), 'rat', 'Rat matches Rat constraint';
 
 # Bool type constraint
 multi sub boolcheck(Bool $x) { "bool" }

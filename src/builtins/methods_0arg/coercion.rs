@@ -121,9 +121,77 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => None,
         },
         "Slip" => match target {
-            Value::Array(items, ..) => Some(Ok(Value::Slip(items.clone()))),
+            Value::Array(items, ..) | Value::Seq(items) => Some(Ok(Value::Slip(items.clone()))),
             Value::Slip(_) => Some(Ok(target.clone())),
             _ => Some(Ok(Value::slip(vec![target.clone()]))),
+        },
+        "List" => match target {
+            Value::Range(a, b) => {
+                if *b == i64::MAX || *a == i64::MIN {
+                    Some(Ok(target.clone()))
+                } else {
+                    Some(Ok(Value::array((*a..=*b).map(Value::Int).collect())))
+                }
+            }
+            Value::RangeExcl(a, b) => {
+                if *b == i64::MAX || *a == i64::MIN {
+                    Some(Ok(target.clone()))
+                } else {
+                    Some(Ok(Value::array((*a..*b).map(Value::Int).collect())))
+                }
+            }
+            Value::Array(items, _) | Value::Seq(items) => Some(Ok(Value::array(items.to_vec()))),
+            Value::GenericRange {
+                start,
+                end,
+                excl_start,
+                excl_end,
+            } => {
+                // String range: expand using codepoint succession
+                if let (Value::Str(s), Value::Str(e)) = (start.as_ref(), end.as_ref()) {
+                    if s.chars().count() == 1 && e.chars().count() == 1 {
+                        let sc = s.chars().next().unwrap() as u32;
+                        let ec = e.chars().next().unwrap() as u32;
+                        let start_cp = if *excl_start { sc + 1 } else { sc };
+                        let items: Vec<Value> = if sc <= ec {
+                            let end_cp = if *excl_end { ec } else { ec + 1 };
+                            (start_cp..end_cp)
+                                .filter_map(char::from_u32)
+                                .map(|c| Value::Str(c.to_string()))
+                                .collect()
+                        } else {
+                            let end_cp = if *excl_end { ec } else { ec.saturating_sub(1) };
+                            (end_cp + 1..=start_cp)
+                                .rev()
+                                .filter_map(char::from_u32)
+                                .map(|c| Value::Str(c.to_string()))
+                                .collect()
+                        };
+                        Some(Ok(Value::array(items)))
+                    } else {
+                        Some(Ok(Value::array(vec![target.clone()])))
+                    }
+                } else {
+                    // Numeric generic range
+                    let items = crate::runtime::utils::value_to_list(target);
+                    Some(Ok(Value::array(items)))
+                }
+            }
+            Value::RangeExclStart(a, b) => {
+                if *b == i64::MAX {
+                    Some(Ok(target.clone()))
+                } else {
+                    Some(Ok(Value::array((*a + 1..=*b).map(Value::Int).collect())))
+                }
+            }
+            Value::RangeExclBoth(a, b) => {
+                if *b == i64::MAX {
+                    Some(Ok(target.clone()))
+                } else {
+                    Some(Ok(Value::array((*a + 1..*b).map(Value::Int).collect())))
+                }
+            }
+            _ => Some(Ok(Value::array(vec![target.clone()]))),
         },
         "list" | "Array" => match target {
             Value::Range(a, b) => {
@@ -154,7 +222,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::array((a + 1..*b).map(Value::Int).collect())))
                 }
             }
-            Value::GenericRange { .. } => Some(Ok(target.clone())),
+            Value::GenericRange { .. } => {
+                let items = crate::runtime::utils::value_to_list(target);
+                Some(Ok(Value::array(items)))
+            }
             Value::Array(..) => Some(Ok(target.clone())),
             Value::Channel(_) => None, // fall through to runtime for drain
             _ => Some(Ok(Value::array(vec![target.clone()]))),

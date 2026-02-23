@@ -11,6 +11,7 @@ set -euo pipefail
 
 OUTDIR="tmp"
 WHITELIST="roast-whitelist.txt"
+TOO_DIFFICULT="too_difficult.txt"
 COUNT=5
 
 while getopts "n:" opt; do
@@ -45,8 +46,11 @@ for entry in "${CATEGORIES[@]}"; do
         continue
     fi
 
-    # Remove whitelisted tests
+    # Remove whitelisted and too-difficult tests
     filtered=$(comm -23 <(sort "$file") <(sort "$WHITELIST"))
+    if [[ -f "$TOO_DIFFICULT" ]]; then
+        filtered=$(comm -23 <(echo "$filtered" | sort) <(sort "$TOO_DIFFICULT"))
+    fi
 
     # If raku pass list exists, further filter to only tests that pass on raku
     if [[ -f "$RAKU_PASS" ]]; then
