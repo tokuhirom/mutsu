@@ -1,5 +1,5 @@
 use super::super::expr::expression;
-use super::super::helpers::ws;
+use super::super::helpers::{split_angle_words, ws};
 use super::super::parse_result::{PError, PResult, merge_expected_messages, parse_char};
 use super::super::primary::parse_block_body;
 
@@ -262,7 +262,7 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                         .ok_or_else(|| PError::expected("'>' closing angle bracket"))?;
                     let content = &r[..end];
                     let r = &r[end + 1..];
-                    let words: Vec<&str> = content.split_whitespace().collect();
+                    let words = split_angle_words(content);
                     if words.len() == 1 {
                         return Ok((
                             r,

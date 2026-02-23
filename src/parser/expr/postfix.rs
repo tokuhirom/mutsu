@@ -1,4 +1,4 @@
-use super::super::helpers::{is_ident_char, ws};
+use super::super::helpers::{is_ident_char, split_angle_words, ws};
 use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 use super::super::primary::{colonpair_expr, parse_block_body, parse_call_arg_list, primary};
 
@@ -453,7 +453,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 return Err(PError::expected_at("closing '>'", r));
             };
             let content = &r[..end];
-            let keys: Vec<&str> = content.split_whitespace().collect();
+            let keys = split_angle_words(content);
             if keys.is_empty()
                 || keys.iter().any(|key| {
                     key.is_empty()

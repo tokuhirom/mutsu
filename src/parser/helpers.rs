@@ -248,6 +248,36 @@ pub(super) fn ws1(input: &str) -> PResult<'_, ()> {
     Ok((rest, ()))
 }
 
+/// Returns true for non-breaking space characters that should not split words in `<...>`.
+pub(super) fn is_non_breaking_space(c: char) -> bool {
+    matches!(c, '\u{00A0}' | '\u{2007}' | '\u{202F}' | '\u{FEFF}')
+}
+
+/// Split angle-list content into words, using breaking whitespace only.
+///
+/// In Raku `<...>` list quotes, non-breaking spaces are not separators.
+pub(super) fn split_angle_words(content: &str) -> Vec<&str> {
+    let mut words = Vec::new();
+    let mut rest = content;
+    loop {
+        let (r, _) = take_while_opt(rest, |c: char| {
+            c.is_whitespace() && !is_non_breaking_space(c)
+        });
+        rest = r;
+        if rest.is_empty() {
+            break;
+        }
+        let Ok((r, word)) = take_while1(rest, |c: char| {
+            !c.is_whitespace() || is_non_breaking_space(c)
+        }) else {
+            break;
+        };
+        words.push(word);
+        rest = r;
+    }
+    words
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,5 +300,17 @@ mod tests {
         let input = "=for comment\nsome comment\n\ncode";
         let (rest, _) = ws(input).unwrap();
         assert_eq!(rest, "code");
+    }
+
+    #[test]
+    fn split_angle_words_splits_breaking_whitespace() {
+        let words = split_angle_words("a\tb c\nd");
+        assert_eq!(words, vec!["a", "b", "c", "d"]);
+    }
+
+    #[test]
+    fn split_angle_words_keeps_non_breaking_space_inside_word() {
+        let words = split_angle_words("a\u{00A0}b");
+        assert_eq!(words, vec!["a\u{00A0}b"]);
     }
 }
