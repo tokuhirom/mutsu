@@ -85,7 +85,24 @@ impl Interpreter {
             }
             let fq = format!("{}::{}/{}", self.current_package, name, arity);
             if !has_types {
-                self.functions.insert(fq, def);
+                match self.functions.entry(fq.clone()) {
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        entry.insert(def);
+                    }
+                    std::collections::hash_map::Entry::Occupied(_) => {
+                        let mut idx = 1usize;
+                        loop {
+                            let key = format!("{}__m{}", fq, idx);
+                            if let std::collections::hash_map::Entry::Vacant(entry) =
+                                self.functions.entry(key)
+                            {
+                                entry.insert(def);
+                                break;
+                            }
+                            idx += 1;
+                        }
+                    }
+                }
             } else {
                 self.functions.entry(fq).or_insert(def);
             }
@@ -182,7 +199,24 @@ impl Interpreter {
             }
             let fq = format!("GLOBAL::{}/{}", name, arity);
             if !has_types {
-                self.functions.insert(fq, def);
+                match self.functions.entry(fq.clone()) {
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        entry.insert(def);
+                    }
+                    std::collections::hash_map::Entry::Occupied(_) => {
+                        let mut idx = 1usize;
+                        loop {
+                            let key = format!("{}__m{}", fq, idx);
+                            if let std::collections::hash_map::Entry::Vacant(entry) =
+                                self.functions.entry(key)
+                            {
+                                entry.insert(def);
+                                break;
+                            }
+                            idx += 1;
+                        }
+                    }
+                }
             } else {
                 self.functions.entry(fq).or_insert(def);
             }

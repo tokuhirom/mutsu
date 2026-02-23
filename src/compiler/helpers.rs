@@ -408,6 +408,7 @@ impl Compiler {
         &mut self,
         iterable: &Expr,
         param: &Option<String>,
+        param_def: &Option<crate::ast::ParamDef>,
         params: &[String],
         body: &[Stmt],
         label: &Option<String>,
@@ -416,7 +417,7 @@ impl Compiler {
         let param_idx = param
             .as_ref()
             .map(|p| self.code.add_constant(Value::Str(p.clone())));
-        let bind_stmts = Self::build_for_bind_stmts(param, param_idx, params);
+        let bind_stmts = Self::build_for_bind_stmts(param, param_def, param_idx, params);
         if !bind_stmts.is_empty() {
             let mut merged = bind_stmts;
             merged.extend(loop_body);

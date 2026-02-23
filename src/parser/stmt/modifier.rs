@@ -130,6 +130,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
             Stmt::For {
                 iterable,
                 param: None,
+                param_def: Box::new(None),
                 params: Vec::new(),
                 body: vec![stmt],
                 label: None,

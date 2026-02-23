@@ -60,6 +60,156 @@ fn gcd_i64(a: i64, b: i64) -> i64 {
     if b == 0 { a } else { gcd_i64(b, a % b) }
 }
 
+fn positional_values_from_unpack_target(value: &Value) -> Vec<Value> {
+    match value {
+        Value::Capture { positional, .. } => positional.clone(),
+        other => super::value_to_list(other),
+    }
+}
+
+fn named_values_from_unpack_target(value: &Value) -> std::collections::HashMap<String, Value> {
+    match value {
+        Value::Capture { named, .. } => named.clone(),
+        Value::Hash(map) => (**map).clone(),
+        Value::Pair(key, val) => {
+            let mut out = std::collections::HashMap::new();
+            out.insert("key".to_string(), Value::Str(key.clone()));
+            out.insert("value".to_string(), *val.clone());
+            out
+        }
+        Value::Instance { attributes, .. } => (**attributes).clone(),
+        _ => std::collections::HashMap::new(),
+    }
+}
+
+fn extract_named_from_unpack_target(
+    interpreter: &mut Interpreter,
+    value: &Value,
+    name: &str,
+) -> Option<Value> {
+    let named = named_values_from_unpack_target(value);
+    if let Some(v) = named.get(name) {
+        return Some(v.clone());
+    }
+    interpreter
+        .call_method_with_values(value.clone(), name, Vec::new())
+        .ok()
+}
+
+fn sub_signature_matches_value(
+    interpreter: &mut Interpreter,
+    sub_params: &[ParamDef],
+    value: &Value,
+) -> bool {
+    let positional = positional_values_from_unpack_target(value);
+    let mut positional_idx = 0usize;
+    for pd in sub_params {
+        if pd.slurpy {
+            continue;
+        }
+        let mut candidate = if pd.named {
+            extract_named_from_unpack_target(interpreter, value, &pd.name)
+        } else if positional_idx < positional.len() {
+            let v = positional[positional_idx].clone();
+            positional_idx += 1;
+            Some(v)
+        } else {
+            None
+        };
+        if candidate.is_none()
+            && let Some(default) = &pd.default
+        {
+            candidate = interpreter
+                .eval_block_value(&[Stmt::Expr(default.clone())])
+                .ok();
+        }
+        let Some(candidate) = candidate else {
+            return false;
+        };
+        if let Some(constraint) = &pd.type_constraint
+            && !interpreter.type_matches_value(constraint, &candidate)
+        {
+            return false;
+        }
+        if let Some(sub) = &pd.sub_signature
+            && !sub_signature_matches_value(interpreter, sub, &candidate)
+        {
+            return false;
+        }
+    }
+    true
+}
+
+fn bind_sub_signature_from_value(
+    interpreter: &mut Interpreter,
+    sub_params: &[ParamDef],
+    value: &Value,
+) -> Result<(), RuntimeError> {
+    let positional = positional_values_from_unpack_target(value);
+    let mut nested_positional_idx = 0usize;
+    for sub_pd in sub_params {
+        if sub_pd.slurpy {
+            if sub_pd.name.starts_with('%') {
+                let named = named_values_from_unpack_target(value);
+                if !sub_pd.name.is_empty() {
+                    interpreter
+                        .env
+                        .insert(sub_pd.name.clone(), Value::hash(named));
+                }
+            }
+            continue;
+        }
+        let mut candidate = if sub_pd.named {
+            extract_named_from_unpack_target(interpreter, value, &sub_pd.name)
+        } else if nested_positional_idx < positional.len() {
+            let v = positional[nested_positional_idx].clone();
+            nested_positional_idx += 1;
+            Some(v)
+        } else {
+            None
+        };
+        if candidate.is_none()
+            && let Some(default_expr) = &sub_pd.default
+        {
+            candidate = Some(interpreter.eval_block_value(&[Stmt::Expr(default_expr.clone())])?);
+        }
+        let Some(mut candidate) = candidate else {
+            continue;
+        };
+        if let Some(constraint) = &sub_pd.type_constraint {
+            if let Some((target, source)) = parse_coercion_type(constraint) {
+                if let Some(src) = source
+                    && !interpreter.type_matches_value(src, &candidate)
+                {
+                    return Err(RuntimeError::new(format!(
+                        "X::TypeCheck::Argument: Type check failed for {}: expected {}, got {}",
+                        sub_pd.name,
+                        constraint,
+                        super::value_type_name(&candidate)
+                    )));
+                }
+                candidate = coerce_value(target, candidate);
+            } else if !interpreter.type_matches_value(constraint, &candidate) {
+                return Err(RuntimeError::new(format!(
+                    "X::TypeCheck::Argument: Type check failed for {}: expected {}, got {}",
+                    sub_pd.name,
+                    constraint,
+                    super::value_type_name(&candidate)
+                )));
+            }
+        }
+        if !sub_pd.name.is_empty() {
+            interpreter
+                .env
+                .insert(sub_pd.name.clone(), candidate.clone());
+        }
+        if let Some(nested) = &sub_pd.sub_signature {
+            bind_sub_signature_from_value(interpreter, nested, &candidate)?;
+        }
+    }
+    Ok(())
+}
+
 /// Strip a type smiley suffix (:U, :D, :_) from a constraint string.
 /// Returns (base_type, smiley) where smiley is Some(":U"), Some(":D"), Some(":_") or None.
 pub(crate) fn strip_type_smiley(constraint: &str) -> (&str, Option<&str>) {
@@ -390,6 +540,14 @@ impl Interpreter {
                     return false;
                 }
             }
+            if let Some(sub_params) = &pd.sub_signature {
+                let Some(arg) = arg_for_checks.as_ref() else {
+                    return false;
+                };
+                if !sub_signature_matches_value(self, sub_params, arg) {
+                    return false;
+                }
+            }
             if let Some(where_expr) = &pd.where_constraint {
                 let Some(arg) = arg_for_checks.as_ref() else {
                     return false;
@@ -517,6 +675,9 @@ impl Interpreter {
                         && key == &pd.name
                     {
                         self.env.insert(pd.name.clone(), *val.clone());
+                        if let Some(sub_params) = &pd.sub_signature {
+                            bind_sub_signature_from_value(self, sub_params, val)?;
+                        }
                         found = true;
                         break;
                     }
@@ -559,11 +720,23 @@ impl Interpreter {
                     if !pd.name.is_empty() && pd.name != "__type_only__" {
                         self.env.insert(pd.name.clone(), value);
                     }
+                    if let Some(sub_params) = &pd.sub_signature {
+                        let target = self
+                            .env
+                            .get(&pd.name)
+                            .cloned()
+                            .unwrap_or_else(|| args[positional_idx].clone());
+                        bind_sub_signature_from_value(self, sub_params, &target)?;
+                    }
                     positional_idx += 1;
                 } else if let Some(default_expr) = &pd.default {
                     let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?;
                     if !pd.name.is_empty() {
                         self.env.insert(pd.name.clone(), value);
+                    }
+                    if let Some(sub_params) = &pd.sub_signature {
+                        let target = self.env.get(&pd.name).cloned().unwrap_or(Value::Nil);
+                        bind_sub_signature_from_value(self, sub_params, &target)?;
                     }
                 }
             }

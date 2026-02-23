@@ -2,7 +2,7 @@ use super::super::expr::expression;
 use super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
 
-use crate::ast::{AssignOp, Expr, Stmt};
+use crate::ast::{AssignOp, Expr, ParamDef, Stmt};
 use crate::token_kind::TokenKind;
 
 use super::{block, ident, keyword, parse_comma_or_expr, statement, var_name};
@@ -114,7 +114,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, iterable) = parse_comma_or_expr(r)?;
         let (r, _) = ws(r)?;
-        let (r, (param, params)) = parse_for_params(r)?;
+        let (r, (param, param_def, params)) = parse_for_params(r)?;
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         return Ok((
@@ -122,6 +122,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
             Stmt::For {
                 iterable,
                 param,
+                param_def: Box::new(param_def),
                 params,
                 body,
                 label: Some(label),
@@ -188,6 +189,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
             Stmt::For {
                 iterable: Expr::ArrayLiteral(vec![Expr::Literal(crate::value::Value::Nil)]),
                 param: None,
+                param_def: Box::new(None),
                 params: Vec::new(),
                 body,
                 label: Some(label),
@@ -204,6 +206,7 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
             Stmt::For {
                 iterable: Expr::ArrayLiteral(vec![Expr::Literal(crate::value::Value::Nil)]),
                 param: None,
+                param_def: Box::new(None),
                 params: Vec::new(),
                 body,
                 label: Some(label),
@@ -215,7 +218,9 @@ pub(super) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Parse for loop parameters: -> $param or -> $a, $b
-pub(super) fn parse_for_params(input: &str) -> PResult<'_, (Option<String>, Vec<String>)> {
+pub(super) fn parse_for_params(
+    input: &str,
+) -> PResult<'_, (Option<String>, Option<ParamDef>, Vec<String>)> {
     fn skip_pointy_return_type<'a>(mut r: &'a str) -> PResult<'a, ()> {
         let (r2, _) = ws(r)?;
         r = r2;
@@ -237,9 +242,22 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, (Option<String>, Vec<
         let (r, _) = ws(stripped)?;
         // Zero-parameter pointy block: for @a -> { ... }
         if r.starts_with('{') {
-            return Ok((r, (None, Vec::new())));
+            return Ok((r, (None, None, Vec::new())));
         }
-        let (r, first) = parse_pointy_param(r)?;
+        let (r, mut first_def) = parse_for_pointy_param(r)?;
+        let first = first_def.name.clone();
+        let (r, _) = ws(r)?;
+        let (r, _) = if r.starts_with('(') {
+            let (r, _) = parse_char(r, '(')?;
+            let (r, _) = ws(r)?;
+            let (r, sub_params) = super::parse_param_list_pub(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ')')?;
+            first_def.sub_signature = Some(sub_params);
+            (r, ())
+        } else {
+            (r, ())
+        };
         let (r, _) = ws(r)?;
         if r.starts_with(',') {
             let mut params = vec![first];
@@ -247,8 +265,8 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, (Option<String>, Vec<
             loop {
                 let (r2, _) = parse_char(r, ',')?;
                 let (r2, _) = ws(r2)?;
-                let (r2, next) = parse_pointy_param(r2)?;
-                params.push(next);
+                let (r2, next) = parse_for_pointy_param(r2)?;
+                params.push(next.name);
                 let (r2, _) = ws(r2)?;
                 if !r2.starts_with(',') {
                     r = r2;
@@ -257,14 +275,95 @@ pub(super) fn parse_for_params(input: &str) -> PResult<'_, (Option<String>, Vec<
                 r = r2;
             }
             let (r, _) = skip_pointy_return_type(r)?;
-            Ok((r, (None, params)))
+            Ok((r, (None, None, params)))
         } else {
             let (r, _) = skip_pointy_return_type(r)?;
-            Ok((r, (Some(first), Vec::new())))
+            Ok((r, (Some(first), Some(first_def), Vec::new())))
         }
     } else {
-        Ok((input, (None, Vec::new())))
+        Ok((input, (None, None, Vec::new())))
     }
+}
+
+fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
+    // Sigilless parameter: \name
+    if let Some(r) = input.strip_prefix('\\') {
+        let (rest, name) = ident(r)?;
+        return Ok((
+            rest,
+            ParamDef {
+                name,
+                default: None,
+                named: false,
+                slurpy: false,
+                sigilless: true,
+                type_constraint: None,
+                literal_value: None,
+                sub_signature: None,
+                where_constraint: None,
+                traits: Vec::new(),
+            },
+        ));
+    }
+
+    let rest = input;
+    let mut type_constraint = None;
+    let rest = if let Ok((r, tc)) = ident(rest) {
+        let (r2, _) = ws(r)?;
+        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
+            type_constraint = Some(tc.to_string());
+            r2
+        } else {
+            rest
+        }
+    } else {
+        rest
+    };
+
+    let (r, name) = var_name(rest)?;
+    let mut rest = if r.starts_with('?') || r.starts_with('!') {
+        &r[1..]
+    } else {
+        r
+    };
+
+    loop {
+        let (r, _) = ws(rest)?;
+        let Some(after_is) = keyword("is", r) else {
+            rest = r;
+            break;
+        };
+        let (after_is, _) = ws1(after_is)?;
+        let (after_is, _trait_name) = ident(after_is)?;
+        rest = after_is;
+    }
+
+    let (r, _) = ws(rest)?;
+    if let Some(after_eq) = r.strip_prefix('=')
+        && !after_eq.starts_with('>')
+    {
+        let (after_eq, _) = ws(after_eq)?;
+        let (after_default, _default_expr) = expression(after_eq)?;
+        rest = after_default;
+    } else {
+        rest = r;
+    }
+
+    Ok((
+        rest,
+        ParamDef {
+            name,
+            default: None,
+            named: false,
+            slurpy: false,
+            sigilless: false,
+            type_constraint,
+            literal_value: None,
+            sub_signature: None,
+            where_constraint: None,
+            traits: Vec::new(),
+        },
+    ))
 }
 
 pub(super) fn for_stmt(input: &str) -> PResult<'_, Stmt> {
@@ -272,7 +371,7 @@ pub(super) fn for_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, iterable) = parse_comma_or_expr(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, (param, params)) = parse_for_params(rest)?;
+    let (rest, (param, param_def, params)) = parse_for_params(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
     Ok((
@@ -280,6 +379,7 @@ pub(super) fn for_stmt(input: &str) -> PResult<'_, Stmt> {
         Stmt::For {
             iterable,
             param,
+            param_def: Box::new(param_def),
             params,
             body,
             label: None,
@@ -503,7 +603,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, cond) = expression(r)?;
         let (r, _) = ws(r)?;
-        let (r, (param, params)) = parse_for_params(r)?;
+        let (r, (param, _param_def, params)) = parse_for_params(r)?;
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         let (r, _) = ws(r)?;
@@ -537,7 +637,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, cond) = expression(r)?;
         let (r, _) = ws(r)?;
-        let (r, (param, params)) = parse_for_params(r)?;
+        let (r, (param, _param_def, params)) = parse_for_params(r)?;
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         let (r, _) = ws(r)?;

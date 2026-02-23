@@ -252,6 +252,7 @@ pub(crate) enum Stmt {
     For {
         iterable: Expr,
         param: Option<String>,
+        param_def: Box<Option<ParamDef>>,
         params: Vec<String>,
         body: Vec<Stmt>,
         label: Option<String>,
