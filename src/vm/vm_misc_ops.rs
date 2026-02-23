@@ -396,7 +396,16 @@ impl VM {
             && runtime::is_known_type_constraint(constraint)
             && !self.interpreter.type_matches_value(constraint, value)
         {
-            return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
+            // Try to coerce the value to the target type instead of erroring
+            let coerced = match constraint {
+                "Str" => Some(Value::Str(value.to_string_value())),
+                _ => None,
+            };
+            if let Some(new_val) = coerced {
+                *self.stack.last_mut().unwrap() = new_val;
+            } else {
+                return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
+            }
         }
         Ok(())
     }

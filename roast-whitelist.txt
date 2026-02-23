@@ -80,6 +80,7 @@ roast/S04-statements/unless.t
 roast/S04-statements/until.t
 roast/S05-grammar/namespace-6e.t
 roast/S05-grammar/ws.t
+roast/S05-match/basics.t
 roast/S05-mass/charsets.t
 roast/S05-mass/named-chars.t
 roast/S05-mass/properties-block.t

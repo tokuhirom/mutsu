@@ -207,11 +207,27 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         ));
     }
 
-    // Optional type constraint: my Int $x
+    // Optional type constraint: my Int $x or my Str(Match) $x (coercion type)
     let (rest, type_constraint) = {
         // Try to parse a type name followed by a sigil or \
         let saved = rest;
         if let Ok((r, tc)) = ident(rest) {
+            // Check for coercion type syntax: Type(FromType)
+            let (r, tc) = if let Some(inner) = r.strip_prefix('(') {
+                // Parse the coercion type: e.g. Str(Match)
+                if let Ok((r2, _from_type)) = ident(inner) {
+                    if let Some(after) = r2.strip_prefix(')') {
+                        // Successfully parsed Type(FromType) — use the target type
+                        (after, tc)
+                    } else {
+                        (r, tc)
+                    }
+                } else {
+                    (r, tc)
+                }
+            } else {
+                (r, tc)
+            };
             let (r2, _) = ws(r)?;
             if r2.starts_with('$')
                 || r2.starts_with('@')
