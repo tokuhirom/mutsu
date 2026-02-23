@@ -645,6 +645,9 @@ impl Interpreter {
         let program_val = Self::positional_value_required(args, 0, "is_run expects code")?;
         let program = match program_val {
             Value::Str(s) => s.clone(),
+            // Str type object = no code (e.g., is_run Str, :args['--help'])
+            Value::Package(name) if name == "Str" => String::new(),
+            Value::Nil => String::new(),
             _ => return Err(RuntimeError::new("is_run expects string code")),
         };
         let expectations =
@@ -676,10 +679,19 @@ impl Interpreter {
             };
         let is_doc_mode = compiler_args.iter().any(|a| a == "--doc");
 
+        // Determine if we need to spawn a real subprocess
+        // (e.g., for --help, or when program is empty with CLI args)
+        let needs_subprocess = !compiler_args.is_empty()
+            && compiler_args.iter().any(|a| a.starts_with("--"))
+            || (program.is_empty() && run_args.is_some());
+
         let (out, err, status) = if is_doc_mode {
             // In --doc mode, render Pod documentation instead of executing
             let doc_output = crate::doc_mode::render_doc(&program);
             (doc_output, String::new(), 0i64)
+        } else if needs_subprocess {
+            // Spawn actual mutsu binary for CLI flag tests
+            self.is_run_subprocess(&program, &run_args, &compiler_args)
         } else {
             let mut nested = Interpreter::new();
             if let Some(Value::Int(pid)) = self.env.get("*PID") {
@@ -1056,6 +1068,41 @@ impl Interpreter {
             s
         } else {
             val.to_string_value()
+        }
+    }
+
+    fn is_run_subprocess(
+        &self,
+        program: &str,
+        run_args: &Option<Vec<Value>>,
+        compiler_args: &[String],
+    ) -> (String, String, i64) {
+        // Find the mutsu executable
+        let exe = std::env::current_exe()
+            .unwrap_or_else(|_| std::path::PathBuf::from("target/debug/mutsu"));
+        let mut cmd = std::process::Command::new(&exe);
+        // Add compiler args first
+        for arg in compiler_args {
+            cmd.arg(arg);
+        }
+        // Add :args (command-line args for the subprocess)
+        if let Some(items) = run_args {
+            for item in items {
+                cmd.arg(item.to_string_value());
+            }
+        }
+        // Add -e with program code if non-empty
+        if !program.is_empty() {
+            cmd.arg("-e").arg(program);
+        }
+        match cmd.output() {
+            Ok(output) => {
+                let out = String::from_utf8_lossy(&output.stdout).to_string();
+                let err = String::from_utf8_lossy(&output.stderr).to_string();
+                let status = output.status.code().unwrap_or(1) as i64;
+                (out, err, status)
+            }
+            Err(e) => (String::new(), format!("Failed to run subprocess: {}", e), 1),
         }
     }
 
