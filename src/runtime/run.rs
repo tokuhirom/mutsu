@@ -266,6 +266,7 @@ impl Interpreter {
                 let _ = planned;
             }
             if state.failed > 0 {
+                self.emit_test_summary_diag(state.planned, state.ran, state.failed);
                 return Err(RuntimeError::new("Test failures"));
             }
         }

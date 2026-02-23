@@ -124,6 +124,7 @@ struct RegexPattern {
     tokens: Vec<RegexToken>,
     anchor_start: bool,
     anchor_end: bool,
+    ignore_case: bool,
 }
 
 #[derive(Clone, Default)]
@@ -204,6 +205,7 @@ pub struct Interpreter {
     stderr_output: String,
     warn_output: String,
     test_state: Option<TestState>,
+    subtest_depth: usize,
     halted: bool,
     exit_code: i64,
     bailed_out: bool,
@@ -650,6 +652,7 @@ impl Interpreter {
             stderr_output: String::new(),
             warn_output: String::new(),
             test_state: None,
+            subtest_depth: 0,
             halted: false,
             exit_code: 0,
             bailed_out: false,
@@ -934,6 +937,7 @@ impl Interpreter {
             stderr_output: String::new(),
             warn_output: String::new(),
             test_state: None,
+            subtest_depth: 0,
             halted: false,
             exit_code: 0,
             bailed_out: false,

@@ -7,6 +7,7 @@ impl Interpreter {
         let parent_halted = self.halted;
         self.test_state = Some(TestState::new());
         self.halted = false;
+        self.subtest_depth += 1;
         SubtestContext {
             parent_test_state,
             parent_output,
@@ -27,6 +28,7 @@ impl Interpreter {
         self.test_state = ctx.parent_test_state;
         self.output = ctx.parent_output;
         self.halted = ctx.parent_halted;
+        self.subtest_depth = self.subtest_depth.saturating_sub(1);
 
         for line in subtest_output.lines() {
             self.output.push_str("    ");

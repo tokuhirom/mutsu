@@ -12,7 +12,17 @@ fn split_prop_args(s: &str) -> (&str, Option<&str>) {
 
 impl Interpreter {
     pub(super) fn parse_regex(&self, pattern: &str) -> Option<RegexPattern> {
-        let mut chars = pattern.chars().peekable();
+        let mut source = pattern.trim_start();
+        let mut ignore_case = false;
+        loop {
+            if let Some(rest) = source.strip_prefix(":i") {
+                ignore_case = true;
+                source = rest.trim_start();
+                continue;
+            }
+            break;
+        }
+        let mut chars = source.chars().peekable();
         let mut tokens = Vec::new();
         let mut anchor_start = false;
         let mut anchor_end = false;
@@ -381,6 +391,7 @@ impl Interpreter {
                                         ],
                                         anchor_start: false,
                                         anchor_end: false,
+                                        ignore_case,
                                     })
                                 }
                                 _ => RegexAtom::Named(name),
@@ -406,7 +417,12 @@ impl Interpreter {
                             group_pattern.push(ch);
                         }
                     }
-                    if let Some(p) = self.parse_regex(&group_pattern) {
+                    let parsed_group = if ignore_case {
+                        self.parse_regex(&format!(":i {}", group_pattern))
+                    } else {
+                        self.parse_regex(&group_pattern)
+                    };
+                    if let Some(p) = parsed_group {
                         RegexAtom::CaptureGroup(p)
                     } else {
                         continue;
@@ -436,15 +452,27 @@ impl Interpreter {
                     if alternatives.len() > 1 {
                         let mut alt_patterns = Vec::new();
                         for alt in alternatives {
-                            if let Some(p) = self.parse_regex(alt) {
+                            let parsed_alt = if ignore_case {
+                                self.parse_regex(&format!(":i {}", alt))
+                            } else {
+                                self.parse_regex(alt)
+                            };
+                            if let Some(p) = parsed_alt {
                                 alt_patterns.push(p);
                             }
                         }
                         RegexAtom::Alternation(alt_patterns)
-                    } else if let Some(p) = self.parse_regex(&group_pattern) {
-                        RegexAtom::Group(p)
                     } else {
-                        continue;
+                        let parsed_group = if ignore_case {
+                            self.parse_regex(&format!(":i {}", group_pattern))
+                        } else {
+                            self.parse_regex(&group_pattern)
+                        };
+                        if let Some(p) = parsed_group {
+                            RegexAtom::Group(p)
+                        } else {
+                            continue;
+                        }
                     }
                 }
                 other => RegexAtom::Literal(other),
@@ -479,6 +507,7 @@ impl Interpreter {
             tokens,
             anchor_start,
             anchor_end,
+            ignore_case,
         })
     }
 
