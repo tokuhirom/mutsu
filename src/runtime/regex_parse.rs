@@ -1,4 +1,5 @@
 use super::*;
+use ::regex::Regex;
 
 /// Split a property name like "NumericValue(0 ^..^ 1)" into ("NumericValue", Some("0 ^..^ 1")).
 fn split_prop_args(s: &str) -> (&str, Option<&str>) {
@@ -11,6 +12,129 @@ fn split_prop_args(s: &str) -> (&str, Option<&str>) {
 }
 
 impl Interpreter {
+    fn expand_ltm_pattern(pattern: &str) -> String {
+        let compact: String = pattern.chars().filter(|ch| !ch.is_whitespace()).collect();
+        if compact.is_empty() {
+            return pattern.to_string();
+        }
+
+        let with_count = Regex::new(r"^(.+?)\*\*([0-9]+(?:\.\.(?:[0-9]+|\*))?)(?:(%%|%)(.+))?$")
+            .expect("ltm count regex is valid");
+        let bare_sep = Regex::new(r"^(.+?)(%%|%)(.+)$").expect("ltm sep regex is valid");
+
+        if let Some(caps) = with_count.captures(&compact) {
+            let atom = caps.get(1).map(|m| m.as_str()).unwrap_or_default();
+            let count_spec = caps.get(2).map(|m| m.as_str()).unwrap_or_default();
+            let sep_mode = caps.get(3).map(|m| m.as_str());
+            let sep = caps.get(4).map(|m| m.as_str());
+            return Self::build_ltm_expansion(atom, count_spec, sep_mode, sep);
+        }
+        if let Some(caps) = bare_sep.captures(&compact) {
+            let atom = caps
+                .get(1)
+                .map(|m| m.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let sep_mode = caps.get(2).map(|m| m.as_str());
+            let sep = caps.get(3).map(|m| m.as_str());
+            if atom.len() >= 2 && matches!(atom.chars().last(), Some('?') | Some('+') | Some('*')) {
+                let mut chars: Vec<char> = atom.chars().collect();
+                let quant = chars.pop().unwrap();
+                let base = chars.pop().unwrap();
+                let prefix: String = chars.into_iter().collect();
+                let core = format!("{base}{quant}");
+                return format!(
+                    "{}{}",
+                    prefix,
+                    Self::build_ltm_expansion(&core, "1..*", sep_mode, sep)
+                );
+            }
+            return Self::build_ltm_expansion(&atom, "1..*", sep_mode, sep);
+        }
+        pattern.to_string()
+    }
+
+    fn build_ltm_expansion(
+        atom: &str,
+        count_spec: &str,
+        sep_mode: Option<&str>,
+        sep: Option<&str>,
+    ) -> String {
+        let (min, max) = if let Some((min_str, max_str)) = count_spec.split_once("..") {
+            let min = min_str.parse::<usize>().unwrap_or(0);
+            let max = if max_str == "*" {
+                None
+            } else {
+                max_str.parse::<usize>().ok()
+            };
+            (min, max)
+        } else {
+            let exact = count_spec.parse::<usize>().unwrap_or(1);
+            (exact, Some(exact))
+        };
+
+        let allow_trailing_sep = matches!(sep_mode, Some("%%"));
+        let sep = sep.unwrap_or_default();
+
+        let repeat_atom = |count: usize| -> String { atom.repeat(count) };
+        let build_exact_list = |count: usize| -> String {
+            if count == 0 {
+                return String::new();
+            }
+            let mut out = atom.to_string();
+            for _ in 1..count {
+                out.push_str(sep);
+                out.push_str(atom);
+            }
+            if allow_trailing_sep {
+                out.push_str(&format!("({sep})?"));
+            }
+            out
+        };
+
+        if sep_mode.is_none() {
+            return match max {
+                Some(max) if max == min => repeat_atom(min),
+                Some(max) => {
+                    let alts: Vec<String> = (min..=max).rev().map(repeat_atom).collect();
+                    if alts.len() == 1 {
+                        alts.into_iter().next().unwrap_or_default()
+                    } else {
+                        format!("({})", alts.join("|"))
+                    }
+                }
+                None => format!("{}({atom})*", repeat_atom(min)),
+            };
+        }
+
+        if max.is_none() && min == 1 && atom.ends_with('?') && !sep.is_empty() {
+            if allow_trailing_sep {
+                return format!("{atom}({sep})?");
+            }
+            return atom.to_string();
+        }
+
+        match max {
+            Some(max) if max == min => build_exact_list(min),
+            Some(max) => {
+                let alts: Vec<String> = (min..=max).map(build_exact_list).collect();
+                if alts.len() == 1 {
+                    alts.into_iter().next().unwrap_or_default()
+                } else {
+                    format!("({})", alts.join("|"))
+                }
+            }
+            None => {
+                let mut out = build_exact_list(min);
+                out.push_str(&format!("({sep}{atom})*"));
+                if allow_trailing_sep {
+                    out.push_str(&format!("({sep})?"));
+                }
+                out
+            }
+        }
+    }
+
     pub(super) fn parse_regex(&self, pattern: &str) -> Option<RegexPattern> {
         let interpolated = self.interpolate_regex_scalars(pattern);
         let mut source = interpolated.trim_start();
@@ -23,7 +147,8 @@ impl Interpreter {
             }
             break;
         }
-        let mut chars = source.chars().peekable();
+        let expanded = Self::expand_ltm_pattern(source);
+        let mut chars = expanded.chars().peekable();
         let mut tokens = Vec::new();
         let mut anchor_start = false;
         let mut anchor_end = false;
@@ -418,15 +543,40 @@ impl Interpreter {
                             group_pattern.push(ch);
                         }
                     }
-                    let parsed_group = if ignore_case {
-                        self.parse_regex(&format!(":i {}", group_pattern))
+                    let alternatives: Vec<&str> = group_pattern.split('|').collect();
+                    if alternatives.len() > 1 {
+                        let mut alt_patterns = Vec::new();
+                        for alt in alternatives {
+                            let parsed_alt = if ignore_case {
+                                self.parse_regex(&format!(":i {}", alt))
+                            } else {
+                                self.parse_regex(alt)
+                            };
+                            if let Some(p) = parsed_alt {
+                                alt_patterns.push(p);
+                            }
+                        }
+                        let group_pat = RegexPattern {
+                            tokens: vec![RegexToken {
+                                atom: RegexAtom::Alternation(alt_patterns),
+                                quant: RegexQuant::One,
+                            }],
+                            anchor_start: false,
+                            anchor_end: false,
+                            ignore_case,
+                        };
+                        RegexAtom::CaptureGroup(group_pat)
                     } else {
-                        self.parse_regex(&group_pattern)
-                    };
-                    if let Some(p) = parsed_group {
-                        RegexAtom::CaptureGroup(p)
-                    } else {
-                        continue;
+                        let parsed_group = if ignore_case {
+                            self.parse_regex(&format!(":i {}", group_pattern))
+                        } else {
+                            self.parse_regex(&group_pattern)
+                        };
+                        if let Some(p) = parsed_group {
+                            RegexAtom::CaptureGroup(p)
+                        } else {
+                            continue;
+                        }
                     }
                 }
                 '[' => {

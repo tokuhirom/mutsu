@@ -335,6 +335,11 @@ impl Interpreter {
                     return Ok(Value::hash(map));
                 }
             }
+            "subparse" | "parse" => {
+                if let Value::Package(ref package_name) = target {
+                    return self.dispatch_package_parse(package_name, method, &args);
+                }
+            }
             "match" => {
                 if let Some(pattern) = args.first() {
                     let text = target.to_string_value();
@@ -1259,6 +1264,102 @@ impl Interpreter {
                 )))
             }
         }
+    }
+
+    fn dispatch_package_parse(
+        &mut self,
+        package_name: &str,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut source: Option<String> = None;
+        let mut start_rule = "TOP".to_string();
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                if key == "rule" || key == "token" {
+                    start_rule = value.to_string_value();
+                }
+                continue;
+            }
+            if source.is_none() {
+                source = Some(arg.to_string_value());
+            }
+        }
+        let Some(text) = source else {
+            return Ok(Value::Nil);
+        };
+
+        let saved_package = self.current_package.clone();
+        let saved_topic = self.env.get("_").cloned();
+        self.current_package = package_name.to_string();
+        let has_start_rule =
+            self.resolve_token_defs(&start_rule).is_some() || self.has_proto_token(&start_rule);
+        if !has_start_rule {
+            self.current_package = saved_package;
+            if let Some(old_topic) = saved_topic {
+                self.env.insert("_".to_string(), old_topic);
+            } else {
+                self.env.remove("_");
+            }
+            return Err(RuntimeError::new(format!(
+                "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
+                method
+            )));
+        }
+        self.env.insert("_".to_string(), Value::Str(text.clone()));
+        let result = (|| -> Result<Value, RuntimeError> {
+            let pattern = match self.eval_token_call_values(&start_rule, &[]) {
+                Ok(Some(pattern)) => pattern,
+                Ok(None) => {
+                    self.env.insert("/".to_string(), Value::Nil);
+                    return Ok(Value::Nil);
+                }
+                Err(err)
+                    if err
+                        .message
+                        .contains("No matching candidates for proto token") =>
+                {
+                    self.env.insert("/".to_string(), Value::Nil);
+                    return Ok(Value::Nil);
+                }
+                Err(err) => return Err(err),
+            };
+
+            let Some(captures) = self.regex_match_with_captures(&pattern, &text) else {
+                self.env.insert("/".to_string(), Value::Nil);
+                return Ok(Value::Nil);
+            };
+            if captures.from != 0 {
+                self.env.insert("/".to_string(), Value::Nil);
+                return Ok(Value::Nil);
+            }
+            if method == "parse" && captures.to != text.chars().count() {
+                self.env.insert("/".to_string(), Value::Nil);
+                return Ok(Value::Nil);
+            }
+            for (i, v) in captures.positional.iter().enumerate() {
+                self.env.insert(i.to_string(), Value::Str(v.clone()));
+            }
+            for (k, v) in &captures.named {
+                self.env.insert(format!("<{}>", k), Value::Str(v.clone()));
+            }
+            let match_obj = Value::make_match_object_with_captures(
+                captures.matched,
+                captures.from as i64,
+                captures.to as i64,
+                &captures.positional,
+            );
+            self.env.insert("/".to_string(), match_obj.clone());
+            Ok(match_obj)
+        })();
+
+        self.current_package = saved_package;
+        if let Some(old_topic) = saved_topic {
+            self.env.insert("_".to_string(), old_topic);
+        } else {
+            self.env.remove("_");
+        }
+        result
     }
 
     fn classhow_lookup(&self, invocant: &Value, method_name: &str) -> Option<Value> {

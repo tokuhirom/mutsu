@@ -92,6 +92,7 @@ roast/S05-metachars/newline.t
 roast/S05-metasyntax/assertions.t
 roast/S05-metasyntax/delimiters.t
 roast/S05-metasyntax/null.t
+roast/S05-metasyntax/proto-token-ltm.t
 roast/S05-metasyntax/unicode-property-pair.t
 roast/S05-substitution/67222.t
 roast/S05-transliteration/79778.t

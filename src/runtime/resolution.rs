@@ -23,13 +23,44 @@ impl Interpreter {
 
     pub(super) fn resolve_token_defs(&self, name: &str) -> Option<Vec<FunctionDef>> {
         if name.contains("::") {
-            return self.token_defs.get(name).cloned();
+            let mut defs = Vec::new();
+            if let Some(exact) = self.token_defs.get(name) {
+                defs.extend(exact.clone());
+            }
+            let sym_prefix = format!("{name}:sym<");
+            let mut sym_keys: Vec<&String> = self
+                .token_defs
+                .keys()
+                .filter(|key| key.starts_with(&sym_prefix))
+                .collect();
+            sym_keys.sort();
+            for key in sym_keys {
+                if let Some(sym_defs) = self.token_defs.get(key) {
+                    defs.extend(sym_defs.clone());
+                }
+            }
+            return if defs.is_empty() { None } else { Some(defs) };
         }
-        let local = format!("{}::{}", self.current_package, name);
-        self.token_defs
-            .get(&local)
-            .cloned()
-            .or_else(|| self.token_defs.get(&format!("GLOBAL::{}", name)).cloned())
+        let mut defs = Vec::new();
+        for scope in [&self.current_package, "GLOBAL"] {
+            let exact_key = format!("{scope}::{name}");
+            if let Some(exact) = self.token_defs.get(&exact_key) {
+                defs.extend(exact.clone());
+            }
+            let sym_prefix = format!("{scope}::{name}:sym<");
+            let mut sym_keys: Vec<&String> = self
+                .token_defs
+                .keys()
+                .filter(|key| key.starts_with(&sym_prefix))
+                .collect();
+            sym_keys.sort();
+            for key in sym_keys {
+                if let Some(sym_defs) = self.token_defs.get(key) {
+                    defs.extend(sym_defs.clone());
+                }
+            }
+        }
+        if defs.is_empty() { None } else { Some(defs) }
     }
 
     pub(super) fn has_proto_token(&self, name: &str) -> bool {
