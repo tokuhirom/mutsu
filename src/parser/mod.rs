@@ -112,7 +112,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 let context: String = rest_trimmed.chars().take(60).collect();
                 Err(RuntimeError::with_location(
                     format!(
-                        "parse error: unparsed input at line {}, column {}: {:?}",
+                        "Confused. parse error: unparsed input at line {}, column {}: {:?}",
                         line_num, col_num, context
                     ),
                     RuntimeErrorCode::ParseUnparsed,
@@ -137,7 +137,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 if let Some(context) = near_snippet(tail, 60) {
                     Err(with_parse_hint(RuntimeError::with_location(
                         format!(
-                            "parse error at line {}, column {}: {} — near: {:?}",
+                            "Confused. parse error at line {}, column {}: {} — near: {:?}",
                             line_num, col_num, e, context
                         ),
                         RuntimeErrorCode::ParseExpected,
@@ -147,7 +147,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 } else {
                     Err(with_parse_hint(RuntimeError::with_location(
                         format!(
-                            "parse error at line {}, column {}: {}",
+                            "Confused. parse error at line {}, column {}: {}",
                             line_num, col_num, e
                         ),
                         RuntimeErrorCode::ParseExpected,
@@ -156,7 +156,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                     )))
                 }
             } else {
-                let mut err = RuntimeError::new(format!("parse error: {}", e));
+                let mut err = RuntimeError::new(format!("Confused. parse error: {}", e));
                 err.code = Some(RuntimeErrorCode::ParseGeneric);
                 Err(with_parse_hint(err))
             }
