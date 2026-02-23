@@ -147,7 +147,7 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
         let (br, bi) = runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
         let denom = br * br + bi * bi;
         if denom == 0.0 {
-            return Err(RuntimeError::new("Division by zero"));
+            return Err(RuntimeError::numeric_divide_by_zero());
         }
         Ok(Value::Complex(
             (ar * br + ai * bi) / denom,
@@ -161,6 +161,9 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
         if has_num && has_rat {
             let lf = runtime::to_float_value(&l).unwrap_or(0.0);
             let rf = runtime::to_float_value(&r).unwrap_or(1.0);
+            if rf == 0.0 {
+                return Err(RuntimeError::numeric_divide_by_zero());
+            }
             return Ok(Value::Num(lf / rf));
         }
         Ok(match (&l, &r) {
@@ -168,11 +171,16 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
                 let (an, ad) = runtime::to_rat_parts(&l).unwrap_or((0, 1));
                 let (bn, bd) = runtime::to_rat_parts(&r).unwrap_or((0, 1));
                 let new_d = ad * bn;
-                if new_d == 0 {
-                    Value::Rat(an * bd, 0)
-                } else {
-                    make_rat(an * bd, new_d)
-                }
+                make_rat(an * bd, new_d)
+            }
+            (Value::Num(_), Value::Num(b)) if *b == 0.0 => {
+                return Err(RuntimeError::numeric_divide_by_zero());
+            }
+            (Value::Int(_), Value::Num(b)) if *b == 0.0 => {
+                return Err(RuntimeError::numeric_divide_by_zero());
+            }
+            (Value::Num(_), Value::Int(b)) if *b == 0 => {
+                return Err(RuntimeError::numeric_divide_by_zero());
             }
             (Value::Num(a), Value::Num(b)) => Value::Num(a / b),
             (Value::Int(a), Value::Num(b)) => Value::Num(*a as f64 / b),

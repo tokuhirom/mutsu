@@ -152,7 +152,7 @@ impl VM {
             let val = match (&l, &r) {
                 (Value::Int(a), Value::Int(b)) if *b != 0 => Value::Int(a.div_euclid(*b)),
                 (Value::Int(_), Value::Int(_)) => {
-                    return Err(RuntimeError::new("Division by zero"));
+                    return Err(RuntimeError::numeric_divide_by_zero());
                 }
                 (Value::BigInt(a), Value::BigInt(b)) if *b != num_bigint::BigInt::from(0i64) => {
                     Value::from_bigint(num_integer::Integer::div_floor(a, b))
@@ -169,7 +169,7 @@ impl VM {
                     let a = runtime::to_int(&l);
                     let b = runtime::to_int(&r);
                     if b == 0 {
-                        return Err(RuntimeError::new("Division by zero"));
+                        return Err(RuntimeError::numeric_divide_by_zero());
                     }
                     Value::Int(a.div_euclid(b))
                 }

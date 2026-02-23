@@ -296,15 +296,10 @@ pub(super) fn angle_list(input: &str) -> PResult<'_, Expr> {
         rest = r;
     }
     if words.len() == 1 {
-        Ok((
-            rest,
-            Expr::Literal(Value::Str(words.into_iter().next().unwrap())),
-        ))
+        let word = words.into_iter().next().unwrap();
+        Ok((rest, angle_word_expr(&word)))
     } else {
-        let exprs: Vec<Expr> = words
-            .into_iter()
-            .map(|w| Expr::Literal(Value::Str(w)))
-            .collect();
+        let exprs: Vec<Expr> = words.into_iter().map(|w| angle_word_expr(&w)).collect();
         Ok((rest, Expr::ArrayLiteral(exprs)))
     }
 }
@@ -312,4 +307,55 @@ pub(super) fn angle_list(input: &str) -> PResult<'_, Expr> {
 /// Returns true for non-breaking space characters that should not split words in `<...>`.
 fn is_non_breaking_space(c: char) -> bool {
     matches!(c, '\u{00A0}' | '\u{2007}' | '\u{202F}' | '\u{FEFF}')
+}
+
+fn angle_word_expr(word: &str) -> Expr {
+    // Raku `<...>` words are stringy, but numeric-looking words retain numeric semantics.
+    if let Some((n, d)) = parse_angle_rat_word(word) {
+        return Expr::Literal(crate::value::make_rat(n, d));
+    }
+    if let Ok((rest, expr)) = super::number::integer(word)
+        && rest.is_empty()
+    {
+        return expr;
+    }
+    if let Ok((rest, expr)) = super::number::decimal(word)
+        && rest.is_empty()
+    {
+        return expr;
+    }
+    if let Ok((rest, expr)) = super::number::dot_decimal(word)
+        && rest.is_empty()
+    {
+        return expr;
+    }
+    Expr::Literal(Value::Str(word.to_string()))
+}
+
+fn parse_angle_rat_word(word: &str) -> Option<(i64, i64)> {
+    let (lhs, rhs) = word.split_once('/')?;
+    if lhs.is_empty() || rhs.is_empty() {
+        return None;
+    }
+    let numer = parse_signed_i64_with_underscores(lhs)?;
+    let denom = parse_signed_i64_with_underscores(rhs)?;
+    Some((numer, denom))
+}
+
+fn parse_signed_i64_with_underscores(s: &str) -> Option<i64> {
+    let (sign, rest) = if let Some(rest) = s.strip_prefix('+') {
+        (1i64, rest)
+    } else if let Some(rest) = s.strip_prefix('-') {
+        (-1i64, rest)
+    } else {
+        (1i64, s)
+    };
+    if rest.is_empty() || !rest.chars().all(|c| c.is_ascii_digit() || c == '_') {
+        return None;
+    }
+    let clean: String = rest.chars().filter(|c| *c != '_').collect();
+    if clean.is_empty() {
+        return None;
+    }
+    clean.parse::<i64>().ok().map(|n| sign * n)
 }
