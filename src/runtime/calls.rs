@@ -9,12 +9,16 @@ impl Interpreter {
         def: &FunctionDef,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        let (args, callsite_line) = self.sanitize_call_args(args);
+        self.test_pending_callsite_line = callsite_line;
         let saved_env = self.env.clone();
-        self.bind_function_args_values(&def.param_defs, &def.params, args)?;
+        self.bind_function_args_values(&def.param_defs, &def.params, &args)?;
+        let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
         self.routine_stack
             .push((def.package.clone(), def.name.clone()));
         let result = self.run_block(&def.body);
         self.routine_stack.pop();
+        self.pop_test_assertion_context(pushed_assertion);
         let implicit_return = self.env.get("_").cloned();
         self.env = saved_env;
         match result {
@@ -25,6 +29,8 @@ impl Interpreter {
     }
 
     pub(crate) fn exec_call(&mut self, name: &str, args: Vec<Value>) -> Result<(), RuntimeError> {
+        let (args, callsite_line) = self.sanitize_call_args(&args);
+        self.test_pending_callsite_line = callsite_line;
         // Delegate test functions to the unified test_functions.rs
         if let Some(_result) = self.call_test_function(name, &args)? {
             return Ok(());
@@ -46,10 +52,12 @@ impl Interpreter {
                 if let Some(def) = def_opt {
                     let saved_env = self.env.clone();
                     self.bind_function_args_values(&def.param_defs, &def.params, &args)?;
+                    let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
                     self.routine_stack
                         .push((def.package.clone(), def.name.clone()));
                     let result = self.run_block(&def.body);
                     self.routine_stack.pop();
+                    self.pop_test_assertion_context(pushed_assertion);
                     self.env = saved_env;
                     match result {
                         Err(e) if e.return_value.is_some() => {}

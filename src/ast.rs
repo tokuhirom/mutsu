@@ -28,6 +28,7 @@ pub(crate) struct FunctionDef {
     pub(crate) params: Vec<String>,
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) body: Vec<Stmt>,
+    pub(crate) is_test_assertion: bool,
 }
 
 pub(crate) fn function_body_fingerprint(
@@ -239,6 +240,7 @@ pub(crate) enum Stmt {
         body: Vec<Stmt>,
         multi: bool,
         is_export: bool,
+        is_test_assertion: bool,
         supersede: bool,
     },
     TokenDecl {

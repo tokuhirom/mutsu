@@ -15,6 +15,7 @@ use crate::value::Value;
 #[derive(Clone, Default)]
 struct LexicalScope {
     user_subs: HashSet<String>,
+    test_assertion_subs: HashSet<String>,
     imported_functions: HashSet<String>,
 }
 
@@ -204,6 +205,17 @@ pub(in crate::parser) fn register_user_sub(name: &str) {
     });
 }
 
+/// Register a user-declared sub with `is test-assertion`.
+pub(in crate::parser) fn register_user_test_assertion_sub(name: &str) {
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let current = scopes
+            .last_mut()
+            .expect("scope stack should never be empty");
+        current.test_assertion_subs.insert(name.to_string());
+    });
+}
+
 /// Reset all scopes (called at parse start).
 pub(in crate::parser) fn reset_user_subs() {
     SCOPES.with(|s| {
@@ -220,6 +232,22 @@ pub(in crate::parser) fn is_user_declared_sub(name: &str) -> bool {
             .rev()
             .any(|scope| scope.user_subs.contains(name))
     })
+}
+
+/// Check if a name was declared as a test assertion sub in any enclosing scope.
+pub(in crate::parser) fn is_user_test_assertion_sub(name: &str) -> bool {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        scopes
+            .iter()
+            .rev()
+            .any(|scope| scope.test_assertion_subs.contains(name))
+    })
+}
+
+/// Check if the callable should carry test assertion caller-site metadata.
+pub(in crate::parser) fn is_test_assertion_callable(name: &str) -> bool {
+    TEST_ASSERTION_EXPORTS.contains(&name) || is_user_test_assertion_sub(name)
 }
 
 /// Push a new lexical scope (called when entering a `{ }` block).
@@ -410,6 +438,29 @@ const TEST_EXPORTS: &[&str] = &[
     "use-ok",
     "force_todo",
     "force-todo",
+    "tap-ok",
+];
+
+const TEST_ASSERTION_EXPORTS: &[&str] = &[
+    "ok",
+    "nok",
+    "is",
+    "isnt",
+    "is-deeply",
+    "is-approx",
+    "cmp-ok",
+    "isa-ok",
+    "does-ok",
+    "can-ok",
+    "lives-ok",
+    "dies-ok",
+    "eval-lives-ok",
+    "eval-dies-ok",
+    "throws-like",
+    "fails-like",
+    "pass",
+    "flunk",
+    "use-ok",
     "tap-ok",
 ];
 
@@ -1163,6 +1214,15 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
             remaining_len: err.remaining_len.or(Some(rest.len())),
         })?
     };
+    let mut args = args;
+    if is_test_assertion_callable(&name) {
+        args.push(crate::ast::CallArg::Named {
+            name: "__mutsu_test_callsite_line".to_string(),
+            value: Some(Expr::Literal(Value::Int(
+                crate::parser::primary::current_line_number(input),
+            ))),
+        });
+    }
     let stmt = Stmt::Call { name, args };
     parse_statement_modifier(rest, stmt)
 }

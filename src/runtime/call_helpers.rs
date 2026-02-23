@@ -1,5 +1,7 @@
 use super::*;
 
+const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
+
 impl Interpreter {
     pub(crate) fn exec_call_values(
         &mut self,
@@ -92,12 +94,65 @@ impl Interpreter {
     }
 
     fn emit_test_failure_diag(&mut self, desc: &str) {
-        if desc.is_empty() {
-            self.stderr_output.push_str("Failed test at line 1\n");
+        let line_no = self.current_test_failure_line();
+        let at_line = if let Some(path) = &self.program_path {
+            format!("at {} line {}", path, line_no)
         } else {
-            self.stderr_output
-                .push_str(&format!("Failed test '{}' at line 1\n", desc));
+            format!("at line {}", line_no)
+        };
+        let _ = desc;
+        let diag = format!("Failed test {}\n", at_line);
+        self.stderr_output.push_str(&diag);
+        eprint!("{}", diag);
+    }
+
+    pub(super) fn sanitize_call_args(&self, args: &[Value]) -> (Vec<Value>, Option<i64>) {
+        let mut out = Vec::with_capacity(args.len());
+        let mut callsite_line = None;
+        for arg in args {
+            if let Value::Pair(key, value) = arg
+                && key == TEST_CALLSITE_LINE_KEY
+            {
+                callsite_line = match value.as_ref() {
+                    Value::Int(i) => Some(*i),
+                    Value::BigInt(i) => i.to_string().parse::<i64>().ok(),
+                    Value::Num(n) => Some(*n as i64),
+                    Value::Str(s) => s.parse::<i64>().ok(),
+                    _ => None,
+                };
+                continue;
+            }
+            out.push(arg.clone());
         }
+        (out, callsite_line)
+    }
+
+    pub(super) fn push_test_assertion_context(&mut self, is_test_assertion: bool) -> bool {
+        if !is_test_assertion {
+            return false;
+        }
+        let line = self
+            .test_assertion_line_stack
+            .last()
+            .copied()
+            .or(self.test_pending_callsite_line)
+            .unwrap_or(1);
+        self.test_assertion_line_stack.push(line);
+        true
+    }
+
+    pub(super) fn pop_test_assertion_context(&mut self, pushed: bool) {
+        if pushed {
+            self.test_assertion_line_stack.pop();
+        }
+    }
+
+    fn current_test_failure_line(&self) -> i64 {
+        self.test_assertion_line_stack
+            .last()
+            .copied()
+            .or(self.test_pending_callsite_line)
+            .unwrap_or(1)
     }
 
     fn env_value(&self, key: &str) -> Option<Value> {

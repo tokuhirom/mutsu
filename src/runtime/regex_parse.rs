@@ -12,7 +12,8 @@ fn split_prop_args(s: &str) -> (&str, Option<&str>) {
 
 impl Interpreter {
     pub(super) fn parse_regex(&self, pattern: &str) -> Option<RegexPattern> {
-        let mut source = pattern.trim_start();
+        let interpolated = self.interpolate_regex_scalars(pattern);
+        let mut source = interpolated.trim_start();
         let mut ignore_case = false;
         loop {
             if let Some(rest) = source.strip_prefix(":i") {
@@ -509,6 +510,101 @@ impl Interpreter {
             anchor_end,
             ignore_case,
         })
+    }
+
+    fn interpolate_regex_scalars(&self, pattern: &str) -> String {
+        let chars: Vec<char> = pattern.chars().collect();
+        let mut out = String::new();
+        let mut i = 0usize;
+        while i < chars.len() {
+            let ch = chars[i];
+            if ch == '\\' {
+                out.push(ch);
+                i += 1;
+                if i < chars.len() {
+                    out.push(chars[i]);
+                    i += 1;
+                }
+                continue;
+            }
+            if ch == '$' {
+                let mut j = i + 1;
+                if j < chars.len() && chars[j] == '{' {
+                    j += 1;
+                    let name_start = j;
+                    while j < chars.len() && chars[j] != '}' {
+                        j += 1;
+                    }
+                    if j < chars.len() && j > name_start {
+                        let name: String = chars[name_start..j].iter().collect();
+                        out.push_str(&Self::escape_regex_scalar_literal(
+                            &self
+                                .env
+                                .get(&name)
+                                .cloned()
+                                .unwrap_or(Value::Nil)
+                                .to_string_value(),
+                        ));
+                        i = j + 1;
+                        continue;
+                    }
+                } else if j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '_') {
+                    let name_start = j;
+                    while j < chars.len()
+                        && (chars[j].is_alphanumeric() || chars[j] == '_' || chars[j] == '-')
+                    {
+                        j += 1;
+                    }
+                    let name: String = chars[name_start..j].iter().collect();
+                    out.push_str(&Self::escape_regex_scalar_literal(
+                        &self
+                            .env
+                            .get(&name)
+                            .cloned()
+                            .unwrap_or(Value::Nil)
+                            .to_string_value(),
+                    ));
+                    i = j;
+                    continue;
+                }
+            }
+            out.push(ch);
+            i += 1;
+        }
+        out
+    }
+
+    fn escape_regex_scalar_literal(input: &str) -> String {
+        let mut out = String::new();
+        for ch in input.chars() {
+            if ch.is_whitespace()
+                || matches!(
+                    ch,
+                    '\\' | '.'
+                        | '^'
+                        | '$'
+                        | '*'
+                        | '+'
+                        | '?'
+                        | '('
+                        | ')'
+                        | '['
+                        | ']'
+                        | '{'
+                        | '}'
+                        | '<'
+                        | '>'
+                        | '|'
+                        | ':'
+                        | '#'
+                        | '\''
+                )
+            {
+                out.push('\\');
+            }
+            out.push(ch);
+        }
+        out
     }
 
     pub(super) fn parse_raku_char_class(&self, inner: &str, negated: bool) -> Option<CharClass> {
