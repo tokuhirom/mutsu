@@ -216,6 +216,7 @@ roast/S24-testing/6-done_testing.t
 roast/S24-testing/7-bail_out.t
 roast/S26-documentation/block-leading-user-format.t
 roast/S26-documentation/module-comment.t
+roast/S26-documentation/multiline-trailing.t
 roast/S28-named-variables/cwd.t
 roast/S28-named-variables/init-instant.t
 roast/S28-named-variables/slangs.t

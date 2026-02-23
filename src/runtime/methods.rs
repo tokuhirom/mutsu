@@ -293,16 +293,26 @@ impl Interpreter {
                 return Ok(Value::Hash(Arc::new(HashMap::new())));
             }
             "WHY" if args.is_empty() => {
-                // Return declarator doc comment attached to this type/package
-                let name = match &target {
-                    Value::Package(name) => Some(name.clone()),
-                    Value::Instance { class_name, .. } => Some(class_name.clone()),
-                    _ => None,
+                // Return declarator doc comment attached to this type/package/sub
+                let keys: Vec<String> = match &target {
+                    Value::Package(name) => vec![name.clone()],
+                    Value::Instance { class_name, .. } => vec![class_name.clone()],
+                    Value::Sub(sub_data) => {
+                        let mut k = Vec::new();
+                        if !sub_data.package.is_empty() && !sub_data.name.is_empty() {
+                            k.push(format!("{}::{}", sub_data.package, sub_data.name));
+                        }
+                        if !sub_data.name.is_empty() {
+                            k.push(sub_data.name.clone());
+                        }
+                        k
+                    }
+                    _ => vec![],
                 };
-                if let Some(name) = name
-                    && let Some(doc) = self.doc_comments.get(&name)
-                {
-                    return Ok(Value::Str(doc.clone()));
+                for key in keys {
+                    if let Some(doc) = self.doc_comments.get(&key) {
+                        return Ok(Value::Str(doc.clone()));
+                    }
                 }
                 return Ok(Value::Nil);
             }
