@@ -154,12 +154,24 @@ impl Interpreter {
             let token = &pattern.tokens[idx];
             match token.quant {
                 RegexQuant::One => {
-                    if let Some(next) = self.regex_match_atom_in_pkg(&token.atom, chars, pos, pkg) {
+                    if let Some(next) = self.regex_match_atom_in_pkg(
+                        &token.atom,
+                        chars,
+                        pos,
+                        pkg,
+                        pattern.ignore_case,
+                    ) {
                         stack.push((idx + 1, next));
                     }
                 }
                 RegexQuant::ZeroOrOne => {
-                    if let Some(next) = self.regex_match_atom_in_pkg(&token.atom, chars, pos, pkg) {
+                    if let Some(next) = self.regex_match_atom_in_pkg(
+                        &token.atom,
+                        chars,
+                        pos,
+                        pkg,
+                        pattern.ignore_case,
+                    ) {
                         stack.push((idx + 1, next));
                     }
                     stack.push((idx + 1, pos));
@@ -168,9 +180,13 @@ impl Interpreter {
                     let mut positions = Vec::new();
                     positions.push(pos);
                     let mut current = pos;
-                    while let Some(next) =
-                        self.regex_match_atom_in_pkg(&token.atom, chars, current, pkg)
-                    {
+                    while let Some(next) = self.regex_match_atom_in_pkg(
+                        &token.atom,
+                        chars,
+                        current,
+                        pkg,
+                        pattern.ignore_case,
+                    ) {
                         if next == current {
                             break;
                         }
@@ -183,15 +199,24 @@ impl Interpreter {
                 }
                 RegexQuant::OneOrMore => {
                     let mut positions = Vec::new();
-                    let mut current =
-                        match self.regex_match_atom_in_pkg(&token.atom, chars, pos, pkg) {
-                            Some(next) => next,
-                            None => continue,
-                        };
+                    let mut current = match self.regex_match_atom_in_pkg(
+                        &token.atom,
+                        chars,
+                        pos,
+                        pkg,
+                        pattern.ignore_case,
+                    ) {
+                        Some(next) => next,
+                        None => continue,
+                    };
                     positions.push(current);
-                    while let Some(next) =
-                        self.regex_match_atom_in_pkg(&token.atom, chars, current, pkg)
-                    {
+                    while let Some(next) = self.regex_match_atom_in_pkg(
+                        &token.atom,
+                        chars,
+                        current,
+                        pkg,
+                        pattern.ignore_case,
+                    ) {
                         if next == current {
                             break;
                         }
@@ -236,6 +261,7 @@ impl Interpreter {
                         pos,
                         &caps,
                         pkg,
+                        pattern.ignore_case,
                     ) {
                         stack.push((idx + 1, next, new_caps));
                     }
@@ -247,6 +273,7 @@ impl Interpreter {
                         pos,
                         &caps,
                         pkg,
+                        pattern.ignore_case,
                     ) {
                         stack.push((idx + 1, next, new_caps));
                     }
@@ -263,6 +290,7 @@ impl Interpreter {
                         current,
                         &current_caps,
                         pkg,
+                        pattern.ignore_case,
                     ) {
                         if next == current {
                             break;
@@ -277,8 +305,14 @@ impl Interpreter {
                 }
                 RegexQuant::OneOrMore => {
                     let (mut current, mut current_caps) = match self
-                        .regex_match_atom_with_capture_in_pkg(&token.atom, chars, pos, &caps, pkg)
-                    {
+                        .regex_match_atom_with_capture_in_pkg(
+                            &token.atom,
+                            chars,
+                            pos,
+                            &caps,
+                            pkg,
+                            pattern.ignore_case,
+                        ) {
                         Some((next, new_caps)) => (next, new_caps),
                         None => continue,
                     };
@@ -290,6 +324,7 @@ impl Interpreter {
                         current,
                         &current_caps,
                         pkg,
+                        pattern.ignore_case,
                     ) {
                         if next == current {
                             break;
@@ -331,12 +366,24 @@ impl Interpreter {
             let token = &pattern.tokens[idx];
             match token.quant {
                 RegexQuant::One => {
-                    if let Some(next) = self.regex_match_atom_in_pkg(&token.atom, chars, pos, pkg) {
+                    if let Some(next) = self.regex_match_atom_in_pkg(
+                        &token.atom,
+                        chars,
+                        pos,
+                        pkg,
+                        pattern.ignore_case,
+                    ) {
                         stack.push((idx + 1, next));
                     }
                 }
                 RegexQuant::ZeroOrOne => {
-                    if let Some(next) = self.regex_match_atom_in_pkg(&token.atom, chars, pos, pkg) {
+                    if let Some(next) = self.regex_match_atom_in_pkg(
+                        &token.atom,
+                        chars,
+                        pos,
+                        pkg,
+                        pattern.ignore_case,
+                    ) {
                         stack.push((idx + 1, next));
                     }
                     stack.push((idx + 1, pos));
@@ -345,9 +392,13 @@ impl Interpreter {
                     let mut positions = Vec::new();
                     positions.push(pos);
                     let mut current = pos;
-                    while let Some(next) =
-                        self.regex_match_atom_in_pkg(&token.atom, chars, current, pkg)
-                    {
+                    while let Some(next) = self.regex_match_atom_in_pkg(
+                        &token.atom,
+                        chars,
+                        current,
+                        pkg,
+                        pattern.ignore_case,
+                    ) {
                         if next == current {
                             break;
                         }
@@ -360,15 +411,24 @@ impl Interpreter {
                 }
                 RegexQuant::OneOrMore => {
                     let mut positions = Vec::new();
-                    let mut current =
-                        match self.regex_match_atom_in_pkg(&token.atom, chars, pos, pkg) {
-                            Some(next) => next,
-                            None => continue,
-                        };
+                    let mut current = match self.regex_match_atom_in_pkg(
+                        &token.atom,
+                        chars,
+                        pos,
+                        pkg,
+                        pattern.ignore_case,
+                    ) {
+                        Some(next) => next,
+                        None => continue,
+                    };
                     positions.push(current);
-                    while let Some(next) =
-                        self.regex_match_atom_in_pkg(&token.atom, chars, current, pkg)
-                    {
+                    while let Some(next) = self.regex_match_atom_in_pkg(
+                        &token.atom,
+                        chars,
+                        current,
+                        pkg,
+                        pattern.ignore_case,
+                    ) {
                         if next == current {
                             break;
                         }
@@ -390,6 +450,7 @@ impl Interpreter {
         chars: &[char],
         pos: usize,
         pkg: &str,
+        ignore_case: bool,
     ) -> Option<usize> {
         // Group, CaptureGroup, Alternation, ZeroWidth, CodeAssertion can match zero-width
         match atom {
@@ -476,13 +537,25 @@ impl Interpreter {
             _ => {}
         }
         let matched = match atom {
-            RegexAtom::Literal(ch) => *ch == c,
+            RegexAtom::Literal(ch) => {
+                if ignore_case {
+                    ch.to_lowercase().to_string() == c.to_lowercase().to_string()
+                } else {
+                    *ch == c
+                }
+            }
             RegexAtom::Named(name) => {
                 let name_chars: Vec<char> = name.chars().collect();
                 if pos + name_chars.len() > chars.len() {
                     false
                 } else {
-                    chars[pos..pos + name_chars.len()] == name_chars[..]
+                    let slice = &chars[pos..pos + name_chars.len()];
+                    if ignore_case {
+                        slice.iter().collect::<String>().to_lowercase()
+                            == name_chars.iter().collect::<String>().to_lowercase()
+                    } else {
+                        *slice == name_chars[..]
+                    }
                 }
             }
             RegexAtom::Any => true,
@@ -556,6 +629,7 @@ impl Interpreter {
         pos: usize,
         current_caps: &RegexCaptures,
         pkg: &str,
+        ignore_case: bool,
     ) -> Option<(usize, RegexCaptures)> {
         // Handle zero-width and group atoms before the length check
         match atom {
@@ -564,7 +638,7 @@ impl Interpreter {
             | RegexAtom::ZeroWidth
             | RegexAtom::UnicodePropAssert { .. } => {
                 return self
-                    .regex_match_atom_in_pkg(atom, chars, pos, pkg)
+                    .regex_match_atom_in_pkg(atom, chars, pos, pkg, ignore_case)
                     .map(|next| (next, current_caps.clone()));
             }
             RegexAtom::CaptureGroup(pattern) => {
@@ -657,7 +731,7 @@ impl Interpreter {
                 None
             }
             _ => self
-                .regex_match_atom_in_pkg(atom, chars, pos, pkg)
+                .regex_match_atom_in_pkg(atom, chars, pos, pkg, ignore_case)
                 .map(|next| (next, current_caps.clone())),
         }
     }

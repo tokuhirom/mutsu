@@ -310,7 +310,13 @@ impl VM {
 
     pub(super) fn exec_get_env_index_op(&mut self, code: &CompiledCode, key_idx: u32) {
         let key = Self::const_str(code, key_idx);
-        let val = if let Some(value) = std::env::var_os(key) {
+        let val = if let Some(Value::Hash(env_hash)) = self.interpreter.env().get("%*ENV") {
+            env_hash.get(key).cloned().unwrap_or_else(|| {
+                std::env::var_os(key)
+                    .map(|v| Value::Str(v.to_string_lossy().to_string()))
+                    .unwrap_or(Value::Nil)
+            })
+        } else if let Some(value) = std::env::var_os(key) {
             Value::Str(value.to_string_lossy().to_string())
         } else {
             Value::Nil
@@ -320,8 +326,12 @@ impl VM {
 
     pub(super) fn exec_exists_env_index_op(&mut self, code: &CompiledCode, key_idx: u32) {
         let key = Self::const_str(code, key_idx);
-        self.stack
-            .push(Value::Bool(std::env::var_os(key).is_some()));
+        let exists = if let Some(Value::Hash(env_hash)) = self.interpreter.env().get("%*ENV") {
+            env_hash.contains_key(key) || std::env::var_os(key).is_some()
+        } else {
+            std::env::var_os(key).is_some()
+        };
+        self.stack.push(Value::Bool(exists));
     }
 
     pub(super) fn exec_exists_expr_op(&mut self) {

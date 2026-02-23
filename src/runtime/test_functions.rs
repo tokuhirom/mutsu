@@ -108,9 +108,9 @@ impl Interpreter {
     fn test_fn_is(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let desc = Self::positional_string(args, 2);
         let todo = Self::named_bool(args, "todo");
-        let left = Self::positional_value(args, 0);
-        let right = Self::positional_value(args, 1);
-        let ok = match (left, right) {
+        let left = Self::positional_value(args, 0).cloned();
+        let right = Self::positional_value(args, 1).cloned();
+        let ok = match (left.as_ref(), right.as_ref()) {
             (Some(left), Some(right)) => {
                 // Handle Junction on the left side (auto-threading)
                 if let Value::Junction { kind, values } = left {
@@ -138,6 +138,18 @@ impl Interpreter {
             _ => false,
         };
         self.test_ok(ok, &desc, todo)?;
+        if !ok {
+            let got = left
+                .as_ref()
+                .map(|v| self.value_for_diag(v))
+                .unwrap_or_default();
+            let expected = right
+                .as_ref()
+                .map(|v| self.value_for_diag(v))
+                .unwrap_or_default();
+            self.stderr_output
+                .push_str(&format!("expected: {}\n     got: {}\n", expected, got));
+        }
         Ok(Value::Bool(ok))
     }
 
