@@ -2,16 +2,26 @@
 set -euo pipefail
 
 COUNT=300
+START_LINE=20
+END_LINE=300
 DRY_RUN=0
 
 usage() {
     cat <<USAGE
-Usage: $0 [-n count] [--dry-run]
+Usage: $0 [-n count] [-s start_line] [-e end_line] [--dry-run]
 
 Options:
-  -n <count>   Passed to ./scripts/pick-next-roast.sh (default: 300)
-  --dry-run    Print the ai-sandbox command without executing it
+  -n <count>      Passed to ./scripts/pick-next-roast.sh (default: 300)
+  -s <start_line> Start line for random selection (default: 20)
+  -e <end_line>   End line for random selection (default: 300)
+  --start <n>     Same as -s
+  --end <n>       Same as -e
+  --dry-run       Print the ai-sandbox command without executing it
 USAGE
+}
+
+is_positive_integer() {
+    [[ "$1" =~ ^[1-9][0-9]*$ ]]
 }
 
 while [[ $# -gt 0 ]]; do
@@ -22,7 +32,40 @@ while [[ $# -gt 0 ]]; do
                 usage
                 exit 1
             fi
+            if ! is_positive_integer "$2"; then
+                echo "Error: -n requires a positive integer" >&2
+                usage
+                exit 1
+            fi
             COUNT="$2"
+            shift 2
+            ;;
+        -s|--start)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: $1 requires a value" >&2
+                usage
+                exit 1
+            fi
+            if ! is_positive_integer "$2"; then
+                echo "Error: $1 requires a positive integer" >&2
+                usage
+                exit 1
+            fi
+            START_LINE="$2"
+            shift 2
+            ;;
+        -e|--end)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: $1 requires a value" >&2
+                usage
+                exit 1
+            fi
+            if ! is_positive_integer "$2"; then
+                echo "Error: $1 requires a positive integer" >&2
+                usage
+                exit 1
+            fi
+            END_LINE="$2"
             shift 2
             ;;
         --dry-run)
@@ -41,11 +84,26 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-LAST_LINE=$(./scripts/pick-next-roast.sh -n "$COUNT" | tail -n 1)
-FILE=$(echo "$LAST_LINE" | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]+//')
+if (( START_LINE > END_LINE )); then
+    echo "Error: start line must be less than or equal to end line" >&2
+    usage
+    exit 1
+fi
 
-if [[ -z "$FILE" || "$FILE" == "$LAST_LINE" ]]; then
-    echo "Failed to parse file path from: $LAST_LINE" >&2
+SELECTED_LINE=$(
+    ./scripts/pick-next-roast.sh -n "$COUNT" \
+    | sed -n "${START_LINE},${END_LINE}p" \
+    | shuf -n 1
+)
+FILE=$(echo "$SELECTED_LINE" | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]+//')
+
+if [[ -z "$SELECTED_LINE" ]]; then
+    echo "Failed to select a line from range ${START_LINE}-${END_LINE}" >&2
+    exit 1
+fi
+
+if [[ -z "$FILE" || "$FILE" == "$SELECTED_LINE" ]]; then
+    echo "Failed to parse file path from: $SELECTED_LINE" >&2
     exit 1
 fi
 
