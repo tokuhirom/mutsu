@@ -86,7 +86,8 @@ pub(super) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    if contains_whatever(&expr) {
+    // Keep bare `*` as Whatever (Inf). Only wrap true WhateverCode expressions.
+    if contains_whatever(&expr) && !is_whatever(&expr) {
         expr = wrap_whatevercode(&expr);
     }
     Ok((rest, expr))
