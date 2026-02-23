@@ -20,6 +20,10 @@ impl Value {
             (Value::Slip(a), Value::Slip(b)) => {
                 a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
             }
+            // Seqs: recursively use eqv for elements
+            (Value::Seq(a), Value::Seq(b)) => {
+                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
+            }
             // Same-type scalar comparisons delegate to PartialEq
             (Value::Int(_), Value::Int(_))
             | (Value::Num(_), Value::Num(_))

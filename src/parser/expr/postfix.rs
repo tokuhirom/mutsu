@@ -139,21 +139,23 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         return Ok((r, expr));
     }
     // ^expr — upto operator: ^5 means 0..^5
+    // Use postfix_expr_tight so that `^10 .batch(3)` parses as `(^10).batch(3)`,
+    // not `^(10.batch(3))`.  Only no-space method calls bind tighter than `^`.
     if input.starts_with('^')
         && !input.starts_with("^..")
         && let Some(&c) = input.as_bytes().get(1)
         && (c == b'$' || c == b'(' || c.is_ascii_digit() || c.is_ascii_alphabetic() || c == b'_')
     {
         let rest = &input[1..];
-        let (rest, expr) = postfix_expr(rest)?;
-        return Ok((
+        let (rest, expr) = postfix_expr_tight(rest)?;
+        return postfix_expr_continue(
             rest,
             Expr::Binary {
                 left: Box::new(Expr::Literal(Value::Int(0))),
                 op: TokenKind::DotDotCaret,
                 right: Box::new(expr),
             },
-        ));
+        );
     }
     // |@array or |%hash or |$scalar or |ident — slip/flatten prefix
     if input.starts_with('|')
@@ -179,33 +181,60 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     postfix_expr(input)
 }
 
+/// Like `postfix_expr` but does NOT allow whitespace-separated dotty method
+/// calls.  Used for operands of tight prefix operators like `^` so that
+/// `^10 .batch(3)` parses as `(^10).batch(3)` rather than `^(10.batch(3))`.
+fn postfix_expr_tight(input: &str) -> PResult<'_, Expr> {
+    postfix_expr_inner(input, false)
+}
+
+/// Continue applying postfix operations (including whitespace-dotty) to an
+/// already-parsed expression.  Used after prefix operators like `^` to allow
+/// `^10 .method` to call `.method` on the range result.
+fn postfix_expr_continue(input: &str, expr: Expr) -> PResult<'_, Expr> {
+    postfix_expr_loop(input, expr, true)
+}
+
 /// Postfix: method calls (.method), indexing ([]), ++, --
 fn postfix_expr(input: &str) -> PResult<'_, Expr> {
-    let (mut rest, mut expr) = primary(input)?;
+    postfix_expr_inner(input, true)
+}
+
+fn postfix_expr_inner(input: &str, allow_ws_dot: bool) -> PResult<'_, Expr> {
+    let (rest, expr) = primary(input)?;
 
     // Type smiley: Any:U, Int:D, Str:D etc.
     // Consume and ignore — runtime doesn't use definedness constraints yet.
-    if matches!(expr, Expr::Literal(Value::Package(_)))
+    let rest = if matches!(expr, Expr::Literal(Value::Package(_)))
         && (rest.starts_with(":U") || rest.starts_with(":D") || rest.starts_with(":_"))
     {
         let after = &rest[2..];
-        // Ensure it's a word boundary (not :Ufoo or :Dfoo)
         if after.is_empty()
             || !after
                 .chars()
                 .next()
                 .is_some_and(|c| c.is_alphanumeric() || c == '_')
         {
-            rest = after;
+            after
+        } else {
+            rest
         }
-    }
+    } else {
+        rest
+    };
 
+    postfix_expr_loop(rest, expr, allow_ws_dot)
+}
+
+fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PResult<'_, Expr> {
     loop {
         // Allow whitespace before dotty postfix call in expression context:
         // e.g. `^3 .map: { ... }`.
-        let (r_ws, _) = ws(rest)?;
-        if r_ws.starts_with('.') && !r_ws.starts_with("..") {
-            rest = r_ws;
+        if allow_ws_dot {
+            let (r_ws, _) = ws(rest)?;
+            if r_ws.starts_with('.') && !r_ws.starts_with("..") {
+                rest = r_ws;
+            }
         }
 
         // Unspace: backslash + whitespace collapses to nothing, allowing

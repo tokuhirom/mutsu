@@ -181,6 +181,34 @@ pub(crate) fn native_method_1arg(
                 Some(Ok(Value::array(items[start..].to_vec())))
             }
         },
+        "batch" => {
+            let n = match arg {
+                Value::Int(i) => *i,
+                _ => return None,
+            };
+            if n < 1 {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("got".to_string(), Value::Int(n));
+                attrs.insert(
+                    "message".to_string(),
+                    Value::Str(format!("batch size must be at least 1, got {}", n)),
+                );
+                let ex = Value::make_instance("X::OutOfRange".to_string(), attrs);
+                let mut err = RuntimeError::new(format!(
+                    "X::OutOfRange: batch size must be at least 1, got {}",
+                    n
+                ));
+                err.exception = Some(Box::new(ex));
+                return Some(Err(err));
+            }
+            let n = n as usize;
+            let items = runtime::value_to_list(target);
+            let batches: Vec<Value> = items
+                .chunks(n)
+                .map(|chunk| Value::array(chunk.to_vec()))
+                .collect();
+            Some(Ok(Value::Seq(batches.into())))
+        }
         "rindex" => {
             let s = target.to_string_value();
             let needle = arg.to_string_value();
