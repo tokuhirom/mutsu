@@ -15,7 +15,7 @@ impl Interpreter {
     fn expand_ltm_pattern(pattern: &str) -> String {
         let compact: String = pattern.chars().filter(|ch| !ch.is_whitespace()).collect();
         if compact.is_empty() {
-            return compact;
+            return pattern.to_string();
         }
 
         let with_count = Regex::new(r"^(.+?)\*\*([0-9]+(?:\.\.(?:[0-9]+|\*))?)(?:(%%|%)(.+))?$")
@@ -51,7 +51,7 @@ impl Interpreter {
             }
             return Self::build_ltm_expansion(&atom, "1..*", sep_mode, sep);
         }
-        compact
+        pattern.to_string()
     }
 
     fn build_ltm_expansion(
