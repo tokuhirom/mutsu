@@ -301,21 +301,25 @@ impl Compiler {
                 self.code.emit(OpCode::MakeArray(elems.len() as u32));
             }
             Expr::BracketArray(elems) => {
-                // Flatten ArrayLiteral elements (e.g., [<a b c>] should produce
-                // a 3-element array, not a 1-element array containing a sub-array)
-                let mut count = 0u32;
-                for elem in elems {
-                    if let Expr::ArrayLiteral(items) = elem {
+                // When a single ArrayLiteral is the sole element (e.g., [<a b c>]
+                // or [(1,2,3)]), flatten it so items become direct array elements.
+                // Multiple comma-separated items stay as-is: [(0,1),(2,3)] → 2 Lists.
+                if elems.len() == 1 {
+                    if let Expr::ArrayLiteral(items) = &elems[0] {
                         for item in items {
                             self.compile_expr(item);
-                            count += 1;
                         }
+                        self.code.emit(OpCode::MakeRealArray(items.len() as u32));
                     } else {
-                        self.compile_expr(elem);
-                        count += 1;
+                        self.compile_expr(&elems[0]);
+                        self.code.emit(OpCode::MakeRealArray(1));
                     }
+                } else {
+                    for elem in elems {
+                        self.compile_expr(elem);
+                    }
+                    self.code.emit(OpCode::MakeRealArray(elems.len() as u32));
                 }
-                self.code.emit(OpCode::MakeRealArray(count));
             }
             Expr::CaptureLiteral(items) => {
                 // Compile all items onto the stack. At runtime, MakeCapture
