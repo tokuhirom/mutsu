@@ -632,6 +632,43 @@ impl Interpreter {
                     ));
                 }
             }
+            "skip" => {
+                if let Value::Instance {
+                    ref class_name,
+                    ref attributes,
+                    ..
+                } = target
+                    && class_name == "Supply"
+                {
+                    let n = if args.is_empty() {
+                        1usize
+                    } else {
+                        let arg = &args[0];
+                        match arg {
+                            Value::Int(i) => *i as usize,
+                            Value::Num(f) => *f as usize,
+                            Value::Str(s) => s.parse::<usize>().map_err(|_| {
+                                RuntimeError::new(format!(
+                                    "X::Str::Numeric: Cannot convert string '{}' to a number",
+                                    s
+                                ))
+                            })?,
+                            _ => arg.to_f64() as usize,
+                        }
+                    };
+                    let values = match attributes.get("values") {
+                        Some(Value::Array(items, ..)) => {
+                            items.iter().skip(n).cloned().collect::<Vec<_>>()
+                        }
+                        _ => Vec::new(),
+                    };
+                    let mut attrs = HashMap::new();
+                    attrs.insert("values".to_string(), Value::array(values));
+                    attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    attrs.insert("live".to_string(), Value::Bool(false));
+                    return Ok(Value::make_instance("Supply".to_string(), attrs));
+                }
+            }
             "grep" => {
                 return self.dispatch_grep(target, &args);
             }
