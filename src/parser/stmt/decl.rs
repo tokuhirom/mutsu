@@ -758,10 +758,10 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         keyword("constant", input).ok_or_else(|| PError::expected("constant declaration"))?;
     let (rest, _) = ws1(rest)?;
     // The name can be $var, @var, %var, or bare identifier
+    // var_name() already strips the sigil, so don't re-add it
     let (rest, name) = if rest.starts_with('$') || rest.starts_with('@') || rest.starts_with('%') {
-        let sigil = rest.chars().next().unwrap();
         let (r, n) = var_name(rest)?;
-        (r, format!("{}{}", sigil, n))
+        (r, n.to_string())
     } else {
         ident(rest)?
     };

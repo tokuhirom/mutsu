@@ -160,11 +160,26 @@ fn extract_program_parent(expr: &Expr) -> Option<String> {
             } else {
                 1
             };
-            let mut path = std::path::PathBuf::from(&base);
+            let mut path_str = base;
             for _ in 0..levels {
-                path = path.parent()?.to_path_buf();
+                if path_str == "." {
+                    path_str = "..".to_string();
+                } else if path_str == ".." || path_str.ends_with("/..") {
+                    path_str = format!("{}/..", path_str);
+                } else if path_str == "/" {
+                    break;
+                } else if let Some(par) = std::path::Path::new(&path_str).parent() {
+                    let s = par.to_string_lossy().to_string();
+                    if s.is_empty() {
+                        path_str = ".".to_string();
+                    } else {
+                        path_str = s;
+                    }
+                } else {
+                    path_str = ".".to_string();
+                }
             }
-            Some(path.to_string_lossy().into_owned())
+            Some(path_str)
         }
         Expr::MethodCall { target, name, .. } if name == "IO" => {
             // .IO is a no-op for path resolution
