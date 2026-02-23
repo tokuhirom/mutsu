@@ -55,8 +55,10 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
-        // Wrap WhateverCode expressions in a lambda, but not bare * (Whatever)
-        if contains_whatever(&expr) && !is_whatever(&expr) {
+        // Wrap WhateverCode expressions in a lambda, but not bare * (Whatever).
+        // Smartmatch handles RHS WhateverCode in precedence parsing, and LHS should
+        // remain a normal expression (e.g. `(*) ~~ HyperWhatever:D`).
+        if should_wrap_whatevercode(&expr) {
             expr = wrap_whatevercode(&expr);
         }
         Ok((rest, expr))
@@ -86,10 +88,24 @@ pub(super) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    if contains_whatever(&expr) {
+    // Keep bare `*` as Whatever (Inf). Only wrap true WhateverCode expressions.
+    if should_wrap_whatevercode(&expr) {
         expr = wrap_whatevercode(&expr);
     }
     Ok((rest, expr))
+}
+
+fn should_wrap_whatevercode(expr: &Expr) -> bool {
+    if !contains_whatever(expr) || is_whatever(expr) {
+        return false;
+    }
+    !matches!(
+        expr,
+        Expr::Binary {
+            op: TokenKind::SmartMatch | TokenKind::BangTilde,
+            ..
+        }
+    )
 }
 
 pub(super) fn or_expr_pub(input: &str) -> PResult<'_, Expr> {
