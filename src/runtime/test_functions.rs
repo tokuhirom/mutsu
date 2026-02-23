@@ -106,10 +106,17 @@ impl Interpreter {
     }
 
     fn test_fn_is(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let desc = Self::positional_string(args, 2);
         let todo = Self::named_bool(args, "todo");
-        let left = Self::positional_value(args, 0).cloned();
-        let right = Self::positional_value(args, 1).cloned();
+        let positional: Vec<&Value> = args
+            .iter()
+            .filter(|arg| !matches!(arg, Value::Pair(key, _) if key == "todo"))
+            .collect();
+        let left = positional.first().cloned().cloned();
+        let right = positional.get(1).cloned().cloned();
+        let desc = positional
+            .get(2)
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
         let ok = match (left.as_ref(), right.as_ref()) {
             (Some(left), Some(right)) => {
                 // Handle Junction on the left side (auto-threading)
@@ -166,10 +173,23 @@ impl Interpreter {
     }
 
     fn test_fn_isnt(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let desc = Self::positional_string(args, 2);
         let todo = Self::named_bool(args, "todo");
-        let left = Self::positional_value_required(args, 0, "isnt expects left")?;
-        let right = Self::positional_value_required(args, 1, "isnt expects right")?;
+        let positional: Vec<&Value> = args
+            .iter()
+            .filter(|arg| !matches!(arg, Value::Pair(key, _) if key == "todo"))
+            .collect();
+        let left = positional
+            .first()
+            .copied()
+            .ok_or_else(|| RuntimeError::new("isnt expects left"))?;
+        let right = positional
+            .get(1)
+            .copied()
+            .ok_or_else(|| RuntimeError::new("isnt expects right"))?;
+        let desc = positional
+            .get(2)
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
         let ok = left != right;
         self.test_ok(ok, &desc, todo)?;
         Ok(Value::Bool(ok))

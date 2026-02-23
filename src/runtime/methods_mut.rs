@@ -1,6 +1,26 @@
 use super::*;
 
 impl Interpreter {
+    fn overwrite_array_bindings_by_identity(
+        &mut self,
+        needle: &std::sync::Arc<Vec<Value>>,
+        replacement: Value,
+    ) {
+        let keys: Vec<String> = self
+            .env
+            .iter()
+            .filter_map(|(name, value)| match value {
+                Value::Array(existing, ..) if std::sync::Arc::ptr_eq(existing, needle) => {
+                    Some(name.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        for key in keys {
+            self.env.insert(key, replacement.clone());
+        }
+    }
+
     pub(crate) fn call_method_mut_with_values(
         &mut self,
         target_var: &str,
@@ -243,6 +263,112 @@ impl Interpreter {
             ..
         } = target.clone()
         {
+            if class_name == "Iterator" {
+                let mut updated = (*attributes).clone();
+                let items = match updated.get("items") {
+                    Some(Value::Array(values, ..)) => values.to_vec(),
+                    _ => Vec::new(),
+                };
+                let mut index = match updated.get("index") {
+                    Some(Value::Int(i)) if *i >= 0 => *i as usize,
+                    _ => 0,
+                };
+                let len = items.len();
+
+                let mut append_to_first_array_arg = |vals: &[Value]| {
+                    if vals.is_empty() {
+                        return;
+                    }
+                    if let Some(Value::Array(existing, is_array)) = args.first() {
+                        let mut next = existing.to_vec();
+                        next.extend(vals.iter().cloned());
+                        let updated_array = Value::Array(std::sync::Arc::new(next), *is_array);
+                        self.overwrite_array_bindings_by_identity(existing, updated_array);
+                    }
+                };
+
+                let ret = match method {
+                    "pull-one" => {
+                        if index < len {
+                            let out = items[index].clone();
+                            index += 1;
+                            out
+                        } else {
+                            Value::Str("IterationEnd".to_string())
+                        }
+                    }
+                    "push-exactly" | "push-at-least" => {
+                        let want = args.get(1).map(super::to_int).unwrap_or(1).max(0) as usize;
+                        let available = len.saturating_sub(index);
+                        let take = available.min(want);
+                        if take > 0 {
+                            append_to_first_array_arg(&items[index..index + take]);
+                            index += take;
+                        }
+                        if index >= len {
+                            Value::Str("IterationEnd".to_string())
+                        } else {
+                            Value::Nil
+                        }
+                    }
+                    "push-all" | "push-until-lazy" => {
+                        if index < len {
+                            append_to_first_array_arg(&items[index..]);
+                            index = len;
+                        }
+                        Value::Str("IterationEnd".to_string())
+                    }
+                    "sink-all" => {
+                        index = len;
+                        Value::Str("IterationEnd".to_string())
+                    }
+                    "skip-one" => {
+                        if index < len {
+                            index += 1;
+                            Value::Bool(true)
+                        } else {
+                            Value::Bool(false)
+                        }
+                    }
+                    "skip-at-least" => {
+                        let want = args.first().map(super::to_int).unwrap_or(0).max(0) as usize;
+                        let available = len.saturating_sub(index);
+                        if available >= want {
+                            index += want;
+                            Value::Bool(true)
+                        } else {
+                            index = len;
+                            Value::Bool(false)
+                        }
+                    }
+                    "skip-at-least-pull-one" => {
+                        let want = args.first().map(super::to_int).unwrap_or(0).max(0) as usize;
+                        let available = len.saturating_sub(index);
+                        if available >= want {
+                            index += want;
+                            if index < len {
+                                let out = items[index].clone();
+                                index += 1;
+                                out
+                            } else {
+                                Value::Str("IterationEnd".to_string())
+                            }
+                        } else {
+                            index = len;
+                            Value::Str("IterationEnd".to_string())
+                        }
+                    }
+                    _ => self.call_method_with_values(target, method, args)?,
+                };
+
+                updated.insert("index".to_string(), Value::Int(index as i64));
+                self.env.insert(
+                    target_var.to_string(),
+                    Value::make_instance(class_name, updated),
+                );
+                return Ok(ret);
+            }
+
             if self.is_native_method(&class_name, method) {
                 // Try mutable dispatch first; if no mutable handler, fall back to immutable
                 match self.call_native_instance_method_mut(
