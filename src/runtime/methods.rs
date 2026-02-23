@@ -1054,10 +1054,57 @@ impl Interpreter {
                     .unwrap_or_else(|| "Anon".to_string());
                 Ok(Value::Package(name))
             }
-            _ => Err(RuntimeError::new(format!(
-                "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
-                method
-            ))),
+            _ => {
+                // Method calls on callables compose by applying the method to the
+                // callable's return value, e.g. `(*-*).abs`.
+                if matches!(&target, Value::Sub(_) | Value::WeakSub(_)) {
+                    use crate::ast::{Expr, Stmt};
+                    use std::sync::atomic::{AtomicU64, Ordering};
+
+                    static COMPOSE_METHOD_ID: AtomicU64 = AtomicU64::new(2_000_000);
+
+                    let callable = match target {
+                        Value::Sub(data) => Value::Sub(data),
+                        Value::WeakSub(weak) => weak
+                            .upgrade()
+                            .map(Value::Sub)
+                            .ok_or_else(|| RuntimeError::new("Callable has been freed"))?,
+                        _ => Value::Nil,
+                    };
+                    let params = match &callable {
+                        Value::Sub(data) if !data.params.is_empty() => data.params.clone(),
+                        _ => vec!["_".to_string()],
+                    };
+
+                    let mut env = HashMap::new();
+                    env.insert("__method_compose_target__".to_string(), callable);
+                    let call_args = params.iter().cloned().map(Expr::Var).collect();
+                    let method_args = args.into_iter().map(Expr::Literal).collect();
+                    let body = vec![Stmt::Expr(Expr::MethodCall {
+                        target: Box::new(Expr::Call {
+                            name: "__method_compose_target__".to_string(),
+                            args: call_args,
+                        }),
+                        name: method.to_string(),
+                        args: method_args,
+                        modifier: None,
+                    })];
+                    let id = COMPOSE_METHOD_ID.fetch_add(1, Ordering::Relaxed);
+                    return Ok(Value::make_sub_with_id(
+                        String::new(),
+                        format!("<composed-method:{}>", method),
+                        params,
+                        body,
+                        env,
+                        id,
+                    ));
+                }
+
+                Err(RuntimeError::new(format!(
+                    "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
+                    method
+                )))
+            }
         }
     }
 
