@@ -302,7 +302,7 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["emit", "tap", "repeated", "do", "Supply"]
+                native_methods: ["emit", "tap", "repeated", "do", "reverse", "Supply"]
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),

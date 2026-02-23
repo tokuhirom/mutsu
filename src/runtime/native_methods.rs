@@ -431,6 +431,21 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         match method {
+            "reverse" => {
+                let values = match attributes.get("values") {
+                    Some(Value::Array(items, ..)) => {
+                        let mut v = items.to_vec();
+                        v.reverse();
+                        v
+                    }
+                    _ => Vec::new(),
+                };
+                let mut new_attrs = HashMap::new();
+                new_attrs.insert("values".to_string(), Value::array(values));
+                new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                new_attrs.insert("live".to_string(), Value::Bool(false));
+                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+            }
             "repeated" => {
                 let as_fn = Self::named_value(&args, "as");
                 let with_fn = Self::named_value(&args, "with");
