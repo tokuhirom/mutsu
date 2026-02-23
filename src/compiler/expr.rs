@@ -301,10 +301,21 @@ impl Compiler {
                 self.code.emit(OpCode::MakeArray(elems.len() as u32));
             }
             Expr::BracketArray(elems) => {
+                // Flatten ArrayLiteral elements (e.g., [<a b c>] should produce
+                // a 3-element array, not a 1-element array containing a sub-array)
+                let mut count = 0u32;
                 for elem in elems {
-                    self.compile_expr(elem);
+                    if let Expr::ArrayLiteral(items) = elem {
+                        for item in items {
+                            self.compile_expr(item);
+                            count += 1;
+                        }
+                    } else {
+                        self.compile_expr(elem);
+                        count += 1;
+                    }
                 }
-                self.code.emit(OpCode::MakeRealArray(elems.len() as u32));
+                self.code.emit(OpCode::MakeRealArray(count));
             }
             Expr::CaptureLiteral(items) => {
                 // Compile all items onto the stack. At runtime, MakeCapture
