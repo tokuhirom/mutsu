@@ -718,6 +718,30 @@ impl Compiler {
                     }
                 }
             }
+            Stmt::TempMethodAssign {
+                var_name,
+                method_name,
+                method_args,
+                value,
+            } => {
+                let name_idx = self.code.add_constant(Value::Str(var_name.clone()));
+                self.code.emit(OpCode::LetSave {
+                    name_idx,
+                    index_mode: false,
+                });
+                let assign_expr = Expr::Call {
+                    name: "__mutsu_assign_method_lvalue".to_string(),
+                    args: vec![
+                        Expr::Var(var_name.clone()),
+                        Expr::Literal(Value::Str(method_name.clone())),
+                        Expr::ArrayLiteral(method_args.clone()),
+                        value.clone(),
+                        Expr::Literal(Value::Str(var_name.clone())),
+                    ],
+                };
+                self.compile_expr(&assign_expr);
+                self.code.emit(OpCode::Pop);
+            }
         }
     }
 }

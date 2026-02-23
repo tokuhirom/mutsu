@@ -1705,6 +1705,7 @@ impl Interpreter {
                         })
                         .collect(),
                     body: sub_data.body.clone(),
+                    is_rw: false,
                 };
                 if let Some(class_def) = self.classes.get_mut(&class_name) {
                     class_def.methods.insert(method_name, vec![def]);

@@ -92,6 +92,8 @@ impl Interpreter {
             // Error / control flow
             "die" => self.builtin_die(&args),
             "fail" => self.builtin_fail(&args),
+            "return-rw" => self.builtin_return_rw(&args),
+            "__mutsu_assign_method_lvalue" => self.builtin_assign_method_lvalue(&args),
             "__mutsu_stub_die" => self.builtin_stub_die(&args),
             "__mutsu_stub_warn" => self.builtin_stub_warn(&args),
             "exit" => self.builtin_exit(&args),
@@ -603,6 +605,41 @@ impl Interpreter {
         let mut err = RuntimeError::new("Failed");
         err.is_fail = true;
         Err(err)
+    }
+
+    fn builtin_return_rw(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let value = args.first().cloned().unwrap_or(Value::Nil);
+        Err(RuntimeError {
+            return_value: Some(value),
+            ..RuntimeError::new("")
+        })
+    }
+
+    fn builtin_assign_method_lvalue(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 4 {
+            return Err(RuntimeError::new(
+                "__mutsu_assign_method_lvalue expects target, method name, method args, and value",
+            ));
+        }
+        let target = args[0].clone();
+        let method = args[1].to_string_value();
+        let method_args = match &args[2] {
+            Value::Array(items, ..) => items.to_vec(),
+            Value::Nil => Vec::new(),
+            other => vec![other.clone()],
+        };
+        let value = args[3].clone();
+        let target_var = args.get(4).and_then(|v| {
+            let name = v.to_string_value();
+            if name.is_empty() { None } else { Some(name) }
+        });
+        self.assign_method_lvalue_with_values(
+            target_var.as_deref(),
+            target,
+            &method,
+            method_args,
+            value,
+        )
     }
 
     fn builtin_warn(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

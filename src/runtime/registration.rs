@@ -502,11 +502,13 @@ impl Interpreter {
                     param_defs,
                     body: method_body,
                     multi,
+                    is_rw,
                 } => {
                     let def = MethodDef {
                         params: params.clone(),
                         param_defs: param_defs.clone(),
                         body: method_body.clone(),
+                        is_rw: *is_rw,
                     };
                     if *multi {
                         class_def
@@ -579,11 +581,13 @@ impl Interpreter {
                     param_defs,
                     body: method_body,
                     multi,
+                    is_rw,
                 } => {
                     let def = MethodDef {
                         params: params.clone(),
                         param_defs: param_defs.clone(),
                         body: method_body.clone(),
+                        is_rw: *is_rw,
                     };
                     if *multi {
                         role_def

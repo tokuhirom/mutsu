@@ -763,6 +763,29 @@ pub(super) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, Stmt::Block(body)))
 }
 
+fn method_lvalue_assign_expr(
+    target: Expr,
+    target_var_name: Option<String>,
+    method_name: String,
+    method_args: Vec<Expr>,
+    value: Expr,
+) -> Expr {
+    let mut args = vec![
+        target,
+        Expr::Literal(Value::Str(method_name)),
+        Expr::ArrayLiteral(method_args),
+        value,
+    ];
+    args.push(match target_var_name {
+        Some(name) => Expr::Literal(Value::Str(name)),
+        None => Expr::Literal(Value::Nil),
+    });
+    Expr::Call {
+        name: "__mutsu_assign_method_lvalue".to_string(),
+        args,
+    }
+}
+
 /// Parse an expression statement (fallback).
 pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     // Topic mutating method call: .=method(args)
@@ -851,25 +874,21 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             target,
             name,
             args,
-            modifier,
+            modifier: _,
         } = &expr
-            && args.is_empty()
-            && modifier.is_none()
-            && matches!(
-                target.as_ref(),
-                Expr::Var(_)
-                    | Expr::ArrayVar(_)
-                    | Expr::HashVar(_)
-                    | Expr::CodeVar(_)
-                    | Expr::BareWord(_)
-            )
         {
-            let stmt = Stmt::Expr(Expr::MethodCall {
-                target: target.clone(),
-                name: name.clone(),
-                args: vec![rhs],
-                modifier: None,
-            });
+            let target_var_name = if let Expr::Var(var_name) = target.as_ref() {
+                Some(var_name.clone())
+            } else {
+                None
+            };
+            let stmt = Stmt::Expr(method_lvalue_assign_expr(
+                (**target).clone(),
+                target_var_name,
+                name.clone(),
+                args.clone(),
+                rhs,
+            ));
             return parse_statement_modifier(r, stmt);
         }
         let stmt = Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)]);
@@ -1139,6 +1158,33 @@ pub(super) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
 pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("temp", input).ok_or_else(|| PError::expected("temp statement"))?;
     let (rest, _) = ws1(rest)?;
+    // temp on lvalue method call: `temp $obj.method = value`
+    if let Ok((expr_rest, expr)) = expression(rest) {
+        let (expr_rest_ws, _) = ws(expr_rest)?;
+        if expr_rest_ws.starts_with('=')
+            && !expr_rest_ws.starts_with("==")
+            && let Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier: _,
+            } = expr
+            && let Expr::Var(var_name) = target.as_ref()
+        {
+            let rhs_rest = &expr_rest_ws[1..];
+            let (rhs_rest, _) = ws(rhs_rest)?;
+            let (rhs_rest, rhs_expr) = expression(rhs_rest)?;
+            return parse_statement_modifier(
+                rhs_rest,
+                Stmt::TempMethodAssign {
+                    var_name: var_name.clone(),
+                    method_name: name,
+                    method_args: args,
+                    value: rhs_expr,
+                },
+            );
+        }
+    }
     // Parse sigil + optional twigil + var name
     let sigil = rest
         .chars()

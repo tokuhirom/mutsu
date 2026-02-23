@@ -86,6 +86,7 @@ struct MethodDef {
     params: Vec<String>,
     param_defs: Vec<ParamDef>,
     body: Vec<Stmt>,
+    is_rw: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

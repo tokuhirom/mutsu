@@ -383,6 +383,20 @@ impl Interpreter {
                 expr: Self::rewrite_proto_dispatch_expr(expr),
                 op: *op,
             },
+            Stmt::TempMethodAssign {
+                var_name,
+                method_name,
+                method_args,
+                value,
+            } => Stmt::TempMethodAssign {
+                var_name: var_name.clone(),
+                method_name: method_name.clone(),
+                method_args: method_args
+                    .iter()
+                    .map(Self::rewrite_proto_dispatch_expr)
+                    .collect(),
+                value: Self::rewrite_proto_dispatch_expr(value),
+            },
             Stmt::If {
                 cond,
                 then_branch,
