@@ -485,6 +485,13 @@ fn native_function_2arg(
                 chars[start.min(chars.len())..].iter().collect(),
             )))
         }
+        "samemark" => {
+            let target = arg1.to_string_value();
+            let source = arg2.to_string_value();
+            Some(Ok(Value::Str(crate::builtins::samemark_string(
+                &target, &source,
+            ))))
+        }
         "log" => {
             let x = runtime::to_float_value(arg1).unwrap_or(f64::NAN);
             let base_val = runtime::to_float_value(arg2).unwrap_or(f64::NAN);

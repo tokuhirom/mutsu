@@ -54,4 +54,4 @@ pub(crate) use arith::{
 pub(crate) use functions::native_function;
 pub(crate) use methods_0arg::native_method_0arg;
 pub(crate) use methods_narg::{native_method_1arg, native_method_2arg};
-pub(crate) use unicode::unicode_titlecase_first;
+pub(crate) use unicode::{samemark_string, unicode_titlecase_first};

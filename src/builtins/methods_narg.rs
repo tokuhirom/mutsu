@@ -55,6 +55,14 @@ pub(crate) fn native_method_1arg(
             let suffix = arg.to_string_value();
             Some(Ok(Value::Bool(s.ends_with(&suffix))))
         }
+        "samemark" => {
+            let target_str = target.to_string_value();
+            let source_str = arg.to_string_value();
+            Some(Ok(Value::Str(crate::builtins::samemark_string(
+                &target_str,
+                &source_str,
+            ))))
+        }
         "Rat" => {
             // .Rat(epsilon) — just ignore epsilon and convert like .Rat
             let result = match target {
