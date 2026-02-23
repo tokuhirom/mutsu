@@ -233,6 +233,9 @@ pub struct Interpreter {
     loaded_modules: HashSet<String>,
     /// When true, `is export` trait is ignored (used by `need` to load without importing).
     pub(crate) suppress_exports: bool,
+    /// Stack of snapshots for lexical import scoping.
+    /// Each entry saves (function_keys, class_names) before a block with `use`.
+    import_scope_stack: Vec<(HashSet<String>, HashSet<String>)>,
     state_vars: HashMap<String, Value>,
     let_saves: Vec<(String, Value)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
@@ -685,6 +688,7 @@ impl Interpreter {
             chroot_root: None,
             loaded_modules: HashSet::new(),
             suppress_exports: false,
+            import_scope_stack: Vec::new(),
             state_vars: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
@@ -825,6 +829,22 @@ impl Interpreter {
         }
     }
 
+    /// Save current function/class keys for lexical import scoping.
+    pub(crate) fn push_import_scope(&mut self) {
+        let func_keys: HashSet<String> = self.functions.keys().cloned().collect();
+        let class_keys: HashSet<String> = self.classes.keys().cloned().collect();
+        self.import_scope_stack.push((func_keys, class_keys));
+    }
+
+    /// Restore function/class registries to the last saved snapshot,
+    /// removing any entries added since the push.
+    pub(crate) fn pop_import_scope(&mut self) {
+        if let Some((func_snapshot, class_snapshot)) = self.import_scope_stack.pop() {
+            self.functions.retain(|key, _| func_snapshot.contains(key));
+            self.classes.retain(|key, _| class_snapshot.contains(key));
+        }
+    }
+
     pub(crate) fn use_module(&mut self, module: &str) -> Result<(), RuntimeError> {
         self.loaded_modules.insert(module.to_string());
         if module == "Test"
@@ -942,6 +962,7 @@ impl Interpreter {
             chroot_root: self.chroot_root.clone(),
             loaded_modules: self.loaded_modules.clone(),
             suppress_exports: false,
+            import_scope_stack: Vec::new(),
             state_vars: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
