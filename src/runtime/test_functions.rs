@@ -551,6 +551,7 @@ impl Interpreter {
                             || err.message.contains("X::Comp")
                             || err.message.contains("X::Undeclared")
                             || err.message.contains("X::Obsolete")
+                            || err.message.contains("parse error")
                     } else if expected_normalized == "X::AdHoc" {
                         // X::AdHoc matches any ad-hoc error
                         true
