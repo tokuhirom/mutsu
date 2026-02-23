@@ -68,7 +68,8 @@ After implementing:
 - Add regression tests under t/ if needed
 - Run make test and make roast to check regressions
 - If it passes, append to roast-whitelist.txt while keeping sort order
-- Create a branch, commit, push, and open a PR with gh pr create
+- commit, push, and open a PR with gh pr create
+- enable auto merge
 EOF
 )
 CMD=(ai-sandbox "$FILE" codex exec "$PROMPT")
