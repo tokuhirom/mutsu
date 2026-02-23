@@ -922,6 +922,15 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !is_keyword(&name)
         && let Ok((r2, block_body)) = parse_block_body(r)
     {
+        if name == "BEGIN" {
+            return Ok((
+                r2,
+                Expr::Call {
+                    name,
+                    args: vec![make_anon_sub(block_body)],
+                },
+            ));
+        }
         let (r3, _) = ws(r2)?;
         if let Some(r3) = r3.strip_prefix(',').or_else(|| r3.strip_prefix(':')) {
             // Consume comma and remaining args

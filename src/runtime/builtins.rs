@@ -99,6 +99,38 @@ impl Interpreter {
             "made" => self.builtin_made(),
             "undefine" => Ok(Value::Nil),
             "VAR" => Ok(args.first().cloned().unwrap_or(Value::Nil)),
+            "HOW" => {
+                if args.len() != 1 {
+                    return Err(RuntimeError::new(
+                        "X::Syntax::Argument::MOPMacro: HOW expects exactly one argument",
+                    ));
+                }
+                self.call_method_with_values(args[0].clone(), "HOW", vec![])
+            }
+            "__MUTSU_SET_META__" => {
+                if args.len() < 3 {
+                    return Ok(Value::Nil);
+                }
+                let type_name = args[0].to_string_value();
+                let key = args[1].to_string_value();
+                let value = args[2].clone();
+                self.type_metadata
+                    .entry(type_name)
+                    .or_default()
+                    .insert(key, value);
+                Ok(Value::Nil)
+            }
+            "BEGIN" => {
+                let Some(first) = args.first().cloned() else {
+                    return Ok(Value::Nil);
+                };
+                match first {
+                    Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
+                        self.call_sub_value(first, Vec::new(), false)
+                    }
+                    other => Ok(other),
+                }
+            }
             // Array operations
             "shift" => self.builtin_shift(&args),
             "pop" => self.builtin_pop(&args),
