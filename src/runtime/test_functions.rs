@@ -330,17 +330,20 @@ impl Interpreter {
         let todo = Self::named_bool(args, "todo");
         let got = Self::positional_value_required(args, 0, "is-approx expects got")?;
         let expected = Self::positional_value_required(args, 1, "is-approx expects expected")?;
+        let abs_tol = Self::named_value(args, "abs-tol")
+            .and_then(|v| super::to_float_value(&v))
+            .unwrap_or(1e-5);
         let ok = match (got, expected) {
             (Value::Complex(gr, gi), Value::Complex(er, ei)) => {
                 let dr = gr - er;
                 let di = gi - ei;
-                (dr * dr + di * di).sqrt() <= 1e-5
+                (dr * dr + di * di).sqrt() <= abs_tol
             }
             (Value::Complex(gr, gi), _) => {
                 if let Some(e) = super::to_float_value(expected) {
                     let dr = gr - e;
                     let di = *gi;
-                    (dr * dr + di * di).sqrt() <= 1e-5
+                    (dr * dr + di * di).sqrt() <= abs_tol
                 } else {
                     false
                 }
@@ -349,13 +352,13 @@ impl Interpreter {
                 if let Some(g) = super::to_float_value(got) {
                     let dr = g - er;
                     let di = *ei;
-                    (dr * dr + di * di).sqrt() <= 1e-5
+                    (dr * dr + di * di).sqrt() <= abs_tol
                 } else {
                     false
                 }
             }
             _ => match (super::to_float_value(got), super::to_float_value(expected)) {
-                (Some(g), Some(e)) => (g - e).abs() <= 1e-5,
+                (Some(g), Some(e)) => (g - e).abs() <= abs_tol,
                 _ => false,
             },
         };

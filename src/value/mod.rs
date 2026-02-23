@@ -620,6 +620,17 @@ impl Value {
         }
     }
 
+    /// Create an Instant value from the current system time.
+    pub(crate) fn make_instant_now() -> Self {
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0);
+        let mut attrs = HashMap::new();
+        attrs.insert("value".to_string(), Value::Num(secs));
+        Value::make_instance("Instant".to_string(), attrs)
+    }
+
     /// Create a Match object with positional captures.
     pub(crate) fn make_match_object_with_captures(
         matched: String,
@@ -707,6 +718,13 @@ impl Value {
                 }
             }
             Value::Str(s) => s.trim().parse::<f64>().unwrap_or(0.0),
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Instant" => {
+                attributes.get("value").map(|v| v.to_f64()).unwrap_or(0.0)
+            }
             _ => 0.0,
         }
     }
