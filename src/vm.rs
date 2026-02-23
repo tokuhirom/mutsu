@@ -289,7 +289,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::Mul => {
-                self.exec_mul_op();
+                self.exec_mul_op()?;
                 *ip += 1;
             }
             OpCode::Div => {
@@ -301,7 +301,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::Pow => {
-                self.exec_pow_op();
+                self.exec_pow_op()?;
                 *ip += 1;
             }
             OpCode::Negate => {

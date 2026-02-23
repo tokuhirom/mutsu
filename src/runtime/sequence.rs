@@ -1,6 +1,98 @@
 use super::*;
 
 impl Interpreter {
+    fn collect_sequence_args_fixed(
+        result: &[Value],
+        arity: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        if arity == 0 {
+            return Ok(Vec::new());
+        }
+        if result.len() < arity {
+            return Err(RuntimeError::new(format!(
+                "Too few positionals passed; expected {arity} arguments but got {}",
+                result.len()
+            )));
+        }
+        Ok(result[result.len() - arity..].to_vec())
+    }
+
+    fn collect_sequence_args_slurpy(result: &[Value], min_arity: usize) -> Vec<Value> {
+        if result.len() >= min_arity {
+            return result.to_vec();
+        }
+        let mut args = vec![Value::Nil; min_arity - result.len()];
+        args.extend(result.iter().cloned());
+        args
+    }
+
+    fn sequence_routine_param_mode(&self, package: &str, name: &str) -> SequenceRoutineParamMode {
+        let name = name.strip_prefix('&').unwrap_or(name);
+        if name.starts_with("prefix:<") || name.starts_with("postfix:<") {
+            return SequenceRoutineParamMode::Fixed(1);
+        }
+        if name.starts_with("infix:<") {
+            return SequenceRoutineParamMode::Fixed(2);
+        }
+
+        let local_prefix = format!("{package}::{name}/");
+        let global_prefix = format!("GLOBAL::{name}/");
+        let mut fixed_arity = 0usize;
+        let mut slurpy_min: Option<usize> = None;
+
+        for (key, def) in &self.functions {
+            let loose_match = key.contains(&format!("::{name}/"));
+            if !key.starts_with(&local_prefix) && !key.starts_with(&global_prefix) && !loose_match {
+                continue;
+            }
+
+            let mut positional_non_slurpy = 0usize;
+            let mut has_slurpy = false;
+            if def.param_defs.is_empty() {
+                positional_non_slurpy = def.params.len();
+            } else {
+                for pd in &def.param_defs {
+                    if pd.named {
+                        continue;
+                    }
+                    if pd.slurpy {
+                        has_slurpy = true;
+                    } else {
+                        positional_non_slurpy += 1;
+                    }
+                }
+            }
+
+            if has_slurpy {
+                slurpy_min = Some(match slurpy_min {
+                    Some(existing) => existing.max(positional_non_slurpy),
+                    None => positional_non_slurpy,
+                });
+            } else {
+                fixed_arity = fixed_arity.max(positional_non_slurpy);
+            }
+        }
+
+        if let Some(min) = slurpy_min {
+            SequenceRoutineParamMode::Slurpy { min_arity: min }
+        } else if fixed_arity > 0 {
+            SequenceRoutineParamMode::Fixed(fixed_arity)
+        } else {
+            SequenceRoutineParamMode::Fixed(2)
+        }
+    }
+
+    fn sequence_has_registered_routine(&self, package: &str, name: &str) -> bool {
+        let name = name.strip_prefix('&').unwrap_or(name);
+        let local_prefix = format!("{package}::{name}/");
+        let global_prefix = format!("GLOBAL::{name}/");
+        self.functions.keys().any(|key| {
+            key.starts_with(&local_prefix)
+                || key.starts_with(&global_prefix)
+                || key.contains(&format!("::{name}/"))
+        })
+    }
+
     pub(super) fn eval_sequence(
         &mut self,
         left: Value,
@@ -372,7 +464,11 @@ impl Interpreter {
                     self.env
                         .insert("@_".to_string(), Value::array(seeds[..=i].to_vec()));
 
-                    let predicate_result = self.eval_block_value(&data.body)?;
+                    let predicate_result = match self.eval_block_value(&data.body) {
+                        Ok(v) => v,
+                        Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
+                        Err(e) => return Err(e),
+                    };
                     self.env = saved;
                     if predicate_result.truthy() {
                         let end = if exclusive { i } else { i + 1 };
@@ -507,74 +603,102 @@ impl Interpreter {
                 SeqMode::Closure => {
                     let genfn = generator.as_ref().unwrap();
                     if let Value::Sub(data) = genfn {
-                        let saved = self.env.clone();
-                        for (k, v) in &data.env {
-                            self.env.insert(k.clone(), v.clone());
-                        }
-
-                        // Determine arity from params
-                        let arity = if !data.params.is_empty() {
-                            data.params.len()
+                        if self.sequence_has_registered_routine(&data.package, &data.name) {
+                            let args =
+                                match self.sequence_routine_param_mode(&data.package, &data.name) {
+                                    SequenceRoutineParamMode::Fixed(arity) => {
+                                        Self::collect_sequence_args_fixed(&result, arity)?
+                                    }
+                                    SequenceRoutineParamMode::Slurpy { min_arity } => {
+                                        Self::collect_sequence_args_slurpy(&result, min_arity)
+                                    }
+                                };
+                            let call_name = data.name.strip_prefix('&').unwrap_or(&data.name);
+                            self.call_function(call_name, args)?
                         } else {
-                            1
-                        };
-
-                        // Collect the appropriate number of previous values
-                        let result_len = result.len();
-                        let args: Vec<Value> = if result_len == 0 {
-                            vec![Value::Nil; arity]
-                        } else if result_len < arity {
-                            // Not enough values yet - pad with Nil
-                            let mut args = vec![Value::Nil; arity - result_len];
-                            args.extend(result.iter().cloned());
-                            args
-                        } else {
-                            // Take the last 'arity' values
-                            result[result_len - arity..].to_vec()
-                        };
-
-                        // Bind parameters
-                        for (i, param) in data.params.iter().enumerate() {
-                            if i < args.len() {
-                                self.env.insert(param.clone(), args[i].clone());
+                            let saved = self.env.clone();
+                            for (k, v) in &data.env {
+                                self.env.insert(k.clone(), v.clone());
                             }
-                        }
 
-                        // Bind $_ to last arg
-                        if let Some(last_arg) = args.last() {
-                            self.env.insert("_".to_string(), last_arg.clone());
-                        }
-
-                        let val = match self.eval_block_value(&data.body) {
-                            Ok(v) => v,
-                            Err(e) if e.is_last => {
-                                self.env = saved;
-                                break;
-                            }
-                            Err(e) => {
-                                self.env = saved;
-                                return Err(e);
-                            }
-                        };
-                        self.env = saved;
-                        val
-                    } else if let Value::Routine { name: rname, .. } = genfn {
-                        // For Routine values (like &[+], &prefix:<!>), determine arity from name
-                        let arity =
-                            if rname.starts_with("prefix:<") || rname.starts_with("postfix:<") {
-                                1
+                            let slurpy_index = data
+                                .params
+                                .iter()
+                                .position(|param| param.starts_with('@') || param.starts_with('%'));
+                            let args: Vec<Value> = if data.params.is_empty() {
+                                // No declared params: sequence generators still receive history in @_.
+                                result.clone()
+                            } else if let Some(min_arity) = slurpy_index {
+                                Self::collect_sequence_args_slurpy(&result, min_arity)
                             } else {
-                                2 // infix operators
+                                let arity = data.params.len();
+                                Self::collect_sequence_args_fixed(&result, arity)?
                             };
-                        let result_len = result.len();
-                        let args: Vec<Value> = if result_len == 0 {
-                            vec![Value::Nil; arity]
-                        } else if result_len < arity {
-                            let mut args = vec![Value::Nil; arity - result_len];
-                            args.extend(result.iter().cloned());
-                            args
-                        } else {
-                            result[result_len - arity..].to_vec()
+
+                            // Bind parameters
+                            for (i, param) in data.params.iter().enumerate() {
+                                if param.starts_with('@') {
+                                    let rest = if i < args.len() {
+                                        args[i..].to_vec()
+                                    } else {
+                                        Vec::new()
+                                    };
+                                    self.env.insert(param.clone(), Value::array(rest));
+                                    break;
+                                }
+                                if param.starts_with('%') {
+                                    let mut map = std::collections::HashMap::new();
+                                    for item in args.iter().skip(i) {
+                                        if let Value::Pair(k, v) = item {
+                                            map.insert(k.clone(), (**v).clone());
+                                        }
+                                    }
+                                    self.env.insert(
+                                        param.clone(),
+                                        Value::Hash(std::sync::Arc::new(map)),
+                                    );
+                                    break;
+                                }
+                                if let Some(arg) = args.get(i) {
+                                    self.env.insert(param.clone(), arg.clone());
+                                }
+                            }
+
+                            // Bind $_ to last arg
+                            if let Some(last_arg) = args.last() {
+                                self.env.insert("_".to_string(), last_arg.clone());
+                            }
+                            // Bind @_ to the argument history window.
+                            self.env
+                                .insert("@_".to_string(), Value::array(args.clone()));
+
+                            let val = match self.eval_block_value(&data.body) {
+                                Ok(v) => v,
+                                Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
+                                Err(e) if e.is_last => {
+                                    self.env = saved;
+                                    break;
+                                }
+                                Err(e) => {
+                                    self.env = saved;
+                                    return Err(e);
+                                }
+                            };
+                            self.env = saved;
+                            val
+                        }
+                    } else if let Value::Routine { name: rname, .. } = genfn {
+                        let package = match genfn {
+                            Value::Routine { package, .. } => package,
+                            _ => unreachable!(),
+                        };
+                        let args = match self.sequence_routine_param_mode(package, rname) {
+                            SequenceRoutineParamMode::Fixed(arity) => {
+                                Self::collect_sequence_args_fixed(&result, arity)?
+                            }
+                            SequenceRoutineParamMode::Slurpy { min_arity } => {
+                                Self::collect_sequence_args_slurpy(&result, min_arity)
+                            }
                         };
                         self.call_sub_value(genfn.clone(), args, false)?
                     } else {
@@ -704,7 +828,11 @@ impl Interpreter {
                                     self.env.insert("@_".to_string(), Value::array(all_vals));
                                 }
 
-                                let predicate_result = self.eval_block_value(&data.body)?;
+                                let predicate_result = match self.eval_block_value(&data.body) {
+                                    Ok(v) => v,
+                                    Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
+                                    Err(e) => return Err(e),
+                                };
                                 self.env = saved;
                                 if predicate_result.truthy() {
                                     if !exclusive {
@@ -907,4 +1035,9 @@ impl Interpreter {
 
         Ok(Value::array(all_results))
     }
+}
+
+enum SequenceRoutineParamMode {
+    Fixed(usize),
+    Slurpy { min_arity: usize },
 }
