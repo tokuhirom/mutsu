@@ -111,6 +111,7 @@ roast/S11-compunit/compunit-dependencyspecification.t
 roast/S11-compunit/rt126904.t
 roast/S11-modules/module-file.t
 roast/S11-modules/need.t
+roast/S11-modules/rakulib.t
 roast/S11-modules/runtime.t
 roast/S11-modules/versioning.t
 roast/S12-class/declaration-order.t

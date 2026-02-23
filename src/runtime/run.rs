@@ -281,13 +281,13 @@ impl Interpreter {
             // Also check lib/ subdirectory (Raku distribution layout)
             candidates.push(base_path.join("lib").join(&filename));
         }
-        if candidates.is_empty() {
-            if let Some(path) = &self.program_path
-                && let Some(parent) = Path::new(path).parent()
-            {
-                candidates.push(parent.join(&filename));
-            }
-            candidates.push(Path::new(".").join(&filename));
+        if candidates.is_empty()
+            && let Some(path) = &self.program_path
+            && let Some(parent) = Path::new(path).parent()
+            && !parent.as_os_str().is_empty()
+            && parent.is_dir()
+        {
+            candidates.push(parent.join(&filename));
         }
         let mut code = None;
         for path in candidates {
