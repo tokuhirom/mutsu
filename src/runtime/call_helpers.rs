@@ -49,8 +49,8 @@ impl Interpreter {
             line.push_str("not ok ");
         }
         line.push_str(&state.ran.to_string());
+        line.push_str(" - ");
         if !desc.is_empty() {
-            line.push_str(" - ");
             line.push_str(desc);
         }
         if todo {

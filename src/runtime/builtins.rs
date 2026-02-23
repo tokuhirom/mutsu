@@ -506,20 +506,61 @@ impl Interpreter {
         }
     }
 
+    fn runtime_error_from_die_value(
+        &self,
+        value: &Value,
+        default_message: &str,
+        is_fail: bool,
+    ) -> RuntimeError {
+        if matches!(value, Value::Nil) {
+            let mut err = RuntimeError::new(default_message);
+            err.is_fail = is_fail;
+            return err;
+        }
+
+        let msg = if let Value::Instance { attributes, .. } = value {
+            attributes
+                .get("message")
+                .map(|v| v.to_string_value())
+                .unwrap_or_else(|| value.to_string_value())
+        } else {
+            value.to_string_value()
+        };
+
+        let mut err = RuntimeError::new(&msg);
+        err.is_fail = is_fail;
+        if let Value::Instance { class_name, .. } = value
+            && (class_name == "Exception"
+                || class_name.starts_with("X::")
+                || class_name.starts_with("CX::"))
+        {
+            err.exception = Some(Box::new(value.clone()));
+        }
+        err
+    }
+
     fn builtin_die(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let msg = args
-            .first()
-            .map(|v| v.to_string_value())
-            .unwrap_or_else(|| "Died".to_string());
-        Err(RuntimeError::new(&msg))
+        if let Some(v) = args.first() {
+            return Err(self.runtime_error_from_die_value(v, "Died", false));
+        }
+        if let Some(current) = self.env.get("!")
+            && !matches!(current, Value::Nil)
+        {
+            return Err(self.runtime_error_from_die_value(current, "Died", false));
+        }
+        Err(RuntimeError::new("Died"))
     }
 
     fn builtin_fail(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let msg = args
-            .first()
-            .map(|v| v.to_string_value())
-            .unwrap_or_else(|| "Failed".to_string());
-        let mut err = RuntimeError::new(&msg);
+        if let Some(v) = args.first() {
+            return Err(self.runtime_error_from_die_value(v, "Failed", true));
+        }
+        if let Some(current) = self.env.get("!")
+            && !matches!(current, Value::Nil)
+        {
+            return Err(self.runtime_error_from_die_value(current, "Failed", true));
+        }
+        let mut err = RuntimeError::new("Failed");
         err.is_fail = true;
         Err(err)
     }
