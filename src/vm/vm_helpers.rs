@@ -148,6 +148,7 @@ impl VM {
                 | "Kernel"
                 | "CX::Warn"
                 | "X::AdHoc"
+                | "CompUnit::DependencySpecification"
         )
     }
 

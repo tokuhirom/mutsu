@@ -27,6 +27,17 @@ pub(crate) fn native_method_0arg(
         }
         return native_method_0arg(inner, method);
     }
+    // CompUnit::DependencySpecification methods
+    if let Value::CompUnitDepSpec { short_name } = target {
+        return match method {
+            "short-name" => Some(Ok(Value::Str(short_name.clone()))),
+            "version-matcher" => Some(Ok(Value::Bool(true))),
+            "auth-matcher" => Some(Ok(Value::Bool(true))),
+            "api-matcher" => Some(Ok(Value::Bool(true))),
+            "Str" | "gist" => Some(Ok(Value::Str(short_name.clone()))),
+            _ => None,
+        };
+    }
     // Capture methods
     if let Value::Capture { positional, named } = target {
         return dispatch_capture(positional, named, method);
