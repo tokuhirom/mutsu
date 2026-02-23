@@ -233,8 +233,21 @@ impl Interpreter {
             "print" | "say" | "put" | "note" => self.builtin_print(name, &args),
             "sink" => Ok(Value::Nil), // sink evaluates args (already done) and returns Nil
             "quietly" => {
-                // quietly suppresses warnings and returns the result
-                Ok(args.into_iter().last().unwrap_or(Value::Nil))
+                let Some(first) = args.first().cloned() else {
+                    return Ok(Value::Nil);
+                };
+                match first {
+                    Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
+                        self.push_warn_suppression();
+                        let result = self.call_sub_value(first, Vec::new(), false);
+                        self.pop_warn_suppression();
+                        match result {
+                            Err(e) if e.is_warn => Ok(Value::Nil),
+                            other => other,
+                        }
+                    }
+                    other => Ok(other),
+                }
             }
             "prompt" => self.builtin_prompt(&args),
             "get" => self.builtin_get(&args),
