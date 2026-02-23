@@ -473,6 +473,17 @@ impl Interpreter {
                 let values = Self::value_to_list(&target);
                 return Ok(Value::junction(kind, values));
             }
+            "iterator" if args.is_empty() => {
+                if matches!(&target, Value::Instance { class_name, .. } if class_name == "Iterator")
+                {
+                    return Ok(target);
+                }
+                let items = crate::runtime::utils::value_to_list(&target);
+                let mut attrs = HashMap::new();
+                attrs.insert("items".to_string(), Value::array(items));
+                attrs.insert("index".to_string(), Value::Int(0));
+                return Ok(Value::make_instance("Iterator".to_string(), attrs));
+            }
             "map" => {
                 let items = Self::value_to_list(&target);
                 return self.eval_map_over_items(args.first().cloned(), items);

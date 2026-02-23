@@ -1,6 +1,31 @@
 use crate::runtime;
 use crate::value::{RuntimeError, Value};
 
+fn positional_pairs(values: &[Value]) -> Vec<Value> {
+    values
+        .iter()
+        .enumerate()
+        .map(|(idx, value)| Value::Pair(idx.to_string(), Box::new(value.clone())))
+        .collect()
+}
+
+fn positional_keys(values: &[Value]) -> Vec<Value> {
+    values
+        .iter()
+        .enumerate()
+        .map(|(idx, _)| Value::Str(idx.to_string()))
+        .collect()
+}
+
+fn positional_kv(values: &[Value]) -> Vec<Value> {
+    let mut kv = Vec::with_capacity(values.len() * 2);
+    for (idx, value) in values.iter().enumerate() {
+        kv.push(Value::Str(idx.to_string()));
+        kv.push(value.clone());
+    }
+    kv
+}
+
 /// Collection-related 0-arg methods: keys, values, kv, pairs, total, minmax, squish
 pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     match method {
@@ -18,6 +43,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Mix(m) => Some(Ok(Value::array(
                 m.keys().map(|k| Value::Str(k.clone())).collect(),
             ))),
+            v if v.is_range() => Some(Ok(Value::array(positional_keys(
+                &crate::runtime::utils::value_to_list(v),
+            )))),
             _ => None,
         },
         "values" => match target {
@@ -34,6 +62,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Mix(m) => Some(Ok(Value::array(
                 m.values().map(|v| Value::Num(*v)).collect(),
             ))),
+            v if v.is_range() => Some(Ok(Value::array(crate::runtime::utils::value_to_list(v)))),
             _ => None,
         },
         "kv" => match target {
@@ -73,6 +102,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Value::Str(key.clone()),
                 Value::Int(*value),
             ]))),
+            v if v.is_range() => Some(Ok(Value::array(positional_kv(
+                &crate::runtime::utils::value_to_list(v),
+            )))),
             _ => None,
         },
         "pairs" => match target {
@@ -97,6 +129,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Num(*v))))
                     .collect(),
             ))),
+            v if v.is_range() => Some(Ok(Value::array(positional_pairs(
+                &crate::runtime::utils::value_to_list(v),
+            )))),
             _ => None,
         },
         "antipairs" => match target {
@@ -106,6 +141,21 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     .map(|(k, v)| Value::Pair(v.to_string_value(), Box::new(Value::Str(k.clone()))))
                     .collect(),
             ))),
+            v if v.is_range() => {
+                let values = crate::runtime::utils::value_to_list(v);
+                Some(Ok(Value::array(
+                    values
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, value)| {
+                            Value::Pair(
+                                value.to_string_value(),
+                                Box::new(Value::Str(idx.to_string())),
+                            )
+                        })
+                        .collect(),
+                )))
+            }
             _ => None,
         },
         "invert" => match target {

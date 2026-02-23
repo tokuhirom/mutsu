@@ -355,12 +355,13 @@ impl Interpreter {
                 name
             )));
         }
-        if let Some(callable) = self
-            .env
-            .get(name)
-            .cloned()
-            .or_else(|| self.env.get(&format!("&{}", name)).cloned())
-            && matches!(callable, Value::Sub(_) | Value::Routine { .. })
+        let callable_from_code_sigil = self.env.get(&format!("&{}", name)).cloned();
+        let callable_from_plain = self.env.get(name).cloned();
+        if let Some(callable) = callable_from_code_sigil
+            .filter(|v| matches!(v, Value::Sub(_) | Value::Routine { .. }))
+            .or_else(|| {
+                callable_from_plain.filter(|v| matches!(v, Value::Sub(_) | Value::Routine { .. }))
+            })
         {
             return self.eval_call_on_value(callable, args.to_vec());
         }

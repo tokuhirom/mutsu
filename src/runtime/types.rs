@@ -235,6 +235,17 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
 }
 
 impl Interpreter {
+    fn bind_param_value(&mut self, name: &str, value: Value) {
+        self.env.insert(name.to_string(), value.clone());
+        if matches!(
+            value,
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+        ) && !name.starts_with('&')
+        {
+            self.env.insert(format!("&{}", name), value);
+        }
+    }
+
     pub(super) fn init_endian_enum(&mut self) {
         let variants = vec![
             ("NativeEndian".to_string(), 0i64),
@@ -612,7 +623,7 @@ impl Interpreter {
             // Legacy path: just bind by position
             for (i, param) in params.iter().enumerate() {
                 if let Some(value) = args.get(i) {
-                    self.env.insert(param.clone(), value.clone());
+                    self.bind_param_value(param, value.clone());
                 }
             }
             return Ok(());
@@ -631,7 +642,7 @@ impl Interpreter {
                         positional_idx += 1;
                     }
                     if !pd.name.is_empty() {
-                        self.env.insert(pd.name.clone(), Value::array(items));
+                        self.bind_param_value(&pd.name, Value::array(items));
                     }
                 } else if is_hash_slurpy {
                     // *%hash — collect Pair arguments into a hash
@@ -642,7 +653,7 @@ impl Interpreter {
                         }
                     }
                     if !pd.name.is_empty() {
-                        self.env.insert(pd.name.clone(), Value::hash(hash_items));
+                        self.bind_param_value(&pd.name, Value::hash(hash_items));
                     }
                 } else {
                     let mut items = Vec::new();
@@ -664,7 +675,7 @@ impl Interpreter {
                         } else {
                             format!("@{}", pd.name)
                         };
-                        self.env.insert(key, Value::array(items));
+                        self.bind_param_value(&key, Value::array(items));
                     }
                 }
             } else if pd.named {
@@ -674,7 +685,7 @@ impl Interpreter {
                     if let Value::Pair(key, val) = arg
                         && key == &pd.name
                     {
-                        self.env.insert(pd.name.clone(), *val.clone());
+                        self.bind_param_value(&pd.name, *val.clone());
                         if let Some(sub_params) = &pd.sub_signature {
                             bind_sub_signature_from_value(self, sub_params, val)?;
                         }
@@ -685,7 +696,7 @@ impl Interpreter {
                 if !found && let Some(default_expr) = &pd.default {
                     let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?;
                     if !pd.name.is_empty() {
-                        self.env.insert(pd.name.clone(), value);
+                        self.bind_param_value(&pd.name, value);
                     }
                 }
             } else {
@@ -718,7 +729,7 @@ impl Interpreter {
                         }
                     }
                     if !pd.name.is_empty() && pd.name != "__type_only__" {
-                        self.env.insert(pd.name.clone(), value);
+                        self.bind_param_value(&pd.name, value);
                     }
                     if let Some(sub_params) = &pd.sub_signature {
                         let target = self
@@ -732,7 +743,7 @@ impl Interpreter {
                 } else if let Some(default_expr) = &pd.default {
                     let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?;
                     if !pd.name.is_empty() {
-                        self.env.insert(pd.name.clone(), value);
+                        self.bind_param_value(&pd.name, value);
                     }
                     if let Some(sub_params) = &pd.sub_signature {
                         let target = self.env.get(&pd.name).cloned().unwrap_or(Value::Nil);

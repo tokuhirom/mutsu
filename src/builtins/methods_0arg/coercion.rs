@@ -120,6 +120,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Bool(b) => Some(Ok(Value::Int(if *b { 1 } else { 0 }))),
             _ => None,
         },
+        "antipair" => match target {
+            Value::Pair(k, v) => Some(Ok(Value::Pair(
+                v.to_string_value(),
+                Box::new(Value::Str(k.clone())),
+            ))),
+            _ => None,
+        },
         "Slip" => match target {
             Value::Array(items, ..) | Value::Seq(items) => Some(Ok(Value::Slip(items.clone()))),
             Value::Slip(_) => Some(Ok(target.clone())),

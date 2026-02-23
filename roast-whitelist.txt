@@ -30,6 +30,7 @@ roast/S02-types/fatrat.t
 roast/S02-types/hyperwhatever.t
 roast/S02-types/nan.t
 roast/S02-types/parsing-bool.t
+roast/S02-types/range-iterator.t
 roast/S02-types/stash.t
 roast/S02-types/unicode.t
 roast/S02-types/version-stress.t
