@@ -115,7 +115,7 @@ for f in "${TEST_FILES[@]}"; do
   fi
 done
 
-DATE=$(date +%Y-%m-%d)
+DATE=$(date +%Y-%m-%dT%H:%M)
 COMMIT=$(git rev-parse --short HEAD)
 
 echo ""
