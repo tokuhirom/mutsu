@@ -1064,25 +1064,41 @@ impl Interpreter {
         let pattern = positional
             .first()
             .ok_or_else(|| RuntimeError::new("subst requires a pattern argument"))?;
-        let replacement = positional
-            .get(1)
-            .map(|v| v.to_string_value())
-            .unwrap_or_default();
+        let replacement_val = positional.get(1).cloned();
+        let is_closure = matches!(
+            replacement_val,
+            Some(Value::Sub(_)) | Some(Value::WeakSub(_))
+        );
+        let replacement_str = if is_closure {
+            String::new()
+        } else {
+            replacement_val
+                .as_ref()
+                .map(|v| v.to_string_value())
+                .unwrap_or_default()
+        };
 
         match pattern {
             Value::Regex(pat) | Value::Str(pat) => {
+                let matches = self.regex_find_all(pat, &text);
+                if matches.is_empty() {
+                    return Ok(Value::Str(text));
+                }
+                let chars: Vec<char> = text.chars().collect();
                 if global {
-                    let matches = self.regex_find_all(pat, &text);
-                    if matches.is_empty() {
-                        return Ok(Value::Str(text));
-                    }
-                    let chars: Vec<char> = text.chars().collect();
                     let mut result = String::new();
                     let mut last_end = 0;
                     for (start, end) in &matches {
                         let prefix: String = chars[last_end..*start].iter().collect();
                         result.push_str(&prefix);
-                        result.push_str(&replacement);
+                        let matched_text: String = chars[*start..*end].iter().collect();
+                        let repl = self.eval_subst_replacement(
+                            &replacement_val,
+                            is_closure,
+                            &replacement_str,
+                            &matched_text,
+                        )?;
+                        result.push_str(&repl);
                         last_end = *end;
                     }
                     let suffix: String = chars[last_end..].iter().collect();
@@ -1090,12 +1106,17 @@ impl Interpreter {
                     Ok(Value::Str(result))
                 } else {
                     // Replace first match only
-                    let matches = self.regex_find_all(pat, &text);
                     if let Some((start, end)) = matches.first() {
-                        let chars: Vec<char> = text.chars().collect();
                         let prefix: String = chars[..*start].iter().collect();
                         let suffix: String = chars[*end..].iter().collect();
-                        Ok(Value::Str(format!("{}{}{}", prefix, replacement, suffix)))
+                        let matched_text: String = chars[*start..*end].iter().collect();
+                        let repl = self.eval_subst_replacement(
+                            &replacement_val,
+                            is_closure,
+                            &replacement_str,
+                            &matched_text,
+                        )?;
+                        Ok(Value::Str(format!("{}{}{}", prefix, repl, suffix)))
                     } else {
                         Ok(Value::Str(text))
                     }
@@ -1104,12 +1125,44 @@ impl Interpreter {
             _ => {
                 let pat_str = pattern.to_string_value();
                 if global {
-                    Ok(Value::Str(text.replace(&pat_str, &replacement)))
+                    Ok(Value::Str(text.replace(&pat_str, &replacement_str)))
                 } else {
-                    Ok(Value::Str(text.replacen(&pat_str, &replacement, 1)))
+                    Ok(Value::Str(text.replacen(&pat_str, &replacement_str, 1)))
                 }
             }
         }
+    }
+
+    /// Evaluate a subst replacement — either a static string or a closure call.
+    fn eval_subst_replacement(
+        &mut self,
+        replacement_val: &Option<Value>,
+        is_closure: bool,
+        replacement_str: &str,
+        matched_text: &str,
+    ) -> Result<String, RuntimeError> {
+        if !is_closure {
+            return Ok(replacement_str.to_string());
+        }
+        let sub_data = match replacement_val {
+            Some(Value::Sub(data)) => data.clone(),
+            Some(Value::WeakSub(weak)) => weak
+                .upgrade()
+                .ok_or_else(|| RuntimeError::new("subst closure has been garbage collected"))?,
+            _ => return Ok(replacement_str.to_string()),
+        };
+        let saved = self.env.clone();
+        // Set up closure environment
+        for (k, v) in &sub_data.env {
+            self.env.insert(k.clone(), v.clone());
+        }
+        // Set $/ to the matched text
+        let match_val = Value::Str(matched_text.to_string());
+        self.env.insert("/".to_string(), match_val.clone());
+        self.env.insert("$_".to_string(), match_val);
+        let result = self.eval_block_value(&sub_data.body).unwrap_or(Value::Nil);
+        self.env = saved;
+        Ok(result.to_string_value())
     }
 
     fn dispatch_contains(&self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
