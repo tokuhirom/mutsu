@@ -507,6 +507,9 @@ impl Compiler {
                 if body.is_empty() {
                     // unit module/package — set package for the rest of the scope
                     self.current_package = name.clone();
+                    // Register the package name so it's accessible as a value
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::RegisterPackage { name_idx });
                 } else {
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
                     let pkg_idx = self.code.emit(OpCode::PackageScope {

@@ -197,6 +197,7 @@ roast/S24-testing/2-force_todo.t
 roast/S24-testing/6-done_testing.t
 roast/S24-testing/7-bail_out.t
 roast/S26-documentation/block-leading-user-format.t
+roast/S26-documentation/module-comment.t
 roast/S28-named-variables/cwd.t
 roast/S28-named-variables/slangs.t
 roast/S29-any/cmp.t

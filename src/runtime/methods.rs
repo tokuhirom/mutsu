@@ -239,6 +239,20 @@ impl Interpreter {
                 // Return package stash as a hash (empty for now)
                 return Ok(Value::Hash(Arc::new(HashMap::new())));
             }
+            "WHY" if args.is_empty() => {
+                // Return declarator doc comment attached to this type/package
+                let name = match &target {
+                    Value::Package(name) => Some(name.clone()),
+                    Value::Instance { class_name, .. } => Some(class_name.clone()),
+                    _ => None,
+                };
+                if let Some(name) = name
+                    && let Some(doc) = self.doc_comments.get(&name)
+                {
+                    return Ok(Value::Str(doc.clone()));
+                }
+                return Ok(Value::Nil);
+            }
             "^name" if args.is_empty() => {
                 return Ok(Value::Str(match &target {
                     Value::Package(name) => name.clone(),
