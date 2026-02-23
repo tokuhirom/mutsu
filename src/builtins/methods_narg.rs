@@ -125,6 +125,38 @@ pub(crate) fn native_method_1arg(
             let parts: Vec<Value> = s.split(&sep).map(|p| Value::Str(p.to_string())).collect();
             Some(Ok(Value::array(parts)))
         }
+        "lines" => {
+            let s = target.to_string_value();
+            if let Value::Pair(key, value) = arg {
+                if key == "chomp" {
+                    let lines: Vec<Value> =
+                        crate::builtins::split_lines_with_chomp(&s, value.truthy())
+                            .into_iter()
+                            .map(Value::Str)
+                            .collect();
+                    return Some(Ok(Value::array(lines)));
+                }
+                return None;
+            }
+
+            let mut lines = crate::builtins::split_lines_chomped(&s);
+            let limit = match arg {
+                Value::Int(i) => Some((*i).max(0) as usize),
+                Value::BigInt(bi) => {
+                    use num_traits::ToPrimitive;
+                    Some(bi.to_usize().unwrap_or(usize::MAX))
+                }
+                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
+                Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+                Value::Rat(n, d) if *d == 0 && *n > 0 => None,
+                _ => return None,
+            };
+            if let Some(n) = limit {
+                lines.truncate(n);
+            }
+            let lines: Vec<Value> = lines.into_iter().map(Value::Str).collect();
+            Some(Ok(Value::array(lines)))
+        }
         "join" => match target {
             Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
                 let sep = arg.to_string_value();
