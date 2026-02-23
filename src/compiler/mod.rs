@@ -61,6 +61,7 @@ impl Compiler {
 
     fn build_for_bind_stmts(
         param: &Option<String>,
+        param_def: &Option<crate::ast::ParamDef>,
         param_idx: Option<u32>,
         params: &[String],
     ) -> Vec<Stmt> {
@@ -73,6 +74,26 @@ impl Compiler {
                 expr: Expr::Var("_".to_string()),
                 op: AssignOp::Assign,
             });
+        }
+        if let Some(def) = param_def
+            && let Some(sub_params) = &def.sub_signature
+        {
+            let target_name = param.as_deref().unwrap_or("_").to_string();
+            for sub in sub_params {
+                if !sub.named || sub.name.is_empty() {
+                    continue;
+                }
+                bind_stmts.push(Stmt::Assign {
+                    name: sub.name.clone(),
+                    expr: Expr::MethodCall {
+                        target: Box::new(Expr::Var(target_name.clone())),
+                        name: sub.name.clone(),
+                        args: Vec::new(),
+                        modifier: None,
+                    },
+                    op: AssignOp::Assign,
+                });
+            }
         }
         for (i, p) in params.iter().enumerate() {
             bind_stmts.push(Stmt::Assign {

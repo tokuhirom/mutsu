@@ -824,11 +824,19 @@ impl Compiler {
                 Stmt::For {
                     iterable,
                     param,
+                    param_def,
                     params,
                     body,
                     label,
                 } => {
-                    self.compile_do_for_expr(iterable, param, params, body, label);
+                    self.compile_do_for_expr(
+                        iterable,
+                        param,
+                        param_def.as_ref(),
+                        params,
+                        body,
+                        label,
+                    );
                 }
                 Stmt::ClassDecl { name, .. } => {
                     // Register the class and return the type object

@@ -73,10 +73,19 @@ impl Interpreter {
                 }
             }
             let untyped_key = format!("{}/{}", name, arity);
-            if let Some(def) = self.functions.get(&untyped_key).cloned()
-                && self.args_match_param_types(arg_values, &def.param_defs)
-            {
-                return Some(def);
+            let mut untyped_candidates: Vec<(String, FunctionDef)> = self
+                .functions
+                .iter()
+                .filter(|(key, _)| {
+                    *key == &untyped_key || key.starts_with(&format!("{}__m", untyped_key))
+                })
+                .map(|(key, def)| (key.clone(), def.clone()))
+                .collect();
+            untyped_candidates.sort_by(|a, b| a.0.cmp(&b.0));
+            for (_, def) in untyped_candidates {
+                if self.args_match_param_types(arg_values, &def.param_defs) {
+                    return Some(def);
+                }
             }
             return self.functions.get(name).cloned();
         }
@@ -119,10 +128,17 @@ impl Interpreter {
             format!("GLOBAL::{}/{}", name, arity),
         ];
         for key in generic_keys {
-            if let Some(def) = self.functions.get(&key).cloned()
-                && self.args_match_param_types(arg_values, &def.param_defs)
-            {
-                return Some(def);
+            let mut candidates: Vec<(String, FunctionDef)> = self
+                .functions
+                .iter()
+                .filter(|(k, _)| *k == &key || k.starts_with(&format!("{}__m", key)))
+                .map(|(k, def)| (k.clone(), def.clone()))
+                .collect();
+            candidates.sort_by(|a, b| a.0.cmp(&b.0));
+            for (_, def) in candidates {
+                if self.args_match_param_types(arg_values, &def.param_defs) {
+                    return Some(def);
+                }
             }
         }
         // Fall back to arity-only if no proto declared
@@ -386,12 +402,14 @@ impl Interpreter {
                 body,
                 label,
                 param,
+                param_def,
                 params,
             } => Stmt::For {
                 iterable: Self::rewrite_proto_dispatch_expr(iterable),
                 body: Self::rewrite_proto_dispatch_stmts(body),
                 label: label.clone(),
                 param: param.clone(),
+                param_def: Box::new((**param_def).clone()),
                 params: params.clone(),
             },
             Stmt::Loop {
