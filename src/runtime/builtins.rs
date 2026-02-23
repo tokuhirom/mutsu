@@ -90,6 +90,8 @@ impl Interpreter {
             // Error / control flow
             "die" => self.builtin_die(&args),
             "fail" => self.builtin_fail(&args),
+            "__mutsu_stub_die" => self.builtin_stub_die(&args),
+            "__mutsu_stub_warn" => self.builtin_stub_warn(&args),
             "exit" => self.builtin_exit(&args),
             "__PROTO_DISPATCH__" => self.call_proto_dispatch(),
             // Type coercion
@@ -566,6 +568,29 @@ impl Interpreter {
     }
 
     fn builtin_warn(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let mut message = String::new();
+        for arg in args {
+            message.push_str(&arg.to_string_value());
+        }
+        Err(RuntimeError::warn_signal(message))
+    }
+
+    fn make_stub_exception(message: String) -> Value {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::Str(message));
+        Value::make_instance("X::StubCode".to_string(), attrs)
+    }
+
+    fn builtin_stub_die(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let mut message = String::new();
+        for arg in args {
+            message.push_str(&arg.to_string_value());
+        }
+        let ex = Self::make_stub_exception(message);
+        Err(self.runtime_error_from_die_value(&ex, "Stub code executed", false))
+    }
+
+    fn builtin_stub_warn(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut message = String::new();
         for arg in args {
             message.push_str(&arg.to_string_value());

@@ -883,6 +883,7 @@ impl Compiler {
                     body: body.clone(),
                     multi: false,
                     is_export: false,
+                    supersede: false,
                 });
                 self.code.emit(OpCode::MakeAnonSubParams(idx));
             }
@@ -898,6 +899,7 @@ impl Compiler {
                     body: body.clone(),
                     multi: false,
                     is_export: false,
+                    supersede: false,
                 });
                 self.code.emit(OpCode::MakeLambda(idx));
             }

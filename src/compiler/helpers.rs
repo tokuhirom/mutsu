@@ -251,6 +251,7 @@ impl Compiler {
             code: sub_compiler.code,
             params: params.to_vec(),
             param_defs: param_defs.to_vec(),
+            fingerprint: crate::ast::function_body_fingerprint(params, param_defs, body),
         };
         self.compiled_functions.insert(key, cf);
     }

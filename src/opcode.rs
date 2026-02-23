@@ -661,4 +661,5 @@ pub(crate) struct CompiledFunction {
     pub(crate) code: CompiledCode,
     pub(crate) params: Vec<String>,
     pub(crate) param_defs: Vec<ParamDef>,
+    pub(crate) fingerprint: u64,
 }

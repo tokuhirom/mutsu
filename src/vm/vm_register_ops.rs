@@ -118,13 +118,15 @@ impl VM {
             body,
             multi,
             is_export,
+            supersede,
         } = stmt
         {
             self.interpreter
-                .register_sub_decl(name, params, param_defs, body, *multi)?;
+                .register_sub_decl(name, params, param_defs, body, *multi, *supersede)?;
             if *is_export && !self.interpreter.suppress_exports {
-                self.interpreter
-                    .register_sub_decl_as_global(name, params, param_defs, body, *multi)?;
+                self.interpreter.register_sub_decl_as_global(
+                    name, params, param_defs, body, *multi, *supersede,
+                )?;
             }
             self.sync_locals_from_env(code);
             Ok(())
