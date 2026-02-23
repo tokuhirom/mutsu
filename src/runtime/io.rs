@@ -10,7 +10,10 @@ impl Interpreter {
 
     fn make_pod_comment(content: String) -> Value {
         let mut attrs = HashMap::new();
-        attrs.insert("contents".to_string(), Value::array(vec![Value::Str(content)]));
+        attrs.insert(
+            "contents".to_string(),
+            Value::array(vec![Value::Str(content)]),
+        );
         attrs.insert("config".to_string(), Value::hash(HashMap::new()));
         Value::make_instance("Pod::Block::Comment".to_string(), attrs)
     }
