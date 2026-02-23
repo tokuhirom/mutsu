@@ -29,6 +29,45 @@ pub(crate) fn titlecase_string(s: &str) -> String {
     result
 }
 
+pub(crate) fn samemark_string(target: &str, source: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    use unicode_segmentation::UnicodeSegmentation;
+
+    if source.is_empty() {
+        return target.to_string();
+    }
+
+    fn split_base_and_marks(grapheme: &str) -> (String, String) {
+        let mut base = String::new();
+        let mut marks = String::new();
+        for ch in grapheme.nfd() {
+            if unicode_normalization::char::is_combining_mark(ch) {
+                marks.push(ch);
+            } else {
+                base.push(ch);
+            }
+        }
+        (base, marks)
+    }
+
+    let source_parts: Vec<(String, String)> =
+        source.graphemes(true).map(split_base_and_marks).collect();
+    if source_parts.is_empty() {
+        return target.to_string();
+    }
+
+    let mut result = String::new();
+    for (idx, target_grapheme) in target.graphemes(true).enumerate() {
+        let (target_base, _) = split_base_and_marks(target_grapheme);
+        let source_idx = idx.min(source_parts.len() - 1);
+        let (_, source_marks) = &source_parts[source_idx];
+        let mut combined = target_base;
+        combined.push_str(source_marks);
+        result.push_str(&combined.nfc().collect::<String>());
+    }
+    result
+}
+
 /// Return the Rat (numerator, denominator) for a Unicode vulgar fraction character.
 pub(crate) fn unicode_rat_value(c: char) -> Option<(i64, i64)> {
     match c {
