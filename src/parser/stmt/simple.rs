@@ -758,6 +758,19 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         && !rest.starts_with("==")
         && !rest.starts_with("=>")
     {
+        // Assignment to certain method call results is read-only (X::Assignment::RO)
+        // Meta-object protocol methods like .HOW, .WHAT, etc. are always immutable
+        if let Expr::MethodCall { name: meth, .. } = &expr
+            && matches!(
+                meth.as_str(),
+                "HOW" | "WHAT" | "WHO" | "WHY" | "WHICH" | "WHERE" | "DEFINITE"
+            )
+        {
+            return Err(PError::fatal(format!(
+                "X::Assignment::RO: Cannot modify an immutable value via .{}",
+                meth
+            )));
+        }
         let r = &rest[1..];
         let (r, _) = ws(r)?;
         let (r, rhs) = super::assign::parse_assign_expr_or_comma(r).map_err(|err| PError {
