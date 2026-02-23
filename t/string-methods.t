@@ -1,5 +1,5 @@
 use Test;
-plan 20;
+plan 25;
 
 is "hello".chars, 5, ".chars";
 is "hello".uc, "HELLO", ".uc";
@@ -21,3 +21,8 @@ is "hello world".words.elems, 2, ".words.elems";
 is "hello".comb.elems, 5, ".comb.elems";
 is "a:b:c".split(":").elems, 3, ".split.elems";
 is "hello\nworld".lines.elems, 2, ".lines.elems";
+is "zoo".samemark("ŏôō"), "z̆ôō", ".samemark basic";
+is "z̆ôō".samemark("ŏôō"), "z̆ôō", ".samemark keeps matching marks";
+is "ẓo⃥o⃝".samemark("ŏôō"), "z̆ôō", ".samemark replaces existing marks";
+is "zoö".samemark("ŏô"), "z̆ôô", ".samemark repeats final source mark";
+is "foo".samemark(""), "foo", ".samemark empty source is no-op";
