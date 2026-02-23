@@ -56,6 +56,12 @@ pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
 
 /// Parse `sub` declaration.
 pub(super) fn sub_decl(input: &str) -> PResult<'_, Stmt> {
+    let (input, supersede) = if let Some(r) = keyword("supersede", input) {
+        let (r, _) = ws1(r)?;
+        (r, true)
+    } else {
+        (input, false)
+    };
     let (rest, multi) = if let Some(r) = keyword("multi", input) {
         let (r, _) = ws1(r)?;
         let r = keyword("sub", r).unwrap_or(r);
@@ -66,10 +72,10 @@ pub(super) fn sub_decl(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         (r, false)
     };
-    sub_decl_body(rest, multi)
+    sub_decl_body(rest, multi, supersede)
 }
 
-pub(super) fn sub_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
+pub(super) fn sub_decl_body(input: &str, multi: bool, supersede: bool) -> PResult<'_, Stmt> {
     let (rest, name) = parse_sub_name(input)?;
     // Register user-declared sub so it can be called without parens later
     super::simple::register_user_sub(&name);
@@ -133,6 +139,7 @@ pub(super) fn sub_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
             body,
             multi,
             is_export: traits.is_export,
+            supersede,
         },
     ))
 }

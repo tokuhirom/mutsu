@@ -278,10 +278,15 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Exception" => attributes
-                .get("message")
-                .map(|v: &Value| v.to_string_value())
-                .unwrap_or_else(|| format!("{}()", class_name)),
+            } if class_name == "Exception"
+                || class_name.starts_with("X::")
+                || class_name.starts_with("CX::") =>
+            {
+                attributes
+                    .get("message")
+                    .map(|v: &Value| v.to_string_value())
+                    .unwrap_or_else(|| format!("{}()", class_name))
+            }
             Value::Instance {
                 class_name,
                 attributes,

@@ -210,7 +210,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 r,
                 Expr::Call {
-                    name: "die".to_string(),
+                    name: "__mutsu_stub_die".to_string(),
                     args: vec![msg],
                 },
             ));
@@ -231,7 +231,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         return Ok((
             r,
             Expr::Call {
-                name: "die".to_string(),
+                name: "__mutsu_stub_die".to_string(),
                 args: vec![msg],
             },
         ));
@@ -251,7 +251,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         return Ok((
             r,
             Expr::Call {
-                name: "warn".to_string(),
+                name: "__mutsu_stub_warn".to_string(),
                 args: vec![msg],
             },
         ));

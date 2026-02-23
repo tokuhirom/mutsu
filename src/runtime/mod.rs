@@ -264,6 +264,14 @@ pub(crate) struct SubtestContext {
     parent_halted: bool,
 }
 
+pub(crate) type RoutineRegistrySnapshot = (
+    HashMap<String, FunctionDef>,
+    HashMap<String, FunctionDef>,
+    HashMap<String, Vec<FunctionDef>>,
+    HashSet<String>,
+    HashSet<String>,
+);
+
 impl Default for Interpreter {
     fn default() -> Self {
         Self::new()

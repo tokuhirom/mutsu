@@ -123,7 +123,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     // my sub name(...) { ... }
     if let Some(r) = keyword("sub", rest) {
         let (r, _) = ws1(r)?;
-        return sub_decl_body(r, false);
+        return sub_decl_body(r, false, false);
     }
 
     // my method name(...) { ... }

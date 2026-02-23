@@ -2,6 +2,7 @@ use super::*;
 
 impl Interpreter {
     pub(super) fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
+        let routine_snapshot = self.snapshot_routine_registry();
         let trimmed = code.trim();
         // Handle angle-bracket word lists: <a b c>, ~<a b>, +<a b>, ?<a b>
         // Only match when the entire expression is a word list with optional prefix
@@ -23,16 +24,20 @@ impl Interpreter {
             };
             let inner = &wl[1..wl.len() - 1];
             let words: Vec<&str> = inner.split_whitespace().collect();
-            return Ok(match prefix {
+            let value = match prefix {
                 '~' => Value::Str(words.join(" ")),
                 '+' => Value::Int(words.len() as i64),
                 '?' => Value::Bool(!words.is_empty()),
                 _ => Value::Str(words.join(" ")),
-            });
+            };
+            self.restore_routine_registry(routine_snapshot);
+            return Ok(value);
         }
         // General case: parse and evaluate as Raku code
-        let (stmts, _) = parse_dispatch::parse_source(trimmed)?;
-        self.eval_block_value(&stmts)
+        let result = parse_dispatch::parse_source(trimmed)
+            .and_then(|(stmts, _)| self.eval_block_value(&stmts));
+        self.restore_routine_registry(routine_snapshot);
+        result
     }
 
     pub(super) fn callframe_value(&self, depth: usize) -> Option<Value> {

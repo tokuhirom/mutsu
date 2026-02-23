@@ -525,6 +525,7 @@ impl VM {
         let body_start = enter_end as usize;
         let leave_start = body_end as usize;
         let end = end as usize;
+        let routine_snapshot = self.interpreter.snapshot_routine_registry();
 
         self.run_range(code, enter_start, body_start, compiled_fns)?;
         let mut body_err = None;
@@ -532,6 +533,7 @@ impl VM {
             body_err = Some(e);
         }
         let leave_res = self.run_range(code, leave_start, end, compiled_fns);
+        self.interpreter.restore_routine_registry(routine_snapshot);
         if let Err(e) = leave_res
             && body_err.is_none()
         {

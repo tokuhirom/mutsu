@@ -1,5 +1,7 @@
 use crate::token_kind::TokenKind;
 use crate::value::Value;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ParamDef {
@@ -26,6 +28,18 @@ pub(crate) struct FunctionDef {
     pub(crate) params: Vec<String>,
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) body: Vec<Stmt>,
+}
+
+pub(crate) fn function_body_fingerprint(
+    params: &[String],
+    param_defs: &[ParamDef],
+    body: &[Stmt],
+) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    format!("{:?}", params).hash(&mut hasher);
+    format!("{:?}", param_defs).hash(&mut hasher);
+    format!("{:?}", body).hash(&mut hasher);
+    hasher.finish()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -225,6 +239,7 @@ pub(crate) enum Stmt {
         body: Vec<Stmt>,
         multi: bool,
         is_export: bool,
+        supersede: bool,
     },
     TokenDecl {
         name: String,

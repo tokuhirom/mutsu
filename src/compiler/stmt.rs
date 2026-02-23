@@ -81,9 +81,18 @@ impl Compiler {
                     }
                     self.code.emit(OpCode::PopImportScope);
                 } else {
+                    // Plain blocks still create a lexical routine scope.
+                    let idx = self.code.emit(OpCode::BlockScope {
+                        enter_end: 0,
+                        body_end: 0,
+                        end: 0,
+                    });
+                    self.code.patch_block_enter_end(idx);
                     for s in stmts {
                         self.compile_stmt(s);
                     }
+                    self.code.patch_block_body_end(idx);
+                    self.code.patch_loop_end(idx);
                 }
             }
             Stmt::Say(exprs) => {

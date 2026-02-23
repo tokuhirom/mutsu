@@ -1,6 +1,15 @@
 use super::*;
 
 impl Interpreter {
+    fn is_stub_routine_body(body: &[Stmt]) -> bool {
+        body.len() == 1
+            && matches!(
+                &body[0],
+                Stmt::Expr(Expr::Call { name, .. })
+                    if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
+            )
+    }
+
     pub(crate) fn has_function(&self, name: &str) -> bool {
         let fq = format!("{}::{}", self.current_package, name);
         self.functions.contains_key(&fq) || self.functions.contains_key(name)
@@ -19,6 +28,7 @@ impl Interpreter {
         param_defs: &[ParamDef],
         body: &[Stmt],
         multi: bool,
+        supersede: bool,
     ) -> Result<(), RuntimeError> {
         let new_def = FunctionDef {
             package: self.current_package.clone(),
@@ -48,14 +58,18 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        let existing_is_stub = self
+            .functions
+            .get(&single_key)
+            .is_some_and(|existing| Self::is_stub_routine_body(&existing.body));
         if multi {
-            if has_single && !has_proto {
+            if has_single && !has_proto && !supersede {
                 return Err(RuntimeError::new(format!(
                     "X::Redeclaration: '{}' already declared as non-multi",
                     name
                 )));
             }
-        } else if has_multi && !has_proto {
+        } else if !supersede && ((has_multi && !has_proto) || (has_single && !existing_is_stub)) {
             return Err(RuntimeError::new(format!(
                 "X::Redeclaration: '{}' already declared",
                 name
@@ -157,6 +171,7 @@ impl Interpreter {
         param_defs: &[ParamDef],
         body: &[Stmt],
         multi: bool,
+        supersede: bool,
     ) -> Result<(), RuntimeError> {
         let def = FunctionDef {
             package: "GLOBAL".to_string(),
@@ -165,7 +180,32 @@ impl Interpreter {
             param_defs: param_defs.to_vec(),
             body: body.to_vec(),
         };
+        let single_key = format!("GLOBAL::{}", name);
+        let multi_prefix = format!("GLOBAL::{}/", name);
+        let has_single = self.functions.contains_key(&single_key);
+        let has_multi = self.functions.keys().any(|k| k.starts_with(&multi_prefix));
+        let has_proto = self.proto_subs.contains(&single_key);
+        if let Some(existing) = self.functions.get(&single_key) {
+            let same = existing.package == def.package
+                && existing.name == def.name
+                && existing.params == def.params
+                && format!("{:?}", existing.param_defs) == format!("{:?}", def.param_defs)
+                && format!("{:?}", existing.body) == format!("{:?}", def.body);
+            if same {
+                return Ok(());
+            }
+        }
+        let existing_is_stub = self
+            .functions
+            .get(&single_key)
+            .is_some_and(|existing| Self::is_stub_routine_body(&existing.body));
         if multi {
+            if has_single && !has_proto && !supersede {
+                return Err(RuntimeError::new(format!(
+                    "X::Redeclaration: '{}' already declared as non-multi",
+                    name
+                )));
+            }
             let arity = param_defs
                 .iter()
                 .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
@@ -187,6 +227,18 @@ impl Interpreter {
                 self.functions.entry(fq).or_insert(def);
             }
         } else {
+            if has_multi && !has_proto && !supersede {
+                return Err(RuntimeError::new(format!(
+                    "X::Redeclaration: '{}' already declared",
+                    name
+                )));
+            }
+            if has_single && !supersede && !existing_is_stub {
+                return Err(RuntimeError::new(format!(
+                    "X::Redeclaration: '{}' already declared",
+                    name
+                )));
+            }
             let fq = format!("GLOBAL::{}", name);
             self.functions.insert(fq, def);
         }
@@ -375,13 +427,11 @@ impl Interpreter {
             native_methods: HashSet::new(),
             mro: Vec::new(),
         };
-        // Detect stub class: `class Foo { ... }` — body is just a die("Stub code executed").
+        // Detect stub class: `class Foo { ... }` — body is a stub operator call.
         // Register the class but skip body execution.
         let is_stub = body.len() == 1
-            && matches!(&body[0], Stmt::Expr(Expr::Call { name: fn_name, args })
-                if fn_name == "die"
-                    && args.len() == 1
-                    && matches!(&args[0], Expr::Literal(Value::Str(s)) if s == "Stub code executed"));
+            && matches!(&body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
+                if fn_name == "__mutsu_stub_die");
         // Make the class visible while its body executes so introspection calls
         // like `A.^add_method(...)` inside the declaration can resolve `A`.
         self.classes.insert(name.to_string(), class_def.clone());

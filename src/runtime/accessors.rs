@@ -224,6 +224,25 @@ impl Interpreter {
         self.end_phasers.push((body, captured_env));
     }
 
+    pub(crate) fn snapshot_routine_registry(&self) -> RoutineRegistrySnapshot {
+        (
+            self.functions.clone(),
+            self.proto_functions.clone(),
+            self.token_defs.clone(),
+            self.proto_subs.clone(),
+            self.proto_tokens.clone(),
+        )
+    }
+
+    pub(crate) fn restore_routine_registry(&mut self, snapshot: RoutineRegistrySnapshot) {
+        let (functions, proto_functions, token_defs, proto_subs, proto_tokens) = snapshot;
+        self.functions = functions;
+        self.proto_functions = proto_functions;
+        self.token_defs = token_defs;
+        self.proto_subs = proto_subs;
+        self.proto_tokens = proto_tokens;
+    }
+
     /// Push a saved variable value for `let` scope management.
     pub(crate) fn let_saves_push(&mut self, name: String, value: Value) {
         self.let_saves.push((name, value));

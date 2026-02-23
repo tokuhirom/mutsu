@@ -267,11 +267,21 @@ impl VM {
     }
 
     pub(super) fn find_compiled_function<'a>(
-        &self,
+        &mut self,
         compiled_fns: &'a HashMap<String, CompiledFunction>,
         name: &str,
         args: &[Value],
     ) -> Option<&'a CompiledFunction> {
+        let expected_fingerprint = self
+            .interpreter
+            .resolve_function_with_types(name, args)
+            .map(|def| {
+                crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body)
+            });
+        // If runtime resolution fails, avoid reusing stale compiled cache entries.
+        // This can happen across repeated EVAL calls that redefine the same routine name.
+        let expected_fingerprint = expected_fingerprint?;
+        let matches_resolved = |cf: &CompiledFunction| cf.fingerprint == expected_fingerprint;
         let pkg = self.interpreter.current_package();
         let arity = args.len();
         let type_sig: Vec<String> = args
@@ -279,25 +289,33 @@ impl VM {
             .map(|v| runtime::value_type_name(v).to_string())
             .collect();
         let key_typed = format!("{}::{}/{}:{}", pkg, name, arity, type_sig.join(","));
-        if let Some(cf) = compiled_fns.get(&key_typed) {
+        if let Some(cf) = compiled_fns.get(&key_typed)
+            && matches_resolved(cf)
+        {
             return Some(cf);
         }
         let key_arity = format!("{}::{}/{}", pkg, name, arity);
-        if let Some(cf) = compiled_fns.get(&key_arity) {
+        if let Some(cf) = compiled_fns.get(&key_arity)
+            && matches_resolved(cf)
+        {
             return Some(cf);
         }
         let key_simple = format!("{}::{}", pkg, name);
-        if let Some(cf) = compiled_fns.get(&key_simple) {
+        if let Some(cf) = compiled_fns.get(&key_simple)
+            && matches_resolved(cf)
+        {
             return Some(cf);
         }
         if pkg != "GLOBAL" {
             let key_global = format!("GLOBAL::{}", name);
-            if let Some(cf) = compiled_fns.get(&key_global) {
+            if let Some(cf) = compiled_fns.get(&key_global)
+                && matches_resolved(cf)
+            {
                 return Some(cf);
             }
         }
         if name.contains("::") {
-            compiled_fns.get(name)
+            compiled_fns.get(name).filter(|cf| matches_resolved(cf))
         } else {
             None
         }

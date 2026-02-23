@@ -532,6 +532,12 @@ impl Interpreter {
                     nested.set_pid(pid.saturating_add(1));
                 }
                 nested.lib_paths = self.lib_paths.clone();
+                nested.functions = self.functions.clone();
+                nested.proto_functions = self.proto_functions.clone();
+                nested.token_defs = self.token_defs.clone();
+                nested.proto_subs = self.proto_subs.clone();
+                nested.proto_tokens = self.proto_tokens.clone();
+                nested.current_package = self.current_package.clone();
                 for (k, v) in &self.env {
                     if k.contains("::") {
                         continue;

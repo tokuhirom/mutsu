@@ -1,3 +1,4 @@
+roast/S06-advanced/stub.t
 roast/integration/advent2009-day03.t
 roast/integration/advent2012-day16.t
 roast/integration/packages.t
