@@ -196,6 +196,7 @@ Per-type method documentation — consult when implementing methods on specific 
 - `TODO_roast/` tracks per-file pass/fail status (split by synopsis number). Mark a test `[x]` only when **all** subtests pass.
 - When a test file has known partial failures, add indented notes under its entry describing the blockers.
 - Do not add a roast test to the whitelist unless `prove -e 'target/debug/mutsu' <file>` exits cleanly.
+- Keep `roast-whitelist.txt` sorted (`LC_ALL=C sort -c roast-whitelist.txt`); CI fails if it is not sorted.
 - Never add special-case logic, hardcoded results, or test-specific hacks just to pass a roast test. Every fix must be a genuine, general-purpose improvement.
 - When the expected behavior is unclear, consult `./old-design-docs/` for the original Raku language specification.
 - When investigating a roast test outside of "roast fix" mode and deciding to defer it, always record the reason for failure in the relevant file under `TODO_roast/`. (In "roast fix" mode, deferring is not allowed — implement everything needed.)

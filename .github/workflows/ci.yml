@@ -49,5 +49,8 @@ jobs:
       - name: TAP tests (make test)
         run: make test
 
+      - name: Roast whitelist is sorted
+        run: make check-roast-whitelist
+
       - name: Roast tests (make roast)
         run: make roast

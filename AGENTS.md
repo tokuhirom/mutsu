@@ -32,6 +32,7 @@ If submodules are missing, run:
 - Add or update tests for every behavior change, especially parser/runtime fixes.
 - Prefer targeted TAP regression tests in `t/` for language behavior changes.
 - Run `make test` before opening a PR; run `make roast` when touching spec-facing behavior.
+- Keep `roast-whitelist.txt` sorted (`LC_ALL=C sort -c roast-whitelist.txt`); CI fails if it is not sorted.
 - No fixed coverage threshold is configured; rely on regression-focused test additions.
 
 ## Commit & Pull Request Guidelines
