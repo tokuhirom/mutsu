@@ -235,6 +235,34 @@ impl Interpreter {
                 };
                 return Ok(Value::Package(type_name.to_string()));
             }
+            "HOW" if args.is_empty() => {
+                // Return a meta-object (ClassHOW) for any value
+                let type_name = match &target {
+                    Value::Package(name) => name.clone(),
+                    Value::Instance { class_name, .. } => class_name.clone(),
+                    _ => {
+                        // Get type name via WHAT logic
+                        let tn = match &target {
+                            Value::Int(_) | Value::BigInt(_) => "Int",
+                            Value::Num(_) => "Num",
+                            Value::Str(_) => "Str",
+                            Value::Bool(_) => "Bool",
+                            Value::Hash(_) => "Hash",
+                            Value::Array(_, true) => "Array",
+                            Value::Array(_, false) => "List",
+                            Value::Nil => "Any",
+                            _ => "Mu",
+                        };
+                        tn.to_string()
+                    }
+                };
+                let mut attrs = HashMap::new();
+                attrs.insert("name".to_string(), Value::Str(type_name));
+                return Ok(Value::make_instance(
+                    "Perl6::Metamodel::ClassHOW".to_string(),
+                    attrs,
+                ));
+            }
             "WHO" if args.is_empty() => {
                 // Return package stash as a hash (empty for now)
                 return Ok(Value::Hash(Arc::new(HashMap::new())));
