@@ -95,6 +95,10 @@ pub(super) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {
     Ok((rest, expr))
 }
 
+pub(in crate::parser) fn term_expr(input: &str) -> PResult<'_, Expr> {
+    postfix::prefix_expr(input)
+}
+
 fn should_wrap_whatevercode(expr: &Expr) -> bool {
     if !contains_whatever(expr) || is_whatever(expr) {
         return false;

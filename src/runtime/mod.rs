@@ -449,6 +449,7 @@ impl Interpreter {
                     "r",
                     "w",
                     "x",
+                    "mode",
                     "s",
                     "z",
                     "modified",

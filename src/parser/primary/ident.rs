@@ -491,19 +491,6 @@ fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
     Ok((r, Expr::Call { name, args }))
 }
 
-/// Listops that take a block/closure as the first argument followed by a list.
-fn is_block_first_listop(name: &str) -> bool {
-    matches!(name, "map" | "grep" | "sort" | "first")
-}
-
-/// Check if an expression is a block-like form (closure, pointed block, etc.)
-fn is_block_expr(expr: &Expr) -> bool {
-    matches!(
-        expr,
-        Expr::AnonSubParams { .. } | Expr::Lambda { .. } | Expr::Block { .. }
-    )
-}
-
 fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
     // Try to parse a primary expression (variable, literal, call, etc.)
     // but stop if we hit a statement modifier
@@ -526,10 +513,11 @@ fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
         return Ok((rest, Expr::Literal(crate::value::Value::Rat(numer, denom))));
     }
 
-    // Parse a single term (no binary operators to avoid consuming too much)
-    // We use primary instead of expression to avoid consuming binary operators
-    // This means shift @a + 1 will be parsed as (shift @a) + 1, not shift(@a + 1)
-    super::primary(input)
+    // Parse a single term with prefix/postfix operators, but no infix operators.
+    // This keeps listop precedence behavior (e.g. `shift @a + 1` parses as
+    // `(shift @a) + 1`) while still allowing argument postfix chains like
+    // `chmod $file.IO.mode, $other`.
+    super::super::expr::term_expr(input)
 }
 
 pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
@@ -992,29 +980,25 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 ),
                 remaining_len: err.remaining_len.or(Some(r.len())),
             })?;
-            // For block-first listops (map, grep, sort, first), if the first arg is
-            // a block/pointed-block and followed by comma, parse remaining args
-            let mut args = vec![arg.clone()];
+            let mut args = vec![arg];
             let mut rest_after = r2;
-            if is_block_first_listop(&name) && is_block_expr(&arg) {
-                loop {
-                    let (r3, _) = ws(rest_after)?;
-                    if !r3.starts_with(',') {
-                        break;
-                    }
-                    let r3 = &r3[1..];
-                    let (r3, _) = ws(r3)?;
-                    if r3.starts_with(';')
-                        || r3.starts_with('}')
-                        || r3.starts_with(')')
-                        || r3.is_empty()
-                    {
-                        break;
-                    }
-                    let (r3, rest_arg) = parse_listop_arg(r3)?;
-                    args.push(rest_arg);
-                    rest_after = r3;
+            loop {
+                let (r3, _) = ws(rest_after)?;
+                if !r3.starts_with(',') {
+                    break;
                 }
+                let r3 = &r3[1..];
+                let (r3, _) = ws(r3)?;
+                if r3.starts_with(';')
+                    || r3.starts_with('}')
+                    || r3.starts_with(')')
+                    || r3.is_empty()
+                {
+                    break;
+                }
+                let (r3, rest_arg) = parse_listop_arg(r3)?;
+                args.push(rest_arg);
+                rest_after = r3;
             }
             return Ok((rest_after, Expr::Call { name, args }));
         }
@@ -1048,6 +1032,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || next == '@'
             || next == '%'
             || next == '&'
+            || next == ':'
             || next == '\''
             || next == '"'
             || next == '('
@@ -1060,13 +1045,27 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if is_user_sub {
                 return parse_expr_listop_args(r, name);
             }
-            return Ok((
-                r2,
-                Expr::Call {
-                    name,
-                    args: vec![arg],
-                },
-            ));
+            let mut args = vec![arg];
+            let mut rest_after = r2;
+            loop {
+                let (r3, _) = ws(rest_after)?;
+                if !r3.starts_with(',') {
+                    break;
+                }
+                let r3 = &r3[1..];
+                let (r3, _) = ws(r3)?;
+                if r3.starts_with(';')
+                    || r3.starts_with('}')
+                    || r3.starts_with(')')
+                    || r3.is_empty()
+                {
+                    break;
+                }
+                let (r3, next_arg) = parse_listop_arg(r3)?;
+                args.push(next_arg);
+                rest_after = r3;
+            }
+            return Ok((rest_after, Expr::Call { name, args }));
         }
     }
 
