@@ -1242,6 +1242,10 @@ impl VM {
                 self.exec_set_local_op(code, *idx)?;
                 *ip += 1;
             }
+            OpCode::SetVarDynamic { name_idx, dynamic } => {
+                self.exec_set_var_dynamic_op(code, *name_idx, *dynamic);
+                *ip += 1;
+            }
             OpCode::AssignExprLocal(idx) => {
                 self.exec_assign_expr_local_op(code, *idx);
                 *ip += 1;

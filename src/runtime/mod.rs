@@ -243,6 +243,8 @@ pub struct Interpreter {
     /// Each entry saves (function_keys, class_names, newline_mode) before a block with `use`.
     import_scope_stack: Vec<(HashSet<String>, HashSet<String>, NewlineMode)>,
     state_vars: HashMap<String, Value>,
+    /// Variable dynamic-scope metadata used by `.VAR.dynamic`.
+    var_dynamic_flags: HashMap<String, bool>,
     let_saves: Vec<(String, Value)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
     /// Shared variables between threads. When `start` spawns a thread,
@@ -738,6 +740,7 @@ impl Interpreter {
             newline_mode: NewlineMode::Lf,
             import_scope_stack: Vec::new(),
             state_vars: HashMap::new(),
+            var_dynamic_flags: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
             shared_vars: Arc::new(Mutex::new(HashMap::new())),
@@ -977,6 +980,22 @@ impl Interpreter {
         self.env.insert(key, value);
     }
 
+    fn normalize_var_meta_name(name: &str) -> &str {
+        name.trim_start_matches(['$', '@', '%', '&'])
+    }
+
+    pub(crate) fn set_var_dynamic(&mut self, name: &str, dynamic: bool) {
+        let key = Self::normalize_var_meta_name(name).to_string();
+        self.var_dynamic_flags.insert(key, dynamic);
+    }
+
+    pub(crate) fn is_var_dynamic(&self, name: &str) -> bool {
+        self.var_dynamic_flags
+            .get(Self::normalize_var_meta_name(name))
+            .copied()
+            .unwrap_or(false)
+    }
+
     pub(crate) fn has_class(&self, name: &str) -> bool {
         self.classes.contains_key(name)
     }
@@ -1037,6 +1056,7 @@ impl Interpreter {
             newline_mode: self.newline_mode,
             import_scope_stack: Vec::new(),
             state_vars: HashMap::new(),
+            var_dynamic_flags: self.var_dynamic_flags.clone(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
             shared_vars: Arc::clone(&self.shared_vars),

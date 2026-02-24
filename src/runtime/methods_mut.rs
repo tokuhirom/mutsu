@@ -49,6 +49,10 @@ impl Interpreter {
             };
             let mut attributes = HashMap::new();
             attributes.insert("name".to_string(), Value::Str(display_name));
+            attributes.insert(
+                "dynamic".to_string(),
+                Value::Bool(self.is_var_dynamic(target_var)),
+            );
             return Ok(Value::make_instance(class_name.to_string(), attributes));
         }
         if target_var.starts_with('@') {

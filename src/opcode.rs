@@ -462,6 +462,11 @@ pub(crate) enum OpCode {
     /// If state_vars has key: set locals[slot] = stored value (discard init).
     /// If not: set locals[slot] = init value, store in state_vars.
     StateVarInit(u32, u32),
+    /// Mark whether a declared variable should report `.VAR.dynamic` true.
+    SetVarDynamic {
+        name_idx: u32,
+        dynamic: bool,
+    },
 
     /// Indirect type lookup: pop string from stack, resolve to Package value.
     IndirectTypeLookup,

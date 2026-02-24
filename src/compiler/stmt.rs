@@ -8,6 +8,7 @@ impl Compiler {
                 self.code.emit(OpCode::Pop);
             }
             Stmt::Block(stmts) => {
+                let saved_dynamic_scope = self.push_dynamic_scope_lexical();
                 if Self::has_catch_or_control(stmts) {
                     self.compile_try(stmts, &None);
                     self.code.emit(OpCode::Pop);
@@ -94,6 +95,7 @@ impl Compiler {
                     self.code.patch_block_body_end(idx);
                     self.code.patch_loop_end(idx);
                 }
+                self.pop_dynamic_scope_lexical(saved_dynamic_scope);
             }
             Stmt::Say(exprs) => {
                 self.compile_exprs(exprs);
@@ -113,6 +115,7 @@ impl Compiler {
                 type_constraint,
                 is_state,
             } => {
+                let is_dynamic = self.var_is_dynamic(name);
                 self.compile_expr(expr);
                 if let Some(tc) = type_constraint {
                     let tc_idx = self.code.add_constant(Value::Str(tc.clone()));
@@ -127,6 +130,11 @@ impl Compiler {
                 } else {
                     self.code.emit(OpCode::SetLocal(slot));
                 }
+                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                self.code.emit(OpCode::SetVarDynamic {
+                    name_idx,
+                    dynamic: is_dynamic,
+                });
             }
             Stmt::Assign {
                 name,
@@ -611,6 +619,9 @@ impl Compiler {
                 }
             }
             Stmt::Use { module, arg } if module == "lib" && arg.is_none() => {}
+            Stmt::Use { module, arg } if module == "dynamic-scope" => {
+                self.apply_dynamic_scope_pragma(arg.as_ref());
+            }
             Stmt::Use { module, arg } if module == "newline" => {
                 if let Some(expr) = arg {
                     self.compile_expr(expr);

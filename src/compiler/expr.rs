@@ -803,6 +803,7 @@ impl Compiler {
                     is_state,
                     ..
                 } => {
+                    let is_dynamic = self.var_is_dynamic(name);
                     // my $x = expr in expression context → declare, assign, return value
                     if *is_state {
                         self.compile_expr(expr);
@@ -846,6 +847,11 @@ impl Compiler {
                         self.code.emit(OpCode::Dup);
                         self.emit_set_named_var(name);
                     }
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::SetVarDynamic {
+                        name_idx,
+                        dynamic: is_dynamic,
+                    });
                 }
                 Stmt::Expr(inner_expr) => {
                     self.compile_expr(inner_expr);
