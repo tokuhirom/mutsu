@@ -1,163 +1,97 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-COUNT=300
-START_LINE=20
-END_LINE=300
 DRY_RUN=0
-SEQUENTIAL=0
 AGENT="codex"
+WIP_FILE="wip.txt"
 
 usage() {
     cat <<USAGE
-Usage: $0 [-n count] [-s start_line] [-e end_line] [--sequential] [--agent codex|claude] [--dry-run]
+Usage: $0 [--agent codex|claude] [--dry-run]
+
+Continuously picks a random failing roast test and processes it.
+Loops until pick-next-roast.sh returns no candidates.
+Uses wip.txt to coordinate with other instances.
 
 Options:
-  -n <count>      Passed to ./scripts/pick-next-roast.sh (default: 300)
-  -s <start_line> Start line for candidate selection (default: 20)
-  -e <end_line>   End line for candidate selection (default: 300)
-  --start <n>     Same as -s
-  --end <n>       Same as -e
-  --sequential    Process all selected candidates from -s to -e in order
   --agent <name>  Agent to run in ai-sandbox (codex|claude, default: codex)
   --dry-run       Print commands without executing ai-sandbox
 USAGE
 }
 
-is_positive_integer() {
-    [[ "$1" =~ ^[1-9][0-9]*$ ]]
-}
-
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        -n)
-            if [[ $# -lt 2 ]]; then
-                echo "Error: -n requires a value" >&2
-                usage
-                exit 1
-            fi
-            if ! is_positive_integer "$2"; then
-                echo "Error: -n requires a positive integer" >&2
-                usage
-                exit 1
-            fi
-            COUNT="$2"
-            shift 2
-            ;;
-        -s|--start)
-            if [[ $# -lt 2 ]]; then
-                echo "Error: $1 requires a value" >&2
-                usage
-                exit 1
-            fi
-            if ! is_positive_integer "$2"; then
-                echo "Error: $1 requires a positive integer" >&2
-                usage
-                exit 1
-            fi
-            START_LINE="$2"
-            shift 2
-            ;;
-        -e|--end)
-            if [[ $# -lt 2 ]]; then
-                echo "Error: $1 requires a value" >&2
-                usage
-                exit 1
-            fi
-            if ! is_positive_integer "$2"; then
-                echo "Error: $1 requires a positive integer" >&2
-                usage
-                exit 1
-            fi
-            END_LINE="$2"
-            shift 2
-            ;;
-        --sequential)
-            SEQUENTIAL=1
-            shift
-            ;;
         --agent)
             if [[ $# -lt 2 ]]; then
-                echo "Error: --agent requires a value" >&2
-                usage
-                exit 1
+                echo "Error: --agent requires a value" >&2; exit 1
             fi
-            AGENT="$2"
-            shift 2
-            ;;
+            AGENT="$2"; shift 2 ;;
         --dry-run)
-            DRY_RUN=1
-            shift
-            ;;
+            DRY_RUN=1; shift ;;
         -h|--help)
-            usage
-            exit 0
-            ;;
+            usage; exit 0 ;;
         *)
-            echo "Error: unknown argument: $1" >&2
-            usage
-            exit 1
-            ;;
+            echo "Error: unknown argument: $1" >&2; usage; exit 1 ;;
     esac
 done
 
-if (( START_LINE > END_LINE )); then
-    echo "Error: start line must be less than or equal to end line" >&2
-    usage
-    exit 1
-fi
-
 if [[ "$AGENT" != "codex" && "$AGENT" != "claude" ]]; then
-    echo "Error: --agent must be codex or claude" >&2
-    usage
-    exit 1
+    echo "Error: --agent must be codex or claude" >&2; exit 1
 fi
 
-CANDIDATES=$(./scripts/pick-next-roast.sh -n "$COUNT" | awk '/^[[:space:]]*[0-9]+[[:space:]]+/' || true)
-SELECTED_LINES=$(echo "$CANDIDATES" | sed -n "${START_LINE},${END_LINE}p")
+# Add entry to wip.txt (create if needed)
+wip_add() {
+    echo "$1" >> "$WIP_FILE"
+}
 
-if [[ -z "$SELECTED_LINES" ]]; then
-    echo "Failed to select candidate lines from range ${START_LINE}-${END_LINE}" >&2
-    exit 1
-fi
-
-if [[ "$SEQUENTIAL" -eq 1 ]]; then
-    failed=0
-    while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        file=$(echo "$line" | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]+//')
-        if [[ -z "$file" || "$file" == "$line" ]]; then
-            echo "Skipping unparsable line: $line" >&2
-            continue
-        fi
-
-        if [[ "$DRY_RUN" -eq 1 ]]; then
-            ./scripts/ai-run-roast.sh --agent "$AGENT" --dry-run "$file"
-        else
-            if ! ./scripts/ai-run-roast.sh --agent "$AGENT" "$file"; then
-                echo "Failed: $file" >&2
-                failed=$((failed + 1))
-            fi
-        fi
-    done <<< "$SELECTED_LINES"
-
-    if (( failed > 0 )); then
-        echo "Completed with $failed failure(s)." >&2
-        exit 1
+# Remove entry from wip.txt
+wip_remove() {
+    if [[ -f "$WIP_FILE" ]]; then
+        local tmp
+        tmp=$(grep -vxF "$1" "$WIP_FILE" || true)
+        echo "$tmp" > "$WIP_FILE"
     fi
-    exit 0
-fi
+}
 
-SELECTED_LINE=$(echo "$SELECTED_LINES" | shuf -n 1)
-FILE=$(echo "$SELECTED_LINE" | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]+//')
+while true; do
+    # Get up to 100 candidates
+    CANDIDATES=$(./scripts/pick-next-roast.sh -n 100 2>/dev/null \
+        | awk '/^[[:space:]]*[0-9]+[[:space:]]+/ { print $2 }' || true)
 
-if [[ -z "$FILE" || "$FILE" == "$SELECTED_LINE" ]]; then
-    echo "Failed to parse file path from: $SELECTED_LINE" >&2
-    exit 1
-fi
+    if [[ -z "$CANDIDATES" ]]; then
+        echo "No more candidates. Done."
+        break
+    fi
 
-if [[ "$DRY_RUN" -eq 1 ]]; then
-    ./scripts/ai-run-roast.sh --agent "$AGENT" --dry-run "$FILE"
-else
-    ./scripts/ai-run-roast.sh --agent "$AGENT" "$FILE"
-fi
+    # Filter out entries in wip.txt
+    if [[ -f "$WIP_FILE" ]]; then
+        CANDIDATES=$(comm -23 <(echo "$CANDIDATES" | sort) <(sort "$WIP_FILE") || true)
+    fi
+
+    if [[ -z "$CANDIDATES" ]]; then
+        echo "All remaining candidates are in wip.txt. Done."
+        break
+    fi
+
+    # Pick one at random
+    FILE=$(echo "$CANDIDATES" | shuf -n 1)
+
+    if [[ -z "$FILE" ]]; then
+        echo "No candidate selected. Done."
+        break
+    fi
+
+    echo "=== Selected: $FILE ==="
+
+    # Register in wip.txt before processing
+    wip_add "$FILE"
+
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        ./scripts/ai-run-roast.sh --agent "$AGENT" --dry-run "$FILE"
+    else
+        ./scripts/ai-run-roast.sh --agent "$AGENT" "$FILE" || echo "Failed: $FILE" >&2
+    fi
+
+    # Remove from wip.txt after processing
+    wip_remove "$FILE"
+done
