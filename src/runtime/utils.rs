@@ -435,6 +435,10 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
             }
         }
         Value::Array(items, ..) => Value::Int(items.len() as i64),
+        Value::Hash(items) => Value::Int(items.len() as i64),
+        Value::Set(items) => Value::Int(items.len() as i64),
+        Value::Bag(items) => Value::Int(items.values().sum()),
+        Value::Mix(items) => Value::Num(items.values().sum()),
         Value::Nil => Value::Int(0),
         Value::Instance {
             ref class_name,

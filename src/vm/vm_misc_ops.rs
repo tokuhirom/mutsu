@@ -176,36 +176,7 @@ impl VM {
 
     pub(super) fn exec_num_coerce_op(&mut self) {
         let val = self.stack.pop().unwrap();
-        let result = match val {
-            Value::Int(i) => Value::Int(i),
-            Value::Num(f) => Value::Num(f),
-            Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
-            Value::Array(items, ..) => Value::Int(items.len() as i64),
-            Value::Rat(n, d) => {
-                if d == 0 {
-                    if n > 0 {
-                        Value::Num(f64::INFINITY)
-                    } else if n < 0 {
-                        Value::Num(f64::NEG_INFINITY)
-                    } else {
-                        Value::Num(f64::NAN)
-                    }
-                } else {
-                    Value::Rat(n, d)
-                }
-            }
-            Value::Str(s) => {
-                if let Ok(i) = s.parse::<i64>() {
-                    Value::Int(i)
-                } else if let Ok(f) = s.parse::<f64>() {
-                    Value::Num(f)
-                } else {
-                    Value::Int(0)
-                }
-            }
-            Value::Enum { value, .. } => Value::Int(value),
-            _ => Value::Int(0),
-        };
+        let result = crate::runtime::utils::coerce_to_numeric(val);
         self.stack.push(result);
     }
 

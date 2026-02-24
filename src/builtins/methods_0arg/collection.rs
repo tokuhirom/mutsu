@@ -34,6 +34,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 let keys: Vec<Value> = map.keys().map(|k| Value::Str(k.clone())).collect();
                 Some(Ok(Value::array(keys)))
             }
+            Value::Pair(key, _) => Some(Ok(Value::array(vec![Value::Str(key.clone())]))),
+            Value::ValuePair(key, _) => Some(Ok(Value::array(vec![*key.clone()]))),
+            Value::Nil => Some(Ok(Value::array(Vec::new()))),
             Value::Set(s) => Some(Ok(Value::array(
                 s.iter().map(|k| Value::Str(k.clone())).collect(),
             ))),
@@ -53,6 +56,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 let values: Vec<Value> = map.values().cloned().collect();
                 Some(Ok(Value::array(values)))
             }
+            Value::Pair(_, value) | Value::ValuePair(_, value) => {
+                Some(Ok(Value::array(vec![*value.clone()])))
+            }
+            Value::Nil => Some(Ok(Value::array(Vec::new()))),
             Value::Set(s) => Some(Ok(Value::array(
                 s.iter().map(|_| Value::Bool(true)).collect(),
             ))),
@@ -74,6 +81,14 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 Some(Ok(Value::array(kv)))
             }
+            Value::Pair(key, value) => Some(Ok(Value::array(vec![
+                Value::Str(key.clone()),
+                *value.clone(),
+            ]))),
+            Value::ValuePair(key, value) => {
+                Some(Ok(Value::array(vec![*key.clone(), *value.clone()])))
+            }
+            Value::Nil => Some(Ok(Value::array(Vec::new()))),
             Value::Set(s) => {
                 let mut kv = Vec::new();
                 for k in s.iter() {
