@@ -371,6 +371,27 @@ impl Interpreter {
                 return Ok(ret);
             }
 
+            if args.len() == 1 {
+                let class_attrs = self.collect_class_attributes(&class_name);
+                let is_public_accessor = if class_attrs.is_empty() {
+                    attributes.contains_key(method)
+                } else {
+                    class_attrs
+                        .iter()
+                        .any(|(attr_name, is_public, _)| *is_public && attr_name == method)
+                };
+                if is_public_accessor {
+                    let mut updated = (*attributes).clone();
+                    let assigned = args[0].clone();
+                    updated.insert(method.to_string(), assigned.clone());
+                    self.env.insert(
+                        target_var.to_string(),
+                        Value::make_instance(class_name, updated),
+                    );
+                    return Ok(assigned);
+                }
+            }
+
             if self.is_native_method(&class_name, method) {
                 // Try mutable dispatch first; if no mutable handler, fall back to immutable
                 match self.call_native_instance_method_mut(
