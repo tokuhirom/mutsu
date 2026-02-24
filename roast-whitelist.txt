@@ -89,6 +89,7 @@ roast/S04-statement-modifiers/unless.t
 roast/S04-statement-modifiers/until.t
 roast/S04-statement-modifiers/values_in_bool_context.t
 roast/S04-statement-modifiers/while.t
+roast/S04-statement-modifiers/without.t
 roast/S04-statement-parsing/hash.t
 roast/S04-statements/last.t
 roast/S04-statements/map-and-sort-in-for.t

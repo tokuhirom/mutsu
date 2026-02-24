@@ -330,6 +330,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
         "defined" => Some(Ok(Value::Bool(match arg {
             Value::Nil | Value::Package(_) => false,
             Value::Slip(items) if items.is_empty() => false,
+            Value::Instance { class_name, .. } if class_name == "Failure" => false,
             _ => true,
         }))),
         "elems" => match arg {
