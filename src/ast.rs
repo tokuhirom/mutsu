@@ -361,6 +361,7 @@ pub(crate) enum Stmt {
         param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,
         multi: bool,
+        is_rw: bool,
     },
     RoleDecl {
         name: String,
@@ -389,6 +390,12 @@ pub(crate) enum Stmt {
         name: String,
         index: Option<Box<Expr>>,
         value: Option<Box<Expr>>,
+    },
+    TempMethodAssign {
+        var_name: String,
+        method_name: String,
+        method_args: Vec<Expr>,
+        value: Expr,
     },
     Expr(Expr),
 }
@@ -501,6 +508,14 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
             if let Some(e) = index {
                 collect_ph_expr(e, out);
             }
+        }
+        Stmt::TempMethodAssign {
+            method_args, value, ..
+        } => {
+            for e in method_args {
+                collect_ph_expr(e, out);
+            }
+            collect_ph_expr(value, out);
         }
         Stmt::ProtoDecl { .. } => {}
         Stmt::DoesDecl { .. } => {}

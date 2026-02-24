@@ -289,6 +289,7 @@ impl Interpreter {
         if body.is_empty() {
             return Ok(Value::Nil);
         }
+        let let_mark = self.let_saves_len();
         let mut compiler = crate::compiler::Compiler::new();
         let scope = if let Some((pkg, routine)) = self.routine_stack.last() {
             format!("{}::&{}", pkg, routine)
@@ -297,7 +298,10 @@ impl Interpreter {
         };
         compiler.set_current_package(scope);
         let (code, compiled_fns) = compiler.compile(body);
-        self.run_compiled_block(&code, &compiled_fns)
+        let result = self.run_compiled_block(&code, &compiled_fns);
+        // Blocks are scope boundaries for temp/let saves.
+        self.restore_let_saves(let_mark);
+        result
     }
 
     /// Run pre-compiled bytecode and return the `$_` topic value.

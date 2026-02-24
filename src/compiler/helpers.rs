@@ -493,7 +493,7 @@ impl Compiler {
     pub(super) fn has_let_deep(stmts: &[Stmt]) -> bool {
         for s in stmts {
             match s {
-                Stmt::Let { .. } => return true,
+                Stmt::Let { .. } | Stmt::TempMethodAssign { .. } => return true,
                 Stmt::Block(inner) => {
                     if Self::has_let_deep(inner) {
                         return true;

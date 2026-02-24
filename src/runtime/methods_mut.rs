@@ -21,6 +21,100 @@ impl Interpreter {
         }
     }
 
+    fn rw_method_attribute_target(body: &[Stmt]) -> Option<String> {
+        let first = body.first()?;
+        let extract_attr = |expr: &Expr| -> Option<String> {
+            match expr {
+                Expr::Var(name) if name.starts_with('!') && name.len() > 1 => {
+                    Some(name[1..].to_string())
+                }
+                Expr::Call { name, args } if name == "return-rw" && args.len() == 1 => {
+                    if let Expr::Var(attr) = &args[0]
+                        && attr.starts_with('!')
+                        && attr.len() > 1
+                    {
+                        return Some(attr[1..].to_string());
+                    }
+                    None
+                }
+                _ => None,
+            }
+        };
+        match first {
+            Stmt::Expr(expr) | Stmt::Return(expr) => extract_attr(expr),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn assign_method_lvalue_with_values(
+        &mut self,
+        target_var: Option<&str>,
+        target: Value,
+        method: &str,
+        method_args: Vec<Value>,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        // Preserve existing accessor/setter assignment behavior for concrete variables.
+        if let Some(var_name) = target_var {
+            match self.call_method_mut_with_values(
+                var_name,
+                target.clone(),
+                method,
+                vec![value.clone()],
+            ) {
+                Ok(result) => return Ok(result),
+                Err(err) => {
+                    if !err
+                        .message
+                        .starts_with("No matching candidates for method:")
+                    {
+                        return Err(err);
+                    }
+                }
+            }
+        }
+
+        let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target
+        else {
+            return Err(RuntimeError::new(format!(
+                "X::Assignment::RO: cannot assign through .{} on non-instance",
+                method
+            )));
+        };
+
+        let method_def = self
+            .resolve_method(&class_name, method, &method_args)
+            .ok_or_else(|| {
+                RuntimeError::new(format!("No matching candidates for method: {method}"))
+            })?;
+        if !method_def.is_rw {
+            return Err(RuntimeError::new(format!(
+                "X::Assignment::RO: method '{}' is not rw",
+                method
+            )));
+        }
+        let attr_name = Self::rw_method_attribute_target(&method_def.body).ok_or_else(|| {
+            RuntimeError::new(format!(
+                "X::Assignment::RO: rw method '{}' does not expose an assignable attribute",
+                method
+            ))
+        })?;
+
+        let mut updated = (*attributes).clone();
+        updated.insert(attr_name, value.clone());
+        if let Some(var_name) = target_var {
+            self.env.insert(
+                var_name.to_string(),
+                Value::make_instance(class_name, updated),
+            );
+        }
+        Ok(value)
+    }
+
     pub(crate) fn call_method_mut_with_values(
         &mut self,
         target_var: &str,

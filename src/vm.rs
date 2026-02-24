@@ -1266,11 +1266,7 @@ impl VM {
     }
 
     /// Check if a value represents a "successful" block exit for `let` purposes.
-    fn is_let_success(val: &Value) -> bool {
-        match val {
-            Value::Nil => false,
-            Value::Package(name) if name == "Mu" || name == "Any" => false,
-            _ => true,
-        }
+    fn is_let_success(_val: &Value) -> bool {
+        false
     }
 }

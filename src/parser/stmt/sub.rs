@@ -152,6 +152,7 @@ pub(super) fn sub_decl_body(input: &str, multi: bool, supersede: bool) -> PResul
 pub(super) struct SubTraits {
     pub is_export: bool,
     pub is_test_assertion: bool,
+    pub is_rw: bool,
 }
 
 /// Parse sub/method traits like `is test-assertion`, `is export`, `returns Str`, etc.
@@ -159,6 +160,7 @@ pub(super) struct SubTraits {
 pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
     let mut is_export = false;
     let mut is_test_assertion = false;
+    let mut is_rw = false;
     loop {
         let (r, _) = ws(input)?;
         if r.starts_with('{') || r.is_empty() {
@@ -167,6 +169,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 SubTraits {
                     is_export,
                     is_test_assertion,
+                    is_rw,
                 },
             ));
         }
@@ -179,6 +182,8 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 is_export = true;
             } else if trait_name == "test-assertion" {
                 is_test_assertion = true;
+            } else if trait_name == "rw" {
+                is_rw = true;
             }
             // Skip optional parenthesized trait args: is export(:DEFAULT)
             let r = skip_balanced_parens(r);
@@ -204,6 +209,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             SubTraits {
                 is_export,
                 is_test_assertion,
+                is_rw,
             },
         ));
     }
@@ -762,7 +768,7 @@ pub(super) fn method_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
         (rest, (Vec::new(), Vec::new()))
     };
 
-    let (rest, _traits) = parse_sub_traits(rest)?;
+    let (rest, traits) = parse_sub_traits(rest)?;
     let (rest, body) = block(rest)?;
     Ok((
         rest,
@@ -772,6 +778,7 @@ pub(super) fn method_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
             param_defs,
             body,
             multi,
+            is_rw: traits.is_rw,
         },
     ))
 }
