@@ -1106,8 +1106,12 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         || is_stmt_modifier_ahead(rest)
         || rest.trim_start().is_empty();
 
-    // User-declared subs can be called with no args as bare words in statement position.
-    if crate::parser::stmt::simple::is_user_declared_sub(&name) && is_terminator {
+    // User-declared and imported subs can be called with no args as bare words
+    // in statement position (e.g., `make-temp-dir;`).
+    if (crate::parser::stmt::simple::is_user_declared_sub(&name)
+        || crate::parser::stmt::simple::is_imported_function(&name))
+        && is_terminator
+    {
         return Ok((rest, make_call_expr(name, input, vec![])));
     }
 

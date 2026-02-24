@@ -240,6 +240,7 @@ pub struct Interpreter {
     end_phasers: Vec<(Vec<Stmt>, HashMap<String, Value>)>,
     chroot_root: Option<PathBuf>,
     loaded_modules: HashSet<String>,
+    module_load_stack: Vec<String>,
     /// When true, `is export` trait is ignored (used by `need` to load without importing).
     pub(crate) suppress_exports: bool,
     pub(crate) newline_mode: NewlineMode,
@@ -743,6 +744,7 @@ impl Interpreter {
             end_phasers: Vec::new(),
             chroot_root: None,
             loaded_modules: HashSet::new(),
+            module_load_stack: Vec::new(),
             suppress_exports: false,
             newline_mode: NewlineMode::Lf,
             import_scope_stack: Vec::new(),
@@ -906,8 +908,20 @@ impl Interpreter {
     }
 
     pub(crate) fn use_module(&mut self, module: &str) -> Result<(), RuntimeError> {
-        self.loaded_modules.insert(module.to_string());
-        if module == "Test"
+        if self.loaded_modules.contains(module) {
+            return Ok(());
+        }
+        if self.module_load_stack.iter().any(|m| m == module) {
+            let mut chain = self.module_load_stack.clone();
+            chain.push(module.to_string());
+            return Err(RuntimeError::new(format!(
+                "circular module dependency detected: {}",
+                chain.join(" -> ")
+            )));
+        }
+        self.module_load_stack.push(module.to_string());
+
+        let result = if module == "Test"
             || matches!(
                 module,
                 "strict"
@@ -917,34 +931,53 @@ impl Interpreter {
                     | "nqp"
                     | "MONKEY"
                     | "newline"
-            )
-        {
-            return Ok(());
-        }
-        // Handle Test::Tap as built-in
-        if module == "Test::Tap" {
-            return Ok(());
-        }
-        // Load Test:: submodules from source as regular modules.
-        // Parse errors should propagate like other `use` failures.
-        // Missing helper modules remain non-fatal for compatibility.
-        if module.starts_with("Test::") {
-            return match self.load_module(module) {
+            ) {
+            Ok(())
+        } else if module == "Test::Tap" {
+            // Handle Test::Tap as built-in
+            Ok(())
+        } else if module.starts_with("Test::") {
+            // Load Test:: submodules from source as regular modules.
+            // Parse errors should propagate like other `use` failures.
+            // Missing helper modules remain non-fatal for compatibility.
+            match self.load_module(module) {
                 Ok(()) => Ok(()),
                 Err(err) if err.message.starts_with("Module not found:") => Ok(()),
                 Err(err) => Err(err),
-            };
+            }
+        } else {
+            self.load_module(module)
+        };
+
+        self.module_load_stack.pop();
+        if result.is_ok() {
+            self.loaded_modules.insert(module.to_string());
         }
-        self.load_module(module)
+        result
     }
 
     /// Load a module without importing its exports (Raku `need` keyword).
     pub(crate) fn need_module(&mut self, module: &str) -> Result<(), RuntimeError> {
-        self.loaded_modules.insert(module.to_string());
+        if self.loaded_modules.contains(module) {
+            return Ok(());
+        }
+        if self.module_load_stack.iter().any(|m| m == module) {
+            let mut chain = self.module_load_stack.clone();
+            chain.push(module.to_string());
+            return Err(RuntimeError::new(format!(
+                "circular module dependency detected: {}",
+                chain.join(" -> ")
+            )));
+        }
+        self.module_load_stack.push(module.to_string());
         let saved = self.suppress_exports;
         self.suppress_exports = true;
         let result = self.load_module(module);
         self.suppress_exports = saved;
+        self.module_load_stack.pop();
+        if result.is_ok() {
+            self.loaded_modules.insert(module.to_string());
+        }
         result
     }
 
@@ -1061,6 +1094,7 @@ impl Interpreter {
             end_phasers: Vec::new(),
             chroot_root: self.chroot_root.clone(),
             loaded_modules: self.loaded_modules.clone(),
+            module_load_stack: Vec::new(),
             suppress_exports: false,
             newline_mode: self.newline_mode,
             import_scope_stack: Vec::new(),
@@ -1183,5 +1217,96 @@ mod tests {
 
         let _ = fs::remove_file(mod_path);
         let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn use_lib_empty_string_raises_libempty_exception() {
+        let mut interp = Interpreter::new();
+        let err = interp.run("use lib '';").unwrap_err();
+        assert!(err.message.contains("X::LibEmpty"));
+    }
+
+    #[test]
+    fn circular_module_dependency_is_reported() {
+        let mut interp = Interpreter::new();
+        let uniq = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("mutsu-circularmod-{}", uniq));
+        fs::create_dir_all(&dir).unwrap();
+        let a_path = dir.join("A.rakumod");
+        let b_path = dir.join("B.rakumod");
+        fs::write(&a_path, "unit class A; use B").unwrap();
+        fs::write(&b_path, "unit class B; use A").unwrap();
+
+        let program = format!("use lib '{}'; use A;", dir.to_string_lossy());
+        let err = interp.run(&program).unwrap_err();
+        assert!(err.message.to_lowercase().contains("circular"));
+
+        let _ = fs::remove_file(a_path);
+        let _ = fs::remove_file(b_path);
+        let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn is_run_honors_compiler_include_paths() {
+        let mut interp = Interpreter::new();
+        let uniq = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("mutsu-is-run-inc-{}", uniq));
+        fs::create_dir_all(&dir).unwrap();
+        let m_path = dir.join("M.rakumod");
+        fs::write(&m_path, "unit module M;\nsub hi is export { 42 }\n").unwrap();
+
+        let escaped_dir = dir
+            .to_string_lossy()
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"");
+        let program = format!(
+            "use Test; use lib \"roast/packages/Test-Helpers\"; use Test::Util; \
+             plan 1; \
+             is_run \"use M; say hi\", :compiler-args[\"-I\", \"{}\"], {{ :out(\"42\\n\"), :status(0) }}, \"is_run uses -I\";",
+            escaped_dir
+        );
+        let output = interp.run(&program).unwrap();
+        assert!(output.contains("ok 1 - is_run uses -I"));
+
+        let _ = fs::remove_file(m_path);
+        let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn unit_module_applies_to_following_declarations() {
+        let mut interp = Interpreter::new();
+        let uniq = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("mutsu-unit-mod-scope-{}", uniq));
+        fs::create_dir_all(&dir).unwrap();
+        let m_path = dir.join("Shadow.rakumod");
+        fs::write(&m_path, "unit module Shadow;\nour $debug = 1;\n").unwrap();
+
+        let program = format!(
+            "use lib '{}'; use Shadow; say $Shadow::debug;",
+            dir.to_string_lossy()
+        );
+        let output = interp.run(&program).unwrap();
+        assert_eq!(output, "1\n");
+
+        let _ = fs::remove_file(m_path);
+        let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
+    fn like_supports_case_insensitive_quote_word_regex() {
+        let mut interp = Interpreter::new();
+        let output = interp
+            .run("use Test; plan 1; like \"circular module\", /:i «circular»/, \"regex\";")
+            .unwrap();
+        assert!(output.contains("ok 1 - regex"));
     }
 }

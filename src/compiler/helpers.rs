@@ -736,12 +736,14 @@ impl Compiler {
                 expr: Expr::Literal(Value::Bool(true)),
                 type_constraint: None,
                 is_state: false,
+                is_our: false,
             },
             Stmt::VarDecl {
                 name: ran_var.clone(),
                 expr: Expr::Literal(Value::Bool(false)),
                 type_constraint: None,
                 is_state: false,
+                is_our: false,
             },
         ];
 

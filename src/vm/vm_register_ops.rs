@@ -268,10 +268,17 @@ impl VM {
         Ok(())
     }
 
-    pub(super) fn exec_use_lib_path_op(&mut self, code: &CompiledCode) {
+    pub(super) fn exec_use_lib_path_op(&mut self, code: &CompiledCode) -> Result<(), RuntimeError> {
         let value = self.stack.pop().unwrap_or(Value::Nil);
-        self.interpreter.add_lib_path(value.to_string_value());
+        let path = value.to_string_value();
+        if path.is_empty() {
+            return Err(RuntimeError::new(
+                "X::LibEmpty: Repository specification can not be an empty string",
+            ));
+        }
+        self.interpreter.add_lib_path(path);
         self.sync_locals_from_env(code);
+        Ok(())
     }
 
     pub(super) fn exec_register_enum_op(

@@ -137,7 +137,7 @@ impl Interpreter {
 
     pub(super) fn parse_regex(&self, pattern: &str) -> Option<RegexPattern> {
         let interpolated = self.interpolate_regex_scalars(pattern);
-        let mut source = interpolated.trim_start();
+        let mut source = interpolated.trim();
         let mut ignore_case = false;
         loop {
             if let Some(rest) = source.strip_prefix(":i") {
@@ -146,6 +146,14 @@ impl Interpreter {
                 continue;
             }
             break;
+        }
+        source = source.trim();
+        // Quote-word delimiters in regex patterns (e.g., «word») represent
+        // literal text content, not literal guillemet characters.
+        if let Some(inner) = source.strip_prefix('«').and_then(|s| s.strip_suffix('»')) {
+            source = inner.trim();
+        } else if let Some(inner) = source.strip_prefix("<<").and_then(|s| s.strip_suffix(">>")) {
+            source = inner.trim();
         }
         let expanded = Self::expand_ltm_pattern(source);
         let mut chars = expanded.chars().peekable();
