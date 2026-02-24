@@ -1,9 +1,11 @@
-use super::super::parse_result::{PError, PResult, merge_expected_messages, parse_char, parse_tag};
+use super::super::parse_result::{
+    PError, PResult, merge_expected_messages, parse_char, parse_tag, take_while1,
+};
 
 use crate::ast::{Expr, Stmt, make_anon_sub};
 use crate::value::Value;
 
-use super::super::stmt::statement_pub;
+use super::super::stmt::{keyword, statement_pub};
 
 fn is_superscript_digit(c: char) -> bool {
     matches!(
@@ -720,6 +722,43 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // anon enum < ... > in expression context
             if let Ok((r, stmt)) = super::super::stmt::decl::anon_enum_decl(input) {
                 return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            }
+            // anon method (...) { ... } in expression context
+            let (r_ws, _) = ws(rest)?;
+            if let Some(after_method) = keyword("method", r_ws) {
+                let (r, _) = ws(after_method)?;
+                if r.starts_with('(') {
+                    let (r, params_body) = parse_anon_sub_with_params(r).map_err(|err| PError {
+                        messages: merge_expected_messages(
+                            "expected anonymous method parameter list/body",
+                            &err.messages,
+                        ),
+                        remaining_len: err.remaining_len.or(Some(r.len())),
+                    })?;
+                    return Ok((r, params_body));
+                }
+                // anon method name (...) { ... }
+                if let Ok((r, _name)) =
+                    take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
+                {
+                    let (r, _) = ws(r)?;
+                    if r.starts_with('(') {
+                        let (r, params_body) =
+                            parse_anon_sub_with_params(r).map_err(|err| PError {
+                                messages: merge_expected_messages(
+                                    "expected anonymous method parameter list/body",
+                                    &err.messages,
+                                ),
+                                remaining_len: err.remaining_len.or(Some(r.len())),
+                            })?;
+                        return Ok((r, params_body));
+                    }
+                }
+                if after_method.starts_with('{') || after_method.trim_start().starts_with('{') {
+                    let (r, _) = ws(after_method)?;
+                    let (r, body) = parse_block_body(r)?;
+                    return Ok((r, make_anon_sub(body)));
+                }
             }
         }
         "sub" => {
