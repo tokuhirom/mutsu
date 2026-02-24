@@ -1,5 +1,5 @@
 use Test;
-plan 5;
+plan 7;
 
 my $add = { $^a + $^b };
 is $add(3, 4), 7, 'placeholder block with two args';
@@ -18,3 +18,10 @@ is @evens.join(","), "2,4", 'grep with placeholder var';
 
 my $sub = { $^b - $^a };
 is $sub(10, 25), 15, 'placeholders sorted alphabetically';
+
+sub rt68116 { 68116 }
+is { &^x() }.( &rt68116 ), 68116, 'call-on invokes callable placeholder for sub';
+
+proto mone(|) { * }
+multi mone { 'one' }
+is { &^x() }.( &mone ), 'one', 'call-on invokes callable placeholder for multi';

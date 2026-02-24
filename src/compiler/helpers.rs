@@ -345,10 +345,21 @@ impl Compiler {
             // Compile body statements; last Stmt::Expr should NOT emit Pop (implicit return)
             for (i, stmt) in body.iter().enumerate() {
                 let is_last = i == body.len() - 1;
-                if is_last && let Stmt::Expr(expr) = stmt {
-                    sub_compiler.compile_expr(expr);
-                    // Don't emit Pop — leave value on stack as implicit return
-                    continue;
+                if is_last {
+                    match stmt {
+                        Stmt::Expr(expr) => {
+                            sub_compiler.compile_expr(expr);
+                            // Don't emit Pop — leave value on stack as implicit return
+                            continue;
+                        }
+                        Stmt::Block(stmts) | Stmt::SyntheticBlock(stmts) => {
+                            // Bare blocks in final statement position auto-execute and
+                            // produce their final value.
+                            sub_compiler.compile_block_inline(stmts);
+                            continue;
+                        }
+                        _ => {}
+                    }
                 }
                 sub_compiler.compile_stmt(stmt);
             }
@@ -930,17 +941,27 @@ impl Compiler {
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
             if is_last {
-                if let Stmt::Expr(expr) = stmt {
-                    self.compile_expr(expr);
-                    // Don't emit Pop — leave value on stack as block's return value
-                    self.pop_dynamic_scope_lexical(saved);
-                    return;
-                }
-                if matches!(stmt, Stmt::Given { .. }) {
-                    // given block pushes succeed value onto stack
-                    self.compile_stmt(stmt);
-                    self.pop_dynamic_scope_lexical(saved);
-                    return;
+                match stmt {
+                    Stmt::Expr(expr) => {
+                        self.compile_expr(expr);
+                        // Don't emit Pop — leave value on stack as block's return value
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
+                    Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
+                        // Nested bare blocks in final position should keep flowing
+                        // their final value outward.
+                        self.compile_block_inline(inner);
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
+                    Stmt::Given { .. } => {
+                        // given block pushes succeed value onto stack
+                        self.compile_stmt(stmt);
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
+                    _ => {}
                 }
             }
             self.compile_stmt(stmt);

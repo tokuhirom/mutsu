@@ -31,6 +31,7 @@ roast/S02-names/indirect.t
 roast/S02-one-pass-parsing/less-than.t
 roast/S02-one-pass-parsing/misc.t
 roast/S02-packages/package-lookup.t
+roast/S02-types/anon_block.t
 roast/S02-types/built-in.t
 roast/S02-types/fatrat.t
 roast/S02-types/hyperwhatever.t

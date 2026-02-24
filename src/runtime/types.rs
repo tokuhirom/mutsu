@@ -698,6 +698,11 @@ impl Interpreter {
             for (i, param) in params.iter().enumerate() {
                 if let Some(value) = args.get(i) {
                     self.bind_param_value(param, value.clone());
+                } else if param.starts_with('^') {
+                    return Err(RuntimeError::new(format!(
+                        "Missing required implicit placeholder parameter ${}",
+                        param
+                    )));
                 }
             }
             return Ok(());
