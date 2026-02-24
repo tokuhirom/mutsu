@@ -274,7 +274,15 @@ impl Interpreter {
                 Ok(Value::Bool(left == right))
             }
             "eqv" => Ok(Value::Bool(left.eqv(right))),
-            "=:=" => Ok(Value::Bool(left == right)),
+            "=:=" => Ok(Value::Bool(super::values_identical(left, right))),
+            "===" => Ok(Value::Bool(super::values_identical(left, right))),
+            "=>" => match left {
+                Value::Str(_) => Ok(Value::Pair(left.to_string_value(), Box::new(right.clone()))),
+                _ => Ok(Value::ValuePair(
+                    Box::new(left.clone()),
+                    Box::new(right.clone()),
+                )),
+            },
             "&" => {
                 let mut vals = match left {
                     Value::Junction {

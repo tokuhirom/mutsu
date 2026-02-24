@@ -33,8 +33,8 @@ fn skip_pointy_return_type(mut r: &str) -> PResult<'_, ()> {
 const REDUCTION_OPS: &[&str] = &[
     "+", "-", "*", "/", "%", "~", "||", "&&", "//", "%%", "**", "^^", "+&", "+|", "+^", "+<", "+>",
     "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=", ">=", "<=>", "===",
-    "=:=", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg", "cmp", "~~", "min", "max", "gcd",
-    "lcm", "and", "or", "not", ",", "after", "before", "X", "Z", "x", "xx", "&", "|", "^",
+    "=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg", "cmp", "~~", "min", "max",
+    "gcd", "lcm", "and", "or", "not", ",", "after", "before", "X", "Z", "x", "xx", "&", "|", "^",
 ];
 
 /// Find the matching `]` for a `[` at position 0, respecting nesting.
@@ -136,7 +136,7 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
     }
     let (r, _) = ws(r)?;
     // Parse comma-separated list as the operand
-    let (r, first) = expression(r)?;
+    let (r, first) = parse_reduction_operand(r)?;
     let mut items = vec![first];
     let mut rest = r;
     loop {
@@ -156,7 +156,7 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
             rest = r;
             break;
         }
-        if let Ok((r, next)) = expression(r) {
+        if let Ok((r, next)) = parse_reduction_operand(r) {
             items.push(next);
             rest = r;
         } else {
@@ -178,6 +178,22 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
             expr: Box::new(expr),
         },
     ))
+}
+
+fn parse_reduction_operand(input: &str) -> PResult<'_, Expr> {
+    let (r, _) = ws(input)?;
+    if let Some(r) = r.strip_prefix('|') {
+        let (r, _) = ws(r)?;
+        let (r, expr) = expression(r)?;
+        return Ok((
+            r,
+            Expr::Call {
+                name: "slip".to_string(),
+                args: vec![expr],
+            },
+        ));
+    }
+    expression(r)
 }
 
 /// Parse colonpair expressions: :$var, :@var, :%var, :name(expr), :name, :!name

@@ -347,9 +347,9 @@ impl VM {
         const KNOWN_BASE_OPS: &[&str] = &[
             "+", "-", "*", "/", "%", "~", "||", "&&", "//", "%%", "**", "^^", "+&", "+|", "+^",
             "+<", "+>", "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=",
-            ">=", "<=>", "===", "=:=", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg", "cmp",
-            "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",", "after", "before", "X", "Z",
-            "x", "xx", "&", "|", "^",
+            ">=", "<=>", "===", "=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg",
+            "cmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",", "after", "before",
+            "X", "Z", "x", "xx", "&", "|", "^",
         ];
         let (negate, base_op) = if let Some(stripped) = op_no_scan.strip_prefix('!')
             && KNOWN_BASE_OPS.contains(&stripped)
@@ -359,11 +359,22 @@ impl VM {
             (false, op_no_scan)
         };
         let list_value = self.stack.pop().unwrap_or(Value::Nil);
-        let list = if let Value::LazyList(ref ll) = list_value {
+        let mut list = if let Value::LazyList(ref ll) = list_value {
             self.interpreter.force_lazy_list_bridge(ll)?
         } else {
             runtime::value_to_list(&list_value)
         };
+        if list.iter().any(|v| matches!(v, Value::Slip(_))) {
+            let mut flattened = Vec::new();
+            for item in list {
+                if let Value::Slip(items) = item {
+                    flattened.extend(items.iter().cloned());
+                } else {
+                    flattened.push(item);
+                }
+            }
+            list = flattened;
+        }
         if scan {
             if list.is_empty() {
                 self.stack.push(Value::Seq(std::sync::Arc::new(Vec::new())));
@@ -417,11 +428,21 @@ impl VM {
                 }
                 self.stack.push(Value::Bool(result));
             } else {
-                let mut acc = list[0].clone();
-                for item in &list[1..] {
-                    let v = Interpreter::apply_reduction_op(&base_op, &acc, item)?;
-                    acc = if negate { Value::Bool(!v.truthy()) } else { v };
-                }
+                let acc = if base_op == "=>" {
+                    let mut acc = list.last().cloned().unwrap_or(Value::Nil);
+                    for item in list[..list.len() - 1].iter().rev() {
+                        let v = Interpreter::apply_reduction_op(&base_op, item, &acc)?;
+                        acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                    }
+                    acc
+                } else {
+                    let mut acc = list[0].clone();
+                    for item in &list[1..] {
+                        let v = Interpreter::apply_reduction_op(&base_op, &acc, item)?;
+                        acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                    }
+                    acc
+                };
                 self.stack.push(acc);
             }
         }
