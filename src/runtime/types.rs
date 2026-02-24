@@ -18,6 +18,12 @@ fn parse_coercion_type(constraint: &str) -> Option<(&str, Option<&str>)> {
     }
 }
 
+#[inline]
+fn is_coercion_constraint(constraint: &str) -> bool {
+    let bytes = constraint.as_bytes();
+    bytes.last() == Some(&b')') && bytes.contains(&b'(')
+}
+
 /// Coerce a value to the target type.
 fn coerce_value(target: &str, value: Value) -> Value {
     let base_target = if target.ends_with(":D") || target.ends_with(":U") || target.ends_with(":_")
@@ -741,7 +747,7 @@ impl Interpreter {
                         if !ok {
                             return false;
                         }
-                    } else if parse_coercion_type(constraint).is_none()
+                    } else if !is_coercion_constraint(constraint)
                         && !self.type_matches_value(constraint, arg)
                     {
                         // Coercion source-type validation is deferred until bind time.
@@ -974,7 +980,7 @@ impl Interpreter {
                                     pd.name,
                                     constraint,
                                     super::value_type_name(&value)
-                                )));
+                                ));
                                 let mut ex_attrs = std::collections::HashMap::new();
                                 ex_attrs
                                     .insert("message".to_string(), Value::Str(err.message.clone()));

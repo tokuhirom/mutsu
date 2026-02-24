@@ -173,13 +173,35 @@ impl Interpreter {
             self.env.insert(format!("!{}", attr_name), attr_val.clone());
             self.env.insert(format!(".{}", attr_name), attr_val.clone());
         }
-        // Bind method arguments with coercion type support
-        match self.bind_function_args_values(&method_def.param_defs, &method_def.params, &args) {
-            Ok(()) => {}
-            Err(e) => {
-                self.method_class_stack.pop();
-                self.env = saved_env;
-                return Err(e);
+        if attributes.is_empty() {
+            // Type-object method calls (e.g. COERCE) need full signature binding.
+            match self.bind_function_args_values(&method_def.param_defs, &method_def.params, &args)
+            {
+                Ok(_) => {}
+                Err(e) => {
+                    self.method_class_stack.pop();
+                    self.env = saved_env;
+                    return Err(e);
+                }
+            }
+        } else {
+            // Instance methods keep the simple positional/default binding fast-path.
+            for (i, param) in method_def.params.iter().enumerate() {
+                if let Some(val) = args.get(i) {
+                    self.env.insert(param.clone(), val.clone());
+                } else if let Some(pd) = method_def.param_defs.get(i)
+                    && let Some(default_expr) = &pd.default
+                {
+                    let val = match self.eval_block_value(&[Stmt::Expr(default_expr.clone())]) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            self.method_class_stack.pop();
+                            self.env = saved_env;
+                            return Err(e);
+                        }
+                    };
+                    self.env.insert(param.clone(), val);
+                }
             }
         }
         let block_result = self.run_block(&method_def.body);
