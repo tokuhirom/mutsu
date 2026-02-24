@@ -50,30 +50,43 @@ impl Interpreter {
     }
 
     fn apply_single_regex_captures(&mut self, captures: &RegexCaptures) {
-        let match_obj = Value::make_match_object_with_captures(
-            captures.matched.clone(),
-            captures.from as i64,
-            captures.to as i64,
-            &captures.positional,
-            &captures.named,
-        );
+        let make_capture_match = |capture: &str| {
+            let mut attrs = HashMap::new();
+            attrs.insert("str".to_string(), Value::Str(capture.to_string()));
+            attrs.insert("from".to_string(), Value::Int(0));
+            attrs.insert("to".to_string(), Value::Int(capture.chars().count() as i64));
+            attrs.insert("list".to_string(), Value::array(Vec::new()));
+            attrs.insert("named".to_string(), Value::hash(HashMap::new()));
+            Value::make_instance("Match".to_string(), attrs)
+        };
+
+        let mut attrs = HashMap::new();
+        attrs.insert("str".to_string(), Value::Str(captures.matched.clone()));
+        attrs.insert("from".to_string(), Value::Int(captures.from as i64));
+        attrs.insert("to".to_string(), Value::Int(captures.to as i64));
+        let positional: Vec<Value> = captures
+            .positional
+            .iter()
+            .map(|s| make_capture_match(s))
+            .collect();
+        attrs.insert("list".to_string(), Value::array(positional));
+        let mut named = HashMap::new();
+        for (k, v) in &captures.named {
+            let vals: Vec<Value> = v.iter().map(|s| make_capture_match(s)).collect();
+            if vals.len() == 1 {
+                named.insert(k.clone(), vals[0].clone());
+            } else {
+                named.insert(k.clone(), Value::array(vals));
+            }
+        }
+        attrs.insert("named".to_string(), Value::hash(named));
+        let match_obj = Value::make_instance("Match".to_string(), attrs);
         self.env.insert("/".to_string(), match_obj);
         for (i, v) in captures.positional.iter().enumerate() {
-            self.env.insert(i.to_string(), Value::Str(v.clone()));
+            self.env.insert(i.to_string(), make_capture_match(v));
         }
         for (k, v) in &captures.named {
-            let vals: Vec<Value> = v
-                .iter()
-                .map(|s| {
-                    Value::make_match_object_with_captures(
-                        s.clone(),
-                        0,
-                        s.chars().count() as i64,
-                        &[],
-                        &std::collections::HashMap::new(),
-                    )
-                })
-                .collect();
+            let vals: Vec<Value> = v.iter().map(|s| make_capture_match(s)).collect();
             let value = if vals.len() == 1 {
                 vals[0].clone()
             } else {
@@ -185,7 +198,25 @@ impl Interpreter {
             ) => {
                 let text = left.to_string_value();
                 if let Some(captures) = self.regex_match_with_captures(pat, &text) {
-                    self.apply_single_regex_captures(&captures);
+                    let match_obj = Value::make_match_object_with_captures(
+                        captures.matched.clone(),
+                        captures.from as i64,
+                        captures.to as i64,
+                        &captures.positional,
+                        &captures.named,
+                    );
+                    self.env.insert("/".to_string(), match_obj);
+                    for (i, v) in captures.positional.iter().enumerate() {
+                        self.env.insert(i.to_string(), Value::Str(v.clone()));
+                    }
+                    for (k, v) in &captures.named {
+                        let value = if v.len() == 1 {
+                            Value::Str(v[0].clone())
+                        } else {
+                            Value::array(v.iter().cloned().map(Value::Str).collect())
+                        };
+                        self.env.insert(format!("<{}>", k), value);
+                    }
                     return true;
                 }
                 self.env.insert("/".to_string(), Value::Nil);
