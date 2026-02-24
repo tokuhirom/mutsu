@@ -10,6 +10,7 @@ use super::super::helpers::{skip_balanced_parens, ws};
 struct MatchAdverbs {
     exhaustive: bool,
     repeat: Option<usize>,
+    ignore_case: bool,
 }
 
 fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
@@ -55,6 +56,8 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
 
         if name == "ex" || name == "exhaustive" {
             adverbs.exhaustive = true;
+        } else if name == "i" || name == "ignorecase" {
+            adverbs.ignore_case = true;
         } else if name == "x" {
             if let Some(raw) = arg {
                 let trimmed = raw.trim();
@@ -198,7 +201,11 @@ pub(in crate::parser) fn scan_to_delim(
                     None => return None,
                 }
             }
-        } else if c == '<' && !is_paired && !input[i + 1..].starts_with('[') {
+        } else if c == '<'
+            && !is_paired
+            && !input[i + 1..].starts_with('[')
+            && !input[i + 1..].starts_with('(')
+        {
             // Track angle bracket nesting for non-paired delimiters (like /).
             // This prevents / inside <:name(/:s .../)> from closing the regex.
             let remaining = &input[i + 1..];
@@ -416,6 +423,52 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     }
 
     // S/pattern/replacement/ — non-destructive substitution
+    // Supports adverbs before the delimiter: S:i/.../.../
+    if let Some(after_s) = input.strip_prefix('S') {
+        let (spec, adverbs) = parse_match_adverbs(after_s)?;
+        if let Some(open_ch) = spec.chars().next() {
+            let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
+            let looks_like_method = open_ch == '.'
+                && spec.len() > 2
+                && spec[1..].starts_with(|c: char| c.is_alphabetic() || c == '_')
+                && spec[2..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-');
+            if is_delim && !looks_like_method {
+                let (close_ch, is_paired) = match open_ch {
+                    '{' => ('}', true),
+                    '[' => (']', true),
+                    '(' => (')', true),
+                    '<' => ('>', true),
+                    other => (other, false),
+                };
+                let r = &spec[open_ch.len_utf8()..];
+                if let Some((pattern, after_pat)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
+                    let r2 = if is_paired {
+                        let (r2, _) = ws(after_pat)?;
+                        r2.strip_prefix(open_ch).unwrap_or(r2)
+                    } else {
+                        after_pat
+                    };
+                    if let Some((replacement, rest)) =
+                        scan_to_delim(r2, open_ch, close_ch, is_paired)
+                    {
+                        let pattern = if adverbs.ignore_case {
+                            format!(":i {}", pattern)
+                        } else {
+                            pattern.to_string()
+                        };
+                        return Ok((
+                            rest,
+                            Expr::NonDestructiveSubst {
+                                pattern,
+                                replacement: replacement.to_string(),
+                            },
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
     if let Some(r) = input.strip_prefix("S/") {
         let mut end = 0;
         let bytes = r.as_bytes();
@@ -525,17 +578,22 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 };
                 let r = &spec[open_ch.len_utf8()..];
                 if let Some((pattern, rest)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
+                    let pattern = if adverbs.ignore_case {
+                        format!(":i {}", pattern)
+                    } else {
+                        pattern.to_string()
+                    };
                     if adverbs.exhaustive || adverbs.repeat.is_some() {
                         return Ok((
                             rest,
                             Expr::Literal(Value::RegexWithAdverbs {
-                                pattern: pattern.to_string(),
+                                pattern,
                                 exhaustive: adverbs.exhaustive,
                                 repeat: adverbs.repeat,
                             }),
                         ));
                     }
-                    return Ok((rest, Expr::Literal(Value::Regex(pattern.to_string()))));
+                    return Ok((rest, Expr::Literal(Value::Regex(pattern))));
                 }
             }
         }

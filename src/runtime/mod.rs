@@ -136,12 +136,15 @@ struct RegexCaptures {
     matched: String,
     from: usize,
     to: usize,
+    capture_start: Option<usize>,
+    capture_end: Option<usize>,
 }
 
 #[derive(Clone)]
 struct RegexToken {
     atom: RegexAtom,
     quant: RegexQuant,
+    named_capture: Option<String>,
 }
 
 #[derive(Clone)]
@@ -169,6 +172,8 @@ enum RegexAtom {
         name: String,
         negated: bool,
     }, // zero-width assertion
+    CaptureStartMarker,
+    CaptureEndMarker,
     /// Combined character class: <+ xdigit - lower>, matches positive AND NOT negative
     CompositeClass {
         positive: Vec<ClassItem>,

@@ -40,18 +40,14 @@ impl Interpreter {
                 let text = left.to_string_value();
                 if let Some(captures) = self.regex_match_with_captures(pat, &text) {
                     // Set $/ to a Match object with from/to/str and positional captures
-                    if let Some((start, end)) = self.regex_find_first(pat, &text) {
-                        let chars: Vec<char> = text.chars().collect();
-                        let matched: String = chars[start..end].iter().collect();
-                        let match_obj = Value::make_match_object_with_captures(
-                            matched,
-                            start as i64,
-                            end as i64,
-                            &captures.positional,
-                            &captures.named,
-                        );
-                        self.env.insert("/".to_string(), match_obj);
-                    }
+                    let match_obj = Value::make_match_object_with_captures(
+                        captures.matched.clone(),
+                        captures.from as i64,
+                        captures.to as i64,
+                        &captures.positional,
+                        &captures.named,
+                    );
+                    self.env.insert("/".to_string(), match_obj);
                     // Set positional capture variables ($0, $1, etc.)
                     for (i, v) in captures.positional.iter().enumerate() {
                         self.env.insert(i.to_string(), Value::Str(v.clone()));

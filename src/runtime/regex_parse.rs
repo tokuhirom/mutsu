@@ -160,6 +160,7 @@ impl Interpreter {
         let mut tokens = Vec::new();
         let mut anchor_start = false;
         let mut anchor_end = false;
+        let mut pending_named_capture: Option<String> = None;
         while let Some(c) = chars.next() {
             // In Raku, unescaped whitespace in regex is insignificant
             if c.is_whitespace() {
@@ -181,6 +182,27 @@ impl Interpreter {
             if c == '$' && chars.clone().all(|ch| ch.is_whitespace()) {
                 anchor_end = true;
                 break;
+            }
+            if c == '$' && chars.peek() == Some(&'<') {
+                chars.next();
+                let mut capture_name = String::new();
+                for ch in chars.by_ref() {
+                    if ch == '>' {
+                        break;
+                    }
+                    capture_name.push(ch);
+                }
+                if !capture_name.is_empty() && chars.peek() == Some(&'=') {
+                    chars.next();
+                    pending_named_capture = Some(capture_name);
+                    continue;
+                }
+                tokens.push(RegexToken {
+                    atom: RegexAtom::Literal('$'),
+                    quant: RegexQuant::One,
+                    named_capture: None,
+                });
+                continue;
             }
             let atom = match c {
                 '.' => RegexAtom::Any,
@@ -294,6 +316,7 @@ impl Interpreter {
                                     tokens.push(RegexToken {
                                         atom: RegexAtom::Literal(c),
                                         quant: RegexQuant::One,
+                                        named_capture: None,
                                     });
                                 }
                                 RegexAtom::Literal(*resolved.last().unwrap())
@@ -379,6 +402,7 @@ impl Interpreter {
                             .map(|ch| RegexToken {
                                 atom: RegexAtom::Literal(ch),
                                 quant: RegexQuant::One,
+                                named_capture: None,
                             })
                             .collect();
                         RegexAtom::Group(RegexPattern {
@@ -390,154 +414,167 @@ impl Interpreter {
                     }
                 }
                 '<' => {
-                    // Check for code assertion: <?{...}> or <!{...}>
-                    // These need special handling because code may contain < and >
-                    let peek_str: String = chars.clone().collect();
-                    if peek_str.starts_with("?{") || peek_str.starts_with("!{") {
-                        let negated = peek_str.starts_with('!');
-                        // Skip '?' or '!'
+                    if chars.peek() == Some(&'(') {
                         chars.next();
-                        // Skip '{'
-                        chars.next();
-                        let mut code = String::new();
-                        let mut brace_depth = 1usize;
-                        for ch in chars.by_ref() {
-                            if ch == '{' {
-                                brace_depth += 1;
-                                code.push(ch);
-                            } else if ch == '}' {
-                                brace_depth -= 1;
-                                if brace_depth == 0 {
-                                    break;
-                                }
-                                code.push(ch);
-                            } else {
-                                code.push(ch);
-                            }
-                        }
-                        // Consume the closing '>'
-                        if chars.peek() == Some(&'>') {
-                            chars.next();
-                        }
-                        RegexAtom::CodeAssertion { code, negated }
+                        RegexAtom::CaptureStartMarker
                     } else {
-                        // Read content between < and >, handling nested <...>
-                        let mut name = String::new();
-                        let mut angle_depth = 1usize;
-                        for ch in chars.by_ref() {
-                            if ch == '<' {
-                                angle_depth += 1;
-                                name.push(ch);
-                            } else if ch == '>' {
-                                angle_depth -= 1;
-                                if angle_depth == 0 {
-                                    break;
+                        // Check for code assertion: <?{...}> or <!{...}>
+                        // These need special handling because code may contain < and >
+                        let peek_str: String = chars.clone().collect();
+                        if peek_str.starts_with("?{") || peek_str.starts_with("!{") {
+                            let negated = peek_str.starts_with('!');
+                            // Skip '?' or '!'
+                            chars.next();
+                            // Skip '{'
+                            chars.next();
+                            let mut code = String::new();
+                            let mut brace_depth = 1usize;
+                            for ch in chars.by_ref() {
+                                if ch == '{' {
+                                    brace_depth += 1;
+                                    code.push(ch);
+                                } else if ch == '}' {
+                                    brace_depth -= 1;
+                                    if brace_depth == 0 {
+                                        break;
+                                    }
+                                    code.push(ch);
+                                } else {
+                                    code.push(ch);
                                 }
-                                name.push(ch);
-                            } else {
-                                name.push(ch);
                             }
-                        }
-                        // Check for Raku character class: <[...]>, <-[...]>, <+[...]>
-                        let trimmed = name.trim();
-                        if (trimmed.starts_with('[')
-                            || trimmed.starts_with("-[")
-                            || trimmed.starts_with("+["))
-                            && trimmed.ends_with(']')
-                        {
-                            let negated;
-                            let inner;
-                            if trimmed.starts_with("-[") {
-                                negated = true;
-                                inner = &trimmed[2..trimmed.len() - 1];
-                            } else if trimmed.starts_with("+[") {
-                                negated = false;
-                                inner = &trimmed[2..trimmed.len() - 1];
-                            } else {
-                                negated = false;
-                                inner = &trimmed[1..trimmed.len() - 1];
+                            // Consume the closing '>'
+                            if chars.peek() == Some(&'>') {
+                                chars.next();
                             }
-                            // Parse Raku-style character class content
-                            if let Some(class) = self.parse_raku_char_class(inner, negated) {
-                                RegexAtom::CharClass(class)
-                            } else {
-                                continue;
-                            }
-                        } else if trimmed == "?" {
-                            // <?>  null assertion: matches zero-width at any position
-                            RegexAtom::ZeroWidth
-                        } else if let Some(prop_name) = trimmed.strip_prefix("!:") {
-                            // <!:PropName> — zero-width negative Unicode property assertion
-                            RegexAtom::UnicodePropAssert {
-                                name: prop_name.to_string(),
-                                negated: true,
-                            }
-                        } else if trimmed.starts_with(":!") || trimmed.starts_with("-:") {
-                            // <:!PropName> or <-:PropName> — negated Unicode property
-                            let prop_name = &trimmed[2..];
-                            let (pname, pargs) = split_prop_args(prop_name);
-                            RegexAtom::UnicodeProp {
-                                name: pname.to_string(),
-                                negated: true,
-                                args: pargs.map(|s| s.to_string()),
-                            }
-                        } else if let Some(prop_name) = trimmed.strip_prefix(':') {
-                            // <:PropName> — Unicode property assertion
-                            let (pname, pargs) = split_prop_args(prop_name);
-                            RegexAtom::UnicodeProp {
-                                name: pname.to_string(),
-                                negated: false,
-                                args: pargs.map(|s| s.to_string()),
-                            }
-                        } else if trimmed.starts_with('+') || trimmed.starts_with('-') {
-                            // Combined character class: <+ xdigit - lower>
-                            if let Some(atom) = self.parse_combined_class(trimmed) {
-                                atom
-                            } else {
-                                continue;
-                            }
+                            RegexAtom::CodeAssertion { code, negated }
                         } else {
-                            // Check for named character classes
-                            match trimmed {
-                                "alpha" | "upper" | "lower" | "digit" | "xdigit" | "space"
-                                | "alnum" | "blank" | "cntrl" | "punct" => {
-                                    RegexAtom::CharClass(CharClass {
-                                        items: vec![ClassItem::NamedBuiltin(trimmed.to_string())],
-                                        negated: false,
-                                    })
+                            // Read content between < and >, handling nested <...>
+                            let mut name = String::new();
+                            let mut angle_depth = 1usize;
+                            for ch in chars.by_ref() {
+                                if ch == '<' {
+                                    angle_depth += 1;
+                                    name.push(ch);
+                                } else if ch == '>' {
+                                    angle_depth -= 1;
+                                    if angle_depth == 0 {
+                                        break;
+                                    }
+                                    name.push(ch);
+                                } else {
+                                    name.push(ch);
                                 }
-                                "ident" => {
-                                    // <ident> = <alpha> <alnum>*
-                                    RegexAtom::Group(RegexPattern {
-                                        tokens: vec![
-                                            RegexToken {
-                                                atom: RegexAtom::CharClass(CharClass {
-                                                    items: vec![ClassItem::NamedBuiltin(
-                                                        "alpha".to_string(),
-                                                    )],
-                                                    negated: false,
-                                                }),
-                                                quant: RegexQuant::One,
-                                            },
-                                            RegexToken {
-                                                atom: RegexAtom::CharClass(CharClass {
-                                                    items: vec![ClassItem::NamedBuiltin(
-                                                        "alnum".to_string(),
-                                                    )],
-                                                    negated: false,
-                                                }),
-                                                quant: RegexQuant::ZeroOrMore,
-                                            },
-                                        ],
-                                        anchor_start: false,
-                                        anchor_end: false,
-                                        ignore_case,
-                                    })
-                                }
-                                _ => RegexAtom::Named(name),
                             }
-                        }
-                    } // close else for code assertion special case
+                            // Check for Raku character class: <[...]>, <-[...]>, <+[...]>
+                            let trimmed = name.trim();
+                            if (trimmed.starts_with('[')
+                                || trimmed.starts_with("-[")
+                                || trimmed.starts_with("+["))
+                                && trimmed.ends_with(']')
+                            {
+                                let negated;
+                                let inner;
+                                if trimmed.starts_with("-[") {
+                                    negated = true;
+                                    inner = &trimmed[2..trimmed.len() - 1];
+                                } else if trimmed.starts_with("+[") {
+                                    negated = false;
+                                    inner = &trimmed[2..trimmed.len() - 1];
+                                } else {
+                                    negated = false;
+                                    inner = &trimmed[1..trimmed.len() - 1];
+                                }
+                                // Parse Raku-style character class content
+                                if let Some(class) = self.parse_raku_char_class(inner, negated) {
+                                    RegexAtom::CharClass(class)
+                                } else {
+                                    continue;
+                                }
+                            } else if trimmed == "?" {
+                                // <?>  null assertion: matches zero-width at any position
+                                RegexAtom::ZeroWidth
+                            } else if let Some(prop_name) = trimmed.strip_prefix("!:") {
+                                // <!:PropName> — zero-width negative Unicode property assertion
+                                RegexAtom::UnicodePropAssert {
+                                    name: prop_name.to_string(),
+                                    negated: true,
+                                }
+                            } else if trimmed.starts_with(":!") || trimmed.starts_with("-:") {
+                                // <:!PropName> or <-:PropName> — negated Unicode property
+                                let prop_name = &trimmed[2..];
+                                let (pname, pargs) = split_prop_args(prop_name);
+                                RegexAtom::UnicodeProp {
+                                    name: pname.to_string(),
+                                    negated: true,
+                                    args: pargs.map(|s| s.to_string()),
+                                }
+                            } else if let Some(prop_name) = trimmed.strip_prefix(':') {
+                                // <:PropName> — Unicode property assertion
+                                let (pname, pargs) = split_prop_args(prop_name);
+                                RegexAtom::UnicodeProp {
+                                    name: pname.to_string(),
+                                    negated: false,
+                                    args: pargs.map(|s| s.to_string()),
+                                }
+                            } else if trimmed.starts_with('+') || trimmed.starts_with('-') {
+                                // Combined character class: <+ xdigit - lower>
+                                if let Some(atom) = self.parse_combined_class(trimmed) {
+                                    atom
+                                } else {
+                                    continue;
+                                }
+                            } else {
+                                // Check for named character classes
+                                match trimmed {
+                                    "alpha" | "upper" | "lower" | "digit" | "xdigit" | "space"
+                                    | "alnum" | "blank" | "cntrl" | "punct" => {
+                                        RegexAtom::CharClass(CharClass {
+                                            items: vec![ClassItem::NamedBuiltin(
+                                                trimmed.to_string(),
+                                            )],
+                                            negated: false,
+                                        })
+                                    }
+                                    "ident" => {
+                                        // <ident> = <alpha> <alnum>*
+                                        RegexAtom::Group(RegexPattern {
+                                            tokens: vec![
+                                                RegexToken {
+                                                    atom: RegexAtom::CharClass(CharClass {
+                                                        items: vec![ClassItem::NamedBuiltin(
+                                                            "alpha".to_string(),
+                                                        )],
+                                                        negated: false,
+                                                    }),
+                                                    quant: RegexQuant::One,
+                                                    named_capture: None,
+                                                },
+                                                RegexToken {
+                                                    atom: RegexAtom::CharClass(CharClass {
+                                                        items: vec![ClassItem::NamedBuiltin(
+                                                            "alnum".to_string(),
+                                                        )],
+                                                        negated: false,
+                                                    }),
+                                                    quant: RegexQuant::ZeroOrMore,
+                                                    named_capture: None,
+                                                },
+                                            ],
+                                            anchor_start: false,
+                                            anchor_end: false,
+                                            ignore_case,
+                                        })
+                                    }
+                                    _ => RegexAtom::Named(name),
+                                }
+                            }
+                        } // close else for code assertion special case
+                    }
+                }
+                ')' if chars.peek() == Some(&'>') => {
+                    chars.next();
+                    RegexAtom::CaptureEndMarker
                 }
                 '(' => {
                     // Capture group: (...)
@@ -574,6 +611,7 @@ impl Interpreter {
                             tokens: vec![RegexToken {
                                 atom: RegexAtom::Alternation(alt_patterns),
                                 quant: RegexQuant::One,
+                                named_capture: None,
                             }],
                             anchor_start: false,
                             anchor_end: false,
@@ -666,7 +704,11 @@ impl Interpreter {
             if chars.peek() == Some(&':') {
                 chars.next();
             }
-            tokens.push(RegexToken { atom, quant });
+            tokens.push(RegexToken {
+                atom,
+                quant,
+                named_capture: pending_named_capture.take(),
+            });
         }
         Some(RegexPattern {
             tokens,
@@ -701,14 +743,14 @@ impl Interpreter {
                     }
                     if j < chars.len() && j > name_start {
                         let name: String = chars[name_start..j].iter().collect();
-                        out.push_str(&Self::escape_regex_scalar_literal(
-                            &self
-                                .env
-                                .get(&name)
-                                .cloned()
-                                .unwrap_or(Value::Nil)
-                                .to_string_value(),
-                        ));
+                        let value = self.env.get(&name).cloned().unwrap_or(Value::Nil);
+                        match value {
+                            Value::Regex(pat) => out.push_str(&pat),
+                            Value::RegexWithAdverbs { pattern, .. } => out.push_str(&pattern),
+                            other => out.push_str(&Self::escape_regex_scalar_literal(
+                                &other.to_string_value(),
+                            )),
+                        }
                         i = j + 1;
                         continue;
                     }
@@ -720,14 +762,13 @@ impl Interpreter {
                         j += 1;
                     }
                     let name: String = chars[name_start..j].iter().collect();
-                    out.push_str(&Self::escape_regex_scalar_literal(
-                        &self
-                            .env
-                            .get(&name)
-                            .cloned()
-                            .unwrap_or(Value::Nil)
-                            .to_string_value(),
-                    ));
+                    let value = self.env.get(&name).cloned().unwrap_or(Value::Nil);
+                    match value {
+                        Value::Regex(pat) => out.push_str(&pat),
+                        Value::RegexWithAdverbs { pattern, .. } => out.push_str(&pattern),
+                        other => out
+                            .push_str(&Self::escape_regex_scalar_literal(&other.to_string_value())),
+                    }
                     i = j;
                     continue;
                 }

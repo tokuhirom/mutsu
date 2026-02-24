@@ -842,9 +842,7 @@ impl Compiler {
                 Stmt::Given { topic, body } => {
                     self.compile_expr(topic);
                     let given_idx = self.code.emit(OpCode::DoGivenExpr { body_end: 0 });
-                    for s in body {
-                        self.compile_stmt(s);
-                    }
+                    self.compile_block_inline(body);
                     self.code.patch_body_end(given_idx);
                 }
                 Stmt::Assign { name, expr, .. } => {

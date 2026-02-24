@@ -205,23 +205,40 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
         let (r, cond) = expression(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
-        // `stmt with expr` is like `given expr { if .defined { stmt } }`
-        return Ok((
-            r,
-            Stmt::Given {
+        // `stmt with expr` is like `given expr { if .defined { stmt } }`.
+        // When the modified statement is an expression statement, preserve
+        // expression semantics via do-given.
+        if matches!(stmt, Stmt::Expr(_)) {
+            let if_stmt = Stmt::If {
+                cond: Expr::MethodCall {
+                    target: Box::new(Expr::Var("_".to_string())),
+                    name: "defined".to_string(),
+                    args: Vec::new(),
+                    modifier: None,
+                },
+                then_branch: vec![stmt.clone()],
+                else_branch: Vec::new(),
+            };
+            let given_stmt = Stmt::Given {
                 topic: cond,
-                body: vec![Stmt::If {
-                    cond: Expr::MethodCall {
-                        target: Box::new(Expr::Var("_".to_string())),
-                        name: "defined".to_string(),
-                        args: Vec::new(),
-                        modifier: None,
-                    },
-                    then_branch: vec![stmt],
-                    else_branch: Vec::new(),
-                }],
-            },
-        ));
+                body: vec![Stmt::Expr(Expr::DoStmt(Box::new(if_stmt)))],
+            };
+            return Ok((r, Stmt::Expr(Expr::DoStmt(Box::new(given_stmt)))));
+        }
+        let given_stmt = Stmt::Given {
+            topic: cond,
+            body: vec![Stmt::If {
+                cond: Expr::MethodCall {
+                    target: Box::new(Expr::Var("_".to_string())),
+                    name: "defined".to_string(),
+                    args: Vec::new(),
+                    modifier: None,
+                },
+                then_branch: vec![stmt.clone()],
+                else_branch: Vec::new(),
+            }],
+        };
+        return Ok((r, given_stmt));
     }
     if let Some(r) = keyword("without", rest) {
         let (r, _) = ws1(r)?;
