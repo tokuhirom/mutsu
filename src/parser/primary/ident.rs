@@ -13,10 +13,10 @@ fn is_superscript_digit(c: char) -> bool {
 }
 
 use super::super::expr::{expression, or_expr_pub};
-use super::super::helpers::ws;
+use super::super::helpers::{ws, ws1};
 use super::current_line_number;
 use super::misc::parse_block_body;
-use super::regex::parse_call_arg_list;
+use super::regex::{parse_call_arg_list, scan_to_delim};
 
 const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
 
@@ -44,69 +44,10 @@ fn parse_raw_braced_regex_body(input: &str) -> PResult<'_, String> {
     let after_open = input
         .strip_prefix('{')
         .ok_or_else(|| PError::expected("regex body"))?;
-    let mut depth = 1u32;
-    let mut i = 0usize;
-    while i < after_open.len() {
-        let ch = after_open[i..]
-            .chars()
-            .next()
-            .ok_or_else(|| PError::expected("closing '}'"))?;
-        let len = ch.len_utf8();
-        match ch {
-            '{' => depth += 1,
-            '}' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    let body = after_open[..i].trim().to_string();
-                    let rest = &after_open[i + len..];
-                    return Ok((rest, body));
-                }
-            }
-            '\\' => {
-                i += len;
-                if i < after_open.len() {
-                    let next_len = after_open[i..]
-                        .chars()
-                        .next()
-                        .map(|c| c.len_utf8())
-                        .unwrap_or(0);
-                    i += next_len;
-                    continue;
-                }
-            }
-            '\'' | '"' => {
-                let quote = ch;
-                i += len;
-                while i < after_open.len() {
-                    let c = after_open[i..]
-                        .chars()
-                        .next()
-                        .ok_or_else(|| PError::expected("string close"))?;
-                    let c_len = c.len_utf8();
-                    if c == '\\' {
-                        i += c_len;
-                        if i < after_open.len() {
-                            let n_len = after_open[i..]
-                                .chars()
-                                .next()
-                                .map(|n| n.len_utf8())
-                                .unwrap_or(0);
-                            i += n_len;
-                            continue;
-                        }
-                    }
-                    i += c_len;
-                    if c == quote {
-                        break;
-                    }
-                }
-                continue;
-            }
-            _ => {}
-        }
-        i += len;
+    if let Some((body, rest)) = scan_to_delim(after_open, '{', '}', true) {
+        return Ok((rest, body.trim().to_string()));
     }
-    Err(PError::expected("closing '}'"))
+    Err(PError::expected("regex closing delimiter"))
 }
 
 /// Parse `::Foo` class literal (type object reference) or `::($expr)` indirect type lookup.
@@ -662,44 +603,48 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             return Ok((r, expr));
         }
         "if" => {
-            let (r, _) = ws(rest)?;
-            let (r, cond) = super::super::expr::expression(r)?;
-            let (r, _) = ws(r)?;
-            let (r, then_branch) = parse_block_body(r)?;
-            let (r, _) = ws(r)?;
-            // Check for else
-            let (r, else_branch) = if let Some(r2) = super::super::stmt::keyword("else", r) {
-                let (r2, _) = ws(r2)?;
-                let (r2, body) = parse_block_body(r2)?;
-                (r2, body)
-            } else {
-                (r, Vec::new())
-            };
-            return Ok((
-                r,
-                Expr::DoStmt(Box::new(crate::ast::Stmt::If {
-                    cond,
-                    then_branch,
-                    else_branch,
-                })),
-            ));
+            // One-pass parsing rule: `if` is a control keyword only when followed by whitespace.
+            // This allows user-defined `sub if` to be called as `if()` / `if;`.
+            if let Ok((r, _)) = ws1(rest) {
+                let (r, cond) = super::super::expr::expression(r)?;
+                let (r, _) = ws(r)?;
+                let (r, then_branch) = parse_block_body(r)?;
+                let (r, _) = ws(r)?;
+                // Check for else
+                let (r, else_branch) = if let Some(r2) = super::super::stmt::keyword("else", r) {
+                    let (r2, _) = ws(r2)?;
+                    let (r2, body) = parse_block_body(r2)?;
+                    (r2, body)
+                } else {
+                    (r, Vec::new())
+                };
+                return Ok((
+                    r,
+                    Expr::DoStmt(Box::new(crate::ast::Stmt::If {
+                        cond,
+                        then_branch,
+                        else_branch,
+                    })),
+                ));
+            }
         }
         "unless" => {
-            let (r, _) = ws(rest)?;
-            let (r, cond) = super::super::expr::expression(r)?;
-            let (r, _) = ws(r)?;
-            let (r, body) = parse_block_body(r)?;
-            return Ok((
-                r,
-                Expr::DoStmt(Box::new(crate::ast::Stmt::If {
-                    cond: Expr::Unary {
-                        op: crate::token_kind::TokenKind::Bang,
-                        expr: Box::new(cond),
-                    },
-                    then_branch: body,
-                    else_branch: Vec::new(),
-                })),
-            ));
+            if let Ok((r, _)) = ws1(rest) {
+                let (r, cond) = super::super::expr::expression(r)?;
+                let (r, _) = ws(r)?;
+                let (r, body) = parse_block_body(r)?;
+                return Ok((
+                    r,
+                    Expr::DoStmt(Box::new(crate::ast::Stmt::If {
+                        cond: Expr::Unary {
+                            op: crate::token_kind::TokenKind::Bang,
+                            expr: Box::new(cond),
+                        },
+                        then_branch: body,
+                        else_branch: Vec::new(),
+                    })),
+                ));
+            }
         }
         "for" => {
             if let Ok((r, stmt)) = super::super::stmt::for_stmt_pub(input) {
@@ -751,7 +696,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // sub not followed by { or ( in expression context — not valid
             return Err(PError::expected_at("anonymous sub body '{' or '('", r));
         }
-        "token" | "rule" => {
+        "token" | "regex" | "rule" => {
             // token/rule term literal: token { ... } / rule { ... }
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {

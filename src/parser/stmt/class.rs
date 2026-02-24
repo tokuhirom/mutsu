@@ -1,5 +1,6 @@
 use super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
+use super::super::primary::regex::scan_to_delim;
 
 use crate::ast::{Expr, Stmt};
 use crate::value::Value;
@@ -138,69 +139,10 @@ fn parse_raw_braced_regex_body(input: &str) -> PResult<'_, String> {
     let after_open = input
         .strip_prefix('{')
         .ok_or_else(|| PError::expected("regex body"))?;
-    let mut depth = 1u32;
-    let mut i = 0usize;
-    while i < after_open.len() {
-        let ch = after_open[i..]
-            .chars()
-            .next()
-            .ok_or_else(|| PError::expected("closing '}'"))?;
-        let len = ch.len_utf8();
-        match ch {
-            '{' => depth += 1,
-            '}' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    let body = after_open[..i].trim().to_string();
-                    let rest = &after_open[i + len..];
-                    return Ok((rest, body));
-                }
-            }
-            '\\' => {
-                i += len;
-                if i < after_open.len() {
-                    let next_len = after_open[i..]
-                        .chars()
-                        .next()
-                        .map(|c| c.len_utf8())
-                        .unwrap_or(0);
-                    i += next_len;
-                    continue;
-                }
-            }
-            '\'' | '"' => {
-                let quote = ch;
-                i += len;
-                while i < after_open.len() {
-                    let c = after_open[i..]
-                        .chars()
-                        .next()
-                        .ok_or_else(|| PError::expected("string close"))?;
-                    let c_len = c.len_utf8();
-                    if c == '\\' {
-                        i += c_len;
-                        if i < after_open.len() {
-                            let n_len = after_open[i..]
-                                .chars()
-                                .next()
-                                .map(|n| n.len_utf8())
-                                .unwrap_or(0);
-                            i += n_len;
-                            continue;
-                        }
-                    }
-                    i += c_len;
-                    if c == quote {
-                        break;
-                    }
-                }
-                continue;
-            }
-            _ => {}
-        }
-        i += len;
+    if let Some((body, rest)) = scan_to_delim(after_open, '{', '}', true) {
+        return Ok((rest, body.trim().to_string()));
     }
-    Err(PError::expected("closing '}'"))
+    Err(PError::expected("regex closing delimiter"))
 }
 
 fn inject_implicit_rule_ws(pattern: &str) -> String {
