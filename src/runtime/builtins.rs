@@ -1,6 +1,12 @@
 use super::*;
 use crate::token_kind::TokenKind;
 
+enum OpAssoc {
+    Left,
+    Right,
+    Chain,
+}
+
 impl Interpreter {
     fn coerce_to_enum_variant(
         &mut self,
@@ -400,6 +406,14 @@ impl Interpreter {
                 return Ok(enum_value);
             }
             return Ok(Value::Nil);
+        }
+        // Handle zip:with — zip with a custom combining function
+        if name == "zip"
+            && args
+                .iter()
+                .any(|a| matches!(a, Value::Pair(k, _) if k == "with"))
+        {
+            return self.builtin_zip_with(args);
         }
         if let Some(native_result) = crate::builtins::native_function(name, args) {
             return native_result;
@@ -910,5 +924,99 @@ impl Interpreter {
             return result;
         }
         Err(RuntimeError::new("Expected callable"))
+    }
+
+    /// zip:with — zip lists using a custom combining function.
+    fn builtin_zip_with(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let mut lists: Vec<Vec<Value>> = Vec::new();
+        let mut with_fn: Option<Value> = None;
+        for arg in args {
+            if let Value::Pair(key, val) = arg
+                && key == "with"
+            {
+                with_fn = Some((**val).clone());
+                continue;
+            }
+            lists.push(crate::runtime::value_to_list(arg));
+        }
+        let combiner = with_fn.ok_or_else(|| RuntimeError::new("zip: missing :with argument"))?;
+        if lists.is_empty() {
+            return Ok(Value::array(vec![]));
+        }
+        // Determine associativity from the operator name
+        let assoc = Self::op_associativity(&combiner);
+        let min_len = lists.iter().map(|l| l.len()).min().unwrap_or(0);
+        let mut result = Vec::with_capacity(min_len);
+        for i in 0..min_len {
+            let elements: Vec<Value> = lists.iter().map(|l| l[i].clone()).collect();
+            let combined = if elements.len() <= 1 {
+                elements.into_iter().next().unwrap_or(Value::Nil)
+            } else {
+                match assoc {
+                    OpAssoc::Right => {
+                        // Right-associative: fold from right
+                        let mut acc = elements.last().unwrap().clone();
+                        for elem in elements[..elements.len() - 1].iter().rev() {
+                            acc = self.call_sub_value(
+                                combiner.clone(),
+                                vec![elem.clone(), acc],
+                                false,
+                            )?;
+                        }
+                        acc
+                    }
+                    OpAssoc::Chain => {
+                        // Chain-associative: all pairwise comparisons must be true
+                        let mut all_true = true;
+                        for pair in elements.windows(2) {
+                            let r = self.call_sub_value(
+                                combiner.clone(),
+                                vec![pair[0].clone(), pair[1].clone()],
+                                false,
+                            )?;
+                            if !r.truthy() {
+                                all_true = false;
+                                break;
+                            }
+                        }
+                        Value::Bool(all_true)
+                    }
+                    OpAssoc::Left => {
+                        // Left-associative (default): fold from left
+                        let mut acc = elements[0].clone();
+                        for elem in &elements[1..] {
+                            acc = self.call_sub_value(
+                                combiner.clone(),
+                                vec![acc, elem.clone()],
+                                false,
+                            )?;
+                        }
+                        acc
+                    }
+                }
+            };
+            result.push(combined);
+        }
+        Ok(Value::array(result))
+    }
+
+    /// Determine the associativity of an operator from its name.
+    fn op_associativity(func: &Value) -> OpAssoc {
+        let name = match func {
+            Value::Routine { name, .. } => name.as_str(),
+            _ => return OpAssoc::Left,
+        };
+        // Extract the operator from "infix:<op>"
+        let op = name
+            .strip_prefix("infix:<")
+            .and_then(|s| s.strip_suffix('>'))
+            .unwrap_or(name);
+        match op {
+            "**" => OpAssoc::Right,
+            "=" | ":=" | "=>" | "x" | "xx" => OpAssoc::Right,
+            "eqv" | "===" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "eq" | "ne" | "lt" | "gt"
+            | "le" | "ge" | "~~" | "=~=" | "=:=" => OpAssoc::Chain,
+            _ => OpAssoc::Left,
+        }
     }
 }

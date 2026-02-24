@@ -81,27 +81,70 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
 }
 
 /// Parse comma-separated call arguments inside parens.
+/// Semicolons act as list-associative separators: each `;`-delimited group
+/// is collected into an `Array` node, producing one arg per group.
 pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Expr>> {
     if input.starts_with(')') {
         return Ok((input, Vec::new()));
     }
     let (input, first) = expression(input)?;
-    let mut args = vec![first];
+    let mut current_group = vec![first];
+    let mut groups: Vec<Vec<Expr>> = Vec::new();
+    let mut has_semicolon = false;
     let mut rest = input;
     loop {
         let (r, _) = ws(rest)?;
+        if r.starts_with(';') && !r.starts_with(";;") {
+            // Semicolon separator: finish current group, start new one
+            has_semicolon = true;
+            groups.push(std::mem::take(&mut current_group));
+            let r = &r[1..];
+            let (r, _) = ws(r)?;
+            if r.starts_with(')') {
+                // Trailing semicolon before close paren
+                return Ok((r, semicolon_groups_to_args(groups, current_group)));
+            }
+            let (r, arg) = expression(r)?;
+            current_group.push(arg);
+            rest = r;
+            continue;
+        }
         if !r.starts_with(',') {
-            return Ok((r, args));
+            if has_semicolon {
+                groups.push(std::mem::take(&mut current_group));
+                return Ok((r, semicolon_groups_to_args(groups, current_group)));
+            }
+            return Ok((r, current_group));
         }
         let (r, _) = parse_char(r, ',')?;
         let (r, _) = ws(r)?;
         if r.starts_with(')') {
-            return Ok((r, args));
+            if has_semicolon {
+                groups.push(std::mem::take(&mut current_group));
+                return Ok((r, semicolon_groups_to_args(groups, current_group)));
+            }
+            return Ok((r, current_group));
         }
         let (r, arg) = expression(r)?;
-        args.push(arg);
+        current_group.push(arg);
         rest = r;
     }
+}
+
+/// Convert semicolon-separated groups into Array args.
+fn semicolon_groups_to_args(groups: Vec<Vec<Expr>>, _empty: Vec<Expr>) -> Vec<Expr> {
+    use crate::ast::Expr;
+    groups
+        .into_iter()
+        .map(|g| {
+            if g.len() == 1 {
+                // Single-element group: wrap in array for consistency
+                Expr::ArrayLiteral(g)
+            } else {
+                Expr::ArrayLiteral(g)
+            }
+        })
+        .collect()
 }
 
 /// Scan `input` for content delimited by `close_ch`, handling backslash escapes,

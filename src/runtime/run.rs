@@ -35,6 +35,10 @@ impl Interpreter {
         let mut pending_todo: Option<String> = None;
         let mut skip_lines_remaining: usize = 0;
         let mut skip_reason: String = String::new();
+        // Block-level skip: skip the next { ... } block
+        let mut skip_block_pending: Option<String> = None;
+        let mut skip_block_depth: usize = 0;
+        let mut skip_block_reason: String = String::new();
 
         for line in input.lines() {
             let trimmed = line.trim_start();
@@ -48,6 +52,71 @@ impl Interpreter {
                     continue;
                 }
                 output.push('\n');
+                continue;
+            }
+
+            // Block-level skip: waiting for opening brace
+            if let Some(ref reason) = skip_block_pending {
+                if trimmed.starts_with('{') {
+                    skip_block_reason = reason.clone();
+                    skip_block_pending = None;
+                    skip_block_depth = 1;
+                    output.push('\n');
+                    continue;
+                } else if trimmed.is_empty() || trimmed.starts_with('#') {
+                    output.push('\n');
+                    continue;
+                } else {
+                    // Not a block — cancel skip
+                    skip_block_pending = None;
+                }
+            }
+            // Inside a skipped block: track braces and emit skip for test lines
+            if skip_block_depth > 0 {
+                for ch in trimmed.chars() {
+                    if ch == '{' {
+                        skip_block_depth += 1;
+                    } else if ch == '}' {
+                        skip_block_depth -= 1;
+                        if skip_block_depth == 0 {
+                            break;
+                        }
+                    }
+                }
+                if skip_block_depth == 0 {
+                    output.push('\n');
+                    continue;
+                }
+                // Emit skip for lines that look like test assertions
+                let test_funcs = [
+                    "is(",
+                    "is ",
+                    "ok ",
+                    "ok(",
+                    "nok ",
+                    "nok(",
+                    "isnt ",
+                    "isnt(",
+                    "cmp-ok ",
+                    "cmp-ok(",
+                    "isa-ok ",
+                    "isa-ok(",
+                    "does-ok ",
+                    "lives-ok",
+                    "dies-ok",
+                    "throws-like",
+                    "like ",
+                    "like(",
+                    "unlike ",
+                    "pass ",
+                    "pass(",
+                    "flunk ",
+                ];
+                if test_funcs.iter().any(|f| trimmed.starts_with(f)) {
+                    output.push_str(&format!("skip '{}', 1;\n", skip_block_reason));
+                } else {
+                    output.push('\n');
+                }
                 continue;
             }
 
@@ -138,7 +207,19 @@ impl Interpreter {
                     output.push('\n');
                     continue;
                 }
-                // Block-level skip (no count prefix): ignore, treat as comment
+                // Block-level skip (no count prefix): skip next block
+                let block_reason = if let Some(start) = after_prefix.find('\'') {
+                    if let Some(end) = after_prefix[start + 1..].find('\'') {
+                        after_prefix[start + 1..start + 1 + end].to_string()
+                    } else {
+                        "skip".to_string()
+                    }
+                } else {
+                    "skip".to_string()
+                };
+                skip_block_pending = Some(block_reason);
+                output.push('\n');
+                continue;
             }
 
             output.push_str(line);

@@ -10,6 +10,18 @@ use super::unicode::{titlecase_string, unicode_char_name};
 // ── Built-in function dispatch ───────────────────────────────────────
 /// Try to dispatch a built-in function call.
 pub(crate) fn native_function(name: &str, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    // Always-variadic functions: route regardless of arity.
+    // zip:with needs interpreter access (for calling the combiner), so return None
+    // when a :with Pair is present to fall through to the interpreter.
+    if name == "zip" {
+        if args
+            .iter()
+            .any(|a| matches!(a, Value::Pair(k, _) if k == "with"))
+        {
+            return None;
+        }
+        return native_function_variadic(name, args);
+    }
     match args.len() {
         0 => native_function_0arg(name),
         1 => native_function_1arg(name, &args[0]),
@@ -651,6 +663,20 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
                 }
             }
             Some(Ok(Value::Str(result)))
+        }
+        "zip" => {
+            // zip([@a], [@b], ...) — interleave elements from each list
+            let lists: Vec<Vec<Value>> = args.iter().map(runtime::value_to_list).collect();
+            if lists.is_empty() {
+                return Some(Ok(Value::array(vec![])));
+            }
+            let min_len = lists.iter().map(|l| l.len()).min().unwrap_or(0);
+            let mut result = Vec::with_capacity(min_len);
+            for i in 0..min_len {
+                let row: Vec<Value> = lists.iter().map(|l| l[i].clone()).collect();
+                result.push(Value::array(row));
+            }
+            Some(Ok(Value::array(result)))
         }
         "flat" => {
             let mut result = Vec::new();
