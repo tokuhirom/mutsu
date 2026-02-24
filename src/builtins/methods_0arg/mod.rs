@@ -163,6 +163,14 @@ fn raku_value(v: &Value) -> String {
                 format!("{}", f)
             }
         }
+        Value::Pair(key, value) => format!("{} => {}", key, raku_value(value)),
+        Value::ValuePair(key, value) => {
+            let key_repr = match key.as_ref() {
+                Value::Pair(_, _) | Value::ValuePair(_, _) => format!("({})", raku_value(key)),
+                _ => raku_value(key),
+            };
+            format!("{} => {}", key_repr, raku_value(value))
+        }
         other => other.to_string_value(),
     }
 }
@@ -767,6 +775,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 };
                 let inner = values.iter().map(raku_value).collect::<Vec<_>>().join(", ");
                 Some(Ok(Value::Str(format!("{}({})", kind_str, inner))))
+            }
+            Value::Pair(_, _) | Value::ValuePair(_, _) => {
+                if method == "raku" || method == "perl" {
+                    Some(Ok(Value::Str(raku_value(target))))
+                } else {
+                    Some(Ok(Value::Str(target.to_string_value())))
+                }
             }
             Value::Int(i) => Some(Ok(Value::Str(format!("{}", i)))),
             _ => Some(Ok(Value::Str(target.to_string_value()))),

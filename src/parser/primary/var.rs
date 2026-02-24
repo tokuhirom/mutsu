@@ -40,6 +40,32 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         }
         return paren_expr(input);
     }
+    // Handle $@array (array in item context) and $%hash (hash in item context)
+    if input.starts_with('@') || input.starts_with('%') {
+        let sigil = &input[..1];
+        let after_sigil = &input[1..];
+        // Check for twigils or plain identifier
+        let (rest, twigil) = if after_sigil.starts_with('*')
+            || after_sigil.starts_with('?')
+            || after_sigil.starts_with('!')
+        {
+            (&after_sigil[1..], &after_sigil[..1])
+        } else {
+            (after_sigil, "")
+        };
+        if let Ok((rest, name)) = parse_qualified_ident_with_hyphens(rest) {
+            let full_name = if twigil.is_empty() {
+                name
+            } else {
+                format!("{}{}", twigil, name)
+            };
+            return if sigil == "@" {
+                Ok((rest, Expr::ArrayVar(full_name)))
+            } else {
+                Ok((rest, Expr::HashVar(full_name)))
+            };
+        }
+    }
     // Handle $_ special variable
     if input.starts_with('_')
         && (input.len() == 1 || !input[1..].chars().next().unwrap().is_alphanumeric())

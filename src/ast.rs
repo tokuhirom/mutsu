@@ -387,6 +387,7 @@ pub(crate) enum Stmt {
     },
     RoleDecl {
         name: String,
+        type_params: Vec<String>,
         body: Vec<Stmt>,
     },
     DoesDecl {

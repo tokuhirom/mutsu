@@ -1,4 +1,5 @@
 roast/MISC/bug-coverage-stress.t
+roast/S01-perl-5-integration/hash.t
 roast/S01-perl-5-integration/isms.t
 roast/S01-perl-5-integration/return.t
 roast/S01-perl-5-integration/subs.t
@@ -37,6 +38,7 @@ roast/S02-types/fatrat.t
 roast/S02-types/hyperwhatever.t
 roast/S02-types/mu.t
 roast/S02-types/nan.t
+roast/S02-types/nested_pairs.t
 roast/S02-types/parsing-bool.t
 roast/S02-types/range-iterator.t
 roast/S02-types/stash.t
@@ -139,6 +141,7 @@ roast/S07-hyperrace/stress.t
 roast/S07-slip/slip.t
 roast/S10-packages/joined-namespaces.t
 roast/S10-packages/require-and-use.t
+roast/S10-packages/use-with-class.t
 roast/S11-compunit/compunit-dependencyspecification.t
 roast/S11-compunit/rt126904.t
 roast/S11-modules/gh2979.t
@@ -154,6 +157,7 @@ roast/S12-class/literal.t
 roast/S12-class/parent_attributes.t
 roast/S12-class/self-inheritance.t
 roast/S12-class/type-object.t
+roast/S12-coercion/parameterized.t
 roast/S12-construction/autopairs.t
 roast/S12-enums/anonymous.t
 roast/S12-enums/pseudo-functional.t

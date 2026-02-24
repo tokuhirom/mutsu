@@ -363,8 +363,14 @@ impl VM {
         idx: u32,
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
-        if let Stmt::RoleDecl { name, body } = stmt {
-            self.interpreter.register_role_decl(name, body)?;
+        if let Stmt::RoleDecl {
+            name,
+            type_params,
+            body,
+        } = stmt
+        {
+            self.interpreter
+                .register_role_decl(name, type_params, body)?;
             self.sync_locals_from_env(code);
             Ok(())
         } else {
