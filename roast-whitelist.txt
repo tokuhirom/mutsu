@@ -37,6 +37,7 @@ roast/S02-types/fatrat.t
 roast/S02-types/hyperwhatever.t
 roast/S02-types/mu.t
 roast/S02-types/nan.t
+roast/S02-types/nested_pairs.t
 roast/S02-types/parsing-bool.t
 roast/S02-types/range-iterator.t
 roast/S02-types/stash.t
@@ -138,6 +139,7 @@ roast/S07-hyperrace/stress.t
 roast/S07-slip/slip.t
 roast/S10-packages/joined-namespaces.t
 roast/S10-packages/require-and-use.t
+roast/S10-packages/use-with-class.t
 roast/S11-compunit/compunit-dependencyspecification.t
 roast/S11-compunit/rt126904.t
 roast/S11-modules/gh2979.t
