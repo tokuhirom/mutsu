@@ -87,6 +87,34 @@ pub(super) fn parse_indirect_decl_name(input: &str) -> PResult<'_, (String, Expr
 
 /// Parse `sub` declaration.
 pub(super) fn sub_decl(input: &str) -> PResult<'_, Stmt> {
+    sub_decl_with_semicolon_mode(input, false)
+}
+
+pub(super) fn top_level_main_semicolon_decl(input: &str) -> PResult<'_, Stmt> {
+    let (rest_after_prefix, _) = if let Some(r) = keyword("unit", input) {
+        let (r, _) = ws1(r)?;
+        (r, true)
+    } else {
+        (input, false)
+    };
+    let input_len = rest_after_prefix.len();
+    let (rest, stmt) = sub_decl_with_semicolon_mode(rest_after_prefix, true)?;
+    let consumed_len = input_len.saturating_sub(rest.len());
+    let consumed = &rest_after_prefix[..consumed_len];
+    let has_semicolon_terminator = consumed.trim_end().ends_with(';');
+    if has_semicolon_terminator
+        && matches!(&stmt, Stmt::SubDecl { name, multi, .. } if name == "MAIN" && !*multi)
+    {
+        Ok((rest, stmt))
+    } else {
+        Err(PError::expected("unit-scoped MAIN sub declaration"))
+    }
+}
+
+pub(super) fn sub_decl_with_semicolon_mode(
+    input: &str,
+    allow_main_semicolon_decl: bool,
+) -> PResult<'_, Stmt> {
     let (input, supersede) = if let Some(r) = keyword("supersede", input) {
         let (r, _) = ws1(r)?;
         (r, true)
@@ -103,10 +131,15 @@ pub(super) fn sub_decl(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         (r, false)
     };
-    sub_decl_body(rest, multi, supersede)
+    sub_decl_body(rest, multi, supersede, allow_main_semicolon_decl)
 }
 
-pub(super) fn sub_decl_body(input: &str, multi: bool, supersede: bool) -> PResult<'_, Stmt> {
+pub(super) fn sub_decl_body(
+    input: &str,
+    multi: bool,
+    supersede: bool,
+    allow_main_semicolon_decl: bool,
+) -> PResult<'_, Stmt> {
     let (rest, name, name_expr) = if input.starts_with("::") {
         let (rest, (name, expr)) = parse_indirect_decl_name(input)?;
         (rest, name, Some(expr))
@@ -163,8 +196,30 @@ pub(super) fn sub_decl_body(input: &str, multi: bool, supersede: bool) -> PResul
     } else {
         rest
     };
-    // Detect `sub name;` without a block body — this is a unit-scoped sub declaration error
+    // Detect `sub name;` without a block body.
     if rest.starts_with(';') || rest.is_empty() {
+        if allow_main_semicolon_decl && name == "MAIN" && !multi {
+            let rest = if let Some(stripped) = rest.strip_prefix(';') {
+                stripped
+            } else {
+                rest
+            };
+            return Ok((
+                rest,
+                Stmt::SubDecl {
+                    name,
+                    name_expr,
+                    params,
+                    param_defs,
+                    signature_alternates,
+                    body: Vec::new(),
+                    multi,
+                    is_export: traits.is_export,
+                    is_test_assertion: traits.is_test_assertion,
+                    supersede,
+                },
+            ));
+        }
         return Err(PError::raw(
             "X::UnitScope::Invalid: A unit-scoped sub definition is not allowed except on a MAIN sub; \
              Please use the block form. If you did not mean to declare a unit-scoped sub, \

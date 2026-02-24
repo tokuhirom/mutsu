@@ -117,6 +117,7 @@ roast/S06-currying/named.t
 roast/S06-multi/compile-time.t
 roast/S06-operator-overloading/semicolon.t
 roast/S06-other/main-eval.t
+roast/S06-other/main-semicolon.t
 roast/S06-signature/closure-over-parameters.t
 roast/S06-signature/multidimensional.t
 roast/S06-signature/passing-hashes.t
