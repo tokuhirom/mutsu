@@ -120,6 +120,54 @@ fn parse_private_method_name(input: &str) -> Option<(&str, String)> {
     Some((rest, name))
 }
 
+fn is_postfix_operator_char(c: char) -> bool {
+    if c.is_whitespace() || c.is_alphanumeric() || c == '_' {
+        return false;
+    }
+    !matches!(
+        c,
+        '.' | ','
+            | ';'
+            | ':'
+            | '('
+            | ')'
+            | '['
+            | ']'
+            | '{'
+            | '}'
+            | '"'
+            | '\''
+            | '\\'
+            | '$'
+            | '@'
+            | '%'
+            | '&'
+            | '#'
+    )
+}
+
+fn is_postfix_operator_boundary(rest: &str) -> bool {
+    rest.is_empty()
+        || rest.starts_with(|c: char| {
+            c.is_whitespace() || matches!(c, ')' | '}' | ']' | ',' | ';' | ':')
+        })
+}
+
+fn parse_custom_postfix_operator(input: &str) -> Option<(String, usize)> {
+    let mut len = 0usize;
+    for c in input.chars() {
+        if !is_postfix_operator_char(c) {
+            break;
+        }
+        len += c.len_utf8();
+    }
+    if len == 0 {
+        None
+    } else {
+        Some((input[..len].to_string(), len))
+    }
+}
+
 pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if let Some((op, len)) = parse_prefix_unary_op(input) {
         let mut rest = &input[len..];
@@ -448,6 +496,17 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 }
                 rest = r;
                 continue;
+            }
+            if let Some((op, len)) = parse_custom_postfix_operator(r) {
+                let after = &r[len..];
+                if is_postfix_operator_boundary(after) {
+                    expr = Expr::Call {
+                        name: format!("postfix:<{op}>"),
+                        args: vec![expr],
+                    };
+                    rest = after;
+                    continue;
+                }
             }
             return Err(PError::expected_at("method name", r));
         }
@@ -814,17 +873,12 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             continue;
         }
 
-        // Custom postfix operator call: $x! -> postfix:<!>($x)
-        if rest.starts_with('!') && !rest.starts_with("!=") {
-            let after = &rest[1..];
-            // Keep `!` as postfix only at expression boundary.
-            if after.is_empty()
-                || after.starts_with(|c: char| {
-                    c.is_whitespace() || c == ')' || c == '}' || c == ']' || c == ',' || c == ';'
-                })
-            {
+        // Custom postfix operator call: $x§ -> postfix:<§>($x)
+        if let Some((op, len)) = parse_custom_postfix_operator(rest) {
+            let after = &rest[len..];
+            if is_postfix_operator_boundary(after) {
                 expr = Expr::Call {
-                    name: "postfix:<!>".to_string(),
+                    name: format!("postfix:<{op}>"),
                     args: vec![expr],
                 };
                 rest = after;

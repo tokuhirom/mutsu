@@ -169,6 +169,7 @@ roast/S12-methods/typed-attributes.t
 roast/S12-traits/precomp.t
 roast/S13-overloading/fallbacks-deep.t
 roast/S13-overloading/multiple-signatures.t
+roast/S13-overloading/operators.t
 roast/S13-syntax/aliasing.t
 roast/S14-roles/bool.t
 roast/S14-roles/generic-subtyping.t

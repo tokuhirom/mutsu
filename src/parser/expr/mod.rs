@@ -863,4 +863,32 @@ mod tests {
             _ => panic!("expected postfix operator call"),
         }
     }
+
+    #[test]
+    fn parse_unicode_custom_postfix_operator_call() {
+        let (rest, expr) = expression("3§").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "postfix:<§>");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(args[0], Expr::Literal(Value::Int(3))));
+            }
+            _ => panic!("expected unicode postfix operator call"),
+        }
+    }
+
+    #[test]
+    fn parse_dot_custom_postfix_operator_call() {
+        let (rest, expr) = expression("5.!").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "postfix:<!>");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(args[0], Expr::Literal(Value::Int(5))));
+            }
+            _ => panic!("expected dot-postfix operator call"),
+        }
+    }
 }
