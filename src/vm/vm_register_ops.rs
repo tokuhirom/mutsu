@@ -28,10 +28,11 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
+            let params = crate::ast::collect_placeholders(body);
             let val = Value::make_sub(
                 self.interpreter.current_package().to_string(),
                 String::new(),
-                vec![],
+                params,
                 Vec::new(),
                 body.clone(),
                 self.interpreter.env().clone(),

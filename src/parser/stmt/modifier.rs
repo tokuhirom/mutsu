@@ -4,8 +4,34 @@ use super::super::parse_result::{PError, PResult, merge_expected_messages, opt_c
 
 use crate::ast::{Expr, Stmt};
 use crate::token_kind::TokenKind;
+use crate::value::Value;
 
 use super::keyword;
+
+fn rewrite_placeholder_block_modifier_stmt(stmt: Stmt, cond: &Expr) -> Stmt {
+    if let Stmt::Block(body) = &stmt
+        && let placeholders = crate::ast::collect_placeholders(body)
+        && !placeholders.is_empty()
+    {
+        let mut rewritten = Vec::new();
+        for (idx, name) in placeholders.into_iter().enumerate() {
+            rewritten.push(Stmt::VarDecl {
+                name,
+                expr: if idx == 0 {
+                    cond.clone()
+                } else {
+                    Expr::Literal(Value::Nil)
+                },
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+            });
+        }
+        rewritten.extend(body.clone());
+        return Stmt::Block(rewritten);
+    }
+    stmt
+}
 
 pub(super) fn is_stmt_modifier_keyword(input: &str) -> bool {
     for kw in &[
@@ -44,11 +70,12 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
         })?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
+        let then_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &cond);
         return Ok((
             r,
             Stmt::If {
                 cond,
-                then_branch: vec![stmt],
+                then_branch: vec![then_stmt],
                 else_branch: Vec::new(),
             },
         ));
@@ -64,6 +91,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
         })?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
+        let then_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &cond);
         return Ok((
             r,
             Stmt::If {
@@ -71,7 +99,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                     op: TokenKind::Bang,
                     expr: Box::new(cond),
                 },
-                then_branch: vec![stmt],
+                then_branch: vec![then_stmt],
                 else_branch: Vec::new(),
             },
         ));

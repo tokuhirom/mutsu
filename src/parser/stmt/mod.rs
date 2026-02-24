@@ -638,6 +638,23 @@ mod tests {
     }
 
     #[test]
+    fn parse_block_with_unless_statement_modifier() {
+        let (rest, stmts) = program("{ my $a = 1; } unless False;").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(
+            &stmts[0],
+            Stmt::If {
+                then_branch,
+                else_branch,
+                ..
+            } if then_branch.len() == 1
+                && matches!(&then_branch[0], Stmt::Block(_))
+                && else_branch.is_empty()
+        ));
+    }
+
+    #[test]
     fn parse_parenthesized_assign_lvalue_stmt() {
         let (rest, stmts) = program("($x = $y) = 5;").unwrap();
         assert_eq!(rest, "");

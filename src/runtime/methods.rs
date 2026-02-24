@@ -3313,6 +3313,9 @@ impl Interpreter {
                     attrs.insert("lock-id".to_string(), Value::Int(lock_id));
                     return Ok(Value::make_instance("Lock".to_string(), attrs));
                 }
+                "Slip" => {
+                    return Ok(Value::slip(args.clone()));
+                }
                 // Types that cannot be instantiated with .new
                 "HyperWhatever" | "Whatever" | "Junction" => {
                     return Err(RuntimeError::new(format!(
