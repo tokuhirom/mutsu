@@ -591,6 +591,7 @@ impl Compiler {
             // --- SubDecl: delegate to interpreter AND compile body ---
             Stmt::SubDecl {
                 name,
+                name_expr,
                 params,
                 param_defs,
                 signature_alternates,
@@ -600,6 +601,10 @@ impl Compiler {
             } => {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterSub(idx));
+                if name_expr.is_some() {
+                    // Runtime-resolved sub names cannot be keyed reliably in compiled_fns.
+                    return;
+                }
                 // Also compile the body to bytecode for VM-native dispatch
                 let state_group = if *multi && !signature_alternates.is_empty() {
                     Some(format!(

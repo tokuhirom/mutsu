@@ -113,6 +113,7 @@ impl VM {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubDecl {
             name,
+            name_expr,
             params,
             param_defs,
             signature_alternates,
@@ -123,8 +124,15 @@ impl VM {
             supersede,
         } = stmt
         {
+            let resolved_name = if let Some(expr) = name_expr {
+                self.interpreter
+                    .eval_block_value(&[Stmt::Expr(expr.clone())])?
+                    .to_string_value()
+            } else {
+                name.clone()
+            };
             self.interpreter.register_sub_decl(
-                name,
+                &resolved_name,
                 params,
                 param_defs,
                 body,
@@ -134,7 +142,7 @@ impl VM {
             )?;
             if *is_export && !self.interpreter.suppress_exports {
                 self.interpreter.register_sub_decl_as_global(
-                    name,
+                    &resolved_name,
                     params,
                     param_defs,
                     body,
@@ -145,7 +153,7 @@ impl VM {
             }
             for (alt_params, alt_param_defs) in signature_alternates {
                 self.interpreter.register_sub_decl(
-                    name,
+                    &resolved_name,
                     alt_params,
                     alt_param_defs,
                     body,
@@ -155,7 +163,7 @@ impl VM {
                 )?;
                 if *is_export && !self.interpreter.suppress_exports {
                     self.interpreter.register_sub_decl_as_global(
-                        name,
+                        &resolved_name,
                         alt_params,
                         alt_param_defs,
                         body,
@@ -301,14 +309,23 @@ impl VM {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::ClassDecl {
             name,
+            name_expr,
             parents,
             body,
         } = stmt
         {
-            self.interpreter.register_class_decl(name, parents, body)?;
+            let resolved_name = if let Some(expr) = name_expr {
+                self.interpreter
+                    .eval_block_value(&[Stmt::Expr(expr.clone())])?
+                    .to_string_value()
+            } else {
+                name.clone()
+            };
+            self.interpreter
+                .register_class_decl(&resolved_name, parents, body)?;
             self.interpreter
                 .env_mut()
-                .insert("_".to_string(), Value::Package(name.clone()));
+                .insert("_".to_string(), Value::Package(resolved_name));
             self.sync_locals_from_env(code);
             Ok(())
         } else {

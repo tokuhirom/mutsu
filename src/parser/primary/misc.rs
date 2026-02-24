@@ -460,6 +460,7 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
         rest,
         Expr::DoStmt(Box::new(Stmt::ClassDecl {
             name,
+            name_expr: None,
             parents: Vec::new(),
             body,
         })),

@@ -3,6 +3,7 @@ use super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 
 use crate::ast::{Expr, ParamDef, Stmt};
+use crate::value::Value;
 
 use super::{block, ident, keyword, qualified_ident, var_name};
 
@@ -60,6 +61,24 @@ pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
     Ok((rest, base))
 }
 
+pub(super) fn parse_indirect_decl_name(input: &str) -> PResult<'_, (String, Expr)> {
+    let rest = input
+        .strip_prefix("::")
+        .ok_or_else(|| PError::expected("indirect declarator name"))?;
+    let (rest, _) = ws(rest)?;
+    let (rest, _) = parse_char(rest, '(')?;
+    let (rest, _) = ws(rest)?;
+    let (rest, expr) = expression(rest)?;
+    let (rest, _) = ws(rest)?;
+    let (rest, _) = parse_char(rest, ')')?;
+    let name = match &expr {
+        Expr::Literal(Value::Str(s)) => s.clone(),
+        Expr::BareWord(s) => s.clone(),
+        _ => "__INDIRECT_DECL_NAME__".to_string(),
+    };
+    Ok((rest, (name, expr)))
+}
+
 /// Parse `sub` declaration.
 pub(super) fn sub_decl(input: &str) -> PResult<'_, Stmt> {
     let (input, supersede) = if let Some(r) = keyword("supersede", input) {
@@ -82,9 +101,15 @@ pub(super) fn sub_decl(input: &str) -> PResult<'_, Stmt> {
 }
 
 pub(super) fn sub_decl_body(input: &str, multi: bool, supersede: bool) -> PResult<'_, Stmt> {
-    let (rest, name) = parse_sub_name(input)?;
-    // Register user-declared sub so it can be called without parens later
-    super::simple::register_user_sub(&name);
+    let (rest, name, name_expr) = if input.starts_with("::") {
+        let (rest, (name, expr)) = parse_indirect_decl_name(input)?;
+        (rest, name, Some(expr))
+    } else {
+        let (rest, name) = parse_sub_name(input)?;
+        // Register user-declared sub so it can be called without parens later
+        super::simple::register_user_sub(&name);
+        (rest, name, None)
+    };
     let (rest, _) = ws(rest)?;
 
     // Parse params
@@ -150,6 +175,7 @@ pub(super) fn sub_decl_body(input: &str, multi: bool, supersede: bool) -> PResul
         rest,
         Stmt::SubDecl {
             name,
+            name_expr,
             params,
             param_defs,
             signature_alternates,
@@ -843,7 +869,13 @@ pub(super) fn method_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
     } else {
         (input, false)
     };
-    let (rest, name) = ident(rest)?;
+    let (rest, name, name_expr) = if rest.starts_with("::") {
+        let (rest, (name, expr)) = parse_indirect_decl_name(rest)?;
+        (rest, name, Some(expr))
+    } else {
+        let (rest, name) = ident(rest)?;
+        (rest, name, None)
+    };
     let (rest, _) = ws(rest)?;
 
     let (rest, (params, param_defs)) = if rest.starts_with('(') {
@@ -864,6 +896,7 @@ pub(super) fn method_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
         rest,
         Stmt::MethodDecl {
             name,
+            name_expr,
             params,
             param_defs,
             body,

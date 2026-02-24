@@ -235,6 +235,7 @@ pub(crate) enum Stmt {
     },
     SubDecl {
         name: String,
+        name_expr: Option<Expr>,
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
         signature_alternates: Vec<(Vec<String>, Vec<ParamDef>)>,
@@ -348,6 +349,7 @@ pub(crate) enum Stmt {
     },
     ClassDecl {
         name: String,
+        name_expr: Option<Expr>,
         parents: Vec<String>,
         body: Vec<Stmt>,
     },
@@ -360,6 +362,7 @@ pub(crate) enum Stmt {
     },
     MethodDecl {
         name: String,
+        name_expr: Option<Expr>,
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,

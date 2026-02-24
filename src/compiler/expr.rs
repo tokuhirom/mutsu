@@ -902,11 +902,18 @@ impl Compiler {
                         label,
                     );
                 }
-                Stmt::ClassDecl { name, .. } => {
+                Stmt::ClassDecl {
+                    name, name_expr, ..
+                } => {
                     // Register the class and return the type object
                     self.compile_stmt(stmt);
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                    self.code.emit(OpCode::GetBareWord(name_idx));
+                    if let Some(expr) = name_expr {
+                        self.compile_expr(expr);
+                        self.code.emit(OpCode::IndirectTypeLookup);
+                    } else {
+                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        self.code.emit(OpCode::GetBareWord(name_idx));
+                    }
                 }
                 Stmt::EnumDecl { name, .. } if name.is_empty() => {
                     // Anonymous enum: RegisterEnum pushes the Map result
@@ -950,6 +957,7 @@ impl Compiler {
             Expr::AnonSubParams { params, body } => {
                 let idx = self.code.add_stmt(Stmt::SubDecl {
                     name: String::new(),
+                    name_expr: None,
                     params: params.clone(),
                     param_defs: Vec::new(),
                     signature_alternates: Vec::new(),
@@ -964,6 +972,7 @@ impl Compiler {
             Expr::Lambda { param, body } => {
                 let idx = self.code.add_stmt(Stmt::SubDecl {
                     name: String::new(),
+                    name_expr: None,
                     params: if param.is_empty() {
                         Vec::new()
                     } else {

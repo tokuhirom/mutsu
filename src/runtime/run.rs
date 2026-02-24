@@ -13,6 +13,7 @@ impl Interpreter {
             let mut result: Vec<Stmt> = stmts[..idx].to_vec();
             if let Stmt::ClassDecl {
                 name,
+                name_expr,
                 parents,
                 body: _,
             } = &stmts[idx]
@@ -20,6 +21,7 @@ impl Interpreter {
                 let body: Vec<Stmt> = stmts[idx + 1..].to_vec();
                 result.push(Stmt::ClassDecl {
                     name: name.clone(),
+                    name_expr: name_expr.clone(),
                     parents: parents.clone(),
                     body,
                 });
