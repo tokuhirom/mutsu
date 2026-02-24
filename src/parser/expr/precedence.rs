@@ -231,7 +231,7 @@ fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let next_fn = if mode == ExprMode::Full {
         sequence_expr
     } else {
-        range_expr
+        list_infix_expr
     };
     let (mut rest, mut left) = next_fn(input)?;
     loop {
@@ -286,51 +286,161 @@ fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     Ok((rest, left))
 }
 
-/// Sequence: ... and ...^
+/// List-infix operators only: Z, X, meta-ops, infix funcs.
+/// Used in NoSequence mode (e.g. inside parenthesized expressions).
+fn list_infix_expr(input: &str) -> PResult<'_, Expr> {
+    let (mut rest, mut left) = range_expr(input)?;
+    rest = parse_list_infix_loop(rest, &mut left)?;
+    Ok((rest, left))
+}
+
+/// Sequence (..., ...^) and list-infix (Z, X, meta-ops, infix funcs).
+/// All have Raku precedence level f= (list associative).
 fn sequence_expr(input: &str) -> PResult<'_, Expr> {
-    let (rest, mut left) = range_expr(input)?;
-    let (r, _) = ws(rest)?;
+    let (mut rest, mut left) = range_expr(input)?;
 
     // Helper: wrap LHS WhateverCode before building the sequence node.
-    // E.g. `*+* ... *` → the `*+*` should be a WhateverCode generator.
     fn maybe_wrap_lhs(left: &mut Expr) {
         if contains_whatever(left) && !matches!(left, Expr::Whatever) {
             *left = wrap_whatevercode(left);
         }
     }
 
-    if let Some(r) = r.strip_prefix("...^") {
-        let (r, _) = ws(r)?;
-        let (r, right) = range_expr(r).map_err(|err| {
-            enrich_expected_error(err, "expected expression after '...^'", r.len())
-        })?;
-        maybe_wrap_lhs(&mut left);
-        return Ok((
-            r,
-            Expr::Binary {
+    loop {
+        let (r, _) = ws(rest)?;
+
+        // ...^ (exclusive-end sequence)
+        if let Some(r2) = r.strip_prefix("...^") {
+            let (r2, _) = ws(r2)?;
+            let (r2, right) = range_expr(r2).map_err(|err| {
+                enrich_expected_error(err, "expected expression after '...^'", r2.len())
+            })?;
+            maybe_wrap_lhs(&mut left);
+            left = Expr::Binary {
                 left: Box::new(left),
                 op: TokenKind::DotDotDotCaret,
                 right: Box::new(right),
-            },
-        ));
-    }
-    if r.starts_with("...") && !r.starts_with("....") {
-        let r = &r[3..];
-        let (r, _) = ws(r)?;
-        let (r, right) = range_expr(r).map_err(|err| {
-            enrich_expected_error(err, "expected expression after '...'", r.len())
-        })?;
-        maybe_wrap_lhs(&mut left);
-        return Ok((
-            r,
-            Expr::Binary {
+            };
+            rest = r2;
+            continue;
+        }
+        // ... (sequence)
+        if r.starts_with("...") && !r.starts_with("....") {
+            let r2 = &r[3..];
+            let (r2, _) = ws(r2)?;
+            let (r2, right) = range_expr(r2).map_err(|err| {
+                enrich_expected_error(err, "expected expression after '...'", r2.len())
+            })?;
+            maybe_wrap_lhs(&mut left);
+            left = Expr::Binary {
                 left: Box::new(left),
                 op: TokenKind::DotDotDot,
                 right: Box::new(right),
-            },
-        ));
+            };
+            rest = r2;
+            continue;
+        }
+        // Try Z/X/meta/infix-func operators
+        let new_rest = parse_list_infix_loop(rest, &mut left)?;
+        if new_rest.len() < rest.len() {
+            rest = new_rest;
+            continue;
+        }
+        break;
     }
     Ok((rest, left))
+}
+
+/// Shared loop for Z/X meta operators and infix function calls.
+/// Modifies `left` in place and returns the remaining input.
+fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str, PError> {
+    let mut rest = input;
+    loop {
+        let (r, _) = ws(rest)?;
+        // Infixed function call: [&func], R[&func], X[&func], Z[&func]
+        if let Some((modifier, name, len)) = parse_infix_func_op(r) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right_exprs) = if modifier.as_deref() == Some("X") {
+                parse_comma_list_of_range(r)?
+            } else {
+                let (r, expr) = range_expr(r).map_err(|err| {
+                    enrich_expected_error(
+                        err,
+                        "expected expression after infixed function",
+                        r.len(),
+                    )
+                })?;
+                (r, vec![expr])
+            };
+            *left = Expr::InfixFunc {
+                name,
+                left: Box::new(left.clone()),
+                right: right_exprs,
+                modifier,
+            };
+            rest = r;
+            continue;
+        }
+        // Meta operators: R-, X+, Z~, bare Z, bare X, etc.
+        if let Some((meta, op, len)) = parse_meta_op(r) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = if (meta == "Z" || meta == "X") && op.is_empty() {
+                let (r, items) = parse_comma_list_of_range_raw(r)?;
+                if items.len() == 1 {
+                    (r, items.into_iter().next().unwrap())
+                } else {
+                    (r, Expr::ArrayLiteral(items))
+                }
+            } else {
+                range_expr(r).map_err(|err| {
+                    enrich_expected_error(err, "expected expression after meta operator", r.len())
+                })?
+            };
+            *left = Expr::MetaOp {
+                meta: meta.to_string(),
+                op: op.to_string(),
+                left: Box::new(left.clone()),
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        break;
+    }
+    Ok(rest)
+}
+
+/// Parse a comma-separated list of range_expr, returning (rest, items).
+fn parse_comma_list_of_range_raw<'a>(input: &'a str) -> PResult<'a, Vec<Expr>> {
+    let (r, first) = range_expr(input)
+        .map_err(|err| enrich_expected_error(err, "expected expression", input.len()))?;
+    let mut items = vec![first];
+    let mut r = r;
+    loop {
+        let (r2, _) = ws(r)?;
+        if !r2.starts_with(',') || r2.starts_with(",,") {
+            break;
+        }
+        let r2 = &r2[1..];
+        let (r2, _) = ws(r2)?;
+        if r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') || r2.starts_with(')') {
+            break;
+        }
+        if let Ok((r3, next)) = range_expr(r2) {
+            items.push(next);
+            r = r3;
+        } else {
+            break;
+        }
+    }
+    Ok((r, items))
+}
+
+/// Parse a comma-separated list of range_expr, returning (rest, Vec<Expr>).
+fn parse_comma_list_of_range<'a>(input: &'a str) -> PResult<'a, Vec<Expr>> {
+    parse_comma_list_of_range_raw(input)
 }
 
 /// Comparison: ==, !=, <, >, <=, >=, eq, ne, lt, gt, le, ge, ~~, !~~, ===, <=>
@@ -762,115 +872,6 @@ fn structural_expr(input: &str) -> PResult<'_, Expr> {
             left = Expr::Binary {
                 left: Box::new(left),
                 op: tok,
-                right: Box::new(right),
-            };
-            rest = r;
-            continue;
-        }
-        // Infixed function call: [&func], R[&func], X[&func], Z[&func]
-        if let Some((modifier, name, len)) = parse_infix_func_op(r) {
-            let r = &r[len..];
-            let (r, _) = ws(r)?;
-            // For X[&func], consume comma-separated list on right
-            let (r, right_exprs) = if modifier.as_deref() == Some("X") {
-                let (r, first) = range_expr(r).map_err(|err| {
-                    enrich_expected_error(
-                        err,
-                        "expected expression after infixed function",
-                        r.len(),
-                    )
-                })?;
-                let mut items = vec![first];
-                let mut r = r;
-                loop {
-                    let (r2, _) = ws(r)?;
-                    if !r2.starts_with(',') || r2.starts_with(",,") {
-                        break;
-                    }
-                    let r2 = &r2[1..];
-                    let (r2, _) = ws(r2)?;
-                    if r2.starts_with(';')
-                        || r2.is_empty()
-                        || r2.starts_with('}')
-                        || r2.starts_with(')')
-                    {
-                        break;
-                    }
-                    if let Ok((r3, next)) = range_expr(r2) {
-                        items.push(next);
-                        r = r3;
-                    } else {
-                        break;
-                    }
-                }
-                (r, items)
-            } else {
-                let (r, expr) = concat_expr(r).map_err(|err| {
-                    enrich_expected_error(
-                        err,
-                        "expected expression after infixed function",
-                        r.len(),
-                    )
-                })?;
-                (r, vec![expr])
-            };
-            left = Expr::InfixFunc {
-                name,
-                left: Box::new(left),
-                right: right_exprs,
-                modifier,
-            };
-            rest = r;
-            continue;
-        }
-        // Meta operators: R-, X+, Zcmp, etc.
-        if let Some((meta, op, len)) = parse_meta_op(r) {
-            let r = &r[len..];
-            let (r, _) = ws(r)?;
-            // For bare Z and X (list infix), consume comma-separated list on right
-            // In Raku, Z and X have lower precedence than comma
-            let (r, right) = if (meta == "Z" || meta == "X") && op.is_empty() {
-                let (r, first) = range_expr(r).map_err(|err| {
-                    enrich_expected_error(err, "expected expression after meta operator", r.len())
-                })?;
-                let mut items = vec![first];
-                let mut r = r;
-                loop {
-                    let (r2, _) = ws(r)?;
-                    if !r2.starts_with(',') || r2.starts_with(",,") {
-                        break;
-                    }
-                    let r2 = &r2[1..];
-                    let (r2, _) = ws(r2)?;
-                    // Stop at statement-ending tokens
-                    if r2.starts_with(';')
-                        || r2.is_empty()
-                        || r2.starts_with('}')
-                        || r2.starts_with(')')
-                    {
-                        break;
-                    }
-                    if let Ok((r3, next)) = range_expr(r2) {
-                        items.push(next);
-                        r = r3;
-                    } else {
-                        break;
-                    }
-                }
-                if items.len() == 1 {
-                    (r, items.into_iter().next().unwrap())
-                } else {
-                    (r, Expr::ArrayLiteral(items))
-                }
-            } else {
-                range_expr(r).map_err(|err| {
-                    enrich_expected_error(err, "expected expression after meta operator", r.len())
-                })?
-            };
-            left = Expr::MetaOp {
-                meta: meta.to_string(),
-                op: op.to_string(),
-                left: Box::new(left),
                 right: Box::new(right),
             };
             rest = r;
