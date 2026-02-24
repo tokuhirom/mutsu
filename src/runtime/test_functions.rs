@@ -782,9 +782,10 @@ impl Interpreter {
             || (program.is_empty() && run_args.is_some());
 
         let (out, err, status) = if is_doc_mode {
-            // In --doc mode, render Pod documentation instead of executing
-            let doc_output = crate::doc_mode::render_doc(&program);
-            (doc_output, String::new(), 0i64)
+            match crate::doc_mode::run_doc_mode(&program) {
+                Ok(result) => (result.output, String::new(), result.status),
+                Err(err) => (String::new(), err.message, 1i64),
+            }
         } else if needs_subprocess {
             // Spawn actual mutsu binary for CLI flag tests
             self.is_run_subprocess(&program, &run_args, &compiler_args)

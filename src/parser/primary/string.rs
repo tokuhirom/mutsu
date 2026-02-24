@@ -12,6 +12,7 @@ use super::var::parse_var_name_from_str;
 fn unicode_bracket_close(open: char) -> Option<char> {
     match open {
         '\u{0028}' => Some('\u{0029}'), // ( )
+        '\u{003C}' => Some('\u{003E}'), // < >
         '\u{005B}' => Some('\u{005D}'), // [ ]
         '\u{007B}' => Some('\u{007D}'), // { }
         '\u{00AB}' => Some('\u{00BB}'), // « »
@@ -108,8 +109,8 @@ pub(super) fn big_q_string(input: &str) -> PResult<'_, Expr> {
     let rest = input
         .strip_prefix('Q')
         .ok_or_else(|| PError::expected("Q string"))?;
-    // Q:to/DELIM/ heredoc
-    if let Some(r) = rest.strip_prefix(":to/") {
+    // Q:to/DELIM/ or Q:to<DELIM> heredoc
+    if let Some(r) = rest.strip_prefix(":to") {
         return parse_to_heredoc(r);
     }
     // Q:s form (interpolating) — e.g. Q:s|...|
@@ -148,12 +149,7 @@ pub(super) fn big_q_string(input: &str) -> PResult<'_, Expr> {
 }
 
 fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
-    // Find the delimiter name (e.g. END)
-    let delim_end = input
-        .find('/')
-        .ok_or_else(|| PError::expected("closing / for heredoc delimiter"))?;
-    let delimiter = &input[..delim_end];
-    let r = &input[delim_end + 1..];
+    let (r, delimiter) = parse_to_heredoc_delimiter(input)?;
     // In Raku, heredoc content starts on the NEXT line.
     // The rest of the current line (after q:to/DELIM/) continues as normal code.
     // Find the next newline to split current-line remainder from heredoc body.
@@ -206,6 +202,30 @@ fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
     Err(PError::expected("heredoc terminator"))
 }
 
+fn parse_to_heredoc_delimiter(input: &str) -> PResult<'_, &'_ str> {
+    let open = input
+        .chars()
+        .next()
+        .ok_or_else(|| PError::expected("heredoc delimiter"))?;
+    if open.is_alphanumeric() || open.is_whitespace() {
+        return Err(PError::expected("heredoc delimiter"));
+    }
+
+    if let Some(close) = unicode_bracket_close(open) {
+        let (rest, delimiter) = read_bracketed(input, open, close)?;
+        return Ok((rest, delimiter));
+    }
+
+    // Symmetric non-bracket delimiter such as /.../
+    let body = &input[open.len_utf8()..];
+    let end = body
+        .find(open)
+        .ok_or_else(|| PError::expected("closing heredoc delimiter"))?;
+    let delimiter = &body[..end];
+    let rest = &body[end + open.len_utf8()..];
+    Ok((rest, delimiter))
+}
+
 /// Parse q{...}, q[...], q(...), q<...>, q/.../ quoting forms.
 pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
     if !input.starts_with('q') {
@@ -213,11 +233,11 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
     }
     let after_q = &input[1..];
 
-    // q:to/DELIM/ or qq:to/DELIM/ heredoc
-    if after_q.starts_with(":to/") || after_q.starts_with("q:to/") {
-        let r = if let Some(stripped) = after_q.strip_prefix("q:to/") {
+    // q:to/DELIM/, q:to<DELIM>, qq:to/.../, qq:to<...> heredoc
+    if after_q.starts_with(":to") || after_q.starts_with("q:to") {
+        let r = if let Some(stripped) = after_q.strip_prefix("q:to") {
             stripped
-        } else if let Some(stripped) = after_q.strip_prefix(":to/") {
+        } else if let Some(stripped) = after_q.strip_prefix(":to") {
             stripped
         } else {
             unreachable!()

@@ -3,6 +3,8 @@
 //! Handles `#|` (leading) and `#=` (trailing) declarator comments attached to
 //! declarations like `sub`, `method`, `class`, `role`, `module`, `grammar`,
 //! `token`, `rule`, `regex`, `enum`, `subset`, `constant`, `my`, `our`, `has`.
+use crate::ast::{Expr, PhaserKind, Stmt};
+use crate::{Interpreter, RuntimeError, parse_dispatch};
 
 /// Strip the `#|` or `#=` prefix from a doc comment line.
 /// Removes `#|` or `#=` and exactly one following space if present.
@@ -192,6 +194,93 @@ pub fn render_doc(source: &str) -> String {
     output
 }
 
+#[derive(Debug, Clone)]
+pub struct DocModeResult {
+    pub output: String,
+    pub status: i64,
+}
+
+fn render_begin_pod_blocks(source: &str) -> String {
+    let lines: Vec<&str> = source.lines().collect();
+    let mut output = String::new();
+    let mut i = 0usize;
+
+    while i < lines.len() {
+        let trimmed = lines[i].trim_start();
+        let mut words = trimmed.split_whitespace();
+        if words.next() == Some("=begin") && words.next() == Some("pod") {
+            i += 1;
+            while i < lines.len() {
+                let inner = lines[i].trim_start();
+                let mut inner_words = inner.split_whitespace();
+                if inner_words.next() == Some("=end") && inner_words.next() == Some("pod") {
+                    i += 1;
+                    break;
+                }
+                if let Some(rest) = inner.strip_prefix("=head") {
+                    let heading = rest
+                        .trim_start_matches(|c: char| c.is_ascii_digit())
+                        .trim_start();
+                    output.push_str(heading);
+                    output.push('\n');
+                    i += 1;
+                    continue;
+                }
+                if inner.starts_with('=') {
+                    i += 1;
+                    continue;
+                }
+                output.push_str(lines[i].trim_end());
+                output.push('\n');
+                i += 1;
+            }
+            continue;
+        }
+        i += 1;
+    }
+
+    output
+}
+
+#[allow(clippy::result_large_err)]
+fn run_doc_init_blocks(source: &str) -> Result<(String, i64, bool), RuntimeError> {
+    let (stmts, _) = parse_dispatch::parse_source(source)?;
+    let mut interpreter = Interpreter::new();
+    let mut i = 0usize;
+    while i + 1 < stmts.len() {
+        let is_doc_marker = matches!(&stmts[i], Stmt::Expr(Expr::BareWord(name)) if name == "DOC");
+        if is_doc_marker
+            && let Stmt::Phaser {
+                kind: PhaserKind::Init,
+                body,
+            } = &stmts[i + 1]
+        {
+            interpreter.eval_block_value(body)?;
+            if interpreter.is_halted() {
+                break;
+            }
+            i += 2;
+            continue;
+        }
+        i += 1;
+    }
+    Ok((
+        interpreter.output().to_string(),
+        interpreter.exit_code(),
+        interpreter.is_halted(),
+    ))
+}
+
+#[allow(clippy::result_large_err)]
+pub fn run_doc_mode(source: &str) -> Result<DocModeResult, RuntimeError> {
+    let (mut output, status, halted) = run_doc_init_blocks(source)?;
+    if !halted {
+        output.push_str(&render_doc(source));
+        output.push_str(&render_begin_pod_blocks(source));
+    }
+    Ok(DocModeResult { output, status })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,5 +323,34 @@ sub foo {}
     fn test_join_doc_lines() {
         let lines = vec!["#|  line 1", "#| ", "#| line 2"];
         assert_eq!(join_doc_lines(&lines), "line 1 line 2");
+    }
+
+    #[test]
+    fn test_render_begin_pod_blocks_heading_and_text() {
+        let source = "\
+=begin pod
+
+=head1 Some Heading
+
+Some Text
+
+=end pod
+";
+        let output = render_begin_pod_blocks(source);
+        assert!(output.contains("Some Heading"));
+        assert!(output.contains("Some Text"));
+    }
+
+    #[test]
+    fn test_run_doc_mode_executes_doc_init() {
+        let source = "\
+=begin pod
+=head1 Docs
+=end pod
+DOC INIT { say 'alive'; exit; }
+";
+        let result = run_doc_mode(source).unwrap();
+        assert!(result.output.contains("alive"));
+        assert!(!result.output.contains("Docs"));
     }
 }

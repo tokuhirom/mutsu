@@ -128,9 +128,19 @@ fn main() {
     }
 
     if doc_mode {
-        let output = mutsu::doc_mode::render_doc(&input);
-        print!("{}", output);
-        return;
+        match mutsu::doc_mode::run_doc_mode(&input) {
+            Ok(result) => {
+                print!("{}", result.output);
+                if result.status != 0 {
+                    std::process::exit(result.status as i32);
+                }
+                return;
+            }
+            Err(err) => {
+                print_error("Runtime error", &err);
+                std::process::exit(1);
+            }
+        }
     }
 
     let mut interpreter = Interpreter::new();

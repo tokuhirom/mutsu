@@ -1,5 +1,5 @@
 use Test;
-plan 3;
+plan 4;
 
 my $text = q:to/END/;
 Hello
@@ -17,3 +17,9 @@ is $multi, "line one\nline two\nline three\n", 'multi-line heredoc';
 my $empty = q:to/END/;
 END
 is $empty, "", 'empty heredoc';
+
+my $angle = Q:to<--END-->;
+first
+second
+--END--
+is $angle, "first\nsecond\n", 'Q:to<...> heredoc';
