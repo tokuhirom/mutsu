@@ -3104,9 +3104,24 @@ impl Interpreter {
                     };
                     attrs.insert(attr_name, val);
                 }
+                let class_mro = self.class_mro(class_name);
                 for val in &args {
-                    if let Value::Pair(k, v) = val {
-                        attrs.insert(k.clone(), *v.clone());
+                    match val {
+                        Value::Pair(k, v) => {
+                            attrs.insert(k.clone(), *v.clone());
+                        }
+                        Value::Instance {
+                            class_name: src_class,
+                            attributes: src_attrs,
+                            ..
+                        } if class_mro.iter().any(|name| name == src_class) => {
+                            for (attr, value) in src_attrs.iter() {
+                                if attrs.contains_key(attr) {
+                                    attrs.insert(attr.clone(), value.clone());
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 if self.class_has_method(class_name, "BUILD") {

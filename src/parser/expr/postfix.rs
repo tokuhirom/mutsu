@@ -581,6 +581,28 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             continue;
         }
 
+        // Object constructor shorthand: Type{ :named(...) } / Type{ key => value, ... }.
+        // Treat this as Type.new(...) for package/type barewords.
+        if rest.starts_with('{') && matches!(&expr, Expr::BareWord(_)) {
+            let r = &rest[1..];
+            let (r, _) = ws(r)?;
+            let (r, args) = if r.starts_with('}') {
+                (r, Vec::new())
+            } else {
+                parse_call_arg_list(r)?
+            };
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, '}')?;
+            expr = Expr::MethodCall {
+                target: Box::new(expr),
+                name: "new".to_string(),
+                args,
+                modifier: None,
+            };
+            rest = r;
+            continue;
+        }
+
         // Hash indexing with braces: %hash{"key"}, %hash{$var}, @a[0]{"key"}, etc.
         if rest.starts_with('{')
             && matches!(
