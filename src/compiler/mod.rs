@@ -17,6 +17,8 @@ pub(crate) struct Compiler {
     compiled_functions: HashMap<String, CompiledFunction>,
     current_package: String,
     tmp_counter: usize,
+    dynamic_scope_all: bool,
+    dynamic_scope_names: Option<std::collections::HashSet<String>>,
 }
 
 impl Compiler {
@@ -27,6 +29,8 @@ impl Compiler {
             compiled_functions: HashMap::new(),
             current_package: "GLOBAL".to_string(),
             tmp_counter: 0,
+            dynamic_scope_all: false,
+            dynamic_scope_names: None,
         }
     }
 

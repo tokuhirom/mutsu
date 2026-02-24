@@ -1,6 +1,63 @@
 use super::*;
 
 impl Compiler {
+    fn normalize_dynamic_scope_name(name: &str) -> String {
+        name.trim_start_matches(['$', '@', '%', '&']).to_string()
+    }
+
+    pub(super) fn push_dynamic_scope_lexical(
+        &mut self,
+    ) -> (bool, Option<std::collections::HashSet<String>>) {
+        (self.dynamic_scope_all, self.dynamic_scope_names.clone())
+    }
+
+    pub(super) fn pop_dynamic_scope_lexical(
+        &mut self,
+        saved: (bool, Option<std::collections::HashSet<String>>),
+    ) {
+        self.dynamic_scope_all = saved.0;
+        self.dynamic_scope_names = saved.1;
+    }
+
+    pub(super) fn apply_dynamic_scope_pragma(&mut self, arg: Option<&Expr>) {
+        match arg {
+            None => {
+                self.dynamic_scope_all = true;
+                self.dynamic_scope_names = None;
+            }
+            Some(Expr::ArrayLiteral(items)) => {
+                let mut names = std::collections::HashSet::new();
+                for item in items {
+                    if let Expr::Literal(Value::Str(s)) = item {
+                        names.insert(Self::normalize_dynamic_scope_name(s));
+                    }
+                }
+                self.dynamic_scope_all = false;
+                self.dynamic_scope_names = Some(names);
+            }
+            Some(Expr::Literal(Value::Str(s))) => {
+                let mut names = std::collections::HashSet::new();
+                names.insert(Self::normalize_dynamic_scope_name(s));
+                self.dynamic_scope_all = false;
+                self.dynamic_scope_names = Some(names);
+            }
+            Some(_) => {
+                self.dynamic_scope_all = false;
+                self.dynamic_scope_names = Some(std::collections::HashSet::new());
+            }
+        }
+    }
+
+    pub(super) fn var_is_dynamic(&self, name: &str) -> bool {
+        if self.dynamic_scope_all {
+            return true;
+        }
+        let Some(names) = &self.dynamic_scope_names else {
+            return false;
+        };
+        names.contains(&Self::normalize_dynamic_scope_name(name))
+    }
+
     pub(super) fn is_normalized_stmt_call_name(name: &str) -> bool {
         matches!(
             name,
@@ -267,6 +324,7 @@ impl Compiler {
     /// CATCH or CONTROL blocks. This should be used for any block context (bare blocks,
     /// if branches, loop bodies, sub bodies) to ensure CATCH/CONTROL are not silently ignored.
     pub(super) fn compile_body_with_implicit_try(&mut self, stmts: &[Stmt]) {
+        let saved = self.push_dynamic_scope_lexical();
         if Self::has_catch_or_control(stmts) {
             self.compile_try(stmts, &None);
             self.code.emit(OpCode::Pop);
@@ -275,10 +333,12 @@ impl Compiler {
                 self.compile_stmt(s);
             }
         }
+        self.pop_dynamic_scope_lexical(saved);
     }
 
     /// Compile Expr::Try { body, catch } to TryCatch opcode.
     pub(super) fn compile_try(&mut self, body: &[Stmt], catch: &Option<Vec<Stmt>>) {
+        let saved = self.push_dynamic_scope_lexical();
         // Separate CATCH/CONTROL blocks from body.
         let mut main_stmts = Vec::new();
         let mut catch_stmts = catch.clone();
@@ -361,6 +421,7 @@ impl Compiler {
         if let Some(j) = jump_after_catch {
             self.code.patch_jump(j);
         }
+        self.pop_dynamic_scope_lexical(saved);
     }
 
     pub(super) fn compile_do_block_expr(&mut self, body: &[Stmt], label: &Option<String>) {
@@ -705,8 +766,10 @@ impl Compiler {
 
     /// Compile a block inline (for blocks without placeholders).
     pub(super) fn compile_block_inline(&mut self, stmts: &[Stmt]) {
+        let saved = self.push_dynamic_scope_lexical();
         if stmts.is_empty() {
             self.code.emit(OpCode::LoadNil);
+            self.pop_dynamic_scope_lexical(saved);
             return;
         }
         // Hoist sub declarations
@@ -717,11 +780,13 @@ impl Compiler {
                 if let Stmt::Expr(expr) = stmt {
                     self.compile_expr(expr);
                     // Don't emit Pop — leave value on stack as block's return value
+                    self.pop_dynamic_scope_lexical(saved);
                     return;
                 }
                 if matches!(stmt, Stmt::Given { .. }) {
                     // given block pushes succeed value onto stack
                     self.compile_stmt(stmt);
+                    self.pop_dynamic_scope_lexical(saved);
                     return;
                 }
             }
@@ -729,5 +794,6 @@ impl Compiler {
         }
         // If last statement wasn't an expression, push Nil
         self.code.emit(OpCode::LoadNil);
+        self.pop_dynamic_scope_lexical(saved);
     }
 }

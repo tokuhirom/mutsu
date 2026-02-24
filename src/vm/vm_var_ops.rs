@@ -537,6 +537,16 @@ impl VM {
         Ok(())
     }
 
+    pub(super) fn exec_set_var_dynamic_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        dynamic: bool,
+    ) {
+        let name = Self::const_str(code, name_idx);
+        self.interpreter.set_var_dynamic(name, dynamic);
+    }
+
     pub(super) fn exec_assign_expr_local_op(&mut self, code: &CompiledCode, idx: u32) {
         let val = self.stack.last().unwrap().clone();
         let idx = idx as usize;
