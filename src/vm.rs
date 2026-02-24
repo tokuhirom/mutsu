@@ -295,6 +295,12 @@ impl VM {
                     Value::Str(s) => s.clone(),
                     _ => unreachable!("SetGlobal name must be a string constant"),
                 };
+                if self.interpreter.strict_mode
+                    && !name.contains("::")
+                    && !self.interpreter.env().contains_key(&name)
+                {
+                    return Err(self.strict_undeclared_error(&name));
+                }
                 let val = self.stack.pop().unwrap();
                 let val = if name.starts_with('%') {
                     runtime::coerce_to_hash(val)

@@ -46,6 +46,26 @@ impl Compiler {
         }
     }
 
+    pub(crate) fn qualify_variable_name(&self, name: &str) -> String {
+        if self.current_package == "GLOBAL" || name.contains("::") {
+            return name.to_string();
+        }
+        if name.is_empty() {
+            return name.to_string();
+        }
+        let first = name.chars().next().unwrap();
+        if matches!(first, '_' | '/' | '!' | '?' | '*' | '.' | '=') {
+            return name.to_string();
+        }
+        if let Some(sigil) = name.chars().next()
+            && matches!(sigil, '$' | '@' | '%' | '&')
+            && name.len() > 1
+        {
+            return format!("{sigil}{}::{}", self.current_package, &name[1..]);
+        }
+        format!("{}::{}", self.current_package, name)
+    }
+
     fn alloc_local(&mut self, name: &str) -> u32 {
         if let Some(&slot) = self.local_map.get(name) {
             return slot;
@@ -60,7 +80,9 @@ impl Compiler {
         if let Some(&slot) = self.local_map.get(name) {
             self.code.emit(OpCode::SetLocal(slot));
         } else {
-            let idx = self.code.add_constant(Value::Str(name.to_string()));
+            let idx = self
+                .code
+                .add_constant(Value::Str(self.qualify_variable_name(name)));
             self.code.emit(OpCode::SetGlobal(idx));
         }
     }

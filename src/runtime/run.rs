@@ -37,6 +37,9 @@ impl Interpreter {
         let mut pending_todo: Option<String> = None;
         let mut skip_lines_remaining: usize = 0;
         let mut skip_reason: String = String::new();
+        // Count-based skip where the skipped line is a block opener `{`.
+        // In that case, consume the whole block while emitting a single skip line.
+        let mut skip_count_block_depth: usize = 0;
         // Block-level skip: skip the next { ... } block
         let mut skip_block_pending: Option<String> = None;
         let mut skip_block_depth: usize = 0;
@@ -44,6 +47,22 @@ impl Interpreter {
 
         for line in input.lines() {
             let trimmed = line.trim_start();
+
+            // Continue skipping the remainder of a count-skipped block.
+            if skip_count_block_depth > 0 {
+                for ch in trimmed.chars() {
+                    if ch == '{' {
+                        skip_count_block_depth += 1;
+                    } else if ch == '}' {
+                        skip_count_block_depth -= 1;
+                        if skip_count_block_depth == 0 {
+                            break;
+                        }
+                    }
+                }
+                output.push('\n');
+                continue;
+            }
 
             // Count-based skip: skip the next N non-comment, non-empty lines
             if skip_lines_remaining > 0 {
@@ -60,6 +79,15 @@ impl Interpreter {
                     skip_lines_remaining -= 1;
                     // Emit a skip() call for each skipped test line
                     output.push_str(&format!("skip '{}', 1;\n", skip_reason));
+                    if trimmed.starts_with('{') {
+                        for ch in trimmed.chars() {
+                            if ch == '{' {
+                                skip_count_block_depth += 1;
+                            } else if ch == '}' && skip_count_block_depth > 0 {
+                                skip_count_block_depth -= 1;
+                            }
+                        }
+                    }
                     continue;
                 }
                 output.push('\n');
@@ -312,7 +340,8 @@ impl Interpreter {
         }
         let (enter_ph, leave_ph, body_main) = self.split_block_phasers(&stmts);
         self.run_block_raw(&enter_ph)?;
-        let compiler = crate::compiler::Compiler::new();
+        let mut compiler = crate::compiler::Compiler::new();
+        compiler.set_current_package(self.current_package.clone());
         let (code, compiled_fns) = compiler.compile(&body_main);
         let interp = std::mem::take(self);
         let vm = crate::vm::VM::new(interp);
@@ -380,7 +409,8 @@ impl Interpreter {
         if stmts.is_empty() {
             return Ok(());
         }
-        let compiler = crate::compiler::Compiler::new();
+        let mut compiler = crate::compiler::Compiler::new();
+        compiler.set_current_package(self.current_package.clone());
         let (code, compiled_fns) = compiler.compile(stmts);
         let interp = std::mem::take(self);
         let vm = crate::vm::VM::new(interp);
@@ -460,5 +490,19 @@ impl Interpreter {
         let stmts = Self::merge_unit_class(stmts);
         self.run_block(&stmts)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Interpreter;
+
+    #[test]
+    fn preprocess_count_skip_consumes_entire_block() {
+        let src = "#?rakudo 1 skip 'reason'\n{\n    is EVAL('$bar'), Any, 'x'\n}\nsay 42;\n";
+        let out = Interpreter::preprocess_roast_directives(src);
+        assert!(out.contains("skip 'reason', 1;"));
+        assert!(!out.contains("is EVAL('$bar')"));
+        assert!(out.contains("say 42;"));
     }
 }

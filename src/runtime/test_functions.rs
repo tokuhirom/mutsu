@@ -571,6 +571,7 @@ impl Interpreter {
             _ => String::new(),
         };
         let mut nested = Interpreter::new();
+        nested.strict_mode = self.strict_mode;
         if let Some(Value::Int(pid)) = self.env.get("*PID") {
             nested.set_pid(pid.saturating_add(1));
         }
@@ -608,6 +609,7 @@ impl Interpreter {
             _ => String::new(),
         };
         let mut nested = Interpreter::new();
+        nested.strict_mode = self.strict_mode;
         if let Some(Value::Int(pid)) = self.env.get("*PID") {
             nested.set_pid(pid.saturating_add(1));
         }
@@ -647,6 +649,7 @@ impl Interpreter {
             Value::Sub(data) => self.eval_block_value(&data.body),
             Value::Str(code) => {
                 let mut nested = Interpreter::new();
+                nested.strict_mode = self.strict_mode;
                 if let Some(Value::Int(pid)) = self.env.get("*PID") {
                     nested.set_pid(pid.saturating_add(1));
                 }

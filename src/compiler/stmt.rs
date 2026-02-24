@@ -156,20 +156,7 @@ impl Compiler {
                     }
                     self.code.emit(OpCode::SetLocal(slot));
                     if *is_our {
-                        let qualified = if self.current_package != "GLOBAL" && !name.contains("::")
-                        {
-                            if let Some(sigil) = name.chars().next() {
-                                if matches!(sigil, '$' | '@' | '%' | '&') && name.len() > 1 {
-                                    format!("{sigil}{}::{}", self.current_package, &name[1..])
-                                } else {
-                                    format!("{}::{}", self.current_package, name)
-                                }
-                            } else {
-                                name.clone()
-                            }
-                        } else {
-                            name.clone()
-                        };
+                        let qualified = self.qualify_variable_name(name);
                         let idx = self.code.add_constant(Value::Str(qualified));
                         self.code.emit(OpCode::SetGlobal(idx));
                     }

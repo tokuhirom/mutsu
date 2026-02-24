@@ -957,6 +957,8 @@ impl Interpreter {
             let _ = self.compute_class_mro(name, &mut stack)?;
             return Ok(());
         }
+        let saved_package = self.current_package.clone();
+        self.current_package = name.to_string();
         for stmt in body {
             match stmt {
                 Stmt::HasDecl {
@@ -1126,6 +1128,7 @@ impl Interpreter {
             }
             self.classes.insert(name.to_string(), class_def.clone());
         }
+        self.current_package = saved_package;
         self.resolve_class_stub_requirements(name, &mut class_def)?;
         self.classes.insert(name.to_string(), class_def);
         let mut stack = Vec::new();
