@@ -254,6 +254,13 @@ impl Value {
 
     /// Check if this value does (composes) the given role name.
     pub(crate) fn does_check(&self, role_name: &str) -> bool {
+        if let Value::Mixin(inner, mixins) = self {
+            let key = format!("__mutsu_role__{}", role_name);
+            if mixins.contains_key(&key) {
+                return true;
+            }
+            return inner.does_check(role_name);
+        }
         // Check built-in role compositions
         if role_name == "Encoding" {
             if let Value::Instance { class_name, .. } = self

@@ -453,6 +453,70 @@ impl Interpreter {
             || self.enum_types.contains_key(name)
     }
 
+    pub(crate) fn has_role(&self, name: &str) -> bool {
+        self.roles.contains_key(name)
+    }
+
+    pub(crate) fn eval_does_values(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
+        if let Some((role_name, args)) = self.extract_role_application(&right) {
+            return self.compose_role_on_value(left, &role_name, &args);
+        }
+        let role_name = right.to_string_value();
+        Ok(Value::Bool(left.does_check(&role_name)))
+    }
+
+    fn extract_role_application(&self, rhs: &Value) -> Option<(String, Vec<Value>)> {
+        match rhs {
+            Value::Pair(name, boxed) if self.roles.contains_key(name) => {
+                if let Value::Array(args, ..) = boxed.as_ref() {
+                    Some((name.clone(), args.as_ref().clone()))
+                } else {
+                    None
+                }
+            }
+            Value::Package(name) | Value::Str(name) if self.roles.contains_key(name) => {
+                Some((name.clone(), Vec::new()))
+            }
+            _ => None,
+        }
+    }
+
+    fn compose_role_on_value(
+        &mut self,
+        left: Value,
+        role_name: &str,
+        role_args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let role = self
+            .roles
+            .get(role_name)
+            .cloned()
+            .ok_or_else(|| RuntimeError::new(format!("Unknown role: {}", role_name)))?;
+
+        let (inner, mut mixins) = match left {
+            Value::Mixin(inner, mixins) => (inner, mixins),
+            other => (Box::new(other), HashMap::new()),
+        };
+        mixins.insert(format!("__mutsu_role__{}", role_name), Value::Bool(true));
+
+        for (idx, (attr_name, _is_public, default_expr)) in role.attributes.iter().enumerate() {
+            let value = if let Some(arg) = role_args.get(idx) {
+                arg.clone()
+            } else if let Some(default_expr) = default_expr {
+                self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?
+            } else {
+                Value::Nil
+            };
+            mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
+        }
+
+        Ok(Value::Mixin(inner, mixins))
+    }
+
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
         // Handle coercion types: Int() matches anything, Int(Rat) matches Rat
         if let Some((_, source)) = parse_coercion_type(constraint) {
