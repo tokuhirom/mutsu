@@ -1300,6 +1300,24 @@ impl Interpreter {
             self.env.insert(key.clone(), val.clone());
         }
     }
+
+    pub(crate) fn merge_sigilless_alias_writes(
+        &self,
+        saved_env: &mut HashMap<String, Value>,
+        current_env: &HashMap<String, Value>,
+    ) {
+        for (key, alias) in current_env {
+            if !key.starts_with("__mutsu_sigilless_alias::") {
+                continue;
+            }
+            let Value::Str(alias_name) = alias else {
+                continue;
+            };
+            if let Some(value) = current_env.get(alias_name).cloned() {
+                saved_env.insert(alias_name.clone(), value);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Default)]

@@ -316,6 +316,7 @@ impl Interpreter {
                 ">" => super::to_float_value(&left) > super::to_float_value(&right),
                 ">=" => super::to_float_value(&left) >= super::to_float_value(&right),
                 "===" => left == right,
+                "!===" => left != right,
                 "=:=" => left == right,
                 _ => {
                     return Err(RuntimeError::new(format!(

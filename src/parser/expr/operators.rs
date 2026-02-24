@@ -6,6 +6,7 @@ use super::super::parse_result::{PError, merge_expected_messages};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ComparisonOp {
     StrictEq,
+    StrictNe,
     NumEq,
     NotDivisibleBy,
     NumNe,
@@ -35,6 +36,7 @@ impl ComparisonOp {
     pub(super) fn token_kind(self) -> TokenKind {
         match self {
             ComparisonOp::StrictEq => TokenKind::EqEqEq,
+            ComparisonOp::StrictNe => TokenKind::BangEqEqEq,
             ComparisonOp::NumEq => TokenKind::EqEq,
             ComparisonOp::NotDivisibleBy => TokenKind::BangPercentPercent,
             ComparisonOp::NumNe => TokenKind::BangEq,
