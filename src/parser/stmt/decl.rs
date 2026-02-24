@@ -199,11 +199,11 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         return Ok((rest, stmt));
     }
 
-    // Sigilless variable: my \name = expr / my \name := expr
+    // Sigilless variable: my \name = expr / my \name := expr / my \name ::= expr
     if let Some(r) = rest.strip_prefix('\\') {
         let (r, name) = ident(r)?;
         let (r, _) = ws(r)?;
-        if let Some(r) = r.strip_prefix(":=") {
+        if let Some(r) = r.strip_prefix("::=").or_else(|| r.strip_prefix(":=")) {
             let (r, _) = ws(r)?;
             let (r, expr) = parse_assign_expr_or_comma(r)?;
             let stmt = Stmt::VarDecl {
@@ -290,11 +290,11 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         }
     };
 
-    // Sigilless variable after type: my Int \name = expr / my Int \name := expr
+    // Sigilless variable after type: my Int \name = expr / my Int \name := expr / ::=
     if let Some(r) = rest.strip_prefix('\\') {
         let (r, name) = ident(r)?;
         let (r, _) = ws(r)?;
-        if let Some(r) = r.strip_prefix(":=") {
+        if let Some(r) = r.strip_prefix("::=").or_else(|| r.strip_prefix(":=")) {
             let (r, _) = ws(r)?;
             let (r, expr) = parse_assign_expr_or_comma(r)?;
             let stmt = Stmt::VarDecl {
@@ -464,8 +464,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         }
         return Ok((rest, stmt));
     }
-    // Binding :=
-    if let Some(stripped) = rest.strip_prefix(":=") {
+    // Binding := or ::=
+    if let Some(stripped) = rest.strip_prefix("::=").or_else(|| rest.strip_prefix(":=")) {
         let (rest, _) = ws(stripped)?;
         let (rest, expr) = parse_assign_expr_or_comma(rest)?;
         let stmt = Stmt::VarDecl {
@@ -537,8 +537,10 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
     }
     let (rest, _) = parse_char(r, ')')?;
     let (rest, _) = ws(rest)?;
-    if rest.starts_with('=') || rest.starts_with(":=") {
-        let rest = if let Some(stripped) = rest.strip_prefix(":=") {
+    if rest.starts_with('=') || rest.starts_with("::=") || rest.starts_with(":=") {
+        let rest = if let Some(stripped) = rest.strip_prefix("::=") {
+            stripped
+        } else if let Some(stripped) = rest.strip_prefix(":=") {
             stripped
         } else {
             &rest[1..]
@@ -832,8 +834,10 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         ident(rest)?
     };
     let (rest, _) = ws(rest)?;
-    if rest.starts_with('=') || rest.starts_with(":=") {
-        let rest = if let Some(stripped) = rest.strip_prefix(":=") {
+    if rest.starts_with('=') || rest.starts_with("::=") || rest.starts_with(":=") {
+        let rest = if let Some(stripped) = rest.strip_prefix("::=") {
+            stripped
+        } else if let Some(stripped) = rest.strip_prefix(":=") {
             stripped
         } else {
             &rest[1..]
