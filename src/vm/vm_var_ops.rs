@@ -523,25 +523,26 @@ impl VM {
     }
 
     pub(super) fn exec_get_pseudo_stash_op(&mut self, code: &CompiledCode, name_idx: u32) {
-        let _name = Self::const_str(code, name_idx);
-        // Currently only MY:: is supported; other pseudo-packages can be added later.
-        // Collect all variable names from the current scope (locals + env).
-        let mut entries: HashMap<String, Value> = HashMap::new();
+        let name = Self::const_str(code, name_idx);
+        if let Some(package) = name.strip_suffix("::")
+            && package != "MY"
+        {
+            self.stack
+                .push(self.interpreter.package_stash_value(package));
+            return;
+        }
 
-        // Add VM locals with sigil prefix
+        // MY:: pseudo-stash: collect all variable names from current scope.
+        let mut entries: HashMap<String, Value> = HashMap::new();
         for (i, var_name) in code.locals.iter().enumerate() {
             let val = self.locals[i].clone();
             let key = Self::add_sigil_prefix(var_name);
             entries.insert(key, val);
         }
-
-        // Add interpreter env entries (these include imported subs, etc.)
         for (key, val) in self.interpreter.env() {
             let display_key = Self::add_sigil_prefix(key);
             entries.entry(display_key).or_insert_with(|| val.clone());
         }
-
-        // Build a Value::Hash from the entries
         self.stack.push(Value::Hash(Arc::new(entries)));
     }
 

@@ -17,16 +17,13 @@ pub(super) fn parse_var_name_from_str(input: &str) -> (&str, String) {
         } else {
             (input, "")
         };
-    let end = rest
-        .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-        .unwrap_or(rest.len());
-    let name = &rest[..end];
+    let (rest_after_name, name) = parse_qualified_ident_with_hyphens_or_empty(rest);
     let full_name = if twigil.is_empty() {
-        name.to_string()
+        name
     } else {
         format!("{}{}", twigil, name)
     };
-    (&rest[end..], full_name)
+    (rest_after_name, full_name)
 }
 
 /// Parse a $variable reference.
@@ -104,9 +101,9 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     } else {
         (input, "")
     };
-    let (rest, name) = parse_ident_with_hyphens(rest)?;
+    let (rest, name) = parse_qualified_ident_with_hyphens(rest)?;
     let full_name = if twigil.is_empty() {
-        name.to_string()
+        name
     } else {
         format!("{}{}", twigil, name)
     };
@@ -145,6 +142,26 @@ pub(super) fn parse_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, &'a st
     Ok((&input[end..], &input[..end]))
 }
 
+fn parse_qualified_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, String> {
+    let (mut rest, first) = parse_ident_with_hyphens(input)?;
+    let mut full = first.to_string();
+    while let Some(after) = rest.strip_prefix("::") {
+        let (r2, part) = parse_ident_with_hyphens(after)?;
+        full.push_str("::");
+        full.push_str(part);
+        rest = r2;
+    }
+    Ok((rest, full))
+}
+
+fn parse_qualified_ident_with_hyphens_or_empty(input: &str) -> (&str, String) {
+    if let Ok((rest, name)) = parse_qualified_ident_with_hyphens(input) {
+        (rest, name)
+    } else {
+        (input, String::new())
+    }
+}
+
 /// Parse an @array variable reference.
 pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '@')?;
@@ -163,9 +180,9 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     if !next_is_ident && twigil.is_empty() {
         return Ok((rest, Expr::ArrayVar("__ANON_ARRAY__".to_string())));
     }
-    let (rest, name) = parse_ident_with_hyphens(rest)?;
+    let (rest, name) = parse_qualified_ident_with_hyphens(rest)?;
     let full_name = if twigil.is_empty() {
-        name.to_string()
+        name
     } else {
         format!("{}{}", twigil, name)
     };
@@ -191,9 +208,9 @@ pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
         return Ok((rest, Expr::HashVar("__ANON_HASH__".to_string())));
     }
     // Special: %*ENV
-    let (rest, name) = parse_ident_with_hyphens(rest)?;
+    let (rest, name) = parse_qualified_ident_with_hyphens(rest)?;
     let full_name = if twigil.is_empty() {
-        name.to_string()
+        name
     } else {
         format!("{}{}", twigil, name)
     };

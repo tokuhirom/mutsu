@@ -8,7 +8,7 @@ pub(super) mod simple;
 mod sub;
 
 use super::memo::{MemoEntry, MemoStats, ParseMemo};
-use super::parse_result::{PError, PResult, parse_char, take_while1, update_best_error};
+use super::parse_result::{PError, PResult, parse_char, update_best_error};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -157,11 +157,9 @@ fn var_name(input: &str) -> PResult<'_, String> {
             return Ok((&r[1..], "/".to_string()));
         }
         // Handle bare $ (anonymous variable) — no name after sigil
-        if let Ok((rest, name)) =
-            take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
-        {
+        if let Ok((rest, name)) = qualified_ident(r) {
             let full = if twigil.is_empty() {
-                name.to_string()
+                name
             } else {
                 format!("{}{}", twigil, name)
             };

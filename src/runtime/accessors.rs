@@ -219,6 +219,45 @@ impl Interpreter {
         self.current_package = pkg;
     }
 
+    pub(crate) fn package_stash_value(&self, package: &str) -> Value {
+        let mut symbols: HashMap<String, Value> = HashMap::new();
+        let prefix = format!("{package}::");
+
+        for (key, val) in &self.env {
+            if let Some(rest) = key.strip_prefix(&prefix) {
+                let stash_key = if rest.starts_with('$')
+                    || rest.starts_with('@')
+                    || rest.starts_with('%')
+                    || rest.starts_with('&')
+                {
+                    rest.to_string()
+                } else {
+                    format!("${rest}")
+                };
+                symbols.insert(stash_key, val.clone());
+            }
+        }
+
+        for (key, def) in &self.functions {
+            if let Some(rest) = key.strip_prefix(&prefix) {
+                if rest.contains('/') || rest.contains(':') {
+                    continue;
+                }
+                symbols
+                    .entry(format!("&{rest}"))
+                    .or_insert_with(|| Value::Routine {
+                        package: def.package.clone(),
+                        name: def.name.clone(),
+                    });
+            }
+        }
+
+        let mut attrs = HashMap::new();
+        attrs.insert("name".to_string(), Value::Str(package.to_string()));
+        attrs.insert("symbols".to_string(), Value::hash(symbols));
+        Value::make_instance("Stash".to_string(), attrs)
+    }
+
     pub(crate) fn push_end_phaser(&mut self, body: Vec<Stmt>) {
         let captured_env = self.env.clone();
         self.end_phasers.push((body, captured_env));
