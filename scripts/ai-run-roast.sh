@@ -95,7 +95,7 @@ EOF_PROMPT
 if [[ "$AGENT" == "codex" ]]; then
     CMD=(ai-sandbox "$FILE" codex exec "$PROMPT")
 else
-    CMD=(ai-sandbox "$FILE" claude -p "$PROMPT")
+    CMD=(ai-sandbox "$FILE" claude -p --verbose --output-format stream-json "$PROMPT")
 fi
 
 echo "Selected file: $FILE"
