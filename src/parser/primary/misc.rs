@@ -964,6 +964,12 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
         return Ok((r, (name, Some(Expr::ArrayLiteral(items)))));
     }
 
+    // :name{block} (block-valued colonpair)
+    if r.starts_with('{') {
+        let (r, body) = parse_block_body(r)?;
+        return Ok((r, (name, Some(Expr::AnonSub(body)))));
+    }
+
     // :name<word> or :name<words> (angle bracket form)
     if r.starts_with('<') && !r.starts_with("<<") {
         let (r, _) = parse_char(r, '<')?;
