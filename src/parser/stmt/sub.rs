@@ -10,7 +10,13 @@ use super::{block, ident, keyword, qualified_ident, var_name};
 /// Parse a sub name, which can be a regular identifier or an operator-style name
 /// like `infix:<+>`, `prefix:<->`, `postfix:<++>`, `circumfix:<[ ]>`.
 pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
-    let (rest, base) = ident(input)?;
+    let (rest, base) = if let Ok((rest, base)) = ident(input) {
+        (rest, base)
+    } else {
+        let (rest, base) =
+            take_while1(input, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+        (rest, base.to_string())
+    };
     // Check for operator category names followed by :<...>
     let is_op_category = matches!(
         base.as_str(),
@@ -399,6 +405,7 @@ fn make_param(name: String) -> ParamDef {
     ParamDef {
         name,
         default: None,
+        required: false,
         named: false,
         slurpy: false,
         sigilless: false,
@@ -408,6 +415,25 @@ fn make_param(name: String) -> ParamDef {
         where_constraint: None,
         traits: Vec::new(),
     }
+}
+
+fn parse_required_suffix(input: &str) -> (&str, bool) {
+    if let Some(rest) = input.strip_prefix('!') {
+        (rest, true)
+    } else if let Some(rest) = input.strip_prefix('?') {
+        (rest, false)
+    } else {
+        (input, false)
+    }
+}
+
+fn parse_where_constraint_expr(input: &str) -> PResult<'_, Expr> {
+    let (r, _) = ws(input)?;
+    if r.starts_with('{') {
+        let (r, body) = crate::parser::primary::parse_block_body(r)?;
+        return Ok((r, Expr::AnonSub(body)));
+    }
+    expression(input)
 }
 
 pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
@@ -465,7 +491,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         }
         let (r, where_constraint) = if let Some(r2) = keyword("where", r) {
             let (r2, _) = ws1(r2)?;
-            let (r2, constraint) = expression(r2)?;
+            let (r2, constraint) = parse_where_constraint_expr(r2)?;
             (r2, Some(Box::new(constraint)))
         } else {
             (r, None)
@@ -561,10 +587,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 p.named = named;
                 p.slurpy = slurpy;
                 // Handle optional (?) / required (!) suffix after sub-signature
-                let mut rest = r3;
-                if rest.starts_with('?') || rest.starts_with('!') {
-                    rest = &rest[1..];
-                }
+                let (rest, required) = parse_required_suffix(r3);
                 // Skip whitespace
                 let (rest, _) = ws(rest)?;
                 // Handle is copy, is rw, is readonly, is raw traits
@@ -578,10 +601,11 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                     rest = r;
                 }
                 p.traits = param_traits;
+                p.required = required;
                 // Handle where constraint
                 let (rest, where_constraint) = if let Some(r) = keyword("where", rest) {
                     let (r, _) = ws1(r)?;
-                    let (r, constraint) = expression(r)?;
+                    let (r, constraint) = parse_where_constraint_expr(r)?;
                     (r, Some(Box::new(constraint)))
                 } else {
                     (rest, None)
@@ -601,6 +625,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                     || r2.as_bytes()[1] == b'%'
                     || r2.as_bytes()[1] == b'&'))
             || r2.starts_with(':')
+            || r2.starts_with('|')
             || r2.starts_with('\\')
         {
             type_constraint = Some(tc);
@@ -619,6 +644,19 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             p.slurpy = slurpy;
             return Ok((r2, p));
         }
+    }
+
+    // Typed capture parameter, e.g. `Capture |cap`
+    if type_constraint.is_some() && rest.starts_with('|') {
+        let (r, mut p) = parse_single_param(rest)?;
+        if p.type_constraint.is_none() {
+            p.type_constraint = type_constraint.clone();
+        }
+        p.named = named;
+        if slurpy {
+            p.slurpy = true;
+        }
+        return Ok((r, p));
     }
 
     // Slurpy marker may appear after a type constraint:
@@ -702,10 +740,11 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 && sub_params[0].sub_signature.is_none()
                 && !sub_params[0].name.starts_with("__")
             {
-                let mut p = make_param(sub_params[0].name.clone());
+                let mut p = make_param(alias_name.clone());
                 p.named = true;
                 p.slurpy = slurpy;
                 p.type_constraint = type_constraint;
+                p.sub_signature = Some(sub_params.clone());
                 // Handle optional (?) / required (!) suffix after alias
                 let mut rest = r3;
                 if rest.starts_with('?') || rest.starts_with('!') {
@@ -727,7 +766,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 // Handle where constraint
                 let (rest, where_constraint) = if let Some(r) = keyword("where", rest) {
                     let (r, _) = ws1(r)?;
-                    let (r, constraint) = expression(r)?;
+                    let (r, constraint) = parse_where_constraint_expr(r)?;
                     (r, Some(Box::new(constraint)))
                 } else {
                     (rest, None)
@@ -736,16 +775,13 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 return Ok((rest, p));
             }
             // Multiple params or complex: treat as sub-signature
-            let mut p = make_param(format!("__{}", alias_name));
+            let mut p = make_param(alias_name);
             p.named = true;
             p.slurpy = slurpy;
             p.type_constraint = type_constraint;
             p.sub_signature = Some(sub_params);
             // Handle optional (?) / required (!) suffix after sub-signature
-            let mut rest = r3;
-            if rest.starts_with('?') || rest.starts_with('!') {
-                rest = &rest[1..];
-            }
+            let (rest, required) = parse_required_suffix(r3);
             // Skip whitespace
             let (rest, _) = ws(rest)?;
             // Handle is copy, is rw, is readonly, is raw traits
@@ -759,10 +795,11 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 rest = r;
             }
             p.traits = param_traits;
+            p.required = required;
             // Handle where constraint
             let (rest, where_constraint) = if let Some(r) = keyword("where", rest) {
                 let (r, _) = ws1(r)?;
-                let (r, constraint) = expression(r)?;
+                let (r, constraint) = parse_where_constraint_expr(r)?;
                 (r, Some(Box::new(constraint)))
             } else {
                 (rest, None)
@@ -790,15 +827,11 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
 
     let (rest, name) = var_name(rest)?;
     // Optional (?) / required (!) suffix
-    let rest = if rest.starts_with('?') || rest.starts_with('!') {
-        &rest[1..]
-    } else {
-        rest
-    };
+    let (rest, required) = parse_required_suffix(rest);
     let (rest, _) = ws(rest)?;
 
     // Default value
-    let (rest, default) = if rest.starts_with('=') && !rest.starts_with("==") {
+    let (rest, mut default) = if rest.starts_with('=') && !rest.starts_with("==") {
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
         let (rest, expr) = expression(rest)?;
@@ -821,11 +854,24 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     // `where` constraint
     let (rest, where_constraint) = if let Some(r) = keyword("where", rest) {
         let (r, _) = ws1(r)?;
-        let (r, constraint) = expression(r)?;
+        let (r, constraint) = parse_where_constraint_expr(r)?;
         (r, Some(Box::new(constraint)))
     } else {
         (rest, None)
     };
+    let (rest_ws, _) = ws(rest)?;
+    let (rest, late_default) =
+        if default.is_none() && rest_ws.starts_with('=') && !rest_ws.starts_with("==") {
+            let rest = &rest_ws[1..];
+            let (rest, _) = ws(rest)?;
+            let (rest, expr) = expression(rest)?;
+            (rest, Some(expr))
+        } else {
+            (rest_ws, None)
+        };
+    if late_default.is_some() {
+        default = late_default;
+    }
 
     // For slurpy params, prefix the name with the sigil so runtime can
     // distinguish *@array from *%hash
@@ -840,6 +886,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     };
     let mut p = make_param(param_name);
     p.default = default;
+    p.required = required;
     p.named = named;
     p.slurpy = slurpy;
     p.type_constraint = type_constraint;

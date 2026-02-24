@@ -95,6 +95,7 @@ impl Interpreter {
                 def.package,
                 def.name,
                 def.params,
+                def.param_defs,
                 def.body,
                 self.env.clone(),
             )

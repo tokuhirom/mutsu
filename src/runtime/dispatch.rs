@@ -589,8 +589,13 @@ impl Interpreter {
                 body: Self::rewrite_proto_dispatch_stmts(body),
             },
             Expr::AnonSub(body) => Expr::AnonSub(Self::rewrite_proto_dispatch_stmts(body)),
-            Expr::AnonSubParams { params, body } => Expr::AnonSubParams {
+            Expr::AnonSubParams {
+                params,
+                param_defs,
+                body,
+            } => Expr::AnonSubParams {
                 params: params.clone(),
+                param_defs: param_defs.clone(),
                 body: Self::rewrite_proto_dispatch_stmts(body),
             },
             other => other.clone(),

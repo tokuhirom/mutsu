@@ -729,6 +729,39 @@ impl Interpreter {
                 mro: vec!["Pod::Block::Comment".to_string(), "Pod::Block".to_string()],
             },
         );
+        classes.insert(
+            "X::AdHoc".to_string(),
+            ClassDef {
+                parents: vec!["Exception".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["X::AdHoc".to_string(), "Exception".to_string()],
+            },
+        );
+        classes.insert(
+            "X::TypeCheck::Binding".to_string(),
+            ClassDef {
+                parents: vec!["Exception".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["X::TypeCheck::Binding".to_string(), "Exception".to_string()],
+            },
+        );
+        classes.insert(
+            "X::TypeCheck::Assignment".to_string(),
+            ClassDef {
+                parents: vec!["Exception".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec![
+                    "X::TypeCheck::Assignment".to_string(),
+                    "Exception".to_string(),
+                ],
+            },
+        );
         let mut interpreter = Self {
             env,
             output: String::new(),

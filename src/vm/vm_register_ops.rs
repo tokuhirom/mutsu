@@ -32,6 +32,7 @@ impl VM {
                 self.interpreter.current_package().to_string(),
                 String::new(),
                 vec![],
+                Vec::new(),
                 body.clone(),
                 self.interpreter.env().clone(),
             );
@@ -48,11 +49,18 @@ impl VM {
         idx: u32,
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
-        if let Stmt::SubDecl { params, body, .. } = stmt {
+        if let Stmt::SubDecl {
+            params,
+            param_defs,
+            body,
+            ..
+        } = stmt
+        {
             let val = Value::make_sub(
                 self.interpreter.current_package().to_string(),
                 String::new(),
                 params.clone(),
+                param_defs.clone(),
                 body.clone(),
                 self.interpreter.env().clone(),
             );
@@ -69,11 +77,18 @@ impl VM {
         idx: u32,
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
-        if let Stmt::SubDecl { params, body, .. } = stmt {
+        if let Stmt::SubDecl {
+            params,
+            param_defs,
+            body,
+            ..
+        } = stmt
+        {
             let val = Value::make_sub(
                 self.interpreter.current_package().to_string(),
                 String::new(),
                 params.clone(),
+                param_defs.clone(),
                 body.clone(),
                 self.interpreter.env().clone(),
             );
@@ -95,6 +110,7 @@ impl VM {
                 self.interpreter.current_package().to_string(),
                 String::new(),
                 vec![],
+                Vec::new(),
                 body.clone(),
                 self.interpreter.env().clone(),
             );

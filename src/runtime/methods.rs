@@ -1,6 +1,128 @@
 use super::*;
 
 impl Interpreter {
+    fn render_signature_value(expr: &Expr) -> String {
+        match expr {
+            Expr::Literal(v) => match v {
+                Value::Str(s) => format!("\"{}\"", s.replace('"', "\\\"")),
+                _ => v.to_string_value(),
+            },
+            _ => "...".to_string(),
+        }
+    }
+
+    fn render_where_constraint(where_expr: &Expr) -> String {
+        if let Expr::AnonSub(body) = where_expr
+            && body.len() == 1
+            && let Stmt::Expr(Expr::Literal(Value::Bool(true))) = &body[0]
+        {
+            return "{ True }".to_string();
+        }
+        "{ ... }".to_string()
+    }
+
+    fn render_signature_param(pd: &ParamDef) -> String {
+        let mut out = String::new();
+        if let Some(tc) = &pd.type_constraint {
+            out.push_str(tc);
+            out.push(' ');
+        }
+        if pd.named {
+            out.push(':');
+        }
+        if pd.slurpy {
+            out.push('*');
+        }
+        if pd.named
+            && !pd.name.starts_with('$')
+            && !pd.name.starts_with('@')
+            && !pd.name.starts_with('%')
+        {
+            out.push('$');
+        }
+        out.push_str(&pd.name);
+        if pd.required && pd.default.is_none() {
+            out.push('!');
+        }
+        for trait_name in &pd.traits {
+            out.push_str(" is ");
+            out.push_str(trait_name);
+        }
+        if let Some(where_expr) = &pd.where_constraint {
+            out.push_str(" where ");
+            out.push_str(&Self::render_where_constraint(where_expr));
+        }
+        if let Some(default) = &pd.default {
+            out.push_str(" = ");
+            out.push_str(&Self::render_signature_value(default));
+        }
+        out
+    }
+
+    fn render_sub_signature(
+        &self,
+        data: &crate::value::SubData,
+        assumed_positional: &[Value],
+        assumed_named: &std::collections::HashMap<String, Value>,
+    ) -> String {
+        let mut param_defs = data.param_defs.clone();
+        if !param_defs.is_empty() {
+            let mut consumed_positional = 0usize;
+            for pd in &param_defs {
+                if !pd.named && !pd.slurpy {
+                    consumed_positional += 1;
+                    if consumed_positional >= assumed_positional.len() {
+                        break;
+                    }
+                }
+            }
+            let mut to_consume = assumed_positional.len();
+            param_defs.retain(|pd| {
+                if to_consume > 0 && !pd.named && !pd.slurpy {
+                    to_consume -= 1;
+                    false
+                } else {
+                    true
+                }
+            });
+            for pd in &mut param_defs {
+                if pd.named
+                    && let Some(v) = assumed_named.get(&pd.name)
+                {
+                    pd.required = false;
+                    pd.default = Some(Expr::Literal(v.clone()));
+                }
+            }
+            let rendered: Vec<String> = param_defs
+                .iter()
+                .map(Self::render_signature_param)
+                .collect();
+            return format!(":({})", rendered.join(", "));
+        }
+        let rendered: Vec<String> = data.params.iter().map(|p| format!("${}", p)).collect();
+        format!(":({})", rendered.join(", "))
+    }
+
+    fn collect_named_param_keys(
+        param_defs: &[ParamDef],
+        out: &mut std::collections::HashSet<String>,
+    ) {
+        for pd in param_defs {
+            if pd.named {
+                if pd.name == "__subsig__" {
+                    if let Some(key) = &pd.type_constraint {
+                        out.insert(key.clone());
+                    }
+                } else {
+                    out.insert(pd.name.clone());
+                }
+            }
+            if let Some(sub) = &pd.sub_signature {
+                Self::collect_named_param_keys(sub, out);
+            }
+        }
+    }
+
     pub(crate) fn call_method_with_values(
         &mut self,
         target: Value,
@@ -33,6 +155,13 @@ impl Interpreter {
                         }
                     }
                 }
+            }
+            if method == "can" && args.len() == 1 {
+                let method_name = args[0].to_string_value();
+                if mixins.contains_key(&method_name) {
+                    return Ok(Value::Bool(true));
+                }
+                return self.call_method_with_values((**inner).clone(), method, args);
             }
             if method == "does" && args.len() == 1 {
                 let does = match &args[0] {
@@ -71,6 +200,100 @@ impl Interpreter {
             return result;
         }
 
+        if let Value::Sub(data) = &target {
+            if method == "assuming" {
+                let mut next = (**data).clone();
+                let make_failure =
+                    |sub_data: &crate::value::SubData, expected: Value, symbol: String| {
+                        let mut ex_attrs = std::collections::HashMap::new();
+                        ex_attrs.insert("expected".to_string(), expected.clone());
+                        ex_attrs.insert("symbol".to_string(), Value::Str(symbol));
+                        ex_attrs.insert(
+                            "payload".to_string(),
+                            Value::Str(expected.to_string_value()),
+                        );
+                        let exception =
+                            Value::make_instance("X::TypeCheck::Binding".to_string(), ex_attrs);
+                        let mut failure_attrs = std::collections::HashMap::new();
+                        failure_attrs.insert("exception".to_string(), exception);
+                        let failure = Value::make_instance("Failure".to_string(), failure_attrs);
+                        let mut mixins = std::collections::HashMap::new();
+                        mixins.insert("Failure".to_string(), failure);
+                        Value::Mixin(
+                            Box::new(Value::Sub(std::sync::Arc::new(sub_data.clone()))),
+                            mixins,
+                        )
+                    };
+                let mut incoming_named = std::collections::HashMap::new();
+                for arg in args {
+                    if let Value::Pair(key, boxed) = arg {
+                        incoming_named.insert(key.clone(), *boxed.clone());
+                        next.assumed_named.insert(key, *boxed);
+                    } else {
+                        next.assumed_positional.push(arg);
+                    }
+                }
+                if next.param_defs.is_empty() && !incoming_named.is_empty() {
+                    return Ok(make_failure(
+                        &next,
+                        Value::Str("Unexpected".to_string()),
+                        String::new(),
+                    ));
+                }
+                let mut known_named: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
+                Self::collect_named_param_keys(&next.param_defs, &mut known_named);
+                for name in incoming_named.keys() {
+                    if !known_named.contains(name) {
+                        return Ok(make_failure(
+                            &next,
+                            Value::Str("Unexpected".to_string()),
+                            String::new(),
+                        ));
+                    }
+                }
+                for pd in next.param_defs.iter().filter(|pd| pd.named) {
+                    if let Some(value) = incoming_named.get(&pd.name)
+                        && let Some(constraint) = &pd.type_constraint
+                        && !self.type_matches_value(constraint, value)
+                    {
+                        return Ok(make_failure(
+                            &next,
+                            Value::Package("X::TypeCheck::Assignment".to_string()),
+                            format!("${}", pd.name),
+                        ));
+                    }
+                }
+                return Ok(Value::Sub(std::sync::Arc::new(next)));
+            }
+            if method == "signature" && args.is_empty() {
+                let sig =
+                    self.render_sub_signature(data, &data.assumed_positional, &data.assumed_named);
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("raku".to_string(), Value::Str(sig.clone()));
+                attrs.insert("perl".to_string(), Value::Str(sig.clone()));
+                attrs.insert("Str".to_string(), Value::Str(sig.clone()));
+                attrs.insert("gist".to_string(), Value::Str(sig));
+                return Ok(Value::make_instance("Signature".to_string(), attrs));
+            }
+            if method == "can" {
+                let method_name = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let can = matches!(
+                    method_name.as_str(),
+                    "assuming" | "signature" | "name" | "raku" | "perl" | "Str" | "gist" | "can"
+                );
+                return Ok(Value::Bool(can));
+            }
+        }
+        if let Value::WeakSub(weak) = &target
+            && let Some(strong) = weak.upgrade()
+        {
+            return self.call_method_with_values(Value::Sub(strong), method, args);
+        }
+
         if let Some(meta_method) = method.strip_prefix('^')
             && meta_method != "name"
         {
@@ -93,6 +316,14 @@ impl Interpreter {
 
         // Primary method dispatch by name
         match method {
+            "new" if matches!(&target, Value::Package(name) if name == "Failure") => {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert(
+                    "exception".to_string(),
+                    args.first().cloned().unwrap_or(Value::Nil),
+                );
+                return Ok(Value::make_instance("Failure".to_string(), attrs));
+            }
             "are" => {
                 return self.dispatch_are(target, &args);
             }
@@ -1503,6 +1734,7 @@ impl Interpreter {
                         String::new(),
                         format!("<composed-method:{}>", method),
                         params,
+                        Vec::new(),
                         body,
                         env,
                         id,
@@ -1851,6 +2083,7 @@ impl Interpreter {
             class_name.clone(),
             method_name.to_string(),
             def.params.clone(),
+            def.param_defs.clone(),
             def.body.clone(),
             HashMap::new(),
         ))
@@ -1981,6 +2214,7 @@ impl Interpreter {
                         .map(|name| ParamDef {
                             name: name.clone(),
                             default: None,
+                            required: false,
                             named: false,
                             slurpy: false,
                             sigilless: false,

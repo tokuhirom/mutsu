@@ -269,6 +269,7 @@ pub(super) fn parse_for_params(
             let unpack_def = ParamDef {
                 name: unpack_name.clone(),
                 default: None,
+                required: false,
                 named: false,
                 slurpy: false,
                 sigilless: false,
@@ -330,6 +331,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             ParamDef {
                 name,
                 default: None,
+                required: false,
                 named: false,
                 slurpy: false,
                 sigilless: true,
@@ -397,6 +399,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         ParamDef {
             name,
             default: None,
+            required: false,
             named: false,
             slurpy: false,
             sigilless: false,

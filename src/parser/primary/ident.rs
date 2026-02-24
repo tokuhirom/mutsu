@@ -1126,32 +1126,18 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 
 /// Parse anonymous sub with params: sub ($x, $y) { ... }
 pub(super) fn parse_anon_sub_with_params(input: &str) -> PResult<'_, Expr> {
-    let (mut r, _) = parse_char(input, '(')?;
-    let mut params = Vec::new();
-    loop {
-        let (r2, _) = ws(r)?;
-        if r2.starts_with(')') {
-            r = r2;
-            break;
-        }
-        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
-            let (r3, name) = super::super::stmt::var_name_pub(r2)?;
-            params.push(name);
-            let (r3, _) = ws(r3)?;
-            if let Some(stripped) = r3.strip_prefix(',') {
-                r = stripped;
-            } else {
-                r = r3;
-            }
-        } else {
-            r = r2;
-            break;
-        }
-    }
-    parse_anon_sub_rest(r, params)
+    let (r, _) = parse_char(input, '(')?;
+    let (r, _) = ws(r)?;
+    let (r, param_defs) = super::super::stmt::parse_param_list_pub(r)?;
+    let params: Vec<String> = param_defs.iter().map(|p| p.name.clone()).collect();
+    parse_anon_sub_rest(r, params, param_defs)
 }
 
-fn parse_anon_sub_rest(input: &str, params: Vec<String>) -> PResult<'_, Expr> {
+fn parse_anon_sub_rest(
+    input: &str,
+    params: Vec<String>,
+    param_defs: Vec<crate::ast::ParamDef>,
+) -> PResult<'_, Expr> {
     let (r, _) = ws(input)?;
     let (r, _) = parse_char(r, ')')?;
     let (r, _) = ws(r)?;
@@ -1159,6 +1145,13 @@ fn parse_anon_sub_rest(input: &str, params: Vec<String>) -> PResult<'_, Expr> {
     if params.is_empty() {
         Ok((r, make_anon_sub(body)))
     } else {
-        Ok((r, Expr::AnonSubParams { params, body }))
+        Ok((
+            r,
+            Expr::AnonSubParams {
+                params,
+                param_defs,
+                body,
+            },
+        ))
     }
 }

@@ -59,6 +59,7 @@ impl Interpreter {
                 self.current_package.clone(),
                 String::new(),
                 param.iter().cloned().collect(),
+                Vec::new(),
                 body.to_vec(),
                 self.env.clone(),
             );
