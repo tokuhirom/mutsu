@@ -786,6 +786,23 @@ impl Interpreter {
                         .or_default()
                         .insert(trusted_class.clone());
                 }
+                // our &baz ::= &bar  — alias a method under a new name
+                Stmt::VarDecl {
+                    name: var_name,
+                    expr: Expr::CodeVar(source_name),
+                    ..
+                } if var_name.starts_with('&') => {
+                    let alias = var_name.trim_start_matches('&').to_string();
+                    if let Some(overloads) = class_def.methods.get(source_name).cloned() {
+                        class_def.methods.insert(alias, overloads);
+                    }
+                    // Also execute the statement so the code variable is set
+                    self.classes.insert(name.to_string(), class_def.clone());
+                    self.run_block_raw(std::slice::from_ref(stmt))?;
+                    if let Some(updated) = self.classes.get(name).cloned() {
+                        class_def = updated;
+                    }
+                }
                 _ => {
                     self.classes.insert(name.to_string(), class_def.clone());
                     self.run_block_raw(std::slice::from_ref(stmt))?;

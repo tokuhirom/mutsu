@@ -520,8 +520,8 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         };
         return parse_statement_modifier(rest, stmt);
     }
-    // Binding
-    if let Some(stripped) = rest.strip_prefix(":=") {
+    // Binding (:= or ::=)
+    if let Some(stripped) = rest.strip_prefix("::=").or_else(|| rest.strip_prefix(":=")) {
         let (rest, _) = ws(stripped)?;
         let (rest, expr) = parse_comma_or_expr(rest).map_err(|err| PError {
             messages: merge_expected_messages(
