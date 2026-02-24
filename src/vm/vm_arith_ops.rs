@@ -341,12 +341,29 @@ impl VM {
         self.stack.push(Value::Bool(result));
     }
 
-    pub(super) fn exec_does_op(&mut self) {
+    pub(super) fn exec_does_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let role_name = right.to_string_value();
-        let result = left.does_check(&role_name);
-        self.stack.push(Value::Bool(result));
+        let result = self.interpreter.eval_does_values(left, right)?;
+        self.stack.push(result);
+        Ok(())
+    }
+
+    pub(super) fn exec_does_var_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let updated = self.interpreter.eval_does_values(left, right)?;
+        let name = Self::const_str(code, name_idx).to_string();
+        self.interpreter
+            .env_mut()
+            .insert(name.clone(), updated.clone());
+        self.update_local_if_exists(code, &name, &updated);
+        self.stack.push(updated);
+        Ok(())
     }
 
     pub(super) fn exec_make_pair_op(&mut self) {

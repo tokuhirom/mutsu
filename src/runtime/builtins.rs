@@ -404,6 +404,12 @@ impl Interpreter {
         {
             return self.eval_call_on_value(callable, args.to_vec());
         }
+        if self.has_role(name) {
+            return Ok(Value::Pair(
+                name.to_string(),
+                Box::new(Value::array(args.to_vec())),
+            ));
+        }
 
         Err(RuntimeError::new(format!(
             "X::Undeclared::Symbols: Unknown function: {}",

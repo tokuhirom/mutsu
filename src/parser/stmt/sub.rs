@@ -13,7 +13,13 @@ pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
     // Check for operator category names followed by :<...>
     let is_op_category = matches!(
         base.as_str(),
-        "infix" | "prefix" | "postfix" | "circumfix" | "postcircumfix" | "trait_mod"
+        "infix"
+            | "prefix"
+            | "postfix"
+            | "circumfix"
+            | "postcircumfix"
+            | "trait_mod"
+            | "trait_auxiliary"
     );
     if is_op_category && rest.starts_with(":<") {
         // Check for :<<...>> (French-quotes / double-angle-bracket) delimiter
@@ -132,7 +138,11 @@ pub(super) fn sub_decl_body(input: &str, multi: bool, supersede: bool) -> PResul
             Some(rest.len()),
         ));
     }
-    let (rest, body) = block(rest)?;
+    let (rest, body) = match block(rest) {
+        Ok(ok) => ok,
+        Err(_) if name.starts_with("trait_auxiliary:<") => consume_raw_sub_body(rest)?,
+        Err(err) => return Err(err),
+    };
     Ok((
         rest,
         Stmt::SubDecl {
@@ -146,6 +156,66 @@ pub(super) fn sub_decl_body(input: &str, multi: bool, supersede: bool) -> PResul
             supersede,
         },
     ))
+}
+
+fn consume_raw_sub_body(input: &str) -> PResult<'_, Vec<Stmt>> {
+    if !input.starts_with('{') {
+        return Err(PError::expected("sub body"));
+    }
+    let mut depth = 0u32;
+    let mut i = 0usize;
+    while i < input.len() {
+        let ch = input[i..]
+            .chars()
+            .next()
+            .ok_or_else(|| PError::expected("closing '}'"))?;
+        let len = ch.len_utf8();
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Ok((&input[i + len..], Vec::new()));
+                }
+            }
+            '\\' => {
+                i += len;
+                if i < input.len() {
+                    let next_len = input[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(0);
+                    i += next_len;
+                    continue;
+                }
+            }
+            '\'' | '"' => {
+                let quote = ch;
+                i += len;
+                while i < input.len() {
+                    let c = input[i..]
+                        .chars()
+                        .next()
+                        .ok_or_else(|| PError::expected("string close"))?;
+                    let c_len = c.len_utf8();
+                    if c == '\\' {
+                        i += c_len;
+                        if i < input.len() {
+                            let n_len =
+                                input[i..].chars().next().map(|n| n.len_utf8()).unwrap_or(0);
+                            i += n_len;
+                            continue;
+                        }
+                    }
+                    i += c_len;
+                    if c == quote {
+                        break;
+                    }
+                }
+                continue;
+            }
+            _ => {}
+        }
+        i += len;
+    }
+    Err(PError::expected("closing '}'"))
 }
 
 /// Result of parsing sub traits.
@@ -238,6 +308,17 @@ pub(super) fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
             if r.starts_with(')') {
                 return Ok((r, params));
             }
+            rest = r;
+            continue;
+        }
+        // Handle invocant separator ';'
+        if let Some(r) = r.strip_prefix(';') {
+            let (r, _) = ws(r)?;
+            if r.starts_with(')') {
+                return Ok((r, params));
+            }
+            let (r, p) = parse_single_param(r)?;
+            params.push(p);
             rest = r;
             continue;
         }

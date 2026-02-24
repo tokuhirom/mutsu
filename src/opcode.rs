@@ -100,6 +100,7 @@ pub(crate) enum OpCode {
     // -- Type check --
     Isa,
     Does,
+    DoesVar(u32),
 
     // -- Pair --
     MakePair,

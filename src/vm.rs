@@ -497,7 +497,11 @@ impl VM {
                 *ip += 1;
             }
             OpCode::Does => {
-                self.exec_does_op();
+                self.exec_does_op()?;
+                *ip += 1;
+            }
+            OpCode::DoesVar(name_idx) => {
+                self.exec_does_var_op(code, *name_idx)?;
                 *ip += 1;
             }
 
