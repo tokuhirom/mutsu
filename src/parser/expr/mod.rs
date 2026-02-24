@@ -41,9 +41,13 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
             let r = &r[2..];
             let (r, _) = ws(r)?;
             let (r, value) = or_expr(r)?;
-            // Auto-quote bareword on LHS of => to a string literal
+            // Auto-quote bareword on LHS of => only for plain barewords.
+            // Parenthesized forms like `(Mu) => 4` must preserve the original value key.
+            let consumed = &input[..input.len() - rest.len()];
             let left = match expr {
-                Expr::BareWord(ref name) => Expr::Literal(Value::Str(name.clone())),
+                Expr::BareWord(ref name) if !consumed.trim_start().starts_with('(') => {
+                    Expr::Literal(Value::Str(name.clone()))
+                }
                 _ => expr,
             };
             return Ok((
@@ -75,8 +79,11 @@ pub(super) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {
         let r = &r[2..];
         let (r, _) = ws(r)?;
         let (r, value) = or_expr(r)?;
+        let consumed = &input[..input.len() - rest.len()];
         let left = match expr {
-            Expr::BareWord(ref name) => Expr::Literal(Value::Str(name.clone())),
+            Expr::BareWord(ref name) if !consumed.trim_start().starts_with('(') => {
+                Expr::Literal(Value::Str(name.clone()))
+            }
             _ => expr,
         };
         return Ok((

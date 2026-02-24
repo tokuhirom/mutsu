@@ -121,6 +121,9 @@ impl Interpreter {
             Some(Value::Hash(items)) => {
                 Value::array(items.keys().map(|k| Value::Str(k.clone())).collect())
             }
+            Some(Value::Pair(key, _)) => Value::array(vec![Value::Str(key)]),
+            Some(Value::ValuePair(key, _)) => Value::array(vec![*key]),
+            Some(Value::Nil) | None => Value::array(Vec::new()),
             _ => Value::array(Vec::new()),
         })
     }
@@ -129,6 +132,10 @@ impl Interpreter {
         let val = args.first().cloned();
         Ok(match val {
             Some(Value::Hash(items)) => Value::array(items.values().cloned().collect()),
+            Some(Value::Pair(_, value)) | Some(Value::ValuePair(_, value)) => {
+                Value::array(vec![*value])
+            }
+            Some(Value::Nil) | None => Value::array(Vec::new()),
             _ => Value::array(Vec::new()),
         })
     }
