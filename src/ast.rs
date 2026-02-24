@@ -432,7 +432,13 @@ pub(crate) fn collect_placeholders(stmts: &[Stmt]) -> Vec<String> {
     for stmt in stmts {
         collect_ph_stmt(stmt, &mut names);
     }
-    names.sort();
+    // Sort by the name component (strip & and ^ prefixes) so that
+    // $^a, $^b, &^c sort as a, b, c regardless of sigil.
+    names.sort_by(|a, b| {
+        let a_name = a.trim_start_matches('&').trim_start_matches('^');
+        let b_name = b.trim_start_matches('&').trim_start_matches('^');
+        a_name.cmp(b_name)
+    });
     names.dedup();
     names
 }
@@ -443,6 +449,16 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
             collect_ph_expr(e, out);
         }
         Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => collect_ph_expr(expr, out),
+        Stmt::Call { args, .. } => {
+            for arg in args {
+                match arg {
+                    CallArg::Positional(e) => collect_ph_expr(e, out),
+                    CallArg::Named { value: Some(e), .. } => collect_ph_expr(e, out),
+                    CallArg::Named { value: None, .. } => {}
+                    CallArg::Slip(e) => collect_ph_expr(e, out),
+                }
+            }
+        }
         Stmt::Say(es) | Stmt::Print(es) | Stmt::Note(es) => {
             for e in es {
                 collect_ph_expr(e, out);
@@ -555,6 +571,12 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
                 out.push(name.clone());
             }
         }
+        Expr::CodeVar(name) if name.starts_with('^') => {
+            let prefixed = format!("&{}", name);
+            if !out.contains(&prefixed) {
+                out.push(prefixed);
+            }
+        }
         Expr::Binary { left, right, .. } => {
             collect_ph_expr(left, out);
             collect_ph_expr(right, out);
@@ -630,6 +652,12 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
                 }
             }
         }
+        Expr::CodeVar(name) if name.starts_with('^') => {
+            let prefixed = format!("&{}", name);
+            if !out.contains(&prefixed) {
+                out.push(prefixed);
+            }
+        }
         Expr::CodeVar(_) => {}
         Expr::IndirectCodeLookup { package, .. } => collect_ph_expr(package, out),
         Expr::Reduction { expr, .. } => collect_ph_expr(expr, out),
@@ -650,6 +678,110 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
                 }
             }
         }
+        _ => {}
+    }
+}
+
+/// Check if a bare variable reference ($name or $name = ...) appears before
+/// the corresponding placeholder variable ($^name) in statement order.
+/// Used to detect X::Undeclared and X::Placeholder::NonPlaceholder.
+pub(crate) fn bare_precedes_placeholder(stmts: &[Stmt], bare_name: &str) -> bool {
+    let ph_name = format!("^{}", bare_name);
+    let mut ph_seen = false;
+    for stmt in stmts {
+        if stmt_contains_var_named(stmt, &ph_name) {
+            ph_seen = true;
+        }
+        if !ph_seen && stmt_references_bare(stmt, bare_name) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Check if a statement contains a variable reference Var(name).
+fn stmt_contains_var_named(stmt: &Stmt, var_name: &str) -> bool {
+    let mut found = false;
+    check_bare_var_stmt(stmt, var_name, &mut found);
+    found
+}
+
+/// Check if a statement references a bare variable (Var(name) or Assign{name}).
+fn stmt_references_bare(stmt: &Stmt, bare_name: &str) -> bool {
+    // Check assignment target name
+    if let Stmt::Assign { name, .. } = stmt
+        && name == bare_name
+    {
+        return true;
+    }
+    let mut found = false;
+    check_bare_var_stmt(stmt, bare_name, &mut found);
+    found
+}
+
+pub(crate) fn has_var_decl(stmts: &[Stmt], name: &str) -> bool {
+    for stmt in stmts {
+        match stmt {
+            Stmt::VarDecl {
+                name: decl_name, ..
+            } if decl_name == name => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
+fn check_bare_var_stmt(stmt: &Stmt, bare_name: &str, found: &mut bool) {
+    match stmt {
+        Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
+            check_bare_var_expr(e, bare_name, found);
+        }
+        Stmt::Assign { expr, .. } => check_bare_var_expr(expr, bare_name, found),
+        Stmt::Say(es) | Stmt::Print(es) | Stmt::Note(es) => {
+            for e in es {
+                check_bare_var_expr(e, bare_name, found);
+            }
+        }
+        Stmt::Call { args, .. } => {
+            for arg in args {
+                match arg {
+                    CallArg::Positional(e) => check_bare_var_expr(e, bare_name, found),
+                    CallArg::Named { value: Some(e), .. } => {
+                        check_bare_var_expr(e, bare_name, found)
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn check_bare_var_expr(expr: &Expr, bare_name: &str, found: &mut bool) {
+    match expr {
+        Expr::Var(name) if name == bare_name => *found = true,
+        Expr::Binary { left, right, .. } => {
+            check_bare_var_expr(left, bare_name, found);
+            check_bare_var_expr(right, bare_name, found);
+        }
+        Expr::Unary { expr, .. } => check_bare_var_expr(expr, bare_name, found),
+        Expr::MethodCall { target, args, .. } => {
+            check_bare_var_expr(target, bare_name, found);
+            for a in args {
+                check_bare_var_expr(a, bare_name, found);
+            }
+        }
+        Expr::Call { args, .. } => {
+            for a in args {
+                check_bare_var_expr(a, bare_name, found);
+            }
+        }
+        Expr::StringInterpolation(parts) => {
+            for p in parts {
+                check_bare_var_expr(p, bare_name, found);
+            }
+        }
+        Expr::AssignExpr { expr, .. } => check_bare_var_expr(expr, bare_name, found),
         _ => {}
     }
 }

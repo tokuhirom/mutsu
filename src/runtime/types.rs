@@ -242,7 +242,14 @@ impl Interpreter {
             Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
         ) && !name.starts_with('&')
         {
-            self.env.insert(format!("&{}", name), value);
+            self.env.insert(format!("&{}", name), value.clone());
+        }
+        // Placeholder variables also create a non-twigil alias:
+        // $^foo → $foo, &^c → &c
+        if let Some(bare) = name.strip_prefix("&^") {
+            self.env.insert(format!("&{}", bare), value);
+        } else if let Some(bare) = name.strip_prefix('^') {
+            self.env.insert(bare.to_string(), value);
         }
     }
 

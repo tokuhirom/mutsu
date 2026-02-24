@@ -118,6 +118,7 @@ roast/S06-other/main-eval.t
 roast/S06-signature/closure-over-parameters.t
 roast/S06-signature/multidimensional.t
 roast/S06-signature/passing-hashes.t
+roast/S06-signature/positional-placeholders.t
 roast/S06-signature/scalar-type.t
 roast/S06-signature/unpack-object.t
 roast/S06-traits/as.t

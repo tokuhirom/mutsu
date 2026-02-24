@@ -8,6 +8,17 @@ impl Compiler {
                 self.code.emit(OpCode::Pop);
             }
             Stmt::Block(stmts) => {
+                // Check for placeholder conflicts in blocks
+                let placeholders = crate::ast::collect_placeholders(stmts);
+                if !placeholders.is_empty()
+                    && let Some(err_val) =
+                        self.check_placeholder_conflicts(&placeholders, stmts, None)
+                {
+                    let idx = self.code.add_constant(err_val);
+                    self.code.emit(OpCode::LoadConst(idx));
+                    self.code.emit(OpCode::Die);
+                    return;
+                }
                 let saved_dynamic_scope = self.push_dynamic_scope_lexical();
                 if Self::has_catch_or_control(stmts) {
                     self.compile_try(stmts, &None);
@@ -621,6 +632,17 @@ impl Compiler {
                 multi,
                 ..
             } => {
+                // Validate placeholder conflicts for subs with implicit params
+                if param_defs.is_empty()
+                    && !params.is_empty()
+                    && let Some(err_val) =
+                        self.check_placeholder_conflicts(params, body, Some("sub"))
+                {
+                    let idx = self.code.add_constant(err_val);
+                    self.code.emit(OpCode::LoadConst(idx));
+                    self.code.emit(OpCode::Die);
+                    return;
+                }
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterSub(idx));
                 if name_expr.is_some() {

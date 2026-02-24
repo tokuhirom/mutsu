@@ -109,6 +109,16 @@ impl VM {
                 self.interpreter
                     .env_mut()
                     .insert(name.clone(), item.clone());
+                // Create non-twigil alias for placeholder params: $^a → $a
+                if let Some(bare) = name.strip_prefix("&^") {
+                    self.interpreter
+                        .env_mut()
+                        .insert(format!("&{}", bare), item.clone());
+                } else if let Some(bare) = name.strip_prefix('^') {
+                    self.interpreter
+                        .env_mut()
+                        .insert(bare.to_string(), item.clone());
+                }
             }
             if let Some(slot) = spec.param_local {
                 self.locals[slot as usize] = item.clone();

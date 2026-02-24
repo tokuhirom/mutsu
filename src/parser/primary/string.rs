@@ -442,7 +442,13 @@ pub(super) fn try_interpolate_var<'a>(
             parts.push(Expr::Var("/".to_string()));
             return Some(&rest[2..]);
         }
-        if next.is_alphabetic() || next == '_' || next == '*' || next == '?' || next == '!' {
+        if next.is_alphabetic()
+            || next == '_'
+            || next == '*'
+            || next == '?'
+            || next == '!'
+            || next == '^'
+        {
             if !current.is_empty() {
                 parts.push(Expr::Literal(Value::Str(std::mem::take(current))));
             }
