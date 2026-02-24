@@ -11,6 +11,7 @@ struct MatchAdverbs {
     exhaustive: bool,
     repeat: Option<usize>,
     ignore_case: bool,
+    perl5: bool,
 }
 
 fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
@@ -58,6 +59,8 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             adverbs.exhaustive = true;
         } else if name == "i" || name == "ignorecase" {
             adverbs.ignore_case = true;
+        } else if name.eq_ignore_ascii_case("p5") {
+            adverbs.perl5 = true;
         } else if name == "x" {
             if let Some(raw) = arg {
                 let trimmed = raw.trim();
@@ -297,15 +300,27 @@ pub(in crate::parser) fn scan_to_delim(
 pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // rx/pattern/ or rx{pattern}
     if let Ok((rest, _)) = parse_tag(input, "rx") {
-        let (open_ch, close_ch, is_paired) = if rest.starts_with('/') {
+        let (spec, adverbs) = parse_match_adverbs(rest)?;
+        let (open_ch, close_ch, is_paired) = if spec.starts_with('/') {
             ('/', '/', false)
-        } else if rest.starts_with('{') {
+        } else if spec.starts_with('{') {
             ('{', '}', true)
         } else {
             return Err(PError::expected("regex delimiter"));
         };
-        let r = &rest[1..];
+        let r = &spec[1..];
         if let Some((pattern, rest)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
+            if adverbs.exhaustive || adverbs.repeat.is_some() || adverbs.perl5 {
+                return Ok((
+                    rest,
+                    Expr::Literal(Value::RegexWithAdverbs {
+                        pattern: pattern.to_string(),
+                        exhaustive: adverbs.exhaustive,
+                        repeat: adverbs.repeat,
+                        perl5: adverbs.perl5,
+                    }),
+                ));
+            }
             return Ok((rest, Expr::Literal(Value::Regex(pattern.to_string()))));
         }
         return Err(PError::expected("regex closing delimiter"));
@@ -583,13 +598,14 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     } else {
                         pattern.to_string()
                     };
-                    if adverbs.exhaustive || adverbs.repeat.is_some() {
+                    if adverbs.exhaustive || adverbs.repeat.is_some() || adverbs.perl5 {
                         return Ok((
                             rest,
                             Expr::Literal(Value::RegexWithAdverbs {
                                 pattern,
                                 exhaustive: adverbs.exhaustive,
                                 repeat: adverbs.repeat,
+                                perl5: adverbs.perl5,
                             }),
                         ));
                     }

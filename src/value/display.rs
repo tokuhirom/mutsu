@@ -388,6 +388,7 @@ impl Value {
                 pattern,
                 exhaustive,
                 repeat,
+                perl5,
             } => {
                 let mut prefix = String::new();
                 if *exhaustive {
@@ -395,6 +396,9 @@ impl Value {
                 }
                 if let Some(count) = repeat {
                     prefix.push_str(&format!(":x({count})"));
+                }
+                if *perl5 {
+                    prefix.push_str(":P5");
                 }
                 format!("m{prefix}/{pattern}/")
             }

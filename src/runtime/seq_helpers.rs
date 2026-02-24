@@ -1,6 +1,164 @@
 use super::*;
+use ::regex::Regex;
 
 impl Interpreter {
+    fn p5_pattern_to_rust_regex(pattern: &str) -> String {
+        let chars: Vec<char> = pattern.chars().collect();
+        let mut i = 0usize;
+        let mut out = String::new();
+        while i < chars.len() {
+            if chars[i] == '(' && i + 3 < chars.len() && chars[i + 1] == '?' {
+                if chars[i + 2] == '<' {
+                    let mut j = i + 3;
+                    let mut name = String::new();
+                    while j < chars.len() && chars[j] != '>' {
+                        name.push(chars[j]);
+                        j += 1;
+                    }
+                    if j < chars.len() && !name.is_empty() {
+                        out.push_str("(?P<");
+                        out.push_str(&name);
+                        out.push('>');
+                        i = j + 1;
+                        continue;
+                    }
+                } else if chars[i + 2] == '\'' {
+                    let mut j = i + 3;
+                    let mut name = String::new();
+                    while j < chars.len() && chars[j] != '\'' {
+                        name.push(chars[j]);
+                        j += 1;
+                    }
+                    if j < chars.len() && !name.is_empty() {
+                        out.push_str("(?P<");
+                        out.push_str(&name);
+                        out.push('>');
+                        i = j + 1;
+                        continue;
+                    }
+                }
+            }
+            out.push(chars[i]);
+            i += 1;
+        }
+        out
+    }
+
+    fn compile_p5_regex(pattern: &str) -> Option<Regex> {
+        let converted = Self::p5_pattern_to_rust_regex(pattern);
+        Regex::new(&converted).ok()
+    }
+
+    fn apply_single_regex_captures(&mut self, captures: &RegexCaptures) {
+        let make_capture_match = |capture: &str| {
+            let mut attrs = HashMap::new();
+            attrs.insert("str".to_string(), Value::Str(capture.to_string()));
+            attrs.insert("from".to_string(), Value::Int(0));
+            attrs.insert("to".to_string(), Value::Int(capture.chars().count() as i64));
+            attrs.insert("list".to_string(), Value::array(Vec::new()));
+            attrs.insert("named".to_string(), Value::hash(HashMap::new()));
+            Value::make_instance("Match".to_string(), attrs)
+        };
+
+        let mut attrs = HashMap::new();
+        attrs.insert("str".to_string(), Value::Str(captures.matched.clone()));
+        attrs.insert("from".to_string(), Value::Int(captures.from as i64));
+        attrs.insert("to".to_string(), Value::Int(captures.to as i64));
+        let positional: Vec<Value> = captures
+            .positional
+            .iter()
+            .map(|s| make_capture_match(s))
+            .collect();
+        attrs.insert("list".to_string(), Value::array(positional));
+        let mut named = HashMap::new();
+        for (k, v) in &captures.named {
+            let vals: Vec<Value> = v.iter().map(|s| make_capture_match(s)).collect();
+            if vals.len() == 1 {
+                named.insert(k.clone(), vals[0].clone());
+            } else {
+                named.insert(k.clone(), Value::array(vals));
+            }
+        }
+        attrs.insert("named".to_string(), Value::hash(named));
+        let match_obj = Value::make_instance("Match".to_string(), attrs);
+        self.env.insert("/".to_string(), match_obj);
+        for (i, v) in captures.positional.iter().enumerate() {
+            self.env.insert(i.to_string(), make_capture_match(v));
+        }
+        for (k, v) in &captures.named {
+            let vals: Vec<Value> = v.iter().map(|s| make_capture_match(s)).collect();
+            let value = if vals.len() == 1 {
+                vals[0].clone()
+            } else {
+                Value::array(vals)
+            };
+            self.env.insert(format!("<{}>", k), value);
+        }
+    }
+
+    fn regex_match_with_captures_p5(&self, pattern: &str, text: &str) -> Option<RegexCaptures> {
+        let re = Self::compile_p5_regex(pattern)?;
+        let captures = re.captures(text)?;
+        let m0 = captures.get(0)?;
+        let names: Vec<Option<&str>> = re.capture_names().collect();
+        let mut out = RegexCaptures {
+            matched: m0.as_str().to_string(),
+            from: m0.start(),
+            to: m0.end(),
+            ..RegexCaptures::default()
+        };
+        for idx in 1..captures.len() {
+            if names.get(idx).is_some_and(|n| n.is_none()) {
+                if let Some(m) = captures.get(idx) {
+                    out.positional.push(m.as_str().to_string());
+                }
+                continue;
+            }
+            if let (Some(Some(name)), Some(m)) = (names.get(idx), captures.get(idx)) {
+                out.named
+                    .entry((*name).to_string())
+                    .or_default()
+                    .push(m.as_str().to_string());
+            }
+        }
+        Some(out)
+    }
+
+    fn regex_match_all_with_captures_p5(&self, pattern: &str, text: &str) -> Vec<RegexCaptures> {
+        let Some(re) = Self::compile_p5_regex(pattern) else {
+            return Vec::new();
+        };
+        let names: Vec<Option<&str>> = re.capture_names().collect();
+        let mut out = Vec::new();
+        for captures in re.captures_iter(text) {
+            let Some(m0) = captures.get(0) else {
+                continue;
+            };
+            let mut item = RegexCaptures {
+                matched: m0.as_str().to_string(),
+                from: m0.start(),
+                to: m0.end(),
+                ..RegexCaptures::default()
+            };
+            for idx in 1..captures.len() {
+                if names.get(idx).is_some_and(|n| n.is_none()) {
+                    if let Some(m) = captures.get(idx) {
+                        item.positional.push(m.as_str().to_string());
+                    }
+                    continue;
+                }
+                if let (Some(Some(name)), Some(m)) = (names.get(idx), captures.get(idx)) {
+                    item.named
+                        .entry((*name).to_string())
+                        .or_default()
+                        .push(m.as_str().to_string());
+                }
+            }
+            out.push(item);
+        }
+        out
+    }
+
     pub(super) fn smart_match(&mut self, left: &Value, right: &Value) -> bool {
         match (left, right) {
             (Value::Version { .. }, Value::Version { parts, plus, minus }) => {
@@ -28,18 +186,18 @@ impl Interpreter {
                     Err(_) => false,
                 }
             }
-            (
+            (_, Value::Regex(pat))
+            | (
                 _,
-                Value::Regex(pat)
-                | Value::RegexWithAdverbs {
+                Value::RegexWithAdverbs {
                     pattern: pat,
                     exhaustive: false,
+                    perl5: false,
                     ..
                 },
             ) => {
                 let text = left.to_string_value();
                 if let Some(captures) = self.regex_match_with_captures(pat, &text) {
-                    // Set $/ to a Match object with from/to/str and positional captures
                     let match_obj = Value::make_match_object_with_captures(
                         captures.matched.clone(),
                         captures.from as i64,
@@ -48,11 +206,9 @@ impl Interpreter {
                         &captures.named,
                     );
                     self.env.insert("/".to_string(), match_obj);
-                    // Set positional capture variables ($0, $1, etc.)
                     for (i, v) in captures.positional.iter().enumerate() {
                         self.env.insert(i.to_string(), Value::Str(v.clone()));
                     }
-                    // Set named capture variables
                     for (k, v) in &captures.named {
                         let value = if v.len() == 1 {
                             Value::Str(v[0].clone())
@@ -69,13 +225,35 @@ impl Interpreter {
             (
                 _,
                 Value::RegexWithAdverbs {
-                    pattern,
-                    exhaustive: true,
-                    repeat,
+                    pattern: pat,
+                    exhaustive: false,
+                    perl5: true,
+                    ..
                 },
             ) => {
                 let text = left.to_string_value();
-                let mut all = self.regex_match_all_with_captures(pattern, &text);
+                if let Some(captures) = self.regex_match_with_captures_p5(pat, &text) {
+                    self.apply_single_regex_captures(&captures);
+                    return true;
+                }
+                self.env.insert("/".to_string(), Value::Nil);
+                false
+            }
+            (
+                _,
+                Value::RegexWithAdverbs {
+                    pattern,
+                    exhaustive: true,
+                    repeat,
+                    perl5,
+                },
+            ) => {
+                let text = left.to_string_value();
+                let mut all = if *perl5 {
+                    self.regex_match_all_with_captures_p5(pattern, &text)
+                } else {
+                    self.regex_match_all_with_captures(pattern, &text)
+                };
                 if all.is_empty() {
                     self.env.insert("/".to_string(), Value::Nil);
                     return false;
