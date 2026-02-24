@@ -115,6 +115,7 @@ impl VM {
             name,
             params,
             param_defs,
+            signature_alternates,
             body,
             multi,
             is_export,
@@ -141,6 +142,28 @@ impl VM {
                     *is_test_assertion,
                     *supersede,
                 )?;
+            }
+            for (alt_params, alt_param_defs) in signature_alternates {
+                self.interpreter.register_sub_decl(
+                    name,
+                    alt_params,
+                    alt_param_defs,
+                    body,
+                    *multi,
+                    *is_test_assertion,
+                    *supersede,
+                )?;
+                if *is_export && !self.interpreter.suppress_exports {
+                    self.interpreter.register_sub_decl_as_global(
+                        name,
+                        alt_params,
+                        alt_param_defs,
+                        body,
+                        *multi,
+                        *is_test_assertion,
+                        *supersede,
+                    )?;
+                }
             }
             self.sync_locals_from_env(code);
             Ok(())

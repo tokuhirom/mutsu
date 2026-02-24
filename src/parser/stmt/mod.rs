@@ -822,7 +822,17 @@ mod tests {
         let (rest, stmts) = program(src).unwrap();
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
-        assert!(matches!(&stmts[0], Stmt::SubDecl { multi: true, .. }));
+        if let Stmt::SubDecl {
+            multi,
+            signature_alternates,
+            ..
+        } = &stmts[0]
+        {
+            assert!(*multi);
+            assert_eq!(signature_alternates.len(), 1);
+        } else {
+            panic!("expected SubDecl");
+        }
     }
 
     #[test]

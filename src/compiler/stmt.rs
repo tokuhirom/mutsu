@@ -585,6 +585,7 @@ impl Compiler {
                 name,
                 params,
                 param_defs,
+                signature_alternates,
                 body,
                 multi,
                 ..
@@ -592,7 +593,33 @@ impl Compiler {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterSub(idx));
                 // Also compile the body to bytecode for VM-native dispatch
-                self.compile_sub_body(name, params, param_defs, body, *multi);
+                let state_group = if *multi && !signature_alternates.is_empty() {
+                    Some(format!(
+                        "{}::{}",
+                        name,
+                        crate::ast::function_body_fingerprint(params, param_defs, body)
+                    ))
+                } else {
+                    None
+                };
+                self.compile_sub_body(
+                    name,
+                    params,
+                    param_defs,
+                    body,
+                    *multi,
+                    state_group.as_deref(),
+                );
+                for (alt_params, alt_param_defs) in signature_alternates {
+                    self.compile_sub_body(
+                        name,
+                        alt_params,
+                        alt_param_defs,
+                        body,
+                        *multi,
+                        state_group.as_deref(),
+                    );
+                }
             }
             Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => {
                 let idx = self.code.add_stmt(stmt.clone());
