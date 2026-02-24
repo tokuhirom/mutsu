@@ -248,6 +248,15 @@ impl VM {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        let bypass_supply_extrema_fastpath = matches!(method, "max" | "min")
+            && args.len() <= 1
+            && (matches!(
+                target,
+                Value::Instance { class_name, .. } if class_name == "Supply"
+            ) || matches!(target, Value::Package(name) if name == "Supply"));
+        if bypass_supply_extrema_fastpath {
+            return None;
+        }
         if args.len() == 2 {
             return crate::builtins::native_method_2arg(target, method, &args[0], &args[1]);
         }

@@ -758,6 +758,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     _ => a.to_string_value().cmp(&b.to_string_value()),
                 })
                 .unwrap_or(Value::Nil))),
+            Value::Package(_) | Value::Instance { .. } => None,
             _ => Some(Ok(target.clone())),
         },
         "max" => match target {
@@ -769,6 +770,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     _ => a.to_string_value().cmp(&b.to_string_value()),
                 })
                 .unwrap_or(Value::Nil))),
+            Value::Package(_) | Value::Instance { .. } => None,
             _ => Some(Ok(target.clone())),
         },
         "tclc" => Some(Ok(Value::Str(crate::value::tclc_str(
