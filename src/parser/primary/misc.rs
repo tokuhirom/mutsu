@@ -466,6 +466,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
                 sub_signature: None,
                 where_constraint: None,
                 traits: Vec::new(),
+                double_slurpy: false,
             })
             .collect();
         Ok((

@@ -278,6 +278,7 @@ pub(super) fn parse_for_params(
                 sub_signature: Some(sub_params),
                 where_constraint: None,
                 traits: Vec::new(),
+                double_slurpy: false,
             };
             return Ok((r, (Some(unpack_name), Some(unpack_def), Vec::new())));
         }

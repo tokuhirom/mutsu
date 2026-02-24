@@ -677,6 +677,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                     sub_signature: None,
                     where_constraint: None,
                     traits: Vec::new(),
+                    double_slurpy: false,
                 })
                 .collect(),
             body: stmts,
