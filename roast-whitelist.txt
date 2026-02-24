@@ -1,4 +1,5 @@
 roast/MISC/bug-coverage-stress.t
+roast/S01-perl-5-integration/hash.t
 roast/S01-perl-5-integration/isms.t
 roast/S01-perl-5-integration/return.t
 roast/S01-perl-5-integration/subs.t
