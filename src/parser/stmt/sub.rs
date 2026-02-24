@@ -101,9 +101,9 @@ pub(super) fn sub_decl_body(input: &str, multi: bool, supersede: bool) -> PResul
         super::simple::register_user_test_assertion_sub(&name);
     }
     let (rest, _) = ws(rest)?;
+    let mut signature_alternates: Vec<(Vec<String>, Vec<ParamDef>)> = Vec::new();
     let rest = if multi {
         // Multi declarators can chain additional signatures with `| (...)`.
-        // Keep parse compatibility by accepting and skipping these alternatives.
         let mut r = rest;
         loop {
             let (r2, _) = ws(r)?;
@@ -114,10 +114,13 @@ pub(super) fn sub_decl_body(input: &str, multi: bool, supersede: bool) -> PResul
             if !r3.starts_with('(') {
                 return Err(PError::expected("alternate signature after '|'"));
             }
-            let r4 = skip_balanced_parens(r3);
-            if r4.len() == r3.len() {
-                return Err(PError::expected("closing ')' for alternate signature"));
-            }
+            let (r4, _) = parse_char(r3, '(')?;
+            let (r4, _) = ws(r4)?;
+            let (r4, alt_param_defs) = parse_param_list(r4)?;
+            let (r4, _) = ws(r4)?;
+            let (r4, _) = parse_char(r4, ')')?;
+            let alt_params: Vec<String> = alt_param_defs.iter().map(|p| p.name.clone()).collect();
+            signature_alternates.push((alt_params, alt_param_defs));
             r = r4;
         }
     } else {
@@ -139,6 +142,7 @@ pub(super) fn sub_decl_body(input: &str, multi: bool, supersede: bool) -> PResul
             name,
             params,
             param_defs,
+            signature_alternates,
             body,
             multi,
             is_export: traits.is_export,

@@ -237,6 +237,7 @@ pub(crate) enum Stmt {
         name: String,
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
+        signature_alternates: Vec<(Vec<String>, Vec<ParamDef>)>,
         body: Vec<Stmt>,
         multi: bool,
         is_export: bool,

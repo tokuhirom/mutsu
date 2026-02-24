@@ -923,6 +923,7 @@ impl Compiler {
                     name: String::new(),
                     params: params.clone(),
                     param_defs: Vec::new(),
+                    signature_alternates: Vec::new(),
                     body: body.clone(),
                     multi: false,
                     is_export: false,
@@ -940,6 +941,7 @@ impl Compiler {
                         vec![param.clone()]
                     },
                     param_defs: Vec::new(),
+                    signature_alternates: Vec::new(),
                     body: body.clone(),
                     multi: false,
                     is_export: false,

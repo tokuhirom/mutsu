@@ -226,6 +226,7 @@ impl Compiler {
         param_defs: &[crate::ast::ParamDef],
         body: &[Stmt],
         multi: bool,
+        state_group: Option<&str>,
     ) {
         let mut sub_compiler = Compiler::new();
         let arity = param_defs
@@ -233,21 +234,25 @@ impl Compiler {
             .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
             .count();
         let state_scope = if multi {
-            let type_sig: Vec<String> = param_defs
-                .iter()
-                .filter(|pd| !pd.named && (!pd.slurpy || pd.name == "_capture"))
-                .map(|pd| pd.type_constraint.clone().unwrap_or_default())
-                .collect();
-            if !type_sig.is_empty() {
-                format!(
-                    "{}::&{}/{}:{}",
-                    self.current_package,
-                    name,
-                    arity,
-                    type_sig.join(",")
-                )
+            if let Some(group) = state_group {
+                format!("{}::&{}/shared:{}", self.current_package, name, group)
             } else {
-                format!("{}::&{}/{}", self.current_package, name, arity)
+                let type_sig: Vec<String> = param_defs
+                    .iter()
+                    .filter(|pd| !pd.named && (!pd.slurpy || pd.name == "_capture"))
+                    .map(|pd| pd.type_constraint.clone().unwrap_or_default())
+                    .collect();
+                if !type_sig.is_empty() {
+                    format!(
+                        "{}::&{}/{}:{}",
+                        self.current_package,
+                        name,
+                        arity,
+                        type_sig.join(",")
+                    )
+                } else {
+                    format!("{}::&{}/{}", self.current_package, name, arity)
+                }
             }
         } else {
             format!("{}::&{}/{}", self.current_package, name, arity)
