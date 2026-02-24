@@ -215,6 +215,7 @@ pub(crate) fn parse_program_partial(input: &str) -> (Vec<Stmt>, Option<String>) 
 #[cfg(test)]
 mod tests {
     use super::parse_program;
+    use crate::ast::{Expr, Stmt};
     use crate::value::RuntimeErrorCode;
 
     #[test]
@@ -252,5 +253,33 @@ mod tests {
                 .as_deref()
                 .is_some_and(|hint| hint.contains("method-call syntax"))
         );
+    }
+
+    #[test]
+    fn parse_program_accepts_corner_bracket_string_in_listop_call() {
+        let src = "sub f($a, $b, $c) { }\nf ｢say 42｣, {:out(\"ok\")}, 'msg';";
+        let (stmts, _) = parse_program(src).unwrap();
+        assert_eq!(stmts.len(), 2);
+        match &stmts[1] {
+            Stmt::Expr(Expr::Call { name, args }) => {
+                assert_eq!(name, "f");
+                assert_eq!(args.len(), 3);
+                assert!(
+                    matches!(&args[0], Expr::Literal(crate::value::Value::Str(s)) if s == "say 42")
+                );
+                assert!(matches!(&args[1], Expr::Hash(_)));
+                assert!(
+                    matches!(&args[2], Expr::Literal(crate::value::Value::Str(s)) if s == "msg")
+                );
+            }
+            other => panic!("expected function call expression, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_program_accepts_french_quote_word_list() {
+        let src = "my @target = $*DISTRO.is-win ?? «/c \"\"» !! '/dev/null';";
+        let (stmts, _) = parse_program(src).unwrap();
+        assert_eq!(stmts.len(), 1);
     }
 }
