@@ -318,6 +318,7 @@ roast/S32-list/batch.t
 roast/S32-list/cross.t
 roast/S32-num/abs.t
 roast/S32-num/exp.t
+roast/S32-num/expmod.t
 roast/S32-num/log.t
 roast/S32-num/pi.t
 roast/S32-num/polar.t
