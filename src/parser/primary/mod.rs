@@ -2,7 +2,7 @@ mod container;
 mod ident;
 mod misc;
 mod number;
-mod regex;
+pub(crate) mod regex;
 mod string;
 mod var;
 

@@ -33,7 +33,7 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
 /// Scan `input` for content delimited by `close_ch`, handling backslash escapes,
 /// single-quoted strings, and paired-delimiter nesting.
 /// Returns `(content, rest_after_close)` or None.
-pub(super) fn scan_to_delim(
+pub(in crate::parser) fn scan_to_delim(
     input: &str,
     open_ch: char,
     close_ch: char,
