@@ -156,6 +156,13 @@ pub enum Value {
         positional: Vec<Value>,
         named: HashMap<String, Value>,
     },
+    /// Unicode normalization form types (NFC, NFD, NFKC, NFKD).
+    /// `form` is one of "NFC", "NFD", "NFKC", "NFKD".
+    /// `text` is the normalized string.
+    Uni {
+        form: String,
+        text: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
