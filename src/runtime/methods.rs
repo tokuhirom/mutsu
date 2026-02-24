@@ -2881,7 +2881,7 @@ impl Interpreter {
                     attrs.insert("done".to_string(), Value::Bool(false));
                     attrs.insert(
                         "supplier_id".to_string(),
-                        Value::Int(super::native_methods::next_supply_id() as i64),
+                        Value::Int(super::native_methods::next_supplier_id() as i64),
                     );
                     return Ok(Value::make_instance(class_name.clone(), attrs));
                 }
