@@ -3,6 +3,7 @@
 use crate::runtime;
 use crate::value::{RuntimeError, Value, make_rat};
 use num_traits::Signed;
+use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::rng::builtin_rand;
@@ -1001,32 +1002,31 @@ fn uni_or_str(target: &Value) -> String {
     }
 }
 
-/// Unicode case folding (Simple + Full mappings).
-/// This is used by the `.fc` method and the `fc()` function.
-/// Case folding is like lowercasing but additionally maps characters like
-/// ß → ss, ﬁ → fi, etc. for caseless comparison.
+/// Unicode case folding for `.fc` and `fc()`.
+/// This applies full fold behavior by combining lowercase conversion with
+/// compatibility decomposition, Greek ypogegrammeni expansion, and recomposition.
 pub(crate) fn unicode_foldcase(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
+    let mut lowered = String::with_capacity(s.len());
     for c in s.chars() {
         match c {
-            '\u{00DF}' => result.push_str("ss"),        // ß → ss
-            '\u{0130}' => result.push_str("i\u{0307}"), // İ → i + combining dot
-            '\u{FB00}' => result.push_str("ff"),        // ﬀ → ff
-            '\u{FB01}' => result.push_str("fi"),        // ﬁ → fi
-            '\u{FB02}' => result.push_str("fl"),        // ﬂ → fl
-            '\u{FB03}' => result.push_str("ffi"),       // ﬃ → ffi
-            '\u{FB04}' => result.push_str("ffl"),       // ﬄ → ffl
-            '\u{FB05}' => result.push_str("st"),        // ﬅ → st
-            '\u{FB06}' => result.push_str("st"),        // ﬆ → st
-            '\u{1E9E}' => result.push_str("ss"),        // ẞ → ss (capital sharp s)
+            '\u{00DF}' | '\u{1E9E}' => lowered.push_str("ss"),
             _ => {
                 for lc in c.to_lowercase() {
-                    result.push(lc);
+                    lowered.push(lc);
                 }
             }
         }
     }
-    result
+
+    let mut expanded = String::with_capacity(lowered.len());
+    for c in lowered.nfkd() {
+        if c == '\u{0345}' {
+            expanded.push('\u{03B9}');
+        } else {
+            expanded.push(c);
+        }
+    }
+    expanded.nfc().collect()
 }
 
 /// Complex trig function dispatch: returns (real, imag)
