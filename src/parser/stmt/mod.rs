@@ -212,7 +212,6 @@ pub(super) fn ident_pub(input: &str) -> PResult<'_, String> {
 pub(super) fn var_name_pub(input: &str) -> PResult<'_, String> {
     var_name(input)
 }
-
 /// Public accessor for parse_param_list (used by primary.rs for arrow lambda sub-signatures).
 pub(super) fn parse_param_list_pub(input: &str) -> PResult<'_, Vec<crate::ast::ParamDef>> {
     parse_param_list(input)

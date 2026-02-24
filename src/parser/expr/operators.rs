@@ -443,7 +443,14 @@ pub(super) fn parse_junction_infix_op(input: &str) -> Option<(JunctionInfixOp, u
     } else if input.starts_with('&') && !input.starts_with("&&") && !input.starts_with("&=") {
         // Make sure it's not a sigil (e.g. &func)
         if let Some(&c) = input.as_bytes().get(1)
-            && (c.is_ascii_alphabetic() || c == b'_')
+            && (c.is_ascii_alphabetic()
+                || c == b'_'
+                || c == b'?'
+                || c == b'!'
+                || c == b'^'
+                || c == b'*'
+                || c == b'['
+                || c == b':')
         {
             return None;
         }

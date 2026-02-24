@@ -146,10 +146,27 @@ impl Compiler {
         } else {
             for (i, stmt) in stmts.iter().enumerate() {
                 let is_last = i == stmts.len() - 1;
-                if is_last && let Stmt::Expr(expr) = stmt {
-                    self.compile_expr(expr);
-                    self.code.emit(OpCode::SetTopic);
-                    continue;
+                if is_last {
+                    match stmt {
+                        Stmt::Expr(expr) => {
+                            self.compile_expr(expr);
+                            self.code.emit(OpCode::SetTopic);
+                            continue;
+                        }
+                        Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
+                            if Self::has_block_placeholders(body) {
+                                self.compile_stmt(&Stmt::Die(Expr::Literal(Value::Str(
+                                    "Implicit placeholder parameters are not available in bare nested blocks"
+                                        .to_string(),
+                                ))));
+                                continue;
+                            }
+                            self.compile_block_inline(body);
+                            self.code.emit(OpCode::SetTopic);
+                            continue;
+                        }
+                        _ => {}
+                    }
                 }
                 self.compile_stmt(stmt);
             }
