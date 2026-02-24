@@ -17,7 +17,9 @@ impl Interpreter {
         }
 
         let bypass_native_fastpath = matches!(method, "max" | "min")
-            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply");
+            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
+            || (method == "Supply"
+                && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supplier"));
         let native_result = if bypass_native_fastpath {
             None
         } else {
@@ -2674,6 +2676,10 @@ impl Interpreter {
                     let mut attrs = HashMap::new();
                     attrs.insert("emitted".to_string(), Value::array(Vec::new()));
                     attrs.insert("done".to_string(), Value::Bool(false));
+                    attrs.insert(
+                        "supplier_id".to_string(),
+                        Value::Int(super::native_methods::next_supply_id() as i64),
+                    );
                     return Ok(Value::make_instance(class_name.clone(), attrs));
                 }
                 "ThreadPoolScheduler" | "CurrentThreadScheduler" | "Tap" => {

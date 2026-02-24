@@ -18,6 +18,90 @@ fn supply_taps_map() -> &'static SupplyTapsMap {
 }
 
 #[derive(Debug, Default)]
+struct SupplierRuntimeState {
+    emitted: Vec<Value>,
+    done: bool,
+    quit_reason: Option<Value>,
+    pending_promises: Vec<SharedPromise>,
+}
+
+type SupplierStateMap = std::sync::Mutex<HashMap<u64, SupplierRuntimeState>>;
+
+fn supplier_state_map() -> &'static SupplierStateMap {
+    static MAP: OnceLock<SupplierStateMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+fn supplier_id_from_attrs(attributes: &HashMap<String, Value>) -> Option<u64> {
+    match attributes.get("supplier_id") {
+        Some(Value::Int(id)) if *id > 0 => Some(*id as u64),
+        _ => None,
+    }
+}
+
+fn supplier_snapshot(supplier_id: u64) -> (Vec<Value>, bool, Option<Value>) {
+    if let Ok(mut map) = supplier_state_map().lock() {
+        let state = map.entry(supplier_id).or_default();
+        (state.emitted.clone(), state.done, state.quit_reason.clone())
+    } else {
+        (Vec::new(), false, None)
+    }
+}
+
+fn supplier_register_promise(supplier_id: u64, promise: SharedPromise) {
+    if let Ok(mut map) = supplier_state_map().lock() {
+        let state = map.entry(supplier_id).or_default();
+        if let Some(reason) = state.quit_reason.clone() {
+            promise.break_with(reason, String::new(), String::new());
+        } else if state.done {
+            let result = state.emitted.last().cloned().unwrap_or(Value::Nil);
+            promise.keep(result, String::new(), String::new());
+        } else {
+            state.pending_promises.push(promise);
+        }
+    }
+}
+
+fn supplier_emit(supplier_id: u64, value: Value) {
+    if let Ok(mut map) = supplier_state_map().lock() {
+        let state = map.entry(supplier_id).or_default();
+        if state.done || state.quit_reason.is_some() {
+            return;
+        }
+        state.emitted.push(value);
+    }
+}
+
+fn supplier_done(supplier_id: u64) {
+    if let Ok(mut map) = supplier_state_map().lock() {
+        let state = map.entry(supplier_id).or_default();
+        if state.done || state.quit_reason.is_some() {
+            return;
+        }
+        state.done = true;
+        let result = state.emitted.last().cloned().unwrap_or(Value::Nil);
+        let pending = std::mem::take(&mut state.pending_promises);
+        for promise in pending {
+            promise.keep(result.clone(), String::new(), String::new());
+        }
+    }
+}
+
+fn supplier_quit(supplier_id: u64, reason: Value) {
+    if let Ok(mut map) = supplier_state_map().lock() {
+        let state = map.entry(supplier_id).or_default();
+        if state.done || state.quit_reason.is_some() {
+            return;
+        }
+        state.quit_reason = Some(reason.clone());
+        let pending = std::mem::take(&mut state.pending_promises);
+        for promise in pending {
+            promise.break_with(reason.clone(), String::new(), String::new());
+        }
+    }
+}
+
+#[derive(Debug, Default)]
 struct LockState {
     owner: Option<String>,
     recursion: u64,
@@ -791,6 +875,26 @@ impl Interpreter {
                 new_attrs.insert("do_callbacks".to_string(), Value::array(do_cbs));
                 Ok(Value::make_instance("Supply".to_string(), new_attrs))
             }
+            "Promise" => {
+                let promise = SharedPromise::new();
+                if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
+                    supplier_register_promise(supplier_id, promise.clone());
+                } else if let Some(reason) = attributes.get("quit_reason").cloned() {
+                    promise.break_with(reason, String::new(), String::new());
+                } else {
+                    let live = attributes.get("live").map(Value::truthy).unwrap_or(false);
+                    if !live {
+                        let result = match attributes.get("values") {
+                            Some(Value::Array(items, ..)) => {
+                                items.last().cloned().unwrap_or(Value::Nil)
+                            }
+                            _ => Value::Nil,
+                        };
+                        promise.keep(result, String::new(), String::new());
+                    }
+                }
+                Ok(Value::Promise(promise))
+            }
             "Supply" | "supply" => {
                 // .Supply on a Supply is identity (noop) — return self
                 // Preserve the same id for === identity check
@@ -818,24 +922,48 @@ impl Interpreter {
         match method {
             "Supply" => {
                 // Return a Supply backed by this Supplier
+                let supplier_id = supplier_id_from_attrs(attributes).unwrap_or_else(next_supply_id);
+                let (values, done, quit_reason) = supplier_snapshot(supplier_id);
                 let mut supply_attrs = HashMap::new();
-                supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                supply_attrs.insert("values".to_string(), Value::array(values));
                 supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 supply_attrs.insert(
                     "live".to_string(),
-                    attributes.get("live").cloned().unwrap_or(Value::Bool(true)),
+                    Value::Bool(!done && quit_reason.is_none()),
                 );
+                supply_attrs.insert("supplier_id".to_string(), Value::Int(supplier_id as i64));
+                if let Some(reason) = quit_reason {
+                    supply_attrs.insert("quit_reason".to_string(), reason);
+                }
                 Ok(Value::make_instance("Supply".to_string(), supply_attrs))
             }
             "emit" => {
                 // Push to supply_emit_buffer (works for on-demand callbacks)
                 let value = args.first().cloned().unwrap_or(Value::Nil);
                 if let Some(buf) = self.supply_emit_buffer.last_mut() {
-                    buf.push(value);
+                    buf.push(value.clone());
+                }
+                if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
+                    supplier_emit(supplier_id, value);
                 }
                 Ok(Value::Nil)
             }
-            "done" => Ok(Value::Nil),
+            "done" => {
+                if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
+                    supplier_done(supplier_id);
+                }
+                Ok(Value::Nil)
+            }
+            "quit" => {
+                let reason = args
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| Value::Str("Died".to_string()));
+                if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
+                    supplier_quit(supplier_id, reason);
+                }
+                Ok(Value::Nil)
+            }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Supplier",
                 method
@@ -856,12 +984,30 @@ impl Interpreter {
                 let value = args.first().cloned().unwrap_or(Value::Nil);
                 // Push to supply_emit_buffer if active
                 if let Some(buf) = self.supply_emit_buffer.last_mut() {
-                    buf.push(value);
+                    buf.push(value.clone());
+                }
+                if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {
+                    supplier_emit(supplier_id, value);
                 }
                 Ok((Value::Nil, attrs))
             }
             "done" => {
                 attrs.insert("done".to_string(), Value::Bool(true));
+                if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {
+                    supplier_done(supplier_id);
+                }
+                Ok((Value::Nil, attrs))
+            }
+            "quit" => {
+                let reason = args
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| Value::Str("Died".to_string()));
+                attrs.insert("done".to_string(), Value::Bool(true));
+                attrs.insert("quit_reason".to_string(), reason.clone());
+                if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {
+                    supplier_quit(supplier_id, reason);
+                }
                 Ok((Value::Nil, attrs))
             }
             _ => Err(RuntimeError::new(format!(
