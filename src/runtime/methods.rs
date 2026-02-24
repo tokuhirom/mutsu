@@ -1340,11 +1340,24 @@ impl Interpreter {
                 .chars()
                 .map(|c| if (c as u32) <= 0x7F { c as u8 } else { b'?' })
                 .collect()),
+            "iso-8859-1" => Ok(input
+                .chars()
+                .map(|c| if (c as u32) <= 0xFF { c as u8 } else { b'?' })
+                .collect()),
             "utf-16" | "utf-16le" => {
                 Ok(input.encode_utf16().flat_map(|u| u.to_le_bytes()).collect())
             }
             "utf-16be" => Ok(input.encode_utf16().flat_map(|u| u.to_be_bytes()).collect()),
-            _ => Ok(input.as_bytes().to_vec()),
+            _ => {
+                if let Some(enc) = Self::lookup_encoding_rs_codec(&encoding) {
+                    if matches!(encoding.as_str(), "windows-1251" | "windows-1252") {
+                        return Ok(Self::encode_single_byte_with_encoding_rs(input, enc));
+                    }
+                    let (encoded, _used_encoding, _had_errors) = enc.encode(input);
+                    return Ok(encoded.into_owned());
+                }
+                Ok(input.as_bytes().to_vec())
+            }
         }
     }
 
@@ -1364,6 +1377,7 @@ impl Interpreter {
                 .iter()
                 .map(|b| if *b <= 0x7F { *b as char } else { '\u{FFFD}' })
                 .collect()),
+            "iso-8859-1" => Ok(bytes.iter().map(|b| *b as char).collect()),
             "utf-16" | "utf-16le" => {
                 if !bytes.len().is_multiple_of(2) {
                     return Err(RuntimeError::new("Invalid utf-16 byte length"));
@@ -1384,8 +1398,41 @@ impl Interpreter {
                     .collect();
                 Ok(String::from_utf16_lossy(&units))
             }
-            _ => Ok(String::from_utf8_lossy(bytes).into_owned()),
+            _ => {
+                if let Some(enc) = Self::lookup_encoding_rs_codec(&encoding) {
+                    let (decoded, _used_encoding, _had_errors) = enc.decode(bytes);
+                    return Ok(decoded.into_owned());
+                }
+                Ok(String::from_utf8_lossy(bytes).into_owned())
+            }
         }
+    }
+
+    fn lookup_encoding_rs_codec(encoding: &str) -> Option<&'static encoding_rs::Encoding> {
+        let label = match encoding {
+            "windows-932" => "shift_jis",
+            _ => encoding,
+        };
+        encoding_rs::Encoding::for_label(label.as_bytes())
+    }
+
+    fn encode_single_byte_with_encoding_rs(
+        input: &str,
+        enc: &'static encoding_rs::Encoding,
+    ) -> Vec<u8> {
+        let mut reverse = HashMap::with_capacity(256);
+        for b in 0u8..=255 {
+            let one = [b];
+            let (decoded, _used_encoding, _had_errors) = enc.decode(&one);
+            let mut chars = decoded.chars();
+            if let (Some(ch), None) = (chars.next(), chars.next()) {
+                reverse.insert(ch, b);
+            }
+        }
+        input
+            .chars()
+            .map(|ch| reverse.get(&ch).copied().unwrap_or(b'?'))
+            .collect()
     }
 
     fn dispatch_package_parse(
