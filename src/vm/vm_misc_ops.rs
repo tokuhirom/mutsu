@@ -174,10 +174,19 @@ impl VM {
         self.stack.push(result);
     }
 
-    pub(super) fn exec_num_coerce_op(&mut self) {
+    pub(super) fn exec_num_coerce_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
+        if matches!(
+            &val,
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+        ) {
+            return Err(RuntimeError::new(
+                "Cannot resolve caller Numeric(Sub:D: ); none of these signatures matches:\n    (Mu:U \\v: *%_)",
+            ));
+        }
         let result = crate::runtime::utils::coerce_to_numeric(val);
         self.stack.push(result);
+        Ok(())
     }
 
     pub(super) fn exec_str_coerce_op(&mut self) {
