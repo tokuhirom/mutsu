@@ -496,7 +496,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
                 Some(Ok(Value::array(result)))
             }
-            _ => None,
+            _ => Some(Ok(Value::array(vec![target.clone()]))),
         },
         "sort" => match target {
             Value::Array(items, ..) => {

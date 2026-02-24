@@ -585,9 +585,26 @@ mod tests {
     }
 
     #[test]
-    fn parse_postfix_angle_index_requires_key() {
-        let err = expression("$x<>").unwrap_err();
-        assert!(err.message().contains("angle index key"));
+    fn parse_postfix_angle_index_zen() {
+        let (rest, expr) = expression("$x<>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Var(ref n) if n == "x"));
+    }
+
+    #[test]
+    fn parse_postfix_angle_index_zen_values_adverb() {
+        let (rest, expr) = expression("%h<>:v").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::MethodCall {
+                target, name, args, ..
+            } => {
+                assert_eq!(name, "values");
+                assert!(args.is_empty());
+                assert!(matches!(*target, Expr::HashVar(ref n) if n == "h"));
+            }
+            _ => panic!("expected method call expression"),
+        }
     }
 
     #[test]

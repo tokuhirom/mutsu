@@ -507,8 +507,9 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             };
             let content = &r[..end];
             let keys = split_angle_words(content);
-            if keys.is_empty()
-                || keys.iter().any(|key| {
+            let is_zen_angle = keys.is_empty();
+            if !is_zen_angle
+                && keys.iter().any(|key| {
                     key.is_empty()
                         || !key.chars().all(|c| {
                             c.is_alphanumeric()
@@ -536,13 +537,33 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         .collect(),
                 )
             };
+            let indexed_expr = if is_zen_angle {
+                expr.clone()
+            } else {
+                Expr::Index {
+                    target: Box::new(expr),
+                    index: Box::new(index_expr),
+                }
+            };
+            if r.starts_with(":v") && !is_ident_char(r.as_bytes().get(2).copied()) {
+                let r = &r[2..];
+                expr = if is_zen_angle {
+                    Expr::MethodCall {
+                        target: Box::new(indexed_expr),
+                        name: "values".to_string(),
+                        args: Vec::new(),
+                        modifier: None,
+                    }
+                } else {
+                    indexed_expr
+                };
+                rest = r;
+                continue;
+            }
             // Check for :exists / :!exists / :delete adverbs
             if r.starts_with(":exists") && !is_ident_char(r.as_bytes().get(7).copied()) {
                 let r = &r[7..];
-                expr = Expr::Exists(Box::new(Expr::Index {
-                    target: Box::new(expr),
-                    index: Box::new(index_expr),
-                }));
+                expr = Expr::Exists(Box::new(indexed_expr));
                 rest = r;
                 continue;
             }
@@ -550,18 +571,12 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 let r = &r[8..];
                 expr = Expr::Unary {
                     op: TokenKind::Bang,
-                    expr: Box::new(Expr::Exists(Box::new(Expr::Index {
-                        target: Box::new(expr),
-                        index: Box::new(index_expr),
-                    }))),
+                    expr: Box::new(Expr::Exists(Box::new(indexed_expr))),
                 };
                 rest = r;
                 continue;
             }
-            expr = Expr::Index {
-                target: Box::new(expr),
-                index: Box::new(index_expr),
-            };
+            expr = indexed_expr;
             rest = r;
             continue;
         }

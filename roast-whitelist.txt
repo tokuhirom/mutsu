@@ -264,6 +264,7 @@ roast/S29-context/exit-in-if.t
 roast/S29-context/exit.t
 roast/S32-array/bool.t
 roast/S32-basics/pairup.t
+roast/S32-container/roundrobin.t
 roast/S32-container/stringify.t
 roast/S32-encoding/registry.t
 roast/S32-hash/antipairs.t

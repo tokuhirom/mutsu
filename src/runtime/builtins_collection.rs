@@ -404,4 +404,50 @@ impl Interpreter {
             Ok(Value::array(tuples))
         }
     }
+
+    pub(super) fn builtin_roundrobin(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.is_empty() {
+            return Ok(Value::array(Vec::new()));
+        }
+        if args.len() == 1 {
+            return Ok(args[0].clone());
+        }
+
+        let streams: Vec<Vec<Value>> = args
+            .iter()
+            .map(|arg| match arg {
+                Value::Capture { positional, named }
+                    if named.is_empty() && positional.len() == 1 =>
+                {
+                    vec![arg.clone()]
+                }
+                Value::Array(items, _) => items.iter().cloned().collect(),
+                Value::Seq(items) | Value::Slip(items) => items.iter().cloned().collect(),
+                Value::Range(a, b) => (*a..=*b).map(Value::Int).collect(),
+                Value::RangeExcl(a, b) => (*a..*b).map(Value::Int).collect(),
+                v if v.is_range() => crate::runtime::utils::value_to_list(v),
+                other => vec![other.clone()],
+            })
+            .collect();
+
+        let mut indices = vec![0usize; streams.len()];
+        let mut rounds = Vec::new();
+        loop {
+            let mut tuple = Vec::new();
+            let mut progressed = false;
+            for (i, stream) in streams.iter().enumerate() {
+                if indices[i] < stream.len() {
+                    tuple.push(stream[indices[i]].clone());
+                    indices[i] += 1;
+                    progressed = true;
+                }
+            }
+            if !progressed {
+                break;
+            }
+            rounds.push(Value::array(tuple));
+        }
+
+        Ok(Value::array(rounds))
+    }
 }
