@@ -364,6 +364,7 @@ impl Interpreter {
                 native_methods: [
                     "emit", "tap", "act", "repeated", "do", "reverse", "split", "tail", "min",
                     "collate", "Supply", "Promise",
+                    "schedule-on",
                 ]
                 .iter()
                 .map(|s| s.to_string())
@@ -432,9 +433,19 @@ impl Interpreter {
             },
         );
         classes.insert(
-            "ThreadPoolScheduler".to_string(),
+            "Scheduler".to_string(),
             ClassDef {
                 parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["cue"].iter().map(|s| s.to_string()).collect(),
+                mro: vec!["Scheduler".to_string()],
+            },
+        );
+        classes.insert(
+            "ThreadPoolScheduler".to_string(),
+            ClassDef {
+                parents: vec!["Scheduler".to_string()],
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: ["cue"].iter().map(|s| s.to_string()).collect(),
@@ -444,7 +455,7 @@ impl Interpreter {
         classes.insert(
             "CurrentThreadScheduler".to_string(),
             ClassDef {
-                parents: Vec::new(),
+                parents: vec!["Scheduler".to_string()],
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: ["cue"].iter().map(|s| s.to_string()).collect(),

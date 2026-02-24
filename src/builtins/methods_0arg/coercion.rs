@@ -282,6 +282,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => None,
         },
         "Supply" => {
+            if let Value::Instance { class_name, .. } = target
+                && class_name == "Supplier"
+            {
+                // Supplier.Supply has runtime behavior (live stream), not generic coercion.
+                return None;
+            }
             // .Supply on an existing Supply is a noop — return self
             if let Value::Instance { class_name, .. } = target
                 && class_name == "Supply"

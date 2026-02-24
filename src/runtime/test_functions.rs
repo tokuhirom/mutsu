@@ -911,6 +911,7 @@ impl Interpreter {
             .unwrap_or(Value::Nil);
         let desc = Self::positional_string(args, 2);
         let expected_live = Self::named_bool(args, "live");
+        let after_tap = Self::named_value(args, "after-tap");
 
         let ctx = self.begin_subtest();
 
@@ -983,6 +984,17 @@ impl Interpreter {
                 }
                 tap_values = values;
             }
+        }
+        if let Some(after_tap_cb) = after_tap
+            && matches!(
+                after_tap_cb,
+                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            )
+        {
+            self.supply_emit_buffer.push(Vec::new());
+            let _ = self.call_sub_value(after_tap_cb, vec![], false);
+            let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
+            tap_values.extend(emitted);
         }
 
         // 4. isa-ok on Tap return
