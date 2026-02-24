@@ -249,6 +249,17 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 let items = crate::runtime::utils::value_to_list(target);
                 Some(Ok(Value::array(items)))
             }
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Buf" || class_name == "Blob" => {
+                let bytes = match attributes.get("bytes") {
+                    Some(Value::Array(items, ..)) => items.to_vec(),
+                    _ => Vec::new(),
+                };
+                Some(Ok(Value::array(bytes)))
+            }
             Value::Array(..) => Some(Ok(target.clone())),
             Value::Channel(_) => None, // fall through to runtime for drain
             _ => Some(Ok(Value::array(vec![target.clone()]))),

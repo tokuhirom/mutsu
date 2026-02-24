@@ -54,6 +54,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "encoding_rs"
+version = "0.8.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75030f3c4f45dafd7586dd6780965a8c7e8e285a5ecb86713e63a79c5b2766f3"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "endian-type"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -135,6 +144,7 @@ name = "mutsu"
 version = "0.1.0"
 dependencies = [
  "emojis",
+ "encoding_rs",
  "libc",
  "num-bigint",
  "num-integer",

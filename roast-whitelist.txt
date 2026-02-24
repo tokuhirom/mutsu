@@ -267,6 +267,7 @@ roast/S32-str/tc.t
 roast/S32-str/tclc.t
 roast/S32-str/trim.t
 roast/S32-str/uc.t
+roast/S32-str/windows-1251-windows-1252-encode-decode.t
 roast/S32-trig/atan2.t
 roast/S32-trig/cos.t
 roast/S32-trig/cosec.t
