@@ -54,6 +54,9 @@ impl Interpreter {
 
         // Primary method dispatch by name
         match method {
+            "are" => {
+                return self.dispatch_are(target, &args);
+            }
             "say" if args.is_empty() => {
                 self.output.push_str(&crate::runtime::gist_value(&target));
                 self.output.push('\n');
@@ -753,7 +756,9 @@ impl Interpreter {
                         .duration_since(UNIX_EPOCH)
                         .map(|d| d.as_secs_f64())
                         .unwrap_or(0.0);
-                    return Ok(Value::Num(secs));
+                    let mut attrs = HashMap::new();
+                    attrs.insert("epoch".to_string(), Value::Num(secs));
+                    return Ok(Value::make_instance("DateTime".to_string(), attrs));
                 }
             }
             "today" if args.is_empty() => {
@@ -765,7 +770,9 @@ impl Interpreter {
                         .map(|d| d.as_secs())
                         .unwrap_or(0);
                     let days = secs / 86_400;
-                    return Ok(Value::Int(days as i64));
+                    let mut attrs = HashMap::new();
+                    attrs.insert("days".to_string(), Value::Int(days as i64));
+                    return Ok(Value::make_instance("Date".to_string(), attrs));
                 }
             }
             "grab" => {
@@ -1532,6 +1539,100 @@ impl Interpreter {
             .chars()
             .map(|ch| reverse.get(&ch).copied().unwrap_or(b'?'))
             .collect()
+    }
+
+    fn dispatch_are(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        let values = Self::value_to_list(&target);
+        match args {
+            [] => {
+                if values.is_empty() {
+                    return Ok(Value::Nil);
+                }
+                let candidates = self.are_candidate_type_names(&values);
+                for candidate in candidates {
+                    if values
+                        .iter()
+                        .all(|value| self.are_value_matches_type(value, &candidate))
+                    {
+                        return Ok(Value::Package(candidate));
+                    }
+                }
+                Ok(Value::Package("Any".to_string()))
+            }
+            [expected] => {
+                let expected_type = self.are_expected_type_name(expected);
+                for (idx, value) in values.iter().enumerate() {
+                    if !self.are_value_matches_type(value, &expected_type) {
+                        let actual = Self::are_actual_type_name(value);
+                        let message = if values.len() == 1 {
+                            format!("Expected '{}' but got '{}'", expected_type, actual)
+                        } else {
+                            format!(
+                                "Expected '{}' but got '{}' in element {}",
+                                expected_type, actual, idx
+                            )
+                        };
+                        return Err(RuntimeError::new(message));
+                    }
+                }
+                Ok(Value::Bool(true))
+            }
+            _ => Err(RuntimeError::new(
+                "Method 'are' accepts zero or one argument",
+            )),
+        }
+    }
+
+    fn are_candidate_type_names(&mut self, values: &[Value]) -> Vec<String> {
+        let mut names = Vec::new();
+        for value in values {
+            for candidate in self.are_specific_candidate_type_names(value) {
+                if !names.contains(&candidate) {
+                    names.push(candidate);
+                }
+            }
+        }
+        for fallback in ["Dateish", "Real", "Numeric", "Cool", "Any"] {
+            let fallback = fallback.to_string();
+            if !names.contains(&fallback) {
+                names.push(fallback);
+            }
+        }
+        names
+    }
+
+    fn are_specific_candidate_type_names(&mut self, value: &Value) -> Vec<String> {
+        match value {
+            Value::Package(name) => vec![name.clone()],
+            Value::Instance { class_name, .. } => self.class_mro(class_name),
+            _ => vec![crate::runtime::utils::value_type_name(value).to_string()],
+        }
+    }
+
+    fn are_expected_type_name(&self, value: &Value) -> String {
+        match value {
+            Value::Package(name) => name.clone(),
+            Value::Str(name) => name.clone(),
+            Value::Instance { class_name, .. } => class_name.clone(),
+            _ => value.to_string_value(),
+        }
+    }
+
+    fn are_value_matches_type(&mut self, value: &Value, expected_type: &str) -> bool {
+        match value {
+            Value::Package(actual_type) => {
+                actual_type == expected_type || expected_type == "Any" || expected_type == "Mu"
+            }
+            _ => self.type_matches_value(expected_type, value),
+        }
+    }
+
+    fn are_actual_type_name(value: &Value) -> String {
+        match value {
+            Value::Package(name) => name.clone(),
+            Value::Instance { class_name, .. } => class_name.clone(),
+            _ => crate::runtime::utils::value_type_name(value).to_string(),
+        }
     }
 
     fn dispatch_package_parse(

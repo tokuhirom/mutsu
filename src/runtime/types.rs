@@ -408,6 +408,9 @@ impl Interpreter {
         if constraint == "Real" && matches!(value_type, "Int" | "Num" | "Rat" | "FatRat") {
             return true;
         }
+        if constraint == "Dateish" && matches!(value_type, "Date" | "DateTime") {
+            return true;
+        }
         if constraint == "Cool"
             && matches!(
                 value_type,

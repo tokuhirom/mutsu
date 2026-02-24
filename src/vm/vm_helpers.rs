@@ -114,6 +114,7 @@ impl VM {
                 | "Duration"
                 | "Date"
                 | "DateTime"
+                | "Dateish"
                 | "ObjAt"
                 | "Code"
                 | "Capture"

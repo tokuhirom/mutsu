@@ -210,6 +210,10 @@ impl Value {
                     | Value::Rat(_, _)
                     | Value::FatRat(_, _)
             ),
+            "Dateish" => matches!(
+                self,
+                Value::Instance { class_name, .. } if class_name == "Date" || class_name == "DateTime"
+            ),
             "Int" => matches!(self, Value::Bool(_)),
             "Stringy" => matches!(self, Value::Str(_)),
             "Block" | "Routine" | "Code" | "Callable" => {
