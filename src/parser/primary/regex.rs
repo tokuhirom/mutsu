@@ -6,6 +6,80 @@ use crate::value::Value;
 use super::super::expr::expression;
 use super::super::helpers::{skip_balanced_parens, ws};
 
+#[derive(Default)]
+struct MatchAdverbs {
+    exhaustive: bool,
+    repeat: Option<usize>,
+}
+
+fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
+    let mut spec = input;
+    let mut adverbs = MatchAdverbs::default();
+    loop {
+        if !spec.starts_with(':') {
+            break;
+        }
+        let mut r = &spec[1..];
+        let mut leading_digits = String::new();
+        while let Some(ch) = r.chars().next() {
+            if ch.is_ascii_digit() {
+                leading_digits.push(ch);
+                r = &r[ch.len_utf8()..];
+            } else {
+                break;
+            }
+        }
+
+        let mut name = String::new();
+        while let Some(ch) = r.chars().next() {
+            if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+                name.push(ch);
+                r = &r[ch.len_utf8()..];
+            } else {
+                break;
+            }
+        }
+        if name.is_empty() {
+            break;
+        }
+
+        let mut arg: Option<&str> = None;
+        if r.starts_with('(') {
+            let after = skip_balanced_parens(r);
+            if after == r {
+                return Err(PError::expected("closing ')' in regex modifier"));
+            }
+            arg = Some(&r[1..r.len() - after.len() - 1]);
+            r = after;
+        }
+
+        if name == "ex" || name == "exhaustive" {
+            adverbs.exhaustive = true;
+        } else if name == "x" {
+            if let Some(raw) = arg {
+                let trimmed = raw.trim();
+                if !trimmed.is_empty()
+                    && let Ok(count) = trimmed.parse::<usize>()
+                {
+                    adverbs.repeat = Some(count);
+                }
+            } else if !leading_digits.is_empty()
+                && let Ok(count) = leading_digits.parse::<usize>()
+            {
+                adverbs.repeat = Some(count);
+            }
+        } else if !leading_digits.is_empty()
+            && name == "x"
+            && let Ok(count) = leading_digits.parse::<usize>()
+        {
+            adverbs.repeat = Some(count);
+        }
+
+        spec = r;
+    }
+    Ok((spec, adverbs))
+}
+
 /// Parse comma-separated call arguments inside parens.
 pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Expr>> {
     if input.starts_with(')') {
@@ -395,28 +469,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // m with arbitrary delimiter: m/.../, m{...}, m[...], m^...^, m!...!, etc.
     // Also allow modifiers before delimiter: m:2x/.../, m:x(2)/.../, m:g:i/.../
     if let Some(after_m) = input.strip_prefix('m') {
-        let mut spec = after_m;
-        loop {
-            if !spec.starts_with(':') {
-                break;
-            }
-            let mut r = &spec[1..];
-            while let Some(ch) = r.chars().next() {
-                if ch.is_alphanumeric() || ch == '_' || ch == '-' {
-                    r = &r[ch.len_utf8()..];
-                } else {
-                    break;
-                }
-            }
-            if r.starts_with('(') {
-                let after = skip_balanced_parens(r);
-                if after == r {
-                    return Err(PError::expected("closing ')' in regex modifier"));
-                }
-                r = after;
-            }
-            spec = r;
-        }
+        let (spec, adverbs) = parse_match_adverbs(after_m)?;
         if let Some(open_ch) = spec.chars().next() {
             let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
             if is_delim {
@@ -429,6 +482,16 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 };
                 let r = &spec[open_ch.len_utf8()..];
                 if let Some((pattern, rest)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
+                    if adverbs.exhaustive || adverbs.repeat.is_some() {
+                        return Ok((
+                            rest,
+                            Expr::Literal(Value::RegexWithAdverbs {
+                                pattern: pattern.to_string(),
+                                exhaustive: adverbs.exhaustive,
+                                repeat: adverbs.repeat,
+                            }),
+                        ));
+                    }
                     return Ok((rest, Expr::Literal(Value::Regex(pattern.to_string()))));
                 }
             }

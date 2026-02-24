@@ -113,6 +113,11 @@ pub enum Value {
         index: usize,
     },
     Regex(String),
+    RegexWithAdverbs {
+        pattern: String,
+        exhaustive: bool,
+        repeat: Option<usize>,
+    },
     Sub(Arc<SubData>),
     /// A weak reference to a Sub (used for &?BLOCK self-references to break cycles).
     /// Upgrade to the strong value when accessed; returns Nil if expired.
@@ -464,6 +469,18 @@ impl PartialEq for Value {
                 },
             ) => at == bt && ak == bk,
             (Value::Regex(a), Value::Regex(b)) => a == b,
+            (
+                Value::RegexWithAdverbs {
+                    pattern: ap,
+                    exhaustive: aex,
+                    repeat: ar,
+                },
+                Value::RegexWithAdverbs {
+                    pattern: bp,
+                    exhaustive: bex,
+                    repeat: br,
+                },
+            ) => ap == bp && aex == bex && ar == br,
             (
                 Value::Routine {
                     package: ap,

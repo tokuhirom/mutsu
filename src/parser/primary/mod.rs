@@ -192,11 +192,25 @@ mod tests {
     fn parse_match_regex_with_repetition_modifiers() {
         let (rest1, expr1) = primary("m:2x/ab/").unwrap();
         assert_eq!(rest1, "");
-        assert!(matches!(expr1, Expr::Literal(Value::Regex(ref s)) if s == "ab"));
+        assert!(matches!(
+            expr1,
+            Expr::Literal(Value::RegexWithAdverbs {
+                pattern: ref s,
+                exhaustive: false,
+                repeat: Some(2),
+            }) if s == "ab"
+        ));
 
         let (rest2, expr2) = primary("m:x(2)/ab/").unwrap();
         assert_eq!(rest2, "");
-        assert!(matches!(expr2, Expr::Literal(Value::Regex(ref s)) if s == "ab"));
+        assert!(matches!(
+            expr2,
+            Expr::Literal(Value::RegexWithAdverbs {
+                pattern: ref s,
+                exhaustive: false,
+                repeat: Some(2),
+            }) if s == "ab"
+        ));
     }
 
     #[test]

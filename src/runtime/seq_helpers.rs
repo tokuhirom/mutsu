@@ -28,7 +28,15 @@ impl Interpreter {
                     Err(_) => false,
                 }
             }
-            (_, Value::Regex(pat)) => {
+            (
+                _,
+                Value::Regex(pat)
+                | Value::RegexWithAdverbs {
+                    pattern: pat,
+                    exhaustive: false,
+                    ..
+                },
+            ) => {
                 let text = left.to_string_value();
                 if let Some(captures) = self.regex_match_with_captures(pat, &text) {
                     // Set $/ to a Match object with from/to/str and positional captures
@@ -61,6 +69,39 @@ impl Interpreter {
                 }
                 self.env.insert("/".to_string(), Value::Nil);
                 false
+            }
+            (
+                _,
+                Value::RegexWithAdverbs {
+                    pattern,
+                    exhaustive: true,
+                    repeat,
+                },
+            ) => {
+                let text = left.to_string_value();
+                let mut all = self.regex_match_all_with_captures(pattern, &text);
+                if all.is_empty() {
+                    self.env.insert("/".to_string(), Value::Nil);
+                    return false;
+                }
+                let earliest = all.iter().map(|c| c.from).min().unwrap_or(0);
+                all.retain(|c| c.from == earliest);
+                let needed = repeat.unwrap_or(1);
+                if all.len() < needed {
+                    self.env.insert("/".to_string(), Value::Nil);
+                    return false;
+                }
+                let selected = all.into_iter().take(needed).collect::<Vec<_>>();
+                let slash_list = selected
+                    .iter()
+                    .map(|c| Value::Str(c.matched.clone()))
+                    .collect::<Vec<_>>();
+                self.env.insert("/".to_string(), Value::array(slash_list));
+                for (i, capture) in selected.iter().enumerate() {
+                    self.env
+                        .insert(i.to_string(), Value::Str(capture.matched.clone()));
+                }
+                true
             }
             (_, Value::Junction { kind, values }) => match kind {
                 crate::value::JunctionKind::Any => values.iter().any(|v| self.smart_match(left, v)),
@@ -149,7 +190,10 @@ impl Interpreter {
                 map.contains_key(&key)
             }),
             // Regex ~~ Hash: check if any key matches the regex
-            (Value::Regex(pat), Value::Hash(map)) => {
+            (
+                Value::Regex(pat) | Value::RegexWithAdverbs { pattern: pat, .. },
+                Value::Hash(map),
+            ) => {
                 for key in map.keys() {
                     if self.regex_find_first(pat, key).is_some() {
                         return true;

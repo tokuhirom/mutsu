@@ -263,7 +263,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::Enum { .. } => "Int",
         Value::Instance { .. } => "Any",
         Value::Junction { .. } => "Junction",
-        Value::Regex(_) => "Regex",
+        Value::Regex(_) | Value::RegexWithAdverbs { .. } => "Regex",
         Value::Version { .. } => "Version",
         Value::Seq(_) => "Seq",
         Value::Slip(_) => "Slip",

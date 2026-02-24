@@ -38,6 +38,7 @@ impl Value {
             | (Value::Mix(_), Value::Mix(_))
             | (Value::Enum { .. }, Value::Enum { .. })
             | (Value::Regex(_), Value::Regex(_))
+            | (Value::RegexWithAdverbs { .. }, Value::RegexWithAdverbs { .. })
             | (Value::Routine { .. }, Value::Routine { .. })
             | (Value::Sub(_), Value::Sub(_))
             | (Value::Instance { .. }, Value::Instance { .. })
@@ -110,7 +111,7 @@ impl Value {
             Value::LazyList(_) => true,
             Value::Promise(p) => p.is_resolved(),
             Value::Channel(_) => true,
-            Value::Regex(_) => true,
+            Value::Regex(_) | Value::RegexWithAdverbs { .. } => true,
             Value::Version { .. } => true,
             Value::Nil => false,
             Value::HyperWhatever => true,
@@ -152,7 +153,7 @@ impl Value {
             Value::Package(name) => name.as_str(),
             Value::Enum { enum_type, .. } => enum_type.as_str(),
             Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => "Sub",
-            Value::Regex(_) => "Regex",
+            Value::Regex(_) | Value::RegexWithAdverbs { .. } => "Regex",
             Value::Junction { .. } => "Junction",
             Value::Version { .. } => "Version",
             Value::Slip(_) => "Slip",
