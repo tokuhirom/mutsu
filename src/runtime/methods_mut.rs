@@ -33,6 +33,8 @@ impl Interpreter {
                 "Array"
             } else if target_var.starts_with('%') {
                 "Hash"
+            } else if target_var.starts_with('&') {
+                "Sub"
             } else {
                 "Scalar"
             };

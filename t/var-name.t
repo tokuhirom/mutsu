@@ -1,6 +1,6 @@
 use Test;
 
-plan 13;
+plan 15;
 
 # .VAR.name on scalar variables
 {
@@ -30,8 +30,10 @@ plan 13;
 {
     my &d;
     is &d.VAR.name, '&d', '.VAR.name on uninitialized code var';
+    is &d.VAR.^name, 'Sub', '.VAR.^name on uninitialized code var';
     &d = -> { 99 };
     is &d.VAR.name, '&d', '.VAR.name on initialized code var';
+    is &d.VAR.^name, 'Sub', '.VAR.^name on initialized code var';
 }
 
 # .VAR on non-container is identity
