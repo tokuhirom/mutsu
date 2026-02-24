@@ -498,6 +498,45 @@ impl Interpreter {
                 new_attrs.insert("live".to_string(), Value::Bool(false));
                 Ok(Value::make_instance("Supply".to_string(), new_attrs))
             }
+            "min" => {
+                let mapper = args.first().cloned();
+                if let Some(ref m) = mapper
+                    && !matches!(m, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. })
+                {
+                    return Err(RuntimeError::new(
+                        "Supply.min: mapper must be code if specified",
+                    ));
+                }
+
+                let values = match attributes.get("values") {
+                    Some(Value::Array(items, ..)) => items.to_vec(),
+                    _ => Vec::new(),
+                };
+
+                let mut result = Vec::new();
+                let mut best_key: Option<Value> = None;
+                for value in values {
+                    let key = if let Some(ref map_fn) = mapper {
+                        self.call_sub_value(map_fn.clone(), vec![value.clone()], true)?
+                    } else {
+                        value.clone()
+                    };
+                    let is_new_min = match &best_key {
+                        None => true,
+                        Some(current) => compare_values(&key, current) < 0,
+                    };
+                    if is_new_min {
+                        best_key = Some(key);
+                        result.push(value);
+                    }
+                }
+
+                let mut new_attrs = HashMap::new();
+                new_attrs.insert("values".to_string(), Value::array(result));
+                new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                new_attrs.insert("live".to_string(), Value::Bool(false));
+                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+            }
             "split" => {
                 let needle = Self::positional_value_required(&args, 0, "split requires a needle")?;
                 let limit = Self::positional_value(&args, 1);

@@ -331,7 +331,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: [
-                    "emit", "tap", "repeated", "do", "reverse", "split", "tail", "Supply",
+                    "emit", "tap", "repeated", "do", "reverse", "split", "tail", "min", "Supply",
                 ]
                 .iter()
                 .map(|s| s.to_string())
