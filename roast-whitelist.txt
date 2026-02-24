@@ -134,6 +134,7 @@ roast/S12-construction/autopairs.t
 roast/S12-enums/anonymous.t
 roast/S12-methods/how.t
 roast/S12-methods/lvalue.t
+roast/S12-methods/trusts.t
 roast/S12-methods/typed-attributes.t
 roast/S12-traits/precomp.t
 roast/S13-overloading/fallbacks-deep.t

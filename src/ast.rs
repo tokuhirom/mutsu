@@ -362,12 +362,16 @@ pub(crate) enum Stmt {
         body: Vec<Stmt>,
         multi: bool,
         is_rw: bool,
+        is_private: bool,
     },
     RoleDecl {
         name: String,
         body: Vec<Stmt>,
     },
     DoesDecl {
+        name: String,
+    },
+    TrustsDecl {
         name: String,
     },
     SubsetDecl {
@@ -519,6 +523,7 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
         }
         Stmt::ProtoDecl { .. } => {}
         Stmt::DoesDecl { .. } => {}
+        Stmt::TrustsDecl { .. } => {}
         Stmt::SubsetDecl {
             predicate: Some(predicate),
             ..

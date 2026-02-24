@@ -435,6 +435,7 @@ const STMT_PARSERS: &[StmtParser] = &[
     decl::enum_decl,
     decl::has_decl,
     class::does_decl,
+    class::trusts_decl,
     class::proto_decl,
     sub::sub_decl,
     sub::method_decl,

@@ -354,6 +354,16 @@ pub(super) fn does_decl(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, Stmt::DoesDecl { name }))
 }
 
+/// Parse `trusts` declaration.
+pub(super) fn trusts_decl(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("trusts", input).ok_or_else(|| PError::expected("trusts declaration"))?;
+    let (rest, _) = ws1(rest)?;
+    let (rest, name) = qualified_ident(rest)?;
+    let (rest, _) = ws(rest)?;
+    let (rest, _) = opt_char(rest, ';');
+    Ok((rest, Stmt::TrustsDecl { name }))
+}
+
 /// Parse a `token`, `regex`, or `rule` declaration.
 pub(super) fn token_decl(input: &str) -> PResult<'_, Stmt> {
     let is_rule = keyword("rule", input).is_some();

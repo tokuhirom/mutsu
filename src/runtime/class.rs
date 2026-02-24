@@ -101,9 +101,9 @@ impl Interpreter {
         let mro = self.class_mro(class_name);
         for cn in mro {
             if let Some(class_def) = self.classes.get(&cn)
-                && class_def.methods.contains_key(method_name)
+                && let Some(defs) = class_def.methods.get(method_name)
             {
-                return true;
+                return defs.iter().any(|d| !d.is_private);
             }
         }
         false
@@ -130,21 +130,39 @@ impl Interpreter {
 
     pub(crate) fn run_instance_method(
         &mut self,
-        class_name: &str,
-        mut attributes: HashMap<String, Value>,
+        receiver_class_name: &str,
+        attributes: HashMap<String, Value>,
         method_name: &str,
         args: Vec<Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
-        let method_def = self
-            .resolve_method(class_name, method_name, &args)
+        let (owner_class, method_def) = self
+            .resolve_method_with_owner(receiver_class_name, method_name, &args)
             .ok_or_else(|| {
                 RuntimeError::new(format!(
                     "No matching candidates for method: {}",
                     method_name
                 ))
             })?;
-        let base = Value::make_instance(class_name.to_string(), attributes.clone());
+        self.run_instance_method_resolved(
+            receiver_class_name,
+            &owner_class,
+            method_def,
+            attributes,
+            args,
+        )
+    }
+
+    pub(super) fn run_instance_method_resolved(
+        &mut self,
+        receiver_class_name: &str,
+        owner_class: &str,
+        method_def: MethodDef,
+        mut attributes: HashMap<String, Value>,
+        args: Vec<Value>,
+    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+        let base = Value::make_instance(receiver_class_name.to_string(), attributes.clone());
         let saved_env = self.env.clone();
+        self.method_class_stack.push(owner_class.to_string());
         self.env.insert("self".to_string(), base.clone());
         for (attr_name, attr_val) in &attributes {
             self.env.insert(format!("!{}", attr_name), attr_val.clone());
@@ -156,7 +174,14 @@ impl Interpreter {
             } else if let Some(pd) = method_def.param_defs.get(i)
                 && let Some(default_expr) = &pd.default
             {
-                let val = self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?;
+                let val = match self.eval_block_value(&[Stmt::Expr(default_expr.clone())]) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        self.method_class_stack.pop();
+                        self.env = saved_env;
+                        return Err(e);
+                    }
+                };
                 self.env.insert(param.clone(), val);
             }
         }
@@ -179,6 +204,7 @@ impl Interpreter {
                 merged_env.insert(k.clone(), v.clone());
             }
         }
+        self.method_class_stack.pop();
         self.env = merged_env;
         result.map(|v| (v, attributes))
     }

@@ -87,6 +87,7 @@ struct MethodDef {
     param_defs: Vec<ParamDef>,
     body: Vec<Stmt>,
     is_rw: bool,
+    is_private: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -220,6 +221,7 @@ pub struct Interpreter {
     program_path: Option<String>,
     current_package: String,
     routine_stack: Vec<(String, String)>,
+    method_class_stack: Vec<String>,
     test_pending_callsite_line: Option<i64>,
     test_assertion_line_stack: Vec<i64>,
     block_stack: Vec<Value>,
@@ -229,6 +231,7 @@ pub struct Interpreter {
     gather_items: Vec<Vec<Value>>,
     enum_types: HashMap<String, Vec<(String, i64)>>,
     classes: HashMap<String, ClassDef>,
+    class_trusts: HashMap<String, HashSet<String>>,
     roles: HashMap<String, RoleDef>,
     subsets: HashMap<String, SubsetDef>,
     proto_subs: HashSet<String>,
@@ -711,6 +714,7 @@ impl Interpreter {
             program_path: None,
             current_package: "GLOBAL".to_string(),
             routine_stack: Vec::new(),
+            method_class_stack: Vec::new(),
             test_pending_callsite_line: None,
             test_assertion_line_stack: Vec::new(),
             block_stack: Vec::new(),
@@ -720,6 +724,7 @@ impl Interpreter {
             gather_items: Vec::new(),
             enum_types: HashMap::new(),
             classes,
+            class_trusts: HashMap::new(),
             roles: {
                 let mut roles = HashMap::new();
                 roles.insert(
@@ -1037,6 +1042,7 @@ impl Interpreter {
             program_path: self.program_path.clone(),
             current_package: self.current_package.clone(),
             routine_stack: Vec::new(),
+            method_class_stack: Vec::new(),
             test_pending_callsite_line: None,
             test_assertion_line_stack: Vec::new(),
             block_stack: Vec::new(),
@@ -1046,6 +1052,7 @@ impl Interpreter {
             gather_items: Vec::new(),
             enum_types: self.enum_types.clone(),
             classes: self.classes.clone(),
+            class_trusts: self.class_trusts.clone(),
             roles: self.roles.clone(),
             subsets: self.subsets.clone(),
             proto_subs: self.proto_subs.clone(),

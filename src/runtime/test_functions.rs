@@ -594,6 +594,11 @@ impl Interpreter {
                 nested.token_defs = self.token_defs.clone();
                 nested.proto_subs = self.proto_subs.clone();
                 nested.proto_tokens = self.proto_tokens.clone();
+                nested.classes = self.classes.clone();
+                nested.class_trusts = self.class_trusts.clone();
+                nested.roles = self.roles.clone();
+                nested.subsets = self.subsets.clone();
+                nested.type_metadata = self.type_metadata.clone();
                 nested.current_package = self.current_package.clone();
                 for (k, v) in &self.env {
                     if k.contains("::") {

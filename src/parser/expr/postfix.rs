@@ -72,6 +72,28 @@ fn parse_quoted_method_name(input: &str) -> Option<(&str, String)> {
     Some((rest, content.to_string()))
 }
 
+fn parse_private_method_name(input: &str) -> Option<(&str, String)> {
+    let mut rest = input;
+    let mut name = String::new();
+    let mut first = true;
+    loop {
+        let (r, part) =
+            take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-').ok()?;
+        if !first {
+            name.push_str("::");
+        }
+        name.push_str(part);
+        first = false;
+        rest = r;
+        if let Some(r2) = rest.strip_prefix("::") {
+            rest = r2;
+            continue;
+        }
+        break;
+    }
+    Some((rest, name))
+}
+
 pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if let Some((op, len)) = parse_prefix_unary_op(input) {
         let mut rest = &input[len..];
@@ -391,6 +413,36 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 continue;
             }
             return Err(PError::expected_at("method name", r));
+        }
+
+        // Private method call: target!Type::method(args) / target!method(args)
+        if rest.starts_with('!') && !rest.starts_with("!=") {
+            let after_bang = &rest[1..];
+            if let Some((r, name)) = parse_private_method_name(after_bang) {
+                if r.starts_with('(') {
+                    let (r, _) = parse_char(r, '(')?;
+                    let (r, _) = ws(r)?;
+                    let (r, args) = parse_call_arg_list(r)?;
+                    let (r, _) = ws(r)?;
+                    let (r, _) = parse_char(r, ')')?;
+                    expr = Expr::MethodCall {
+                        target: Box::new(expr),
+                        name,
+                        args,
+                        modifier: Some('!'),
+                    };
+                    rest = r;
+                    continue;
+                }
+                expr = Expr::MethodCall {
+                    target: Box::new(expr),
+                    name,
+                    args: Vec::new(),
+                    modifier: Some('!'),
+                };
+                rest = r;
+                continue;
+            }
         }
 
         // CallOn: $var(args) — invoke a callable stored in a variable
