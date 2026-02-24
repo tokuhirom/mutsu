@@ -271,6 +271,7 @@ roast/S32-trig/sec.t
 roast/S32-trig/sech.t
 roast/S32-trig/simple.t
 roast/S32-trig/sin.t
+roast/S32-trig/sinh.t
 roast/S32-trig/tan.t
 roast/S32-trig/tanh.t
 roast/integration/advent2009-day03.t

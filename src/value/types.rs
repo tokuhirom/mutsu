@@ -16,6 +16,7 @@ impl Value {
             }
             // Pairs: recursively use eqv for values
             (Value::Pair(ak, av), Value::Pair(bk, bv)) => ak == bk && av.eqv(bv),
+            (Value::ValuePair(ak, av), Value::ValuePair(bk, bv)) => ak.eqv(bk) && av.eqv(bv),
             // Slips: recursively use eqv for elements
             (Value::Slip(a), Value::Slip(b)) => {
                 a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
@@ -78,7 +79,7 @@ impl Value {
             Value::Set(s) => !s.is_empty(),
             Value::Bag(b) => !b.is_empty(),
             Value::Mix(m) => !m.is_empty(),
-            Value::Pair(_, _) => true,
+            Value::Pair(_, _) | Value::ValuePair(_, _) => true,
             Value::Enum { .. } => true,
             Value::CompUnitDepSpec { .. } => true,
             Value::Package(_) => false,
@@ -140,7 +141,7 @@ impl Value {
             Value::Set(_) => "Set",
             Value::Bag(_) => "Bag",
             Value::Mix(_) => "Mix",
-            Value::Pair(_, _) => "Pair",
+            Value::Pair(_, _) | Value::ValuePair(_, _) => "Pair",
             Value::Range(_, _)
             | Value::RangeExcl(_, _)
             | Value::RangeExclStart(_, _)

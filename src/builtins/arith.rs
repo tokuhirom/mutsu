@@ -278,9 +278,22 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
 pub(crate) fn arith_negate(val: Value) -> Result<Value, RuntimeError> {
     match val {
         Value::Bool(b) => Ok(Value::Int(if b { -1 } else { 0 })),
-        Value::Int(i) => Ok(Value::Int(-i)),
+        Value::Int(i) => {
+            if let Some(neg) = i.checked_neg() {
+                Ok(Value::Int(neg))
+            } else {
+                // i64::MIN overflow: promote to Num
+                Ok(Value::Num(-(i as f64)))
+            }
+        }
         Value::Num(f) => Ok(Value::Num(-f)),
-        Value::Rat(n, d) => Ok(Value::Rat(-n, d)),
+        Value::Rat(n, d) => {
+            if let Some(neg) = n.checked_neg() {
+                Ok(Value::Rat(neg, d))
+            } else {
+                Ok(Value::Num(-(n as f64) / d as f64))
+            }
+        }
         Value::Complex(r, i) => Ok(Value::Complex(-r, -i)),
         Value::Str(ref s) => {
             if let Ok(i) = s.trim().parse::<i64>() {

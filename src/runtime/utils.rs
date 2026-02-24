@@ -86,6 +86,9 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                 if let Value::Pair(k, v) = &items[i] {
                     map.insert(k.clone(), *v.clone());
                     i += 1;
+                } else if let Value::ValuePair(k, v) = &items[i] {
+                    map.insert(k.to_string_value(), *v.clone());
+                    i += 1;
                 } else {
                     let key = items[i].to_string_value();
                     let val = if i + 1 < items.len() {
@@ -102,6 +105,11 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
         Value::Pair(k, v) => {
             let mut map = HashMap::new();
             map.insert(k, *v);
+            Value::hash(map)
+        }
+        Value::ValuePair(k, v) => {
+            let mut map = HashMap::new();
+            map.insert(k.to_string_value(), *v);
             Value::hash(map)
         }
         Value::Nil => Value::hash(HashMap::new()),
@@ -176,6 +184,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
             .collect::<Vec<_>>()
             .join("\n"),
         Value::Pair(k, v) => format!("{} => {}", k, gist_value(v)),
+        Value::ValuePair(k, v) => format!("{} => {}", gist_value(k), gist_value(v)),
         Value::Version { .. } => format!("v{}", value.to_string_value()),
         Value::Nil => "Nil".to_string(),
         _ => value.to_string_value(),
@@ -216,7 +225,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         | Value::RangeExclStart(_, _)
         | Value::RangeExclBoth(_, _)
         | Value::GenericRange { .. } => "Range",
-        Value::Pair(_, _) => "Pair",
+        Value::Pair(_, _) | Value::ValuePair(_, _) => "Pair",
         Value::Rat(_, _) => "Rat",
         Value::FatRat(_, _) => "FatRat",
         Value::Complex(_, _) => "Complex",

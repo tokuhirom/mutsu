@@ -138,7 +138,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Hash(items) => Some(Ok(Value::array(
                 items
                     .iter()
-                    .map(|(k, v)| Value::Pair(v.to_string_value(), Box::new(Value::Str(k.clone()))))
+                    .map(|(k, v)| match v {
+                        Value::Str(s) => Value::Pair(s.clone(), Box::new(Value::Str(k.clone()))),
+                        _ => Value::ValuePair(Box::new(v.clone()), Box::new(Value::Str(k.clone()))),
+                    })
                     .collect(),
             ))),
             v if v.is_range() => {

@@ -324,8 +324,18 @@ impl VM {
     pub(super) fn exec_make_pair_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let key = left.to_string_value();
-        self.stack.push(Value::Pair(key, Box::new(right)));
+        // Preserve the original key type for `.key` to return the correct type.
+        // Use ValuePair for non-string keys, Pair for string keys.
+        match &left {
+            Value::Str(_) => {
+                let key = left.to_string_value();
+                self.stack.push(Value::Pair(key, Box::new(right)));
+            }
+            _ => {
+                self.stack
+                    .push(Value::ValuePair(Box::new(left), Box::new(right)));
+            }
+        }
     }
 
     pub(super) fn exec_bit_and_op(&mut self) {

@@ -111,12 +111,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         },
         "key" => match target {
             Value::Pair(k, _) => Some(Ok(Value::Str(k.clone()))),
+            Value::ValuePair(k, _) => Some(Ok(*k.clone())),
             Value::Bool(true) => Some(Ok(Value::Str("True".to_string()))),
             Value::Bool(false) => Some(Ok(Value::Str("False".to_string()))),
             _ => None,
         },
         "value" => match target {
-            Value::Pair(_, v) => Some(Ok(*v.clone())),
+            Value::Pair(_, v) | Value::ValuePair(_, v) => Some(Ok(*v.clone())),
             Value::Bool(b) => Some(Ok(Value::Int(if *b { 1 } else { 0 }))),
             _ => None,
         },
@@ -124,6 +125,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Pair(k, v) => Some(Ok(Value::Pair(
                 v.to_string_value(),
                 Box::new(Value::Str(k.clone())),
+            ))),
+            Value::ValuePair(k, v) => Some(Ok(Value::ValuePair(
+                Box::new(*v.clone()),
+                Box::new(*k.clone()),
             ))),
             _ => None,
         },

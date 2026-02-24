@@ -104,6 +104,8 @@ pub enum Value {
         name: String,
     },
     Pair(String, Box<Value>),
+    /// Pair with a non-string key (preserves the original key type for `.key`)
+    ValuePair(Box<Value>, Box<Value>),
     Enum {
         enum_type: String,
         key: String,
@@ -448,6 +450,7 @@ impl PartialEq for Value {
             ) => a == b,
             (Value::Package(a), Value::Package(b)) => a == b,
             (Value::Pair(ak, av), Value::Pair(bk, bv)) => ak == bk && av == bv,
+            (Value::ValuePair(ak, av), Value::ValuePair(bk, bv)) => ak == bk && av == bv,
             (
                 Value::Enum {
                     enum_type: at,
