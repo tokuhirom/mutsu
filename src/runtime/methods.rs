@@ -16,6 +16,43 @@ impl Interpreter {
             )));
         }
 
+        if let Value::Mixin(inner, mixins) = &target {
+            if args.is_empty() {
+                if let Some(mixin_val) = mixins.get(method) {
+                    return Ok(mixin_val.clone());
+                }
+                for mixin_val in mixins.values() {
+                    if let Value::Enum { enum_type, key, .. } = mixin_val {
+                        if method == key {
+                            return Ok(Value::Bool(true));
+                        }
+                        if let Some(variants) = self.enum_types.get(enum_type)
+                            && variants.iter().any(|(variant, _)| variant == method)
+                        {
+                            return Ok(Value::Bool(false));
+                        }
+                    }
+                }
+            }
+            if method == "does" && args.len() == 1 {
+                let does = match &args[0] {
+                    Value::Enum {
+                        enum_type,
+                        key: probe_key,
+                        ..
+                    } => matches!(
+                        mixins.get(enum_type),
+                        Some(Value::Enum { key, .. }) if key == probe_key
+                    ),
+                    Value::Package(name) | Value::Str(name) => {
+                        mixins.contains_key(name) || inner.does_check(name)
+                    }
+                    other => inner.does_check(&other.to_string_value()),
+                };
+                return Ok(Value::Bool(does));
+            }
+        }
+
         let bypass_native_fastpath = matches!(method, "max" | "min")
             && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
             || (method == "Supply"
@@ -122,6 +159,13 @@ impl Interpreter {
                 // Non-container .VAR is identity. Container variables are handled in
                 // call_method_mut_with_values via target variable metadata.
                 return Ok(target);
+            }
+            "does" if args.len() == 1 => {
+                let role_name = match &args[0] {
+                    Value::Package(name) | Value::Str(name) => name.clone(),
+                    _ => return Ok(Value::Bool(false)),
+                };
+                return Ok(Value::Bool(target.does_check(&role_name)));
             }
             "start" => {
                 if let Some(cls) = self.promise_class_name(&target) {

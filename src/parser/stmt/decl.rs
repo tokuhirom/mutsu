@@ -645,16 +645,8 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
                 r = r2;
                 break;
             }
-            let (r2, vname) = ident(r)?;
-            let (r2, _) = ws(r2)?;
-            let (r2, val) = if let Some(stripped) = r2.strip_prefix("=>") {
-                let (r2, _) = ws(stripped)?;
-                let (r2, expr) = expression(r2)?;
-                (r2, Some(expr))
-            } else {
-                (r2, None)
-            };
-            variants.push((vname, val));
+            let (r2, variant) = parse_enum_variant_entry(r)?;
+            variants.push(variant);
             let (r2, _) = ws(r2)?;
             if let Some(stripped) = r2.strip_prefix(',') {
                 let (r2, _) = ws(stripped)?;
@@ -676,6 +668,28 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
             variants,
         },
     ))
+}
+
+fn parse_enum_variant_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
+    let (rest, expr) = expression(input)?;
+    match expr {
+        Expr::BareWord(name) | Expr::Literal(Value::Str(name)) => Ok((rest, (name, None))),
+        Expr::Binary {
+            left,
+            op: crate::token_kind::TokenKind::FatArrow,
+            right,
+        } => match *left {
+            Expr::Literal(Value::Str(name)) => {
+                let value_expr = match *right {
+                    Expr::Literal(Value::Bool(true)) => None,
+                    other => Some(other),
+                };
+                Ok((rest, (name, value_expr)))
+            }
+            _ => Err(PError::expected("enum variant name")),
+        },
+        _ => Err(PError::expected("enum variant")),
+    }
 }
 
 pub(super) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
@@ -708,16 +722,8 @@ pub(super) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
             if let Some(r) = r.strip_prefix(')') {
                 return Ok((r, Stmt::EnumDecl { name, variants }));
             }
-            let (r2, vname) = ident(r)?;
-            let (r2, _) = ws(r2)?;
-            let (r2, val) = if let Some(stripped) = r2.strip_prefix("=>") {
-                let (r2, _) = ws(stripped)?;
-                let (r2, expr) = expression(r2)?;
-                (r2, Some(expr))
-            } else {
-                (r2, None)
-            };
-            variants.push((vname, val));
+            let (r2, variant) = parse_enum_variant_entry(r)?;
+            variants.push(variant);
             let (r2, _) = ws(r2)?;
             if let Some(stripped) = r2.strip_prefix(',') {
                 let (r2, _) = ws(stripped)?;
