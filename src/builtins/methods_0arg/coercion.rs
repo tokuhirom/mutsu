@@ -206,6 +206,17 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => Some(Ok(Value::array(vec![target.clone()]))),
         },
         "list" | "Array" => match target {
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Supply" => {
+                let items = match attributes.get("values") {
+                    Some(Value::Array(items, ..)) => items.to_vec(),
+                    _ => Vec::new(),
+                };
+                Some(Ok(Value::array(items)))
+            }
             Value::Range(a, b) => {
                 if *b == i64::MAX || *a == i64::MIN {
                     Some(Ok(target.clone()))

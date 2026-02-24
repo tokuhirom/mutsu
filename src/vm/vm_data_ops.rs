@@ -9,6 +9,11 @@ impl VM {
         for val in raw {
             match val {
                 Value::Slip(items) => elems.extend(items.iter().cloned()),
+                // In bracket-array literals (`[...]`), a single element is in
+                // list context and should flatten one level (e.g. `[2..6]`,
+                // `[@a]`, `[(1,2,3)]`), while multi-element forms keep each
+                // element itemized (e.g. `[(1,2),(3,4)]`).
+                other if is_real_array && n == 1 => elems.extend(runtime::value_to_list(&other)),
                 other => elems.push(other),
             }
         }
