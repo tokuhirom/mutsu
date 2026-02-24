@@ -204,7 +204,9 @@ fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
                 Expr::Var(var_name)
             }
         }
-        Expr::AnonSubParams { params, body } if params.iter().all(|p| p.starts_with("__wc_")) => {
+        Expr::AnonSubParams { params, body, .. }
+            if params.iter().all(|p| p.starts_with("__wc_")) =>
+        {
             // Multi-param WhateverCode: renumber all params
             let mut renames = Vec::new();
             for old_name in params {
@@ -303,7 +305,23 @@ fn wrap_whatevercode(expr: &Expr) -> Expr {
         let body_expr = replace_whatever_numbered(expr, &mut counter);
         let params: Vec<String> = (0..counter).map(|i| format!("__wc_{}", i)).collect();
         Expr::AnonSubParams {
-            params,
+            params: params.clone(),
+            param_defs: params
+                .iter()
+                .map(|name| crate::ast::ParamDef {
+                    name: name.clone(),
+                    default: None,
+                    required: false,
+                    named: false,
+                    slurpy: false,
+                    sigilless: false,
+                    type_constraint: None,
+                    literal_value: None,
+                    sub_signature: None,
+                    where_constraint: None,
+                    traits: Vec::new(),
+                })
+                .collect(),
             body: vec![Stmt::Expr(body_expr)],
         }
     }
@@ -731,7 +749,10 @@ mod tests {
     fn parse_pair_lvalue_colonparen_form() {
         let (rest, expr) = expression(":(:$a is raw)").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::Binary { .. }));
+        assert!(matches!(
+            expr,
+            Expr::Literal(Value::Instance { ref class_name, .. }) if class_name == "Signature"
+        ));
     }
 
     #[test]

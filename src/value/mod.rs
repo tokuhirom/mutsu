@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::ast::Stmt;
+use crate::ast::{ParamDef, Stmt};
 use num_bigint::BigInt as NumBigInt;
 use num_traits::{ToPrimitive, Zero};
 use std::sync::{Arc, Condvar, Mutex, Weak};
@@ -33,8 +33,11 @@ pub struct SubData {
     pub package: String,
     pub name: String,
     pub params: Vec<String>,
+    pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) body: Vec<Stmt>,
     pub env: HashMap<String, Value>,
+    pub(crate) assumed_positional: Vec<Value>,
+    pub(crate) assumed_named: HashMap<String, Value>,
     pub id: u64,
 }
 
@@ -579,6 +582,7 @@ impl Value {
         package: String,
         name: String,
         params: Vec<String>,
+        param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,
         env: HashMap<String, Value>,
     ) -> Self {
@@ -586,8 +590,11 @@ impl Value {
             package,
             name,
             params,
+            param_defs,
             body,
             env,
+            assumed_positional: Vec::new(),
+            assumed_named: HashMap::new(),
             id: next_instance_id(),
         }))
     }
@@ -597,6 +604,7 @@ impl Value {
         package: String,
         name: String,
         params: Vec<String>,
+        param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,
         env: HashMap<String, Value>,
         id: u64,
@@ -605,8 +613,11 @@ impl Value {
             package,
             name,
             params,
+            param_defs,
             body,
             env,
+            assumed_positional: Vec::new(),
+            assumed_named: HashMap::new(),
             id,
         }))
     }

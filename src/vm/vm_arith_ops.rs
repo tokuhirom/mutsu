@@ -296,6 +296,7 @@ impl VM {
             String::new(),
             "<composed>".to_string(),
             vec!["x".to_string()],
+            Vec::new(),
             vec![Stmt::Expr(Expr::Call {
                 name: left_name,
                 args: vec![Expr::Call {

@@ -208,6 +208,7 @@ pub(super) fn ident_pub(input: &str) -> PResult<'_, String> {
 }
 
 /// Public accessor for var_name (used by primary.rs for anon sub params).
+#[allow(dead_code)]
 pub(super) fn var_name_pub(input: &str) -> PResult<'_, String> {
     var_name(input)
 }

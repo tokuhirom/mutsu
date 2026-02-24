@@ -982,12 +982,16 @@ impl Compiler {
                 let idx = self.code.add_stmt(Stmt::Block(body.clone()));
                 self.code.emit(OpCode::MakeAnonSub(idx));
             }
-            Expr::AnonSubParams { params, body } => {
+            Expr::AnonSubParams {
+                params,
+                param_defs,
+                body,
+            } => {
                 let idx = self.code.add_stmt(Stmt::SubDecl {
                     name: String::new(),
                     name_expr: None,
                     params: params.clone(),
-                    param_defs: Vec::new(),
+                    param_defs: param_defs.clone(),
                     signature_alternates: Vec::new(),
                     body: body.clone(),
                     multi: false,

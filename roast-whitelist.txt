@@ -110,6 +110,7 @@ roast/S05-modifier/repetition-exhaustive.t
 roast/S05-substitution/67222.t
 roast/S05-transliteration/79778.t
 roast/S06-advanced/stub.t
+roast/S06-currying/named.t
 roast/S06-multi/compile-time.t
 roast/S06-operator-overloading/semicolon.t
 roast/S06-other/main-eval.t

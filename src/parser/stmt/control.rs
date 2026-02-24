@@ -330,6 +330,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             ParamDef {
                 name,
                 default: None,
+                required: false,
                 named: false,
                 slurpy: false,
                 sigilless: true,
@@ -397,6 +398,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         ParamDef {
             name,
             default: None,
+            required: false,
             named: false,
             slurpy: false,
             sigilless: false,

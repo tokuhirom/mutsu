@@ -492,6 +492,58 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             ));
         }
     }
+    if let Some(r) = r.strip_prefix("!===") {
+        let (r, _) = ws(r)?;
+        let (r, right) = if mode == ExprMode::Full {
+            junctive_expr_mode(r, mode).map_err(|err| PError {
+                messages: merge_expected_messages(
+                    "expected expression after comparison operator",
+                    &err.messages,
+                ),
+                remaining_len: err.remaining_len.or(Some(r.len())),
+            })?
+        } else {
+            junctive_expr_mode(r, mode)?
+        };
+        return Ok((
+            r,
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(Expr::Binary {
+                    left: Box::new(left),
+                    op: TokenKind::EqEqEq,
+                    right: Box::new(right),
+                }),
+            },
+        ));
+    }
+    if let Some(r) = r.strip_prefix("!eqv")
+        && !is_ident_char(r.as_bytes().first().copied())
+    {
+        let (r, _) = ws(r)?;
+        let (r, right) = if mode == ExprMode::Full {
+            junctive_expr_mode(r, mode).map_err(|err| PError {
+                messages: merge_expected_messages(
+                    "expected expression after comparison operator",
+                    &err.messages,
+                ),
+                remaining_len: err.remaining_len.or(Some(r.len())),
+            })?
+        } else {
+            junctive_expr_mode(r, mode)?
+        };
+        return Ok((
+            r,
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(Expr::Binary {
+                    left: Box::new(left),
+                    op: TokenKind::Ident("eqv".to_string()),
+                    right: Box::new(right),
+                }),
+            },
+        ));
+    }
     if let Some((op, len)) = parse_comparison_op(r) {
         let r = &r[len..];
         let (r, _) = ws(r)?;

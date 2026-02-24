@@ -75,6 +75,22 @@ impl Interpreter {
             other => other,
         };
         if let Value::Sub(data) = target_val {
+            let mut call_args = args.clone();
+            if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
+                let mut positional = data.assumed_positional.clone();
+                let mut named = data.assumed_named.clone();
+                for arg in args {
+                    if let Value::Pair(key, boxed) = arg {
+                        named.insert(key, *boxed);
+                    } else {
+                        positional.push(arg);
+                    }
+                }
+                call_args = positional;
+                for (key, value) in named {
+                    call_args.push(Value::Pair(key, Box::new(value)));
+                }
+            }
             let saved_env = self.env.clone();
             let mut new_env = saved_env.clone();
             for (k, v) in &data.env {
@@ -84,23 +100,23 @@ impl Interpreter {
                 }
                 new_env.insert(k.clone(), v.clone());
             }
-            // Bind named params
-            for (i, pname) in data.params.iter().enumerate() {
-                if let Some(value) = args.get(i) {
-                    new_env.insert(pname.clone(), value.clone());
-                }
-            }
+            self.env = new_env.clone();
+            self.bind_function_args_values(&data.param_defs, &data.params, &call_args)?;
+            new_env = self.env.clone();
             // Bind implicit $_ for bare blocks called with arguments
-            if data.params.is_empty() && !args.is_empty() {
-                new_env.insert("_".to_string(), args[0].clone());
+            if data.params.is_empty() && !call_args.is_empty() {
+                new_env.insert("_".to_string(), call_args[0].clone());
             }
             // &?BLOCK: weak self-reference to break reference cycles
             let block_arc = std::sync::Arc::new(crate::value::SubData {
                 package: data.package.clone(),
                 name: data.name.clone(),
                 params: data.params.clone(),
+                param_defs: data.param_defs.clone(),
                 body: data.body.clone(),
                 env: new_env.clone(),
+                assumed_positional: data.assumed_positional.clone(),
+                assumed_named: data.assumed_named.clone(),
                 id: crate::value::next_instance_id(),
             });
             new_env.insert(
@@ -111,6 +127,7 @@ impl Interpreter {
                 data.package.clone(),
                 data.name.clone(),
                 data.params.clone(),
+                data.param_defs.clone(),
                 data.body.clone(),
                 new_env.clone(),
             );
@@ -486,6 +503,9 @@ impl Interpreter {
                 name.to_string(),
                 Box::new(Value::array(args.to_vec())),
             ));
+        }
+        if name.starts_with("X::") {
+            return Ok(Value::Package(name.to_string()));
         }
 
         Err(RuntimeError::new(format!(
