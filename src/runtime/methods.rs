@@ -700,10 +700,22 @@ impl Interpreter {
                                     self.env.insert(i.to_string(), Value::Str(v.clone()));
                                 }
                                 for (k, v) in &captures.named {
-                                    let value = if v.len() == 1 {
-                                        Value::Str(v[0].clone())
+                                    let vals: Vec<Value> = v
+                                        .iter()
+                                        .map(|s| {
+                                            Value::make_match_object_with_captures(
+                                                s.clone(),
+                                                0,
+                                                s.chars().count() as i64,
+                                                &[],
+                                                &std::collections::HashMap::new(),
+                                            )
+                                        })
+                                        .collect();
+                                    let value = if vals.len() == 1 {
+                                        vals[0].clone()
                                     } else {
-                                        Value::array(v.iter().cloned().map(Value::Str).collect())
+                                        Value::array(vals)
                                     };
                                     self.env.insert(format!("<{}>", k), value);
                                 }

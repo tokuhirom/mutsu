@@ -120,6 +120,7 @@ pub enum Value {
         pattern: String,
         exhaustive: bool,
         repeat: Option<usize>,
+        perl5: bool,
     },
     Sub(Arc<SubData>),
     /// A weak reference to a Sub (used for &?BLOCK self-references to break cycles).
@@ -481,13 +482,15 @@ impl PartialEq for Value {
                     pattern: ap,
                     exhaustive: aex,
                     repeat: ar,
+                    perl5: ap5,
                 },
                 Value::RegexWithAdverbs {
                     pattern: bp,
                     exhaustive: bex,
                     repeat: br,
+                    perl5: bp5,
                 },
-            ) => ap == bp && aex == bex && ar == br,
+            ) => ap == bp && aex == bex && ar == br && ap5 == bp5,
             (
                 Value::Routine {
                     package: ap,
@@ -674,16 +677,30 @@ impl Value {
         positional: &[String],
         named: &HashMap<String, Vec<String>>,
     ) -> Self {
+        let make_capture_match = |capture: &str| {
+            let mut cap_attrs = HashMap::new();
+            cap_attrs.insert("str".to_string(), Value::Str(capture.to_string()));
+            cap_attrs.insert("from".to_string(), Value::Int(0));
+            cap_attrs.insert("to".to_string(), Value::Int(capture.chars().count() as i64));
+            cap_attrs.insert("list".to_string(), Value::array(Vec::new()));
+            cap_attrs.insert("named".to_string(), Value::hash(HashMap::new()));
+            Value::make_instance("Match".to_string(), cap_attrs)
+        };
+
         let mut attrs = HashMap::new();
         attrs.insert("str".to_string(), Value::Str(matched));
         attrs.insert("from".to_string(), Value::Int(from));
         attrs.insert("to".to_string(), Value::Int(to));
-        let caps: Vec<Value> = positional.iter().map(|s| Value::Str(s.clone())).collect();
+        let caps: Vec<Value> = positional.iter().map(|s| make_capture_match(s)).collect();
         attrs.insert("list".to_string(), Value::array(caps));
         let mut named_caps: HashMap<String, Value> = HashMap::new();
         for (key, values) in named {
-            let vals: Vec<Value> = values.iter().cloned().map(Value::Str).collect();
-            named_caps.insert(key.clone(), Value::array(vals));
+            let vals: Vec<Value> = values.iter().map(|s| make_capture_match(s)).collect();
+            if vals.len() == 1 {
+                named_caps.insert(key.clone(), vals[0].clone());
+            } else {
+                named_caps.insert(key.clone(), Value::array(vals));
+            }
         }
         attrs.insert("named".to_string(), Value::hash(named_caps));
         Value::make_instance("Match".to_string(), attrs)

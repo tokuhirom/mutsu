@@ -234,6 +234,7 @@ mod tests {
                 pattern: ref s,
                 exhaustive: false,
                 repeat: Some(2),
+                perl5: false,
             }) if s == "ab"
         ));
 
@@ -245,7 +246,33 @@ mod tests {
                 pattern: ref s,
                 exhaustive: false,
                 repeat: Some(2),
+                perl5: false,
             }) if s == "ab"
+        ));
+    }
+
+    #[test]
+    fn parse_p5_regex_with_adverb() {
+        let (rest1, expr1) = primary("m:P5/(?<name>.+)/").unwrap();
+        assert_eq!(rest1, "");
+        assert!(matches!(
+            expr1,
+            Expr::Literal(Value::RegexWithAdverbs {
+                pattern: ref s,
+                perl5: true,
+                ..
+            }) if s == "(?<name>.+)"
+        ));
+
+        let (rest2, expr2) = primary("rx:P5/a/").unwrap();
+        assert_eq!(rest2, "");
+        assert!(matches!(
+            expr2,
+            Expr::Literal(Value::RegexWithAdverbs {
+                pattern: ref s,
+                perl5: true,
+                ..
+            }) if s == "a"
         ));
     }
 
