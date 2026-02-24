@@ -1,14 +1,29 @@
 use super::*;
+use std::collections::HashMap as StdHashMap;
 
 impl Interpreter {
     pub(super) fn builtin_elems(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let val = args.first().cloned();
+        if args.len() != 1 {
+            let msg = format!(
+                "Calling elems({}) will never work with signature of the proto ($, *%)",
+                std::iter::repeat_n("Int", args.len())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            let mut attrs = StdHashMap::new();
+            attrs.insert("message".to_string(), Value::Str(msg.clone()));
+            let ex = Value::make_instance("X::TypeCheck::Argument".to_string(), attrs);
+            let mut err = RuntimeError::new(msg);
+            err.exception = Some(Box::new(ex));
+            return Err(err);
+        }
+        let val = &args[0];
         Ok(match val {
-            Some(Value::Array(items, ..)) => Value::Int(items.len() as i64),
-            Some(Value::LazyList(list)) => Value::Int(self.force_lazy_list(&list)?.len() as i64),
-            Some(Value::Hash(items)) => Value::Int(items.len() as i64),
-            Some(Value::Str(s)) => Value::Int(s.chars().count() as i64),
-            _ => Value::Int(0),
+            Value::Array(items, ..) => Value::Int(items.len() as i64),
+            Value::LazyList(list) => Value::Int(self.force_lazy_list(list)?.len() as i64),
+            Value::Hash(items) => Value::Int(items.len() as i64),
+            Value::Str(s) => Value::Int(s.chars().count() as i64),
+            _ => Value::Int(1),
         })
     }
 
