@@ -295,9 +295,10 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("rmdir requires a path"))?;
         let path_buf = self.resolve_path(&path);
-        fs::remove_dir(&path_buf)
-            .map_err(|err| RuntimeError::new(format!("Failed to rmdir '{}': {}", path, err)))?;
-        Ok(Value::Bool(true))
+        match fs::remove_dir(&path_buf) {
+            Ok(()) => Ok(Value::Bool(true)),
+            Err(_) => Ok(Value::Bool(false)),
+        }
     }
 
     pub(super) fn builtin_chdir(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
