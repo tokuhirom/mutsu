@@ -2217,6 +2217,7 @@ impl Interpreter {
                             required: false,
                             named: false,
                             slurpy: false,
+                            double_slurpy: false,
                             sigilless: false,
                             type_constraint: None,
                             literal_value: None,

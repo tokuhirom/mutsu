@@ -659,9 +659,20 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((r, p));
     }
 
+    // Double slurpy marker may appear after a type constraint:
+    // e.g. `Array **@AoA`
+    if rest.starts_with("**")
+        && rest.len() > 2
+        && (rest.as_bytes()[2] == b'@' || rest.as_bytes()[2] == b'%')
+    {
+        slurpy = true;
+        double_slurpy = true;
+        slurpy_sigil = Some(rest.as_bytes()[2] as char);
+        rest = &rest[2..];
+    }
     // Slurpy marker may appear after a type constraint:
     // e.g. `Code *$block`, `Int *@xs`, `Hash *%h`.
-    if rest.starts_with('*')
+    else if rest.starts_with('*')
         && rest.len() > 1
         && (rest.as_bytes()[1] == b'@'
             || rest.as_bytes()[1] == b'%'

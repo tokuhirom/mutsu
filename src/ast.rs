@@ -10,6 +10,7 @@ pub(crate) struct ParamDef {
     pub(crate) required: bool,
     pub(crate) named: bool,
     pub(crate) slurpy: bool,
+    pub(crate) double_slurpy: bool,
     #[allow(dead_code)]
     pub(crate) sigilless: bool,
     pub(crate) type_constraint: Option<String>,

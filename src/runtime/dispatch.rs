@@ -141,6 +141,27 @@ impl Interpreter {
                 }
             }
         }
+        // Try slurpy candidates with different arities (slurpy params accept
+        // variable number of args, so the registered arity may differ from call arity).
+        let slurpy_prefixes = [
+            format!("{}::{}/", self.current_package, name),
+            format!("GLOBAL::{}/", name),
+        ];
+        let mut slurpy_candidates: Vec<(String, FunctionDef)> = self
+            .functions
+            .iter()
+            .filter(|(k, def)| {
+                slurpy_prefixes.iter().any(|prefix| k.starts_with(prefix))
+                    && def.param_defs.iter().any(|p| p.slurpy)
+            })
+            .map(|(k, def)| (k.clone(), def.clone()))
+            .collect();
+        slurpy_candidates.sort_by(|a, b| a.0.cmp(&b.0));
+        for (_, def) in slurpy_candidates {
+            if self.args_match_param_types(arg_values, &def.param_defs) {
+                return Some(def);
+            }
+        }
         // Fall back to arity-only if no proto declared
         if self.has_proto(name) {
             None
