@@ -291,6 +291,37 @@ impl Interpreter {
             }
         }
 
+        // Handle push/append on hash variables
+        if target_var.starts_with('%') {
+            let key = target_var.to_string();
+            match method {
+                "push" | "append" => {
+                    let is_push = method == "push";
+                    let mut hash: std::collections::HashMap<String, Value> =
+                        match self.env.get(&key) {
+                            Some(Value::Hash(h, ..)) => (**h).clone(),
+                            _ => match &target {
+                                Value::Hash(h, ..) => (**h).clone(),
+                                _ => std::collections::HashMap::new(),
+                            },
+                        };
+
+                    // Collect key-value pairs from arguments
+                    let pairs = Self::hash_push_collect_pairs(args);
+
+                    // Push/append each pair into the hash
+                    for (k, v) in pairs {
+                        Self::hash_push_insert(&mut hash, k, v, is_push);
+                    }
+
+                    let result = Value::hash(hash.clone());
+                    self.env.insert(key, Value::hash(hash));
+                    return Ok(result);
+                }
+                _ => {}
+            }
+        }
+
         // Handle push/append/pop/shift/unshift on sigilless array bindings
         if !target_var.starts_with('@') && matches!(&target, Value::Array(..)) {
             let key = target_var.to_string();
@@ -526,5 +557,89 @@ impl Interpreter {
             }
         }
         self.call_method_with_values(target, method, args)
+    }
+
+    /// Collect key-value pairs from Hash.push/append arguments.
+    /// Arguments can be Pair values or alternating key, value flat lists.
+    fn hash_push_collect_pairs(args: Vec<Value>) -> Vec<(String, Value)> {
+        let mut pairs = Vec::new();
+        let mut iter = args.into_iter().peekable();
+        while let Some(arg) = iter.next() {
+            match &arg {
+                Value::Pair(k, v) => {
+                    pairs.push((k.clone(), (**v).clone()));
+                }
+                Value::ValuePair(k, v) => {
+                    pairs.push((k.to_string_value(), (**v).clone()));
+                }
+                Value::Array(items, ..) => {
+                    // Recursively collect pairs from array elements
+                    let inner_pairs = Self::hash_push_collect_pairs(items.to_vec());
+                    pairs.extend(inner_pairs);
+                }
+                Value::Hash(h, ..) => {
+                    for (k, v) in h.iter() {
+                        pairs.push((k.clone(), v.clone()));
+                    }
+                }
+                _ => {
+                    // Alternating key, value
+                    let key = arg.to_string_value();
+                    let val = iter.next().unwrap_or(Value::Nil);
+                    pairs.push((key, val));
+                }
+            }
+        }
+        pairs
+    }
+
+    /// Insert a key-value pair into a hash with push/append semantics.
+    /// push: if key exists, stack the new value (existing becomes [existing, new])
+    /// append: if key exists, flatten arrays when appending
+    fn hash_push_insert(
+        hash: &mut std::collections::HashMap<String, Value>,
+        key: String,
+        value: Value,
+        is_push: bool,
+    ) {
+        if let Some(existing) = hash.get(&key) {
+            let new_val = match existing {
+                Value::Array(arr, ..) => {
+                    let mut items = arr.to_vec();
+                    if is_push {
+                        // push: add value as-is (could be nested array)
+                        items.push(value);
+                    } else {
+                        // append: flatten arrays
+                        match value {
+                            Value::Array(new_items, ..) => {
+                                items.extend(new_items.iter().cloned());
+                            }
+                            other => items.push(other),
+                        }
+                    }
+                    Value::array(items)
+                }
+                _ => {
+                    // First duplicate: create array [existing, new]
+                    if is_push {
+                        Value::array(vec![existing.clone(), value])
+                    } else {
+                        // append: flatten arrays
+                        let mut items = vec![existing.clone()];
+                        match value {
+                            Value::Array(new_items, ..) => {
+                                items.extend(new_items.iter().cloned());
+                            }
+                            other => items.push(other),
+                        }
+                        Value::array(items)
+                    }
+                }
+            };
+            hash.insert(key, new_val);
+        } else {
+            hash.insert(key, value);
+        }
     }
 }

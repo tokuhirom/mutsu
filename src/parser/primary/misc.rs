@@ -190,15 +190,65 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
     }
     if let Some(after_paren) = rest.strip_prefix('(') {
         let (r, _) = ws(after_paren)?;
-        let (r, val) = expression(r)?;
+        let (r, first) = expression(r)?;
         let (r, _) = ws(r)?;
+        // Check for comma-separated list: :name(a, b, ...)
+        if r.starts_with(',') {
+            let mut items = vec![first];
+            let mut r = r;
+            while r.starts_with(',') {
+                let (r2, _) = parse_char(r, ',')?;
+                let (r2, _) = ws(r2)?;
+                let (r2, next) = expression(r2)?;
+                let (r2, _) = ws(r2)?;
+                items.push(next);
+                r = r2;
+            }
+            let (r, _) = parse_char(r, ')')?;
+            return Ok((
+                r,
+                Expr::Binary {
+                    left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    right: Box::new(Expr::ArrayLiteral(items)),
+                },
+            ));
+        }
         let (r, _) = parse_char(r, ')')?;
         return Ok((
             r,
             Expr::Binary {
                 left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
                 op: crate::token_kind::TokenKind::FatArrow,
-                right: Box::new(val),
+                right: Box::new(first),
+            },
+        ));
+    }
+    // :name[items] (array-valued colonpair)
+    if rest.starts_with('[') {
+        let (r, _) = parse_char(rest, '[')?;
+        let (r, _) = ws(r)?;
+        let mut items = Vec::new();
+        let mut r = r;
+        while !r.starts_with(']') {
+            let (r2, item) = expression(r)?;
+            items.push(item);
+            let (r2, _) = ws(r2)?;
+            if r2.starts_with(',') {
+                let (r2, _) = parse_char(r2, ',')?;
+                let (r2, _) = ws(r2)?;
+                r = r2;
+            } else {
+                r = r2;
+            }
+        }
+        let (r, _) = parse_char(r, ']')?;
+        return Ok((
+            r,
+            Expr::Binary {
+                left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(Expr::ArrayLiteral(items)),
             },
         ));
     }
@@ -577,14 +627,28 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
     // :name or :name(expr) or :name[items]
     let (r, name) = super::super::stmt::ident_pub(r)?;
 
-    // :name(expr)
+    // :name(expr) or :name(expr, expr, ...)
     if r.starts_with('(') {
         let (r, _) = parse_char(r, '(')?;
         let (r, _) = ws_inner(r);
-        let (r, val) = super::super::expr::expression(r)?;
+        let (r, first) = super::super::expr::expression(r)?;
         let (r, _) = ws_inner(r);
+        if r.starts_with(',') {
+            let mut items = vec![first];
+            let mut r = r;
+            while r.starts_with(',') {
+                let (r2, _) = parse_char(r, ',')?;
+                let (r2, _) = ws_inner(r2);
+                let (r2, next) = super::super::expr::expression(r2)?;
+                let (r2, _) = ws_inner(r2);
+                items.push(next);
+                r = r2;
+            }
+            let (r, _) = parse_char(r, ')')?;
+            return Ok((r, (name, Some(Expr::ArrayLiteral(items)))));
+        }
         let (r, _) = parse_char(r, ')')?;
-        return Ok((r, (name, Some(val))));
+        return Ok((r, (name, Some(first))));
     }
 
     // :name[items]
