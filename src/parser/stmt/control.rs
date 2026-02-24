@@ -269,6 +269,7 @@ pub(super) fn parse_for_params(
             let unpack_def = ParamDef {
                 name: unpack_name.clone(),
                 default: None,
+                required: false,
                 named: false,
                 slurpy: false,
                 sigilless: false,
