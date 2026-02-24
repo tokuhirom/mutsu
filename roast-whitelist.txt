@@ -124,6 +124,7 @@ roast/S06-advanced/stub.t
 roast/S06-currying/misc.t
 roast/S06-currying/named.t
 roast/S06-multi/compile-time.t
+roast/S06-operator-overloading/prefix.t
 roast/S06-operator-overloading/semicolon.t
 roast/S06-other/main-eval.t
 roast/S06-other/main-semicolon.t

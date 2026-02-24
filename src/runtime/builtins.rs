@@ -419,6 +419,12 @@ impl Interpreter {
             .strip_prefix("prefix:<")
             .and_then(|s| s.strip_suffix('>'))
         {
+            if let Some(def) = self.resolve_function_with_alias(name, args) {
+                return self.call_function_def(&def, args);
+            }
+            if let Some(callable) = self.env.get(&format!("&{}", name)).cloned() {
+                return self.call_sub_value(callable, args.to_vec(), false);
+            }
             if args.is_empty() {
                 return Ok(Value::Nil);
             }
