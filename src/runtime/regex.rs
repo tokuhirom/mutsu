@@ -209,7 +209,9 @@ impl Interpreter {
                 '{' => brace_depth += 1,
                 '}' => brace_depth = brace_depth.saturating_sub(1),
                 ':' if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 => {
-                    if !text[i + 1..].starts_with(':') {
+                    let prev_is_colon = i > 0 && text[..i].ends_with(':');
+                    let next_is_colon = text[i + 1..].starts_with(':');
+                    if !prev_is_colon && !next_is_colon {
                         return Some(i);
                     }
                 }

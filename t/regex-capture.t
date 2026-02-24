@@ -1,5 +1,5 @@
 use Test;
-plan 12;
+plan 14;
 
 ok "abc" ~~ /<a>/, 'named capture matches';
 is $<a>, "a", 'capture variable set';
@@ -25,3 +25,9 @@ is @a[*-1], 30, 'WhateverCode index on array';
 my regex abc { abc }
 "foo abc def" ~~ / <&abc> /;
 nok $<&abc>, '$<&name> lookup parses and is not set for plain <&name> regex calls';
+
+grammar T1 {
+    token ws { 'x' }
+}
+ok 'x' ~~ /<T1::ws>/, 'qualified token lookup handles :: correctly';
+is $<T1::ws>, 'x', 'qualified token lookup capture is set';
