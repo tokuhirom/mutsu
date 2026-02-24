@@ -14,7 +14,7 @@ use std::collections::HashMap;
 
 use crate::ast::Stmt;
 
-use super::helpers::{is_ident_char, ws};
+use super::helpers::{is_ident_char, ws, ws1};
 
 // Re-export submodule items used across submodules
 use args::{parse_stmt_call_args, parse_stmt_call_args_no_paren};
@@ -191,7 +191,7 @@ fn block(input: &str) -> PResult<'_, Vec<Stmt>> {
 }
 
 fn block_inner(input: &str) -> PResult<'_, Vec<Stmt>> {
-    let (input, stmts) = stmt_list(input)?;
+    let (input, stmts) = stmt_list_with_mode(input, false)?;
     let (input, _) = ws(input)?;
     let (input, _) = parse_char(input, '}')?;
     Ok((input, stmts))
@@ -199,7 +199,7 @@ fn block_inner(input: &str) -> PResult<'_, Vec<Stmt>> {
 
 /// Public accessor for stmt_list (used by primary.rs for block expressions).
 pub(super) fn stmt_list_pub(input: &str) -> PResult<'_, Vec<Stmt>> {
-    stmt_list(input)
+    stmt_list_with_mode(input, false)
 }
 
 /// Public accessor for ident (used by primary.rs for hash literal detection).
@@ -359,8 +359,13 @@ fn skip_to_next_statement(input: &str) -> Option<&str> {
 
 /// Parse a list of statements (inside a block or at program level).
 fn stmt_list(input: &str) -> PResult<'_, Vec<Stmt>> {
+    stmt_list_with_mode(input, true)
+}
+
+fn stmt_list_with_mode(input: &str, allow_mainline_capture: bool) -> PResult<'_, Vec<Stmt>> {
     let mut stmts = Vec::new();
     let mut rest = input;
+    let mut saw_compunit_declarator = false;
     loop {
         let (r, _) = ws(rest)?;
         // Consume any standalone semicolons
@@ -370,8 +375,44 @@ fn stmt_list(input: &str) -> PResult<'_, Vec<Stmt>> {
         if r.is_empty() || r.starts_with('}') {
             return Ok((r, stmts));
         }
+        if allow_mainline_capture
+            && let Ok((after_decl, mut main_sub)) = sub::top_level_main_semicolon_decl(r)
+        {
+            if saw_compunit_declarator {
+                return Err(PError::raw(
+                    "X::UnitScope::TooLate: A unit-scoped sub declaration is too late in the compilation unit"
+                        .to_string(),
+                    Some(r.len()),
+                ));
+            }
+            let (tail_rest, tail_stmts) = stmt_list_with_mode(after_decl, false)?;
+            if let Stmt::SubDecl { body, .. } = &mut main_sub {
+                *body = tail_stmts;
+            }
+            stmts.push(main_sub);
+            return Ok((tail_rest, stmts));
+        }
+        if allow_mainline_capture
+            && let Some(after_multi) = keyword("multi", r)
+            && let Ok((after_multi, _)) = ws1(after_multi)
+            && sub::top_level_main_semicolon_decl(after_multi).is_ok()
+        {
+            return Err(PError::raw(
+                "X::UnitScope::Invalid: A unit-scoped sub definition is not allowed except on a MAIN sub; \
+                 Please use the block form. If you did not mean to declare a unit-scoped sub, \
+                 perhaps you accidentally placed a semicolon after routine's definition?"
+                    .to_string(),
+                Some(r.len()),
+            ));
+        }
         match statement(r) {
             Ok((r, stmt)) => {
+                if matches!(
+                    stmt,
+                    Stmt::Package { .. } | Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. }
+                ) {
+                    saw_compunit_declarator = true;
+                }
                 stmts.push(stmt);
                 rest = r;
             }
@@ -795,6 +836,43 @@ mod tests {
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
         assert!(matches!(&stmts[0], Stmt::SubDecl { name, .. } if name == "foo"));
+    }
+
+    #[test]
+    fn parse_main_semicolon_captures_following_mainline() {
+        let (rest, stmts) = program("my @*ARGS = <x>; sub MAIN($a); say $a;").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 2);
+        assert!(matches!(&stmts[0], Stmt::VarDecl { .. }));
+        if let Stmt::SubDecl { name, body, .. } = &stmts[1] {
+            assert_eq!(name, "MAIN");
+            assert_eq!(body.len(), 1);
+            assert!(matches!(&body[0], Stmt::Say(_)));
+        } else {
+            panic!("expected MAIN SubDecl");
+        }
+    }
+
+    #[test]
+    fn parse_unit_main_semicolon_captures_following_mainline() {
+        let (rest, stmts) = program("unit sub MAIN($a); say $a;").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        if let Stmt::SubDecl { name, body, .. } = &stmts[0] {
+            assert_eq!(name, "MAIN");
+            assert_eq!(body.len(), 1);
+            assert!(matches!(&body[0], Stmt::Say(_)));
+        } else {
+            panic!("expected MAIN SubDecl");
+        }
+    }
+
+    #[test]
+    fn parse_main_semicolon_after_module_is_too_late() {
+        let err = program("module AtBeginning {}; sub MAIN;")
+            .err()
+            .expect("expected parse error");
+        assert!(err.to_string().contains("X::UnitScope::TooLate"));
     }
 
     #[test]

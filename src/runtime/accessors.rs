@@ -49,6 +49,15 @@ impl Interpreter {
         // resolve the bare function name.
         let bare_name = Self::strip_pseudo_packages(name);
         let has_packages = bare_name != name;
+        if bare_name == "?ROUTINE" {
+            if let Some((package, routine)) = self.routine_stack.last() {
+                return Value::Routine {
+                    package: package.clone(),
+                    name: routine.clone(),
+                };
+            }
+            return Value::Nil;
+        }
         // When SETTING:: (or similar) pseudo-packages are present, resolve to
         // the builtin directly — these refer to the outer setting scope, not
         // user-defined overrides.
