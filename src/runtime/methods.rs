@@ -2940,6 +2940,51 @@ impl Interpreter {
 
     fn dispatch_grep(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
         match target {
+            Value::Package(class_name) if class_name == "Supply" => Err(RuntimeError::new(
+                "Cannot call .grep on a Supply type object",
+            )),
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Supply" => {
+                let source_values = if let Some(on_demand_cb) = attributes.get("on_demand_callback")
+                {
+                    let emitter = Value::make_instance("Supplier".to_string(), {
+                        let mut a = HashMap::new();
+                        a.insert("emitted".to_string(), Value::array(Vec::new()));
+                        a.insert("done".to_string(), Value::Bool(false));
+                        a
+                    });
+                    self.supply_emit_buffer.push(Vec::new());
+                    let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
+                    self.supply_emit_buffer.pop().unwrap_or_default()
+                } else {
+                    attributes
+                        .get("values")
+                        .and_then(|v| {
+                            if let Value::Array(items, ..) = v {
+                                Some(items.to_vec())
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or_default()
+                };
+                let filtered = self.eval_grep_over_items(args.first().cloned(), source_values)?;
+                let filtered_values = Self::value_to_list(&filtered);
+                let mut attrs = HashMap::new();
+                attrs.insert("values".to_string(), Value::array(filtered_values));
+                attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                attrs.insert(
+                    "live".to_string(),
+                    attributes
+                        .get("live")
+                        .cloned()
+                        .unwrap_or(Value::Bool(false)),
+                );
+                Ok(Value::make_instance("Supply".to_string(), attrs))
+            }
             Value::Array(items, ..) => {
                 self.eval_grep_over_items(args.first().cloned(), items.to_vec())
             }

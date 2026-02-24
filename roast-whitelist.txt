@@ -220,6 +220,7 @@ roast/S17-promise/stress.t
 roast/S17-supply/collate.t
 roast/S17-supply/do.t
 roast/S17-supply/grab.t
+roast/S17-supply/grep.t
 roast/S17-supply/list.t
 roast/S17-supply/map.t
 roast/S17-supply/max.t
