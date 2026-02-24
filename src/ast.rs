@@ -10,6 +10,7 @@ pub(crate) struct ParamDef {
     pub(crate) required: bool,
     pub(crate) named: bool,
     pub(crate) slurpy: bool,
+    pub(crate) double_slurpy: bool,
     #[allow(dead_code)]
     pub(crate) sigilless: bool,
     pub(crate) type_constraint: Option<String>,
@@ -676,6 +677,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                     sub_signature: None,
                     where_constraint: None,
                     traits: Vec::new(),
+                    double_slurpy: false,
                 })
                 .collect(),
             body: stmts,

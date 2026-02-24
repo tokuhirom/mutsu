@@ -320,6 +320,7 @@ fn wrap_whatevercode(expr: &Expr) -> Expr {
                     sub_signature: None,
                     where_constraint: None,
                     traits: Vec::new(),
+                    double_slurpy: false,
                 })
                 .collect(),
             body: vec![Stmt::Expr(body_expr)],

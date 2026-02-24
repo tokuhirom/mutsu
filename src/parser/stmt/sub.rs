@@ -408,6 +408,7 @@ fn make_param(name: String) -> ParamDef {
         required: false,
         named: false,
         slurpy: false,
+        double_slurpy: false,
         sigilless: false,
         type_constraint: None,
         literal_value: None,
@@ -503,6 +504,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
 
     // Slurpy: *@arr or *%hash or *$scalar
     let mut slurpy_sigil = None;
+    let mut double_slurpy = false;
     if rest.starts_with('*')
         && rest.len() > 1
         && (rest.as_bytes()[1] == b'@'
@@ -659,9 +661,20 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((r, p));
     }
 
+    // Double slurpy marker may appear after a type constraint:
+    // e.g. `Array **@AoA`
+    if rest.starts_with("**")
+        && rest.len() > 2
+        && (rest.as_bytes()[2] == b'@' || rest.as_bytes()[2] == b'%')
+    {
+        slurpy = true;
+        double_slurpy = true;
+        slurpy_sigil = Some(rest.as_bytes()[2] as char);
+        rest = &rest[2..];
+    }
     // Slurpy marker may appear after a type constraint:
     // e.g. `Code *$block`, `Int *@xs`, `Hash *%h`.
-    if rest.starts_with('*')
+    else if rest.starts_with('*')
         && rest.len() > 1
         && (rest.as_bytes()[1] == b'@'
             || rest.as_bytes()[1] == b'%'
@@ -703,6 +716,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         let mut p = make_param(name);
         p.named = named;
         p.slurpy = slurpy;
+        p.double_slurpy = double_slurpy;
         p.sigilless = true;
         p.default = default;
         p.type_constraint = type_constraint;
@@ -720,6 +734,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         p.sub_signature = Some(sub_params);
         p.named = named;
         p.slurpy = slurpy;
+        p.double_slurpy = double_slurpy;
         p.type_constraint = type_constraint;
         return Ok((r, p));
     }
@@ -743,6 +758,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 let mut p = make_param(alias_name.clone());
                 p.named = true;
                 p.slurpy = slurpy;
+                p.double_slurpy = double_slurpy;
                 p.type_constraint = type_constraint;
                 p.sub_signature = Some(sub_params.clone());
                 // Handle optional (?) / required (!) suffix after alias
@@ -778,6 +794,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             let mut p = make_param(alias_name);
             p.named = true;
             p.slurpy = slurpy;
+            p.double_slurpy = double_slurpy;
             p.type_constraint = type_constraint;
             p.sub_signature = Some(sub_params);
             // Handle optional (?) / required (!) suffix after sub-signature
@@ -821,6 +838,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         let mut p = make_param("__ANON_STATE__".to_string());
         p.named = named;
         p.slurpy = slurpy;
+        p.double_slurpy = double_slurpy;
         p.type_constraint = type_constraint;
         return Ok((after_q, p));
     }
@@ -889,6 +907,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     p.required = required;
     p.named = named;
     p.slurpy = slurpy;
+    p.double_slurpy = double_slurpy;
     p.type_constraint = type_constraint;
     p.where_constraint = where_constraint;
     p.traits = param_traits;

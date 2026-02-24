@@ -722,6 +722,21 @@ impl Interpreter {
                     if !pd.name.is_empty() {
                         self.bind_param_value(&pd.name, Value::hash(hash_items));
                     }
+                } else if pd.double_slurpy {
+                    // **@ (non-flattening slurpy): keep each argument as-is
+                    let mut items = Vec::new();
+                    while positional_idx < args.len() {
+                        items.push(args[positional_idx].clone());
+                        positional_idx += 1;
+                    }
+                    if !pd.name.is_empty() {
+                        let key = if pd.name.starts_with('@') {
+                            pd.name.clone()
+                        } else {
+                            format!("@{}", pd.name)
+                        };
+                        self.bind_param_value(&key, Value::array(items));
+                    }
                 } else {
                     let mut items = Vec::new();
                     while positional_idx < args.len() {

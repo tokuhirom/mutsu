@@ -278,6 +278,7 @@ pub(super) fn parse_for_params(
                 sub_signature: Some(sub_params),
                 where_constraint: None,
                 traits: Vec::new(),
+                double_slurpy: false,
             };
             return Ok((r, (Some(unpack_name), Some(unpack_def), Vec::new())));
         }
@@ -334,6 +335,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 required: false,
                 named: false,
                 slurpy: false,
+                double_slurpy: false,
                 sigilless: true,
                 type_constraint: None,
                 literal_value: None,
@@ -402,6 +404,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             required: false,
             named: false,
             slurpy: false,
+            double_slurpy: false,
             sigilless: false,
             type_constraint,
             literal_value: None,
