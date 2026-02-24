@@ -1609,6 +1609,13 @@ impl Interpreter {
             {
                 return Ok(Value::Str(msg.to_string_value()));
             }
+            // Signature instances: gist/Str returns the stored representation
+            if (method == "gist" || method == "Str")
+                && args.is_empty()
+                && let Some(val) = attributes.get(method)
+            {
+                return Ok(Value::Str(val.to_string_value()));
+            }
             if (method == "raku" || method == "perl") && args.is_empty() {
                 if class_name == "ObjAt" {
                     let which = attributes
@@ -1616,6 +1623,10 @@ impl Interpreter {
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
                     return Ok(Value::Str(format!("ObjAt.new(\"{}\")", which)));
+                }
+                // Signature instances store their raku representation
+                if let Some(raku_val) = attributes.get("raku") {
+                    return Ok(Value::Str(raku_val.to_string_value()));
                 }
                 return Ok(Value::Str(format!("{}.new()", class_name)));
             }
@@ -2248,6 +2259,9 @@ impl Interpreter {
                             sub_signature: None,
                             where_constraint: None,
                             traits: Vec::new(),
+                            optional_marker: false,
+                            outer_sub_signature: None,
+                            code_signature: None,
                         })
                         .collect(),
                     body: sub_data.body.clone(),

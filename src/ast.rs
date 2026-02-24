@@ -21,6 +21,9 @@ pub(crate) struct ParamDef {
     pub(crate) where_constraint: Option<Box<Expr>>,
     #[allow(dead_code)]
     pub(crate) traits: Vec<String>,
+    pub(crate) optional_marker: bool,
+    pub(crate) outer_sub_signature: Option<Vec<ParamDef>>,
+    pub(crate) code_signature: Option<(Vec<ParamDef>, Option<String>)>,
 }
 
 #[derive(Debug, Clone)]
@@ -810,6 +813,9 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                     where_constraint: None,
                     traits: Vec::new(),
                     double_slurpy: false,
+                    optional_marker: false,
+                    outer_sub_signature: None,
+                    code_signature: None,
                 })
                 .collect(),
             body: stmts,

@@ -209,17 +209,27 @@ impl Interpreter {
                     output.push('\n');
                     continue;
                 }
-                // Block-level skip (no count prefix): skip next block
-                let block_reason = if let Some(start) = after_prefix.find('\'') {
-                    if let Some(end) = after_prefix[start + 1..].find('\'') {
-                        after_prefix[start + 1..start + 1 + end].to_string()
+                // Skip without count: extract reason and skip 1 test line.
+                let after_skip = after_prefix
+                    .strip_prefix("skip")
+                    .unwrap_or(after_prefix)
+                    .trim_start();
+                skip_reason = if let Some(start) = after_skip.find('"') {
+                    if let Some(end) = after_skip[start + 1..].find('"') {
+                        after_skip[start + 1..start + 1 + end].to_string()
+                    } else {
+                        "skip".to_string()
+                    }
+                } else if let Some(start) = after_skip.find('\'') {
+                    if let Some(end) = after_skip[start + 1..].find('\'') {
+                        after_skip[start + 1..start + 1 + end].to_string()
                     } else {
                         "skip".to_string()
                     }
                 } else {
                     "skip".to_string()
                 };
-                skip_block_pending = Some(block_reason);
+                skip_lines_remaining = 1;
                 output.push('\n');
                 continue;
             }

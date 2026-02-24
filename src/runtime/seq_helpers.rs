@@ -1,5 +1,6 @@
 use super::*;
 use ::regex::Regex;
+use crate::value::signature::{extract_sig_info, signature_smartmatch};
 
 impl Interpreter {
     fn p5_pattern_to_rust_regex(pattern: &str) -> String {
@@ -513,6 +514,27 @@ impl Interpreter {
                 let path_a = attrs_a.get("path").map(|v| v.to_string_value());
                 let path_b = attrs_b.get("path").map(|v| v.to_string_value());
                 path_a == path_b
+            }
+            // Signature ~~ Signature: s1 ACCEPTS s2
+            (
+                Value::Instance {
+                    class_name: cn_a,
+                    id: id_a,
+                    ..
+                },
+                Value::Instance {
+                    class_name: cn_b,
+                    id: id_b,
+                    ..
+                },
+            ) if cn_a == "Signature" && cn_b == "Signature" => {
+                if let (Some(info_a), Some(info_b)) =
+                    (extract_sig_info(left), extract_sig_info(right))
+                {
+                    signature_smartmatch(&info_b, &info_a)
+                } else {
+                    id_a == id_b
+                }
             }
             // Instance identity: two instances match iff they have the same id
             (Value::Instance { id: id_a, .. }, Value::Instance { id: id_b, .. }) => id_a == id_b,

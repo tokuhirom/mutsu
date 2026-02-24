@@ -2,6 +2,7 @@ use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 
 use crate::ast::{Expr, Stmt, make_anon_sub};
 use crate::value::Value;
+use crate::value::signature::{make_signature_value, param_defs_to_sig_info};
 
 use super::super::expr::expression;
 use super::super::helpers::{split_angle_words, ws};
@@ -9,7 +10,6 @@ use super::super::stmt::keyword;
 use super::string::{double_quoted_string, single_quoted_string};
 use super::var::parse_ident_with_hyphens;
 
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 fn skip_pointy_return_type(mut r: &str) -> PResult<'_, ()> {
@@ -178,90 +178,15 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         .strip_prefix(':')
         .filter(|r| !r.starts_with(':'))
         .ok_or_else(|| PError::expected("colonpair"))?;
-    // :(...): pair-list/lvalue form used in constructs like
-    // `:(:$a is raw) := \(:a($b))`.
-    if let Some(mut r) = r.strip_prefix('(') {
-        let (r2, _) = ws(r)?;
-        r = r2;
-        let mut items = Vec::new();
-        if r.starts_with(')') {
-            let (r, _) = parse_char(r, ')')?;
-            let mut attrs = HashMap::new();
-            attrs.insert("raku".to_string(), Value::Str(":()".to_string()));
-            attrs.insert("perl".to_string(), Value::Str(":()".to_string()));
-            attrs.insert("Str".to_string(), Value::Str(":()".to_string()));
-            attrs.insert("gist".to_string(), Value::Str(":()".to_string()));
-            return Ok((
-                r,
-                Expr::Literal(Value::make_instance("Signature".to_string(), attrs)),
-            ));
-        }
-        loop {
-            let mut item_input = r;
-            if let Ok((after_type, _type_name)) = parse_ident_with_hyphens(r) {
-                let (after_ws, _) = ws(after_type)?;
-                if after_ws.starts_with(':') {
-                    item_input = after_ws;
-                }
-            }
-            let (r_item, mut item) = match colonpair_expr(item_input) {
-                Ok(parsed) => parsed,
-                Err(_) => expression(item_input)?,
-            };
-            let (mut r_next, _) = ws(r_item)?;
-            // Optional traits after a pair-lvalue item: `is raw`, etc.
-            while let Some(after_is) = keyword("is", r_next) {
-                let (after_is, _) = ws(after_is)?;
-                let (after_is, _trait_name) = parse_ident_with_hyphens(after_is)?;
-                let (after_is, _) = ws(after_is)?;
-                r_next = after_is;
-            }
-            // Optional where constraint after a pair-lvalue item.
-            if let Some(after_where) = keyword("where", r_next) {
-                let (after_where, _) = ws(after_where)?;
-                let (after_where, _constraint) = expression(after_where)?;
-                let (after_where, _) = ws(after_where)?;
-                r_next = after_where;
-            }
-            // Optional assignment in signature-like colonpair items: :$a = True
-            if let Some(after_eq) = r_next.strip_prefix('=')
-                && let Expr::Binary { left, op, .. } = &item
-                && *op == crate::token_kind::TokenKind::FatArrow
-            {
-                let (after_eq, _) = ws(after_eq)?;
-                let (after_eq, value_expr) = expression(after_eq)?;
-                item = Expr::Binary {
-                    left: left.clone(),
-                    op: crate::token_kind::TokenKind::FatArrow,
-                    right: Box::new(value_expr),
-                };
-                let (after_eq, _) = ws(after_eq)?;
-                r_next = after_eq;
-            }
-            items.push(item);
-            if r_next.starts_with(',') {
-                let (r_more, _) = parse_char(r_next, ',')?;
-                let (r_more, _) = ws(r_more)?;
-                r = r_more;
-                continue;
-            }
-            let (r_end, _) = parse_char(r_next, ')')?;
-            let rendered = items
-                .iter()
-                .map(render_signature_item)
-                .collect::<Vec<_>>()
-                .join(", ");
-            let sig = format!(":({})", rendered);
-            let mut attrs = HashMap::new();
-            attrs.insert("raku".to_string(), Value::Str(sig.clone()));
-            attrs.insert("perl".to_string(), Value::Str(sig.clone()));
-            attrs.insert("Str".to_string(), Value::Str(sig.clone()));
-            attrs.insert("gist".to_string(), Value::Str(sig));
-            return Ok((
-                r_end,
-                Expr::Literal(Value::make_instance("Signature".to_string(), attrs)),
-            ));
-        }
+    // :(...): signature literal — parse using the full parameter list parser.
+    if let Some(r) = r.strip_prefix('(') {
+        let (r, _) = ws(r)?;
+        let (r, (param_defs, return_type)) =
+            super::super::stmt::parse_param_list_with_return_pub(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ')')?;
+        let sig_info = param_defs_to_sig_info(&param_defs, return_type);
+        return Ok((r, Expr::Literal(make_signature_value(sig_info))));
     }
     // :!name (negated boolean pair)
     if let Some(after_bang) = r.strip_prefix('!') {
@@ -424,31 +349,6 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             right: Box::new(Expr::Literal(Value::Bool(true))),
         },
     ))
-}
-
-fn render_signature_item(expr: &Expr) -> String {
-    match expr {
-        Expr::Var(name) => format!("${}", name),
-        Expr::ArrayVar(name) => format!("@{}", name),
-        Expr::HashVar(name) => format!("%{}", name),
-        Expr::Binary { left, op, right } if *op == crate::token_kind::TokenKind::FatArrow => {
-            if let Expr::Literal(Value::Str(name)) = left.as_ref() {
-                match right.as_ref() {
-                    Expr::Var(v) if v == name => format!(":${}", name),
-                    Expr::Literal(Value::Bool(true)) => format!(":${}", name),
-                    other => format!(":${} = {}", name, render_signature_item(other)),
-                }
-            } else {
-                "...".to_string()
-            }
-        }
-        Expr::Literal(v) => match v {
-            Value::Str(s) => format!("\"{}\"", s.replace('"', "\\\"")),
-            _ => v.to_string_value(),
-        },
-        Expr::AnonSub(_) => "{ ... }".to_string(),
-        _ => "...".to_string(),
-    }
 }
 
 /// Parse `\(...)` Capture literal.

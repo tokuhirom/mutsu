@@ -79,6 +79,7 @@ roast/S03-smartmatch/array-map.t
 roast/S03-smartmatch/range-range.t
 roast/S03-smartmatch/regex-hash.t
 roast/S03-smartmatch/scalar-hash.t
+roast/S03-smartmatch/signature-signature.t
 roast/S04-exception-handlers/top-level.t
 roast/S04-exceptions/control_across_runloop.t
 roast/S04-statement-modifiers/unless.t
