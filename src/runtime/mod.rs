@@ -362,8 +362,18 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: [
-                    "emit", "tap", "act", "repeated", "do", "reverse", "split", "tail", "min",
-                    "collate", "Supply", "Promise",
+                    "emit",
+                    "tap",
+                    "act",
+                    "repeated",
+                    "do",
+                    "reverse",
+                    "split",
+                    "tail",
+                    "min",
+                    "collate",
+                    "Supply",
+                    "Promise",
                     "schedule-on",
                 ]
                 .iter()
