@@ -139,6 +139,60 @@ pub(super) fn get_supply_taps(supply_id: u64) -> Vec<Value> {
 }
 
 impl Interpreter {
+    fn resolve_supply_tail_count(
+        &mut self,
+        arg: Option<&Value>,
+        total_len: usize,
+    ) -> Result<usize, RuntimeError> {
+        let Some(value) = arg else {
+            return Ok(1);
+        };
+        let parsed = match value {
+            Value::Int(i) => *i,
+            Value::Num(f) if f.is_infinite() && f.is_sign_positive() => return Ok(total_len),
+            Value::Num(f) if f.is_infinite() && f.is_sign_negative() => return Ok(0),
+            Value::Num(f) if f.is_nan() => {
+                return Err(RuntimeError::new("Cannot use NaN as a tail count"));
+            }
+            Value::Num(f) => *f as i64,
+            Value::Str(s) => {
+                let trimmed = s.trim();
+                if trimmed.eq_ignore_ascii_case("inf") {
+                    return Ok(total_len);
+                }
+                if trimmed.eq_ignore_ascii_case("-inf") {
+                    return Ok(0);
+                }
+                match trimmed.parse::<f64>() {
+                    Ok(f) if f.is_infinite() && f.is_sign_positive() => return Ok(total_len),
+                    Ok(f) if f.is_infinite() && f.is_sign_negative() => return Ok(0),
+                    Ok(f) if f.is_nan() => {
+                        return Err(RuntimeError::new("Cannot use NaN as a tail count"));
+                    }
+                    Ok(f) => f as i64,
+                    Err(_) => {
+                        return Err(RuntimeError::new(format!(
+                            "Cannot use '{}' as a tail count",
+                            s
+                        )));
+                    }
+                }
+            }
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
+                let computed =
+                    self.eval_call_on_value(value.clone(), vec![Value::Int(total_len as i64)])?;
+                return self.resolve_supply_tail_count(Some(&computed), total_len);
+            }
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "Cannot use '{}' as a tail count",
+                    value.to_string_value()
+                )));
+            }
+        };
+        Ok(parsed.clamp(0, total_len as i64) as usize)
+    }
+
     /// Dispatch a mutable native instance method.
     /// Returns (result_value, updated_attributes).
     pub(super) fn call_native_instance_method_mut(
@@ -431,6 +485,19 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         match method {
+            "tail" => {
+                let values = match attributes.get("values") {
+                    Some(Value::Array(items, ..)) => items.to_vec(),
+                    _ => Vec::new(),
+                };
+                let tail_count = self.resolve_supply_tail_count(args.first(), values.len())?;
+                let start = values.len().saturating_sub(tail_count);
+                let mut new_attrs = HashMap::new();
+                new_attrs.insert("values".to_string(), Value::array(values[start..].to_vec()));
+                new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                new_attrs.insert("live".to_string(), Value::Bool(false));
+                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+            }
             "split" => {
                 let needle = Self::positional_value_required(&args, 0, "split requires a needle")?;
                 let limit = Self::positional_value(&args, 1);
