@@ -498,6 +498,7 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
 pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
     let l = match &left {
         Value::Int(_)
+        | Value::BigInt(_)
         | Value::Num(_)
         | Value::Rat(_, _)
         | Value::FatRat(_, _)
@@ -506,6 +507,7 @@ pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
     };
     let r = match &right {
         Value::Int(_)
+        | Value::BigInt(_)
         | Value::Num(_)
         | Value::Rat(_, _)
         | Value::FatRat(_, _)

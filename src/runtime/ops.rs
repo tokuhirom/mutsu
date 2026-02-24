@@ -110,14 +110,8 @@ impl Interpreter {
                     }
                 }
             }
-            "%" => {
-                if is_fractional(left) || is_fractional(right) {
-                    Ok(Value::Num(to_num(left) % to_num(right)))
-                } else {
-                    Ok(Value::Int(to_int(left) % to_int(right)))
-                }
-            }
-            "**" => Ok(Value::Num(to_num(left).powf(to_num(right)))),
+            "%" => crate::builtins::arith_mod(left.clone(), right.clone()),
+            "**" => Ok(crate::builtins::arith_pow(left.clone(), right.clone())),
             "~" => Ok(Value::Str(format!(
                 "{}{}",
                 crate::runtime::utils::coerce_to_str(left),
