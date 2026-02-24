@@ -373,17 +373,113 @@ impl Compiler {
                     main_leaves_value = true;
                     continue;
                 } else if let Stmt::Call { name, args } = stmt {
-                    // Compile as expression to leave value on stack
-                    let expr_args: Vec<Expr> = args
+                    let rewritten_args = Self::rewrite_stmt_call_args(name, args);
+                    let positional_only = rewritten_args
                         .iter()
-                        .filter_map(|a| match a {
-                            CallArg::Positional(e) => Some(e.clone()),
-                            _ => None,
-                        })
-                        .collect();
-                    self.compile_expr(&Expr::Call {
-                        name: name.clone(),
-                        args: expr_args,
+                        .all(|arg| matches!(arg, CallArg::Positional(_)));
+
+                    if positional_only && Self::is_normalized_stmt_call_name(name) {
+                        let expr_args: Vec<Expr> = rewritten_args
+                            .iter()
+                            .filter_map(|arg| match arg {
+                                CallArg::Positional(expr) => Some(expr.clone()),
+                                _ => None,
+                            })
+                            .collect();
+                        self.compile_expr(&Expr::Call {
+                            name: name.clone(),
+                            args: expr_args,
+                        });
+                        main_leaves_value = true;
+                        continue;
+                    }
+
+                    if positional_only
+                        && rewritten_args
+                            .iter()
+                            .all(|arg| matches!(arg, CallArg::Positional(_)))
+                    {
+                        let arity = rewritten_args.len() as u32;
+                        for arg in &rewritten_args {
+                            if let CallArg::Positional(expr) = arg {
+                                self.compile_expr(expr);
+                            }
+                        }
+                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        self.code.emit(OpCode::ExecCall { name_idx, arity });
+                        main_leaves_value = true;
+                        continue;
+                    }
+
+                    let has_slip = rewritten_args
+                        .iter()
+                        .any(|arg| matches!(arg, CallArg::Slip(_)));
+                    if has_slip {
+                        let mut regular_count = 0u32;
+                        for arg in &rewritten_args {
+                            match arg {
+                                CallArg::Positional(expr) => {
+                                    self.compile_expr(expr);
+                                    regular_count += 1;
+                                }
+                                CallArg::Named {
+                                    name: n,
+                                    value: Some(expr),
+                                } => {
+                                    self.compile_expr(&Expr::Literal(Value::Str(n.clone())));
+                                    self.compile_expr(expr);
+                                    self.code.emit(OpCode::MakePair);
+                                    regular_count += 1;
+                                }
+                                CallArg::Named {
+                                    name: n,
+                                    value: None,
+                                } => {
+                                    self.compile_expr(&Expr::Literal(Value::Str(n.clone())));
+                                    self.compile_expr(&Expr::Literal(Value::Bool(true)));
+                                    self.code.emit(OpCode::MakePair);
+                                    regular_count += 1;
+                                }
+                                CallArg::Slip(_) => {}
+                            }
+                        }
+                        for arg in &rewritten_args {
+                            if let CallArg::Slip(expr) = arg {
+                                self.compile_expr(expr);
+                            }
+                        }
+                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        self.code.emit(OpCode::ExecCallSlip {
+                            name_idx,
+                            regular_arity: regular_count,
+                        });
+                        main_leaves_value = true;
+                        continue;
+                    }
+
+                    for arg in &rewritten_args {
+                        match arg {
+                            CallArg::Positional(expr) => self.compile_expr(expr),
+                            CallArg::Named {
+                                name,
+                                value: Some(expr),
+                            } => {
+                                self.compile_expr(&Expr::Literal(Value::Str(name.clone())));
+                                self.compile_expr(expr);
+                                self.code.emit(OpCode::MakePair);
+                            }
+                            CallArg::Named { name, value: None } => {
+                                self.compile_expr(&Expr::Literal(Value::Str(name.clone())));
+                                self.compile_expr(&Expr::Literal(Value::Bool(true)));
+                                self.code.emit(OpCode::MakePair);
+                            }
+                            CallArg::Slip(_) => unreachable!(),
+                        }
+                    }
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::ExecCallPairs {
+                        name_idx,
+                        arity: rewritten_args.len() as u32,
                     });
                     main_leaves_value = true;
                     continue;

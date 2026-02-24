@@ -791,10 +791,16 @@ impl Interpreter {
     }
 
     fn builtin_eval(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let code = args
-            .first()
-            .map(|v| v.to_string_value())
-            .unwrap_or_default();
+        let code = Self::positional_string(args, 0);
+        if let Some(lang) = Self::named_value(args, "lang") {
+            let lang = lang.to_string_value();
+            if !lang.eq_ignore_ascii_case("raku") && !lang.eq_ignore_ascii_case("perl6") {
+                return Err(RuntimeError::new(format!(
+                    "EVAL with :lang<{}> is not supported",
+                    lang
+                )));
+            }
+        }
         if code.contains("&?ROUTINE") && self.routine_stack.is_empty() {
             return Err(RuntimeError::new("X::Undeclared::Symbols"));
         }
