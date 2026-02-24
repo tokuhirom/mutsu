@@ -346,7 +346,7 @@ impl VM {
         let values: Vec<Value> = self.stack.drain(start..).collect();
         let mut result = String::new();
         for v in values {
-            result.push_str(&v.to_string_value());
+            result.push_str(&crate::runtime::utils::coerce_to_str(&v));
         }
         self.stack.push(Value::Str(result));
     }

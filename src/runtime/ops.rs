@@ -84,8 +84,8 @@ impl Interpreter {
             "**" => Ok(Value::Num(to_num(left).powf(to_num(right)))),
             "~" => Ok(Value::Str(format!(
                 "{}{}",
-                left.to_string_value(),
-                right.to_string_value()
+                crate::runtime::utils::coerce_to_str(left),
+                crate::runtime::utils::coerce_to_str(right)
             ))),
             "&&" | "and" => {
                 if !left.truthy() {

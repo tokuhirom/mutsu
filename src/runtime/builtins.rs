@@ -320,7 +320,7 @@ impl Interpreter {
                 "!" => Ok(Value::Bool(!arg.truthy())),
                 "+" => Ok(Value::Int(crate::runtime::to_int(arg))),
                 "-" => crate::builtins::arith_negate(arg.clone()),
-                "~" => Ok(Value::Str(arg.to_string_value())),
+                "~" => Ok(Value::Str(crate::runtime::utils::coerce_to_str(arg))),
                 "?" => Ok(Value::Bool(arg.truthy())),
                 "so" => Ok(Value::Bool(arg.truthy())),
                 "not" => Ok(Value::Bool(!arg.truthy())),

@@ -36,7 +36,7 @@ fn coerce_value(target: &str, value: Value) -> Value {
             Value::Str(s) => Value::Num(s.parse::<f64>().unwrap_or(0.0)),
             _ => value,
         },
-        "Str" => Value::Str(value.to_string_value()),
+        "Str" => Value::Str(crate::runtime::utils::coerce_to_str(&value)),
         "Rat" => {
             match &value {
                 Value::Rat(_, _) => value,

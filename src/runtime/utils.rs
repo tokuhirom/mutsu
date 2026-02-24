@@ -167,6 +167,14 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
     }
 }
 
+pub(crate) fn coerce_to_str(value: &Value) -> String {
+    match value {
+        // Type objects stringify as empty string in Str context.
+        Value::Package(_) => String::new(),
+        _ => value.to_string_value(),
+    }
+}
+
 pub(crate) fn gist_value(value: &Value) -> String {
     match value {
         Value::Rat(n, d) => {
