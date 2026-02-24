@@ -271,6 +271,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "Str" | "Stringy" => match target {
             Value::Package(_) | Value::Instance { .. } => None,
             Value::Str(s) if s == "IO::Special" => Some(Ok(Value::Str(String::new()))),
+            Value::Array(items, false) if items.iter().all(|v| matches!(v, Value::Int(_))) => {
+                // Uni-like list: convert codepoints to a string
+                let s: String = items
+                    .iter()
+                    .filter_map(|v| match v {
+                        Value::Int(cp) => char::from_u32(*cp as u32),
+                        _ => None,
+                    })
+                    .collect();
+                Some(Ok(Value::Str(s)))
+            }
             _ => Some(Ok(Value::Str(target.to_string_value()))),
         },
         "Int" => {
@@ -495,10 +506,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             _ => None,
         },
         "reverse" => match target {
-            Value::Array(items, ..) => {
+            Value::Array(items, is_array) => {
                 let mut reversed = (**items).clone();
                 reversed.reverse();
-                Some(Ok(Value::array(reversed)))
+                Some(Ok(Value::Array(std::sync::Arc::new(reversed), *is_array)))
             }
             Value::Str(s) => Some(Ok(Value::Str(s.chars().rev().collect()))),
             _ => None,
