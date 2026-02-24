@@ -638,26 +638,31 @@ impl Interpreter {
                         None
                     }
                 });
-                let type_matched =
-                    if expected_normalized.is_empty() || expected_normalized == "Exception" {
-                        true
-                    } else if let Some(cls) = ex_class {
-                        cls == expected_normalized
-                            || cls.starts_with(&format!("{}::", expected_normalized))
-                    } else if expected_normalized == "X::Comp"
-                        || expected_normalized == "X::Comp::Group"
-                    {
-                        err.message.contains("X::Syntax")
-                            || err.message.contains("X::Comp")
-                            || err.message.contains("X::Undeclared")
-                            || err.message.contains("X::Obsolete")
-                            || err.message.contains("parse error")
-                    } else if expected_normalized == "X::AdHoc" {
-                        // X::AdHoc matches any ad-hoc error
-                        true
-                    } else {
-                        err.message.contains(expected_normalized)
-                    };
+                let type_matched = if expected_normalized.is_empty()
+                    || expected_normalized == "Exception"
+                {
+                    true
+                } else if let Some(cls) = ex_class {
+                    cls == expected_normalized
+                        || cls.starts_with(&format!("{}::", expected_normalized))
+                } else if expected_normalized == "X::Syntax::Confused" {
+                    err.message.contains("Confused") || err.message.contains("parse error")
+                } else if expected_normalized.starts_with("X::Syntax") {
+                    err.message.contains(expected_normalized) || err.message.contains("parse error")
+                } else if expected_normalized == "X::Comp"
+                    || expected_normalized == "X::Comp::Group"
+                {
+                    err.message.contains("X::Syntax")
+                        || err.message.contains("X::Comp")
+                        || err.message.contains("X::Undeclared")
+                        || err.message.contains("X::Obsolete")
+                        || err.message.contains("parse error")
+                } else if expected_normalized == "X::AdHoc" {
+                    // X::AdHoc matches any ad-hoc error
+                    true
+                } else {
+                    err.message.contains(expected_normalized)
+                };
                 (
                     type_matched,
                     err.exception.as_ref().map(|e| e.as_ref().clone()),

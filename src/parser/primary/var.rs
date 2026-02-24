@@ -129,6 +129,24 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     {
         return Ok((input, Expr::BareWord("self".to_string())));
     }
+    // $.ident followed by ( or : → parse as self.ident(args) or self.ident: args
+    // This ensures $.method(args) works as a method call, not a variable call.
+    if input.starts_with('.')
+        && input.len() > 1
+        && (input.as_bytes()[1].is_ascii_alphabetic() || input.as_bytes()[1] == b'_')
+    {
+        // Look ahead past the identifier to check for ( or :
+        let after_dot = &input[1..];
+        let ident_end = after_dot
+            .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+            .unwrap_or(after_dot.len());
+        let after_ident = &after_dot[ident_end..];
+        if after_ident.starts_with('(')
+            || (after_ident.starts_with(':') && !after_ident.starts_with("::"))
+        {
+            return Ok((input, Expr::BareWord("self".to_string())));
+        }
+    }
     // Handle twigils: $*FOO, $?FILE, $!attr, $.attr
     let (rest, twigil) = if input.starts_with('*')
         || input.starts_with('?')

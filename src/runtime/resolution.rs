@@ -397,7 +397,12 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         if let Some(Value::Sub(data)) = func {
             let arity = if !data.params.is_empty() {
-                data.params.len()
+                // Account for assumed positional args (from .assuming)
+                let effective = data
+                    .params
+                    .len()
+                    .saturating_sub(data.assumed_positional.len());
+                if effective == 0 { 1 } else { effective }
             } else {
                 1
             };
@@ -455,14 +460,21 @@ impl Interpreter {
                 }
                 {
                     let interp = vm.interpreter_mut();
+                    let assumed_count = data.assumed_positional.len();
+                    // Bind assumed positional args first
+                    for (idx, val) in data.assumed_positional.iter().enumerate() {
+                        if let Some(p) = data.params.get(idx) {
+                            interp.env_insert(p.clone(), val.clone());
+                        }
+                    }
                     if arity == 1 {
                         let item = list_items[i].clone();
-                        if let Some(p) = data.params.first() {
+                        if let Some(p) = data.params.get(assumed_count) {
                             interp.env_insert(p.clone(), item.clone());
                         }
                         interp.env_insert(underscore.clone(), item);
                     } else {
-                        for (idx, p) in data.params.iter().enumerate() {
+                        for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
                             if i + idx < list_items.len() {
                                 interp.env_insert(p.clone(), list_items[i + idx].clone());
                             }
