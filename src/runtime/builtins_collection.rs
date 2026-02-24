@@ -251,6 +251,7 @@ impl Interpreter {
         for arg in args {
             match arg {
                 Value::Array(elems, ..) => items.extend(elems.iter().cloned()),
+                Value::Seq(elems) => items.extend(elems.iter().cloned()),
                 Value::Slip(elems) => items.extend(elems.iter().cloned()),
                 other => items.push(other.clone()),
             }

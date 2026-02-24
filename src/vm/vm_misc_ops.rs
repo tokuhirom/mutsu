@@ -316,11 +316,16 @@ impl VM {
         op_idx: u32,
     ) -> Result<(), RuntimeError> {
         let op = Self::const_str(code, op_idx).to_string();
-        // Handle negated reduction operators like [!after], [!before]
-        let (negate, base_op) = if let Some(stripped) = op.strip_prefix('!') {
+        // Support scan/meta reduction [\op] and negated forms like [!after].
+        let (scan, op_no_scan) = if let Some(stripped) = op.strip_prefix('\\') {
             (true, stripped.to_string())
         } else {
             (false, op.clone())
+        };
+        let (negate, base_op) = if let Some(stripped) = op_no_scan.strip_prefix('!') {
+            (true, stripped.to_string())
+        } else {
+            (false, op_no_scan)
         };
         let list_value = self.stack.pop().unwrap_or(Value::Nil);
         let list = if let Value::LazyList(ref ll) = list_value {
@@ -328,6 +333,22 @@ impl VM {
         } else {
             runtime::value_to_list(&list_value)
         };
+        if scan {
+            if list.is_empty() {
+                self.stack.push(Value::Seq(std::sync::Arc::new(Vec::new())));
+                return Ok(());
+            }
+            let mut acc = list[0].clone();
+            let mut out = Vec::with_capacity(list.len());
+            out.push(acc.clone());
+            for item in &list[1..] {
+                let v = Interpreter::apply_reduction_op(&base_op, &acc, item)?;
+                acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                out.push(acc.clone());
+            }
+            self.stack.push(Value::Seq(std::sync::Arc::new(out)));
+            return Ok(());
+        }
         if list.is_empty() {
             self.stack.push(runtime::reduction_identity(&base_op));
         } else {

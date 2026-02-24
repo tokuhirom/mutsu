@@ -48,9 +48,10 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
     if op.is_empty() {
         return Err(PError::expected("operator in reduction"));
     }
-    // Only accept known operators to avoid confusion with array literals
-    // Also support negated operators like [!after], [!before], [!==], etc.
-    let base_op = op.strip_prefix('!').unwrap_or(op);
+    // Only accept known operators to avoid confusion with array literals.
+    // Also support scan/meta form [\op] and negated operators like [!after].
+    let op_no_scan = op.strip_prefix('\\').unwrap_or(op);
+    let base_op = op_no_scan.strip_prefix('!').unwrap_or(op_no_scan);
     if !REDUCTION_OPS.contains(&base_op) {
         return Err(PError::expected("known reduction operator"));
     }

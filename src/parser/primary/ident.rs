@@ -420,6 +420,48 @@ fn is_stmt_modifier_ahead(input: &str) -> bool {
 /// Parse expression listop arguments: comma-separated full expressions.
 /// Stops at statement modifiers, semicolons, and closing brackets.
 fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {
+    // Raku listop `slip ...` takes a single expression argument, which may
+    // itself be a comma expression (e.g. `slip (2,3), 4`).
+    if name == "slip" {
+        let (r, first) = expression(input).map_err(|err| PError {
+            messages: merge_expected_messages("expected listop argument expression", &err.messages),
+            remaining_len: err.remaining_len.or(Some(input.len())),
+        })?;
+        let mut exprs = vec![first];
+        let mut r = r;
+        loop {
+            let (r2, _) = ws(r)?;
+            if !r2.starts_with(',') || r2.starts_with(",,") {
+                break;
+            }
+            let r2 = &r2[1..];
+            let (r2, _) = ws(r2)?;
+            if r2.is_empty()
+                || r2.starts_with(';')
+                || r2.starts_with('}')
+                || r2.starts_with(')')
+                || is_stmt_modifier_ahead(r2)
+            {
+                break;
+            }
+            let (r2, expr) = expression(r2).map_err(|err| PError {
+                messages: merge_expected_messages(
+                    "expected listop argument expression after ','",
+                    &err.messages,
+                ),
+                remaining_len: err.remaining_len.or(Some(r2.len())),
+            })?;
+            exprs.push(expr);
+            r = r2;
+        }
+        let arg = if exprs.len() == 1 {
+            exprs.remove(0)
+        } else {
+            Expr::ArrayLiteral(exprs)
+        };
+        return Ok((r, make_call_expr(name, input, vec![arg])));
+    }
+
     let (r, first) = expression(input).map_err(|err| PError {
         messages: merge_expected_messages("expected listop argument expression", &err.messages),
         remaining_len: err.remaining_len.or(Some(input.len())),
