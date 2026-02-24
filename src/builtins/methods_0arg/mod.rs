@@ -759,6 +759,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     _ => a.to_string_value().cmp(&b.to_string_value()),
                 })
                 .unwrap_or(Value::Nil))),
+            Value::Instance { class_name, .. } if class_name == "Supply" => None,
+            Value::Package(class_name) if class_name == "Supply" => None,
             _ => Some(Ok(target.clone())),
         },
         "max" => match target {

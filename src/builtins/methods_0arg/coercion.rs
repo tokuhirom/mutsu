@@ -135,6 +135,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "Slip" => match target {
             Value::Array(items, ..) | Value::Seq(items) => Some(Ok(Value::Slip(items.clone()))),
             Value::Slip(_) => Some(Ok(target.clone())),
+            Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. } => Some(Ok(Value::slip(
+                crate::runtime::utils::value_to_list(target),
+            ))),
             _ => Some(Ok(Value::slip(vec![target.clone()]))),
         },
         "List" => match target {

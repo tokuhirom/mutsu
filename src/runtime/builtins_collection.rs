@@ -223,7 +223,7 @@ impl Interpreter {
 
     pub(crate) fn flat_into(val: &Value, out: &mut Vec<Value>) {
         match val {
-            Value::Array(items, ..) => {
+            Value::Array(items, ..) | Value::Slip(items) | Value::Seq(items) => {
                 for item in items.iter() {
                     Self::flat_into(item, out);
                 }
