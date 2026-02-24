@@ -40,14 +40,7 @@ impl VM {
             } else if self.interpreter.has_class(name) || Self::is_builtin_type(name) {
                 Value::Package(name.to_string())
             } else if !name.starts_with('$') && !name.starts_with('@') && !name.starts_with('%') {
-                // If the env value is a Sub, call it (bare word = function call)
-                if matches!(v, Value::Sub(..)) {
-                    let result = self.interpreter.call_function(name, Vec::new())?;
-                    self.sync_locals_from_env(code);
-                    result
-                } else {
-                    v.clone()
-                }
+                v.clone()
             } else {
                 Value::Str(name.to_string())
             }
