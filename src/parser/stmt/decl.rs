@@ -151,6 +151,16 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         return proto_decl(rest);
     }
 
+    // my multi [sub] name(...) { ... }
+    if let Some(r) = keyword("multi", rest) {
+        let (r, _) = ws1(r)?;
+        // "sub" is optional after "multi"
+        let r = keyword("sub", r)
+            .map(|r2| ws(r2).map(|(r3, _)| r3).unwrap_or(r2))
+            .unwrap_or(r);
+        return sub_decl_body(r, true, false, false);
+    }
+
     // my sub name(...) { ... }
     if let Some(r) = keyword("sub", rest) {
         let (r, _) = ws1(r)?;

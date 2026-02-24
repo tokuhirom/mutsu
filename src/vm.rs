@@ -937,7 +937,7 @@ impl VM {
 
             // -- Unary coercion --
             OpCode::NumCoerce => {
-                self.exec_num_coerce_op();
+                self.exec_num_coerce_op()?;
                 *ip += 1;
             }
             OpCode::StrCoerce => {
