@@ -978,9 +978,6 @@ impl Interpreter {
                         | Value::GenericRange { .. } => {
                             expanded.extend(Self::value_to_list(item));
                         }
-                        Value::Array(sub, ..) => {
-                            expanded.extend(sub.iter().cloned());
-                        }
                         _ => expanded.push(item.clone()),
                     }
                 }

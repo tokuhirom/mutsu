@@ -547,6 +547,59 @@ impl Interpreter {
                 return Ok(Value::make_instance("Iterator".to_string(), attrs));
             }
             "map" => {
+                if let Value::Instance {
+                    ref class_name,
+                    ref attributes,
+                    ..
+                } = target
+                    && class_name == "Supply"
+                {
+                    let mapper = args.first().cloned().unwrap_or(Value::Nil);
+                    let source_values =
+                        if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
+                            let emitter = Value::make_instance("Supplier".to_string(), {
+                                let mut a = HashMap::new();
+                                a.insert("emitted".to_string(), Value::array(Vec::new()));
+                                a.insert("done".to_string(), Value::Bool(false));
+                                a
+                            });
+                            self.supply_emit_buffer.push(Vec::new());
+                            let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
+                            self.supply_emit_buffer.pop().unwrap_or_default()
+                        } else {
+                            attributes
+                                .get("values")
+                                .and_then(|v| {
+                                    if let Value::Array(items, ..) = v {
+                                        Some(items.to_vec())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or_default()
+                        };
+
+                    let mut mapped_values = Vec::with_capacity(source_values.len());
+                    for value in source_values {
+                        mapped_values.push(self.call_sub_value(
+                            mapper.clone(),
+                            vec![value],
+                            true,
+                        )?);
+                    }
+
+                    let mut attrs = HashMap::new();
+                    attrs.insert("values".to_string(), Value::array(mapped_values));
+                    attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    attrs.insert(
+                        "live".to_string(),
+                        attributes
+                            .get("live")
+                            .cloned()
+                            .unwrap_or(Value::Bool(false)),
+                    );
+                    return Ok(Value::make_instance("Supply".to_string(), attrs));
+                }
                 let items = Self::value_to_list(&target);
                 return self.eval_map_over_items(args.first().cloned(), items);
             }
@@ -569,7 +622,22 @@ impl Interpreter {
                 {
                     let mut values = Vec::new();
                     for arg in &args {
-                        Self::flat_into(arg, &mut values);
+                        match arg {
+                            Value::Array(items, false) => {
+                                values.extend(items.iter().cloned());
+                            }
+                            Value::Range(..)
+                            | Value::RangeExcl(..)
+                            | Value::RangeExclStart(..)
+                            | Value::RangeExclBoth(..)
+                            | Value::GenericRange { .. } => {
+                                values.extend(Self::value_to_list(arg));
+                            }
+                            Value::Slip(items) => {
+                                values.extend(items.iter().cloned());
+                            }
+                            other => values.push(other.clone()),
+                        }
                     }
                     let mut attrs = HashMap::new();
                     attrs.insert("values".to_string(), Value::array(values));
