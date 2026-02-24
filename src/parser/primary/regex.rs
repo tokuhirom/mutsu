@@ -4,7 +4,7 @@ use crate::ast::Expr;
 use crate::value::Value;
 
 use super::super::expr::expression;
-use super::super::helpers::{skip_balanced_parens, ws};
+use super::super::helpers::{consume_unspace, skip_balanced_parens, ws};
 
 #[derive(Default)]
 struct MatchAdverbs {
@@ -710,6 +710,19 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
     };
     let (rest, name) = take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
     let name = name.to_string();
+    // Detect illegal space between method name and parens: .method (args) is Confused
+    // Raku requires no space between method name and opening paren.
+    if (rest.starts_with(' ') || rest.starts_with('\t')) && !rest.starts_with('\\') {
+        let after_ws = rest.trim_start_matches([' ', '\t']);
+        if after_ws.starts_with('(') {
+            return Err(PError::expected_at(
+                "Confused. no space allowed between method name and the left parenthesis",
+                rest,
+            ));
+        }
+    }
+    // Handle unspace between method name and parens: .method\ (args)
+    let rest = consume_unspace(rest);
     if rest.starts_with('(') {
         let (rest, _) = parse_char(rest, '(')?;
         let (rest, _) = ws(rest)?;

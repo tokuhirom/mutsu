@@ -1,4 +1,6 @@
-use super::super::helpers::{is_ident_char, is_non_breaking_space, split_angle_words, ws};
+use super::super::helpers::{
+    consume_unspace, is_ident_char, is_non_breaking_space, split_angle_words, ws,
+};
 use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 use super::super::primary::{colonpair_expr, parse_block_body, parse_call_arg_list, primary};
 
@@ -379,7 +381,8 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         }
 
         // Unspace: backslash + whitespace collapses to nothing, allowing
-        // `foo\ .method` to parse as `foo.method`.
+        // `foo\ .method` to parse as `foo.method` and
+        // `foo\ (args)` to parse as `foo(args)`.
         if rest.starts_with('\\') {
             let after_bs = &rest[1..];
             if let Some(c) = after_bs.chars().next()
@@ -394,7 +397,10 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         break;
                     }
                 }
-                if scan.starts_with('.') && !scan.starts_with("..") {
+                if (scan.starts_with('.') && !scan.starts_with(".."))
+                    || scan.starts_with('(')
+                    || scan.starts_with('[')
+                {
                     rest = scan;
                 }
             }
@@ -449,6 +455,18 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
             {
                 let name = name.to_string();
+                // Detect illegal space between method name and parens
+                if (r.starts_with(' ') || r.starts_with('\t')) && !r.starts_with('\\') {
+                    let after_ws = r.trim_start_matches([' ', '\t']);
+                    if after_ws.starts_with('(') {
+                        return Err(PError::expected_at(
+                            "Confused. no space allowed between method name and the left parenthesis",
+                            r,
+                        ));
+                    }
+                }
+                // Handle unspace between method name and parens: .method\ (args)
+                let r = consume_unspace(r);
                 // Check for args in parens
                 if r.starts_with('(') {
                     let (r, _) = parse_char(r, '(')?;
