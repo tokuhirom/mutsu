@@ -410,13 +410,19 @@ impl Interpreter {
                                     self.env.insert(i.to_string(), Value::Str(v.clone()));
                                 }
                                 for (k, v) in &captures.named {
-                                    self.env.insert(format!("<{}>", k), Value::Str(v.clone()));
+                                    let value = if v.len() == 1 {
+                                        Value::Str(v[0].clone())
+                                    } else {
+                                        Value::array(v.iter().cloned().map(Value::Str).collect())
+                                    };
+                                    self.env.insert(format!("<{}>", k), value);
                                 }
                                 Ok(Value::make_match_object_with_captures(
                                     matched,
                                     from,
                                     to,
                                     &captures.positional,
+                                    &captures.named,
                                 ))
                             } else {
                                 Ok(Value::Nil)
@@ -1603,13 +1609,19 @@ impl Interpreter {
                 self.env.insert(i.to_string(), Value::Str(v.clone()));
             }
             for (k, v) in &captures.named {
-                self.env.insert(format!("<{}>", k), Value::Str(v.clone()));
+                let value = if v.len() == 1 {
+                    Value::Str(v[0].clone())
+                } else {
+                    Value::array(v.iter().cloned().map(Value::Str).collect())
+                };
+                self.env.insert(format!("<{}>", k), value);
             }
             let match_obj = Value::make_match_object_with_captures(
                 captures.matched,
                 captures.from as i64,
                 captures.to as i64,
                 &captures.positional,
+                &captures.named,
             );
             self.env.insert("/".to_string(), match_obj.clone());
             Ok(match_obj)

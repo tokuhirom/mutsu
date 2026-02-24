@@ -640,6 +640,7 @@ impl Value {
         from: i64,
         to: i64,
         positional: &[String],
+        named: &HashMap<String, Vec<String>>,
     ) -> Self {
         let mut attrs = HashMap::new();
         attrs.insert("str".to_string(), Value::Str(matched));
@@ -647,6 +648,12 @@ impl Value {
         attrs.insert("to".to_string(), Value::Int(to));
         let caps: Vec<Value> = positional.iter().map(|s| Value::Str(s.clone())).collect();
         attrs.insert("list".to_string(), Value::array(caps));
+        let mut named_caps: HashMap<String, Value> = HashMap::new();
+        for (key, values) in named {
+            let vals: Vec<Value> = values.iter().cloned().map(Value::Str).collect();
+            named_caps.insert(key.clone(), Value::array(vals));
+        }
+        attrs.insert("named".to_string(), Value::hash(named_caps));
         Value::make_instance("Match".to_string(), attrs)
     }
 
