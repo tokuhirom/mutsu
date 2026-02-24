@@ -256,6 +256,108 @@ impl Interpreter {
                     Ok(Value::from_bigint((&a / &ga) * &b))
                 }
             }
+            "^^" => {
+                let lt = left.truthy();
+                let rt = right.truthy();
+                if lt ^ rt {
+                    if lt {
+                        Ok(left.clone())
+                    } else {
+                        Ok(right.clone())
+                    }
+                } else {
+                    Ok(Value::Bool(false))
+                }
+            }
+            "~~" => {
+                // Basic smartmatch for reduction context: value equality
+                Ok(Value::Bool(left == right))
+            }
+            "eqv" => Ok(Value::Bool(left.eqv(right))),
+            "=:=" => Ok(Value::Bool(left == right)),
+            "&" => {
+                let mut vals = match left {
+                    Value::Junction {
+                        kind: crate::value::JunctionKind::All,
+                        values,
+                    } => values.as_ref().clone(),
+                    _ => vec![left.clone()],
+                };
+                vals.push(right.clone());
+                Ok(Value::Junction {
+                    kind: crate::value::JunctionKind::All,
+                    values: std::sync::Arc::new(vals),
+                })
+            }
+            "|" => {
+                let mut vals = match left {
+                    Value::Junction {
+                        kind: crate::value::JunctionKind::Any,
+                        values,
+                    } => values.as_ref().clone(),
+                    _ => vec![left.clone()],
+                };
+                vals.push(right.clone());
+                Ok(Value::Junction {
+                    kind: crate::value::JunctionKind::Any,
+                    values: std::sync::Arc::new(vals),
+                })
+            }
+            "^" => {
+                let mut vals = match left {
+                    Value::Junction {
+                        kind: crate::value::JunctionKind::One,
+                        values,
+                    } => values.as_ref().clone(),
+                    _ => vec![left.clone()],
+                };
+                vals.push(right.clone());
+                Ok(Value::Junction {
+                    kind: crate::value::JunctionKind::One,
+                    values: std::sync::Arc::new(vals),
+                })
+            }
+            "~|" => {
+                let ls = crate::runtime::utils::coerce_to_str(left);
+                let rs = crate::runtime::utils::coerce_to_str(right);
+                let max_len = ls.len().max(rs.len());
+                let mut out = Vec::with_capacity(max_len);
+                for i in 0..max_len {
+                    let lb = ls.as_bytes().get(i).copied().unwrap_or(0);
+                    let rb = rs.as_bytes().get(i).copied().unwrap_or(0);
+                    out.push(lb | rb);
+                }
+                Ok(Value::Str(String::from_utf8_lossy(&out).into_owned()))
+            }
+            "~^" => {
+                let ls = crate::runtime::utils::coerce_to_str(left);
+                let rs = crate::runtime::utils::coerce_to_str(right);
+                let max_len = ls.len().max(rs.len());
+                let mut out = Vec::with_capacity(max_len);
+                for i in 0..max_len {
+                    let lb = ls.as_bytes().get(i).copied().unwrap_or(0);
+                    let rb = rs.as_bytes().get(i).copied().unwrap_or(0);
+                    out.push(lb ^ rb);
+                }
+                Ok(Value::Str(String::from_utf8_lossy(&out).into_owned()))
+            }
+            "~&" => {
+                let ls = crate::runtime::utils::coerce_to_str(left);
+                let rs = crate::runtime::utils::coerce_to_str(right);
+                let min_len = ls.len().min(rs.len());
+                let mut out = Vec::with_capacity(min_len);
+                for i in 0..min_len {
+                    out.push(ls.as_bytes()[i] & rs.as_bytes()[i]);
+                }
+                Ok(Value::Str(String::from_utf8_lossy(&out).into_owned()))
+            }
+            "+<" => Ok(Value::Int(to_int(left) << (to_int(right) as u32))),
+            "+>" => Ok(Value::Int(to_int(left) >> (to_int(right) as u32))),
+            "x" => {
+                let s = crate::runtime::utils::coerce_to_str(left);
+                let n = to_int(right).max(0) as usize;
+                Ok(Value::Str(s.repeat(n)))
+            }
             "X" => {
                 let left_list = Self::value_to_list(left);
                 let right_list = Self::value_to_list(right);

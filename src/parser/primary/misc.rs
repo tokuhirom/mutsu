@@ -31,9 +31,10 @@ fn skip_pointy_return_type(mut r: &str) -> PResult<'_, ()> {
 
 /// Known reduction operators (must be listed to distinguish from array literals).
 const REDUCTION_OPS: &[&str] = &[
-    "+", "-", "*", "/", "~", "||", "&&", "//", "%%", "**", "+&", "+|", "+^", "?&", "?|", "?^",
-    "==", "!=", "<", ">", "<=", ">=", "<=>", "===", "eq", "ne", "lt", "gt", "le", "ge", "leg",
-    "cmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",", "after", "before", "X",
+    "+", "-", "*", "/", "%", "~", "||", "&&", "//", "%%", "**", "^^", "+&", "+|", "+^", "+<", "+>",
+    "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=", ">=", "<=>", "===",
+    "=:=", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg", "cmp", "~~", "min", "max", "gcd",
+    "lcm", "and", "or", "not", ",", "after", "before", "X", "Z", "x", "xx", "&", "|", "^",
 ];
 
 /// Find the matching `]` for a `[` at position 0, respecting nesting.
@@ -98,10 +99,16 @@ fn is_valid_reduction_op(op: &str) -> bool {
             break;
         }
     }
-    // Also support scan form (\op) and negated operators (!after)
+    // Also support scan form (\op) and negated operators (!after),
+    // while keeping operators that genuinely start with '!' (e.g. '!=').
     let s = s.strip_prefix('\\').unwrap_or(s);
-    let s = s.strip_prefix('!').unwrap_or(s);
-    REDUCTION_OPS.contains(&s)
+    if REDUCTION_OPS.contains(&s) {
+        return true;
+    }
+    if let Some(stripped) = s.strip_prefix('!') {
+        return REDUCTION_OPS.contains(&stripped);
+    }
+    false
 }
 
 /// Parse a reduction operator: [+], [*], [~], [min], [[+]], [R[+]], etc.

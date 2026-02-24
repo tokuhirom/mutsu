@@ -285,15 +285,36 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
 
 pub(crate) fn reduction_identity(op: &str) -> Value {
     match op {
-        "+" => Value::Int(0),
-        "*" => Value::Int(1),
-        "~" => Value::Str(String::new()),
+        "+" | "-" | "+|" | "+^" => Value::Int(0),
+        "*" | "**" => Value::Int(1),
+        "+&" => Value::Int(-1), // +^0 (all bits set)
+        "~" | "~|" | "~^" => Value::Str(String::new()),
         "&&" | "and" | "?&" => Value::Bool(true),
-        "||" | "or" | "?|" => Value::Bool(false),
+        "||" | "or" | "?|" | "^^" => Value::Bool(false),
         "?^" => Value::Bool(false),
-        "//" => Value::Nil,
+        "//" => Value::Package("Any".to_string()),
         "min" => Value::Num(f64::INFINITY),
         "max" => Value::Num(f64::NEG_INFINITY),
+        // Comparison/chaining operators: vacuous truth for empty lists
+        "==" | "!=" | "<" | ">" | "<=" | ">=" | "===" | "=:=" | "eqv" | "eq" | "ne" | "lt"
+        | "gt" | "le" | "ge" | "before" | "after" | "~~" | "cmp" | "leg" | "<=>" | "%%" => {
+            Value::Bool(true)
+        }
+        // Junction operators
+        "&" => Value::Junction {
+            kind: crate::value::JunctionKind::All,
+            values: std::sync::Arc::new(Vec::new()),
+        },
+        "|" => Value::Junction {
+            kind: crate::value::JunctionKind::Any,
+            values: std::sync::Arc::new(Vec::new()),
+        },
+        "^" => Value::Junction {
+            kind: crate::value::JunctionKind::One,
+            values: std::sync::Arc::new(Vec::new()),
+        },
+        // Comma/zip: empty list
+        "," | "Z" => Value::Array(std::sync::Arc::new(Vec::new()), false),
         _ => Value::Nil,
     }
 }
