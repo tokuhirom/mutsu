@@ -700,6 +700,36 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         rest = &rest[1..];
     }
 
+    // Handle ::?CLASS and ::?ROLE pseudo-types in signatures (must come before named check)
+    if rest.starts_with("::?CLASS") || rest.starts_with("::?ROLE") {
+        let end = if rest.starts_with("::?CLASS") { 8 } else { 7 };
+        let pseudo_type = &rest[..end];
+        let r = &rest[end..];
+        let (r, tc) = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
+            let smiley = &r[..2];
+            (&r[2..], format!("{}{}", pseudo_type, smiley))
+        } else {
+            (r, pseudo_type.to_string())
+        };
+        if let Some(r) = r.strip_prefix(':') {
+            // This invocant marker is handled at parse_param_list level.
+            let (r, _) = ws(r)?;
+            if r.starts_with(')') {
+                return Ok((r, make_param("self".to_string())));
+            }
+            return parse_single_param(r);
+        }
+        let (r, _) = ws(r)?;
+        if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') {
+            type_constraint = Some(tc);
+            rest = r;
+        } else {
+            let mut p = make_param("self".to_string());
+            p.type_constraint = Some(tc);
+            return Ok((r, p));
+        }
+    }
+
     // Named param marker: :$name (but not :: which is a parametric type prefix)
     if rest.starts_with(':') && !rest.starts_with("::") {
         named = true;
@@ -747,7 +777,10 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             .first()
             .is_some_and(|b| b.is_ascii_lowercase())
         && rest.contains('(');
-    if !skip_type_for_named_alias && let Ok((r, tc)) = qualified_ident(rest) {
+    if type_constraint.is_none()
+        && !skip_type_for_named_alias
+        && let Ok((r, tc)) = qualified_ident(rest)
+    {
         let mut tc_full = tc;
         let mut r = r;
         while r.starts_with('[') {

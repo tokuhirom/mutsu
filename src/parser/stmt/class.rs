@@ -261,14 +261,35 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
         let (r2, _) = ws(r2)?;
         r = r2;
     }
-    // does Role
+    // does Role or does Role[TypeArgs]
     while let Some(r2) = keyword("does", r) {
         let (r2, _) = ws1(r2)?;
         let (r2, role_name) = qualified_ident(r2)?;
-        // Treat "does" as parent for now
-        parents.push(role_name);
         let (r2, _) = ws(r2)?;
-        r = r2;
+        // Check for type arguments [...]
+        if r2.starts_with('[') {
+            // Capture the full bracket content
+            let mut depth = 0u32;
+            let mut end = 0;
+            for (i, ch) in r2.char_indices() {
+                if ch == '[' {
+                    depth += 1;
+                } else if ch == ']' {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = i + 1;
+                        break;
+                    }
+                }
+            }
+            let bracket_content = &r2[..end];
+            parents.push(format!("{}{}", role_name, bracket_content));
+            let (r2, _) = ws(&r2[end..])?;
+            r = r2;
+        } else {
+            parents.push(role_name);
+            r = r2;
+        }
     }
 
     let (rest, body) = block(r)?;
@@ -291,35 +312,83 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, Stmt::Block(stmts)))
 }
 
-/// Parse `role` declaration.
-pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
-    fn skip_optional_role_args(input: &str) -> PResult<'_, ()> {
-        let (mut r, _) = ws(input)?;
-        if !r.starts_with('[') {
-            return Ok((r, ()));
+/// Parse optional role type parameters like `[::T]` or `[::T1, ::T2]`.
+/// Returns the type parameter names (without the `::` prefix).
+fn parse_optional_role_type_params(input: &str) -> PResult<'_, Vec<String>> {
+    let (r, _) = ws(input)?;
+    if !r.starts_with('[') {
+        return Ok((r, Vec::new()));
+    }
+    // Find the matching closing bracket to extract the content
+    let mut depth = 0u32;
+    let mut end = 0;
+    for (i, ch) in r.char_indices() {
+        if ch == '[' {
+            depth += 1;
+        } else if ch == ']' {
+            depth -= 1;
+            if depth == 0 {
+                end = i;
+                break;
+            }
         }
-        let mut depth = 0u32;
-        while let Some(ch) = r.chars().next() {
-            let len = ch.len_utf8();
-            if ch == '[' {
-                depth += 1;
-            } else if ch == ']' {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    r = &r[len..];
-                    break;
+    }
+    let content = &r[1..end]; // content between [ and ]
+    let rest = &r[end + 1..];
+    // Parse type params: split by comma and look for ::Name patterns
+    let mut params = Vec::new();
+    for part in content.split(',') {
+        let trimmed = part.trim();
+        if let Some(stripped) = trimmed.strip_prefix("::") {
+            // May have additional constraints like "Cool ::T" — take just the ident
+            let name_part = stripped.trim();
+            if let Ok((_, name)) = ident(name_part) {
+                params.push(name);
+            }
+        } else {
+            // Could be "Cool ::T" pattern — look for :: within
+            if let Some(pos) = trimmed.find("::") {
+                let after = &trimmed[pos + 2..];
+                if let Ok((_, name)) = ident(after.trim()) {
+                    params.push(name);
                 }
             }
-            r = &r[len..];
         }
-        let (r, _) = ws(r)?;
-        Ok((r, ()))
     }
+    let (rest, _) = ws(rest)?;
+    Ok((rest, params))
+}
 
+/// Skip optional role args like `[Str:D(Numeric)]` in a `does` clause.
+fn skip_optional_role_args(input: &str) -> PResult<'_, ()> {
+    let (mut r, _) = ws(input)?;
+    if !r.starts_with('[') {
+        return Ok((r, ()));
+    }
+    let mut depth = 0u32;
+    while let Some(ch) = r.chars().next() {
+        let len = ch.len_utf8();
+        if ch == '[' {
+            depth += 1;
+        } else if ch == ']' {
+            depth = depth.saturating_sub(1);
+            if depth == 0 {
+                r = &r[len..];
+                break;
+            }
+        }
+        r = &r[len..];
+    }
+    let (r, _) = ws(r)?;
+    Ok((r, ()))
+}
+
+/// Parse `role` declaration.
+pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("role", input).ok_or_else(|| PError::expected("role declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
-    let (mut rest, _) = skip_optional_role_args(rest)?;
+    let (mut rest, type_params) = parse_optional_role_type_params(rest)?;
 
     // Optional `does Role[...]` clauses.
     while let Some(r) = keyword("does", rest) {
@@ -348,7 +417,14 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
         Ok(ok) => ok,
         Err(_) => consume_raw_braced_body(rest)?,
     };
-    Ok((rest, Stmt::RoleDecl { name, body }))
+    Ok((
+        rest,
+        Stmt::RoleDecl {
+            name,
+            type_params,
+            body,
+        },
+    ))
 }
 
 /// Parse `does` declaration.

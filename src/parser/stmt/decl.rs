@@ -6,7 +6,7 @@ use crate::ast::{Expr, Stmt};
 use crate::value::Value;
 
 use super::{
-    class::{module_decl, package_decl, proto_decl},
+    class::{module_decl, package_decl, proto_decl, role_decl},
     ident, keyword, parse_assign_expr_or_comma, parse_statement_modifier, qualified_ident,
     var_name,
 };
@@ -167,6 +167,10 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     if let Some(r) = keyword("class", rest) {
         let (r, _) = ws1(r)?;
         return class_decl_body(r);
+    }
+    // my role Name[...] { ... }
+    if keyword("role", rest).is_some() {
+        return role_decl(rest);
     }
     // my module Name { ... }
     if keyword("module", rest).is_some() {
@@ -595,8 +599,14 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("has", input).ok_or_else(|| PError::expected("has declaration"))?;
     let (rest, _) = ws1(rest)?;
 
-    // Optional type constraint
+    // Optional type constraint (with optional smiley :D, :U, :_)
     let rest = if let Ok((r, _tc)) = ident(rest) {
+        // Skip smiley after type name
+        let r = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
+            &r[2..]
+        } else {
+            r
+        };
         let (r2, _) = ws(r)?;
         if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
             r2

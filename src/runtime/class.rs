@@ -160,7 +160,12 @@ impl Interpreter {
         mut attributes: HashMap<String, Value>,
         args: Vec<Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
-        let base = Value::make_instance(receiver_class_name.to_string(), attributes.clone());
+        // For type-object calls (no attributes), use Package so self.new works
+        let base = if attributes.is_empty() {
+            Value::Package(receiver_class_name.to_string())
+        } else {
+            Value::make_instance(receiver_class_name.to_string(), attributes.clone())
+        };
         let saved_env = self.env.clone();
         self.method_class_stack.push(owner_class.to_string());
         self.env.insert("self".to_string(), base.clone());
@@ -168,21 +173,13 @@ impl Interpreter {
             self.env.insert(format!("!{}", attr_name), attr_val.clone());
             self.env.insert(format!(".{}", attr_name), attr_val.clone());
         }
-        for (i, param) in method_def.params.iter().enumerate() {
-            if let Some(val) = args.get(i) {
-                self.env.insert(param.clone(), val.clone());
-            } else if let Some(pd) = method_def.param_defs.get(i)
-                && let Some(default_expr) = &pd.default
-            {
-                let val = match self.eval_block_value(&[Stmt::Expr(default_expr.clone())]) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        self.method_class_stack.pop();
-                        self.env = saved_env;
-                        return Err(e);
-                    }
-                };
-                self.env.insert(param.clone(), val);
+        // Bind method arguments with coercion type support
+        match self.bind_function_args_values(&method_def.param_defs, &method_def.params, &args) {
+            Ok(()) => {}
+            Err(e) => {
+                self.method_class_stack.pop();
+                self.env = saved_env;
+                return Err(e);
             }
         }
         let block_result = self.run_block(&method_def.body);

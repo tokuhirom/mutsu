@@ -1,5 +1,60 @@
 use super::*;
 
+/// Parse role type arguments from a string like "Str:D(Numeric), Bool(Any)".
+fn parse_role_type_args(input: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut depth = 0i32;
+    let mut start = 0;
+    for (i, ch) in input.char_indices() {
+        match ch {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth -= 1,
+            ',' if depth == 0 => {
+                args.push(input[start..i].trim().to_string());
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    let last = input[start..].trim();
+    if !last.is_empty() {
+        args.push(last.to_string());
+    }
+    args
+}
+
+/// Substitute type parameters in a method definition.
+/// E.g., if type_subs = [("T", "Str:D(Numeric)")], then any param with
+/// type_constraint "T" becomes "Str:D(Numeric)".
+fn substitute_type_params_in_method(
+    method: &MethodDef,
+    type_subs: &[(String, String)],
+) -> MethodDef {
+    let new_param_defs = method
+        .param_defs
+        .iter()
+        .map(|pd| {
+            if let Some(tc) = &pd.type_constraint {
+                for (param_name, replacement) in type_subs {
+                    if tc == param_name {
+                        let mut new_pd = pd.clone();
+                        new_pd.type_constraint = Some(replacement.clone());
+                        return new_pd;
+                    }
+                }
+            }
+            pd.clone()
+        })
+        .collect();
+    MethodDef {
+        params: method.params.clone(),
+        param_defs: new_param_defs,
+        body: method.body.clone(),
+        is_rw: method.is_rw,
+        is_private: method.is_private,
+    }
+}
+
 impl Interpreter {
     fn is_stub_routine_body(body: &[Stmt]) -> bool {
         body.len() == 1
@@ -667,15 +722,21 @@ impl Interpreter {
             "Supplier",
         ];
         for parent in parents {
-            if parent == name {
+            // Strip type arguments for validation (e.g., "R[Str:D(Numeric)]" -> "R")
+            let base_parent = if let Some(bracket) = parent.find('[') {
+                &parent[..bracket]
+            } else {
+                parent.as_str()
+            };
+            if base_parent == name {
                 return Err(RuntimeError::new(format!(
                     "X::Inheritance::SelfInherit: class '{}' cannot inherit from itself",
                     name
                 )));
             }
-            if !self.classes.contains_key(parent)
-                && !BUILTIN_TYPES.contains(&parent.as_str())
-                && !self.roles.contains_key(parent)
+            if !self.classes.contains_key(base_parent)
+                && !BUILTIN_TYPES.contains(&base_parent)
+                && !self.roles.contains_key(base_parent)
             {
                 return Err(RuntimeError::new(format!(
                     "X::Inheritance::UnknownParent: class '{}' specifies unknown parent class '{}'",
@@ -690,6 +751,54 @@ impl Interpreter {
             native_methods: HashSet::new(),
             mro: Vec::new(),
         };
+        // Compose roles listed in the parents (from "does Role" in class header)
+        for parent in parents {
+            // Strip role type arguments (e.g., "R[Str:D(Numeric)]" -> "R")
+            let base_role_name = if let Some(bracket) = parent.find('[') {
+                &parent[..bracket]
+            } else {
+                parent.as_str()
+            };
+            if let Some(role) = self.roles.get(base_role_name).cloned() {
+                // Collect type parameter substitutions if this is a parametric role
+                let type_subs: Vec<(String, String)> =
+                    if let Some(role_type_params) = self.role_type_params.get(base_role_name) {
+                        if let Some(bracket_start) = parent.find('[') {
+                            let args_str = &parent[bracket_start + 1..parent.len() - 1];
+                            let type_args = parse_role_type_args(args_str);
+                            role_type_params
+                                .iter()
+                                .zip(type_args.iter())
+                                .map(|(p, a)| (p.clone(), a.clone()))
+                                .collect()
+                        } else {
+                            Vec::new()
+                        }
+                    } else {
+                        Vec::new()
+                    };
+                for attr in &role.attributes {
+                    if !class_def.attributes.iter().any(|(n, _, _)| n == &attr.0) {
+                        class_def.attributes.push(attr.clone());
+                    }
+                }
+                for (mname, overloads) in &role.methods {
+                    let composed: Vec<MethodDef> = if type_subs.is_empty() {
+                        overloads.clone()
+                    } else {
+                        overloads
+                            .iter()
+                            .map(|md| substitute_type_params_in_method(md, &type_subs))
+                            .collect()
+                    };
+                    class_def
+                        .methods
+                        .entry(mname.clone())
+                        .or_default()
+                        .extend(composed);
+                }
+            }
+        }
         for stmt in body {
             if let Stmt::TrustsDecl {
                 name: trusted_class,
@@ -823,6 +932,7 @@ impl Interpreter {
     pub(crate) fn register_role_decl(
         &mut self,
         name: &str,
+        type_params: &[String],
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
         let mut role_def = RoleDef {
@@ -880,6 +990,10 @@ impl Interpreter {
             }
         }
         self.roles.insert(name.to_string(), role_def);
+        if !type_params.is_empty() {
+            self.role_type_params
+                .insert(name.to_string(), type_params.to_vec());
+        }
         Ok(())
     }
 
