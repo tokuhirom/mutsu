@@ -1,7 +1,7 @@
 use super::*;
 use std::process::ChildStdin;
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 type StdinMap = std::sync::Mutex<HashMap<u32, Arc<std::sync::Mutex<Option<ChildStdin>>>>>;
 
@@ -14,6 +14,13 @@ type SupplyTapsMap = std::sync::Mutex<HashMap<u64, Vec<Value>>>;
 
 fn supply_taps_map() -> &'static SupplyTapsMap {
     static MAP: OnceLock<SupplyTapsMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+type CancellationMap = std::sync::Mutex<HashMap<u64, Arc<AtomicBool>>>;
+
+fn cancellation_map() -> &'static CancellationMap {
+    static MAP: OnceLock<CancellationMap> = OnceLock::new();
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
@@ -134,6 +141,22 @@ pub(super) fn next_lock_id() -> u64 {
             .or_insert_with(|| Arc::new(LockRuntime::default()));
     }
     id
+}
+
+fn next_cancellation_id() -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    if let Ok(mut map) = cancellation_map().lock() {
+        map.insert(id, Arc::new(AtomicBool::new(false)));
+    }
+    id
+}
+
+fn cancellation_state(id: u64) -> Option<Arc<AtomicBool>> {
+    cancellation_map()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&id).cloned())
 }
 
 fn lock_runtime_by_id(id: u64) -> Option<Arc<LockRuntime>> {
@@ -323,12 +346,121 @@ impl Interpreter {
             "Proc" => Ok(self.native_proc(attributes, method)),
             "Supply" => self.native_supply(attributes, method, args),
             "Supplier" => self.native_supplier(attributes, method, args),
+            "Tap" => self.native_tap(method),
+            "ThreadPoolScheduler" | "CurrentThreadScheduler" => {
+                self.native_scheduler(attributes, method, args)
+            }
+            "Cancellation" => self.native_cancellation(attributes, method),
             "Encoding::Builtin" => Ok(Self::native_encoding_builtin(attributes, method)),
             "Encoding::Encoder" => Ok(Self::native_encoding_encoder(attributes, method, &args)),
             "Encoding::Decoder" => Ok(Self::native_encoding_decoder(attributes, method, &args)),
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on '{}'",
                 method, class_name
+            ))),
+        }
+    }
+
+    fn cancellation_instance() -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "cancellation-id".to_string(),
+            Value::Int(next_cancellation_id() as i64),
+        );
+        Value::make_instance("Cancellation".to_string(), attrs)
+    }
+
+    fn scheduler_times_arg(args: &[Value]) -> Result<Option<usize>, RuntimeError> {
+        let Some(value) = Self::named_value(args, "times") else {
+            return Ok(None);
+        };
+        let count = match value {
+            Value::Int(i) => i,
+            Value::Num(f) if f.is_finite() => f as i64,
+            Value::Bool(b) => i64::from(b),
+            Value::Str(s) => s.trim().parse::<i64>().map_err(|_| {
+                RuntimeError::new(format!(
+                    "Scheduler.cue: :times must be numeric, got '{}'",
+                    s
+                ))
+            })?,
+            other => {
+                return Err(RuntimeError::new(format!(
+                    "Scheduler.cue: :times must be numeric, got '{}'",
+                    other.to_string_value()
+                )));
+            }
+        };
+        Ok(Some(count.max(0) as usize))
+    }
+
+    fn native_tap(&self, method: &str) -> Result<Value, RuntimeError> {
+        match method {
+            "cancel" => Ok(Value::Nil),
+            _ => Err(RuntimeError::new(format!(
+                "No native method '{}' on Tap",
+                method
+            ))),
+        }
+    }
+
+    fn native_cancellation(
+        &self,
+        attributes: &HashMap<String, Value>,
+        method: &str,
+    ) -> Result<Value, RuntimeError> {
+        match method {
+            "cancel" => {
+                if let Some(Value::Int(id)) = attributes.get("cancellation-id")
+                    && *id > 0
+                    && let Some(flag) = cancellation_state(*id as u64)
+                {
+                    flag.store(true, Ordering::Relaxed);
+                }
+                Ok(Value::Nil)
+            }
+            _ => Err(RuntimeError::new(format!(
+                "No native method '{}' on Cancellation",
+                method
+            ))),
+        }
+    }
+
+    fn native_scheduler(
+        &mut self,
+        _attributes: &HashMap<String, Value>,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        match method {
+            "cue" => {
+                let callback = args.first().cloned().unwrap_or(Value::Nil);
+                let times = Self::scheduler_times_arg(&args)?.unwrap_or(1);
+                let cancellation = Self::cancellation_instance();
+                let cancellation_id = match &cancellation {
+                    Value::Instance { attributes, .. } => {
+                        match attributes.get("cancellation-id").cloned() {
+                            Some(Value::Int(id)) if id > 0 => id as u64,
+                            _ => 0,
+                        }
+                    }
+                    _ => 0,
+                };
+                let cancel_flag = cancellation_state(cancellation_id);
+                for _ in 0..times {
+                    if cancel_flag
+                        .as_ref()
+                        .is_some_and(|flag| flag.load(Ordering::Relaxed))
+                    {
+                        break;
+                    }
+                    self.call_sub_value(callback.clone(), Vec::new(), true)?;
+                }
+                Ok(cancellation)
+            }
+            _ => Err(RuntimeError::new(format!(
+                "No native method '{}' on Scheduler",
+                method
             ))),
         }
     }

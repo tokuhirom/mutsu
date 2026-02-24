@@ -2877,7 +2877,7 @@ impl Interpreter {
                     );
                     return Ok(Value::make_instance(class_name.clone(), attrs));
                 }
-                "ThreadPoolScheduler" | "CurrentThreadScheduler" | "Tap" => {
+                "ThreadPoolScheduler" | "CurrentThreadScheduler" | "Tap" | "Cancellation" => {
                     return Ok(Value::make_instance(class_name.clone(), HashMap::new()));
                 }
                 "CompUnit::DependencySpecification" => {

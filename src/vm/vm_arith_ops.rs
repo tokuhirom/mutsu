@@ -284,10 +284,12 @@ impl VM {
         static COMPOSE_ID: std::sync::atomic::AtomicU64 =
             std::sync::atomic::AtomicU64::new(1_000_000);
         let id = COMPOSE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let left_name = format!("__compose_left_{}__", id);
+        let right_name = format!("__compose_right_{}__", id);
         let env = {
             let mut env = std::collections::HashMap::new();
-            env.insert("__compose_left__".to_string(), left);
-            env.insert("__compose_right__".to_string(), right);
+            env.insert(left_name.clone(), left);
+            env.insert(right_name.clone(), right);
             env
         };
         let composed = Value::make_sub_with_id(
@@ -295,9 +297,9 @@ impl VM {
             "<composed>".to_string(),
             vec!["x".to_string()],
             vec![Stmt::Expr(Expr::Call {
-                name: "__compose_left__".to_string(),
+                name: left_name,
                 args: vec![Expr::Call {
-                    name: "__compose_right__".to_string(),
+                    name: right_name,
                     args: vec![Expr::Var("x".to_string())],
                 }],
             })],
