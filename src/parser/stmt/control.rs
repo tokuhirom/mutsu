@@ -450,15 +450,32 @@ pub(super) fn for_stmt(input: &str) -> PResult<'_, Stmt> {
     ))
 }
 
-pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, String> {
+pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     // Sigilless parameter: \name
     if let Some(r) = input.strip_prefix('\\') {
         let (rest, name) = ident(r)?;
-        return Ok((rest, name));
+        return Ok((
+            rest,
+            ParamDef {
+                name,
+                default: None,
+                required: false,
+                named: false,
+                slurpy: false,
+                double_slurpy: false,
+                sigilless: true,
+                type_constraint: None,
+                literal_value: None,
+                sub_signature: None,
+                where_constraint: None,
+                traits: Vec::new(),
+            },
+        ));
     }
     // Optional type constraint before the variable
     let rest = input;
-    let rest = if let Ok((r, _tc)) = ident(rest) {
+    let mut type_constraint = None;
+    let rest = if let Ok((r, tc)) = ident(rest) {
         let r = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
             &r[2..]
         } else {
@@ -466,6 +483,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, String> {
         };
         let (r2, _) = ws(r)?;
         if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
+            type_constraint = Some(tc);
             r2
         } else {
             rest
@@ -482,7 +500,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, String> {
     };
 
     // Optional parameter traits: `is rw`, `is copy`, ...
-    // Keep parsing permissive here and ignore trait semantics for now.
+    let mut traits = Vec::new();
     loop {
         let (r, _) = ws(rest)?;
         let Some(after_is) = keyword("is", r) else {
@@ -490,17 +508,20 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, String> {
             break;
         };
         let (after_is, _) = ws1(after_is)?;
-        let (after_is, _trait_name) = ident(after_is)?;
+        let (after_is, trait_name) = ident(after_is)?;
+        traits.push(trait_name);
         rest = after_is;
     }
 
     // Optional default value: `$x = expr`
+    let mut default = None;
     let (r, _) = ws(rest)?;
     if let Some(after_eq) = r.strip_prefix('=')
         && !after_eq.starts_with('>')
     {
         let (after_eq, _) = ws(after_eq)?;
-        let (after_default, _default_expr) = expression(after_eq)?;
+        let (after_default, default_expr) = expression(after_eq)?;
+        default = Some(default_expr);
         rest = after_default;
     } else {
         rest = r;
@@ -515,7 +536,23 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, String> {
         rest = r;
     }
 
-    Ok((rest, name))
+    Ok((
+        rest,
+        ParamDef {
+            name,
+            default,
+            required: false,
+            named: false,
+            slurpy: false,
+            double_slurpy: false,
+            sigilless: false,
+            type_constraint,
+            literal_value: None,
+            sub_signature: None,
+            where_constraint: None,
+            traits,
+        },
+    ))
 }
 
 /// Parse `while` loop.

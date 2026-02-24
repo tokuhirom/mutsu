@@ -272,7 +272,8 @@ impl Interpreter {
                 new_env.insert(k.clone(), v.clone());
             }
             self.env = new_env.clone();
-            self.bind_function_args_values(&data.param_defs, &data.params, &call_args)?;
+            let rw_bindings =
+                self.bind_function_args_values(&data.param_defs, &data.params, &call_args)?;
             new_env = self.env.clone();
             // Bind implicit $_ for bare blocks called with arguments
             if data.params.is_empty() && !call_args.is_empty() {
@@ -326,6 +327,7 @@ impl Interpreter {
                 }
             }
             let mut merged = saved_env;
+            self.apply_rw_bindings_to_env(&rw_bindings, &mut merged);
             if merge_all {
                 for (k, v) in self.env.iter() {
                     merged.insert(k.clone(), v.clone());

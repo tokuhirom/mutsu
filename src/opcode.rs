@@ -180,12 +180,14 @@ pub(crate) enum OpCode {
     CallFunc {
         name_idx: u32,
         arity: u32,
+        arg_sources_idx: Option<u32>,
     },
     /// Expression-level function call with capture slip: pop 1 slip + `regular_arity` args,
     /// flatten the slip into the argument list, call name, push result.
     CallFuncSlip {
         name_idx: u32,
         regular_arity: u32,
+        arg_sources_idx: Option<u32>,
     },
     /// Method call: pop `arity` args + target, call method, push result.
     CallMethod {
@@ -204,6 +206,7 @@ pub(crate) enum OpCode {
     ExecCall {
         name_idx: u32,
         arity: u32,
+        arg_sources_idx: Option<u32>,
     },
     /// Statement-level call with positional/named values encoded as Value::Pair.
     ExecCallPairs {
@@ -216,6 +219,7 @@ pub(crate) enum OpCode {
     ExecCallSlip {
         name_idx: u32,
         regular_arity: u32,
+        arg_sources_idx: Option<u32>,
     },
     BlockScope {
         enter_end: u32,
@@ -232,10 +236,12 @@ pub(crate) enum OpCode {
     MakeGather(u32),
     CallOnValue {
         arity: u32,
+        arg_sources_idx: Option<u32>,
     },
     CallOnCodeVar {
         name_idx: u32,
         arity: u32,
+        arg_sources_idx: Option<u32>,
     },
     MakeAnonSub(u32),
     MakeAnonSubParams(u32),

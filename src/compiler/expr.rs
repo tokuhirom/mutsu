@@ -151,6 +151,7 @@ impl Compiler {
                     self.code.emit(OpCode::CallFuncSlip {
                         name_idx,
                         regular_arity: 0,
+                        arg_sources_idx: None,
                     });
                     return;
                 }
@@ -393,11 +394,16 @@ impl Compiler {
                         rewritten_args[1] = make_anon_sub(body.clone());
                     }
                     let arity = rewritten_args.len() as u32;
+                    let arg_sources_idx = self.add_arg_sources_constant(&rewritten_args);
                     for arg in &rewritten_args {
                         self.compile_expr(arg);
                     }
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                    self.code.emit(OpCode::CallFunc { name_idx, arity });
+                    self.code.emit(OpCode::CallFunc {
+                        name_idx,
+                        arity,
+                        arg_sources_idx,
+                    });
                 }
                 // Rewrite cas($var, &fn) to assignment expression:
                 // $var = fn($var)
@@ -420,11 +426,16 @@ impl Compiler {
                         self.compile_expr(&assign_expr);
                     } else {
                         let arity = args.len() as u32;
+                        let arg_sources_idx = self.add_arg_sources_constant(args);
                         for arg in args {
                             self.compile_expr(arg);
                         }
                         let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                        self.code.emit(OpCode::CallFunc { name_idx, arity });
+                        self.code.emit(OpCode::CallFunc {
+                            name_idx,
+                            arity,
+                            arg_sources_idx,
+                        });
                     }
                 } else {
                     // Rewrite VAR($var)/VAR(@var)/VAR(%var)/VAR(&var) → $var.VAR, etc.
@@ -484,14 +495,20 @@ impl Compiler {
                         self.code.emit(OpCode::CallFuncSlip {
                             name_idx,
                             regular_arity: regular_count,
+                            arg_sources_idx: None,
                         });
                     } else {
                         let arity = args.len() as u32;
+                        let arg_sources_idx = self.add_arg_sources_constant(args);
                         for arg in args {
                             self.compile_expr(arg);
                         }
                         let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                        self.code.emit(OpCode::CallFunc { name_idx, arity });
+                        self.code.emit(OpCode::CallFunc {
+                            name_idx,
+                            arity,
+                            arg_sources_idx,
+                        });
                     }
                 }
             }
@@ -960,6 +977,7 @@ impl Compiler {
             }
             Expr::CallOn { target, args } => {
                 if let Expr::CodeVar(name) = target.as_ref() {
+                    let arg_sources_idx = self.add_arg_sources_constant(args);
                     for arg in args {
                         self.compile_expr(arg);
                     }
@@ -967,14 +985,17 @@ impl Compiler {
                     self.code.emit(OpCode::CallOnCodeVar {
                         name_idx,
                         arity: args.len() as u32,
+                        arg_sources_idx,
                     });
                 } else {
                     self.compile_expr(target);
+                    let arg_sources_idx = self.add_arg_sources_constant(args);
                     for arg in args {
                         self.compile_expr(arg);
                     }
                     self.code.emit(OpCode::CallOnValue {
                         arity: args.len() as u32,
+                        arg_sources_idx,
                     });
                 }
             }

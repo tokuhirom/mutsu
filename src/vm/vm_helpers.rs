@@ -355,18 +355,22 @@ impl VM {
                 .push_routine(fn_package.to_string(), fn_name.to_string());
         }
 
-        if let Err(e) =
-            self.interpreter
+        let rw_bindings =
+            match self
+                .interpreter
                 .bind_function_args_values(&cf.param_defs, &cf.params, &args)
-        {
-            if !fn_name.is_empty() {
-                self.interpreter.pop_routine();
-            }
-            self.stack.truncate(saved_stack_depth);
-            self.locals = saved_locals;
-            *self.interpreter.env_mut() = saved_env;
-            return Err(e);
-        }
+            {
+                Ok(bindings) => bindings,
+                Err(e) => {
+                    if !fn_name.is_empty() {
+                        self.interpreter.pop_routine();
+                    }
+                    self.stack.truncate(saved_stack_depth);
+                    self.locals = saved_locals;
+                    *self.interpreter.env_mut() = saved_env;
+                    return Err(e);
+                }
+            };
 
         self.locals = vec![Value::Nil; cf.code.locals.len()];
         for (i, local_name) in cf.code.locals.iter().enumerate() {
@@ -445,9 +449,15 @@ impl VM {
         }
 
         let mut restored_env = saved_env;
+        self.interpreter
+            .apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
+        let rw_sources: std::collections::HashSet<String> = rw_bindings
+            .iter()
+            .map(|(_, source)| source.clone())
+            .collect();
         let local_names: std::collections::HashSet<&String> = cf.code.locals.iter().collect();
         for (k, v) in self.interpreter.env().iter() {
-            if restored_env.contains_key(k) && !local_names.contains(k) {
+            if restored_env.contains_key(k) && !local_names.contains(k) && !rw_sources.contains(k) {
                 restored_env.insert(k.clone(), v.clone());
             }
         }

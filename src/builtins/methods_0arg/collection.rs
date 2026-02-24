@@ -126,7 +126,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Hash(items) => Some(Ok(Value::array(
                 items
                     .iter()
-                    .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                    .map(|(k, v)| {
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("key".to_string(), Value::Str(k.clone()));
+                        attrs.insert("value".to_string(), v.clone());
+                        attrs.insert("__mutsu_hash_ref".to_string(), Value::Hash(items.clone()));
+                        Value::make_instance("Pair".to_string(), attrs)
+                    })
                     .collect(),
             ))),
             Value::Set(s) => Some(Ok(Value::array(

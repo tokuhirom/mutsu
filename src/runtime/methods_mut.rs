@@ -21,6 +21,26 @@ impl Interpreter {
         }
     }
 
+    fn overwrite_hash_bindings_by_identity(
+        &mut self,
+        needle: &std::sync::Arc<std::collections::HashMap<String, Value>>,
+        replacement: Value,
+    ) {
+        let keys: Vec<String> = self
+            .env
+            .iter()
+            .filter_map(|(name, value)| match value {
+                Value::Hash(existing) if std::sync::Arc::ptr_eq(existing, needle) => {
+                    Some(name.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        for key in keys {
+            self.env.insert(key, replacement.clone());
+        }
+    }
+
     fn rw_method_attribute_target(body: &[Stmt]) -> Option<String> {
         let first = body.first()?;
         let extract_attr = |expr: &Expr| -> Option<String> {
@@ -54,6 +74,23 @@ impl Interpreter {
         method_args: Vec<Value>,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        if method == "value"
+            && let Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } = &target
+            && class_name == "Pair"
+            && let Some(Value::Str(key)) = attributes.get("key")
+            && let Some(Value::Hash(source_hash)) = attributes.get("__mutsu_hash_ref")
+        {
+            let mut updated = (**source_hash).clone();
+            updated.insert(key.clone(), value.clone());
+            let replacement = Value::hash(updated);
+            self.overwrite_hash_bindings_by_identity(source_hash, replacement);
+            return Ok(value);
+        }
+
         // Preserve existing accessor/setter assignment behavior for concrete variables.
         if let Some(var_name) = target_var {
             match self.call_method_mut_with_values(

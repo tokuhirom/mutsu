@@ -71,6 +71,34 @@ impl Compiler {
         }
     }
 
+    fn positional_arg_source_name(expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Var(name) => Some(name.clone()),
+            Expr::ArrayVar(name) => Some(format!("@{}", name)),
+            Expr::HashVar(name) => Some(format!("%{}", name)),
+            Expr::CodeVar(name) => Some(format!("&{}", name)),
+            _ => None,
+        }
+    }
+
+    fn add_arg_sources_constant(&mut self, args: &[Expr]) -> Option<u32> {
+        let entries: Vec<Value> = args
+            .iter()
+            .map(|arg| {
+                if let Some(name) = Self::positional_arg_source_name(arg) {
+                    Value::Str(name)
+                } else {
+                    Value::Nil
+                }
+            })
+            .collect();
+        if entries.iter().all(|v| matches!(v, Value::Nil)) {
+            None
+        } else {
+            Some(self.code.add_constant(Value::array(entries)))
+        }
+    }
+
     fn build_for_bind_stmts(
         param: &Option<String>,
         param_def: &Option<crate::ast::ParamDef>,

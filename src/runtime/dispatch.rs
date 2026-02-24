@@ -219,12 +219,15 @@ impl Interpreter {
         arg_values: &[Value],
     ) -> Result<Option<String>, RuntimeError> {
         let saved_env = self.env.clone();
-        self.bind_function_args_values(&def.param_defs, &def.params, arg_values)?;
+        let rw_bindings =
+            self.bind_function_args_values(&def.param_defs, &def.params, arg_values)?;
         self.routine_stack
             .push((def.package.clone(), def.name.clone()));
         let result = self.eval_block_value(&def.body);
         self.routine_stack.pop();
-        self.env = saved_env;
+        let mut restored_env = saved_env;
+        self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
+        self.env = restored_env;
         let value = match result {
             Ok(v) => v,
             Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
@@ -287,7 +290,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let saved_env = self.env.clone();
-        self.bind_function_args_values(&def.param_defs, &def.params, args)?;
+        let rw_bindings = self.bind_function_args_values(&def.param_defs, &def.params, args)?;
         self.routine_stack
             .push((def.package.clone(), def.name.clone()));
         self.proto_dispatch_stack
@@ -301,7 +304,9 @@ impl Interpreter {
         };
         self.proto_dispatch_stack.pop();
         self.routine_stack.pop();
-        self.restore_env_preserving_existing(&saved_env, &def.params);
+        let mut restored_env = saved_env.clone();
+        self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
+        self.restore_env_preserving_existing(&restored_env, &def.params);
         match result {
             Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
             other => other,
@@ -321,13 +326,15 @@ impl Interpreter {
             )));
         };
         let saved_env = self.env.clone();
-        self.bind_function_args_values(&def.param_defs, &def.params, &args)?;
+        let rw_bindings = self.bind_function_args_values(&def.param_defs, &def.params, &args)?;
         self.routine_stack
             .push((def.package.clone(), def.name.clone()));
         let result = self.run_block(&def.body);
         self.routine_stack.pop();
         let implicit_return = self.env.get("_").cloned().unwrap_or(Value::Nil);
-        self.restore_env_preserving_existing(&saved_env, &def.params);
+        let mut restored_env = saved_env.clone();
+        self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
+        self.restore_env_preserving_existing(&restored_env, &def.params);
         match result {
             Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
             Err(e) => Err(e),

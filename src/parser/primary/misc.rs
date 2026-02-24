@@ -436,13 +436,13 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
     let (r, _) = ws(r)?;
     if r.starts_with(',') {
         // Multi-param: -> $a, $b { body }
-        let mut params = vec![first];
+        let mut param_defs = vec![first];
         let mut r = r;
         loop {
             let (r2, _) = parse_char(r, ',')?;
             let (r2, _) = ws(r2)?;
             let (r2, next) = super::super::stmt::parse_pointy_param_pub(r2)?;
-            params.push(next);
+            param_defs.push(next);
             let (r2, _) = ws(r2)?;
             if !r2.starts_with(',') {
                 r = r2;
@@ -452,23 +452,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
         }
         let (r, _) = skip_pointy_return_type(r)?;
         let (r, body) = parse_block_body(r)?;
-        let param_defs = params
-            .iter()
-            .map(|name| crate::ast::ParamDef {
-                name: name.clone(),
-                default: None,
-                required: false,
-                named: false,
-                slurpy: false,
-                sigilless: false,
-                type_constraint: None,
-                literal_value: None,
-                sub_signature: None,
-                where_constraint: None,
-                traits: Vec::new(),
-                double_slurpy: false,
-            })
-            .collect();
+        let params: Vec<String> = param_defs.iter().map(|p| p.name.clone()).collect();
         Ok((
             r,
             Expr::AnonSubParams {
@@ -481,7 +465,25 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
         // Single param: -> $n { body }
         let (r, _) = skip_pointy_return_type(r)?;
         let (r, body) = parse_block_body(r)?;
-        Ok((r, Expr::Lambda { param: first, body }))
+        let simple_single = first.traits.is_empty();
+        if simple_single {
+            Ok((
+                r,
+                Expr::Lambda {
+                    param: first.name,
+                    body,
+                },
+            ))
+        } else {
+            Ok((
+                r,
+                Expr::AnonSubParams {
+                    params: vec![first.name.clone()],
+                    param_defs: vec![first],
+                    body,
+                },
+            ))
+        }
     }
 }
 

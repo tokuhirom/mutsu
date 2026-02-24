@@ -7,6 +7,7 @@ use super::super::primary::parse_call_arg_list;
 
 use crate::ast::{AssignOp, Expr, Stmt};
 use crate::token_kind::TokenKind;
+use crate::value::Value;
 
 use super::{ident, parse_statement_modifier, var_name};
 
@@ -378,6 +379,51 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, var) = var_name(input)?;
     let name = format!("{}{}", prefix, var);
     let (rest, _) = ws(rest)?;
+    let var_expr = if sigil == b'@' {
+        Expr::ArrayVar(var.clone())
+    } else if sigil == b'%' {
+        Expr::HashVar(var.clone())
+    } else {
+        Expr::Var(name.clone())
+    };
+
+    // Mutating method compound assignment: $x.m += expr
+    if let Some(after_dot) = rest.strip_prefix('.')
+        && !after_dot.starts_with('=')
+    {
+        let (after_name, method_name) = take_while1(after_dot, |c: char| {
+            c.is_alphanumeric() || c == '_' || c == '-'
+        })?;
+        let method_name = method_name.to_string();
+        let (after_name, _) = ws(after_name)?;
+        if let Some((after_op, op)) = parse_compound_assign_op(after_name) {
+            let (after_op, _) = ws(after_op)?;
+            let (rest, rhs) = parse_assign_expr_or_comma(after_op)?;
+            let current_value = Expr::MethodCall {
+                target: Box::new(var_expr.clone()),
+                name: method_name.clone(),
+                args: Vec::new(),
+                modifier: None,
+            };
+            let updated_value = Expr::Binary {
+                left: Box::new(current_value),
+                op: op.token_kind(),
+                right: Box::new(rhs),
+            };
+            let assign_call = Expr::Call {
+                name: "__mutsu_assign_method_lvalue".to_string(),
+                args: vec![
+                    var_expr,
+                    Expr::Literal(Value::Str(method_name)),
+                    Expr::ArrayLiteral(Vec::new()),
+                    updated_value,
+                    Expr::Literal(Value::Str(name.clone())),
+                ],
+            };
+            let stmt = Stmt::Expr(assign_call);
+            return parse_statement_modifier(rest, stmt);
+        }
+    }
 
     // Meta-op assignment: @a [X+]= @b → @a = @a X+ @b
     if let Some(rest_after_bracket) = rest.strip_prefix('[')
@@ -389,13 +435,6 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             let after_eq = &after_bracket[1..];
             let (after_eq, _) = ws(after_eq)?;
             let (rest, rhs) = parse_assign_expr_or_comma(after_eq)?;
-            let var_expr = if sigil == b'@' {
-                Expr::ArrayVar(var.clone())
-            } else if sigil == b'%' {
-                Expr::HashVar(var.clone())
-            } else {
-                Expr::Var(name.clone())
-            };
             // Determine meta and op
             let (meta, op) = if let Some(op_str) = meta_op_str.strip_prefix('R') {
                 ("R", op_str)
