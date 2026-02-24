@@ -1,6 +1,7 @@
 use super::super::expr::expression;
 use super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, parse_char, take_while1};
+use crate::token_kind::lookup_unicode_char_by_name;
 
 use crate::ast::{Expr, ParamDef, Stmt, collect_placeholders};
 use crate::value::Value;
@@ -64,7 +65,126 @@ pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
         }
         // If we can't find the closing '>', fall through to return the base name
     }
+    if is_op_category
+        && rest.starts_with(":[")
+        && let Some(after_open) = rest.strip_prefix(":['")
+        && let Some(end_pos) = after_open.find("']")
+    {
+        let op_symbol = unescape_operator_single_quoted(&after_open[..end_pos]);
+        let after_close = &after_open[end_pos + 2..];
+        let full_name = format!("{}:<{}>", base, op_symbol);
+        return Ok((after_close, full_name));
+    }
+    if is_op_category
+        && rest.starts_with(":[")
+        && let Some(after_open) = rest.strip_prefix(":[\"")
+        && let Some(end_pos) = after_open.find("\"]")
+    {
+        let op_symbol = unescape_operator_double_quoted(&after_open[..end_pos]);
+        let after_close = &after_open[end_pos + 2..];
+        let full_name = format!("{}:<{}>", base, op_symbol);
+        return Ok((after_close, full_name));
+    }
     Ok((rest, base))
+}
+
+fn unescape_operator_single_quoted(s: &str) -> String {
+    s.replace("\\'", "'").replace("\\\\", "\\")
+}
+
+fn unescape_operator_double_quoted(s: &str) -> String {
+    let mut out = String::new();
+    let mut rest = s;
+    while !rest.is_empty() {
+        if rest.starts_with('\\') && rest.len() > 1 {
+            let c = rest.as_bytes()[1] as char;
+            match c {
+                'n' => {
+                    out.push('\n');
+                    rest = &rest[2..];
+                    continue;
+                }
+                't' => {
+                    out.push('\t');
+                    rest = &rest[2..];
+                    continue;
+                }
+                'r' => {
+                    out.push('\r');
+                    rest = &rest[2..];
+                    continue;
+                }
+                '0' => {
+                    out.push('\0');
+                    rest = &rest[2..];
+                    continue;
+                }
+                '"' => {
+                    out.push('"');
+                    rest = &rest[2..];
+                    continue;
+                }
+                '\\' => {
+                    out.push('\\');
+                    rest = &rest[2..];
+                    continue;
+                }
+                'x' => {
+                    let r = &rest[2..];
+                    if let Some(r2) = r.strip_prefix('[')
+                        && let Some(end) = r2.find(']')
+                    {
+                        for part in r2[..end].split(',') {
+                            if let Ok(n) = u32::from_str_radix(part.trim(), 16)
+                                && let Some(ch) = char::from_u32(n)
+                            {
+                                out.push(ch);
+                            }
+                        }
+                        rest = &r2[end + 1..];
+                        continue;
+                    }
+                }
+                'c' => {
+                    let r = &rest[2..];
+                    if let Some(r2) = r.strip_prefix('[')
+                        && let Some(end) = r2.find(']')
+                    {
+                        let names = &r2[..end];
+                        let mut ok = true;
+                        for part in names.split(',') {
+                            let name = part.trim();
+                            if name.is_empty() {
+                                continue;
+                            }
+                            if let Some(ch) = lookup_unicode_char_by_name(name) {
+                                out.push(ch);
+                            } else {
+                                ok = false;
+                                break;
+                            }
+                        }
+                        if ok {
+                            rest = &r2[end + 1..];
+                            continue;
+                        }
+                    }
+                }
+                _ => {}
+            }
+            out.push('\\');
+            out.push(c);
+            rest = &rest[2..];
+            continue;
+        }
+        let ch = rest
+            .chars()
+            .next()
+            .expect("rest is non-empty when decoding operator name");
+        out.push(ch);
+        rest = &rest[ch.len_utf8()..];
+    }
+    out
 }
 
 pub(super) fn parse_indirect_decl_name(input: &str) -> PResult<'_, (String, Expr)> {
