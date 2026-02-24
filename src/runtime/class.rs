@@ -196,6 +196,11 @@ impl Interpreter {
             let env_key = format!("!{}", attr_name);
             if let Some(val) = self.env.get(&env_key) {
                 attributes.insert(attr_name, val.clone());
+                continue;
+            }
+            let public_env_key = format!(".{}", attr_name);
+            if let Some(val) = self.env.get(&public_env_key) {
+                attributes.insert(attr_name, val.clone());
             }
         }
         let mut merged_env = saved_env.clone();

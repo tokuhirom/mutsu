@@ -602,7 +602,16 @@ impl VM {
             val
         };
         self.locals[idx] = val.clone();
-        self.interpreter.env_mut().insert(name.clone(), val);
+        self.interpreter.env_mut().insert(name.clone(), val.clone());
+        if let Some(attr) = name.strip_prefix('.') {
+            self.interpreter
+                .env_mut()
+                .insert(format!("!{}", attr), val.clone());
+        } else if let Some(attr) = name.strip_prefix('!') {
+            self.interpreter
+                .env_mut()
+                .insert(format!(".{}", attr), val.clone());
+        }
         Ok(())
     }
 
@@ -628,7 +637,16 @@ impl VM {
             val
         };
         self.locals[idx] = val.clone();
-        self.interpreter.env_mut().insert(name.clone(), val);
+        self.interpreter.env_mut().insert(name.clone(), val.clone());
+        if let Some(attr) = name.strip_prefix('.') {
+            self.interpreter
+                .env_mut()
+                .insert(format!("!{}", attr), val.clone());
+        } else if let Some(attr) = name.strip_prefix('!') {
+            self.interpreter
+                .env_mut()
+                .insert(format!(".{}", attr), val.clone());
+        }
     }
 
     pub(super) fn exec_get_pseudo_stash_op(&mut self, code: &CompiledCode, name_idx: u32) {

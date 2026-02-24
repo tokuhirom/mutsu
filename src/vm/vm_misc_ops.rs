@@ -277,7 +277,16 @@ impl VM {
         };
         let val = self.stack.last().unwrap().clone();
         self.update_local_if_exists(code, &name, &val);
-        self.interpreter.env_mut().insert(name, val);
+        self.interpreter.env_mut().insert(name.clone(), val.clone());
+        if let Some(attr) = name.strip_prefix('.') {
+            self.interpreter
+                .env_mut()
+                .insert(format!("!{}", attr), val.clone());
+        } else if let Some(attr) = name.strip_prefix('!') {
+            self.interpreter
+                .env_mut()
+                .insert(format!(".{}", attr), val.clone());
+        }
     }
 
     pub(super) fn exec_get_env_index_op(&mut self, code: &CompiledCode, key_idx: u32) {
