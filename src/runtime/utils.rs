@@ -279,6 +279,13 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::Channel(_) => "Channel",
         Value::HyperWhatever => "HyperWhatever",
         Value::Capture { .. } => "Capture",
+        Value::Uni { form, .. } => match form.as_str() {
+            "NFC" => "NFC",
+            "NFD" => "NFD",
+            "NFKC" => "NFKC",
+            "NFKD" => "NFKD",
+            _ => "Uni",
+        },
         Value::Mixin(inner, _) => value_type_name(inner),
     }
 }

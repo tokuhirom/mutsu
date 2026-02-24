@@ -54,7 +54,8 @@ impl Value {
             | (Value::CompUnitDepSpec { .. }, Value::CompUnitDepSpec { .. })
             | (Value::Junction { .. }, Value::Junction { .. })
             | (Value::Promise(_), Value::Promise(_))
-            | (Value::Channel(_), Value::Channel(_)) => self == other,
+            | (Value::Channel(_), Value::Channel(_))
+            | (Value::Uni { .. }, Value::Uni { .. }) => self == other,
             // Cross-type comparisons always return false for eqv
             _ => false,
         }
@@ -119,6 +120,7 @@ impl Value {
             Value::Nil => false,
             Value::HyperWhatever => true,
             Value::Capture { positional, .. } => !positional.is_empty(),
+            Value::Uni { text, .. } => !text.is_empty(),
             Value::Mixin(inner, mixins) => {
                 if let Some(bool_val) = mixins.get("Bool") {
                     bool_val.truthy()
@@ -175,6 +177,7 @@ impl Value {
             Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
             Value::HyperWhatever => "HyperWhatever",
             Value::Capture { .. } => "Capture",
+            Value::Uni { form, .. } => form.as_str(),
             Value::Mixin(inner, _) => return inner.isa_check(type_name),
         };
         if my_type == type_name {
