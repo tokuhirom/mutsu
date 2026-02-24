@@ -157,6 +157,36 @@ impl VM {
             (Value::Hash(items), Value::Int(key)) => {
                 items.get(&key.to_string()).cloned().unwrap_or(Value::Nil)
             }
+            (
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                },
+                Value::Str(key),
+            ) if class_name == "Match" => {
+                if let Some(Value::Hash(named)) = attributes.get("named") {
+                    named.get(&key).cloned().unwrap_or(Value::Nil)
+                } else {
+                    Value::Nil
+                }
+            }
+            (
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                },
+                Value::Int(i),
+            ) if class_name == "Match" => {
+                if i < 0 {
+                    Value::Nil
+                } else if let Some(Value::Array(items, ..)) = attributes.get("list") {
+                    items.get(i as usize).cloned().unwrap_or(Value::Nil)
+                } else {
+                    Value::Nil
+                }
+            }
             (Value::Str(_), Value::Str(key)) => self
                 .interpreter
                 .env()

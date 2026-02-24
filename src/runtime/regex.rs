@@ -1,36 +1,105 @@
 use super::*;
 
 impl Interpreter {
+    fn regex_escape_literal(text: &str) -> String {
+        let mut out = String::new();
+        for ch in text.chars() {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                out.push(ch);
+            } else {
+                out.push('\\');
+                out.push(ch);
+            }
+        }
+        out
+    }
+
+    fn extract_sym_adverb(name: &str) -> Option<String> {
+        let marker = ":sym<";
+        let start = name.find(marker)? + marker.len();
+        let rest = &name[start..];
+        let end = rest.find('>')?;
+        Some(rest[..end].to_string())
+    }
+
+    fn instantiate_token_pattern(def: &FunctionDef, pattern: &str) -> String {
+        let Some(sym) = Self::extract_sym_adverb(&def.name) else {
+            return pattern.to_string();
+        };
+        let escaped = Self::regex_escape_literal(&sym);
+        pattern
+            .replace("<.sym>", &escaped)
+            .replace("<sym>", &escaped)
+    }
+
     fn token_pattern_from_def(def: &FunctionDef) -> Option<String> {
         match def.body.last() {
-            Some(Stmt::Expr(Expr::Literal(Value::Regex(p)))) => Some(p.clone()),
-            Some(Stmt::Expr(Expr::Literal(Value::Str(s)))) => Some(s.clone()),
-            Some(Stmt::Return(Expr::Literal(Value::Regex(p)))) => Some(p.clone()),
-            Some(Stmt::Return(Expr::Literal(Value::Str(s)))) => Some(s.clone()),
+            Some(Stmt::Expr(Expr::Literal(Value::Regex(p)))) => {
+                Some(Self::instantiate_token_pattern(def, p))
+            }
+            Some(Stmt::Expr(Expr::Literal(Value::Str(s)))) => {
+                Some(Self::instantiate_token_pattern(def, s))
+            }
+            Some(Stmt::Return(Expr::Literal(Value::Regex(p)))) => {
+                Some(Self::instantiate_token_pattern(def, p))
+            }
+            Some(Stmt::Return(Expr::Literal(Value::Str(s)))) => {
+                Some(Self::instantiate_token_pattern(def, s))
+            }
             _ => None,
         }
     }
 
-    fn resolve_token_pattern_static_in_pkg(
-        &self,
-        name: &str,
-        pkg: &str,
-    ) -> Option<(String, String)> {
+    fn resolve_token_patterns_static_in_pkg(&self, name: &str, pkg: &str) -> Vec<(String, String)> {
+        let mut out = Vec::new();
         if name.contains("::") {
-            let defs = self.token_defs.get(name)?;
-            for def in defs {
-                if let Some(p) = Self::token_pattern_from_def(def) {
-                    return Some((p, def.package.clone()));
+            if let Some(defs) = self.token_defs.get(name) {
+                for def in defs {
+                    if let Some(p) = Self::token_pattern_from_def(def) {
+                        out.push((p, def.package.clone()));
+                    }
                 }
             }
-            return None;
+            let sym_prefix = format!("{name}:sym<");
+            let mut sym_keys: Vec<&String> = self
+                .token_defs
+                .keys()
+                .filter(|key| key.starts_with(&sym_prefix))
+                .collect();
+            sym_keys.sort();
+            for key in sym_keys {
+                if let Some(defs) = self.token_defs.get(key) {
+                    for def in defs {
+                        if let Some(p) = Self::token_pattern_from_def(def) {
+                            out.push((p, def.package.clone()));
+                        }
+                    }
+                }
+            }
+            return out;
         }
         if !pkg.is_empty() {
             let local = format!("{}::{}", pkg, name);
             if let Some(defs) = self.token_defs.get(&local) {
                 for def in defs {
                     if let Some(p) = Self::token_pattern_from_def(def) {
-                        return Some((p, def.package.clone()));
+                        out.push((p, def.package.clone()));
+                    }
+                }
+            }
+            let sym_prefix = format!("{pkg}::{name}:sym<");
+            let mut sym_keys: Vec<&String> = self
+                .token_defs
+                .keys()
+                .filter(|key| key.starts_with(&sym_prefix))
+                .collect();
+            sym_keys.sort();
+            for key in sym_keys {
+                if let Some(defs) = self.token_defs.get(key) {
+                    for def in defs {
+                        if let Some(p) = Self::token_pattern_from_def(def) {
+                            out.push((p, def.package.clone()));
+                        }
                     }
                 }
             }
@@ -39,11 +108,27 @@ impl Interpreter {
         if let Some(defs) = self.token_defs.get(&global) {
             for def in defs {
                 if let Some(p) = Self::token_pattern_from_def(def) {
-                    return Some((p, def.package.clone()));
+                    out.push((p, def.package.clone()));
                 }
             }
         }
-        None
+        let sym_prefix = format!("GLOBAL::{name}:sym<");
+        let mut sym_keys: Vec<&String> = self
+            .token_defs
+            .keys()
+            .filter(|key| key.starts_with(&sym_prefix))
+            .collect();
+        sym_keys.sort();
+        for key in sym_keys {
+            if let Some(defs) = self.token_defs.get(key) {
+                for def in defs {
+                    if let Some(p) = Self::token_pattern_from_def(def) {
+                        out.push((p, def.package.clone()));
+                    }
+                }
+            }
+        }
+        out
     }
 
     #[allow(dead_code)]
@@ -495,20 +580,29 @@ impl Interpreter {
             } else {
                 (false, name.as_str())
             };
-            if let Some((sub_pat, sub_pkg)) =
-                self.resolve_token_pattern_static_in_pkg(lookup_name, pkg)
-            {
+            let candidates = self.resolve_token_patterns_static_in_pkg(lookup_name, pkg);
+            if !candidates.is_empty() {
                 let remaining: String = chars[pos..].iter().collect();
-                if let Some(len) =
-                    self.regex_match_len_at_start_in_pkg(&sub_pat, &remaining, &sub_pkg)
-                {
-                    return Some(pos + len);
+                let mut best_len: Option<usize> = None;
+                for (sub_pat, sub_pkg) in candidates {
+                    if let Some(len) =
+                        self.regex_match_len_at_start_in_pkg(&sub_pat, &remaining, &sub_pkg)
+                    {
+                        let better = best_len.map(|current| len > current).unwrap_or(true);
+                        if better {
+                            best_len = Some(len);
+                        }
+                    }
                 }
-                return None;
+                return best_len.map(|len| pos + len);
             }
             if lookup_name == "ws" {
                 let _ = silent;
-                return Some(pos);
+                let mut next = pos;
+                while next < chars.len() && chars[next].is_whitespace() {
+                    next += 1;
+                }
+                return Some(next);
             }
         }
         if pos >= chars.len() {
@@ -650,7 +744,11 @@ impl Interpreter {
                     let mut new_caps = current_caps.clone();
                     // Merge inner captures (nested capture groups)
                     for (k, v) in &inner_caps.named {
-                        new_caps.named.insert(k.clone(), v.clone());
+                        new_caps
+                            .named
+                            .entry(k.clone())
+                            .or_default()
+                            .extend(v.clone());
                     }
                     for v in &inner_caps.positional {
                         new_caps.positional.push(v.clone());
@@ -679,38 +777,60 @@ impl Interpreter {
             } else {
                 (false, name.as_str())
             };
-            if let Some((sub_pat, sub_pkg)) =
-                self.resolve_token_pattern_static_in_pkg(lookup_name, pkg)
-            {
+            let candidates = self.resolve_token_patterns_static_in_pkg(lookup_name, pkg);
+            if !candidates.is_empty() {
                 let tail: Vec<char> = chars[pos..].to_vec();
-                if let Some(parsed) = self.parse_regex(&sub_pat)
-                    && let Some((inner_end, inner_caps)) =
-                        self.regex_match_end_from_caps_in_pkg(&parsed, &tail, 0, &sub_pkg)
-                {
+                let mut best: Option<(usize, RegexCaptures)> = None;
+                for (sub_pat, sub_pkg) in candidates {
+                    if let Some(parsed) = self.parse_regex(&sub_pat)
+                        && let Some((inner_end, inner_caps)) =
+                            self.regex_match_end_from_caps_in_pkg(&parsed, &tail, 0, &sub_pkg)
+                    {
+                        let better = best
+                            .as_ref()
+                            .map(|(best_end, _)| inner_end > *best_end)
+                            .unwrap_or(true);
+                        if better {
+                            best = Some((inner_end, inner_caps));
+                        }
+                    }
+                }
+                if let Some((inner_end, inner_caps)) = best {
                     let end = pos + inner_end;
                     let mut new_caps = current_caps.clone();
                     for (k, v) in inner_caps.named {
-                        new_caps.named.insert(k, v);
+                        new_caps.named.entry(k).or_default().extend(v);
                     }
                     for v in inner_caps.positional {
                         new_caps.positional.push(v);
                     }
                     if !silent {
                         let captured: String = chars[pos..end].iter().collect();
-                        new_caps.named.insert(lookup_name.to_string(), captured);
+                        new_caps
+                            .named
+                            .entry(lookup_name.to_string())
+                            .or_default()
+                            .push(captured);
                     }
                     return Some((end, new_caps));
                 }
                 return None;
             }
             if lookup_name == "ws" {
+                let mut end = pos;
+                while end < chars.len() && chars[end].is_whitespace() {
+                    end += 1;
+                }
                 let mut new_caps = current_caps.clone();
                 if !silent {
+                    let captured: String = chars[pos..end].iter().collect();
                     new_caps
                         .named
-                        .insert(lookup_name.to_string(), String::new());
+                        .entry(lookup_name.to_string())
+                        .or_default()
+                        .push(captured);
                 }
-                return Some((pos, new_caps));
+                return Some((end, new_caps));
             }
         }
         if pos >= chars.len() {
@@ -725,7 +845,11 @@ impl Interpreter {
                 if chars[pos..pos + name_chars.len()] == name_chars[..] {
                     let captured: String = name_chars.iter().collect();
                     let mut new_caps = current_caps.clone();
-                    new_caps.named.insert(name.clone(), captured);
+                    new_caps
+                        .named
+                        .entry(name.clone())
+                        .or_default()
+                        .push(captured);
                     return Some((pos + name_chars.len(), new_caps));
                 }
                 None
@@ -762,7 +886,12 @@ impl Interpreter {
         env.insert("/".to_string(), Value::array(match_list));
         // Set named captures
         for (k, v) in &caps.named {
-            env.insert(format!("<{}>", k), Value::Str(v.clone()));
+            let value = if v.len() == 1 {
+                Value::Str(v[0].clone())
+            } else {
+                Value::array(v.iter().cloned().map(Value::Str).collect())
+            };
+            env.insert(format!("<{}>", k), value);
         }
         // Evaluate the code in a fresh interpreter with this env
         let mut interp = Interpreter {

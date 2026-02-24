@@ -359,21 +359,27 @@ impl Interpreter {
                         }
                         literal.push(ch);
                     }
-                    // Expand to a sequence of literal atoms
                     let lit_chars: Vec<char> = literal.chars().collect();
                     if lit_chars.is_empty() {
                         // Empty string literal matches zero-width
-                        continue;
+                        RegexAtom::ZeroWidth
+                    } else if lit_chars.len() == 1 {
+                        RegexAtom::Literal(lit_chars[0])
+                    } else {
+                        let tokens = lit_chars
+                            .into_iter()
+                            .map(|ch| RegexToken {
+                                atom: RegexAtom::Literal(ch),
+                                quant: RegexQuant::One,
+                            })
+                            .collect();
+                        RegexAtom::Group(RegexPattern {
+                            tokens,
+                            anchor_start: false,
+                            anchor_end: false,
+                            ignore_case,
+                        })
                     }
-                    // Push all but the last char as One-quantified literals
-                    for &lc in &lit_chars[..lit_chars.len() - 1] {
-                        tokens.push(RegexToken {
-                            atom: RegexAtom::Literal(lc),
-                            quant: RegexQuant::One,
-                        });
-                    }
-                    // The last char will get any quantifier attached below
-                    RegexAtom::Literal(*lit_chars.last().unwrap())
                 }
                 '<' => {
                     // Check for code assertion: <?{...}> or <!{...}>

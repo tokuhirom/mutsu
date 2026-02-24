@@ -129,7 +129,7 @@ struct RegexPattern {
 
 #[derive(Clone, Default)]
 struct RegexCaptures {
-    named: HashMap<String, String>,
+    named: HashMap<String, Vec<String>>,
     positional: Vec<String>,
     matched: String,
     from: usize,

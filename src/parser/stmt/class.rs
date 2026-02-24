@@ -383,6 +383,12 @@ pub(super) fn token_decl(input: &str) -> PResult<'_, Stmt> {
     pattern = normalize_token_pattern(&pattern);
     if is_rule {
         pattern = inject_implicit_rule_ws(&pattern);
+        if name.contains(":sym<") {
+            if !pattern.ends_with(' ') {
+                pattern.push(' ');
+            }
+            pattern.push_str("<.ws>?");
+        }
     }
     let body = vec![Stmt::Expr(Expr::Literal(Value::Regex(pattern)))];
 

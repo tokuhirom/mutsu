@@ -40,6 +40,7 @@ impl Interpreter {
                             start as i64,
                             end as i64,
                             &captures.positional,
+                            &captures.named,
                         );
                         self.env.insert("/".to_string(), match_obj);
                     }
@@ -49,7 +50,12 @@ impl Interpreter {
                     }
                     // Set named capture variables
                     for (k, v) in &captures.named {
-                        self.env.insert(format!("<{}>", k), Value::Str(v.clone()));
+                        let value = if v.len() == 1 {
+                            Value::Str(v[0].clone())
+                        } else {
+                            Value::array(v.iter().cloned().map(Value::Str).collect())
+                        };
+                        self.env.insert(format!("<{}>", k), value);
                     }
                     return true;
                 }
