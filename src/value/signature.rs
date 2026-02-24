@@ -199,8 +199,10 @@ fn render_param(p: &SigParam) -> String {
     }
 
     // Named param with alias sub-signature: :name(sub-sig)
-    if p.named && p.sub_signature.is_some() && !p.name.is_empty() {
-        let sub = p.sub_signature.as_ref().unwrap();
+    if p.named
+        && !p.name.is_empty()
+        && let Some(sub) = p.sub_signature.as_ref()
+    {
         let sub_parts: Vec<String> = sub.iter().map(render_param).collect();
         result.push_str(&p.name);
         result.push('(');
