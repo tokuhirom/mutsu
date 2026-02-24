@@ -2926,11 +2926,30 @@ impl Interpreter {
         Ok(build_supply(emitted))
     }
 
-    fn dispatch_sort(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(crate) fn dispatch_sort(
+        &mut self,
+        target: Value,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
         match target {
             Value::Array(mut items, ..) => {
                 let items_mut = Arc::make_mut(&mut items);
-                if let Some(Value::Sub(data)) = args.first().cloned() {
+                // Handle Routine comparator (e.g. &[<=>], &infix:<+>)
+                if let Some(comparator @ Value::Routine { .. }) = args.first().cloned() {
+                    items_mut.sort_by(|a, b| {
+                        let call_args = vec![a.clone(), b.clone()];
+                        match self.eval_call_on_value(comparator.clone(), call_args) {
+                            Ok(result) => match &result {
+                                Value::Int(n) => n.cmp(&0),
+                                Value::Enum {
+                                    enum_type, value, ..
+                                } if enum_type == "Order" => value.cmp(&0),
+                                _ => std::cmp::Ordering::Equal,
+                            },
+                            Err(_) => std::cmp::Ordering::Equal,
+                        }
+                    });
+                } else if let Some(Value::Sub(data)) = args.first().cloned() {
                     let is_key_extractor = data.params.len() <= 1;
                     if is_key_extractor {
                         items_mut.sort_by(|a, b| {

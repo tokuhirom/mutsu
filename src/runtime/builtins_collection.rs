@@ -271,7 +271,25 @@ impl Interpreter {
         })
     }
 
-    pub(super) fn builtin_sort(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_sort(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // sort(comparator, list) or sort(list)
+        if args.len() >= 2 {
+            let first = &args[0];
+            // Check if first arg is a callable (comparator function)
+            if matches!(first, Value::Sub(_) | Value::Routine { .. }) {
+                let comparator = first.clone();
+                let mut items: Vec<Value> = Vec::new();
+                for arg in args.iter().skip(1) {
+                    match arg {
+                        Value::Array(elems, ..) => items.extend(elems.iter().cloned()),
+                        Value::Seq(elems) => items.extend(elems.iter().cloned()),
+                        other => items.push(other.clone()),
+                    }
+                }
+                // Delegate to dispatch_sort which handles all callable types
+                return self.dispatch_sort(Value::array(items), &[comparator]);
+            }
+        }
         let val = args.first().cloned();
         Ok(match val {
             Some(Value::Array(mut items, ..)) => {

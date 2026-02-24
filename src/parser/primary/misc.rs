@@ -35,28 +35,93 @@ const REDUCTION_OPS: &[&str] = &[
     "cmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",", "after", "before", "X",
 ];
 
-/// Parse a reduction operator: [+], [*], [~], [min], [max], [gcd], [lcm], [||], [&&], etc.
+/// Find the matching `]` for a `[` at position 0, respecting nesting.
+fn find_matching_bracket(input: &str) -> Option<usize> {
+    let mut depth = 0;
+    for (i, c) in input.char_indices() {
+        match c {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Flatten nested bracket operator notation into a simple string.
+/// e.g., "+" → "+", "R-" → "R-", "R[+]" → "R+", "[+]" → "+", "R[R[R-]]" → "RRR-"
+fn flatten_bracket_op(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+    let first = s.as_bytes()[0];
+    // Handle plain bracket: [op] → flatten(op)
+    if first == b'['
+        && let Some(end) = find_matching_bracket(s)
+    {
+        let inner = &s[1..end];
+        return flatten_bracket_op(inner);
+    }
+    // Handle meta + bracket: R[op] → R + flatten(op)
+    if (first == b'R' || first == b'Z' || first == b'X')
+        && s.len() > 1
+        && s.as_bytes()[1] == b'['
+        && let Some(end) = find_matching_bracket(&s[1..])
+    {
+        let inner = &s[2..1 + end];
+        let flattened_inner = flatten_bracket_op(inner);
+        let rest = &s[1 + end + 1..];
+        return format!("{}{}{}", first as char, flattened_inner, rest);
+    }
+    s.to_string()
+}
+
+/// Check if the given op (after flattening) is a valid reduction operator.
+/// Handles R/Z/X meta-prefix chains by stripping them to find the base op.
+fn is_valid_reduction_op(op: &str) -> bool {
+    let mut s = op;
+    // Strip meta prefixes while keeping bare operators like `X` intact.
+    while s.len() > 1 {
+        if let Some(rest) = s.strip_prefix('R') {
+            s = rest;
+        } else if let Some(rest) = s.strip_prefix('Z') {
+            s = rest;
+        } else if let Some(rest) = s.strip_prefix('X') {
+            s = rest;
+        } else {
+            break;
+        }
+    }
+    // Also support scan form (\op) and negated operators (!after)
+    let s = s.strip_prefix('\\').unwrap_or(s);
+    let s = s.strip_prefix('!').unwrap_or(s);
+    REDUCTION_OPS.contains(&s)
+}
+
+/// Parse a reduction operator: [+], [*], [~], [min], [[+]], [R[+]], etc.
 pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
     if !input.starts_with('[') {
         return Err(PError::expected("reduction operator"));
     }
-    let r = &input[1..];
-    // Find the closing ]
-    let end = r
-        .find(']')
-        .ok_or_else(|| PError::expected("']' closing reduction"))?;
-    let op = &r[..end];
-    if op.is_empty() {
+    // Use bracket-matching to find the closing ] (supports nesting)
+    let end =
+        find_matching_bracket(input).ok_or_else(|| PError::expected("']' closing reduction"))?;
+    let inner = &input[1..end];
+    if inner.is_empty() {
         return Err(PError::expected("operator in reduction"));
     }
-    // Only accept known operators to avoid confusion with array literals.
-    // Also support scan/meta form [\op] and negated operators like [!after].
-    let op_no_scan = op.strip_prefix('\\').unwrap_or(op);
-    let base_op = op_no_scan.strip_prefix('!').unwrap_or(op_no_scan);
-    if !REDUCTION_OPS.contains(&base_op) {
+    // Flatten nested bracket notation: [[+]] → "+", [R[+]] → "R+"
+    let op = flatten_bracket_op(inner);
+    // Only accept known operators (after flattening) to avoid confusion with array literals.
+    if !is_valid_reduction_op(&op) {
         return Err(PError::expected("known reduction operator"));
     }
-    let r = &r[end + 1..];
+    let r = &input[end + 1..];
     // Must be followed by whitespace and an expression (not just `]`)
     if r.is_empty() || r.starts_with(';') || r.starts_with('}') || r.starts_with(')') {
         return Err(PError::expected("expression after reduction operator"));
@@ -101,7 +166,7 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
     Ok((
         rest,
         Expr::Reduction {
-            op: op.to_string(),
+            op,
             expr: Box::new(expr),
         },
     ))

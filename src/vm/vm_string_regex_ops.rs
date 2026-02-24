@@ -161,7 +161,15 @@ impl VM {
         let meta = Self::const_str(code, meta_idx).to_string();
         let op = Self::const_str(code, op_idx).to_string();
         let result = match meta.as_str() {
-            "R" => Interpreter::apply_reduction_op(&op, &right, &left)?,
+            "R" => {
+                if op == "..." || op == "...^" {
+                    let exclude_end = op == "...^";
+                    self.interpreter
+                        .eval_sequence_values(right, left, exclude_end)?
+                } else {
+                    Interpreter::apply_reduction_op(&op, &right, &left)?
+                }
+            }
             "X" => {
                 let left_list = runtime::value_to_list(&left);
                 let right_list = runtime::value_to_list(&right);
@@ -263,7 +271,17 @@ impl VM {
                 Value::Str(rendered)
             }
         } else {
-            Value::Nil
+            // Try user-defined infix:<name> function
+            let infix_name = format!("infix:<{}>", name);
+            let right_val = right_vals.first().cloned().unwrap_or(Value::Nil);
+            if let Some(result) = self.try_user_infix(&infix_name, &left_val, &right_val)? {
+                result
+            } else {
+                return Err(RuntimeError::new(format!(
+                    "Unknown infix function: {}",
+                    name
+                )));
+            }
         };
         self.stack.push(result);
         Ok(())

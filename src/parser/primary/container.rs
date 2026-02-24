@@ -139,7 +139,13 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
 }
 
 fn finalize_paren_list(items: Vec<Expr>) -> Expr {
-    Expr::ArrayLiteral(lift_meta_ops_in_paren_list(items))
+    let lifted = lift_meta_ops_in_paren_list(items);
+    // If lifting produced a single MetaOp, return it unwrapped
+    // (the Z/X meta-op already produces a list result)
+    if lifted.len() == 1 && matches!(&lifted[0], Expr::MetaOp { .. }) {
+        return lifted.into_iter().next().unwrap();
+    }
+    Expr::ArrayLiteral(lifted)
 }
 
 fn lift_meta_ops_in_paren_list(items: Vec<Expr>) -> Vec<Expr> {
