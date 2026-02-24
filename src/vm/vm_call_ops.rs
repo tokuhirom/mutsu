@@ -184,6 +184,45 @@ impl VM {
         Ok(())
     }
 
+    pub(super) fn exec_call_method_dynamic_op(
+        &mut self,
+        code: &CompiledCode,
+        arity: u32,
+    ) -> Result<(), RuntimeError> {
+        let arity = arity as usize;
+        if self.stack.len() < arity + 2 {
+            return Err(RuntimeError::new("VM stack underflow in CallMethodDynamic"));
+        }
+        let start = self.stack.len() - arity;
+        let raw_args: Vec<Value> = self.stack.drain(start..).collect();
+        let mut args = Vec::new();
+        for arg in raw_args {
+            match arg {
+                Value::Slip(items) => args.extend(items.iter().cloned()),
+                other => args.push(other),
+            }
+        }
+        let name_val = self
+            .stack
+            .pop()
+            .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamic name"))?;
+        let method = name_val.to_string_value();
+        let target = self
+            .stack
+            .pop()
+            .ok_or_else(|| RuntimeError::new("VM stack underflow in CallMethodDynamic target"))?;
+        let call_result =
+            if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
+                native_result
+            } else {
+                self.interpreter
+                    .call_method_with_values(target, &method, args)
+            };
+        self.stack.push(call_result?);
+        self.sync_locals_from_env(code);
+        Ok(())
+    }
+
     pub(super) fn exec_call_method_mut_op(
         &mut self,
         code: &CompiledCode,

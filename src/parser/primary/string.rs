@@ -493,7 +493,7 @@ pub(super) fn finalize_interpolation(parts: Vec<Expr>, current: String) -> Expr 
 }
 
 /// Interpolate variables in string content (used by qq// etc.)
-pub(super) fn interpolate_string_content(content: &str) -> Expr {
+pub(in crate::parser) fn interpolate_string_content(content: &str) -> Expr {
     let mut parts: Vec<Expr> = Vec::new();
     let mut current = String::new();
     let mut rest = content;

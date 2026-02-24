@@ -423,7 +423,7 @@ mod tests {
     fn parse_dynamic_quoted_method_call() {
         let (rest, expr) = expression("$_.\"$k\"()").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::MethodCall { .. }));
+        assert!(matches!(expr, Expr::DynamicMethodCall { .. }));
     }
 
     #[test]

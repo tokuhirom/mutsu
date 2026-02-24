@@ -768,6 +768,10 @@ impl VM {
                 self.exec_call_method_op(code, *name_idx, *arity, *modifier_idx)?;
                 *ip += 1;
             }
+            OpCode::CallMethodDynamic { arity } => {
+                self.exec_call_method_dynamic_op(code, *arity)?;
+                *ip += 1;
+            }
             OpCode::CallMethodMut {
                 name_idx,
                 arity,
