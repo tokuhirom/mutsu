@@ -816,6 +816,19 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "X::TypeCheck::Argument".to_string(),
+            ClassDef {
+                parents: vec!["Exception".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec![
+                    "X::TypeCheck::Argument".to_string(),
+                    "Exception".to_string(),
+                ],
+            },
+        );
+        classes.insert(
             "X::TypeCheck::Assignment".to_string(),
             ClassDef {
                 parents: vec!["Exception".to_string()],

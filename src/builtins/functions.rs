@@ -338,7 +338,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             Value::Hash(items) => Some(Ok(Value::Int(items.len() as i64))),
             Value::Str(s) => Some(Ok(Value::Int(s.chars().count() as i64))),
             Value::LazyList(_) => None,
-            _ => Some(Ok(Value::Int(0))),
+            _ => Some(Ok(Value::Int(1))),
         },
         "reverse" => Some(Ok(match arg {
             Value::Array(items, ..) => {
