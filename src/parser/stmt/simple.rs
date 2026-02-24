@@ -2,6 +2,8 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use regex::Regex;
+
 use super::super::expr::expression;
 use super::super::helpers::{ws, ws1};
 use super::super::parse_result::{
@@ -384,22 +386,59 @@ fn extract_exported_names(source: &str) -> Vec<String> {
     SCOPES.with(|s| {
         *s.borrow_mut() = saved_scopes;
     });
-    let mut names = Vec::new();
+    let mut names = HashSet::new();
     for stmt in &stmts {
         match stmt {
             Stmt::SubDecl {
                 name, is_export, ..
             } if *is_export => {
-                names.push(name.clone());
+                names.insert(name.clone());
             }
             Stmt::ProtoDecl {
                 name, is_export, ..
             } if *is_export => {
-                names.push(name.clone());
+                names.insert(name.clone());
             }
             _ => {}
         }
     }
+    // Fallback scan for modules that use syntax not yet fully covered by parse_program_partial.
+    // This keeps imported exported-callables discoverable for statement-call parsing.
+    for name in extract_exported_names_fallback(source) {
+        names.insert(name);
+    }
+
+    let mut names: Vec<String> = names.into_iter().collect();
+    names.sort();
+    names
+}
+
+fn extract_exported_names_fallback(source: &str) -> Vec<String> {
+    // `sub foo(...) is export`
+    // `multi sub foo(...) is export`
+    // `proto sub foo(|) is export`
+    let sub_re = Regex::new(
+        r"\b(?:our\s+)?(?:proto\s+|multi\s+)?sub\s+([A-Za-z_][A-Za-z0-9_'\-]*)\b[^;{]*\bis\s+export\b",
+    )
+    .expect("valid exported-sub regex");
+    // `proto foo(|) is export` (without the `sub` keyword)
+    let proto_re = Regex::new(r"\bproto\s+([A-Za-z_][A-Za-z0-9_'\-]*)\b[^;{]*\bis\s+export\b")
+        .expect("valid exported-proto regex");
+
+    let mut names = HashSet::new();
+    for caps in sub_re.captures_iter(source) {
+        if let Some(name) = caps.get(1) {
+            names.insert(name.as_str().to_string());
+        }
+    }
+    for caps in proto_re.captures_iter(source) {
+        if let Some(name) = caps.get(1) {
+            names.insert(name.as_str().to_string());
+        }
+    }
+
+    let mut names: Vec<String> = names.into_iter().collect();
+    names.sort();
     names
 }
 
@@ -505,6 +544,26 @@ fn check_io_func_followed_by_loop<'a>(name: &str, rest_after_ws: &'a str) -> PRe
         }
     }
     Ok((rest_after_ws, ()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_exported_names;
+
+    #[test]
+    fn extract_exported_names_fallback_handles_proto_and_kebab_case_names() {
+        let source = r#"
+proto sub is_run(|) is export {*}
+sub get_out(Str $code, :@compiler-args) is export { }
+proto doesn't-hang(|) is export {*}
+sub helper() { }
+"#;
+        let names = extract_exported_names(source);
+        assert!(names.contains(&"is_run".to_string()));
+        assert!(names.contains(&"get_out".to_string()));
+        assert!(names.contains(&"doesn't-hang".to_string()));
+        assert!(!names.contains(&"helper".to_string()));
+    }
 }
 
 /// Parse a `say` statement.

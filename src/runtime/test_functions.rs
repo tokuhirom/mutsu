@@ -799,6 +799,26 @@ impl Interpreter {
             if let Some(Value::Int(pid)) = self.env.get("*PID") {
                 nested.set_pid(pid.saturating_add(1));
             }
+            // Apply supported compiler args in in-process mode.
+            // `-I <path>` must behave like CLI include paths for module loading.
+            let mut i = 0usize;
+            while i < compiler_args.len() {
+                if compiler_args[i] == "-I" {
+                    if let Some(path) = compiler_args.get(i + 1)
+                        && !path.is_empty()
+                    {
+                        nested.add_lib_path(path.clone());
+                    }
+                    i += 2;
+                    continue;
+                }
+                if let Some(path) = compiler_args[i].strip_prefix("-I")
+                    && !path.is_empty()
+                {
+                    nested.add_lib_path(path.to_string());
+                }
+                i += 1;
+            }
             if let Some(items) = run_args {
                 nested.set_args(items);
             }

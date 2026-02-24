@@ -1206,7 +1206,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::UseLibPath => {
-                self.exec_use_lib_path_op(code);
+                self.exec_use_lib_path_op(code)?;
                 *ip += 1;
             }
             OpCode::PushImportScope => {
