@@ -217,6 +217,13 @@ pub(super) fn parse_param_list_pub(input: &str) -> PResult<'_, Vec<crate::ast::P
     parse_param_list(input)
 }
 
+/// Public accessor for parse_param_list_with_return (used by signature literals).
+pub(super) fn parse_param_list_with_return_pub(
+    input: &str,
+) -> PResult<'_, (Vec<crate::ast::ParamDef>, Option<String>)> {
+    sub::parse_param_list_with_return(input)
+}
+
 /// Public accessor for constant declaration parser (used by primary.rs in expression context).
 pub(super) fn constant_decl_pub(input: &str) -> PResult<'_, Stmt> {
     decl::constant_decl(input)

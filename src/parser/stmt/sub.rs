@@ -452,8 +452,14 @@ pub(super) fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
 /// Skip a return type annotation (--> Type) in a signature.
 /// Consumes whitespace, a type name (possibly with :D/:U), and any trailing whitespace.
 pub(super) fn skip_return_type_annotation(input: &str) -> Result<&str, PError> {
+    let (rest, _type_name) = parse_return_type_annotation(input)?;
+    Ok(rest)
+}
+
+/// Parse a return type annotation (--> Type) and return both remainder and type name.
+pub(super) fn parse_return_type_annotation(input: &str) -> PResult<'_, String> {
     let (rest, _) = ws(input)?;
-    // Consume the type name (identifier, possibly with :: qualifications)
+    let start = rest;
     let mut rest = rest;
     while !rest.is_empty() && !rest.starts_with(')') && !rest.starts_with(',') {
         let ch = rest.chars().next().unwrap();
@@ -463,8 +469,71 @@ pub(super) fn skip_return_type_annotation(input: &str) -> Result<&str, PError> {
             break;
         }
     }
+    let type_name = start[..start.len() - rest.len()].to_string();
     let (rest, _) = ws(rest)?;
-    Ok(rest)
+    Ok((rest, type_name))
+}
+
+/// Parse parameter list with return type annotation.
+/// Returns (remaining input, params, optional return type).
+pub(super) fn parse_param_list_with_return(
+    input: &str,
+) -> PResult<'_, (Vec<ParamDef>, Option<String>)> {
+    let mut params = Vec::new();
+    let mut return_type = None;
+    let mut rest = input;
+    if rest.starts_with(')') {
+        return Ok((rest, (params, None)));
+    }
+    if let Some(stripped) = rest.strip_prefix("-->") {
+        let (r, rt) = parse_return_type_annotation(stripped)?;
+        return Ok((r, (params, Some(rt))));
+    }
+    let (r, p) = parse_single_param(rest)?;
+    params.push(p);
+    rest = r;
+    loop {
+        let (r, _) = ws(rest)?;
+        if let Some(r) = r.strip_prefix(':') {
+            let (r, _) = ws(r)?;
+            if r.starts_with(')') {
+                return Ok((r, (params, return_type)));
+            }
+            rest = r;
+            continue;
+        }
+        if let Some(r) = r.strip_prefix(';') {
+            let (r, _) = ws(r)?;
+            if r.starts_with(')') {
+                return Ok((r, (params, return_type)));
+            }
+            let (r, p) = parse_single_param(r)?;
+            params.push(p);
+            rest = r;
+            continue;
+        }
+        if !r.starts_with(',') {
+            if let Some(stripped) = r.strip_prefix("-->") {
+                let (r, rt) = parse_return_type_annotation(stripped)?;
+                return_type = Some(rt);
+                return Ok((r, (params, return_type)));
+            }
+            return Ok((r, (params, return_type)));
+        }
+        let (r, _) = parse_char(r, ',')?;
+        let (r, _) = ws(r)?;
+        if r.starts_with(')') {
+            return Ok((r, (params, return_type)));
+        }
+        if let Some(stripped) = r.strip_prefix("-->") {
+            let (r, rt) = parse_return_type_annotation(stripped)?;
+            return_type = Some(rt);
+            return Ok((r, (params, return_type)));
+        }
+        let (r, p) = parse_single_param(r)?;
+        params.push(p);
+        rest = r;
+    }
 }
 
 /// Helper to construct a default ParamDef with only required fields.
@@ -482,16 +551,23 @@ fn make_param(name: String) -> ParamDef {
         sub_signature: None,
         where_constraint: None,
         traits: Vec::new(),
+        optional_marker: false,
+        outer_sub_signature: None,
+        code_signature: None,
     }
 }
 
-fn parse_required_suffix(input: &str) -> (&str, bool) {
+/// Returns (rest, required, optional_marker).
+/// `!` → required=true, optional_marker=false
+/// `?` → required=false, optional_marker=true
+/// neither → required=false, optional_marker=false
+fn parse_required_suffix(input: &str) -> (&str, bool, bool) {
     if let Some(rest) = input.strip_prefix('!') {
-        (rest, true)
+        (rest, true, false)
     } else if let Some(rest) = input.strip_prefix('?') {
-        (rest, false)
+        (rest, false, true)
     } else {
-        (input, false)
+        (input, false, false)
     }
 }
 
@@ -509,6 +585,18 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     let mut named = false;
     let mut slurpy = false;
     let mut type_constraint = None;
+
+    // Array sub-signature: [Type1, Type2, ...] → anonymous @ with sub-sig
+    if rest.starts_with('[') {
+        let (r, _) = parse_char(rest, '[')?;
+        let (r, _) = ws(r)?;
+        let (r, sub_params) = parse_param_list(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ']')?;
+        let mut p = make_param("@".to_string());
+        p.sub_signature = Some(sub_params);
+        return Ok((r, p));
+    }
 
     // Capture-all: (|), (|$c), (|c), or capture sub-signature forms like | ($x)
     if let Some(stripped) = rest.strip_prefix('|') {
@@ -584,14 +672,34 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         rest = &rest[1..];
     }
 
-    // Named param marker: :$name
-    if rest.starts_with(':') {
+    // Named param marker: :$name (but not :: which is a parametric type prefix)
+    if rest.starts_with(':') && !rest.starts_with("::") {
         named = true;
         rest = &rest[1..];
     }
 
     // Type constraint (may be qualified: IO::Path)
-    if let Ok((r, tc)) = qualified_ident(rest) {
+    // Skip type constraint parsing for named params with lowercase identifiers followed by '('
+    // Parametric type constraint: ::T
+    if let Some(after_colon) = rest.strip_prefix("::")
+        && let Ok((r, tc_name)) = ident(after_colon)
+    {
+        let tc = format!("::{}", tc_name);
+        let (r2, _) = ws(r)?;
+        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
+            type_constraint = Some(tc);
+            rest = r2;
+        }
+    }
+
+    // — those are named aliases like :x($r), not type constraints.
+    let skip_type_for_named_alias = named
+        && rest
+            .as_bytes()
+            .first()
+            .is_some_and(|b| b.is_ascii_lowercase())
+        && rest.contains('(');
+    if !skip_type_for_named_alias && let Ok((r, tc)) = qualified_ident(rest) {
         // Preserve type smileys :D, :U, :_ as part of the type constraint
         let (r, tc) = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
             let smiley = &r[..2];
@@ -656,7 +764,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 p.named = named;
                 p.slurpy = slurpy;
                 // Handle optional (?) / required (!) suffix after sub-signature
-                let (rest, required) = parse_required_suffix(r3);
+                let (rest, required, opt_marker) = parse_required_suffix(r3);
                 // Skip whitespace
                 let (rest, _) = ws(rest)?;
                 // Handle is copy, is rw, is readonly, is raw traits
@@ -671,6 +779,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 }
                 p.traits = param_traits;
                 p.required = required;
+                p.optional_marker = opt_marker;
                 // Handle where constraint
                 let (rest, where_constraint) = if let Some(r) = keyword("where", rest) {
                     let (r, _) = ws1(r)?;
@@ -704,7 +813,11 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 named = true;
                 rest = &rest[1..];
             }
-        } else if r2.starts_with(')') || r2.starts_with(',') {
+        } else if r2.starts_with(')')
+            || r2.starts_with(',')
+            || r2.starts_with(']')
+            || r2.starts_with("-->")
+        {
             // Bare identifier as type-only parameter (e.g., enum values in multi dispatch)
             // multi infix:<->(e1, e2) { ... }
             let mut p = make_param("__type_only__".to_string());
@@ -828,11 +941,35 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 p.double_slurpy = double_slurpy;
                 p.type_constraint = type_constraint;
                 p.sub_signature = Some(sub_params.clone());
-                // Handle optional (?) / required (!) suffix after alias
-                let mut rest = r3;
-                if rest.starts_with('?') || rest.starts_with('!') {
-                    rest = &rest[1..];
+                // Check for a sub-signature after the alias: :x($r) (Str $g, Any $i)
+                let (r3, _) = ws(r3)?;
+                if r3.starts_with('(') {
+                    let (r4, _) = parse_char(r3, '(')?;
+                    let (r4, _) = ws(r4)?;
+                    let (r4, outer_sub) = parse_param_list(r4)?;
+                    let (r4, _) = ws(r4)?;
+                    let (r3_new, _) = parse_char(r4, ')')?;
+                    p.outer_sub_signature = Some(outer_sub);
+                    let (rest, alias_required, alias_opt_marker) = parse_required_suffix(r3_new);
+                    p.required = alias_required;
+                    p.optional_marker = alias_opt_marker;
+                    let (rest, _) = ws(rest)?;
+                    let mut param_traits = Vec::new();
+                    let (mut rest, _) = ws(rest)?;
+                    while let Some(r) = keyword("is", rest) {
+                        let (r, _) = ws1(r)?;
+                        let (r, trait_name) = ident(r)?;
+                        param_traits.push(trait_name);
+                        let (r, _) = ws(r)?;
+                        rest = r;
+                    }
+                    p.traits = param_traits;
+                    return Ok((rest, p));
                 }
+                // Handle optional (?) / required (!) suffix after alias
+                let (rest, alias_required, alias_opt_marker) = parse_required_suffix(r3);
+                p.required = alias_required;
+                p.optional_marker = alias_opt_marker;
                 // Skip whitespace
                 let (rest, _) = ws(rest)?;
                 // Handle is copy, is rw, is readonly, is raw traits
@@ -865,7 +1002,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             p.type_constraint = type_constraint;
             p.sub_signature = Some(sub_params);
             // Handle optional (?) / required (!) suffix after sub-signature
-            let (rest, required) = parse_required_suffix(r3);
+            let (rest, required, opt_marker) = parse_required_suffix(r3);
             // Skip whitespace
             let (rest, _) = ws(rest)?;
             // Handle is copy, is rw, is readonly, is raw traits
@@ -880,6 +1017,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             }
             p.traits = param_traits;
             p.required = required;
+            p.optional_marker = opt_marker;
             // Handle where constraint
             let (rest, where_constraint) = if let Some(r) = keyword("where", rest) {
                 let (r, _) = ws1(r)?;
@@ -902,7 +1040,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             || after_q.starts_with('\t')
             || after_q.starts_with('\n'))
     {
-        let mut p = make_param("__ANON_STATE__".to_string());
+        let mut p = make_param("__ANON_OPTIONAL__".to_string());
         p.named = named;
         p.slurpy = slurpy;
         p.double_slurpy = double_slurpy;
@@ -910,10 +1048,97 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((after_q, p));
     }
 
+    // Bare & (anonymous callable parameter)
+    if rest.starts_with('&')
+        && (rest.len() == 1
+            || rest.as_bytes()[1] == b','
+            || rest.as_bytes()[1] == b')'
+            || rest.as_bytes()[1] == b' '
+            || rest.as_bytes()[1] == b'\t'
+            || rest.as_bytes()[1] == b'\n'
+            || rest.as_bytes()[1] == b'?'
+            || rest.as_bytes()[1] == b'!')
+    {
+        let rest = &rest[1..];
+        let (rest, required, opt_marker) = parse_required_suffix(rest);
+        let mut p = make_param("&".to_string());
+        p.named = named;
+        p.slurpy = slurpy;
+        p.double_slurpy = double_slurpy;
+        p.type_constraint = type_constraint;
+        p.required = required;
+        p.optional_marker = opt_marker;
+        return Ok((rest, p));
+    }
+
+    // Capture the original sigil before var_name strips it
+    let original_sigil = rest.as_bytes().first().copied().unwrap_or(b'$');
     let (rest, name) = var_name(rest)?;
+
+    // Code signature constraint: &foo:(Str --> Bool)
+    let mut code_sig = None;
+    let rest = if original_sigil == b'&' && rest.starts_with(":(") {
+        let r = &rest[1..]; // skip ':'
+        let (r, _) = parse_char(r, '(')?;
+        let (r, _) = ws(r)?;
+        let (r, (sig_params, sig_ret)) = parse_param_list_with_return(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ')')?;
+        code_sig = Some((sig_params, sig_ret));
+        r
+    } else {
+        rest
+    };
+
     // Optional (?) / required (!) suffix
-    let (rest, required) = parse_required_suffix(rest);
+    let (rest, required, opt_marker) = parse_required_suffix(rest);
     let (rest, _) = ws(rest)?;
+
+    // Sub-signature after variable: $x ($a, $b) or $ ($a, $b)
+    if rest.starts_with('(') {
+        let (r, _) = parse_char(rest, '(')?;
+        let (r, _) = ws(r)?;
+        let (r, sub_params) = parse_param_list(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ')')?;
+        let (r, _) = ws(r)?;
+        // Handle optional (?) / required (!) suffix after sub-signature
+        let (r, post_required, post_opt_marker) = parse_required_suffix(r);
+        let (r, _) = ws(r)?;
+        let mut param_traits = Vec::new();
+        let (mut r, _) = ws(r)?;
+        while let Some(r2) = keyword("is", r) {
+            let (r2, _) = ws1(r2)?;
+            let (r2, trait_name) = ident(r2)?;
+            param_traits.push(trait_name);
+            let (r2, _) = ws(r2)?;
+            r = r2;
+        }
+        let param_name = if slurpy {
+            match slurpy_sigil {
+                Some('%') => format!("%{}", name),
+                Some('@') => format!("@{}", name),
+                _ => name,
+            }
+        } else {
+            match original_sigil {
+                b'@' => format!("@{}", name),
+                b'%' => format!("%{}", name),
+                b'&' => format!("&{}", name),
+                _ => name,
+            }
+        };
+        let mut p = make_param(param_name);
+        p.required = required || post_required;
+        p.optional_marker = opt_marker || post_opt_marker;
+        p.named = named;
+        p.slurpy = slurpy;
+        p.double_slurpy = double_slurpy;
+        p.type_constraint = type_constraint;
+        p.sub_signature = Some(sub_params);
+        p.traits = param_traits;
+        return Ok((r, p));
+    }
 
     // Default value
     let (rest, mut default) = if rest.starts_with('=') && !rest.starts_with("==") {
@@ -958,8 +1183,8 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         default = late_default;
     }
 
-    // For slurpy params, prefix the name with the sigil so runtime can
-    // distinguish *@array from *%hash
+    // Prefix the name with the sigil so runtime can distinguish types.
+    // For slurpy params, use the slurpy_sigil; for non-slurpy, use original_sigil.
     let param_name = if slurpy {
         match slurpy_sigil {
             Some('%') => format!("%{}", name),
@@ -967,17 +1192,24 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             _ => name,
         }
     } else {
-        name
+        match original_sigil {
+            b'@' => format!("@{}", name),
+            b'%' => format!("%{}", name),
+            b'&' => format!("&{}", name),
+            _ => name,
+        }
     };
     let mut p = make_param(param_name);
     p.default = default;
     p.required = required;
+    p.optional_marker = opt_marker;
     p.named = named;
     p.slurpy = slurpy;
     p.double_slurpy = double_slurpy;
     p.type_constraint = type_constraint;
     p.where_constraint = where_constraint;
     p.traits = param_traits;
+    p.code_signature = code_sig;
     Ok((rest, p))
 }
 

@@ -2248,6 +2248,9 @@ impl Interpreter {
                             sub_signature: None,
                             where_constraint: None,
                             traits: Vec::new(),
+                            optional_marker: false,
+                            outer_sub_signature: None,
+                            code_signature: None,
                         })
                         .collect(),
                     body: sub_data.body.clone(),

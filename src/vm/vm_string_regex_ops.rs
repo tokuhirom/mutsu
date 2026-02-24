@@ -166,6 +166,8 @@ impl VM {
                     let exclude_end = op == "...^";
                     self.interpreter
                         .eval_sequence_values(right, left, exclude_end)?
+                } else if op == "~~" {
+                    Value::Bool(self.interpreter.smart_match_values(&right, &left))
                 } else {
                     Interpreter::apply_reduction_op(&op, &right, &left)?
                 }
@@ -178,6 +180,12 @@ impl VM {
                     for l in &left_list {
                         for r in &right_list {
                             results.push(Value::array(vec![l.clone(), r.clone()]));
+                        }
+                    }
+                } else if op == "~~" {
+                    for l in &left_list {
+                        for r in &right_list {
+                            results.push(Value::Bool(self.interpreter.smart_match_values(l, r)));
                         }
                     }
                 } else {

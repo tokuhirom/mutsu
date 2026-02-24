@@ -2,6 +2,7 @@ use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 
 use crate::ast::{Expr, Stmt, make_anon_sub};
 use crate::value::Value;
+use crate::value::signature::{make_signature_value, param_defs_to_sig_info};
 
 use super::super::expr::expression;
 use super::super::helpers::{split_angle_words, ws};
@@ -178,10 +179,21 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         .strip_prefix(':')
         .filter(|r| !r.starts_with(':'))
         .ok_or_else(|| PError::expected("colonpair"))?;
-    // :(...): pair-list/lvalue form used in constructs like
-    // `:(:$a is raw) := \(:a($b))`.
+    // :(...): signature literal.
     if let Some(mut r) = r.strip_prefix('(') {
         let (r2, _) = ws(r)?;
+        // Preferred path: parse using the full parameter list parser.
+        if let Ok((r3, (param_defs, return_type))) =
+            super::super::stmt::parse_param_list_with_return_pub(r2)
+            && let Ok((r3, _)) = ws(r3)
+            && let Ok((r3, _)) = parse_char(r3, ')')
+        {
+            let sig_info = param_defs_to_sig_info(&param_defs, return_type);
+            return Ok((r3, Expr::Literal(make_signature_value(sig_info))));
+        }
+
+        // Fallback path: permissive parsing for legacy forms like :(:$a = True)
+        // used in roast tests around Test::Assuming.
         r = r2;
         let mut items = Vec::new();
         if r.starts_with(')') {
@@ -209,21 +221,18 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 Err(_) => expression(item_input)?,
             };
             let (mut r_next, _) = ws(r_item)?;
-            // Optional traits after a pair-lvalue item: `is raw`, etc.
             while let Some(after_is) = keyword("is", r_next) {
                 let (after_is, _) = ws(after_is)?;
                 let (after_is, _trait_name) = parse_ident_with_hyphens(after_is)?;
                 let (after_is, _) = ws(after_is)?;
                 r_next = after_is;
             }
-            // Optional where constraint after a pair-lvalue item.
             if let Some(after_where) = keyword("where", r_next) {
                 let (after_where, _) = ws(after_where)?;
                 let (after_where, _constraint) = expression(after_where)?;
                 let (after_where, _) = ws(after_where)?;
                 r_next = after_where;
             }
-            // Optional assignment in signature-like colonpair items: :$a = True
             if let Some(after_eq) = r_next.strip_prefix('=')
                 && let Expr::Binary { left, op, .. } = &item
                 && *op == crate::token_kind::TokenKind::FatArrow

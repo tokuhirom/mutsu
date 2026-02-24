@@ -69,8 +69,10 @@ impl Interpreter {
                     output.push('\n');
                     continue;
                 } else {
-                    // Not a block — cancel skip
+                    // Not a block: treat as single-line skip target.
+                    output.push_str(&format!("skip '{}', 1;\n", reason));
                     skip_block_pending = None;
+                    continue;
                 }
             }
             // Inside a skipped block: track braces and emit skip for test lines
@@ -209,17 +211,28 @@ impl Interpreter {
                     output.push('\n');
                     continue;
                 }
-                // Block-level skip (no count prefix): skip next block
-                let block_reason = if let Some(start) = after_prefix.find('\'') {
-                    if let Some(end) = after_prefix[start + 1..].find('\'') {
-                        after_prefix[start + 1..start + 1 + end].to_string()
+                // Skip without count: skip next block if it starts with '{',
+                // otherwise skip the next non-comment line.
+                let after_skip = after_prefix
+                    .strip_prefix("skip")
+                    .unwrap_or(after_prefix)
+                    .trim_start();
+                skip_reason = if let Some(start) = after_skip.find('"') {
+                    if let Some(end) = after_skip[start + 1..].find('"') {
+                        after_skip[start + 1..start + 1 + end].to_string()
+                    } else {
+                        "skip".to_string()
+                    }
+                } else if let Some(start) = after_skip.find('\'') {
+                    if let Some(end) = after_skip[start + 1..].find('\'') {
+                        after_skip[start + 1..start + 1 + end].to_string()
                     } else {
                         "skip".to_string()
                     }
                 } else {
                     "skip".to_string()
                 };
-                skip_block_pending = Some(block_reason);
+                skip_block_pending = Some(skip_reason.clone());
                 output.push('\n');
                 continue;
             }

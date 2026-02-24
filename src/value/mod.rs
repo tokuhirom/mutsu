@@ -8,6 +8,7 @@ use std::sync::{Arc, Condvar, Mutex, Weak};
 
 mod display;
 mod error;
+pub(crate) mod signature;
 mod types;
 
 pub use display::{tclc_str, wordcase_str};
