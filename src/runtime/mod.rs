@@ -335,7 +335,7 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: [
                     "emit", "tap", "repeated", "do", "reverse", "split", "tail", "min", "collate",
-                    "Supply",
+                    "Supply", "Promise",
                 ]
                 .iter()
                 .map(|s| s.to_string())
@@ -349,7 +349,7 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["emit", "done", "Supply"]
+                native_methods: ["emit", "done", "quit", "Supply"]
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),

@@ -254,7 +254,13 @@ impl VM {
                 target,
                 Value::Instance { class_name, .. } if class_name == "Supply"
             ) || matches!(target, Value::Package(name) if name == "Supply"));
-        if bypass_supply_extrema_fastpath {
+        let bypass_supplier_supply_fastpath = method == "Supply"
+            && args.is_empty()
+            && matches!(
+                target,
+                Value::Instance { class_name, .. } if class_name == "Supplier"
+            );
+        if bypass_supply_extrema_fastpath || bypass_supplier_supply_fastpath {
             return None;
         }
         if args.len() == 2 {
