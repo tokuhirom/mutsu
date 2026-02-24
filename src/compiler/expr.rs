@@ -398,6 +398,34 @@ impl Compiler {
                     }
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
                     self.code.emit(OpCode::CallFunc { name_idx, arity });
+                }
+                // Rewrite cas($var, &fn) to assignment expression:
+                // $var = fn($var)
+                else if name == "cas" && args.len() == 2 {
+                    let var_name = match &args[0] {
+                        Expr::Var(n) => Some(n.clone()),
+                        Expr::ArrayVar(n) => Some(format!("@{}", n)),
+                        Expr::HashVar(n) => Some(format!("%{}", n)),
+                        Expr::CodeVar(n) => Some(format!("&{}", n)),
+                        _ => None,
+                    };
+                    if let Some(vname) = var_name {
+                        let assign_expr = Expr::AssignExpr {
+                            name: vname,
+                            expr: Box::new(Expr::CallOn {
+                                target: Box::new(args[1].clone()),
+                                args: vec![args[0].clone()],
+                            }),
+                        };
+                        self.compile_expr(&assign_expr);
+                    } else {
+                        let arity = args.len() as u32;
+                        for arg in args {
+                            self.compile_expr(arg);
+                        }
+                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        self.code.emit(OpCode::CallFunc { name_idx, arity });
+                    }
                 } else {
                     // Rewrite VAR($var)/VAR(@var)/VAR(%var)/VAR(&var) → $var.VAR, etc.
                     if name == "VAR"

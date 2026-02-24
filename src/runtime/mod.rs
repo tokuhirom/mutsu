@@ -303,6 +303,10 @@ impl Interpreter {
         env.insert("*PID".to_string(), Value::Int(std::process::id() as i64));
         env.insert("@*ARGS".to_string(), Value::array(Vec::new()));
         env.insert("*INIT-INSTANT".to_string(), Value::make_instant_now());
+        env.insert(
+            "*SCHEDULER".to_string(),
+            Value::make_instance("ThreadPoolScheduler".to_string(), HashMap::new()),
+        );
         let mut classes = HashMap::new();
         classes.insert(
             "Promise".to_string(),
@@ -402,7 +406,7 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: HashSet::new(),
+                native_methods: ["cancel"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["Tap".to_string()],
             },
         );
@@ -412,7 +416,7 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: HashSet::new(),
+                native_methods: ["cue"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["ThreadPoolScheduler".to_string()],
             },
         );
@@ -422,8 +426,18 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: HashSet::new(),
+                native_methods: ["cue"].iter().map(|s| s.to_string()).collect(),
                 mro: vec!["CurrentThreadScheduler".to_string()],
+            },
+        );
+        classes.insert(
+            "Cancellation".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: ["cancel"].iter().map(|s| s.to_string()).collect(),
+                mro: vec!["Cancellation".to_string()],
             },
         );
         classes.insert(
