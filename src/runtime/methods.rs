@@ -105,10 +105,18 @@ impl Interpreter {
                 self.output.push_str(&target.to_string_value());
                 return Ok(Value::Nil);
             }
+            "put" if args.is_empty() => {
+                self.output.push_str(&crate::runtime::gist_value(&target));
+                self.output.push('\n');
+                return Ok(Value::Nil);
+            }
             "note" if args.is_empty() => {
                 let content = format!("{}\n", gist_value(&target));
                 self.write_to_named_handle("$*ERR", &content, false)?;
                 return Ok(Value::Nil);
+            }
+            "return-rw" if args.is_empty() => {
+                return Ok(target);
             }
             "encode" => {
                 let encoding = args

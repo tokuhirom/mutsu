@@ -457,12 +457,13 @@ impl VM {
         tc_idx: u32,
     ) -> Result<(), RuntimeError> {
         let constraint = Self::const_str(code, tc_idx);
+        let (base_constraint, _) = crate::runtime::types::strip_type_smiley(constraint);
         let value = self.stack.last().expect("TypeCheck: empty stack");
-        if runtime::is_known_type_constraint(constraint) {
+        if runtime::is_known_type_constraint(base_constraint) {
             if !matches!(value, Value::Nil)
                 && !self.interpreter.type_matches_value(constraint, value)
             {
-                let coerced = match constraint {
+                let coerced = match base_constraint {
                     "Str" => Some(Value::Str(crate::runtime::utils::coerce_to_str(value))),
                     _ => None,
                 };
@@ -472,7 +473,8 @@ impl VM {
                     return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
                 }
             }
-        } else if !self.interpreter.has_type(constraint) && !is_core_raku_type(constraint) {
+        } else if !self.interpreter.has_type(base_constraint) && !is_core_raku_type(base_constraint)
+        {
             // Unknown user-defined type — reject it
             return Err(RuntimeError::new(format!(
                 "Type '{}' is not declared",

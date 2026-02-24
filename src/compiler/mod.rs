@@ -91,20 +91,33 @@ impl Compiler {
             && let Some(sub_params) = &def.sub_signature
         {
             let target_name = param.as_deref().unwrap_or("_").to_string();
+            let mut positional_index = 0usize;
             for sub in sub_params {
-                if !sub.named || sub.name.is_empty() {
+                if sub.name.is_empty() {
                     continue;
                 }
-                bind_stmts.push(Stmt::Assign {
-                    name: sub.name.clone(),
-                    expr: Expr::MethodCall {
-                        target: Box::new(Expr::Var(target_name.clone())),
+                if sub.named {
+                    bind_stmts.push(Stmt::Assign {
                         name: sub.name.clone(),
-                        args: Vec::new(),
-                        modifier: None,
-                    },
-                    op: AssignOp::Assign,
-                });
+                        expr: Expr::MethodCall {
+                            target: Box::new(Expr::Var(target_name.clone())),
+                            name: sub.name.clone(),
+                            args: Vec::new(),
+                            modifier: None,
+                        },
+                        op: AssignOp::Assign,
+                    });
+                } else {
+                    bind_stmts.push(Stmt::Assign {
+                        name: sub.name.clone(),
+                        expr: Expr::Index {
+                            target: Box::new(Expr::Var(target_name.clone())),
+                            index: Box::new(Expr::Literal(Value::Int(positional_index as i64))),
+                        },
+                        op: AssignOp::Assign,
+                    });
+                    positional_index += 1;
+                }
             }
         }
         for (i, p) in params.iter().enumerate() {

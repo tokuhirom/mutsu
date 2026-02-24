@@ -241,7 +241,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }));
     }
     match method {
+        "self" => Some(Ok(target.clone())),
         "defined" => Some(Ok(Value::Bool(match target {
+            Value::Nil | Value::Package(_) => false,
+            Value::Slip(items) if items.is_empty() => false,
+            _ => true,
+        }))),
+        "DEFINITE" => Some(Ok(Value::Bool(match target {
             Value::Nil | Value::Package(_) => false,
             Value::Slip(items) if items.is_empty() => false,
             _ => true,

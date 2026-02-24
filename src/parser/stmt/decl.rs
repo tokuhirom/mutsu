@@ -14,6 +14,22 @@ use super::{
 use super::super::parse_result::take_while_opt;
 use super::{class_decl_body, method_decl_body, parse_comma_or_expr, sub_decl_body};
 
+fn strip_type_smiley_suffix(type_name: &str) -> &str {
+    type_name
+        .strip_suffix(":U")
+        .or_else(|| type_name.strip_suffix(":D"))
+        .or_else(|| type_name.strip_suffix(":_"))
+        .unwrap_or(type_name)
+}
+
+fn typed_default_expr(type_name: &str) -> Expr {
+    if strip_type_smiley_suffix(type_name) == "Mu" {
+        Expr::BareWord("Mu".to_string())
+    } else {
+        Expr::Literal(Value::Nil)
+    }
+}
+
 /// Parse a `use` statement.
 pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("use", input).ok_or_else(|| PError::expected("use statement"))?;
@@ -183,10 +199,25 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         return Ok((rest, stmt));
     }
 
-    // Sigilless variable: my \name = expr
+    // Sigilless variable: my \name = expr / my \name := expr
     if let Some(r) = rest.strip_prefix('\\') {
         let (r, name) = ident(r)?;
         let (r, _) = ws(r)?;
+        if let Some(r) = r.strip_prefix(":=") {
+            let (r, _) = ws(r)?;
+            let (r, expr) = parse_assign_expr_or_comma(r)?;
+            let stmt = Stmt::VarDecl {
+                name,
+                expr,
+                type_constraint: None,
+                is_state,
+                is_our,
+            };
+            if apply_modifier {
+                return parse_statement_modifier(r, stmt);
+            }
+            return Ok((r, stmt));
+        }
         if r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>") {
             let r = &r[1..];
             let (r, _) = ws(r)?;
@@ -220,6 +251,13 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         // Try to parse a type name followed by a sigil or \
         let saved = rest;
         if let Ok((r, tc)) = ident(rest) {
+            // Preserve type smileys :D, :U, :_ as part of the type constraint.
+            let (r, tc) = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
+                let smiley = &r[..2];
+                (&r[2..], format!("{}{}", tc, smiley))
+            } else {
+                (r, tc)
+            };
             // Check for coercion type syntax: Type(FromType)
             let (r, tc) = if let Some(inner) = r.strip_prefix('(') {
                 // Parse the coercion type: e.g. Str(Match)
@@ -252,10 +290,25 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         }
     };
 
-    // Sigilless variable after type: my Int \name = expr
+    // Sigilless variable after type: my Int \name = expr / my Int \name := expr
     if let Some(r) = rest.strip_prefix('\\') {
         let (r, name) = ident(r)?;
         let (r, _) = ws(r)?;
+        if let Some(r) = r.strip_prefix(":=") {
+            let (r, _) = ws(r)?;
+            let (r, expr) = parse_assign_expr_or_comma(r)?;
+            let stmt = Stmt::VarDecl {
+                name,
+                expr,
+                type_constraint,
+                is_state,
+                is_our,
+            };
+            if apply_modifier {
+                return parse_statement_modifier(r, stmt);
+            }
+            return Ok((r, stmt));
+        }
         if r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>") {
             let r = &r[1..];
             let (r, _) = ws(r)?;
@@ -276,7 +329,9 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             r,
             Stmt::VarDecl {
                 name,
-                expr: Expr::Literal(Value::Nil),
+                expr: type_constraint
+                    .as_deref()
+                    .map_or(Expr::Literal(Value::Nil), typed_default_expr),
                 type_constraint,
                 is_state,
                 is_our,
@@ -431,6 +486,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         Expr::Literal(Value::real_array(Vec::new()))
     } else if is_hash {
         Expr::Hash(Vec::new())
+    } else if let Some(tc) = type_constraint.as_deref() {
+        typed_default_expr(tc)
     } else {
         Expr::Literal(Value::Nil)
     };
