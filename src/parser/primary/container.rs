@@ -1,10 +1,10 @@
-use super::super::parse_result::{PError, PResult, parse_char, take_while_opt, take_while1};
+use super::super::parse_result::{PError, PResult, parse_char};
 
 use crate::ast::{Expr, Stmt};
 use crate::value::Value;
 
 use super::super::expr::{expression, expression_no_sequence};
-use super::super::helpers::ws;
+use super::super::helpers::{split_angle_words, ws};
 use super::super::stmt::keyword;
 
 /// Parse a parenthesized expression or list.
@@ -295,27 +295,15 @@ fn parse_quote_word_list(
     if reject_lt_operators && (input.starts_with('=') || input.starts_with('-')) {
         return Err(PError::expected("angle list"));
     }
-    let mut rest = input;
-    let mut words = Vec::new();
-    loop {
-        // Skip breaking whitespace (all Unicode whitespace except non-breaking spaces)
-        let (r, _) = take_while_opt(rest, |c: char| {
-            c.is_whitespace() && !is_non_breaking_space(c)
-        });
-        rest = r;
-        if rest.starts_with(close) {
-            rest = &rest[close.len_utf8()..];
-            break;
-        }
-        if rest.is_empty() {
-            return Err(PError::expected("closing quote-word delimiter"));
-        }
-        let (r, word) = take_while1(rest, |c: char| {
-            c != close && (!c.is_whitespace() || is_non_breaking_space(c))
-        })?;
-        words.push(word.to_string());
-        rest = r;
-    }
+    let Some(end) = input.find(close) else {
+        return Err(PError::expected("closing quote-word delimiter"));
+    };
+    let content = &input[..end];
+    let rest = &input[end + close.len_utf8()..];
+    let words: Vec<String> = split_angle_words(content)
+        .into_iter()
+        .map(str::to_string)
+        .collect();
     if words.len() == 1 {
         let word = words.into_iter().next().unwrap();
         Ok((rest, angle_word_expr(&word)))
@@ -324,12 +312,6 @@ fn parse_quote_word_list(
         Ok((rest, Expr::ArrayLiteral(exprs)))
     }
 }
-
-/// Returns true for non-breaking space characters that should not split words in `<...>`.
-fn is_non_breaking_space(c: char) -> bool {
-    matches!(c, '\u{00A0}' | '\u{2007}' | '\u{202F}' | '\u{FEFF}')
-}
-
 fn angle_word_expr(word: &str) -> Expr {
     // Raku `<...>` words are stringy, but numeric-looking words retain numeric semantics.
     if let Some((n, d)) = parse_angle_rat_word(word) {

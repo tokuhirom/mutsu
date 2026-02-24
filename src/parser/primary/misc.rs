@@ -4,7 +4,7 @@ use crate::ast::{Expr, Stmt, make_anon_sub};
 use crate::value::Value;
 
 use super::super::expr::expression;
-use super::super::helpers::ws;
+use super::super::helpers::{split_angle_words, ws};
 use super::super::stmt::keyword;
 use super::string::{double_quoted_string, single_quoted_string};
 use super::var::parse_ident_with_hyphens;
@@ -219,7 +219,7 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         if let Some(close) = inner.find('>') {
             let content = &inner[..close];
             let r = &inner[close + 1..];
-            let words: Vec<&str> = content.split_whitespace().collect();
+            let words = split_angle_words(content);
             if !words.is_empty() {
                 let val_expr = if words.len() == 1 {
                     Expr::Literal(Value::Str(words[0].to_string()))
@@ -615,7 +615,7 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
             .ok_or_else(|| PError::expected("'>' closing angle bracket"))?;
         let content = &r[..end];
         let r = &r[end + 1..];
-        let words: Vec<&str> = content.split_whitespace().collect();
+        let words = split_angle_words(content);
         if words.len() == 1 {
             return Ok((
                 r,

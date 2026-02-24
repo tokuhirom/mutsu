@@ -4,38 +4,17 @@ impl Interpreter {
     pub(super) fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
         let routine_snapshot = self.snapshot_routine_registry();
         let trimmed = code.trim();
-        // Handle angle-bracket word lists: <a b c>, ~<a b>, +<a b>, ?<a b>
-        // Only match when the entire expression is a word list with optional prefix
-        let wl = trimmed
-            .strip_prefix('~')
-            .or_else(|| trimmed.strip_prefix('+'))
-            .or_else(|| trimmed.strip_prefix('?'))
-            .unwrap_or(trimmed)
-            .trim();
-        if wl.starts_with('<') && wl.ends_with('>') && wl.matches('<').count() == 1 {
-            let prefix = if trimmed.starts_with('~') {
-                '~'
-            } else if trimmed.starts_with('+') {
-                '+'
-            } else if trimmed.starts_with('?') {
-                '?'
-            } else {
-                ' '
-            };
-            let inner = &wl[1..wl.len() - 1];
-            let words: Vec<&str> = inner.split_whitespace().collect();
-            let value = match prefix {
-                '~' => Value::Str(words.join(" ")),
-                '+' => Value::Int(words.len() as i64),
-                '?' => Value::Bool(!words.is_empty()),
-                _ => Value::Str(words.join(" ")),
-            };
-            self.restore_routine_registry(routine_snapshot);
-            return Ok(value);
-        }
         // General case: parse and evaluate as Raku code
-        let result = parse_dispatch::parse_source(trimmed)
+        let mut result = parse_dispatch::parse_source(trimmed)
             .and_then(|(stmts, _)| self.eval_block_value(&stmts));
+        // Fallback: parser still rejects forms like `~< foo bar >`.
+        // Rewrite to an equivalent parenthesized form and try again.
+        if result.is_err()
+            && let Some(rewritten) = rewrite_prefixed_angle_list(trimmed)
+        {
+            result = parse_dispatch::parse_source(&rewritten)
+                .and_then(|(stmts, _)| self.eval_block_value(&stmts));
+        }
         self.restore_routine_registry(routine_snapshot);
         result
     }
@@ -138,4 +117,21 @@ impl Interpreter {
             false
         }
     }
+}
+
+fn rewrite_prefixed_angle_list(code: &str) -> Option<String> {
+    let (prefix, rest) = if let Some(rest) = code.strip_prefix('~') {
+        ('~', rest)
+    } else if let Some(rest) = code.strip_prefix('+') {
+        ('+', rest)
+    } else if let Some(rest) = code.strip_prefix('?') {
+        ('?', rest)
+    } else {
+        return None;
+    };
+    let inner = rest.trim_start();
+    if !inner.starts_with('<') || !inner.ends_with('>') {
+        return None;
+    }
+    Some(format!("{}({})", prefix, inner))
 }
