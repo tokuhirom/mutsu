@@ -378,7 +378,7 @@ impl Compiler {
                         .iter()
                         .all(|arg| matches!(arg, CallArg::Positional(_)));
 
-                    if positional_only && Self::is_normalized_stmt_call_name(name) {
+                    if positional_only {
                         let expr_args: Vec<Expr> = rewritten_args
                             .iter()
                             .filter_map(|arg| match arg {
@@ -390,23 +390,6 @@ impl Compiler {
                             name: name.clone(),
                             args: expr_args,
                         });
-                        main_leaves_value = true;
-                        continue;
-                    }
-
-                    if positional_only
-                        && rewritten_args
-                            .iter()
-                            .all(|arg| matches!(arg, CallArg::Positional(_)))
-                    {
-                        let arity = rewritten_args.len() as u32;
-                        for arg in &rewritten_args {
-                            if let CallArg::Positional(expr) = arg {
-                                self.compile_expr(expr);
-                            }
-                        }
-                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                        self.code.emit(OpCode::ExecCall { name_idx, arity });
                         main_leaves_value = true;
                         continue;
                     }
@@ -449,7 +432,7 @@ impl Compiler {
                             }
                         }
                         let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                        self.code.emit(OpCode::ExecCallSlip {
+                        self.code.emit(OpCode::CallFuncSlip {
                             name_idx,
                             regular_arity: regular_count,
                         });
@@ -477,7 +460,7 @@ impl Compiler {
                         }
                     }
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                    self.code.emit(OpCode::ExecCallPairs {
+                    self.code.emit(OpCode::CallFunc {
                         name_idx,
                         arity: rewritten_args.len() as u32,
                     });
