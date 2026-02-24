@@ -6,6 +6,7 @@ DRY_RUN=0
 LIST_ONLY=0
 RUN_ALL=0
 PR_NUMBER=""
+POLL_INTERVAL_SECONDS=600
 
 usage() {
     cat <<USAGE
@@ -199,12 +200,11 @@ fi
 
 CANDIDATES="$(collect_candidates_tsv)"
 
-if [[ -z "$CANDIDATES" ]]; then
-    echo "No open PRs with conflicts or CI failures were found."
-    exit 0
-fi
-
 if [[ "$LIST_ONLY" -eq 1 ]]; then
+    if [[ -z "$CANDIDATES" ]]; then
+        echo "No open PRs with conflicts or CI failures were found."
+        exit 0
+    fi
     echo "Matched PRs (priority order):"
     while IFS=$'\t' read -r number reason head_ref title url; do
         echo "#$number [$reason] $head_ref :: $title"
@@ -214,12 +214,26 @@ if [[ "$LIST_ONLY" -eq 1 ]]; then
 fi
 
 if [[ "$RUN_ALL" -eq 1 ]]; then
+    if [[ -z "$CANDIDATES" ]]; then
+        echo "No open PRs with conflicts or CI failures were found."
+        exit 0
+    fi
     while IFS=$'\t' read -r number reason head_ref _title url; do
         run_for_pr "$number" "$reason" "$head_ref" "$url"
     done <<<"$CANDIDATES"
     exit 0
 fi
 
-FIRST="$(printf '%s\n' "$CANDIDATES" | head -n 1)"
-IFS=$'\t' read -r number reason head_ref _title url <<<"$FIRST"
-run_for_pr "$number" "$reason" "$head_ref" "$url"
+while true; do
+    if [[ -z "$CANDIDATES" ]]; then
+        echo "No open PRs with conflicts or CI failures were found. Sleeping ${POLL_INTERVAL_SECONDS}s..."
+        sleep "$POLL_INTERVAL_SECONDS"
+        CANDIDATES="$(collect_candidates_tsv)"
+        continue
+    fi
+
+    FIRST="$(printf '%s\n' "$CANDIDATES" | head -n 1)"
+    IFS=$'\t' read -r number reason head_ref _title url <<<"$FIRST"
+    run_for_pr "$number" "$reason" "$head_ref" "$url"
+    CANDIDATES="$(collect_candidates_tsv)"
+done
