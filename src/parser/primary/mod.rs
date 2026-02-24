@@ -100,6 +100,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(container::paren_expr(input));
         try_primary!(misc::reduction_op(input));
         try_primary!(container::array_literal(input));
+        try_primary!(container::double_angle_list(input));
         try_primary!(container::angle_list(input));
         try_primary!(container::french_quote_list(input));
         try_primary!(ident::whatever(input));

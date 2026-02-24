@@ -282,4 +282,22 @@ mod tests {
         let (stmts, _) = parse_program(src).unwrap();
         assert_eq!(stmts.len(), 1);
     }
+
+    #[test]
+    fn parse_program_accepts_double_angle_quote_word_list_with_quoted_word() {
+        let src = "my @str = <<do gjump sover \"\\r\\nth\" elaz yfo x>>;";
+        let (stmts, _) = parse_program(src).unwrap();
+        assert_eq!(stmts.len(), 1);
+        let Stmt::VarDecl { expr, .. } = &stmts[0] else {
+            panic!("expected VarDecl")
+        };
+        let Expr::ArrayLiteral(items) = expr else {
+            panic!("expected array literal")
+        };
+        assert_eq!(items.len(), 7);
+        assert!(matches!(
+            &items[3],
+            Expr::Literal(crate::value::Value::Str(s)) if s == "\r\nth"
+        ));
+    }
 }

@@ -141,6 +141,39 @@ impl VM {
                 };
                 Value::array(slice)
             }
+            (Value::Seq(items), Value::Int(i)) => {
+                if i < 0 {
+                    Value::Nil
+                } else {
+                    items.get(i as usize).cloned().unwrap_or(Value::Nil)
+                }
+            }
+            (Value::Seq(items), Value::Range(a, b)) => {
+                let start = a.max(0) as usize;
+                let end = b.max(-1) as usize;
+                let slice = if start >= items.len() {
+                    Vec::new()
+                } else {
+                    let end = end.min(items.len().saturating_sub(1));
+                    items[start..=end].to_vec()
+                };
+                Value::array(slice)
+            }
+            (Value::Seq(items), Value::RangeExcl(a, b)) => {
+                let start = a.max(0) as usize;
+                let end_excl = b.max(0) as usize;
+                let slice = if start >= items.len() {
+                    Vec::new()
+                } else {
+                    let end_excl = end_excl.min(items.len());
+                    if start >= end_excl {
+                        Vec::new()
+                    } else {
+                        items[start..end_excl].to_vec()
+                    }
+                };
+                Value::array(slice)
+            }
             (Value::Hash(items), Value::Num(f)) if f.is_infinite() && f > 0.0 => {
                 Value::array(items.values().cloned().collect())
             }

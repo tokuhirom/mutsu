@@ -234,6 +234,7 @@ roast/S17-scheduler/times.t
 roast/S17-supply/Promise.t
 roast/S17-supply/act.t
 roast/S17-supply/collate.t
+roast/S17-supply/decode.t
 roast/S17-supply/do.t
 roast/S17-supply/grab.t
 roast/S17-supply/grep.t

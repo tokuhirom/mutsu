@@ -365,6 +365,7 @@ impl Interpreter {
                     "emit",
                     "tap",
                     "act",
+                    "decode",
                     "repeated",
                     "do",
                     "reverse",
@@ -380,6 +381,26 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["Supply".to_string()],
+            },
+        );
+        classes.insert(
+            "utf8".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["utf8".to_string()],
+            },
+        );
+        classes.insert(
+            "utf16".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["utf16".to_string()],
             },
         );
         classes.insert(
