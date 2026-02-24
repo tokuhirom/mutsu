@@ -802,6 +802,30 @@ impl Interpreter {
                 return Ok(match target {
                     Value::Seq(_) => target,
                     Value::Array(items, ..) => Value::Seq(items),
+                    Value::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } if class_name == "Supply" => {
+                        let values = if let Some(on_demand_cb) =
+                            attributes.get("on_demand_callback")
+                        {
+                            let emitter = Value::make_instance("Supplier".to_string(), {
+                                let mut a = HashMap::new();
+                                a.insert("emitted".to_string(), Value::array(Vec::new()));
+                                a.insert("done".to_string(), Value::Bool(false));
+                                a
+                            });
+                            self.supply_emit_buffer.push(Vec::new());
+                            let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
+                            self.supply_emit_buffer.pop().unwrap_or_default()
+                        } else if let Some(Value::Array(v, ..)) = attributes.get("values") {
+                            v.to_vec()
+                        } else {
+                            Vec::new()
+                        };
+                        Value::Seq(std::sync::Arc::new(values))
+                    }
                     Value::LazyList(ll) => {
                         let items = Self::value_to_list(&Value::LazyList(ll));
                         Value::Seq(std::sync::Arc::new(items))
@@ -3243,6 +3267,23 @@ impl Interpreter {
                         attrs.insert("cwd".to_string(), Value::Str(cwd));
                     }
                     return Ok(Value::make_instance("IO::Path".to_string(), attrs));
+                }
+                "utf8" | "utf16" => {
+                    let elems: Vec<Value> = args
+                        .iter()
+                        .flat_map(|a| match a {
+                            Value::Int(i) => vec![Value::Int(*i)],
+                            Value::Array(items, ..) => items.to_vec(),
+                            Value::Range(start, end) => (*start..=*end).map(Value::Int).collect(),
+                            Value::RangeExcl(start, end) => {
+                                (*start..*end).map(Value::Int).collect()
+                            }
+                            _ => vec![],
+                        })
+                        .collect();
+                    let mut attrs = HashMap::new();
+                    attrs.insert("bytes".to_string(), Value::array(elems));
+                    return Ok(Value::make_instance(class_name.clone(), attrs));
                 }
                 "Buf" | "buf8" | "Buf[uint8]" | "Blob" | "blob8" | "Blob[uint8]" | "buf16"
                 | "buf32" | "buf64" | "blob16" | "blob32" | "blob64" => {

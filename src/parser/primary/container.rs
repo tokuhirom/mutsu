@@ -4,8 +4,12 @@ use crate::ast::{Expr, Stmt};
 use crate::value::Value;
 
 use super::super::expr::{expression, expression_no_sequence};
-use super::super::helpers::{split_angle_words, ws};
+use super::super::helpers::{is_non_breaking_space, split_angle_words, ws};
 use super::super::stmt::keyword;
+use super::string::{
+    double_quoted_string, single_quoted_string, smart_double_quoted_string,
+    smart_single_quoted_string,
+};
 
 /// Parse a parenthesized expression or list.
 pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
@@ -380,40 +384,149 @@ pub(super) fn percent_hash_literal(input: &str) -> PResult<'_, Expr> {
 
 /// Parse a < > quote-word list.
 pub(super) fn angle_list(input: &str) -> PResult<'_, Expr> {
-    parse_quote_word_list(input, '<', '>', true)
+    parse_quote_word_list(input, "<", ">", true, false)
 }
 
 /// Parse a « » quote-word list.
 pub(super) fn french_quote_list(input: &str) -> PResult<'_, Expr> {
-    parse_quote_word_list(input, '«', '»', false)
+    parse_quote_word_list(input, "«", "»", false, true)
 }
 
-fn parse_quote_word_list(
-    input: &str,
-    open: char,
-    close: char,
+/// Parse a << >> quote-word list.
+pub(super) fn double_angle_list(input: &str) -> PResult<'_, Expr> {
+    parse_quote_word_list(input, "<<", ">>", false, true)
+}
+
+fn parse_quote_word_list<'a>(
+    input: &'a str,
+    open: &str,
+    close: &str,
     reject_lt_operators: bool,
-) -> PResult<'_, Expr> {
-    let (input, _) = parse_char(input, open)?;
+    quoted_words: bool,
+) -> PResult<'a, Expr> {
+    let Some(input) = input.strip_prefix(open) else {
+        return Err(PError::expected("quote-word list"));
+    };
     // For `<...>`, make sure it's not <= or <=> etc.
     if reject_lt_operators && (input.starts_with('=') || input.starts_with('-')) {
         return Err(PError::expected("angle list"));
     }
-    let Some(end) = input.find(close) else {
+    let end = if quoted_words {
+        find_quote_word_close(input, close)
+    } else {
+        input.find(close)
+    };
+    let Some(end) = end else {
         return Err(PError::expected("closing quote-word delimiter"));
     };
     let content = &input[..end];
-    let rest = &input[end + close.len_utf8()..];
-    let words: Vec<String> = split_angle_words(content)
-        .into_iter()
-        .map(str::to_string)
-        .collect();
-    if words.len() == 1 {
-        let word = words.into_iter().next().unwrap();
-        Ok((rest, angle_word_expr(&word)))
+    let rest = &input[end + close.len()..];
+    let exprs = if quoted_words {
+        split_quotish_words(content)?
     } else {
-        let exprs: Vec<Expr> = words.into_iter().map(|w| angle_word_expr(&w)).collect();
+        split_angle_words(content)
+            .into_iter()
+            .map(angle_word_expr)
+            .collect()
+    };
+    if exprs.len() == 1 {
+        Ok((rest, exprs.into_iter().next().unwrap()))
+    } else {
         Ok((rest, Expr::ArrayLiteral(exprs)))
+    }
+}
+
+fn find_quote_word_close(input: &str, close: &str) -> Option<usize> {
+    let mut i = 0usize;
+    let mut quoted_by: Option<char> = None;
+    let mut escaped = false;
+    while i < input.len() {
+        let rest = &input[i..];
+        if quoted_by.is_none() && rest.starts_with(close) {
+            return Some(i);
+        }
+        let mut chars = rest.chars();
+        let ch = chars.next()?;
+        let ch_len = ch.len_utf8();
+        if let Some(quote) = quoted_by {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == quote {
+                quoted_by = None;
+            }
+        } else if ch == '"' || ch == '\'' || ch == '“' || ch == '‘' {
+            quoted_by = Some(match ch {
+                '"' => '"',
+                '\'' => '\'',
+                '“' => '”',
+                '‘' => '’',
+                _ => unreachable!(),
+            });
+        }
+        i += ch_len;
+    }
+    None
+}
+
+fn split_quotish_words(content: &str) -> Result<Vec<Expr>, PError> {
+    let mut words = Vec::new();
+    let mut rest = content;
+    loop {
+        rest = trim_breaking_ws(rest);
+        if rest.is_empty() {
+            break;
+        }
+        if let Some((r, quoted)) = parse_quoted_word(rest)? {
+            words.push(Expr::Literal(Value::Str(quoted)));
+            rest = r;
+            continue;
+        }
+        let word_len = rest
+            .char_indices()
+            .find_map(|(idx, c)| (c.is_whitespace() && !is_non_breaking_space(c)).then_some(idx))
+            .unwrap_or(rest.len());
+        let (word, r) = rest.split_at(word_len);
+        words.push(angle_word_expr(word));
+        rest = r;
+    }
+    Ok(words)
+}
+
+fn trim_breaking_ws(input: &str) -> &str {
+    let mut idx = 0usize;
+    for (i, c) in input.char_indices() {
+        if !c.is_whitespace() || is_non_breaking_space(c) {
+            idx = i;
+            break;
+        }
+        idx = i + c.len_utf8();
+    }
+    &input[idx..]
+}
+
+fn parse_quoted_word(input: &str) -> Result<Option<(&str, String)>, PError> {
+    if let Ok((rest, expr)) = single_quoted_string(input) {
+        return quoted_word_literal(rest, expr);
+    }
+    if let Ok((rest, expr)) = smart_single_quoted_string(input) {
+        return quoted_word_literal(rest, expr);
+    }
+    if let Ok((rest, expr)) = double_quoted_string(input) {
+        return quoted_word_literal(rest, expr);
+    }
+    if let Ok((rest, expr)) = smart_double_quoted_string(input) {
+        return quoted_word_literal(rest, expr);
+    }
+    Ok(None)
+}
+
+fn quoted_word_literal(rest: &str, expr: Expr) -> Result<Option<(&str, String)>, PError> {
+    if let Expr::Literal(Value::Str(s)) = expr {
+        Ok(Some((rest, s)))
+    } else {
+        Err(PError::expected("string literal word"))
     }
 }
 fn angle_word_expr(word: &str) -> Expr {

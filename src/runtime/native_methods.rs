@@ -2,6 +2,7 @@ use super::*;
 use std::process::ChildStdin;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use unicode_segmentation::UnicodeSegmentation;
 
 type StdinMap = std::sync::Mutex<HashMap<u32, Arc<std::sync::Mutex<Option<ChildStdin>>>>>;
 
@@ -353,6 +354,121 @@ impl Interpreter {
             }
         };
         Ok(parsed.clamp(0, total_len as i64) as usize)
+    }
+
+    fn translate_newlines_for_decode_native(&self, input: &str) -> String {
+        match self.newline_mode {
+            NewlineMode::Lf => input.to_string(),
+            NewlineMode::Cr => input.replace('\r', "\n"),
+            NewlineMode::Crlf => input.replace("\r\n", "\n"),
+        }
+    }
+
+    fn decode_bytes_for_supply(
+        &self,
+        bytes: &[u8],
+        encoding_name: &str,
+    ) -> Result<String, RuntimeError> {
+        let encoding = self
+            .find_encoding(encoding_name)
+            .map(|e| e.name.as_str())
+            .unwrap_or(encoding_name)
+            .to_lowercase();
+
+        match encoding.as_str() {
+            "ascii" => Ok(bytes
+                .iter()
+                .map(|b| if *b <= 0x7F { *b as char } else { '\u{FFFD}' })
+                .collect()),
+            "iso-8859-1" => Ok(bytes.iter().map(|b| *b as char).collect()),
+            "utf-16" | "utf-16le" => {
+                if !bytes.len().is_multiple_of(2) {
+                    return Err(RuntimeError::new("Invalid utf-16 byte length"));
+                }
+                let units: Vec<u16> = bytes
+                    .chunks_exact(2)
+                    .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+                    .collect();
+                Ok(String::from_utf16_lossy(&units))
+            }
+            "utf-16be" => {
+                if !bytes.len().is_multiple_of(2) {
+                    return Err(RuntimeError::new("Invalid utf-16be byte length"));
+                }
+                let units: Vec<u16> = bytes
+                    .chunks_exact(2)
+                    .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+                    .collect();
+                Ok(String::from_utf16_lossy(&units))
+            }
+            _ => {
+                if let Some(enc) = encoding_rs::Encoding::for_label(encoding.as_bytes()) {
+                    let (decoded, _used_encoding, _had_errors) = enc.decode(bytes);
+                    return Ok(decoded.into_owned());
+                }
+                Ok(String::from_utf8_lossy(bytes).into_owned())
+            }
+        }
+    }
+
+    fn supply_chunk_to_bytes(&self, chunk: &Value, encoding_name: &str) -> Vec<u8> {
+        let normalized = self
+            .find_encoding(encoding_name)
+            .map(|e| e.name.as_str())
+            .unwrap_or(encoding_name)
+            .to_lowercase();
+        match chunk {
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Buf" || class_name == "Blob" || class_name == "utf8" => {
+                if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                    return items
+                        .iter()
+                        .map(|v| match v {
+                            Value::Int(i) => *i as u8,
+                            _ => 0,
+                        })
+                        .collect();
+                }
+                Vec::new()
+            }
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "utf16" => {
+                if let Some(Value::Array(items, ..)) = attributes.get("bytes") {
+                    let use_be = normalized == "utf-16be";
+                    let mut bytes = Vec::with_capacity(items.len() * 2);
+                    for item in items.iter() {
+                        let unit = match item {
+                            Value::Int(i) => *i as u16,
+                            _ => 0u16,
+                        };
+                        let pair = if use_be {
+                            unit.to_be_bytes()
+                        } else {
+                            unit.to_le_bytes()
+                        };
+                        bytes.extend_from_slice(&pair);
+                    }
+                    return bytes;
+                }
+                Vec::new()
+            }
+            Value::Array(items, ..) => items
+                .iter()
+                .map(|v| match v {
+                    Value::Int(i) => *i as u8,
+                    _ => 0,
+                })
+                .collect(),
+            Value::Int(i) => vec![*i as u8],
+            Value::Str(s) => s.as_bytes().to_vec(),
+            other => other.to_string_value().into_bytes(),
+        }
     }
 
     /// Dispatch a mutable native instance method.
@@ -756,6 +872,52 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         match method {
+            "decode" => {
+                let encoding = args
+                    .first()
+                    .map(Value::to_string_value)
+                    .unwrap_or_else(|| "utf-8".to_string());
+                let source_values = match attributes.get("values") {
+                    Some(Value::Array(items, ..)) => items.to_vec(),
+                    _ => Vec::new(),
+                };
+
+                let mut emitted: Vec<Value> = Vec::new();
+                let mut carry = String::new();
+                for chunk in source_values {
+                    let bytes = self.supply_chunk_to_bytes(&chunk, &encoding);
+                    let decoded = self.decode_bytes_for_supply(&bytes, &encoding)?;
+                    let normalized = self.translate_newlines_for_decode_native(&decoded);
+                    let mut merged = String::new();
+                    merged.push_str(&carry);
+                    merged.push_str(&normalized);
+                    let graphemes: Vec<&str> = merged.graphemes(true).collect();
+                    if graphemes.is_empty() {
+                        carry.clear();
+                        continue;
+                    }
+                    let keep = graphemes.len().saturating_sub(1);
+                    if keep > 0 {
+                        emitted.push(Value::Str(graphemes[..keep].concat()));
+                    }
+                    carry = graphemes[keep].to_string();
+                }
+                if !carry.is_empty() {
+                    emitted.push(Value::Str(carry));
+                }
+
+                let mut new_attrs = HashMap::new();
+                new_attrs.insert("values".to_string(), Value::array(emitted));
+                new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                new_attrs.insert(
+                    "live".to_string(),
+                    attributes
+                        .get("live")
+                        .cloned()
+                        .unwrap_or(Value::Bool(false)),
+                );
+                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+            }
             "tail" => {
                 let values = match attributes.get("values") {
                     Some(Value::Array(items, ..)) => items.to_vec(),
