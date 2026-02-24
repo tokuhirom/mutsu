@@ -728,6 +728,7 @@ impl Interpreter {
                 }
                 Stmt::MethodDecl {
                     name: method_name,
+                    name_expr,
                     params,
                     param_defs,
                     body: method_body,
@@ -736,6 +737,12 @@ impl Interpreter {
                     is_private,
                 } => {
                     self.validate_private_access_in_stmts(name, method_body)?;
+                    let resolved_method_name = if let Some(expr) = name_expr {
+                        self.eval_block_value(&[Stmt::Expr(expr.clone())])?
+                            .to_string_value()
+                    } else {
+                        method_name.clone()
+                    };
                     let def = MethodDef {
                         params: params.clone(),
                         param_defs: param_defs.clone(),
@@ -746,11 +753,11 @@ impl Interpreter {
                     if *multi {
                         class_def
                             .methods
-                            .entry(method_name.clone())
+                            .entry(resolved_method_name)
                             .or_default()
                             .push(def);
                     } else {
-                        class_def.methods.insert(method_name.clone(), vec![def]);
+                        class_def.methods.insert(resolved_method_name, vec![def]);
                     }
                 }
                 Stmt::DoesDecl { name: role_name } => {
@@ -818,6 +825,7 @@ impl Interpreter {
                 }
                 Stmt::MethodDecl {
                     name: method_name,
+                    name_expr,
                     params,
                     param_defs,
                     body: method_body,
@@ -825,6 +833,12 @@ impl Interpreter {
                     is_rw,
                     is_private,
                 } => {
+                    let resolved_method_name = if let Some(expr) = name_expr {
+                        self.eval_block_value(&[Stmt::Expr(expr.clone())])?
+                            .to_string_value()
+                    } else {
+                        method_name.clone()
+                    };
                     let def = MethodDef {
                         params: params.clone(),
                         param_defs: param_defs.clone(),
@@ -835,11 +849,11 @@ impl Interpreter {
                     if *multi {
                         role_def
                             .methods
-                            .entry(method_name.clone())
+                            .entry(resolved_method_name)
                             .or_default()
                             .push(def);
                     } else {
-                        role_def.methods.insert(method_name.clone(), vec![def]);
+                        role_def.methods.insert(resolved_method_name, vec![def]);
                     }
                 }
                 _ => {

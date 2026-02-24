@@ -7,7 +7,7 @@ use crate::value::Value;
 
 use super::{block, ident, keyword, qualified_ident};
 
-use super::sub::parse_sub_name;
+use super::sub::{parse_indirect_decl_name, parse_sub_name};
 use super::{parse_param_list, parse_sub_traits};
 
 fn parse_declarator_traits(input: &str) -> PResult<'_, Vec<(String, Value)>> {
@@ -241,7 +241,13 @@ pub(crate) fn class_decl(input: &str) -> PResult<'_, Stmt> {
 
 /// Parse the body of a class declaration (after `class` keyword and whitespace).
 pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
-    let (rest, name) = qualified_ident(input)?;
+    let (rest, name, name_expr) = if input.starts_with("::") {
+        let (rest, (name, expr)) = parse_indirect_decl_name(input)?;
+        (rest, name, Some(expr))
+    } else {
+        let (rest, name) = qualified_ident(input)?;
+        (rest, name, None)
+    };
     let (rest, traits) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
 
@@ -268,6 +274,7 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
     let (rest, body) = block(r)?;
     let class_stmt = Stmt::ClassDecl {
         name: name.clone(),
+        name_expr,
         parents,
         body,
     };
@@ -476,6 +483,7 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
             r,
             Stmt::ClassDecl {
                 name,
+                name_expr: None,
                 parents: Vec::new(),
                 body: Vec::new(),
             },

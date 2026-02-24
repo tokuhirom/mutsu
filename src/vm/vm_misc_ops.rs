@@ -496,7 +496,12 @@ impl VM {
     pub(super) fn exec_indirect_type_lookup_op(&mut self) {
         let name_val = self.stack.pop().unwrap_or(Value::Nil);
         let name = name_val.to_string_value();
-        self.stack.push(Value::Package(name));
+        if let Some(code_name) = name.strip_prefix('&') {
+            self.stack
+                .push(self.interpreter.resolve_code_var(code_name));
+        } else {
+            self.stack.push(Value::Package(name));
+        }
     }
 
     pub(super) fn exec_state_var_init_op(&mut self, code: &CompiledCode, slot: u32, key_idx: u32) {
