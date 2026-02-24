@@ -2,6 +2,59 @@ use super::*;
 use crate::token_kind::TokenKind;
 
 impl Interpreter {
+    fn coerce_to_enum_variant(
+        &mut self,
+        enum_name: &str,
+        variants: &[(String, i64)],
+        value: Value,
+    ) -> Option<Value> {
+        let by_index = |idx: usize| -> Option<Value> {
+            variants.get(idx).map(|(key, val)| Value::Enum {
+                enum_type: enum_name.to_string(),
+                key: key.clone(),
+                value: *val,
+                index: idx,
+            })
+        };
+
+        match value {
+            Value::Enum {
+                enum_type, index, ..
+            } if enum_type == enum_name => by_index(index),
+            Value::Enum { value, .. } => variants
+                .iter()
+                .enumerate()
+                .find(|(_, (_, v))| *v == value)
+                .and_then(|(idx, _)| by_index(idx)),
+            Value::Int(int_value) => variants
+                .iter()
+                .enumerate()
+                .find(|(_, (_, v))| *v == int_value)
+                .and_then(|(idx, _)| by_index(idx)),
+            Value::Num(num_value) => {
+                if num_value.fract() == 0.0 {
+                    let int_value = num_value as i64;
+                    variants
+                        .iter()
+                        .enumerate()
+                        .find(|(_, (_, v))| *v == int_value)
+                        .and_then(|(idx, _)| by_index(idx))
+                } else {
+                    None
+                }
+            }
+            Value::Str(name) => variants
+                .iter()
+                .enumerate()
+                .find(|(_, (key, _))| *key == name)
+                .and_then(|(idx, _)| by_index(idx)),
+            other => self
+                .call_method_with_values(other, enum_name, vec![])
+                .ok()
+                .and_then(|resolved| self.coerce_to_enum_variant(enum_name, variants, resolved)),
+        }
+    }
+
     pub(crate) fn eval_call_on_value(
         &mut self,
         target_val: Value,
@@ -338,6 +391,15 @@ impl Interpreter {
         }
         if let Some(pattern) = self.eval_token_call_values(name, args)? {
             return Ok(Value::Regex(pattern));
+        }
+        if let Some(variants) = self.enum_types.get(name).cloned() {
+            let Some(first) = args.first().cloned() else {
+                return Ok(Value::Nil);
+            };
+            if let Some(enum_value) = self.coerce_to_enum_variant(name, &variants, first) {
+                return Ok(enum_value);
+            }
+            return Ok(Value::Nil);
         }
         if let Some(native_result) = crate::builtins::native_function(name, args) {
             return native_result;

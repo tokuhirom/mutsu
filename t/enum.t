@@ -1,5 +1,5 @@
 use Test;
-plan 30;
+plan 35;
 
 # Basic angle-bracket enum declaration
 enum Day <Sun Mon Tue Wed Thu Fri Sat>;
@@ -67,3 +67,12 @@ is +mixed::c, 12, "auto-increment to 12";
 
 # .enums type-level method
 is Day.enums.elems, 7, "Day.enums returns hash with 7 elements";
+
+# Parenthesized enum variants can use colonpair and quoted-string entries.
+enum day (:Sun(1), 'Mon', 'Tue', 'Wed');
+is day(Tue), day(3), "day(Tue) same as day(3)";
+my $today = "Today" but day(Tue);
+ok $today.day ~~ day, "day(Tue).day is a day";
+ok $today.day == Tue, "day(Tue) == Tue";
+lives-ok { day($today) }, "day(\$today) lives";
+ok $today.Tue, "day(Tue).Tue";

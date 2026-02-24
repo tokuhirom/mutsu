@@ -192,6 +192,10 @@ impl Interpreter {
                 }
                 self.type_matches_value(type_name, left)
             }
+            // Enum type objects are currently represented as Str values in env.
+            (_, Value::Str(type_name)) if self.enum_types.contains_key(type_name) => {
+                matches!(left, Value::Enum { enum_type, .. } if enum_type == type_name)
+            }
             // When LHS is a type object (Package), only match same type or type hierarchy
             (Value::Package(_), _) => false,
             // When RHS is NaN, check if LHS is also NaN

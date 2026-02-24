@@ -132,6 +132,7 @@ roast/S12-class/self-inheritance.t
 roast/S12-class/type-object.t
 roast/S12-construction/autopairs.t
 roast/S12-enums/anonymous.t
+roast/S12-enums/pseudo-functional.t
 roast/S12-methods/how.t
 roast/S12-methods/lvalue.t
 roast/S12-methods/typed-attributes.t

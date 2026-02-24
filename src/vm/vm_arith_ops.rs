@@ -312,21 +312,22 @@ impl VM {
         let left = self.stack.pop().unwrap();
         // Determine the mixin type from the right-hand value
         let mixin_type = match &right {
-            Value::Bool(_) => "Bool",
-            Value::Int(_) | Value::BigInt(_) => "Int",
-            Value::Num(_) => "Num",
-            Value::Str(_) => "Str",
-            _ => "Any",
+            Value::Bool(_) => "Bool".to_string(),
+            Value::Int(_) | Value::BigInt(_) => "Int".to_string(),
+            Value::Num(_) => "Num".to_string(),
+            Value::Str(_) => "Str".to_string(),
+            Value::Enum { enum_type, .. } => enum_type.clone(),
+            _ => "Any".to_string(),
         };
         // If left is already a Mixin, add to existing mixins
         let result = match left {
             Value::Mixin(inner, mut mixins) => {
-                mixins.insert(mixin_type.to_string(), right);
+                mixins.insert(mixin_type.clone(), right);
                 Value::Mixin(inner, mixins)
             }
             other => {
                 let mut mixins = std::collections::HashMap::new();
-                mixins.insert(mixin_type.to_string(), right);
+                mixins.insert(mixin_type, right);
                 Value::Mixin(Box::new(other), mixins)
             }
         };
