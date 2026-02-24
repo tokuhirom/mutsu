@@ -476,8 +476,11 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 type_constraint: None,
                 literal_value: None,
                 sub_signature: None,
+                outer_sub_signature: None,
+                code_signature: None,
                 where_constraint: None,
                 traits: Vec::new(),
+                optional_marker: false,
             },
         ));
     }
@@ -558,8 +561,11 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             type_constraint,
             literal_value: None,
             sub_signature: None,
+            outer_sub_signature: None,
+            code_signature: None,
             where_constraint: None,
             traits,
+            optional_marker: false,
         },
     ))
 }

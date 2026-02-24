@@ -69,8 +69,10 @@ impl Interpreter {
                     output.push('\n');
                     continue;
                 } else {
-                    // Not a block — cancel skip
+                    // Not a block: treat as single-line skip target.
+                    output.push_str(&format!("skip '{}', 1;\n", reason));
                     skip_block_pending = None;
+                    continue;
                 }
             }
             // Inside a skipped block: track braces and emit skip for test lines
@@ -209,7 +211,8 @@ impl Interpreter {
                     output.push('\n');
                     continue;
                 }
-                // Skip without count: extract reason and skip 1 test line.
+                // Skip without count: skip next block if it starts with '{',
+                // otherwise skip the next non-comment line.
                 let after_skip = after_prefix
                     .strip_prefix("skip")
                     .unwrap_or(after_prefix)
@@ -229,7 +232,7 @@ impl Interpreter {
                 } else {
                     "skip".to_string()
                 };
-                skip_lines_remaining = 1;
+                skip_block_pending = Some(skip_reason.clone());
                 output.push('\n');
                 continue;
             }

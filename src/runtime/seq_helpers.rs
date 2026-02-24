@@ -1,6 +1,6 @@
 use super::*;
-use ::regex::Regex;
 use crate::value::signature::{extract_sig_info, signature_smartmatch};
+use ::regex::Regex;
 
 impl Interpreter {
     fn p5_pattern_to_rust_regex(pattern: &str) -> String {
