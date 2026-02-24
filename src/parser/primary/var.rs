@@ -60,14 +60,15 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
             return Ok((after, Expr::Var("!".to_string())));
         }
     }
-    // Handle $<name> (named capture variable)
+    // Handle $<name> (named capture variable), including forms like $<&foo>.
     if let Some(after_lt) = input.strip_prefix('<')
-        && let Ok((after_name, name)) = take_while1(after_lt, |c: char| {
-            c.is_alphanumeric() || c == '_' || c == '-' || c == ':'
-        })
-        && let Some(after_gt) = after_name.strip_prefix('>')
+        && let Some(end) = after_lt.find('>')
     {
-        return Ok((after_gt, Expr::CaptureVar(name.to_string())));
+        let name = &after_lt[..end];
+        if !name.is_empty() {
+            let after_gt = &after_lt[end + 1..];
+            return Ok((after_gt, Expr::CaptureVar(name.to_string())));
+        }
     }
     // Handle $=finish and other Pod variables ($=pod, $=data, etc.)
     if let Some(after_eq) = input.strip_prefix('=') {
