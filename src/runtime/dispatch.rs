@@ -444,6 +444,9 @@ impl Interpreter {
                 repeat: *repeat,
             },
             Stmt::Block(stmts) => Stmt::Block(Self::rewrite_proto_dispatch_stmts(stmts)),
+            Stmt::SyntheticBlock(stmts) => {
+                Stmt::SyntheticBlock(Self::rewrite_proto_dispatch_stmts(stmts))
+            }
             other => other.clone(),
         }
     }

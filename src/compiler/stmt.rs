@@ -97,6 +97,11 @@ impl Compiler {
                 }
                 self.pop_dynamic_scope_lexical(saved_dynamic_scope);
             }
+            Stmt::SyntheticBlock(stmts) => {
+                for s in stmts {
+                    self.compile_stmt(s);
+                }
+            }
             Stmt::Say(exprs) => {
                 self.compile_exprs(exprs);
                 self.code.emit(OpCode::Say(exprs.len() as u32));

@@ -532,7 +532,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
                 is_state: false,
             });
         }
-        return Ok((rest, Stmt::Block(stmts)));
+        return Ok((rest, Stmt::SyntheticBlock(stmts)));
     }
     // No assignment
     let (rest, _) = ws(rest)?;
@@ -546,7 +546,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
             is_state: false,
         });
     }
-    Ok((rest, Stmt::Block(stmts)))
+    Ok((rest, Stmt::SyntheticBlock(stmts)))
 }
 
 /// Parse `has` attribute declaration.

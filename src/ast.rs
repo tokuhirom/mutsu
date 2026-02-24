@@ -294,6 +294,8 @@ pub(crate) enum Stmt {
         body: Vec<Stmt>,
     },
     Block(Vec<Stmt>),
+    /// Non-lexical statement sequence used by parser desugarings.
+    SyntheticBlock(Vec<Stmt>),
     If {
         cond: Expr,
         then_branch: Vec<Stmt>,
@@ -476,6 +478,7 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
             }
         }
         Stmt::Block(body)
+        | Stmt::SyntheticBlock(body)
         | Stmt::Default(body)
         | Stmt::Catch(body)
         | Stmt::Control(body)
