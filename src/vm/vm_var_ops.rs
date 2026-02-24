@@ -340,6 +340,59 @@ impl VM {
         Ok(())
     }
 
+    pub(super) fn exec_delete_index_named_op(&mut self, code: &CompiledCode, name_idx: u32) {
+        let var_name = Self::const_str(code, name_idx).to_string();
+        let idx = self.stack.pop().unwrap_or(Value::Nil);
+        let result = if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
+            Self::delete_from_container(container, idx)
+        } else {
+            Self::delete_from_missing_container(idx)
+        };
+        self.stack.push(result);
+    }
+
+    pub(super) fn exec_delete_index_expr_op(&mut self) {
+        let idx = self.stack.pop().unwrap_or(Value::Nil);
+        let mut target = self.stack.pop().unwrap_or(Value::Nil);
+        let result = Self::delete_from_container(&mut target, idx);
+        self.stack.push(result);
+    }
+
+    fn delete_from_missing_container(idx: Value) -> Value {
+        match idx {
+            Value::Array(keys, ..) => Value::array(vec![Value::Nil; keys.len()]),
+            _ => Value::Nil,
+        }
+    }
+
+    fn delete_from_container(container: &mut Value, idx: Value) -> Value {
+        match container {
+            Value::Hash(hash) => match idx {
+                Value::Array(keys, ..) => {
+                    let h = Arc::make_mut(hash);
+                    let removed = keys
+                        .iter()
+                        .map(|key| h.remove(&key.to_string_value()).unwrap_or(Value::Nil))
+                        .collect();
+                    Value::array(removed)
+                }
+                _ => Arc::make_mut(hash)
+                    .remove(&idx.to_string_value())
+                    .unwrap_or(Value::Nil),
+            },
+            Value::Package(type_name) if type_name == "Hash" || type_name == "Hash:U" => {
+                match idx {
+                    Value::Array(keys, ..) => Value::array(vec![Value::Nil; keys.len()]),
+                    _ => Value::Nil,
+                }
+            }
+            _ => match idx {
+                Value::Array(keys, ..) => Value::array(vec![Value::Nil; keys.len()]),
+                _ => Value::Nil,
+            },
+        }
+    }
+
     pub(super) fn exec_string_concat_op(&mut self, n: u32) {
         let n = n as usize;
         let start = self.stack.len() - n;

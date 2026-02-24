@@ -266,6 +266,7 @@ roast/S32-basics/pairup.t
 roast/S32-container/stringify.t
 roast/S32-encoding/registry.t
 roast/S32-hash/antipairs.t
+roast/S32-hash/delete.t
 roast/S32-hash/invert.t
 roast/S32-hash/keys_values.t
 roast/S32-io/dir.t
