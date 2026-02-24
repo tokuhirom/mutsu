@@ -196,7 +196,7 @@ impl VM {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
-        let is_regex = matches!(&right, Value::Regex(_));
+        let is_regex = matches!(&right, Value::Regex(_) | Value::RegexWithAdverbs { .. });
         let matched = self.interpreter.smart_match_values(&left, &right);
         if is_regex {
             // For regex smartmatch, return the Match object (from $/) or Nil

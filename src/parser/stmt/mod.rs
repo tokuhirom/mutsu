@@ -778,7 +778,15 @@ mod tests {
         let (rest, stmts) = program("my regex rx { abc };").unwrap();
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
-        assert!(matches!(&stmts[0], Stmt::VarDecl { .. }));
+        assert!(matches!(
+            &stmts[0],
+            Stmt::TokenDecl { name, body, .. }
+                if name == "rx"
+                    && matches!(
+                        body.as_slice(),
+                        [Stmt::Expr(Expr::Literal(Value::Regex(pattern)))] if pattern == "abc"
+                    )
+        ));
     }
 
     #[test]

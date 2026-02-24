@@ -298,7 +298,7 @@ impl Interpreter {
                     Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
                     Value::Instance { class_name, .. } => class_name.as_str(),
                     Value::Junction { .. } => "Junction",
-                    Value::Regex(_) => "Regex",
+                    Value::Regex(_) | Value::RegexWithAdverbs { .. } => "Regex",
                     Value::Version { .. } => "Version",
                     Value::Slip(_) => "Slip",
                     Value::Seq(_) => "Seq",

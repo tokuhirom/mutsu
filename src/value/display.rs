@@ -384,6 +384,20 @@ impl Value {
                 format!("{}({})", kind_str, elems)
             }
             Value::Regex(pattern) => format!("/{}/", pattern),
+            Value::RegexWithAdverbs {
+                pattern,
+                exhaustive,
+                repeat,
+            } => {
+                let mut prefix = String::new();
+                if *exhaustive {
+                    prefix.push_str(":ex");
+                }
+                if let Some(count) = repeat {
+                    prefix.push_str(&format!(":x({count})"));
+                }
+                format!("m{prefix}/{pattern}/")
+            }
             Value::Version { parts, plus, minus } => {
                 let s = Self::version_parts_to_string(parts);
                 if *plus {
