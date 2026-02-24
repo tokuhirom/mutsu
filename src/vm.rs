@@ -1235,7 +1235,7 @@ impl VM {
 
             // -- Local variables --
             OpCode::GetLocal(idx) => {
-                self.exec_get_local_op(*idx);
+                self.exec_get_local_op(code, *idx)?;
                 *ip += 1;
             }
             OpCode::SetLocal(idx) => {

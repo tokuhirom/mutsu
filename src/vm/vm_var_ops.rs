@@ -504,8 +504,24 @@ impl VM {
         self.stack.push(val);
     }
 
-    pub(super) fn exec_get_local_op(&mut self, idx: u32) {
-        self.stack.push(self.locals[idx as usize].clone());
+    pub(super) fn exec_get_local_op(
+        &mut self,
+        code: &CompiledCode,
+        idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let idx = idx as usize;
+        let val = self.locals[idx].clone();
+        let name = code.locals.get(idx).cloned().unwrap_or_default();
+        let env_has_name = self.interpreter.env().contains_key(&name);
+        let is_internal = name.starts_with("__");
+        let is_special = matches!(name.as_str(), "_" | "/" | "!" | "¢");
+        if !env_has_name && !is_internal && !is_special && matches!(val, Value::Nil) {
+            return Err(RuntimeError::new(format!(
+                "X::Undeclared::Symbols: Variable '{name}' is not declared"
+            )));
+        }
+        self.stack.push(val);
+        Ok(())
     }
 
     pub(super) fn exec_set_local_op(

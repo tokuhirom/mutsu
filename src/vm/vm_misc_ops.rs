@@ -507,6 +507,8 @@ impl VM {
         let leave_start = body_end as usize;
         let end = end as usize;
         let routine_snapshot = self.interpreter.snapshot_routine_registry();
+        let saved_env = self.interpreter.env().clone();
+        let saved_locals = self.locals.clone();
 
         self.run_range(code, enter_start, body_start, compiled_fns)?;
         let mut body_err = None;
@@ -515,6 +517,22 @@ impl VM {
         }
         let leave_res = self.run_range(code, leave_start, end, compiled_fns);
         self.interpreter.restore_routine_registry(routine_snapshot);
+
+        let current_env = self.interpreter.env().clone();
+        let mut restored_env = saved_env.clone();
+        for (k, v) in current_env {
+            if saved_env.contains_key(&k) {
+                restored_env.insert(k, v);
+            }
+        }
+        self.locals = saved_locals;
+        for (idx, name) in code.locals.iter().enumerate() {
+            if let Some(val) = restored_env.get(name).cloned() {
+                self.locals[idx] = val;
+            }
+        }
+        *self.interpreter.env_mut() = restored_env;
+
         if let Err(e) = leave_res
             && body_err.is_none()
         {
