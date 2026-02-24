@@ -4,6 +4,8 @@ impl Interpreter {
     pub(super) fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
         let routine_snapshot = self.snapshot_routine_registry();
         let trimmed = code.trim();
+        let previous_pod = self.env.get("=pod").cloned();
+        self.collect_pod_blocks(trimmed);
         // General case: parse and evaluate as Raku code
         let mut result = parse_dispatch::parse_source(trimmed)
             .and_then(|(stmts, _)| self.eval_block_value(&stmts));
@@ -14,6 +16,11 @@ impl Interpreter {
         {
             result = parse_dispatch::parse_source(&rewritten)
                 .and_then(|(stmts, _)| self.eval_block_value(&stmts));
+        }
+        if let Some(saved) = previous_pod {
+            self.env.insert("=pod".to_string(), saved);
+        } else {
+            self.env.remove("=pod");
         }
         self.restore_routine_registry(routine_snapshot);
         result

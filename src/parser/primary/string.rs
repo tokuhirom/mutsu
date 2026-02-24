@@ -161,16 +161,26 @@ fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
     };
     // Find the terminator line in the heredoc body
     let mut content_end = None;
+    let mut terminator_end = None;
     let mut search_pos = 0;
     while search_pos <= heredoc_start.len() {
-        if heredoc_start[search_pos..].starts_with(delimiter) {
-            let after_delim = &heredoc_start[search_pos + delimiter.len()..];
+        // Raku allows indentation before heredoc terminators.
+        let line = &heredoc_start[search_pos..];
+        let leading_ws = line
+            .chars()
+            .take_while(|c| matches!(c, ' ' | '\t'))
+            .map(char::len_utf8)
+            .sum::<usize>();
+        let term_pos = search_pos + leading_ws;
+        if heredoc_start[term_pos..].starts_with(delimiter) {
+            let after_delim = &heredoc_start[term_pos + delimiter.len()..];
             if after_delim.is_empty()
                 || after_delim.starts_with('\n')
                 || after_delim.starts_with('\r')
                 || after_delim.starts_with(';')
             {
                 content_end = Some(search_pos);
+                terminator_end = Some(term_pos + delimiter.len());
                 break;
             }
         }
@@ -182,7 +192,7 @@ fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
     }
     if let Some(end) = content_end {
         let content = &heredoc_start[..end];
-        let after_terminator = &heredoc_start[end + delimiter.len()..];
+        let after_terminator = &heredoc_start[terminator_end.expect("terminator end")..];
         // Skip optional newline after terminator
         let after_terminator = after_terminator
             .strip_prefix('\n')

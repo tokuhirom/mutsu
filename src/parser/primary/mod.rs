@@ -226,6 +226,14 @@ mod tests {
     }
 
     #[test]
+    fn parse_big_q_to_heredoc_with_indented_terminator() {
+        let src = "Q:to/END/\nhello\n    END\n";
+        let (rest, expr) = primary(src).unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "hello\n"));
+    }
+
+    #[test]
     fn parse_match_regex_with_repetition_modifiers() {
         let (rest1, expr1) = primary("m:2x/ab/").unwrap();
         assert_eq!(rest1, "");

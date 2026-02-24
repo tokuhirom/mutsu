@@ -18,6 +18,52 @@ impl Interpreter {
         Value::make_instance("Pod::Block::Comment".to_string(), attrs)
     }
 
+    fn make_pod_table(rows: Vec<Vec<String>>) -> Value {
+        let mut attrs = HashMap::new();
+        let contents = rows
+            .into_iter()
+            .map(|row| Value::array(row.into_iter().map(Value::Str).collect::<Vec<_>>()))
+            .collect::<Vec<_>>();
+        attrs.insert("contents".to_string(), Value::array(contents));
+        attrs.insert("headers".to_string(), Value::array(Vec::new()));
+        attrs.insert("caption".to_string(), Value::Str(String::new()));
+        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+        Value::make_instance("Pod::Block::Table".to_string(), attrs)
+    }
+
+    fn is_pod_table_separator(line: &str) -> bool {
+        let trimmed = line.trim();
+        !trimmed.is_empty()
+            && trimmed.contains('-')
+            && trimmed
+                .chars()
+                .all(|c| matches!(c, '-' | '+' | '|' | ':' | ' ' | '\t'))
+    }
+
+    fn collect_table_rows(lines: &[&str], mut idx: usize) -> (Vec<Vec<String>>, usize) {
+        let mut rows = Vec::new();
+        while idx < lines.len() {
+            let trimmed = lines[idx].trim_start();
+            if trimmed.is_empty() || trimmed.starts_with('=') {
+                break;
+            }
+            if Self::is_pod_table_separator(trimmed) {
+                idx += 1;
+                continue;
+            }
+            if !trimmed.contains('|') {
+                break;
+            }
+            let row = trimmed
+                .split('|')
+                .map(|cell| cell.trim().to_string())
+                .collect::<Vec<_>>();
+            rows.push(row);
+            idx += 1;
+        }
+        (rows, idx)
+    }
+
     fn collect_paragraph(lines: &[&str], mut idx: usize) -> (String, usize) {
         let mut text = String::new();
         while idx < lines.len() {
@@ -46,6 +92,15 @@ impl Interpreter {
             if first == Some("=comment") {
                 let (text, next_idx) = Self::collect_paragraph(&lines, idx + 1);
                 entries.push(Self::make_pod_comment(text));
+                idx = next_idx;
+                continue;
+            }
+
+            if first == Some("=table") {
+                let (rows, next_idx) = Self::collect_table_rows(&lines, idx + 1);
+                if !rows.is_empty() {
+                    entries.push(Self::make_pod_table(rows));
+                }
                 idx = next_idx;
                 continue;
             }
@@ -102,6 +157,14 @@ impl Interpreter {
                     if inner_first == Some("=comment") {
                         let (text, next_idx) = Self::collect_paragraph(&lines, idx + 1);
                         contents.push(Self::make_pod_comment(text));
+                        idx = next_idx;
+                        continue;
+                    }
+                    if inner_first == Some("=table") {
+                        let (rows, next_idx) = Self::collect_table_rows(&lines, idx + 1);
+                        if !rows.is_empty() {
+                            contents.push(Self::make_pod_table(rows));
+                        }
                         idx = next_idx;
                         continue;
                     }
