@@ -152,10 +152,17 @@ fn try_parse_sequence_in_paren<'a>(input: &'a str, seeds: &[Expr]) -> Option<PRe
     let result = (|| {
         let (rest, _) = ws(rest)?;
         // Special case: bare * means infinite sequence (Whatever/Inf)
+        // Only treat as bare Whatever if followed by `)` or `,` (after whitespace),
+        // not when followed by an operator like `> 64` (which is WhateverCode).
         let (rest, endpoint) = if rest.starts_with('*')
             && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
         {
-            (&rest[1..], Expr::Whatever)
+            let after_star = rest[1..].trim_start();
+            if after_star.starts_with(')') || after_star.starts_with(',') || after_star.is_empty() {
+                (&rest[1..], Expr::Whatever)
+            } else {
+                super::super::expr::expression_no_sequence(rest)?
+            }
         } else {
             super::super::expr::expression_no_sequence(rest)?
         };

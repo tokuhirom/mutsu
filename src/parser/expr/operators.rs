@@ -351,6 +351,7 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
             || c == '"'
             || c == '\''
             || c == '*'
+            || c == '.'  // topic method call: -.method
             || c == '\u{221E}' // ∞
             || c.is_ascii_digit()
             || c.is_ascii_alphabetic())

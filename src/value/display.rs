@@ -1,5 +1,23 @@
 use super::*;
 
+/// Format a Num in scientific notation matching Raku's output (e.g. `1e+40`, `-1e-05`).
+fn format_num_scientific(f: f64) -> String {
+    // Use Rust's {:e} format and ensure the exponent has an explicit sign
+    let s = format!("{:e}", f);
+    // Rust produces e.g. "1e40" or "1e-5"; Raku uses "1e+40" and "1e-05"
+    if let Some(pos) = s.rfind('e') {
+        let (mantissa, exp_part) = s.split_at(pos + 1); // exp_part is e.g. "40" or "-5"
+        let exp_with_sign = if let Some(stripped) = exp_part.strip_prefix('-') {
+            format!("-{:02}", stripped.parse::<i32>().unwrap_or(0).abs())
+        } else {
+            format!("+{}", exp_part)
+        };
+        format!("{}{}", mantissa, exp_with_sign)
+    } else {
+        s
+    }
+}
+
 /// Apply tclc (titlecase first char, lowercase rest) to a string.
 pub fn tclc_str(s: &str) -> String {
     let mut result = String::new();
@@ -93,7 +111,13 @@ impl Value {
                 } else if *f == 0.0 && f.is_sign_negative() {
                     "-0".to_string()
                 } else if f.fract() == 0.0 && f.is_finite() {
-                    format!("{}", *f as i64)
+                    let abs = f.abs();
+                    if abs >= 1e15 || (abs != 0.0 && abs < 1e-4) {
+                        // Scientific notation for very large/small integer-valued Nums
+                        format_num_scientific(*f)
+                    } else {
+                        format!("{}", *f as i64)
+                    }
                 } else {
                     format!("{}", f)
                 }
@@ -255,6 +279,9 @@ impl Value {
                 )
             }
             Value::Pair(k, v) => format!("{}\t{}", k, v.to_string_value()),
+            Value::ValuePair(k, v) => {
+                format!("{}\t{}", k.to_string_value(), v.to_string_value())
+            }
             Value::Enum { key, .. } => key.clone(),
             Value::CompUnitDepSpec { short_name } => {
                 format!("CompUnit::DependencySpecification({})", short_name)

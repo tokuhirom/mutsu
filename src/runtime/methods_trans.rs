@@ -100,6 +100,17 @@ impl Interpreter {
                     _ => {}
                 }
                 rules.push(self.parse_trans_pair(key, value));
+            } else if let Value::ValuePair(key, value) = arg {
+                // For ValuePair, the key preserves its original type
+                if let Value::Regex(pattern) = key.as_ref() {
+                    rules.push(TransRule::Regex {
+                        pattern: pattern.clone(),
+                        replacement: value.to_string_value(),
+                    });
+                } else {
+                    let key_str = key.to_string_value();
+                    rules.push(self.parse_trans_pair(&key_str, value));
+                }
             }
         }
 

@@ -274,7 +274,7 @@ impl Interpreter {
                     Value::Set(_) => "Set",
                     Value::Bag(_) => "Bag",
                     Value::Mix(_) => "Mix",
-                    Value::Pair(_, _) => "Pair",
+                    Value::Pair(_, _) | Value::ValuePair(_, _) => "Pair",
                     Value::Enum { enum_type, .. } => enum_type.as_str(),
                     Value::Nil => "Any",
                     Value::Package(name) => name.as_str(),
