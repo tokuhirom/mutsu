@@ -234,6 +234,7 @@ roast/S15-normalization/nfkd-7.t
 roast/S15-normalization/nfkd-8.t
 roast/S15-normalization/nfkd-9.t
 roast/S15-normalization/nfkd-sanity.t
+roast/S15-string-types/NFK-types.t
 roast/S15-string-types/Str.t
 roast/S16-filehandles/misc.t
 roast/S16-filehandles/mkdir_rmdir.t
@@ -318,6 +319,7 @@ roast/S32-list/batch.t
 roast/S32-list/cross.t
 roast/S32-num/abs.t
 roast/S32-num/exp.t
+roast/S32-num/expmod.t
 roast/S32-num/log.t
 roast/S32-num/pi.t
 roast/S32-num/polar.t

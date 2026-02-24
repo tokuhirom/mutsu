@@ -606,6 +606,7 @@ impl Interpreter {
                     Value::Channel(_) => "Channel",
                     Value::HyperWhatever => "HyperWhatever",
                     Value::Capture { .. } => "Capture",
+                    Value::Uni { form, .. } => form.as_str(),
                     Value::Mixin(inner, _) => {
                         return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
                     }
