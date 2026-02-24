@@ -313,12 +313,10 @@ impl Interpreter {
                     attributes.clone(),
                 ))
             }
-            "rmdir" => {
-                fs::remove_dir(&path_buf).map_err(|err| {
-                    RuntimeError::new(format!("Failed to rmdir '{}': {}", p, err))
-                })?;
-                Ok(Value::Bool(true))
-            }
+            "rmdir" => match fs::remove_dir(&path_buf) {
+                Ok(()) => Ok(Value::Bool(true)),
+                Err(_) => Ok(Value::Bool(false)),
+            },
             "dir" => {
                 let mut entries = Vec::new();
                 let requested = PathBuf::from(&p);
