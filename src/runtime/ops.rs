@@ -10,6 +10,20 @@ impl Interpreter {
             match v {
                 Value::Int(i) => *i as f64,
                 Value::Num(f) => *f,
+                Value::Rat(n, d) => {
+                    if *d == 0 {
+                        f64::NAN
+                    } else {
+                        *n as f64 / *d as f64
+                    }
+                }
+                Value::FatRat(n, d) => {
+                    if *d == 0 {
+                        f64::NAN
+                    } else {
+                        *n as f64 / *d as f64
+                    }
+                }
                 Value::Str(s) => s.parse::<f64>().unwrap_or(0.0),
                 Value::Bool(b) => {
                     if *b {
@@ -25,6 +39,20 @@ impl Interpreter {
             match v {
                 Value::Int(i) => *i,
                 Value::Num(f) => *f as i64,
+                Value::Rat(n, d) => {
+                    if *d == 0 {
+                        0
+                    } else {
+                        n / d
+                    }
+                }
+                Value::FatRat(n, d) => {
+                    if *d == 0 {
+                        0
+                    } else {
+                        n / d
+                    }
+                }
                 Value::Str(s) => s.parse::<i64>().unwrap_or(0),
                 Value::Bool(b) => {
                     if *b {
@@ -36,23 +64,31 @@ impl Interpreter {
                 _ => 0,
             }
         };
+        let is_fractional =
+            |v: &Value| matches!(v, Value::Num(_) | Value::Rat(_, _) | Value::FatRat(_, _));
+        // Handle R (reverse) meta-prefix: swap operands and recurse with inner op
+        if let Some(inner_op) = op.strip_prefix('R')
+            && !inner_op.is_empty()
+        {
+            return Self::apply_reduction_op(inner_op, right, left);
+        }
         match op {
             "+" => {
-                if matches!(left, Value::Num(_)) || matches!(right, Value::Num(_)) {
+                if is_fractional(left) || is_fractional(right) {
                     Ok(Value::Num(to_num(left) + to_num(right)))
                 } else {
                     Ok(Value::Int(to_int(left) + to_int(right)))
                 }
             }
             "-" => {
-                if matches!(left, Value::Num(_)) || matches!(right, Value::Num(_)) {
+                if is_fractional(left) || is_fractional(right) {
                     Ok(Value::Num(to_num(left) - to_num(right)))
                 } else {
                     Ok(Value::Int(to_int(left) - to_int(right)))
                 }
             }
             "*" => {
-                if matches!(left, Value::Num(_)) || matches!(right, Value::Num(_)) {
+                if is_fractional(left) || is_fractional(right) {
                     Ok(Value::Num(to_num(left) * to_num(right)))
                 } else {
                     Ok(Value::Int(to_int(left) * to_int(right)))
@@ -75,7 +111,7 @@ impl Interpreter {
                 }
             }
             "%" => {
-                if matches!(left, Value::Num(_)) || matches!(right, Value::Num(_)) {
+                if is_fractional(left) || is_fractional(right) {
                     Ok(Value::Num(to_num(left) % to_num(right)))
                 } else {
                     Ok(Value::Int(to_int(left) % to_int(right)))

@@ -650,6 +650,15 @@ impl Interpreter {
             "..." => TokenKind::DotDotDot,
             "...^" => TokenKind::DotDotDotCaret,
             ".." => TokenKind::DotDot,
+            "<=>" => TokenKind::LtEqGt,
+            "<" => TokenKind::Lt,
+            ">" => TokenKind::Gt,
+            "<=" => TokenKind::Lte,
+            ">=" => TokenKind::Gte,
+            "~~" => TokenKind::SmartMatch,
+            "&&" => TokenKind::AndAnd,
+            "||" => TokenKind::OrOr,
+            "//" => TokenKind::SlashSlash,
             _ => TokenKind::Ident(op.to_string()),
         }
     }

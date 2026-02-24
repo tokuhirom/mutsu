@@ -400,11 +400,96 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
             rest = r;
             continue;
         }
-        // Meta operators: R-, X+, Z~, bare Z, bare X, etc.
+        // Bracket infix operators: [+], [R-], [Z*], [Z[cmp]], [blue], etc.
+        if let Some(bracket_infix) = parse_bracket_infix_op(r) {
+            match bracket_infix {
+                BracketInfix::PlainOp(op, len) => {
+                    let r = &r[len..];
+                    let (r, _) = ws(r)?;
+                    let (r, right) = range_expr(r).map_err(|err| {
+                        enrich_expected_error(
+                            err,
+                            "expected expression after bracket infix op",
+                            r.len(),
+                        )
+                    })?;
+                    // Resolve plain op to a Binary expr
+                    if let Some(tk) = op_str_to_token_kind(&op) {
+                        *left = Expr::Binary {
+                            left: Box::new(left.clone()),
+                            op: tk,
+                            right: Box::new(right),
+                        };
+                    } else {
+                        // Unknown plain op: treat as user-defined infix
+                        *left = Expr::InfixFunc {
+                            name: op,
+                            left: Box::new(left.clone()),
+                            right: vec![right],
+                            modifier: None,
+                        };
+                    }
+                    rest = r;
+                    continue;
+                }
+                BracketInfix::MetaOp(meta, op, len) => {
+                    let r = &r[len..];
+                    let (r, _) = ws(r)?;
+                    let needs_comma_list =
+                        meta == "Z" || meta == "X" || op == "..." || op == "...^";
+                    let (r, right) = if needs_comma_list {
+                        let (r, items) = parse_comma_list_of_range_raw(r)?;
+                        if items.len() == 1 {
+                            (r, items.into_iter().next().unwrap())
+                        } else {
+                            (r, Expr::ArrayLiteral(items))
+                        }
+                    } else {
+                        range_expr(r).map_err(|err| {
+                            enrich_expected_error(
+                                err,
+                                "expected expression after bracket meta infix op",
+                                r.len(),
+                            )
+                        })?
+                    };
+                    *left = Expr::MetaOp {
+                        meta,
+                        op,
+                        left: Box::new(left.clone()),
+                        right: Box::new(right),
+                    };
+                    rest = r;
+                    continue;
+                }
+                BracketInfix::UserInfix(name, len) => {
+                    let r = &r[len..];
+                    let (r, _) = ws(r)?;
+                    let (r, right) = range_expr(r).map_err(|err| {
+                        enrich_expected_error(
+                            err,
+                            "expected expression after bracket user infix op",
+                            r.len(),
+                        )
+                    })?;
+                    *left = Expr::InfixFunc {
+                        name,
+                        left: Box::new(left.clone()),
+                        right: vec![right],
+                        modifier: None,
+                    };
+                    rest = r;
+                    continue;
+                }
+            }
+        }
+        // Meta operators: R-, X+, Z~, bare Z, bare X, R[...], etc.
         if let Some((meta, op, len)) = parse_meta_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let (r, right) = if (meta == "Z" || meta == "X") && op.is_empty() {
+            let needs_comma_list =
+                ((meta == "Z" || meta == "X") && op.is_empty()) || op == "..." || op == "...^";
+            let (r, right) = if needs_comma_list {
                 let (r, items) = parse_comma_list_of_range_raw(r)?;
                 if items.len() == 1 {
                     (r, items.into_iter().next().unwrap())
@@ -417,8 +502,8 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
                 })?
             };
             *left = Expr::MetaOp {
-                meta: meta.to_string(),
-                op: op.to_string(),
+                meta,
+                op,
                 left: Box::new(left.clone()),
                 right: Box::new(right),
             };
@@ -821,8 +906,95 @@ fn parse_infix_func_op(input: &str) -> Option<(Option<String>, String, usize)> {
     Some((modifier, name.to_string(), total_len))
 }
 
-/// Parse meta operator: R-, X+, Zcmp, etc.
-fn parse_meta_op(input: &str) -> Option<(&str, &str, usize)> {
+/// Convert an operator string to its TokenKind for bracket infix notation.
+fn op_str_to_token_kind(op: &str) -> Option<TokenKind> {
+    match op {
+        "+" => Some(TokenKind::Plus),
+        "-" => Some(TokenKind::Minus),
+        "*" => Some(TokenKind::Star),
+        "/" => Some(TokenKind::Slash),
+        "%" => Some(TokenKind::Percent),
+        "**" => Some(TokenKind::StarStar),
+        "~" => Some(TokenKind::Tilde),
+        "==" => Some(TokenKind::EqEq),
+        "!=" => Some(TokenKind::BangEq),
+        "<" => Some(TokenKind::Lt),
+        ">" => Some(TokenKind::Gt),
+        "<=" => Some(TokenKind::Lte),
+        ">=" => Some(TokenKind::Gte),
+        "<=>" => Some(TokenKind::LtEqGt),
+        "===" => Some(TokenKind::EqEqEq),
+        "~~" => Some(TokenKind::SmartMatch),
+        "&&" => Some(TokenKind::AndAnd),
+        "||" => Some(TokenKind::OrOr),
+        "//" => Some(TokenKind::SlashSlash),
+        "%%" => Some(TokenKind::PercentPercent),
+        "+&" => Some(TokenKind::BitAnd),
+        "+|" => Some(TokenKind::BitOr),
+        "+^" => Some(TokenKind::BitXor),
+        // Word operators are represented as Ident tokens
+        "eq" | "ne" | "lt" | "gt" | "le" | "ge" | "leg" | "cmp" | "min" | "max" | "gcd" | "lcm"
+        | "and" | "or" | "not" | "after" | "before" => Some(TokenKind::Ident(op.to_string())),
+        _ => None,
+    }
+}
+
+/// Find the index of the closing `]` that matches the opening `[` at position 0.
+/// Returns the index of the matching `]`, or None if not found.
+fn find_matching_bracket(input: &str) -> Option<usize> {
+    let mut depth = 0;
+    for (i, c) in input.char_indices() {
+        match c {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Flatten nested bracket operator notation into a simple string.
+/// e.g., "+" → "+", "R-" → "R-", "R[R-]" → "RR-", "[+]" → "+", "R[R[R-]]" → "RRR-"
+fn flatten_bracket_op(s: &str) -> String {
+    if s.is_empty() {
+        return String::new();
+    }
+    let first = s.as_bytes()[0];
+    // Handle plain bracket: [op] → flatten(op)
+    if first == b'['
+        && let Some(end) = find_matching_bracket(s)
+    {
+        let inner = &s[1..end];
+        return flatten_bracket_op(inner);
+    }
+    // Handle meta + bracket: R[op] → R + flatten(op)
+    if (first == b'R' || first == b'Z' || first == b'X')
+        && s.len() > 1
+        && s.as_bytes()[1] == b'['
+        && let Some(end) = find_matching_bracket(&s[1..])
+    {
+        let inner = &s[2..1 + end];
+        let flattened_inner = flatten_bracket_op(inner);
+        let rest = &s[1 + end + 1..];
+        return format!("{}{}{}", first as char, flattened_inner, rest);
+    }
+    s.to_string()
+}
+
+/// Known operators for bracket infix and meta-op bracket notation.
+const KNOWN_OPS: &[&str] = &[
+    "**", "==", "!=", "<=", ">=", "<=>", "===", "~~", "%%", "//", "||", "&&", "~", "+", "-", "*",
+    "/", "%", "<", ">", "+&", "+|", "+^", "?&", "?|", "?^", "cmp", "min", "max", "eq", "ne", "lt",
+    "gt", "le", "ge", "leg", "and", "or", "not", "after", "before", "gcd", "lcm", ",",
+];
+
+/// Parse meta operator: R-, X+, Zcmp, R[+], Z[~], R[R[R-]], RR[R-], etc.
+fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
     let meta = if input.starts_with('R') {
         "R"
     } else if input.starts_with('X') {
@@ -833,13 +1005,29 @@ fn parse_meta_op(input: &str) -> Option<(&str, &str, usize)> {
         return None;
     };
     let r = &input[1..];
+
+    // Try bracket notation: R[op], Z[op], X[op]
+    if r.starts_with('[')
+        && let Some(end) = find_matching_bracket(r)
+    {
+        let inner = &r[1..end];
+        let op = flatten_bracket_op(inner);
+        return Some((meta.to_string(), op, 1 + end + 1));
+    }
+
+    // Try chained meta with brackets: RR[op], RZ[op], etc.
+    if let Some((inner_meta, inner_op, inner_len)) = parse_meta_op(r) {
+        let op = format!("{}{}", inner_meta, inner_op);
+        return Some((meta.to_string(), op, 1 + inner_len));
+    }
+
     // Try symbolic operators first (multi-char then single-char)
     let ops: &[&str] = &[
         "**", "==", "!=", "<=", ">=", "~~", "%%", "//", "~", "+", "-", "*", "/", "%", "<", ">",
     ];
     for op in ops {
         if r.starts_with(op) {
-            return Some((meta, op, 1 + op.len()));
+            return Some((meta.to_string(), op.to_string(), 1 + op.len()));
         }
     }
     // Try word operators: cmp, min, max, eq, ne, lt, gt, le, ge, leg
@@ -848,13 +1036,72 @@ fn parse_meta_op(input: &str) -> Option<(&str, &str, usize)> {
     ];
     for op in word_ops {
         if r.starts_with(op) && !is_ident_char(r.as_bytes().get(op.len()).copied()) {
-            return Some((meta, op, 1 + op.len()));
+            return Some((meta.to_string(), op.to_string(), 1 + op.len()));
         }
     }
     // Bare Z (zip with comma) or bare X (cross product) — followed by non-ident, non-operator char
     if (meta == "Z" || meta == "X") && !is_ident_char(r.as_bytes().first().copied()) {
-        return Some((meta, "", 1));
+        return Some((meta.to_string(), String::new(), 1));
     }
+    None
+}
+
+/// Parse bracket infix operator: [+], [R-], [Z*], [Z[cmp]], [blue], etc.
+/// Returns (kind, total_consumed_len) where kind is an enum describing
+/// whether it's a plain op, meta op, or user-defined infix.
+enum BracketInfix {
+    /// A plain operator like `+`, `-`, `*`, `cmp`
+    PlainOp(String, usize),
+    /// A meta operator like `R-`, `Z*`, `Zcmp`
+    MetaOp(String, String, usize),
+    /// A user-defined infix like `blue`
+    UserInfix(String, usize),
+}
+
+fn parse_bracket_infix_op(input: &str) -> Option<BracketInfix> {
+    if !input.starts_with('[') {
+        return None;
+    }
+    // Don't match [&func] (handled by parse_infix_func_op)
+    if input.starts_with("[&") {
+        return None;
+    }
+    let end = find_matching_bracket(input)?;
+    let inner = &input[1..end];
+    if inner.is_empty() {
+        return None;
+    }
+    let total_len = end + 1;
+    let flattened = flatten_bracket_op(inner);
+
+    // Check if it's a meta-prefixed op
+    let first = flattened.as_bytes()[0];
+    if first == b'R' || first == b'Z' || first == b'X' {
+        let meta_ch = &flattened[..1];
+        let op = &flattened[1..];
+        // Make sure inner op is valid (known op or known meta pattern)
+        if !op.is_empty() {
+            return Some(BracketInfix::MetaOp(
+                meta_ch.to_string(),
+                op.to_string(),
+                total_len,
+            ));
+        }
+    }
+
+    // Check if it's a known plain operator
+    if KNOWN_OPS.contains(&flattened.as_str()) {
+        return Some(BracketInfix::PlainOp(flattened, total_len));
+    }
+
+    // Check if it's a user-defined infix name (identifier)
+    if flattened
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
+        return Some(BracketInfix::UserInfix(flattened, total_len));
+    }
+
     None
 }
 
@@ -1032,6 +1279,72 @@ fn concat_expr(input: &str) -> PResult<'_, Expr> {
     Ok((rest, left))
 }
 
+/// Classify an operator string by its precedence level.
+enum OpPrecedence {
+    Multiplicative,
+    Additive,
+    Concatenation,
+    Comparison,
+    Other,
+}
+
+fn classify_base_op(op: &str) -> OpPrecedence {
+    // Strip all meta prefixes to find the base operator
+    let mut s = op;
+    while let Some(rest) = s
+        .strip_prefix('R')
+        .or_else(|| s.strip_prefix('Z'))
+        .or_else(|| s.strip_prefix('X'))
+    {
+        s = rest;
+    }
+    match s {
+        "*" | "/" | "%" | "gcd" | "lcm" => OpPrecedence::Multiplicative,
+        "+" | "-" => OpPrecedence::Additive,
+        "~" => OpPrecedence::Concatenation,
+        "==" | "!=" | "<" | ">" | "<=" | ">=" | "<=>" | "===" | "eq" | "ne" | "lt" | "gt"
+        | "le" | "ge" | "leg" | "cmp" | "~~" | "%%" => OpPrecedence::Comparison,
+        _ => OpPrecedence::Other,
+    }
+}
+
+/// Try to parse a bracket meta-op or bracket infix at a specific precedence level.
+/// Returns Some((meta, op, total_len)) for meta-ops,
+/// or Some(("", op, total_len)) for plain bracket infix.
+fn try_bracket_op_at_level(input: &str, level: &OpPrecedence) -> Option<(String, String, usize)> {
+    // Try R[op], Z[op], X[op]
+    // Skip Z/X meta-ops — they need list-infix comma handling
+    if let Some((meta, op, len)) = parse_meta_op(input)
+        && meta != "Z"
+        && meta != "X"
+    {
+        let full_op = format!("{}{}", meta, op);
+        if std::mem::discriminant(&classify_base_op(&full_op)) == std::mem::discriminant(level) {
+            return Some((meta, op, len));
+        }
+    }
+    // Try [op] bracket infix
+    if let Some(bracket_infix) = parse_bracket_infix_op(input) {
+        match &bracket_infix {
+            BracketInfix::PlainOp(op, len) => {
+                if std::mem::discriminant(&classify_base_op(op)) == std::mem::discriminant(level) {
+                    return Some((String::new(), op.clone(), *len));
+                }
+            }
+            BracketInfix::MetaOp(meta, op, len) if meta != "Z" && meta != "X" => {
+                let full_op = format!("{}{}", meta, op);
+                if std::mem::discriminant(&classify_base_op(&full_op))
+                    == std::mem::discriminant(level)
+                {
+                    return Some((meta.clone(), op.clone(), *len));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Addition/subtraction: + -
 fn additive_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = multiplicative_expr(input)?;
@@ -1048,6 +1361,37 @@ fn additive_expr(input: &str) -> PResult<'_, Expr> {
                 op: op.token_kind(),
                 right: Box::new(right),
             };
+            rest = r;
+            continue;
+        }
+        // Try bracket meta-op at additive level: R[+], R[-], [R+], [R-], etc.
+        if let Some((meta, op, len)) = try_bracket_op_at_level(r, &OpPrecedence::Additive) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = multiplicative_expr(r).map_err(|err| {
+                enrich_expected_error(
+                    err,
+                    "expected expression after bracket additive operator",
+                    r.len(),
+                )
+            })?;
+            if meta.is_empty() {
+                // Plain bracket infix: [+] or [-]
+                if let Some(tk) = op_str_to_token_kind(&op) {
+                    left = Expr::Binary {
+                        left: Box::new(left),
+                        op: tk,
+                        right: Box::new(right),
+                    };
+                }
+            } else {
+                left = Expr::MetaOp {
+                    meta,
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                };
+            }
             rest = r;
             continue;
         }
@@ -1076,6 +1420,36 @@ fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
                 op: op.token_kind(),
                 right: Box::new(right),
             };
+            rest = r;
+            continue;
+        }
+        // Try bracket meta-op at multiplicative level: R[*], R[/], [R*], [R/], etc.
+        if let Some((meta, op, len)) = try_bracket_op_at_level(r, &OpPrecedence::Multiplicative) {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = power_expr(r).map_err(|err| {
+                enrich_expected_error(
+                    err,
+                    "expected expression after bracket multiplicative operator",
+                    r.len(),
+                )
+            })?;
+            if meta.is_empty() {
+                if let Some(tk) = op_str_to_token_kind(&op) {
+                    left = Expr::Binary {
+                        left: Box::new(left),
+                        op: tk,
+                        right: Box::new(right),
+                    };
+                }
+            } else {
+                left = Expr::MetaOp {
+                    meta,
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                };
+            }
             rest = r;
             continue;
         }

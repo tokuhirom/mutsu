@@ -484,6 +484,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         })
                     }
                 }
+                Value::Enum { value, .. } => Value::Int(value.signum()),
                 _ => return None,
             };
             Some(Ok(result))
