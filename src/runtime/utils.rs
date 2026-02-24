@@ -540,10 +540,6 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
         Value::Str(s) => s.parse::<f64>().ok(),
         Value::Nil => Some(0.0),
         Value::Array(items, ..) => Some(items.len() as f64),
-        Value::Seq(items) => Some(items.len() as f64),
-        Value::Slip(items) => Some(items.len() as f64),
-        Value::Capture { positional, .. } => Some(positional.len() as f64),
-        Value::Hash(map) => Some(map.len() as f64),
         Value::Instance {
             class_name,
             attributes,
