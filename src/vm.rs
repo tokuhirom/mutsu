@@ -1293,6 +1293,10 @@ impl VM {
                 self.exec_use_module_op(code, *name_idx)?;
                 *ip += 1;
             }
+            OpCode::NoModule(name_idx) => {
+                self.exec_no_module_op(code, *name_idx)?;
+                *ip += 1;
+            }
             OpCode::NeedModule(name_idx) => {
                 self.exec_need_module_op(code, *name_idx)?;
                 *ip += 1;

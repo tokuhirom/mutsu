@@ -119,6 +119,29 @@ pub(super) fn need_stmt(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, Stmt::Need { module }))
 }
 
+/// Parse a `no` statement.
+pub(super) fn no_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("no", input).ok_or_else(|| PError::expected("no statement"))?;
+    let (rest, _) = ws1(rest)?;
+    let (rest, module) = qualified_ident(rest)?;
+    let (rest, _) = ws(rest)?;
+
+    let (rest, arg) = if rest.starts_with(';') || rest.is_empty() || rest.starts_with('}') {
+        (rest, None)
+    } else if rest.starts_with('<') {
+        let (r, expr) = super::super::primary::primary(rest)?;
+        (r, Some(expr))
+    } else {
+        let (r, expr) = expression(rest)?;
+        (r, Some(expr))
+    };
+
+    let (rest, _) = ws(rest)?;
+    let (rest, _) = opt_char(rest, ';');
+    let _ = arg;
+    Ok((rest, Stmt::No { module }))
+}
+
 /// Parse `my`, `our`, or `state` variable declaration.
 pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
     my_decl_inner(input, true)

@@ -1168,6 +1168,13 @@ impl Interpreter {
         result
     }
 
+    pub(crate) fn no_module(&mut self, module: &str) -> Result<(), RuntimeError> {
+        if module == "strict" {
+            self.strict_mode = false;
+        }
+        Ok(())
+    }
+
     pub fn output(&self) -> &str {
         &self.output
     }
