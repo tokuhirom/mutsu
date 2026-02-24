@@ -175,13 +175,31 @@ fn or_or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = if mode == ExprMode::Full {
-                and_and_expr_mode(r, mode).map_err(|err| {
-                    enrich_expected_error(
-                        err,
-                        "expected expression after logical operator",
-                        r.len(),
-                    )
-                })?
+                if r.starts_with("not")
+                    && !is_ident_char(r.as_bytes().get(3).copied())
+                    && !r[3..].starts_with('(')
+                {
+                    not_expr_mode(r, mode).map_err(|err| {
+                        enrich_expected_error(
+                            err,
+                            "expected expression after logical operator",
+                            r.len(),
+                        )
+                    })?
+                } else {
+                    and_and_expr_mode(r, mode).map_err(|err| {
+                        enrich_expected_error(
+                            err,
+                            "expected expression after logical operator",
+                            r.len(),
+                        )
+                    })?
+                }
+            } else if r.starts_with("not")
+                && !is_ident_char(r.as_bytes().get(3).copied())
+                && !r[3..].starts_with('(')
+            {
+                not_expr_mode(r, mode)?
             } else {
                 and_and_expr_mode(r, mode)?
             };

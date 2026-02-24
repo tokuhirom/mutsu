@@ -31,7 +31,7 @@ fn skip_pointy_return_type(mut r: &str) -> PResult<'_, ()> {
 const REDUCTION_OPS: &[&str] = &[
     "+", "-", "*", "/", "~", "||", "&&", "//", "%%", "**", "+&", "+|", "+^", "?&", "?|", "?^",
     "==", "!=", "<", ">", "<=", ">=", "<=>", "===", "eq", "ne", "lt", "gt", "le", "ge", "leg",
-    "cmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",", "after", "before",
+    "cmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",", "after", "before", "X",
 ];
 
 /// Parse a reduction operator: [+], [*], [~], [min], [max], [gcd], [lcm], [||], [&&], etc.

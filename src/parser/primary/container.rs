@@ -106,7 +106,7 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
     let mut items = vec![first];
     // Handle trailing comma before close paren
     if let Ok((input, _)) = parse_char(input, ')') {
-        return Ok((input, Expr::ArrayLiteral(items)));
+        return Ok((input, finalize_paren_list(items)));
     }
     // Check for sequence operator right after first comma
     if let Some(seq) = try_parse_sequence_in_paren(input, &items) {
@@ -117,7 +117,7 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
     loop {
         let (input, _) = ws(input_rest)?;
         if let Ok((input, _)) = parse_char(input, ')') {
-            return Ok((input, Expr::ArrayLiteral(items)));
+            return Ok((input, finalize_paren_list(items)));
         }
         // Check for sequence operator before comma
         if let Some(seq) = try_parse_sequence_in_paren(input, &items) {
@@ -126,7 +126,7 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         let (input, _) = parse_char(input, ',')?;
         let (input, _) = ws(input)?;
         if let Ok((input, _)) = parse_char(input, ')') {
-            return Ok((input, Expr::ArrayLiteral(items)));
+            return Ok((input, finalize_paren_list(items)));
         }
         // Check for sequence operator after comma
         if let Some(seq) = try_parse_sequence_in_paren(input, &items) {
@@ -136,6 +136,36 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         items.push(next);
         input_rest = input;
     }
+}
+
+fn finalize_paren_list(items: Vec<Expr>) -> Expr {
+    Expr::ArrayLiteral(lift_meta_ops_in_paren_list(items))
+}
+
+fn lift_meta_ops_in_paren_list(items: Vec<Expr>) -> Vec<Expr> {
+    let meta_idx = items.iter().position(|e| matches!(e, Expr::MetaOp { .. }));
+    if let Some(idx) = meta_idx
+        && idx > 0
+        && let Expr::MetaOp {
+            meta,
+            op,
+            left,
+            right,
+        } = &items[idx]
+    {
+        let mut seeds: Vec<Expr> = items[..idx].to_vec();
+        seeds.push(*left.clone());
+        let new_meta = Expr::MetaOp {
+            meta: meta.clone(),
+            op: op.clone(),
+            left: Box::new(Expr::ArrayLiteral(seeds)),
+            right: right.clone(),
+        };
+        let mut result = vec![new_meta];
+        result.extend(items[idx + 1..].to_vec());
+        return result;
+    }
+    items
 }
 
 /// Parse itemized parenthesized expression: `$(...)`.

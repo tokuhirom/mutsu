@@ -495,6 +495,9 @@ impl Interpreter {
     }
 
     fn call_infix_routine(&mut self, op: &str, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() == 1 && matches!(op, "=:=" | "===" | "eqv") {
+            return Ok(Value::Bool(true));
+        }
         // 1-arg Iterable gets flattened (like +@foo slurpy)
         let args: Vec<Value> = if args.len() == 1 {
             match &args[0] {

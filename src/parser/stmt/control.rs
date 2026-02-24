@@ -244,6 +244,42 @@ pub(super) fn parse_for_params(
         if r.starts_with('{') {
             return Ok((r, (None, None, Vec::new())));
         }
+        // Positional destructuring pointy param: -> [$a, $b] { ... }
+        if let Some(mut r) = r.strip_prefix('[') {
+            let (r2, _) = ws(r)?;
+            r = r2;
+            let mut sub_params = Vec::new();
+            if !r.starts_with(']') {
+                loop {
+                    let (r2, param_def) = parse_for_pointy_param(r)?;
+                    sub_params.push(param_def);
+                    let (r2, _) = ws(r2)?;
+                    if let Some(r3) = r2.strip_prefix(',') {
+                        let (r3, _) = ws(r3)?;
+                        r = r3;
+                        continue;
+                    }
+                    r = r2;
+                    break;
+                }
+            }
+            let (r, _) = parse_char(r, ']')?;
+            let (r, _) = skip_pointy_return_type(r)?;
+            let unpack_name = "__for_unpack".to_string();
+            let unpack_def = ParamDef {
+                name: unpack_name.clone(),
+                default: None,
+                named: false,
+                slurpy: false,
+                sigilless: false,
+                type_constraint: None,
+                literal_value: None,
+                sub_signature: Some(sub_params),
+                where_constraint: None,
+                traits: Vec::new(),
+            };
+            return Ok((r, (Some(unpack_name), Some(unpack_def), Vec::new())));
+        }
         let (r, mut first_def) = parse_for_pointy_param(r)?;
         let first = first_def.name.clone();
         let (r, _) = ws(r)?;
@@ -309,9 +345,16 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     let rest = input;
     let mut type_constraint = None;
     let rest = if let Ok((r, tc)) = ident(rest) {
+        // Preserve type smileys :D, :U, :_ as part of the type constraint.
+        let (r, tc) = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
+            let smiley = &r[..2];
+            (&r[2..], format!("{}{}", tc, smiley))
+        } else {
+            (r, tc)
+        };
         let (r2, _) = ws(r)?;
         if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
-            type_constraint = Some(tc.to_string());
+            type_constraint = Some(tc);
             r2
         } else {
             rest
@@ -396,6 +439,11 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, String> {
     // Optional type constraint before the variable
     let rest = input;
     let rest = if let Ok((r, _tc)) = ident(rest) {
+        let r = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
+            &r[2..]
+        } else {
+            r
+        };
         let (r2, _) = ws(r)?;
         if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
             r2

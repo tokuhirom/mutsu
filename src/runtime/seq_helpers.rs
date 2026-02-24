@@ -240,6 +240,14 @@ impl Interpreter {
             (_, Value::Str(type_name)) if self.enum_types.contains_key(type_name) => {
                 matches!(left, Value::Enum { enum_type, .. } if enum_type == type_name)
             }
+            // Mu instances smartmatch only the Mu type object (Mu ~~ Mu.new is True).
+            (
+                Value::Package(lhs_type),
+                Value::Instance {
+                    class_name: rhs_class,
+                    ..
+                },
+            ) if rhs_class == "Mu" => lhs_type == "Mu",
             // When LHS is a type object (Package), only match same type or type hierarchy
             (Value::Package(_), _) => false,
             // When RHS is NaN, check if LHS is also NaN

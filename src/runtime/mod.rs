@@ -310,6 +310,26 @@ impl Interpreter {
         );
         let mut classes = HashMap::new();
         classes.insert(
+            "Mu".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Mu".to_string()],
+            },
+        );
+        classes.insert(
+            "Any".to_string(),
+            ClassDef {
+                parents: vec!["Mu".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Any".to_string(), "Mu".to_string()],
+            },
+        );
+        classes.insert(
             "Promise".to_string(),
             ClassDef {
                 parents: Vec::new(),
