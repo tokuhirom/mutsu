@@ -129,6 +129,7 @@ impl Interpreter {
                 name,
                 args,
                 modifier,
+                quoted: _,
             } => {
                 self.validate_private_access_in_expr(caller_class, target)?;
                 for arg in args {

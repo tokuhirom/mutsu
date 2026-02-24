@@ -524,12 +524,14 @@ impl Interpreter {
                 name,
                 args,
                 modifier,
+                quoted,
             } => Expr::MethodCall {
                 target: Box::new(Self::rewrite_proto_dispatch_expr(target)),
                 name: name.clone(),
                 // Same rule as Expr::Call: don't rewrite callback arguments.
                 args: args.to_vec(),
                 modifier: *modifier,
+                quoted: *quoted,
             },
             Expr::ArrayLiteral(items) => Expr::ArrayLiteral(
                 items

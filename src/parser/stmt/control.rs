@@ -893,6 +893,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         name: "defined".to_string(),
         args: Vec::new(),
         modifier: None,
+        quoted: false,
     };
     let cond = if is_without {
         Expr::Unary {
@@ -921,6 +922,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             name: "defined".to_string(),
             args: Vec::new(),
             modifier: None,
+            quoted: false,
         };
         let (r, _) = ws(r)?;
         let (r, orwith_else) = if keyword("else", r).is_some() {

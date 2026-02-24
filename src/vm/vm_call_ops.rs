@@ -157,6 +157,7 @@ impl VM {
         name_idx: u32,
         arity: u32,
         modifier_idx: Option<u32>,
+        quoted: bool,
     ) -> Result<(), RuntimeError> {
         let method_raw = Self::const_str(code, name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
@@ -230,13 +231,27 @@ impl VM {
             return Ok(());
         }
 
-        let call_result =
+        // When the method name was quoted (e.g. ."DEFINITE"()), skip the native
+        // pseudo-method fast path so user-defined methods are called instead.
+        let skip_native = quoted
+            && matches!(
+                method.as_str(),
+                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+            );
+        if skip_native {
+            self.interpreter.skip_pseudo_method_native = Some(method.clone());
+        }
+        let call_result = if !skip_native {
             if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
                 native_result
             } else {
                 self.interpreter
                     .call_method_with_values(target, &method, args)
-            };
+            }
+        } else {
+            self.interpreter
+                .call_method_with_values(target, &method, args)
+        };
         match modifier.as_deref() {
             Some("?") => {
                 self.stack.push(call_result.unwrap_or(Value::Nil));
@@ -308,6 +323,7 @@ impl VM {
         arity: u32,
         target_name_idx: u32,
         modifier_idx: Option<u32>,
+        quoted: bool,
     ) -> Result<(), RuntimeError> {
         let method_raw = Self::const_str(code, name_idx).to_string();
         let target_name = Self::const_str(code, target_name_idx).to_string();
@@ -380,13 +396,25 @@ impl VM {
             self.stack.push(junction_result);
             return Ok(());
         }
-        let call_result =
+        let skip_native = quoted
+            && matches!(
+                method.as_str(),
+                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+            );
+        if skip_native {
+            self.interpreter.skip_pseudo_method_native = Some(method.clone());
+        }
+        let call_result = if !skip_native {
             if let Some(native_result) = Self::try_native_method(&target, &method, &args) {
                 native_result
             } else {
                 self.interpreter
                     .call_method_mut_with_values(&target_name, target, &method, args)
-            };
+            }
+        } else {
+            self.interpreter
+                .call_method_mut_with_values(&target_name, target, &method, args)
+        };
         match modifier.as_deref() {
             Some("?") => {
                 self.stack.push(call_result.unwrap_or(Value::Nil));
