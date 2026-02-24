@@ -332,7 +332,19 @@ impl VM {
         } else {
             (false, op.clone())
         };
-        let (negate, base_op) = if let Some(stripped) = op_no_scan.strip_prefix('!') {
+        // Only treat '!' as negation prefix when the remaining part is a known
+        // operator (e.g. [!after], [!==], [!eqv]).  Operators like '!=' are their
+        // own base operators and must not be split.
+        const KNOWN_BASE_OPS: &[&str] = &[
+            "+", "-", "*", "/", "%", "~", "||", "&&", "//", "%%", "**", "^^", "+&", "+|", "+^",
+            "+<", "+>", "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=",
+            ">=", "<=>", "===", "=:=", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg", "cmp",
+            "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",", "after", "before", "X", "Z",
+            "x", "xx", "&", "|", "^",
+        ];
+        let (negate, base_op) = if let Some(stripped) = op_no_scan.strip_prefix('!')
+            && KNOWN_BASE_OPS.contains(&stripped)
+        {
             (true, stripped.to_string())
         } else {
             (false, op_no_scan)
@@ -378,7 +390,9 @@ impl VM {
                     | "<="
                     | ">="
                     | "==="
+                    | "=:="
                     | "eqv"
+                    | "~~"
                     | "cmp"
                     | "leg"
             );
