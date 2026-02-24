@@ -108,6 +108,19 @@ fn supplier_quit(supplier_id: u64, reason: Value) {
     }
 }
 
+#[derive(Clone, Default)]
+struct SupplierSubscriptions {
+    taps: Vec<Value>,
+    done_callbacks: Vec<Value>,
+}
+
+type SupplierSubscriptionsMap = std::sync::Mutex<HashMap<u64, SupplierSubscriptions>>;
+
+fn supplier_subscriptions_map() -> &'static SupplierSubscriptionsMap {
+    static MAP: OnceLock<SupplierSubscriptionsMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
 #[derive(Debug, Default)]
 struct LockState {
     owner: Option<String>,
@@ -129,6 +142,11 @@ fn lock_state_map() -> &'static LockStateMap {
 }
 
 pub(super) fn next_supply_id() -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+    COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
+pub(super) fn next_supplier_id() -> u64 {
     static COUNTER: AtomicU64 = AtomicU64::new(1);
     COUNTER.fetch_add(1, Ordering::Relaxed)
 }
@@ -240,6 +258,43 @@ pub(super) fn register_supply_tap(supply_id: u64, tap: Value) {
 pub(super) fn get_supply_taps(supply_id: u64) -> Vec<Value> {
     if let Ok(map) = supply_taps_map().lock() {
         map.get(&supply_id).cloned().unwrap_or_default()
+    } else {
+        Vec::new()
+    }
+}
+
+fn register_supplier_tap(supplier_id: u64, tap: Value) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(supplier_id).or_default().taps.push(tap);
+    }
+}
+
+fn register_supplier_done_callback(supplier_id: u64, done_cb: Value) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(supplier_id)
+            .or_default()
+            .done_callbacks
+            .push(done_cb);
+    }
+}
+
+fn supplier_taps(supplier_id: u64) -> Vec<Value> {
+    if let Ok(map) = supplier_subscriptions_map().lock() {
+        map.get(&supplier_id)
+            .map(|s| s.taps.clone())
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    }
+}
+
+fn take_supplier_done_callbacks(supplier_id: u64) -> Vec<Value> {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        if let Some(subs) = map.get_mut(&supplier_id) {
+            std::mem::take(&mut subs.done_callbacks)
+        } else {
+            Vec::new()
+        }
     } else {
         Vec::new()
     }
@@ -929,10 +984,14 @@ impl Interpreter {
                 new_attrs.insert("live".to_string(), Value::Bool(false));
                 Ok(Value::make_instance("Supply".to_string(), new_attrs))
             }
-            "tap" => {
+            "tap" | "act" => {
                 // Immutable tap: emit all values and return a Tap instance
                 let tap_cb = args.first().cloned().unwrap_or(Value::Nil);
                 let done_cb = Self::named_value(&args, "done");
+
+                if let Some(Value::Int(supplier_id)) = attributes.get("supplier_id") {
+                    register_supplier_tap(*supplier_id as u64, tap_cb.clone());
+                }
 
                 // If this Supply has a supply_id (belongs to Proc::Async),
                 // register tap in the global registry so .start can find it
@@ -976,7 +1035,19 @@ impl Interpreter {
                 }
 
                 if let Some(done_fn) = done_cb {
-                    let _ = self.call_sub_value(done_fn, vec![], true);
+                    if let Some(Value::Int(supplier_id)) = attributes.get("supplier_id") {
+                        let supplier_is_done = attributes
+                            .get("supplier_done")
+                            .map(Value::truthy)
+                            .unwrap_or(false);
+                        if supplier_is_done {
+                            let _ = self.call_sub_value(done_fn, vec![], true);
+                        } else {
+                            register_supplier_done_callback(*supplier_id as u64, done_fn);
+                        }
+                    } else {
+                        let _ = self.call_sub_value(done_fn, vec![], true);
+                    }
                 }
                 Ok(Value::make_instance("Tap".to_string(), HashMap::new()))
             }
@@ -1064,6 +1135,7 @@ impl Interpreter {
                     Value::Bool(!done && quit_reason.is_none()),
                 );
                 supply_attrs.insert("supplier_id".to_string(), Value::Int(supplier_id as i64));
+                supply_attrs.insert("supplier_done".to_string(), Value::Bool(done));
                 if let Some(reason) = quit_reason {
                     supply_attrs.insert("quit_reason".to_string(), reason);
                 }
@@ -1121,12 +1193,34 @@ impl Interpreter {
                 if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {
                     supplier_emit(supplier_id, value);
                 }
+                if let Some(Value::Array(items, ..)) = attrs.get_mut("emitted") {
+                    Arc::make_mut(items).push(args.first().cloned().unwrap_or(Value::Nil));
+                } else {
+                    attrs.insert(
+                        "emitted".to_string(),
+                        Value::array(vec![args.first().cloned().unwrap_or(Value::Nil)]),
+                    );
+                }
+                if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
+                    for tap in supplier_taps(*supplier_id as u64) {
+                        let _ = self.call_sub_value(
+                            tap,
+                            vec![args.first().cloned().unwrap_or(Value::Nil)],
+                            true,
+                        );
+                    }
+                }
                 Ok((Value::Nil, attrs))
             }
             "done" => {
                 attrs.insert("done".to_string(), Value::Bool(true));
                 if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {
                     supplier_done(supplier_id);
+                }
+                if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
+                    for done_cb in take_supplier_done_callbacks(*supplier_id as u64) {
+                        let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                    }
                 }
                 Ok((Value::Nil, attrs))
             }
@@ -1139,6 +1233,11 @@ impl Interpreter {
                 attrs.insert("quit_reason".to_string(), reason.clone());
                 if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {
                     supplier_quit(supplier_id, reason);
+                }
+                if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
+                    for done_cb in take_supplier_done_callbacks(*supplier_id as u64) {
+                        let _ = self.call_sub_value(done_cb, Vec::new(), true);
+                    }
                 }
                 Ok((Value::Nil, attrs))
             }
@@ -1172,9 +1271,13 @@ impl Interpreter {
                 }
                 Ok((Value::Nil, attrs))
             }
-            "tap" => {
+            "tap" | "act" => {
                 let tap_cb = args.first().cloned().unwrap_or(Value::Nil);
                 let done_cb = Self::named_value(&args, "done");
+
+                if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
+                    register_supplier_tap(*supplier_id as u64, tap_cb.clone());
+                }
 
                 // If this Supply has a supply_id (belongs to Proc::Async),
                 // register tap in the global registry so .start can find it
@@ -1225,7 +1328,19 @@ impl Interpreter {
 
                 // Call done callback after all values emitted
                 if let Some(done_fn) = done_cb {
-                    let _ = self.call_sub_value(done_fn, vec![], true);
+                    if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
+                        let supplier_is_done = attrs
+                            .get("supplier_done")
+                            .map(Value::truthy)
+                            .unwrap_or(false);
+                        if supplier_is_done {
+                            let _ = self.call_sub_value(done_fn, vec![], true);
+                        } else {
+                            register_supplier_done_callback(*supplier_id as u64, done_fn);
+                        }
+                    } else {
+                        let _ = self.call_sub_value(done_fn, vec![], true);
+                    }
                 }
                 let tap_instance = Value::make_instance("Tap".to_string(), HashMap::new());
                 Ok((tap_instance, attrs))

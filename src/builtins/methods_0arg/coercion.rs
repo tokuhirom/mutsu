@@ -288,6 +288,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             {
                 return Some(Ok(target.clone()));
             }
+            // Supplier.Supply must be handled by runtime native methods
+            // so the returned Supply remains linked to Supplier.emit/.done.
+            if let Value::Instance { class_name, .. } = target
+                && class_name == "Supplier"
+            {
+                return None;
+            }
             let values = match target {
                 Value::Array(items, ..) => items.to_vec(),
                 Value::Range(a, b) => (*a..=*b).map(Value::Int).collect(),
