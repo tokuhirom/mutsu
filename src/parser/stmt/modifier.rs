@@ -275,23 +275,40 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
         let (r, cond) = expression(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
-        return Ok((
-            r,
-            Stmt::If {
-                cond: Expr::Unary {
-                    op: TokenKind::Bang,
-                    expr: Box::new(Expr::MethodCall {
-                        target: Box::new(cond),
-                        name: "defined".to_string(),
-                        args: Vec::new(),
-                        modifier: None,
-                        quoted: false,
-                    }),
-                },
-                then_branch: vec![stmt],
+        // `stmt without expr` is like `given expr { unless .defined { stmt } }`.
+        // Sets $_ to the condition value, then runs stmt if $_ is not defined.
+        let not_defined = Expr::Unary {
+            op: TokenKind::Bang,
+            expr: Box::new(Expr::MethodCall {
+                target: Box::new(Expr::Var("_".to_string())),
+                name: "defined".to_string(),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+            }),
+        };
+        let modified_stmt = rewrite_placeholder_block_modifier_stmt(stmt.clone(), &cond);
+        if matches!(stmt, Stmt::Expr(_)) {
+            let if_stmt = Stmt::If {
+                cond: not_defined,
+                then_branch: vec![modified_stmt],
                 else_branch: Vec::new(),
-            },
-        ));
+            };
+            let given_stmt = Stmt::Given {
+                topic: cond,
+                body: vec![Stmt::Expr(Expr::DoStmt(Box::new(if_stmt)))],
+            };
+            return Ok((r, Stmt::Expr(Expr::DoStmt(Box::new(given_stmt)))));
+        }
+        let given_stmt = Stmt::Given {
+            topic: cond,
+            body: vec![Stmt::If {
+                cond: not_defined,
+                then_branch: vec![modified_stmt],
+                else_branch: Vec::new(),
+            }],
+        };
+        return Ok((r, given_stmt));
     }
 
     Ok((rest, stmt))

@@ -245,11 +245,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "defined" => Some(Ok(Value::Bool(match target {
             Value::Nil | Value::Package(_) => false,
             Value::Slip(items) if items.is_empty() => false,
+            Value::Instance { class_name, .. } if class_name == "Failure" => false,
             _ => true,
         }))),
         "DEFINITE" => Some(Ok(Value::Bool(match target {
             Value::Nil | Value::Package(_) => false,
             Value::Slip(items) if items.is_empty() => false,
+            Value::Instance { class_name, .. } if class_name == "Failure" => false,
             _ => true,
         }))),
         "WHICH" => {
