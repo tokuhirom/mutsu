@@ -1,6 +1,6 @@
 #!/bin/bash
 # Pick the next roast test to work on, prioritized by severity.
-# Priority: panic > timeout > error > fail
+# Priority: panic > timeout > parse-error > error > fail
 # Within each category, picks the shortest file (by line count).
 # Excludes tests already in the whitelist.
 #
@@ -26,6 +26,7 @@ RAKU_PASS="$OUTDIR/roast-raku-pass.txt"
 CATEGORIES=(
     "panic:$OUTDIR/roast-panic.txt"
     "timeout:$OUTDIR/roast-timeout.txt"
+    "parse-error:$OUTDIR/roast-parse-error.txt"
     "error:$OUTDIR/roast-error.txt"
     "fail:$OUTDIR/roast-fail.txt"
 )
