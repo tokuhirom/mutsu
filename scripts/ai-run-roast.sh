@@ -88,7 +88,9 @@ After implementing:
 - Run cargo fmt to format the code
 - Run make test and make roast to check regressions
 - If it passes, append to roast-whitelist.txt while keeping sort order
-- commit, push, and open a PR with gh pr create
+- before opening a PR, merge the latest remote main with: git fetch origin && git merge origin/main
+- resolve merge conflicts if any, rerun relevant checks, then commit and push
+- open a PR with gh pr create
 - enable auto merge
 EOF_PROMPT
 )
