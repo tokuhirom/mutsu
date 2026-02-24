@@ -239,6 +239,7 @@ pub struct Interpreter {
     classes: HashMap<String, ClassDef>,
     class_trusts: HashMap<String, HashSet<String>>,
     roles: HashMap<String, RoleDef>,
+    role_type_params: HashMap<String, Vec<String>>,
     subsets: HashMap<String, SubsetDef>,
     proto_subs: HashSet<String>,
     proto_tokens: HashSet<String>,
@@ -801,6 +802,20 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "X::TypeCheck::Binding::Parameter".to_string(),
+            ClassDef {
+                parents: vec!["X::TypeCheck::Binding".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec![
+                    "X::TypeCheck::Binding::Parameter".to_string(),
+                    "X::TypeCheck::Binding".to_string(),
+                    "Exception".to_string(),
+                ],
+            },
+        );
+        classes.insert(
             "X::TypeCheck::Assignment".to_string(),
             ClassDef {
                 parents: vec!["Exception".to_string()],
@@ -856,6 +871,7 @@ impl Interpreter {
                 );
                 roles
             },
+            role_type_params: HashMap::new(),
             subsets: HashMap::new(),
             proto_subs: HashSet::new(),
             proto_tokens: HashSet::new(),
@@ -1208,6 +1224,7 @@ impl Interpreter {
             classes: self.classes.clone(),
             class_trusts: self.class_trusts.clone(),
             roles: self.roles.clone(),
+            role_type_params: self.role_type_params.clone(),
             subsets: self.subsets.clone(),
             proto_subs: self.proto_subs.clone(),
             proto_tokens: self.proto_tokens.clone(),
