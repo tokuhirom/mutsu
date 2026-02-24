@@ -246,7 +246,9 @@ impl Value {
             "Pod::Block" => matches!(
                 self,
                 Value::Instance { class_name, .. }
-                    if class_name == "Pod::Block" || class_name == "Pod::Block::Comment"
+                    if class_name == "Pod::Block"
+                        || class_name == "Pod::Block::Comment"
+                        || class_name == "Pod::Block::Table"
             ),
             _ => false,
         }
