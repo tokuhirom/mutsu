@@ -216,6 +216,7 @@ pub(crate) fn native_method_1arg(
                 let start = items.len().saturating_sub(n);
                 Some(Ok(Value::array(items[start..].to_vec())))
             }
+            Value::Instance { class_name, .. } if class_name == "Supply" => None,
             _ => {
                 let n = match arg {
                     Value::Int(i) => *i as usize,

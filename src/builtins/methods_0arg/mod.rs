@@ -740,6 +740,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "tail" => match target {
             Value::Array(items, ..) => Some(Ok(items.last().cloned().unwrap_or(Value::Nil))),
+            Value::Instance { class_name, .. } if class_name == "Supply" => None,
             _ => {
                 let items = runtime::value_to_list(target);
                 Some(Ok(items.last().cloned().unwrap_or(Value::Nil)))
