@@ -271,6 +271,7 @@ roast/S32-str/append.t
 roast/S32-str/bool.t
 roast/S32-str/chop.t
 roast/S32-str/contains.t
+roast/S32-str/fc.t
 roast/S32-str/index.t
 roast/S32-str/lc.t
 roast/S32-str/length.t
