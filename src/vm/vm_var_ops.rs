@@ -661,7 +661,7 @@ impl VM {
             val
         };
         self.locals[idx] = val.clone();
-        self.interpreter.env_mut().insert(name.clone(), val.clone());
+        self.set_env_with_main_alias(name, val.clone());
         if let Some(attr) = name.strip_prefix('.') {
             self.interpreter
                 .env_mut()
@@ -696,7 +696,7 @@ impl VM {
             val
         };
         self.locals[idx] = val.clone();
-        self.interpreter.env_mut().insert(name.clone(), val.clone());
+        self.set_env_with_main_alias(name, val.clone());
         if let Some(attr) = name.strip_prefix('.') {
             self.interpreter
                 .env_mut()

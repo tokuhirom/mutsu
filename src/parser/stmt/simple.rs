@@ -1120,7 +1120,18 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             r = r2;
         }
 
-        // Convert all but last expr to Stmt::Expr
+        // Without a trailing statement modifier, keep this as a plain comma
+        // expression statement (do not split into multiple statements).
+        if !is_stmt_modifier_keyword(r) {
+            let expr = if exprs.len() == 1 {
+                exprs.remove(0)
+            } else {
+                Expr::ArrayLiteral(exprs)
+            };
+            return Ok((r, Stmt::Expr(expr)));
+        }
+
+        // Convert all but last expr to Stmt::Expr for modifier lowering
         let mut stmts = Vec::new();
         let last_expr = exprs.pop().unwrap();
         for e in exprs {

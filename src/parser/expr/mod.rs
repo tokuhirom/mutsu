@@ -40,7 +40,7 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
         if r.starts_with("=>") && !r.starts_with("==>") {
             let r = &r[2..];
             let (r, _) = ws(r)?;
-            let (r, value) = or_expr(r)?;
+            let (r, value) = parse_fat_arrow_value(r)?;
             // Auto-quote bareword on LHS of => only for plain barewords.
             // Parenthesized forms like `(Mu) => 4` must preserve the original value key.
             let consumed = &input[..input.len() - rest.len()];
@@ -78,7 +78,7 @@ pub(super) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {
     if r.starts_with("=>") && !r.starts_with("==>") {
         let r = &r[2..];
         let (r, _) = ws(r)?;
-        let (r, value) = or_expr(r)?;
+        let (r, value) = parse_fat_arrow_value(r)?;
         let consumed = &input[..input.len() - rest.len()];
         let left = match expr {
             Expr::BareWord(ref name) if !consumed.trim_start().starts_with('(') => {
@@ -100,6 +100,25 @@ pub(super) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {
         expr = wrap_whatevercode(&expr);
     }
     Ok((rest, expr))
+}
+
+fn parse_fat_arrow_value(input: &str) -> PResult<'_, Expr> {
+    let (rest, value) = or_expr(input)?;
+    let (r, _) = ws(rest)?;
+    if r.starts_with("=>") && !r.starts_with("==>") {
+        let r = &r[2..];
+        let (r, _) = ws(r)?;
+        let (r, right) = parse_fat_arrow_value(r)?;
+        return Ok((
+            r,
+            Expr::Binary {
+                left: Box::new(value),
+                op: TokenKind::FatArrow,
+                right: Box::new(right),
+            },
+        ));
+    }
+    Ok((rest, value))
 }
 
 pub(in crate::parser) fn term_expr(input: &str) -> PResult<'_, Expr> {

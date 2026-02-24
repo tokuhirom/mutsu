@@ -210,6 +210,16 @@ fn bind_sub_signature_from_value(
     Ok(())
 }
 
+fn sub_signature_target_from_remaining_args(args: &[Value]) -> Value {
+    if args.len() == 1 {
+        return args[0].clone();
+    }
+    Value::Capture {
+        positional: args.to_vec(),
+        named: std::collections::HashMap::new(),
+    }
+}
+
 /// Strip a type smiley suffix (:U, :D, :_) from a constraint string.
 /// Returns (base_type, smiley) where smiley is Some(":U"), Some(":D"), Some(":_") or None.
 pub(crate) fn strip_type_smiley(constraint: &str) -> (&str, Option<&str>) {
@@ -263,6 +273,28 @@ impl Interpreter {
         } else if let Some(bare) = name.strip_prefix('^') {
             self.env.insert(bare.to_string(), value);
         }
+    }
+
+    fn captured_type_object(value: &Value) -> Value {
+        match value {
+            Value::Package(name) => Value::Package(name.clone()),
+            Value::Instance { class_name, .. } => Value::Package(class_name.clone()),
+            Value::Nil => Value::Package("Any".to_string()),
+            _ => Value::Package(super::value_type_name(value).to_string()),
+        }
+    }
+
+    fn parse_generic_constraint(constraint: &str) -> Option<(&str, &str)> {
+        let open = constraint.find('[')?;
+        if open == 0 || !constraint.ends_with(']') {
+            return None;
+        }
+        let base = &constraint[..open];
+        let inner = &constraint[open + 1..constraint.len() - 1];
+        if base.is_empty() || inner.is_empty() {
+            return None;
+        }
+        Some((base, inner))
     }
 
     pub(super) fn init_endian_enum(&mut self) {
@@ -545,6 +577,37 @@ impl Interpreter {
                 true
             };
         }
+        if let Some((base, inner)) = Self::parse_generic_constraint(constraint) {
+            match base {
+                "Array" | "List" | "Positional" => {
+                    if let Value::Array(items, ..) = value {
+                        return items.iter().all(|v| self.type_matches_value(inner, v));
+                    }
+                    return false;
+                }
+                "Hash" | "Associative" => {
+                    if let Value::Hash(map) = value {
+                        return map.values().all(|v| self.type_matches_value(inner, v));
+                    }
+                    if let Value::Array(items, ..) = value {
+                        return items.iter().all(|item| {
+                            if let Value::Pair(_, v) = item {
+                                self.type_matches_value(inner, v)
+                            } else {
+                                false
+                            }
+                        });
+                    }
+                    return false;
+                }
+                _ => {}
+            }
+        }
+        if let Some(Value::Package(bound)) = self.env.get(constraint).cloned()
+            && bound != constraint
+        {
+            return self.type_matches_value(&bound, value);
+        }
         // Handle type smileys (:U, :D, :_)
         let (base_constraint, smiley) = strip_type_smiley(constraint);
         if let Some(smiley) = smiley {
@@ -603,76 +666,118 @@ impl Interpreter {
         args: &[Value],
         param_defs: &[ParamDef],
     ) -> bool {
-        let positional_params: Vec<&ParamDef> = param_defs.iter().filter(|p| !p.named).collect();
-        let mut i = 0usize;
-        for pd in positional_params {
-            let is_capture_param = pd.name == "_capture";
-            let arg_for_checks: Option<Value> = if pd.slurpy || is_capture_param {
-                Some(Value::array(args[i..].to_vec()))
-            } else {
-                args.get(i).cloned()
-            };
-            if let Some(literal) = &pd.literal_value {
-                if let Some(arg) = arg_for_checks.as_ref() {
-                    if arg != literal {
+        let saved_env = self.env.clone();
+        let result = (|| {
+            let positional_params: Vec<&ParamDef> =
+                param_defs.iter().filter(|p| !p.named).collect();
+            let mut i = 0usize;
+            for pd in positional_params {
+                let is_capture_param = pd.name == "_capture";
+                let is_subsig_capture = pd.name == "__subsig__" && pd.sub_signature.is_some();
+                let arg_for_checks: Option<Value> = if pd.slurpy || is_capture_param {
+                    Some(Value::array(args[i..].to_vec()))
+                } else if is_subsig_capture {
+                    Some(sub_signature_target_from_remaining_args(&args[i..]))
+                } else {
+                    args.get(i).cloned()
+                };
+                if let Some(literal) = &pd.literal_value {
+                    if let Some(arg) = arg_for_checks.as_ref() {
+                        if arg != literal {
+                            return false;
+                        }
+                    } else {
                         return false;
                     }
-                } else {
-                    return false;
                 }
-            }
-            if let Some(constraint) = &pd.type_constraint
-                && let Some(arg) = arg_for_checks.as_ref()
-            {
-                if pd.name == "__type_only__" {
-                    // Bare identifier param (e.g., enum value) — resolve from env and compare
-                    if let Some(expected_val) = self.env.get(constraint).cloned() {
-                        if arg != &expected_val {
+                if let Some(constraint) = &pd.type_constraint
+                    && let Some(arg) = arg_for_checks.as_ref()
+                {
+                    if let Some(captured_name) = constraint.strip_prefix("::") {
+                        self.env
+                            .insert(captured_name.to_string(), Self::captured_type_object(arg));
+                    } else if pd.name == "__type_only__" {
+                        // Bare identifier param (e.g., enum value) — resolve from env and compare
+                        if let Some(expected_val) = self.env.get(constraint).cloned() {
+                            if arg != &expected_val {
+                                return false;
+                            }
+                        } else if !self.type_matches_value(constraint, arg) {
+                            return false;
+                        }
+                    } else if pd.name.starts_with('@') {
+                        let ok = match arg {
+                            Value::Array(items, ..) => {
+                                items.iter().all(|v| self.type_matches_value(constraint, v))
+                            }
+                            Value::Slip(items) => {
+                                items.iter().all(|v| self.type_matches_value(constraint, v))
+                            }
+                            _ => false,
+                        };
+                        if !ok {
+                            return false;
+                        }
+                    } else if pd.name.starts_with('%') {
+                        let ok = match arg {
+                            Value::Hash(map) => {
+                                map.values().all(|v| self.type_matches_value(constraint, v))
+                            }
+                            Value::Array(items, ..) => items.iter().all(|item| {
+                                if let Value::Pair(_, v) = item {
+                                    self.type_matches_value(constraint, v)
+                                } else {
+                                    false
+                                }
+                            }),
+                            _ => false,
+                        };
+                        if !ok {
                             return false;
                         }
                     } else if !self.type_matches_value(constraint, arg) {
                         return false;
                     }
-                } else if !self.type_matches_value(constraint, arg) {
-                    return false;
+                }
+                if let Some(sub_params) = &pd.sub_signature {
+                    let Some(arg) = arg_for_checks.as_ref() else {
+                        return false;
+                    };
+                    if !sub_signature_matches_value(self, sub_params, arg) {
+                        return false;
+                    }
+                }
+                if let Some(where_expr) = &pd.where_constraint {
+                    let Some(arg) = arg_for_checks.as_ref() else {
+                        return false;
+                    };
+                    let saved = self.env.clone();
+                    self.env.insert("_".to_string(), arg.clone());
+                    let ok = match where_expr.as_ref() {
+                        Expr::AnonSub(body) => self
+                            .eval_block_value(body)
+                            .map(|v| v.truthy())
+                            .unwrap_or(false),
+                        expr => self
+                            .eval_block_value(&[Stmt::Expr(expr.clone())])
+                            .map(|v| v.truthy())
+                            .unwrap_or(false),
+                    };
+                    self.env = saved;
+                    if !ok {
+                        return false;
+                    }
+                }
+                if is_capture_param || is_subsig_capture {
+                    i = args.len();
+                } else if !pd.slurpy {
+                    i += 1;
                 }
             }
-            if let Some(sub_params) = &pd.sub_signature {
-                let Some(arg) = arg_for_checks.as_ref() else {
-                    return false;
-                };
-                if !sub_signature_matches_value(self, sub_params, arg) {
-                    return false;
-                }
-            }
-            if let Some(where_expr) = &pd.where_constraint {
-                let Some(arg) = arg_for_checks.as_ref() else {
-                    return false;
-                };
-                let saved = self.env.clone();
-                self.env.insert("_".to_string(), arg.clone());
-                let ok = match where_expr.as_ref() {
-                    Expr::AnonSub(body) => self
-                        .eval_block_value(body)
-                        .map(|v| v.truthy())
-                        .unwrap_or(false),
-                    expr => self
-                        .eval_block_value(&[Stmt::Expr(expr.clone())])
-                        .map(|v| v.truthy())
-                        .unwrap_or(false),
-                };
-                self.env = saved;
-                if !ok {
-                    return false;
-                }
-            }
-            if is_capture_param {
-                i = args.len();
-            } else if !pd.slurpy {
-                i += 1;
-            }
-        }
-        true
+            true
+        })();
+        self.env = saved_env;
+        result
     }
 
     pub(super) fn method_args_match(&mut self, args: &[Value], param_defs: &[ParamDef]) -> bool {
@@ -810,6 +915,15 @@ impl Interpreter {
             } else {
                 // Positional param
                 if positional_idx < args.len() {
+                    if pd.name == "__subsig__"
+                        && let Some(sub_params) = &pd.sub_signature
+                    {
+                        let capture =
+                            sub_signature_target_from_remaining_args(&args[positional_idx..]);
+                        bind_sub_signature_from_value(self, sub_params, &capture)?;
+                        positional_idx = args.len();
+                        continue;
+                    }
                     let is_rw = pd.traits.iter().any(|t| t == "rw");
                     if is_rw {
                         let source_name = arg_sources
@@ -829,29 +943,117 @@ impl Interpreter {
                     if pd.name != "__type_only__"
                         && let Some(constraint) = &pd.type_constraint
                     {
-                        if let Some((target, source)) = parse_coercion_type(constraint) {
+                        let type_error_kind = if constraint.chars().all(|c| c.is_ascii_uppercase())
+                            && self.env.contains_key(constraint)
+                        {
+                            "X::TypeCheck::Binding"
+                        } else {
+                            "X::TypeCheck::Argument"
+                        };
+                        if let Some(captured_name) = constraint.strip_prefix("::") {
+                            self.env.insert(
+                                captured_name.to_string(),
+                                Self::captured_type_object(&value),
+                            );
+                        } else if let Some((target, source)) = parse_coercion_type(constraint) {
                             // Coercion type: check source type if specified, then coerce
                             if let Some(src) = source
                                 && !self.type_matches_value(src, &value)
                             {
                                 return Err(RuntimeError::new(format!(
-                                    "X::TypeCheck::Argument: Type check failed for {}: expected {}, got {}",
+                                    "{}: Type check failed for {}: expected {}, got {}",
+                                    type_error_kind,
                                     pd.name,
                                     constraint,
                                     super::value_type_name(&value)
                                 )));
                             }
                             value = coerce_value(target, value);
+                        } else if pd.name.starts_with('@') {
+                            let ok = match &value {
+                                Value::Array(items, ..) => {
+                                    items.iter().all(|v| self.type_matches_value(constraint, v))
+                                }
+                                Value::Slip(items) => {
+                                    items.iter().all(|v| self.type_matches_value(constraint, v))
+                                }
+                                _ => false,
+                            };
+                            if !ok {
+                                return Err(RuntimeError::new(format!(
+                                    "{}: Type check failed for {}: expected {}, got {}",
+                                    type_error_kind,
+                                    pd.name,
+                                    constraint,
+                                    super::value_type_name(&value)
+                                )));
+                            }
+                        } else if pd.name.starts_with('%') {
+                            let ok = match &value {
+                                Value::Hash(map) => {
+                                    map.values().all(|v| self.type_matches_value(constraint, v))
+                                }
+                                Value::Array(items, ..) => items.iter().all(|item| {
+                                    if let Value::Pair(_, v) = item {
+                                        self.type_matches_value(constraint, v)
+                                    } else {
+                                        false
+                                    }
+                                }),
+                                _ => false,
+                            };
+                            if !ok {
+                                return Err(RuntimeError::new(format!(
+                                    "{}: Type check failed for {}: expected {}, got {}",
+                                    type_error_kind,
+                                    pd.name,
+                                    constraint,
+                                    super::value_type_name(&value)
+                                )));
+                            }
                         } else if !self.type_matches_value(constraint, &value) {
                             return Err(RuntimeError::new(format!(
-                                "X::TypeCheck::Argument: Type check failed for {}: expected {}, got {}",
+                                "{}: Type check failed for {}: expected {}, got {}",
+                                type_error_kind,
                                 pd.name,
                                 constraint,
                                 super::value_type_name(&value)
                             )));
                         }
+                        if (constraint.starts_with("Associative[")
+                            || constraint.starts_with("Hash["))
+                            && let Value::Array(items, ..) = &value
+                        {
+                            let mut map = std::collections::HashMap::new();
+                            for item in items.iter() {
+                                if let Value::Pair(k, v) = item {
+                                    map.insert(k.clone(), *v.clone());
+                                }
+                            }
+                            value = Value::hash(map);
+                        }
                     }
-                    if !pd.name.is_empty() && pd.name != "__type_only__" {
+                    if !pd.name.is_empty()
+                        && pd.name != "__type_only__"
+                        && !pd.name.starts_with("__type_capture__")
+                    {
+                        if pd.name.starts_with('%')
+                            && let Value::Array(items, ..) = &value
+                        {
+                            let mut map = std::collections::HashMap::new();
+                            for item in items.iter() {
+                                if let Value::Pair(k, v) = item {
+                                    map.insert(k.clone(), *v.clone());
+                                }
+                            }
+                            self.bind_param_value(&pd.name, Value::hash(map));
+                            if let Some(sub_params) = &pd.sub_signature {
+                                let target = self.env.get(&pd.name).cloned().unwrap_or(Value::Nil);
+                                bind_sub_signature_from_value(self, sub_params, &target)?;
+                            }
+                            positional_idx += 1;
+                            continue;
+                        }
                         self.bind_param_value(&pd.name, value);
                     }
                     if let Some(sub_params) = &pd.sub_signature {

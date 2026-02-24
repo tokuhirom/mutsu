@@ -1047,8 +1047,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     {
         let is_user_sub = crate::parser::stmt::simple::is_user_declared_sub(&name);
         let next = r.chars().next().unwrap();
-        let hyphen_forward_call =
-            !is_user_sub && name.contains('-') && (next.is_alphabetic() || next == '_');
+        let hyphen_forward_call = !is_user_sub && name.contains('-');
         if is_user_sub && let Ok((r2, expr)) = parse_expr_listop_args(r, name.clone()) {
             return Ok((r2, expr));
         }

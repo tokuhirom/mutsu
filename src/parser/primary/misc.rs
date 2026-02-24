@@ -218,7 +218,26 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             }
             let (r_item, mut item) = match colonpair_expr(item_input) {
                 Ok(parsed) => parsed,
-                Err(_) => expression(item_input)?,
+                Err(_) => match expression(item_input) {
+                    Ok((r_expr, expr_item)) => {
+                        let (r_chk, _) = ws(r_expr)?;
+                        let valid_tail = r_chk.starts_with(',')
+                            || r_chk.starts_with(')')
+                            || keyword("is", r_chk).is_some()
+                            || keyword("where", r_chk).is_some()
+                            || r_chk.starts_with('=');
+                        if valid_tail {
+                            (r_expr, expr_item)
+                        } else {
+                            let (r_frag, frag) = parse_signature_fragment(item_input)?;
+                            (r_frag, Expr::BareWord(frag))
+                        }
+                    }
+                    Err(_) => {
+                        let (r_frag, frag) = parse_signature_fragment(item_input)?;
+                        (r_frag, Expr::BareWord(frag))
+                    }
+                },
             };
             let (mut r_next, _) = ws(r_item)?;
             while let Some(after_is) = keyword("is", r_next) {
@@ -269,6 +288,24 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 r_end,
                 Expr::Literal(Value::make_instance("Signature".to_string(), attrs)),
+            ));
+        }
+    }
+    // :123name (numeric leading-value pair) => :name(123)
+    let digit_end = r.find(|c: char| !c.is_ascii_digit()).unwrap_or(r.len());
+    if digit_end > 0 && digit_end < r.len() {
+        let digits = &r[..digit_end];
+        let after_digits = &r[digit_end..];
+        if let Ok((rest, name)) = parse_ident_with_hyphens(after_digits)
+            && let Ok(n) = digits.parse::<i64>()
+        {
+            return Ok((
+                rest,
+                Expr::Binary {
+                    left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    right: Box::new(Expr::Literal(Value::Int(n))),
+                },
             ));
         }
     }
@@ -437,6 +474,7 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
 
 fn render_signature_item(expr: &Expr) -> String {
     match expr {
+        Expr::BareWord(name) => name.clone(),
         Expr::Var(name) => format!("${}", name),
         Expr::ArrayVar(name) => format!("@{}", name),
         Expr::HashVar(name) => format!("%{}", name),
@@ -458,6 +496,63 @@ fn render_signature_item(expr: &Expr) -> String {
         Expr::AnonSub(_) => "{ ... }".to_string(),
         _ => "...".to_string(),
     }
+}
+
+fn parse_signature_fragment(input: &str) -> PResult<'_, String> {
+    let mut depth_paren = 0usize;
+    let mut depth_bracket = 0usize;
+    let mut depth_brace = 0usize;
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escape = false;
+    for (idx, ch) in input.char_indices() {
+        if in_single {
+            if ch == '\'' && !escape {
+                in_single = false;
+            }
+            escape = ch == '\\' && !escape;
+            continue;
+        }
+        if in_double {
+            if ch == '"' && !escape {
+                in_double = false;
+            }
+            escape = ch == '\\' && !escape;
+            continue;
+        }
+        match ch {
+            '\'' => in_single = true,
+            '"' => in_double = true,
+            '(' => depth_paren += 1,
+            ')' => {
+                if depth_paren == 0 && depth_bracket == 0 && depth_brace == 0 {
+                    let frag = input[..idx].trim();
+                    if frag.is_empty() {
+                        return Err(PError::expected("signature item"));
+                    }
+                    return Ok((&input[idx..], frag.to_string()));
+                }
+                depth_paren = depth_paren.saturating_sub(1);
+            }
+            '[' => depth_bracket += 1,
+            ']' => depth_bracket = depth_bracket.saturating_sub(1),
+            '{' => depth_brace += 1,
+            '}' => depth_brace = depth_brace.saturating_sub(1),
+            ',' if depth_paren == 0 && depth_bracket == 0 && depth_brace == 0 => {
+                let frag = input[..idx].trim();
+                if frag.is_empty() {
+                    return Err(PError::expected("signature item"));
+                }
+                return Ok((&input[idx..], frag.to_string()));
+            }
+            _ => {}
+        }
+    }
+    let frag = input.trim();
+    if frag.is_empty() {
+        return Err(PError::expected("signature item"));
+    }
+    Ok(("", frag.to_string()))
 }
 
 /// Parse `\(...)` Capture literal.

@@ -41,7 +41,19 @@ impl VM {
         let mut args = Vec::new();
         for arg in raw_args {
             match arg {
-                Value::Slip(items) => args.extend(items.iter().cloned()),
+                Value::Slip(items) => {
+                    for item in items.iter() {
+                        match item {
+                            Value::Capture { positional, named } => {
+                                args.extend(positional.iter().cloned());
+                                for (k, v) in named.iter() {
+                                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                                }
+                            }
+                            other => args.push(other.clone()),
+                        }
+                    }
+                }
                 other => args.push(other),
             }
         }
@@ -106,7 +118,17 @@ impl VM {
                 }
             }
             Value::Slip(items) => {
-                args.extend(items.iter().cloned());
+                for item in items.iter() {
+                    match item {
+                        Value::Capture { positional, named } => {
+                            args.extend(positional.iter().cloned());
+                            for (k, v) in named.iter() {
+                                args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                            }
+                        }
+                        other => args.push(other.clone()),
+                    }
+                }
             }
             other => {
                 args.push(other);
@@ -154,7 +176,19 @@ impl VM {
         let mut args = Vec::new();
         for arg in raw_args {
             match arg {
-                Value::Slip(items) => args.extend(items.iter().cloned()),
+                Value::Slip(items) => {
+                    for item in items.iter() {
+                        match item {
+                            Value::Capture { positional, named } => {
+                                args.extend(positional.iter().cloned());
+                                for (k, v) in named.iter() {
+                                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                                }
+                            }
+                            other => args.push(other.clone()),
+                        }
+                    }
+                }
                 other => args.push(other),
             }
         }
@@ -284,7 +318,19 @@ impl VM {
         let mut args = Vec::new();
         for arg in raw_args {
             match arg {
-                Value::Slip(items) => args.extend(items.iter().cloned()),
+                Value::Slip(items) => {
+                    for item in items.iter() {
+                        match item {
+                            Value::Capture { positional, named } => {
+                                args.extend(positional.iter().cloned());
+                                for (k, v) in named.iter() {
+                                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                                }
+                            }
+                            other => args.push(other.clone()),
+                        }
+                    }
+                }
                 other => args.push(other),
             }
         }
@@ -360,7 +406,19 @@ impl VM {
         let mut args = Vec::new();
         for arg in raw_args {
             match arg {
-                Value::Slip(items) => args.extend(items.iter().cloned()),
+                Value::Slip(items) => {
+                    for item in items.iter() {
+                        match item {
+                            Value::Capture { positional, named } => {
+                                args.extend(positional.iter().cloned());
+                                for (k, v) in named.iter() {
+                                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                                }
+                            }
+                            other => args.push(other.clone()),
+                        }
+                    }
+                }
                 other => args.push(other),
             }
         }
@@ -475,7 +533,19 @@ impl VM {
         let mut args = Vec::new();
         for arg in raw_args {
             match arg {
-                Value::Slip(items) => args.extend(items.iter().cloned()),
+                Value::Slip(items) => {
+                    for item in items.iter() {
+                        match item {
+                            Value::Capture { positional, named } => {
+                                args.extend(positional.iter().cloned());
+                                for (k, v) in named.iter() {
+                                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                                }
+                            }
+                            other => args.push(other.clone()),
+                        }
+                    }
+                }
                 other => args.push(other),
             }
         }
@@ -554,7 +624,17 @@ impl VM {
                 }
             }
             Value::Slip(items) => {
-                args.extend(items.iter().cloned());
+                for item in items.iter() {
+                    match item {
+                        Value::Capture { positional, named } => {
+                            args.extend(positional.iter().cloned());
+                            for (k, v) in named.iter() {
+                                args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                            }
+                        }
+                        other => args.push(other.clone()),
+                    }
+                }
             }
             other => {
                 args.push(other);

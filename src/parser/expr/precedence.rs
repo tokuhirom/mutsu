@@ -510,9 +510,54 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
             rest = r;
             continue;
         }
+        // User-defined infix words (typically via my &infix:<...> = ...),
+        // e.g. `42 same-in-Int "42"`.
+        // Do not span statement boundaries across newlines.
+        let ws_before = &rest[..rest.len() - r.len()];
+        if !ws_before.contains('\n')
+            && let Some((name, len)) = parse_custom_infix_word(r)
+        {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = range_expr(r).map_err(|err| {
+                enrich_expected_error(err, "expected expression after infix operator", r.len())
+            })?;
+            *left = Expr::InfixFunc {
+                name,
+                left: Box::new(left.clone()),
+                right: vec![right],
+                modifier: None,
+            };
+            rest = r;
+            continue;
+        }
         break;
     }
     Ok(rest)
+}
+
+fn parse_custom_infix_word(input: &str) -> Option<(String, usize)> {
+    let first = input.chars().next()?;
+    if !first.is_alphabetic() && first != '_' {
+        return None;
+    }
+    let mut end = first.len_utf8();
+    let mut saw_hyphen = false;
+    for ch in input[end..].chars() {
+        if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+            if ch == '-' {
+                saw_hyphen = true;
+            }
+            end += ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+    if !saw_hyphen {
+        return None;
+    }
+    let name = &input[..end];
+    Some((name.to_string(), end))
 }
 
 /// Parse a comma-separated list of range_expr, returning (rest, items).

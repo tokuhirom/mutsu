@@ -128,27 +128,36 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     Ok((rest, Expr::Var(full_name)))
 }
 
-/// Parse identifier allowing kebab-case hyphens (e.g., `my-var`).
-/// A hyphen is only part of the name if followed by an alphanumeric character,
+/// Parse identifier allowing kebab-case hyphens and apostrophes (e.g., `my-var`, `same'proto`).
+/// A hyphen/apostrophe is only part of the name if followed by an alphabetic char or `_`,
 /// so `$pd--` parses as `$pd` + postfix `--`.
 pub(super) fn parse_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, &'a str> {
     let (rest, _first) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_')?;
     let mut end = input.len() - rest.len();
     loop {
         let remaining = &input[end..];
-        if let Some(after_hyphen) = remaining.strip_prefix('-')
-            && let Some(next) = after_hyphen.chars().next()
-            && (next.is_alphabetic() || next == '_')
-        {
-            end += 1; // consume hyphen
-            for c in after_hyphen.chars() {
-                if c.is_alphanumeric() || c == '_' {
-                    end += c.len_utf8();
-                } else {
-                    break;
+        let sep = if remaining.starts_with('-') {
+            Some('-')
+        } else if remaining.starts_with('\'') {
+            Some('\'')
+        } else {
+            None
+        };
+        if let Some(sep) = sep {
+            let after_sep = &remaining[sep.len_utf8()..];
+            if let Some(next) = after_sep.chars().next()
+                && (next.is_alphabetic() || next == '_')
+            {
+                end += sep.len_utf8();
+                for c in after_sep.chars() {
+                    if c.is_alphanumeric() || c == '_' {
+                        end += c.len_utf8();
+                    } else {
+                        break;
+                    }
                 }
+                continue;
             }
-            continue;
         }
         break;
     }

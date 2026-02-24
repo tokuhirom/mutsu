@@ -69,8 +69,40 @@ impl Interpreter {
                     output.push('\n');
                     continue;
                 } else {
-                    // Not a block: treat as single-line skip target.
-                    output.push_str(&format!("skip '{}', 1;\n", reason));
+                    // Not a block — treat as single-line skip for test assertions.
+                    let test_funcs = [
+                        "is(",
+                        "is ",
+                        "ok ",
+                        "ok(",
+                        "nok ",
+                        "nok(",
+                        "isnt ",
+                        "isnt(",
+                        "cmp-ok ",
+                        "cmp-ok(",
+                        "isa-ok ",
+                        "isa-ok(",
+                        "does-ok ",
+                        "lives-ok",
+                        "dies-ok",
+                        "throws-like",
+                        "like ",
+                        "like(",
+                        "unlike ",
+                        "pass ",
+                        "pass(",
+                        "flunk ",
+                        "is-primed-sig",
+                        "is-primed-call",
+                        "priming-fails-bind-ok",
+                    ];
+                    if test_funcs.iter().any(|f| trimmed.starts_with(f)) {
+                        output.push_str(&format!("skip '{}', 1;\n", reason));
+                        skip_block_pending = None;
+                        continue;
+                    }
+                    // Not a block/test line — cancel skip
                     skip_block_pending = None;
                     continue;
                 }
@@ -115,6 +147,9 @@ impl Interpreter {
                     "pass ",
                     "pass(",
                     "flunk ",
+                    "is-primed-sig",
+                    "is-primed-call",
+                    "priming-fails-bind-ok",
                 ];
                 if test_funcs.iter().any(|f| trimmed.starts_with(f)) {
                     output.push_str(&format!("skip '{}', 1;\n", skip_block_reason));
