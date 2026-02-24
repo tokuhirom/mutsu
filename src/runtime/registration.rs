@@ -10,6 +10,225 @@ impl Interpreter {
             )
     }
 
+    fn validate_private_access_in_stmts(
+        &self,
+        caller_class: &str,
+        stmts: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        for stmt in stmts {
+            self.validate_private_access_in_stmt(caller_class, stmt)?;
+        }
+        Ok(())
+    }
+
+    fn validate_private_access_in_stmt(
+        &self,
+        caller_class: &str,
+        stmt: &Stmt,
+    ) -> Result<(), RuntimeError> {
+        match stmt {
+            Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
+                self.validate_private_access_in_expr(caller_class, e)?
+            }
+            Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
+                self.validate_private_access_in_expr(caller_class, expr)?
+            }
+            Stmt::Say(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
+                for e in exprs {
+                    self.validate_private_access_in_expr(caller_class, e)?;
+                }
+            }
+            Stmt::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                self.validate_private_access_in_expr(caller_class, cond)?;
+                self.validate_private_access_in_stmts(caller_class, then_branch)?;
+                self.validate_private_access_in_stmts(caller_class, else_branch)?;
+            }
+            Stmt::While { cond, body, .. } => {
+                self.validate_private_access_in_expr(caller_class, cond)?;
+                self.validate_private_access_in_stmts(caller_class, body)?;
+            }
+            Stmt::For { iterable, body, .. } => {
+                self.validate_private_access_in_expr(caller_class, iterable)?;
+                self.validate_private_access_in_stmts(caller_class, body)?;
+            }
+            Stmt::Loop {
+                init,
+                cond,
+                step,
+                body,
+                ..
+            } => {
+                if let Some(init) = init.as_ref() {
+                    self.validate_private_access_in_stmt(caller_class, init)?;
+                }
+                if let Some(cond) = cond.as_ref() {
+                    self.validate_private_access_in_expr(caller_class, cond)?;
+                }
+                if let Some(step) = step.as_ref() {
+                    self.validate_private_access_in_expr(caller_class, step)?;
+                }
+                self.validate_private_access_in_stmts(caller_class, body)?;
+            }
+            Stmt::Block(body)
+            | Stmt::Default(body)
+            | Stmt::Catch(body)
+            | Stmt::Control(body)
+            | Stmt::RoleDecl { body, .. }
+            | Stmt::SubDecl { body, .. }
+            | Stmt::TokenDecl { body, .. }
+            | Stmt::RuleDecl { body, .. }
+            | Stmt::ProtoDecl { body, .. }
+            | Stmt::Package { body, .. }
+            | Stmt::React { body }
+            | Stmt::When { body, .. }
+            | Stmt::Given { body, .. }
+            | Stmt::Phaser { body, .. }
+            | Stmt::Subtest { body, .. } => {
+                self.validate_private_access_in_stmts(caller_class, body)?
+            }
+            Stmt::Whenever { supply, body, .. } => {
+                self.validate_private_access_in_expr(caller_class, supply)?;
+                self.validate_private_access_in_stmts(caller_class, body)?;
+            }
+            Stmt::MethodDecl { body, .. } => {
+                self.validate_private_access_in_stmts(caller_class, body)?;
+            }
+            Stmt::TempMethodAssign {
+                method_args, value, ..
+            } => {
+                for e in method_args {
+                    self.validate_private_access_in_expr(caller_class, e)?;
+                }
+                self.validate_private_access_in_expr(caller_class, value)?;
+            }
+            Stmt::Let { index, value, .. } => {
+                if let Some(index) = index.as_ref() {
+                    self.validate_private_access_in_expr(caller_class, index)?;
+                }
+                if let Some(value) = value.as_ref() {
+                    self.validate_private_access_in_expr(caller_class, value)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn validate_private_access_in_expr(
+        &self,
+        caller_class: &str,
+        expr: &Expr,
+    ) -> Result<(), RuntimeError> {
+        match expr {
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier,
+            } => {
+                self.validate_private_access_in_expr(caller_class, target)?;
+                for arg in args {
+                    self.validate_private_access_in_expr(caller_class, arg)?;
+                }
+                if *modifier == Some('!')
+                    && let Some((owner_class, _)) = name.split_once("::")
+                    && owner_class != caller_class
+                    && !self
+                        .class_trusts
+                        .get(owner_class)
+                        .is_some_and(|trusted| trusted.contains(caller_class))
+                {
+                    return Err(RuntimeError::new("X::Method::Private::Permission"));
+                }
+            }
+            Expr::HyperMethodCall { target, args, .. } => {
+                self.validate_private_access_in_expr(caller_class, target)?;
+                for arg in args {
+                    self.validate_private_access_in_expr(caller_class, arg)?;
+                }
+            }
+            Expr::Call { args, .. }
+            | Expr::ArrayLiteral(args)
+            | Expr::BracketArray(args)
+            | Expr::CaptureLiteral(args)
+            | Expr::StringInterpolation(args) => {
+                for arg in args {
+                    self.validate_private_access_in_expr(caller_class, arg)?;
+                }
+            }
+            Expr::Unary { expr, .. }
+            | Expr::PostfixOp { expr, .. }
+            | Expr::Reduction { expr, .. } => {
+                self.validate_private_access_in_expr(caller_class, expr)?;
+            }
+            Expr::Binary { left, right, .. }
+            | Expr::MetaOp { left, right, .. }
+            | Expr::HyperOp { left, right, .. } => {
+                self.validate_private_access_in_expr(caller_class, left)?;
+                self.validate_private_access_in_expr(caller_class, right)?;
+            }
+            Expr::Ternary {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                self.validate_private_access_in_expr(caller_class, cond)?;
+                self.validate_private_access_in_expr(caller_class, then_expr)?;
+                self.validate_private_access_in_expr(caller_class, else_expr)?;
+            }
+            Expr::Index { target, index } => {
+                self.validate_private_access_in_expr(caller_class, target)?;
+                self.validate_private_access_in_expr(caller_class, index)?;
+            }
+            Expr::IndexAssign {
+                target,
+                index,
+                value,
+            } => {
+                self.validate_private_access_in_expr(caller_class, target)?;
+                self.validate_private_access_in_expr(caller_class, index)?;
+                self.validate_private_access_in_expr(caller_class, value)?;
+            }
+            Expr::AssignExpr { expr, .. } => {
+                self.validate_private_access_in_expr(caller_class, expr)?
+            }
+            Expr::DoBlock { body, .. }
+            | Expr::Block(body)
+            | Expr::Gather(body)
+            | Expr::AnonSub(body)
+            | Expr::AnonSubParams { body, .. }
+            | Expr::Lambda { body, .. } => {
+                self.validate_private_access_in_stmts(caller_class, body)?
+            }
+            Expr::Try { body, catch } => {
+                self.validate_private_access_in_stmts(caller_class, body)?;
+                if let Some(catch) = catch.as_ref() {
+                    self.validate_private_access_in_stmts(caller_class, catch)?;
+                }
+            }
+            Expr::DoStmt(stmt) => self.validate_private_access_in_stmt(caller_class, stmt)?,
+            Expr::CallOn { target, args } => {
+                self.validate_private_access_in_expr(caller_class, target)?;
+                for arg in args {
+                    self.validate_private_access_in_expr(caller_class, arg)?;
+                }
+            }
+            Expr::InfixFunc { left, right, .. } => {
+                self.validate_private_access_in_expr(caller_class, left)?;
+                for arg in right {
+                    self.validate_private_access_in_expr(caller_class, arg)?;
+                }
+            }
+            Expr::Exists(inner) => self.validate_private_access_in_expr(caller_class, inner)?,
+            _ => {}
+        }
+        Ok(())
+    }
+
     pub(crate) fn has_function(&self, name: &str) -> bool {
         let fq = format!("{}::{}", self.current_package, name);
         self.functions.contains_key(&fq) || self.functions.contains_key(name)
@@ -470,6 +689,17 @@ impl Interpreter {
             native_methods: HashSet::new(),
             mro: Vec::new(),
         };
+        for stmt in body {
+            if let Stmt::TrustsDecl {
+                name: trusted_class,
+            } = stmt
+            {
+                self.class_trusts
+                    .entry(name.to_string())
+                    .or_default()
+                    .insert(trusted_class.clone());
+            }
+        }
         // Detect stub class: `class Foo { ... }` — body is a stub operator call.
         // Register the class but skip body execution.
         let is_stub = body.len() == 1
@@ -503,12 +733,15 @@ impl Interpreter {
                     body: method_body,
                     multi,
                     is_rw,
+                    is_private,
                 } => {
+                    self.validate_private_access_in_stmts(name, method_body)?;
                     let def = MethodDef {
                         params: params.clone(),
                         param_defs: param_defs.clone(),
                         body: method_body.clone(),
                         is_rw: *is_rw,
+                        is_private: *is_private,
                     };
                     if *multi {
                         class_def
@@ -537,6 +770,14 @@ impl Interpreter {
                             .or_default()
                             .extend(overloads);
                     }
+                }
+                Stmt::TrustsDecl {
+                    name: trusted_class,
+                } => {
+                    self.class_trusts
+                        .entry(name.to_string())
+                        .or_default()
+                        .insert(trusted_class.clone());
                 }
                 _ => {
                     self.classes.insert(name.to_string(), class_def.clone());
@@ -582,12 +823,14 @@ impl Interpreter {
                     body: method_body,
                     multi,
                     is_rw,
+                    is_private,
                 } => {
                     let def = MethodDef {
                         params: params.clone(),
                         param_defs: param_defs.clone(),
                         body: method_body.clone(),
                         is_rw: *is_rw,
+                        is_private: *is_private,
                     };
                     if *multi {
                         role_def

@@ -1155,6 +1155,37 @@ impl Interpreter {
             ..
         } = &target
         {
+            if let Some((owner_class, private_method_name)) = method.split_once("::")
+                && let Some((resolved_owner, method_def)) = self.resolve_private_method_with_owner(
+                    class_name,
+                    owner_class,
+                    private_method_name,
+                    &args,
+                )
+            {
+                let caller_class = self.method_class_stack.last().cloned();
+                let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
+                    || self
+                        .class_trusts
+                        .get(&resolved_owner)
+                        .is_some_and(|trusted| {
+                            caller_class
+                                .as_ref()
+                                .is_some_and(|caller| trusted.contains(caller))
+                        });
+                if !caller_allowed {
+                    return Err(RuntimeError::new("X::Method::Private::Permission"));
+                }
+                let (result, _updated) = self.run_instance_method_resolved(
+                    class_name,
+                    &resolved_owner,
+                    method_def,
+                    (**attributes).clone(),
+                    args,
+                )?;
+                return Ok(result);
+            }
+
             // IO::Spec methods
             if class_name == "IO::Spec" {
                 match method {
@@ -1900,6 +1931,7 @@ impl Interpreter {
                         .collect(),
                     body: sub_data.body.clone(),
                     is_rw: false,
+                    is_private: false,
                 };
                 if let Some(class_def) = self.classes.get_mut(&class_name) {
                     class_def.methods.insert(method_name, vec![def]);

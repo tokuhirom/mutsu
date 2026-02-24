@@ -80,6 +80,16 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
     ) -> Option<MethodDef> {
+        self.resolve_method_with_owner(class_name, method_name, arg_values)
+            .map(|(_, def)| def)
+    }
+
+    pub(super) fn resolve_method_with_owner(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        arg_values: &[Value],
+    ) -> Option<(String, MethodDef)> {
         let mro = self.class_mro(class_name);
         for cn in mro {
             if let Some(overloads) = self
@@ -89,8 +99,42 @@ impl Interpreter {
                 .cloned()
             {
                 for def in overloads {
+                    if def.is_private {
+                        continue;
+                    }
                     if self.method_args_match(arg_values, &def.param_defs) {
-                        return Some(def);
+                        return Some((cn.clone(), def));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub(super) fn resolve_private_method_with_owner(
+        &mut self,
+        class_name: &str,
+        owner_class: &str,
+        method_name: &str,
+        arg_values: &[Value],
+    ) -> Option<(String, MethodDef)> {
+        let mro = self.class_mro(class_name);
+        for cn in mro {
+            if cn != owner_class {
+                continue;
+            }
+            if let Some(overloads) = self
+                .classes
+                .get(&cn)
+                .and_then(|c| c.methods.get(method_name))
+                .cloned()
+            {
+                for def in overloads {
+                    if !def.is_private {
+                        continue;
+                    }
+                    if self.method_args_match(arg_values, &def.param_defs) {
+                        return Some((cn.clone(), def));
                     }
                 }
             }

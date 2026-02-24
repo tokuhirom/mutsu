@@ -753,7 +753,12 @@ pub(super) fn method_decl(input: &str) -> PResult<'_, Stmt> {
 }
 
 pub(super) fn method_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
-    let (rest, name) = ident(input)?;
+    let (rest, is_private) = if let Some(rest) = input.strip_prefix('!') {
+        (rest, true)
+    } else {
+        (input, false)
+    };
+    let (rest, name) = ident(rest)?;
     let (rest, _) = ws(rest)?;
 
     let (rest, (params, param_defs)) = if rest.starts_with('(') {
@@ -779,6 +784,7 @@ pub(super) fn method_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
             body,
             multi,
             is_rw: traits.is_rw,
+            is_private,
         },
     ))
 }

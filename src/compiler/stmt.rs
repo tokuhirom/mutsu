@@ -518,8 +518,11 @@ impl Compiler {
             // --- No-ops: these statements are handled elsewhere ---
             // CATCH/CONTROL are extracted by compile_try/compile_body_with_implicit_try
             Stmt::Catch(_) | Stmt::Control(_) => {}
-            // HasDecl/MethodDecl/DoesDecl outside class context are no-ops
-            Stmt::HasDecl { .. } | Stmt::MethodDecl { .. } | Stmt::DoesDecl { .. } => {}
+            // HasDecl/MethodDecl/DoesDecl/TrustsDecl outside class context are no-ops
+            Stmt::HasDecl { .. }
+            | Stmt::MethodDecl { .. }
+            | Stmt::DoesDecl { .. }
+            | Stmt::TrustsDecl { .. } => {}
 
             // --- Take (gather/take) ---
             Stmt::Take(expr) => {
