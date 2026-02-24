@@ -102,6 +102,29 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             }
             Value::hash(map)
         }
+        Value::Seq(items) | Value::Slip(items) => {
+            let mut map = HashMap::new();
+            let mut i = 0;
+            while i < items.len() {
+                if let Value::Pair(k, v) = &items[i] {
+                    map.insert(k.clone(), *v.clone());
+                    i += 1;
+                } else if let Value::ValuePair(k, v) = &items[i] {
+                    map.insert(k.to_string_value(), *v.clone());
+                    i += 1;
+                } else {
+                    let key = items[i].to_string_value();
+                    let val = if i + 1 < items.len() {
+                        items[i + 1].clone()
+                    } else {
+                        Value::Nil
+                    };
+                    map.insert(key, val);
+                    i += 2;
+                }
+            }
+            Value::hash(map)
+        }
         Value::Pair(k, v) => {
             let mut map = HashMap::new();
             map.insert(k, *v);

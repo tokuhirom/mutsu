@@ -2123,6 +2123,29 @@ impl Interpreter {
                         Value::Pair(k, v) => {
                             map.insert(k.clone(), *v.clone());
                         }
+                        Value::ValuePair(k, v) => {
+                            map.insert(k.to_string_value(), *v.clone());
+                        }
+                        other => {
+                            let key = other.to_string_value();
+                            let value = iter.next().cloned().unwrap_or(Value::Nil);
+                            map.insert(key, value);
+                        }
+                    }
+                }
+                Ok(Value::hash(map))
+            }
+            Value::Seq(items) | Value::Slip(items) => {
+                let mut map = HashMap::new();
+                let mut iter = items.iter();
+                while let Some(item) = iter.next() {
+                    match item {
+                        Value::Pair(k, v) => {
+                            map.insert(k.clone(), *v.clone());
+                        }
+                        Value::ValuePair(k, v) => {
+                            map.insert(k.to_string_value(), *v.clone());
+                        }
                         other => {
                             let key = other.to_string_value();
                             let value = iter.next().cloned().unwrap_or(Value::Nil);
