@@ -1067,6 +1067,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         expr: (*index.clone()),
                         type_constraint: None,
                         is_state: false,
+                        is_our: false,
                     },
                     Stmt::Expr(Expr::IndexAssign {
                         target: target.clone(),

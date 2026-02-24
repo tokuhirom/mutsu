@@ -615,6 +615,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 expr: Expr::Literal(crate::value::Value::Nil),
                 type_constraint: None,
                 is_state: false,
+                is_our: false,
             })
         });
         let step = repeat_param.map(|name| Expr::AssignExpr {
@@ -649,6 +650,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 expr: Expr::Literal(crate::value::Value::Nil),
                 type_constraint: None,
                 is_state: false,
+                is_our: false,
             })
         });
         let step = repeat_param.map(|name| Expr::AssignExpr {

@@ -119,6 +119,7 @@ impl Compiler {
                 expr,
                 type_constraint,
                 is_state,
+                is_our,
             } => {
                 let is_dynamic = self.var_is_dynamic(name);
                 self.compile_expr(expr);
@@ -133,7 +134,28 @@ impl Compiler {
                     self.code.state_locals.push((slot as usize, key.clone()));
                     self.code.emit(OpCode::StateVarInit(slot, key_idx));
                 } else {
+                    if *is_our {
+                        self.code.emit(OpCode::Dup);
+                    }
                     self.code.emit(OpCode::SetLocal(slot));
+                    if *is_our {
+                        let qualified = if self.current_package != "GLOBAL" && !name.contains("::")
+                        {
+                            if let Some(sigil) = name.chars().next() {
+                                if matches!(sigil, '$' | '@' | '%' | '&') && name.len() > 1 {
+                                    format!("{sigil}{}::{}", self.current_package, &name[1..])
+                                } else {
+                                    format!("{}::{}", self.current_package, name)
+                                }
+                            } else {
+                                name.clone()
+                            }
+                        } else {
+                            name.clone()
+                        };
+                        let idx = self.code.add_constant(Value::Str(qualified));
+                        self.code.emit(OpCode::SetGlobal(idx));
+                    }
                 }
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));
                 self.code.emit(OpCode::SetVarDynamic {

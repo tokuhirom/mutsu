@@ -1279,6 +1279,29 @@ mod tests {
     }
 
     #[test]
+    fn unit_module_applies_to_following_declarations() {
+        let mut interp = Interpreter::new();
+        let uniq = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("mutsu-unit-mod-scope-{}", uniq));
+        fs::create_dir_all(&dir).unwrap();
+        let m_path = dir.join("Shadow.rakumod");
+        fs::write(&m_path, "unit module Shadow;\nour $debug = 1;\n").unwrap();
+
+        let program = format!(
+            "use lib '{}'; use Shadow; say $Shadow::debug;",
+            dir.to_string_lossy()
+        );
+        let output = interp.run(&program).unwrap();
+        assert_eq!(output, "1\n");
+
+        let _ = fs::remove_file(m_path);
+        let _ = fs::remove_dir(dir);
+    }
+
+    #[test]
     fn like_supports_case_insensitive_quote_word_regex() {
         let mut interp = Interpreter::new();
         let output = interp
