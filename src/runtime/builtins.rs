@@ -183,6 +183,9 @@ impl Interpreter {
         if matches!(target_val, Value::Routine { .. }) {
             return self.call_sub_value(target_val, args, false);
         }
+        if matches!(target_val, Value::Instance { .. }) {
+            return self.call_method_with_values(target_val, "CALL-ME", args);
+        }
         Ok(Value::Nil)
     }
 

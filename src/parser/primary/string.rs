@@ -757,8 +757,11 @@ pub(super) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
                 }
             }
             if end > 0 {
-                let block_src = &rest[1..end];
-                if let Ok((_rest, expr)) = expression(block_src) {
+                let block_src = rest[1..end].trim();
+                if !block_src.is_empty()
+                    && let Ok((expr_rest, expr)) = expression(block_src)
+                    && expr_rest.trim().is_empty()
+                {
                     parts.push(expr);
                 }
                 rest = &rest[end + 1..];
@@ -828,8 +831,11 @@ pub(super) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
                 }
             }
             if end > 0 {
-                let block_src = &rest[1..end];
-                if let Ok((_rest, expr)) = expression(block_src) {
+                let block_src = rest[1..end].trim();
+                if !block_src.is_empty()
+                    && let Ok((expr_rest, expr)) = expression(block_src)
+                    && expr_rest.trim().is_empty()
+                {
                     parts.push(expr);
                 }
                 rest = &rest[end + 1..];

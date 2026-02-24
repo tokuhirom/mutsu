@@ -986,6 +986,34 @@ mod tests {
     }
 
     #[test]
+    fn parse_method_decl_with_typed_invocant_marker() {
+        let (rest, stmts) = program("class A { method AT-KEY(A:D: $key) { 1 } }").unwrap();
+        assert_eq!(rest, "");
+        if let Stmt::ClassDecl { body, .. } = &stmts[0] {
+            if let Stmt::MethodDecl { param_defs, .. } = &body[0] {
+                assert_eq!(param_defs.len(), 1);
+                assert_eq!(param_defs[0].name, "key");
+            } else {
+                panic!("expected MethodDecl");
+            }
+        } else {
+            panic!("expected ClassDecl");
+        }
+    }
+
+    #[test]
+    fn parse_sub_decl_with_typed_invocant_marker() {
+        let (rest, stmts) = program("sub f(A:D: $key) { $key }").unwrap();
+        assert_eq!(rest, "");
+        if let Stmt::SubDecl { param_defs, .. } = &stmts[0] {
+            assert_eq!(param_defs.len(), 1);
+            assert_eq!(param_defs[0].name, "key");
+        } else {
+            panic!("expected SubDecl");
+        }
+    }
+
+    #[test]
     fn parse_role_decl_with_generics_and_does_clause() {
         let (rest, stmts) = program("role R2[Cool ::T] does R1[T] is ok { }").unwrap();
         assert_eq!(rest, "");

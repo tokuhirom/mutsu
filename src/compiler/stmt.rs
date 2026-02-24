@@ -140,7 +140,7 @@ impl Compiler {
                 }
                 let slot = self.alloc_local(name);
                 if *is_state {
-                    let key = format!("__state_{}::{}::{}", self.current_package, name, slot);
+                    let key = format!("__state_{}::{}", self.current_package, name);
                     let key_idx = self.code.add_constant(Value::Str(key.clone()));
                     self.code.state_locals.push((slot as usize, key.clone()));
                     self.code.emit(OpCode::StateVarInit(slot, key_idx));

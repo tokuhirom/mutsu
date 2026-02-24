@@ -520,9 +520,19 @@ pub(super) fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
         let r = skip_return_type_annotation(stripped)?;
         return Ok((r, params));
     }
-    let (r, p) = parse_single_param(rest)?;
-    params.push(p);
-    rest = r;
+    if let Some((r, _invocant_type)) = parse_implicit_invocant_marker(rest) {
+        rest = r;
+        if rest.starts_with(')') {
+            return Ok((rest, params));
+        }
+        let (r, p) = parse_single_param(rest)?;
+        params.push(p);
+        rest = r;
+    } else {
+        let (r, p) = parse_single_param(rest)?;
+        params.push(p);
+        rest = r;
+    }
     loop {
         let (r, _) = ws(rest)?;
         // Handle invocant marker ':'
@@ -609,9 +619,19 @@ pub(super) fn parse_param_list_with_return(
         let (r, rt) = parse_return_type_annotation(stripped)?;
         return Ok((r, (params, Some(rt))));
     }
-    let (r, p) = parse_single_param(rest)?;
-    params.push(p);
-    rest = r;
+    if let Some((r, _invocant_type)) = parse_implicit_invocant_marker(rest) {
+        rest = r;
+        if rest.starts_with(')') {
+            return Ok((rest, (params, return_type)));
+        }
+        let (r, p) = parse_single_param(rest)?;
+        params.push(p);
+        rest = r;
+    } else {
+        let (r, p) = parse_single_param(rest)?;
+        params.push(p);
+        rest = r;
+    }
     loop {
         let (r, _) = ws(rest)?;
         if let Some(r) = r.strip_prefix(':') {
@@ -675,6 +695,34 @@ fn make_param(name: String) -> ParamDef {
         outer_sub_signature: None,
         code_signature: None,
     }
+}
+
+fn parse_implicit_invocant_marker(input: &str) -> Option<(&str, String)> {
+    if input.starts_with('$')
+        || input.starts_with('@')
+        || input.starts_with('%')
+        || input.starts_with('&')
+        || input.starts_with('*')
+        || input.starts_with(':')
+    {
+        return None;
+    }
+    let (mut rest, mut type_name) = qualified_ident(input).ok()?;
+    while rest.starts_with('[') {
+        let (r2, suffix) = parse_generic_suffix(rest).ok()?;
+        type_name.push_str(&suffix);
+        rest = r2;
+    }
+    if rest.starts_with(":D") || rest.starts_with(":U") || rest.starts_with(":_") {
+        type_name.push_str(&rest[..2]);
+        rest = &rest[2..];
+    }
+    let after_colon = rest.strip_prefix(':')?;
+    if after_colon.starts_with(':') {
+        return None;
+    }
+    let (after_colon, _) = ws(after_colon).ok()?;
+    Some((after_colon, type_name))
 }
 
 /// Returns (rest, required, optional_marker).

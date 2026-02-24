@@ -354,6 +354,14 @@ impl Compiler {
                             // Don't emit Pop — leave value on stack as implicit return
                             continue;
                         }
+                        Stmt::If {
+                            cond,
+                            then_branch,
+                            else_branch,
+                        } => {
+                            sub_compiler.compile_if_value(cond, then_branch, else_branch);
+                            continue;
+                        }
                         Stmt::Block(stmts) | Stmt::SyntheticBlock(stmts) => {
                             // Bare blocks in final statement position auto-execute and
                             // produce their final value.
@@ -396,6 +404,57 @@ impl Compiler {
             fingerprint: crate::ast::function_body_fingerprint(params, param_defs, body),
         };
         self.compiled_functions.insert(key, cf);
+    }
+
+    fn emit_nil_value(&mut self) {
+        let nil_idx = self.code.add_constant(Value::Nil);
+        self.code.emit(OpCode::LoadConst(nil_idx));
+    }
+
+    fn compile_stmts_value(&mut self, stmts: &[Stmt]) {
+        let saved = self.push_dynamic_scope_lexical();
+        if stmts.is_empty() {
+            self.emit_nil_value();
+            self.pop_dynamic_scope_lexical(saved);
+            return;
+        }
+        for (i, stmt) in stmts.iter().enumerate() {
+            let is_last = i == stmts.len() - 1;
+            if is_last {
+                match stmt {
+                    Stmt::Expr(expr) => self.compile_expr(expr),
+                    Stmt::If {
+                        cond,
+                        then_branch,
+                        else_branch,
+                    } => self.compile_if_value(cond, then_branch, else_branch),
+                    Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
+                        self.compile_block_inline(inner)
+                    }
+                    _ => {
+                        self.compile_stmt(stmt);
+                        self.emit_nil_value();
+                    }
+                }
+            } else {
+                self.compile_stmt(stmt);
+            }
+        }
+        self.pop_dynamic_scope_lexical(saved);
+    }
+
+    fn compile_if_value(&mut self, cond: &Expr, then_branch: &[Stmt], else_branch: &[Stmt]) {
+        self.compile_expr(cond);
+        let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
+        self.compile_stmts_value(then_branch);
+        let jump_end = self.code.emit(OpCode::Jump(0));
+        self.code.patch_jump(jump_else);
+        if else_branch.is_empty() {
+            self.emit_nil_value();
+        } else {
+            self.compile_stmts_value(else_branch);
+        }
+        self.code.patch_jump(jump_end);
     }
 
     /// Check if a list of statements contains a CATCH or CONTROL block.
