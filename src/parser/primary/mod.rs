@@ -91,8 +91,10 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(regex::version_lit(input));
         try_primary!(ident::keyword_literal(input));
         try_primary!(regex::topic_method_call(input));
+        try_primary!(container::itemized_paren_expr(input));
         try_primary!(var::scalar_var(input));
         try_primary!(var::array_var(input));
+        try_primary!(container::percent_hash_literal(input));
         try_primary!(var::hash_var(input));
         try_primary!(var::code_var(input));
         try_primary!(container::paren_expr(input));
@@ -171,6 +173,32 @@ mod tests {
         let (rest, expr) = primary("<a b c>").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::ArrayLiteral(ref items) if items.len() == 3));
+    }
+
+    #[test]
+    fn parse_percent_hash_literal_colonpair() {
+        let (rest, expr) = primary("%(:a)").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Hash(pairs) => {
+                assert_eq!(pairs.len(), 1);
+                assert_eq!(pairs[0].0, "a");
+                assert!(matches!(pairs[0].1, Some(Expr::Literal(Value::Bool(true)))));
+            }
+            _ => panic!("expected hash literal"),
+        }
+    }
+
+    #[test]
+    fn parse_itemized_paren_expr() {
+        let (rest, expr) = primary("$(1,2)").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::CaptureLiteral(ref items)
+                if items.len() == 1
+                    && matches!(items[0], Expr::ArrayLiteral(ref elems) if elems.len() == 2)
+        ));
     }
 
     #[test]

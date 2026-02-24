@@ -138,6 +138,18 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
     }
 }
 
+/// Parse itemized parenthesized expression: `$(...)`.
+pub(super) fn itemized_paren_expr(input: &str) -> PResult<'_, Expr> {
+    let Some(rest) = input.strip_prefix('$') else {
+        return Err(PError::expected("itemized parenthesized expression"));
+    };
+    if !rest.starts_with('(') {
+        return Err(PError::expected("itemized parenthesized expression"));
+    }
+    let (rest, inner) = paren_expr(rest)?;
+    Ok((rest, Expr::CaptureLiteral(vec![inner])))
+}
+
 /// Try to parse a sequence operator (...) inside a paren expression.
 /// If the input starts with ... or ...^, treat all collected items as seeds.
 fn try_parse_sequence_in_paren<'a>(input: &'a str, seeds: &[Expr]) -> Option<PResult<'a, Expr>> {
@@ -271,6 +283,50 @@ pub(super) fn array_literal(input: &str) -> PResult<'_, Expr> {
             let (r, _) = parse_char(r, ']')?;
             return Ok((r, Expr::BracketArray(items)));
         }
+    }
+}
+
+/// Parse a hash constructor literal: %(key => value, :name, ...)
+pub(super) fn percent_hash_literal(input: &str) -> PResult<'_, Expr> {
+    let (input, _) = parse_char(input, '%')?;
+    let (input, _) = parse_char(input, '(')?;
+    let (mut rest, _) = ws(input)?;
+    let mut pairs = Vec::new();
+
+    if let Ok((rest_after, _)) = parse_char(rest, ')') {
+        return Ok((rest_after, Expr::Hash(pairs)));
+    }
+
+    loop {
+        let (r, item) = expression(rest)?;
+        let (key, value) = match item {
+            Expr::Binary {
+                left,
+                op: crate::token_kind::TokenKind::FatArrow,
+                right,
+            } => {
+                let key = match *left {
+                    Expr::Literal(Value::Str(s)) => s,
+                    Expr::Literal(Value::Int(i)) => i.to_string(),
+                    _ => return Err(PError::expected("hash pair key")),
+                };
+                (key, Some(*right))
+            }
+            _ => return Err(PError::expected("hash pair")),
+        };
+        pairs.push((key, value));
+
+        let (r, _) = ws(r)?;
+        if let Ok((r, _)) = parse_char(r, ',') {
+            let (r, _) = ws(r)?;
+            if let Ok((r_after, _)) = parse_char(r, ')') {
+                return Ok((r_after, Expr::Hash(pairs)));
+            }
+            rest = r;
+            continue;
+        }
+        let (r, _) = parse_char(r, ')')?;
+        return Ok((r, Expr::Hash(pairs)));
     }
 }
 

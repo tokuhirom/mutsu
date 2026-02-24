@@ -236,6 +236,7 @@ impl Interpreter {
             "min" => self.builtin_min(&args),
             "max" => self.builtin_max(&args),
             "cross" => self.builtin_cross(args),
+            "roundrobin" => self.builtin_roundrobin(&args),
             // List operations
             "join" => self.builtin_join(&args),
             "item" => Ok(args.first().cloned().unwrap_or(Value::Nil)),
@@ -866,6 +867,7 @@ impl Interpreter {
                 | "join"
                 | "map"
                 | "grep"
+                | "roundrobin"
                 | "push"
                 | "pop"
                 | "shift"
