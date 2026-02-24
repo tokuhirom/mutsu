@@ -661,6 +661,30 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 };
                 continue;
             }
+            if r_adv2.starts_with(":delete") && !is_ident_char(r_adv2.as_bytes().get(7).copied()) {
+                rest = &r_adv2[7..];
+                expr = Expr::MethodCall {
+                    target: Box::new(expr),
+                    name: "DELETE-KEY".to_string(),
+                    args: vec![],
+                    modifier: None,
+                };
+                continue;
+            }
+        }
+
+        // General :delete adverb. Index targets are lowered to dedicated delete
+        // opcodes by the compiler; non-index targets die at runtime.
+        let (r_delete, _) = ws(rest)?;
+        if r_delete.starts_with(":delete") && !is_ident_char(r_delete.as_bytes().get(7).copied()) {
+            rest = &r_delete[7..];
+            expr = Expr::MethodCall {
+                target: Box::new(expr),
+                name: "DELETE-KEY".to_string(),
+                args: vec![],
+                modifier: None,
+            };
+            continue;
         }
 
         // Hyper method call: »/>> followed by .method or method name

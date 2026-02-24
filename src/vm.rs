@@ -812,6 +812,14 @@ impl VM {
                 self.exec_index_op()?;
                 *ip += 1;
             }
+            OpCode::DeleteIndexNamed(name_idx) => {
+                self.exec_delete_index_named_op(code, *name_idx);
+                *ip += 1;
+            }
+            OpCode::DeleteIndexExpr => {
+                self.exec_delete_index_expr_op();
+                *ip += 1;
+            }
 
             // -- String interpolation --
             OpCode::StringConcat(n) => {

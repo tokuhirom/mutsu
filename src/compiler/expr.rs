@@ -520,6 +520,26 @@ impl Compiler {
                 args,
                 modifier,
             } => {
+                // Lower index :delete adverb to dedicated delete opcodes.
+                if name == "DELETE-KEY"
+                    && args.is_empty()
+                    && modifier.is_none()
+                    && let Expr::Index {
+                        target: delete_target,
+                        index: delete_index,
+                    } = target.as_ref()
+                {
+                    if let Some(var_name) = Self::postfix_index_name(delete_target) {
+                        self.compile_expr(delete_index);
+                        let name_idx = self.code.add_constant(Value::Str(var_name));
+                        self.code.emit(OpCode::DeleteIndexNamed(name_idx));
+                    } else {
+                        self.compile_expr(delete_target);
+                        self.compile_expr(delete_index);
+                        self.code.emit(OpCode::DeleteIndexExpr);
+                    }
+                    return;
+                }
                 self.compile_expr(target);
                 let arity = args.len() as u32;
                 for arg in args {

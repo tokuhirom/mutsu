@@ -245,6 +245,8 @@ pub(crate) enum OpCode {
 
     // -- Indexing --
     Index,
+    DeleteIndexNamed(u32),
+    DeleteIndexExpr,
 
     // -- String interpolation --
     StringConcat(u32),
