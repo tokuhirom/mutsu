@@ -1,5 +1,5 @@
 use Test;
-plan 11;
+plan 12;
 
 ok "abc" ~~ /<a>/, 'named capture matches';
 is $<a>, "a", 'capture variable set';
@@ -21,3 +21,7 @@ ok "x254" ~~ m/x (\d+): <?{$0 < 255}> /, 'multi-digit capture with ratchet';
 
 my @a = 10, 20, 30;
 is @a[*-1], 30, 'WhateverCode index on array';
+
+my regex abc { abc }
+"foo abc def" ~~ / <&abc> /;
+nok $<&abc>, '$<&name> lookup parses and is not set for plain <&name> regex calls';

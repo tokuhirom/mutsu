@@ -676,7 +676,7 @@ impl Interpreter {
         })
     }
 
-    fn interpolate_regex_scalars(&self, pattern: &str) -> String {
+    pub(super) fn interpolate_regex_scalars(&self, pattern: &str) -> String {
         let chars: Vec<char> = pattern.chars().collect();
         let mut out = String::new();
         let mut i = 0usize;
