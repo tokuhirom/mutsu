@@ -616,6 +616,9 @@ impl Interpreter {
             "sort" => {
                 return self.dispatch_sort(target, &args);
             }
+            "collate" if args.is_empty() => {
+                return self.dispatch_collate(target);
+            }
             "from-list" => {
                 if let Value::Package(ref class_name) = target
                     && class_name == "Supply"
@@ -2538,6 +2541,64 @@ impl Interpreter {
                 self.dispatch_sort(Value::array(items), args)
             }
             other => Ok(other),
+        }
+    }
+
+    fn dispatch_collate(&mut self, target: Value) -> Result<Value, RuntimeError> {
+        fn case_profile(s: &str) -> Vec<u8> {
+            s.chars()
+                .map(|ch| {
+                    if ch.is_lowercase() {
+                        0
+                    } else if ch.is_uppercase() {
+                        1
+                    } else {
+                        2
+                    }
+                })
+                .collect()
+        }
+
+        fn collate_sorted(values: Vec<Value>) -> Vec<Value> {
+            let mut keyed: Vec<(String, Vec<u8>, String, Value)> = values
+                .into_iter()
+                .map(|value| {
+                    let s = value.to_string_value();
+                    (s.to_lowercase(), case_profile(&s), s.clone(), value)
+                })
+                .collect();
+            keyed.sort_by(|a, b| {
+                a.0.cmp(&b.0)
+                    .then_with(|| a.1.cmp(&b.1))
+                    .then_with(|| a.2.cmp(&b.2))
+            });
+            keyed.into_iter().map(|(_, _, _, value)| value).collect()
+        }
+
+        match target {
+            Value::Package(class_name) if class_name == "Supply" => {
+                Ok(Value::Seq(Arc::new(vec![Value::Package(class_name)])))
+            }
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Supply" => {
+                let values = match attributes.get("values") {
+                    Some(Value::Array(items, ..)) => items.to_vec(),
+                    _ => Vec::new(),
+                };
+                let mut attrs = HashMap::new();
+                attrs.insert("values".to_string(), Value::array(collate_sorted(values)));
+                attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                attrs.insert("live".to_string(), Value::Bool(false));
+                Ok(Value::make_instance("Supply".to_string(), attrs))
+            }
+            Value::Array(items, ..) => Ok(Value::Seq(Arc::new(collate_sorted(items.to_vec())))),
+            other => {
+                let values = Self::value_to_list(&other);
+                Ok(Value::Seq(Arc::new(collate_sorted(values))))
+            }
         }
     }
 
