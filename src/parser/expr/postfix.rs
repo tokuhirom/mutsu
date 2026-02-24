@@ -154,18 +154,24 @@ fn is_postfix_operator_boundary(rest: &str) -> bool {
 }
 
 fn parse_custom_postfix_operator(input: &str) -> Option<(String, usize)> {
-    let mut len = 0usize;
-    for c in input.chars() {
-        if !is_postfix_operator_char(c) {
+    if input.starts_with('!') {
+        return Some(("!".to_string(), '!'.len_utf8()));
+    }
+
+    let mut chars = input.chars();
+    let first = chars.next()?;
+    if first.is_ascii() || !is_postfix_operator_char(first) {
+        return None;
+    }
+
+    let mut len = first.len_utf8();
+    for c in chars {
+        if c.is_ascii() || !is_postfix_operator_char(c) {
             break;
         }
         len += c.len_utf8();
     }
-    if len == 0 {
-        None
-    } else {
-        Some((input[..len].to_string(), len))
-    }
+    Some((input[..len].to_string(), len))
 }
 
 pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
