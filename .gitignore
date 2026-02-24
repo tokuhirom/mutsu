@@ -22,15 +22,6 @@ io-handle-testfile
 objects
 refs
 temp-test.*
-tempfile-copy-mtgt
-tempfile-copy-stgt
-tempfile-move1
-tempfile-move2
-tempfile-rename1
-tempfile-rename2
-tempfile-slurp-empty
-tempfile-slurp-test
-tempfile-zero-length-copy-mtgt
-tempfile-zero-length-copy-stgt
-tempfile_io_in_for_loop
+temp-file-*
+tempfile*
 
