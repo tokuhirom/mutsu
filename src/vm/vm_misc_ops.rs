@@ -182,7 +182,8 @@ impl VM {
 
     pub(super) fn exec_str_coerce_op(&mut self) {
         let val = self.stack.pop().unwrap();
-        self.stack.push(Value::Str(val.to_string_value()));
+        self.stack
+            .push(Value::Str(crate::runtime::utils::coerce_to_str(&val)));
     }
 
     pub(super) fn exec_upto_range_op(&mut self) {
@@ -441,7 +442,7 @@ impl VM {
                 && !self.interpreter.type_matches_value(constraint, value)
             {
                 let coerced = match constraint {
-                    "Str" => Some(Value::Str(value.to_string_value())),
+                    "Str" => Some(Value::Str(crate::runtime::utils::coerce_to_str(value))),
                     _ => None,
                 };
                 if let Some(new_val) = coerced {
