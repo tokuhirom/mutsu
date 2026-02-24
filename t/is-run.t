@@ -2,10 +2,11 @@ use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
 use Test;
 use Test::Util;
 
-plan 12;
+plan 13;
 
 # Basic stdout check
 is_run('say 42', { out => "42\n" }, 'basic stdout');
+is_run ｢say 41 + 1｣, {:out("42\n"), :err(''), :0status}, 'unicode corner quote code arg';
 
 # stderr check
 is_run('note "hello"', { err => "hello\n" }, 'basic stderr');

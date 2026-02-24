@@ -295,8 +295,8 @@ fn parse_quote_word_list(
     if reject_lt_operators && (input.starts_with('=') || input.starts_with('-')) {
         return Err(PError::expected("angle list"));
     }
-    let mut words = Vec::new();
     let mut rest = input;
+    let mut words = Vec::new();
     loop {
         // Skip breaking whitespace (all Unicode whitespace except non-breaking spaces)
         let (r, _) = take_while_opt(rest, |c: char| {
