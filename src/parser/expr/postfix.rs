@@ -120,7 +120,99 @@ fn parse_private_method_name(input: &str) -> Option<(&str, String)> {
     Some((rest, name))
 }
 
+fn is_postfix_operator_char(c: char) -> bool {
+    if c.is_whitespace() || c.is_alphanumeric() || c == '_' {
+        return false;
+    }
+    !matches!(
+        c,
+        '.' | ','
+            | ';'
+            | ':'
+            | '('
+            | ')'
+            | '['
+            | ']'
+            | '{'
+            | '}'
+            | '"'
+            | '\''
+            | '\\'
+            | '$'
+            | '@'
+            | '%'
+            | '&'
+            | '#'
+    )
+}
+
+fn is_postfix_operator_boundary(rest: &str) -> bool {
+    rest.is_empty()
+        || rest.starts_with(|c: char| {
+            c.is_whitespace() || matches!(c, ')' | '}' | ']' | ',' | ';' | ':')
+        })
+}
+
+fn parse_custom_postfix_operator(input: &str) -> Option<(String, usize)> {
+    if input.starts_with('!') {
+        return Some(("!".to_string(), '!'.len_utf8()));
+    }
+
+    let mut chars = input.chars();
+    let first = chars.next()?;
+    if first.is_ascii() || !is_postfix_operator_char(first) {
+        return None;
+    }
+
+    let mut len = first.len_utf8();
+    for c in chars {
+        if c.is_ascii() || !is_postfix_operator_char(c) {
+            break;
+        }
+        len += c.len_utf8();
+    }
+    Some((input[..len].to_string(), len))
+}
+
 pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
+    if let Some(after_open) = input.strip_prefix('(')
+        && let Some(end) = after_open.find(')')
+    {
+        let raw_op = &after_open[..end];
+        let op = raw_op.trim();
+        let after = &after_open[end + 1..];
+        if !op.is_empty()
+            && op == raw_op
+            && op
+                .chars()
+                .all(|c| !c.is_whitespace() && !c.is_alphanumeric() && c != '_' && c != '\'')
+            && after.chars().next().is_some_and(char::is_whitespace)
+        {
+            let (after, _) = ws(after)?;
+            let (after, arg) = prefix_expr(after)?;
+            return Ok((
+                after,
+                Expr::Call {
+                    name: format!("prefix:<({})>", op),
+                    args: vec![arg],
+                },
+            ));
+        }
+    }
+
+    if let Some((name, len)) = crate::parser::stmt::simple::match_user_declared_prefix_op(input) {
+        let rest = &input[len..];
+        let (rest, _) = ws(rest)?;
+        let (rest, arg) = prefix_expr(rest)?;
+        return Ok((
+            rest,
+            Expr::Call {
+                name,
+                args: vec![arg],
+            },
+        ));
+    }
+
     if let Some((op, len)) = parse_prefix_unary_op(input) {
         let mut rest = &input[len..];
         if op.consumes_ws() {
@@ -448,6 +540,17 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 }
                 rest = r;
                 continue;
+            }
+            if let Some((op, len)) = parse_custom_postfix_operator(r) {
+                let after = &r[len..];
+                if is_postfix_operator_boundary(after) {
+                    expr = Expr::Call {
+                        name: format!("postfix:<{op}>"),
+                        args: vec![expr],
+                    };
+                    rest = after;
+                    continue;
+                }
             }
             return Err(PError::expected_at("method name", r));
         }
@@ -814,17 +917,12 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             continue;
         }
 
-        // Custom postfix operator call: $x! -> postfix:<!>($x)
-        if rest.starts_with('!') && !rest.starts_with("!=") {
-            let after = &rest[1..];
-            // Keep `!` as postfix only at expression boundary.
-            if after.is_empty()
-                || after.starts_with(|c: char| {
-                    c.is_whitespace() || c == ')' || c == '}' || c == ']' || c == ',' || c == ';'
-                })
-            {
+        // Custom postfix operator call: $x§ -> postfix:<§>($x)
+        if let Some((op, len)) = parse_custom_postfix_operator(rest) {
+            let after = &rest[len..];
+            if is_postfix_operator_boundary(after) {
                 expr = Expr::Call {
-                    name: "postfix:<!>".to_string(),
+                    name: format!("postfix:<{op}>"),
                     args: vec![expr],
                 };
                 rest = after;

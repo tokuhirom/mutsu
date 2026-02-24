@@ -567,6 +567,72 @@ mod tests {
     }
 
     #[test]
+    fn parse_fat_arrow_chains_right_associatively() {
+        let (rest, expr) = expression("1 => 2 => 3 => 4").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Binary {
+                op: TokenKind::FatArrow,
+                left,
+                right,
+            } => {
+                assert!(matches!(*left, Expr::Literal(Value::Int(1))));
+                match *right {
+                    Expr::Binary {
+                        op: TokenKind::FatArrow,
+                        left: right_left,
+                        right: right_right,
+                    } => {
+                        assert!(matches!(*right_left, Expr::Literal(Value::Int(2))));
+                        match *right_right {
+                            Expr::Binary {
+                                op: TokenKind::FatArrow,
+                                left: tail_left,
+                                right: tail_right,
+                            } => {
+                                assert!(matches!(*tail_left, Expr::Literal(Value::Int(3))));
+                                assert!(matches!(*tail_right, Expr::Literal(Value::Int(4))));
+                            }
+                            _ => panic!("expected final fat-arrow pair"),
+                        }
+                    }
+                    _ => panic!("expected nested fat-arrow pair"),
+                }
+            }
+            _ => panic!("expected fat-arrow pair"),
+        }
+    }
+
+    #[test]
+    fn parse_fat_arrow_chain_in_call_arguments() {
+        let (rest, expr) = expression("is($list, 1 => 2 => 3 => 4, \"x\")").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "is");
+                assert!(args.len() >= 3);
+                match &args[1] {
+                    Expr::Binary {
+                        op: TokenKind::FatArrow,
+                        right,
+                        ..
+                    } => {
+                        assert!(matches!(
+                            right.as_ref(),
+                            Expr::Binary {
+                                op: TokenKind::FatArrow,
+                                ..
+                            }
+                        ));
+                    }
+                    _ => panic!("expected chained fat-arrow in second argument"),
+                }
+            }
+            _ => panic!("expected call expression"),
+        }
+    }
+
+    #[test]
     fn expression_memo_reuses_result() {
         reset_expression_memo();
         let (rest, expr) = expression("1 + 2").unwrap();
@@ -795,6 +861,34 @@ mod tests {
                 assert!(matches!(args[0], Expr::Var(ref n) if n == "base"));
             }
             _ => panic!("expected postfix operator call"),
+        }
+    }
+
+    #[test]
+    fn parse_unicode_custom_postfix_operator_call() {
+        let (rest, expr) = expression("3§").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "postfix:<§>");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(args[0], Expr::Literal(Value::Int(3))));
+            }
+            _ => panic!("expected unicode postfix operator call"),
+        }
+    }
+
+    #[test]
+    fn parse_dot_custom_postfix_operator_call() {
+        let (rest, expr) = expression("5.!").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "postfix:<!>");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(args[0], Expr::Literal(Value::Int(5))));
+            }
+            _ => panic!("expected dot-postfix operator call"),
         }
     }
 }

@@ -98,6 +98,9 @@ impl Value {
                         _ => false,
                     };
                 }
+                if class_name == "Failure" {
+                    return false;
+                }
                 true
             }
             Value::Junction { kind, values } => match kind {

@@ -220,6 +220,33 @@ impl VM {
                     Value::Nil
                 }
             }
+            (instance @ Value::Instance { .. }, Value::Str(key)) => self
+                .interpreter
+                .call_method_with_values(instance, "AT-KEY", vec![Value::Str(key)])
+                .unwrap_or(Value::Nil),
+            (instance @ Value::Instance { .. }, Value::Int(i)) => {
+                let fallback = instance.clone();
+                self.interpreter
+                    .call_method_with_values(instance, "AT-POS", vec![Value::Int(i)])
+                    .or_else(|_| {
+                        self.interpreter.call_method_with_values(
+                            fallback,
+                            "AT-KEY",
+                            vec![Value::Int(i)],
+                        )
+                    })
+                    .unwrap_or(Value::Nil)
+            }
+            (instance @ Value::Instance { .. }, Value::Array(keys, ..)) => Value::array(
+                keys.iter()
+                    .cloned()
+                    .map(|k| {
+                        self.interpreter
+                            .call_method_with_values(instance.clone(), "AT-KEY", vec![k])
+                            .unwrap_or(Value::Nil)
+                    })
+                    .collect(),
+            ),
             (Value::Str(_), Value::Str(key)) => self
                 .interpreter
                 .env()

@@ -18,9 +18,21 @@ fn parse_coercion_type(constraint: &str) -> Option<(&str, Option<&str>)> {
     }
 }
 
+#[inline]
+fn is_coercion_constraint(constraint: &str) -> bool {
+    let bytes = constraint.as_bytes();
+    bytes.last() == Some(&b')') && bytes.contains(&b'(')
+}
+
 /// Coerce a value to the target type.
 fn coerce_value(target: &str, value: Value) -> Value {
-    match target {
+    let base_target = if target.ends_with(":D") || target.ends_with(":U") || target.ends_with(":_")
+    {
+        &target[..target.len() - 2]
+    } else {
+        target
+    };
+    match base_target {
         "Int" => match &value {
             Value::Int(_) => value,
             Value::Num(n) => Value::Int(*n as i64),
@@ -240,6 +252,7 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
     match value {
         Value::Nil | Value::Package(_) => false,
         Value::Slip(items) if items.is_empty() => false,
+        Value::Instance { class_name, .. } if class_name == "Failure" => false,
         _ => true,
     }
 }
@@ -735,7 +748,10 @@ impl Interpreter {
                         if !ok {
                             return false;
                         }
-                    } else if !self.type_matches_value(constraint, arg) {
+                    } else if !is_coercion_constraint(constraint)
+                        && !self.type_matches_value(constraint, arg)
+                    {
+                        // Coercion source-type validation is deferred until bind time.
                         return false;
                     }
                 }
@@ -960,15 +976,23 @@ impl Interpreter {
                             if let Some(src) = source
                                 && !self.type_matches_value(src, &value)
                             {
-                                return Err(RuntimeError::new(format!(
-                                    "{}: Type check failed for {}: expected {}, got {}",
-                                    type_error_kind,
+                                let mut err = RuntimeError::new(format!(
+                                    "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
                                     pd.name,
                                     constraint,
                                     super::value_type_name(&value)
-                                )));
+                                ));
+                                let mut ex_attrs = std::collections::HashMap::new();
+                                ex_attrs
+                                    .insert("message".to_string(), Value::Str(err.message.clone()));
+                                let exception = Value::make_instance(
+                                    "X::TypeCheck::Binding::Parameter".to_string(),
+                                    ex_attrs,
+                                );
+                                err.exception = Some(Box::new(exception));
+                                return Err(err);
                             }
-                            value = coerce_value(target, value);
+                            value = self.coerce_value_with_method(target, value);
                         } else if pd.name.starts_with('@') {
                             let ok = match &value {
                                 Value::Array(items, ..) => {
@@ -1078,5 +1102,29 @@ impl Interpreter {
             }
         }
         Ok(rw_bindings)
+    }
+
+    /// Coerce a value to the target type, trying built-in coercions first,
+    /// then falling back to target class COERCE when available.
+    fn coerce_value_with_method(&mut self, target: &str, value: Value) -> Value {
+        let result = coerce_value(target, value.clone());
+        if std::mem::discriminant(&result) == std::mem::discriminant(&value) {
+            let base_target =
+                if target.ends_with(":D") || target.ends_with(":U") || target.ends_with(":_") {
+                    &target[..target.len() - 2]
+                } else {
+                    target
+                };
+            if self.classes.contains_key(base_target)
+                && let Ok(coerced) = self.call_method_with_values(
+                    Value::Package(base_target.to_string()),
+                    "COERCE",
+                    vec![value],
+                )
+            {
+                return coerced;
+            }
+        }
+        result
     }
 }

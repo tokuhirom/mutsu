@@ -1,6 +1,7 @@
 use super::super::expr::expression;
 use super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, parse_char, take_while1};
+use crate::token_kind::lookup_unicode_char_by_name;
 
 use crate::ast::{Expr, ParamDef, Stmt, collect_placeholders};
 use crate::value::Value;
@@ -64,7 +65,126 @@ pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
         }
         // If we can't find the closing '>', fall through to return the base name
     }
+    if is_op_category
+        && rest.starts_with(":[")
+        && let Some(after_open) = rest.strip_prefix(":['")
+        && let Some(end_pos) = after_open.find("']")
+    {
+        let op_symbol = unescape_operator_single_quoted(&after_open[..end_pos]);
+        let after_close = &after_open[end_pos + 2..];
+        let full_name = format!("{}:<{}>", base, op_symbol);
+        return Ok((after_close, full_name));
+    }
+    if is_op_category
+        && rest.starts_with(":[")
+        && let Some(after_open) = rest.strip_prefix(":[\"")
+        && let Some(end_pos) = after_open.find("\"]")
+    {
+        let op_symbol = unescape_operator_double_quoted(&after_open[..end_pos]);
+        let after_close = &after_open[end_pos + 2..];
+        let full_name = format!("{}:<{}>", base, op_symbol);
+        return Ok((after_close, full_name));
+    }
     Ok((rest, base))
+}
+
+fn unescape_operator_single_quoted(s: &str) -> String {
+    s.replace("\\'", "'").replace("\\\\", "\\")
+}
+
+fn unescape_operator_double_quoted(s: &str) -> String {
+    let mut out = String::new();
+    let mut rest = s;
+    while !rest.is_empty() {
+        if rest.starts_with('\\') && rest.len() > 1 {
+            let c = rest.as_bytes()[1] as char;
+            match c {
+                'n' => {
+                    out.push('\n');
+                    rest = &rest[2..];
+                    continue;
+                }
+                't' => {
+                    out.push('\t');
+                    rest = &rest[2..];
+                    continue;
+                }
+                'r' => {
+                    out.push('\r');
+                    rest = &rest[2..];
+                    continue;
+                }
+                '0' => {
+                    out.push('\0');
+                    rest = &rest[2..];
+                    continue;
+                }
+                '"' => {
+                    out.push('"');
+                    rest = &rest[2..];
+                    continue;
+                }
+                '\\' => {
+                    out.push('\\');
+                    rest = &rest[2..];
+                    continue;
+                }
+                'x' => {
+                    let r = &rest[2..];
+                    if let Some(r2) = r.strip_prefix('[')
+                        && let Some(end) = r2.find(']')
+                    {
+                        for part in r2[..end].split(',') {
+                            if let Ok(n) = u32::from_str_radix(part.trim(), 16)
+                                && let Some(ch) = char::from_u32(n)
+                            {
+                                out.push(ch);
+                            }
+                        }
+                        rest = &r2[end + 1..];
+                        continue;
+                    }
+                }
+                'c' => {
+                    let r = &rest[2..];
+                    if let Some(r2) = r.strip_prefix('[')
+                        && let Some(end) = r2.find(']')
+                    {
+                        let names = &r2[..end];
+                        let mut ok = true;
+                        for part in names.split(',') {
+                            let name = part.trim();
+                            if name.is_empty() {
+                                continue;
+                            }
+                            if let Some(ch) = lookup_unicode_char_by_name(name) {
+                                out.push(ch);
+                            } else {
+                                ok = false;
+                                break;
+                            }
+                        }
+                        if ok {
+                            rest = &r2[end + 1..];
+                            continue;
+                        }
+                    }
+                }
+                _ => {}
+            }
+            out.push('\\');
+            out.push(c);
+            rest = &rest[2..];
+            continue;
+        }
+        let ch = rest
+            .chars()
+            .next()
+            .expect("rest is non-empty when decoding operator name");
+        out.push(ch);
+        rest = &rest[ch.len_utf8()..];
+    }
+    out
 }
 
 pub(super) fn parse_indirect_decl_name(input: &str) -> PResult<'_, (String, Expr)> {
@@ -400,9 +520,19 @@ pub(super) fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
         let r = skip_return_type_annotation(stripped)?;
         return Ok((r, params));
     }
-    let (r, p) = parse_single_param(rest)?;
-    params.push(p);
-    rest = r;
+    if let Some((r, _invocant_type)) = parse_implicit_invocant_marker(rest) {
+        rest = r;
+        if rest.starts_with(')') {
+            return Ok((rest, params));
+        }
+        let (r, p) = parse_single_param(rest)?;
+        params.push(p);
+        rest = r;
+    } else {
+        let (r, p) = parse_single_param(rest)?;
+        params.push(p);
+        rest = r;
+    }
     loop {
         let (r, _) = ws(rest)?;
         // Handle invocant marker ':'
@@ -489,9 +619,19 @@ pub(super) fn parse_param_list_with_return(
         let (r, rt) = parse_return_type_annotation(stripped)?;
         return Ok((r, (params, Some(rt))));
     }
-    let (r, p) = parse_single_param(rest)?;
-    params.push(p);
-    rest = r;
+    if let Some((r, _invocant_type)) = parse_implicit_invocant_marker(rest) {
+        rest = r;
+        if rest.starts_with(')') {
+            return Ok((rest, (params, return_type)));
+        }
+        let (r, p) = parse_single_param(rest)?;
+        params.push(p);
+        rest = r;
+    } else {
+        let (r, p) = parse_single_param(rest)?;
+        params.push(p);
+        rest = r;
+    }
     loop {
         let (r, _) = ws(rest)?;
         if let Some(r) = r.strip_prefix(':') {
@@ -555,6 +695,34 @@ fn make_param(name: String) -> ParamDef {
         outer_sub_signature: None,
         code_signature: None,
     }
+}
+
+fn parse_implicit_invocant_marker(input: &str) -> Option<(&str, String)> {
+    if input.starts_with('$')
+        || input.starts_with('@')
+        || input.starts_with('%')
+        || input.starts_with('&')
+        || input.starts_with('*')
+        || input.starts_with(':')
+    {
+        return None;
+    }
+    let (mut rest, mut type_name) = qualified_ident(input).ok()?;
+    while rest.starts_with('[') {
+        let (r2, suffix) = parse_generic_suffix(rest).ok()?;
+        type_name.push_str(&suffix);
+        rest = r2;
+    }
+    if rest.starts_with(":D") || rest.starts_with(":U") || rest.starts_with(":_") {
+        type_name.push_str(&rest[..2]);
+        rest = &rest[2..];
+    }
+    let after_colon = rest.strip_prefix(':')?;
+    if after_colon.starts_with(':') {
+        return None;
+    }
+    let (after_colon, _) = ws(after_colon).ok()?;
+    Some((after_colon, type_name))
 }
 
 /// Returns (rest, required, optional_marker).
@@ -700,6 +868,36 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         rest = &rest[1..];
     }
 
+    // Handle ::?CLASS and ::?ROLE pseudo-types in signatures (must come before named check)
+    if rest.starts_with("::?CLASS") || rest.starts_with("::?ROLE") {
+        let end = if rest.starts_with("::?CLASS") { 8 } else { 7 };
+        let pseudo_type = &rest[..end];
+        let r = &rest[end..];
+        let (r, tc) = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
+            let smiley = &r[..2];
+            (&r[2..], format!("{}{}", pseudo_type, smiley))
+        } else {
+            (r, pseudo_type.to_string())
+        };
+        if let Some(r) = r.strip_prefix(':') {
+            // This invocant marker is handled at parse_param_list level.
+            let (r, _) = ws(r)?;
+            if r.starts_with(')') {
+                return Ok((r, make_param("self".to_string())));
+            }
+            return parse_single_param(r);
+        }
+        let (r, _) = ws(r)?;
+        if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') {
+            type_constraint = Some(tc);
+            rest = r;
+        } else {
+            let mut p = make_param("self".to_string());
+            p.type_constraint = Some(tc);
+            return Ok((r, p));
+        }
+    }
+
     // Named param marker: :$name (but not :: which is a parametric type prefix)
     if rest.starts_with(':') && !rest.starts_with("::") {
         named = true;
@@ -747,7 +945,10 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             .first()
             .is_some_and(|b| b.is_ascii_lowercase())
         && rest.contains('(');
-    if !skip_type_for_named_alias && let Ok((r, tc)) = qualified_ident(rest) {
+    if type_constraint.is_none()
+        && !skip_type_for_named_alias
+        && let Ok((r, tc)) = qualified_ident(rest)
+    {
         let mut tc_full = tc;
         let mut r = r;
         while r.starts_with('[') {

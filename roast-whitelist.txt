@@ -1,4 +1,5 @@
 roast/MISC/bug-coverage-stress.t
+roast/S01-perl-5-integration/hash.t
 roast/S01-perl-5-integration/isms.t
 roast/S01-perl-5-integration/return.t
 roast/S01-perl-5-integration/subs.t
@@ -37,6 +38,7 @@ roast/S02-types/fatrat.t
 roast/S02-types/hyperwhatever.t
 roast/S02-types/mu.t
 roast/S02-types/nan.t
+roast/S02-types/nested_pairs.t
 roast/S02-types/parsing-bool.t
 roast/S02-types/range-iterator.t
 roast/S02-types/stash.t
@@ -87,6 +89,7 @@ roast/S04-statement-modifiers/unless.t
 roast/S04-statement-modifiers/until.t
 roast/S04-statement-modifiers/values_in_bool_context.t
 roast/S04-statement-modifiers/while.t
+roast/S04-statement-modifiers/without.t
 roast/S04-statement-parsing/hash.t
 roast/S04-statements/last.t
 roast/S04-statements/map-and-sort-in-for.t
@@ -121,6 +124,7 @@ roast/S06-advanced/stub.t
 roast/S06-currying/misc.t
 roast/S06-currying/named.t
 roast/S06-multi/compile-time.t
+roast/S06-operator-overloading/prefix.t
 roast/S06-operator-overloading/semicolon.t
 roast/S06-other/main-eval.t
 roast/S06-other/main-semicolon.t
@@ -138,6 +142,7 @@ roast/S07-hyperrace/stress.t
 roast/S07-slip/slip.t
 roast/S10-packages/joined-namespaces.t
 roast/S10-packages/require-and-use.t
+roast/S10-packages/use-with-class.t
 roast/S11-compunit/compunit-dependencyspecification.t
 roast/S11-compunit/rt126904.t
 roast/S11-modules/gh2979.t
@@ -153,6 +158,7 @@ roast/S12-class/literal.t
 roast/S12-class/parent_attributes.t
 roast/S12-class/self-inheritance.t
 roast/S12-class/type-object.t
+roast/S12-coercion/parameterized.t
 roast/S12-construction/autopairs.t
 roast/S12-enums/anonymous.t
 roast/S12-enums/pseudo-functional.t
@@ -165,6 +171,7 @@ roast/S12-methods/typed-attributes.t
 roast/S12-traits/precomp.t
 roast/S13-overloading/fallbacks-deep.t
 roast/S13-overloading/multiple-signatures.t
+roast/S13-overloading/operators.t
 roast/S13-syntax/aliasing.t
 roast/S14-roles/bool.t
 roast/S14-roles/generic-subtyping.t
@@ -290,6 +297,7 @@ roast/S29-context/die.t
 roast/S29-context/exit-in-if.t
 roast/S29-context/exit.t
 roast/S32-array/bool.t
+roast/S32-array/elems.t
 roast/S32-basics/pairup.t
 roast/S32-container/roundrobin.t
 roast/S32-container/stringify.t

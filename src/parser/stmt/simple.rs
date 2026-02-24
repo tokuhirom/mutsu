@@ -236,6 +236,52 @@ pub(in crate::parser) fn is_user_declared_sub(name: &str) -> bool {
     })
 }
 
+/// Match a user-declared prefix operator against the current input.
+/// Returns `(full_name, consumed_len)` when input begins with an in-scope
+/// `prefix:<...>` operator symbol.
+pub(in crate::parser) fn match_user_declared_prefix_op(input: &str) -> Option<(String, usize)> {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        let mut best: Option<(String, usize)> = None;
+
+        for scope in scopes.iter().rev() {
+            for name in &scope.user_subs {
+                let Some(op) = name
+                    .strip_prefix("prefix:<")
+                    .and_then(|s| s.strip_suffix('>'))
+                else {
+                    continue;
+                };
+                if !input.starts_with(op) {
+                    continue;
+                }
+                let consumed = op.len();
+                // For word-like operators, require identifier boundary.
+                if op
+                    .as_bytes()
+                    .last()
+                    .copied()
+                    .is_some_and(|b| crate::parser::helpers::is_ident_char(Some(b)))
+                    && input
+                        .as_bytes()
+                        .get(consumed)
+                        .copied()
+                        .is_some_and(|b| crate::parser::helpers::is_ident_char(Some(b)))
+                {
+                    continue;
+                }
+                if best
+                    .as_ref()
+                    .is_none_or(|(_, best_len)| consumed > *best_len)
+                {
+                    best = Some((name.clone(), consumed));
+                }
+            }
+        }
+        best
+    })
+}
+
 /// Check if a name was declared as a test assertion sub in any enclosing scope.
 pub(in crate::parser) fn is_user_test_assertion_sub(name: &str) -> bool {
     SCOPES.with(|s| {

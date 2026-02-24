@@ -353,6 +353,7 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "roll"
             | "sleep"
             | "dir"
+            | "elems"
     ) || is_expr_listop(name)
 }
 
@@ -603,12 +604,12 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 let (r, body) = parse_block_body(r)?;
                 return Ok((r, Expr::Try { body, catch: None }));
             }
-            // try EXPR — wrap expression in try
-            let (r, expr) = expression(r)?;
+            // try STMT — wrap the entire following statement in try
+            let (r, stmt) = statement_pub(r)?;
             return Ok((
                 r,
                 Expr::Try {
-                    body: vec![Stmt::Expr(expr)],
+                    body: vec![stmt],
                     catch: None,
                 },
             ));

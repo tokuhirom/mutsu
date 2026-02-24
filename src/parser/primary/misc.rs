@@ -819,7 +819,14 @@ pub(super) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
     let id = ANON_ROLE_COUNTER.fetch_add(1, Ordering::Relaxed);
     let name = format!("__ANON_ROLE_{id}__");
     let (rest, body) = parse_block_body(rest)?;
-    Ok((rest, Expr::DoStmt(Box::new(Stmt::RoleDecl { name, body }))))
+    Ok((
+        rest,
+        Expr::DoStmt(Box::new(Stmt::RoleDecl {
+            name,
+            type_params: Vec::new(),
+            body,
+        })),
+    ))
 }
 
 /// Parse hash literal body: key => val, :name(val), ... }
@@ -962,6 +969,12 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
         }
         let (r, _) = parse_char(r, ']')?;
         return Ok((r, (name, Some(Expr::ArrayLiteral(items)))));
+    }
+
+    // :name{block} (block-valued colonpair)
+    if r.starts_with('{') {
+        let (r, body) = parse_block_body(r)?;
+        return Ok((r, (name, Some(Expr::AnonSub(body)))));
     }
 
     // :name<word> or :name<words> (angle bracket form)

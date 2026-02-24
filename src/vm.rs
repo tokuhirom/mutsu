@@ -95,6 +95,7 @@ impl VM {
                 self.locals[i] = val.clone();
             }
         }
+        self.load_state_locals(code);
         let mut ip = 0;
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
@@ -105,12 +106,14 @@ impl VM {
                     ip += 1;
                     continue;
                 }
+                self.sync_state_locals(code);
                 return (self.interpreter, Err(e));
             }
             if self.interpreter.is_halted() {
                 break;
             }
         }
+        self.sync_state_locals(code);
         (self.interpreter, Ok(()))
     }
 
@@ -131,6 +134,7 @@ impl VM {
                 self.locals[i] = Value::Nil;
             }
         }
+        self.load_state_locals(code);
         let mut ip = 0;
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
@@ -141,13 +145,36 @@ impl VM {
                     ip += 1;
                     continue;
                 }
+                self.sync_state_locals(code);
                 return Err(e);
             }
             if self.interpreter.is_halted() {
                 break;
             }
         }
+        self.sync_state_locals(code);
         Ok(())
+    }
+
+    fn load_state_locals(&mut self, code: &CompiledCode) {
+        for (slot, key) in &code.state_locals {
+            if let Some(val) = self.interpreter.get_state_var(key) {
+                self.locals[*slot] = val.clone();
+            }
+        }
+    }
+
+    fn sync_state_locals(&mut self, code: &CompiledCode) {
+        for (slot, key) in &code.state_locals {
+            let local_name = &code.locals[*slot];
+            let val = self
+                .interpreter
+                .env()
+                .get(local_name)
+                .cloned()
+                .unwrap_or_else(|| self.locals[*slot].clone());
+            self.interpreter.set_state_var(key.clone(), val);
+        }
     }
 
     /// Get a reference to the interpreter (for reading env values).
