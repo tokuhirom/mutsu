@@ -310,8 +310,6 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
     // Handle twigils on code vars: &?BLOCK, &!DISPATCHER, &^x, &*FOO
     let (rest, twigil) = if let Some(stripped) = input.strip_prefix('?') {
         (stripped, "?")
-    } else if let Some(stripped) = input.strip_prefix('^') {
-        (stripped, "^")
     } else if let Some(stripped) = input.strip_prefix('!') {
         (stripped, "!")
     } else if let Some(stripped) = input.strip_prefix('^') {
