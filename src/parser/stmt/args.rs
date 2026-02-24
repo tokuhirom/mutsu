@@ -6,7 +6,7 @@ use super::super::primary::parse_block_body;
 use crate::ast::{CallArg, Expr};
 use crate::value::Value;
 
-use super::{ident, try_parse_assign_expr};
+use super::{ident, is_stmt_modifier_keyword, try_parse_assign_expr};
 
 /// Parse call arguments for statement-level function calls.
 /// Handles positional args, named args (fat arrow and colon pairs).
@@ -108,6 +108,9 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
         let (r, _) = ws(r)?;
         // Check for end
         if r.starts_with(';') || r.is_empty() || r.starts_with('}') || r.starts_with(')') {
+            return Ok((r, args));
+        }
+        if is_stmt_modifier_keyword(r) {
             return Ok((r, args));
         }
         let (r, arg) = parse_single_call_arg(r).map_err(|err| PError {

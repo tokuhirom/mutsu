@@ -823,7 +823,7 @@ pub(super) fn subtest_stmt(input: &str) -> PResult<'_, Stmt> {
 /// Parse a block statement: { ... }
 pub(super) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, body) = block(input)?;
-    Ok((rest, Stmt::Block(body)))
+    parse_statement_modifier(rest, Stmt::Block(body))
 }
 
 fn method_lvalue_assign_expr(

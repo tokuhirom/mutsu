@@ -104,6 +104,12 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, ',')?;
     let (input, _) = ws(input)?;
     let mut items = vec![first];
+    if let Some(result) = try_inline_modifier(input, finalize_paren_list(items.clone())) {
+        let (rest, modified_expr) = result?;
+        let (rest, _) = ws(rest)?;
+        let (rest, _) = parse_char(rest, ')')?;
+        return Ok((rest, modified_expr));
+    }
     // Handle trailing comma before close paren
     if let Ok((input, _)) = parse_char(input, ')') {
         return Ok((input, finalize_paren_list(items)));
@@ -125,6 +131,12 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         }
         let (input, _) = parse_char(input, ',')?;
         let (input, _) = ws(input)?;
+        if let Some(result) = try_inline_modifier(input, finalize_paren_list(items.clone())) {
+            let (rest, modified_expr) = result?;
+            let (rest, _) = ws(rest)?;
+            let (rest, _) = parse_char(rest, ')')?;
+            return Ok((rest, modified_expr));
+        }
         if let Ok((input, _)) = parse_char(input, ')') {
             return Ok((input, finalize_paren_list(items)));
         }
