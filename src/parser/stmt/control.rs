@@ -2,7 +2,7 @@ use super::super::expr::expression;
 use super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
 
-use crate::ast::{AssignOp, Expr, ParamDef, Stmt};
+use crate::ast::{AssignOp, Expr, ParamDef, Stmt, collect_placeholders};
 use crate::token_kind::TokenKind;
 
 use super::{block, ident, keyword, parse_comma_or_expr, statement, var_name};
@@ -423,6 +423,20 @@ pub(super) fn for_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, (param, param_def, params)) = parse_for_params(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
+    // When no explicit params, collect placeholder variables from the body
+    let (param, params) = if param.is_none() && params.is_empty() {
+        let placeholders = collect_placeholders(&body);
+        if placeholders.is_empty() {
+            (param, params)
+        } else {
+            // Use the first placeholder as the loop param, rest as extra params
+            let first = placeholders[0].clone();
+            let rest_params = placeholders[1..].to_vec();
+            (Some(first), rest_params)
+        }
+    } else {
+        (param, params)
+    };
     Ok((
         rest,
         Stmt::For {

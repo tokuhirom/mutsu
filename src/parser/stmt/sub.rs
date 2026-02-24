@@ -2,7 +2,7 @@ use super::super::expr::expression;
 use super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 
-use crate::ast::{Expr, ParamDef, Stmt};
+use crate::ast::{Expr, ParamDef, Stmt, collect_placeholders};
 use crate::value::Value;
 
 use super::{block, ident, keyword, qualified_ident, var_name};
@@ -176,6 +176,18 @@ pub(super) fn sub_decl_body(input: &str, multi: bool, supersede: bool) -> PResul
         Ok(ok) => ok,
         Err(_) if name.starts_with("trait_auxiliary:<") => consume_raw_sub_body(rest)?,
         Err(err) => return Err(err),
+    };
+    // When no explicit signature is given, collect placeholder variables
+    // ($^a, $^b, &^c, etc.) from the body as implicit parameters.
+    let (params, param_defs) = if params.is_empty() && param_defs.is_empty() {
+        let placeholders = collect_placeholders(&body);
+        if placeholders.is_empty() {
+            (params, param_defs)
+        } else {
+            (placeholders, Vec::new())
+        }
+    } else {
+        (params, param_defs)
     };
     Ok((
         rest,

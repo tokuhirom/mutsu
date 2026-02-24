@@ -190,6 +190,7 @@ impl Compiler {
     pub(super) fn expr_has_placeholder(expr: &Expr) -> bool {
         match expr {
             Expr::Var(name) => name.starts_with('^'),
+            Expr::CodeVar(name) => name.starts_with('^'),
             Expr::Binary { left, right, .. } => {
                 Self::expr_has_placeholder(left) || Self::expr_has_placeholder(right)
             }
@@ -210,12 +211,78 @@ impl Compiler {
             Expr::Index { target, index } | Expr::IndexAssign { target, index, .. } => {
                 Self::expr_has_placeholder(target) || Self::expr_has_placeholder(index)
             }
+            Expr::CallOn { target, args } => {
+                Self::expr_has_placeholder(target) || args.iter().any(Self::expr_has_placeholder)
+            }
             Expr::StringInterpolation(parts)
             | Expr::ArrayLiteral(parts)
             | Expr::BracketArray(parts)
             | Expr::CaptureLiteral(parts) => parts.iter().any(Self::expr_has_placeholder),
             _ => false,
         }
+    }
+
+    /// Check for placeholder variable conflicts in a block/sub body.
+    /// Returns a Value to die with if a conflict is found.
+    /// `decl_kind` is Some("sub") for named subs, None for blocks.
+    pub(super) fn check_placeholder_conflicts(
+        &self,
+        params: &[String],
+        body: &[Stmt],
+        decl_kind: Option<&str>,
+    ) -> Option<Value> {
+        use crate::ast::{bare_precedes_placeholder, has_var_decl};
+        for param in params {
+            let bare_name = if let Some(b) = param.strip_prefix("&^") {
+                b
+            } else if let Some(b) = param.strip_prefix('^') {
+                b
+            } else {
+                continue;
+            };
+            // Check for `my $name` in the same scope → X::Redeclaration
+            if has_var_decl(body, bare_name) {
+                return Some(Value::Str(format!(
+                    "X::Redeclaration: Redeclaration of symbol '$^{}'",
+                    bare_name
+                )));
+            }
+            // Check if bare var precedes placeholder in the body
+            if bare_precedes_placeholder(body, bare_name) {
+                // If outer scope has this variable → X::Placeholder::NonPlaceholder
+                if self.local_map.contains_key(bare_name) {
+                    let decl = decl_kind.unwrap_or("block");
+                    let message = format!(
+                        "'${}' has already been used as a non-placeholder in the surrounding {}, \
+                         so you will confuse the reader if you suddenly declare $^{} here",
+                        bare_name, decl, bare_name
+                    );
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert(
+                        "variable_name".to_string(),
+                        Value::Str(format!("${}", bare_name)),
+                    );
+                    attrs.insert(
+                        "placeholder".to_string(),
+                        Value::Str(format!("$^{}", bare_name)),
+                    );
+                    attrs.insert("decl".to_string(), Value::Str(decl.to_string()));
+                    attrs.insert("message".to_string(), Value::Str(message));
+                    return Some(Value::make_instance(
+                        "X::Placeholder::NonPlaceholder".to_string(),
+                        attrs,
+                    ));
+                } else {
+                    // No outer declaration → X::Undeclared
+                    return Some(Value::Str(format!(
+                        "X::Undeclared: Variable '${}' is not declared. \
+                         Did you mean '$^{}'?",
+                        bare_name, bare_name
+                    )));
+                }
+            }
+        }
+        None
     }
 
     /// Compile a SubDecl body to a CompiledFunction and store it.

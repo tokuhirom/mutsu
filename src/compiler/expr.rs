@@ -987,6 +987,13 @@ impl Compiler {
                 param_defs,
                 body,
             } => {
+                // Validate for placeholder conflicts
+                if let Some(err_val) = self.check_placeholder_conflicts(params, body, None) {
+                    let idx = self.code.add_constant(err_val);
+                    self.code.emit(OpCode::LoadConst(idx));
+                    self.code.emit(OpCode::Die);
+                    return;
+                }
                 let idx = self.code.add_stmt(Stmt::SubDecl {
                     name: String::new(),
                     name_expr: None,

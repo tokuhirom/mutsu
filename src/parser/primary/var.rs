@@ -10,13 +10,16 @@ use super::current_line_number;
 
 /// Parse a variable name from raw string (used in interpolation).
 pub(super) fn parse_var_name_from_str(input: &str) -> (&str, String) {
-    // Handle twigils: $*, $?, $!
-    let (rest, twigil) =
-        if input.starts_with('*') || input.starts_with('?') || input.starts_with('!') {
-            (&input[1..], &input[..1])
-        } else {
-            (input, "")
-        };
+    // Handle twigils: $*, $?, $!, $^
+    let (rest, twigil) = if input.starts_with('*')
+        || input.starts_with('?')
+        || input.starts_with('!')
+        || input.starts_with('^')
+    {
+        (&input[1..], &input[..1])
+    } else {
+        (input, "")
+    };
     let (rest_after_name, name) = parse_qualified_ident_with_hyphens_or_empty(rest);
     let full_name = if twigil.is_empty() {
         name
@@ -304,9 +307,11 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
             }
         }
     }
-    // Handle twigils: &?BLOCK, &?ROUTINE
+    // Handle twigils: &?BLOCK, &?ROUTINE, &^placeholder
     let (rest, twigil) = if let Some(stripped) = input.strip_prefix('?') {
         (stripped, "?")
+    } else if let Some(stripped) = input.strip_prefix('^') {
+        (stripped, "^")
     } else {
         (input, "")
     };
