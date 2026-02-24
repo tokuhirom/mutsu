@@ -259,6 +259,9 @@ pub(super) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if let Ok(r) = try_kw("e", Value::Num(std::f64::consts::E)) {
         return Ok(r);
     }
+    if let Ok(r) = try_kw("i", Value::Complex(0.0, 1.0)) {
+        return Ok(r);
+    }
     if let Ok(r) = try_kw("\u{1D452}", Value::Num(std::f64::consts::E)) {
         return Ok(r);
     }
