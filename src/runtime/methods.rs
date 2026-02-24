@@ -227,6 +227,9 @@ impl Interpreter {
                 let mut incoming_named = std::collections::HashMap::new();
                 for arg in args {
                     if let Value::Pair(key, boxed) = arg {
+                        if key == "__mutsu_test_callsite_line" {
+                            continue;
+                        }
                         incoming_named.insert(key.clone(), *boxed.clone());
                         next.assumed_named.insert(key, *boxed);
                     } else {
@@ -1160,6 +1163,18 @@ impl Interpreter {
             "tree" if !args.is_empty() => {
                 return self.dispatch_tree(target, &args);
             }
+            "values" if args.is_empty() => match target {
+                Value::Capture { positional, named } => {
+                    let mut vals = positional.clone();
+                    vals.extend(named.values().cloned());
+                    return Ok(Value::array(vals));
+                }
+                Value::Array(items, ..) => return Ok(Value::array(items.to_vec())),
+                Value::Hash(map) => return Ok(Value::array(map.values().cloned().collect())),
+                Value::Pair(_, value) => return Ok(Value::array(vec![*value.clone()])),
+                Value::ValuePair(_, value) => return Ok(Value::array(vec![*value.clone()])),
+                _ => return Ok(Value::array(Vec::new())),
+            },
             _ => {}
         }
 
@@ -3103,6 +3118,16 @@ impl Interpreter {
     fn dispatch_new(&mut self, target: Value, args: Vec<Value>) -> Result<Value, RuntimeError> {
         if let Value::Package(class_name) = &target {
             match class_name.as_str() {
+                "Array" | "List" | "Positional" => {
+                    let mut items = Vec::new();
+                    for arg in &args {
+                        match arg {
+                            Value::Slip(vals) => items.extend(vals.iter().cloned()),
+                            other => items.push(other.clone()),
+                        }
+                    }
+                    return Ok(Value::array(items));
+                }
                 "Hash" | "Map" => {
                     let mut flat = Vec::new();
                     for arg in &args {

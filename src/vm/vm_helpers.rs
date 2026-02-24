@@ -50,6 +50,16 @@ impl VM {
         self.interpreter
             .env_mut()
             .insert(name.to_string(), value.clone());
+        if let Some(inner) = name
+            .strip_prefix("&infix:<")
+            .or_else(|| name.strip_prefix("&prefix:<"))
+            .or_else(|| name.strip_prefix("&postfix:<"))
+            && let Some(op_name) = inner.strip_suffix('>')
+        {
+            self.interpreter
+                .env_mut()
+                .insert(format!("&{}", op_name), value.clone());
+        }
         if let Some(alias) = Self::main_unqualified_name(name) {
             self.interpreter.env_mut().insert(alias, value);
             return;

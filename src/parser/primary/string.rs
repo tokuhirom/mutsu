@@ -432,6 +432,33 @@ pub(super) fn try_interpolate_var<'a>(
     parts: &mut Vec<Expr>,
     current: &mut String,
 ) -> Option<&'a str> {
+    let parse_angle_index = |input: &'a str, target: Expr| -> (Expr, &'a str) {
+        if let Some(after_lt) = input.strip_prefix('<')
+            && let Some(end) = after_lt.find('>')
+        {
+            let content = &after_lt[..end];
+            let words: Vec<&str> = content.split_whitespace().collect();
+            let index = if words.len() <= 1 {
+                Expr::Literal(Value::Str(words.first().copied().unwrap_or("").to_string()))
+            } else {
+                Expr::ArrayLiteral(
+                    words
+                        .into_iter()
+                        .map(|w| Expr::Literal(Value::Str(w.to_string())))
+                        .collect(),
+                )
+            };
+            return (
+                Expr::Index {
+                    target: Box::new(target),
+                    index: Box::new(index),
+                },
+                &after_lt[end + 1..],
+            );
+        }
+        (target, input)
+    };
+
     if rest.starts_with('$') && rest.len() > 1 {
         let next = rest.as_bytes()[1] as char;
         // Special variable $/ (match variable)
@@ -454,7 +481,8 @@ pub(super) fn try_interpolate_var<'a>(
             }
             let var_rest = &rest[1..];
             let (var_rest, var_name) = parse_var_name_from_str(var_rest);
-            parts.push(Expr::Var(var_name));
+            let (expr, var_rest) = parse_angle_index(var_rest, Expr::Var(var_name));
+            parts.push(expr);
             return Some(var_rest);
         }
     }
@@ -469,8 +497,33 @@ pub(super) fn try_interpolate_var<'a>(
                 .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
                 .unwrap_or(var_rest.len());
             let name = &var_rest[..end];
-            parts.push(Expr::ArrayVar(name.to_string()));
-            return Some(&var_rest[end..]);
+            let expr = Expr::ArrayVar(name.to_string());
+            let mut remainder = &var_rest[end..];
+            // Zen-slice interpolation: "@arr[]" should interpolate the array value,
+            // not leave literal "[]".
+            if let Some(r) = remainder.strip_prefix("[]") {
+                remainder = r;
+            }
+            let (expr, remainder) = parse_angle_index(remainder, expr);
+            parts.push(expr);
+            return Some(remainder);
+        }
+    }
+    if rest.starts_with('%') && rest.len() > 1 {
+        let next = rest.as_bytes()[1] as char;
+        if next.is_alphabetic() || next == '_' {
+            if !current.is_empty() {
+                parts.push(Expr::Literal(Value::Str(std::mem::take(current))));
+            }
+            let var_rest = &rest[1..];
+            let end = var_rest
+                .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                .unwrap_or(var_rest.len());
+            let name = &var_rest[..end];
+            let expr = Expr::HashVar(name.to_string());
+            let (expr, remainder) = parse_angle_index(&var_rest[end..], expr);
+            parts.push(expr);
+            return Some(remainder);
         }
     }
     None

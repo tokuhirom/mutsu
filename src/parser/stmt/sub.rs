@@ -580,6 +580,34 @@ fn parse_where_constraint_expr(input: &str) -> PResult<'_, Expr> {
     expression(input)
 }
 
+fn parse_generic_suffix(input: &str) -> PResult<'_, String> {
+    if !input.starts_with('[') {
+        return Ok((input, String::new()));
+    }
+    let mut depth = 0usize;
+    let mut end = 0usize;
+    for (idx, ch) in input.char_indices() {
+        match ch {
+            '[' => depth += 1,
+            ']' => {
+                if depth == 0 {
+                    return Err(PError::expected("matching ']'"));
+                }
+                depth -= 1;
+                if depth == 0 {
+                    end = idx + ch.len_utf8();
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    if end == 0 {
+        return Err(PError::expected("matching ']'"));
+    }
+    Ok((&input[end..], input[..end].to_string()))
+}
+
 pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     let mut rest = input;
     let mut named = false;
@@ -678,6 +706,26 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         rest = &rest[1..];
     }
 
+    // Type-capture parameter: ::T $x  or bare ::T
+    if let Some(after_capture) = rest.strip_prefix("::")
+        && let Ok((r, capture_name)) = ident(after_capture)
+    {
+        type_constraint = Some(format!("::{}", capture_name));
+        let (r, _) = ws(r)?;
+        rest = r;
+        if rest.starts_with(')') || rest.starts_with(',') || rest.starts_with(';') {
+            let mut p = make_param(format!("__type_capture__{}", capture_name));
+            p.type_constraint = type_constraint;
+            p.named = named;
+            p.slurpy = slurpy;
+            return Ok((rest, p));
+        }
+        if rest.starts_with(':') {
+            named = true;
+            rest = &rest[1..];
+        }
+    }
+
     // Type constraint (may be qualified: IO::Path)
     // Skip type constraint parsing for named params with lowercase identifiers followed by '('
     // Parametric type constraint: ::T
@@ -700,12 +748,19 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             .is_some_and(|b| b.is_ascii_lowercase())
         && rest.contains('(');
     if !skip_type_for_named_alias && let Ok((r, tc)) = qualified_ident(rest) {
+        let mut tc_full = tc;
+        let mut r = r;
+        while r.starts_with('[') {
+            let (r2, suffix) = parse_generic_suffix(r)?;
+            tc_full.push_str(&suffix);
+            r = r2;
+        }
         // Preserve type smileys :D, :U, :_ as part of the type constraint
         let (r, tc) = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
             let smiley = &r[..2];
-            (&r[2..], format!("{}{}", tc, smiley))
+            (&r[2..], format!("{}{}", tc_full, smiley))
         } else {
-            (r, tc)
+            (r, tc_full)
         };
         let (r2, _) = ws(r)?;
 
@@ -1073,6 +1128,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
 
     // Capture the original sigil before var_name strips it
     let original_sigil = rest.as_bytes().first().copied().unwrap_or(b'$');
+    let param_sigil = rest.as_bytes().first().copied();
     let (rest, name) = var_name(rest)?;
 
     // Code signature constraint: &foo:(Str --> Bool)
@@ -1191,6 +1247,10 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             Some('@') => format!("@{}", name),
             _ => name,
         }
+    } else if param_sigil == Some(b'@') {
+        format!("@{}", name)
+    } else if param_sigil == Some(b'%') {
+        format!("%{}", name)
     } else {
         match original_sigil {
             b'@' => format!("@{}", name),

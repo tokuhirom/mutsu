@@ -279,16 +279,28 @@ impl VM {
                 Value::Str(rendered)
             }
         } else {
-            // Try user-defined infix:<name> function
+            // Try user-defined infix:<name> first, then callable forms for currying support.
+            let mut call_args = vec![left_val.clone()];
+            call_args.extend(right_vals.clone());
+            if modifier.as_deref() == Some("R") && call_args.len() == 2 {
+                call_args.swap(0, 1);
+            }
             let infix_name = format!("infix:<{}>", name);
             let right_val = right_vals.first().cloned().unwrap_or(Value::Nil);
             if let Some(result) = self.try_user_infix(&infix_name, &left_val, &right_val)? {
                 result
+            } else if let Ok(v) = self.interpreter.call_function(&name, call_args.clone()) {
+                v
             } else {
-                return Err(RuntimeError::new(format!(
-                    "Unknown infix function: {}",
-                    name
-                )));
+                let env_name = format!("&{}", name);
+                if let Some(code_val) = self.interpreter.env().get(&env_name).cloned() {
+                    self.interpreter.eval_call_on_value(code_val, call_args)?
+                } else {
+                    return Err(RuntimeError::new(format!(
+                        "Unknown infix function: {}",
+                        name
+                    )));
+                }
             }
         };
         self.stack.push(result);

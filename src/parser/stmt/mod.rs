@@ -156,6 +156,27 @@ fn var_name(input: &str) -> PResult<'_, String> {
         if input.starts_with('$') && r.starts_with('/') {
             return Ok((&r[1..], "/".to_string()));
         }
+        // Handle callable operator references: &infix:<...>, &prefix:<...>, ...
+        if input.starts_with('&') {
+            for op_kind in ["infix", "prefix", "postfix", "circumfix"] {
+                if let Some(after_kind) = r.strip_prefix(op_kind)
+                    && let Some(after_colon) = after_kind.strip_prefix(':')
+                {
+                    if let Some(after_open) = after_colon.strip_prefix("<<")
+                        && let Some(end) = after_open.find(">>")
+                    {
+                        let symbol = &after_open[..end];
+                        return Ok((&after_open[end + 2..], format!("{op_kind}:<{symbol}>")));
+                    }
+                    if let Some(after_open) = after_colon.strip_prefix('<')
+                        && let Some(end) = after_open.find('>')
+                    {
+                        let symbol = &after_open[..end];
+                        return Ok((&after_open[end + 1..], format!("{op_kind}:<{symbol}>")));
+                    }
+                }
+            }
+        }
         // Handle bare $ (anonymous variable) — no name after sigil
         if let Ok((rest, name)) = qualified_ident(r) {
             let full = if twigil.is_empty() {

@@ -316,9 +316,13 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
         }
     }
 
-    // Positional argument — try assignment expression first ($x = expr)
+    // Positional argument — try assignment expression first ($x = expr).
+    // But do not consume a prefix before a fat-arrow chain (e.g. `2 => "x" => {...}`).
     if let Ok((rest, assign_expr)) = try_parse_assign_expr(input) {
-        return Ok((rest, CallArg::Positional(assign_expr)));
+        let (rest_ws, _) = ws(rest)?;
+        if !rest_ws.starts_with("=>") || rest_ws.starts_with("==>") {
+            return Ok((rest, CallArg::Positional(assign_expr)));
+        }
     }
     let (rest, expr) = expression(input).map_err(|err| PError {
         messages: merge_expected_messages("expected positional argument expression", &err.messages),

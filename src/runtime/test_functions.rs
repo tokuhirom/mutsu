@@ -1066,21 +1066,30 @@ impl Interpreter {
 
     fn test_fn_group_of(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // group-of $plan => $desc => { ... }
-        // Pair(String, Box<Value>) where key is plan (as string), value is Pair(desc, block)
-        let (plan, desc, block) = if let Some(Value::Pair(plan_str, inner_val)) = args.first() {
-            if let Value::Pair(desc_str, block_val) = inner_val.as_ref() {
-                let plan: i64 = plan_str
-                    .parse()
-                    .map_err(|_| RuntimeError::new("group-of: plan must be an integer"))?;
-                (plan, desc_str.clone(), *block_val.clone())
-            } else {
-                return Err(RuntimeError::new(
-                    "group-of expects $plan => $desc => { ... }",
-                ));
+        // Accept both `Pair` and `ValuePair` keys for compatibility with non-string keys.
+        let to_pair_parts = |value: &Value| -> Option<(Value, Value)> {
+            match value {
+                Value::Pair(k, v) => Some((Value::Str(k.clone()), *v.clone())),
+                Value::ValuePair(k, v) => Some((*k.clone(), *v.clone())),
+                _ => None,
             }
-        } else {
+        };
+        let Some((plan_key, inner)) = args.first().and_then(to_pair_parts) else {
             return Err(RuntimeError::new("group-of expects a Pair argument"));
         };
+        let Some((desc_key, block)) = to_pair_parts(&inner) else {
+            return Err(RuntimeError::new(
+                "group-of expects $plan => $desc => { ... }",
+            ));
+        };
+        let plan: i64 = match plan_key {
+            Value::Int(i) => i,
+            other => other
+                .to_string_value()
+                .parse()
+                .map_err(|_| RuntimeError::new("group-of: plan must be an integer"))?,
+        };
+        let desc = desc_key.to_string_value();
         let ctx = self.begin_subtest();
         self.test_fn_plan(&[Value::Int(plan)])?;
         let run_result = self.call_sub_value(block, vec![], true);
