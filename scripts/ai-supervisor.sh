@@ -96,6 +96,44 @@ fi
 require_cmd gh
 require_cmd ai-sandbox
 
+build_history_prompt() {
+    local branch_name="$1"
+    cat <<EOF
+Update roast history on branch $branch_name.
+
+Follow the repository PR workflow in CLAUDE.md and handle this end-to-end:
+1. Checkout main and sync latest origin/main
+2. Create and switch to branch: $branch_name
+3. Run ./scripts/roast-history.sh --commit
+4. If there are no changes, report and stop (do not open a PR)
+5. Otherwise push the branch and open a PR with gh pr create
+6. Enable auto-merge for the PR
+
+Constraints:
+- Keep the changes limited to roast history artifacts
+- Do not modify anything under roast/
+EOF
+}
+
+run_history_update() {
+    local timestamp
+    local branch_name
+    local prompt
+    local cmd
+
+    timestamp="$(date +%Y%m%d%H%M)"
+    branch_name="update-history-${timestamp}"
+    prompt="$(build_history_prompt "$branch_name")"
+    cmd=(ai-sandbox "$branch_name" codex exec "$prompt")
+
+    echo "No fixable PR found. Running roast history update on: $branch_name"
+    echo "Running: ${cmd[*]}"
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        return 0
+    fi
+    "${cmd[@]}"
+}
+
 collect_candidates_tsv() {
     gh pr list \
         --state open \
@@ -226,6 +264,7 @@ fi
 
 while true; do
     if [[ -z "$CANDIDATES" ]]; then
+        run_history_update
         echo "No open PRs with conflicts or CI failures were found. Sleeping ${POLL_INTERVAL_SECONDS}s..."
         sleep "$POLL_INTERVAL_SECONDS"
         CANDIDATES="$(collect_candidates_tsv)"
