@@ -797,7 +797,13 @@ impl Interpreter {
     }
 
     pub(super) fn method_args_match(&mut self, args: &[Value], param_defs: &[ParamDef]) -> bool {
-        let positional_params: Vec<&ParamDef> = param_defs.iter().filter(|p| !p.named).collect();
+        let filtered_params: Vec<ParamDef> = param_defs
+            .iter()
+            .filter(|p| !p.traits.iter().any(|t| t == "invocant"))
+            .cloned()
+            .collect();
+        let positional_params: Vec<&ParamDef> =
+            filtered_params.iter().filter(|p| !p.named).collect();
         let mut required = 0usize;
         let mut has_slurpy = false;
         for pd in &positional_params {
@@ -814,7 +820,7 @@ impl Interpreter {
         } else if args.len() != required {
             return false;
         }
-        self.args_match_param_types(args, param_defs)
+        self.args_match_param_types(args, &filtered_params)
     }
 
     pub(crate) fn bind_function_args_values(

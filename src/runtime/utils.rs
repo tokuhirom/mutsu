@@ -5,6 +5,13 @@ use crate::value::{JunctionKind, Value};
 /// Maximum number of elements when expanding an infinite range to a list.
 const MAX_RANGE_EXPAND: i64 = 1_000_000;
 
+pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
+    match (left, right) {
+        (Value::Instance { id: a, .. }, Value::Instance { id: b, .. }) => a == b,
+        _ => left == right,
+    }
+}
+
 pub(crate) fn make_order(ord: std::cmp::Ordering) -> Value {
     match ord {
         std::cmp::Ordering::Less => Value::Enum {
