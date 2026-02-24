@@ -264,6 +264,9 @@ pub struct Interpreter {
     /// Registry of encodings (both built-in and user-registered).
     /// Each entry maps a canonical name to an EncodingEntry.
     encoding_registry: Vec<EncodingEntry>,
+    /// When set, pseudo-method names (DEFINITE, WHAT, etc.) bypass native fast path.
+    /// Used for quoted method calls like `."DEFINITE"()`.
+    pub(crate) skip_pseudo_method_native: Option<String>,
 }
 
 /// An entry in the encoding registry.
@@ -870,6 +873,7 @@ impl Interpreter {
             supply_emit_buffer: Vec::new(),
             shared_vars: Arc::new(Mutex::new(HashMap::new())),
             encoding_registry: Self::builtin_encodings(),
+            skip_pseudo_method_native: None,
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -1221,6 +1225,7 @@ impl Interpreter {
             supply_emit_buffer: Vec::new(),
             shared_vars: Arc::clone(&self.shared_vars),
             encoding_registry: self.encoding_registry.clone(),
+            skip_pseudo_method_native: None,
         }
     }
 

@@ -775,8 +775,9 @@ impl VM {
                 name_idx,
                 arity,
                 modifier_idx,
+                quoted,
             } => {
-                self.exec_call_method_op(code, *name_idx, *arity, *modifier_idx)?;
+                self.exec_call_method_op(code, *name_idx, *arity, *modifier_idx, *quoted)?;
                 *ip += 1;
             }
             OpCode::CallMethodDynamic { arity } => {
@@ -788,6 +789,7 @@ impl VM {
                 arity,
                 target_name_idx,
                 modifier_idx,
+                quoted,
             } => {
                 self.exec_call_method_mut_op(
                     code,
@@ -795,6 +797,7 @@ impl VM {
                     *arity,
                     *target_name_idx,
                     *modifier_idx,
+                    *quoted,
                 )?;
                 *ip += 1;
             }

@@ -872,6 +872,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             name: method_name,
             args,
             modifier: None,
+            quoted: false,
         });
         return parse_statement_modifier(rest, stmt);
     }
@@ -938,6 +939,7 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             name,
             args,
             modifier: _,
+            quoted: _,
         } = &expr
         {
             let target_var_name = if let Expr::Var(var_name) = target.as_ref() {
@@ -1243,6 +1245,7 @@ pub(super) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 name,
                 args,
                 modifier: _,
+                quoted: _,
             } = expr
             && let Expr::Var(var_name) = target.as_ref()
         {

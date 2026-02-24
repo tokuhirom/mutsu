@@ -369,6 +369,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         name,
                         args,
                         modifier,
+                        quoted: false,
                     };
                     rest = r;
                     continue;
@@ -397,6 +398,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         name,
                         args,
                         modifier,
+                        quoted: false,
                     };
                     rest = r_inner;
                     continue;
@@ -407,6 +409,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     name,
                     args: Vec::new(),
                     modifier,
+                    quoted: false,
                 };
                 rest = r;
                 continue;
@@ -432,6 +435,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                             name,
                             args,
                             modifier,
+                            quoted: true,
                         };
                     }
                     QuotedMethodName::Dynamic(name_expr) => {
@@ -463,6 +467,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         name,
                         args,
                         modifier: Some('!'),
+                        quoted: false,
                     };
                     rest = r;
                     continue;
@@ -472,6 +477,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     name,
                     args: Vec::new(),
                     modifier: Some('!'),
+                    quoted: false,
                 };
                 rest = r;
                 continue;
@@ -585,6 +591,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         name: "values".to_string(),
                         args: Vec::new(),
                         modifier: None,
+                        quoted: false,
                     }
                 } else {
                     indexed_expr
@@ -630,6 +637,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 name: "new".to_string(),
                 args,
                 modifier: None,
+                quoted: false,
             };
             rest = r;
             continue;
@@ -686,6 +694,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     name: "DELETE-KEY".to_string(),
                     args: vec![],
                     modifier: None,
+                    quoted: false,
                 };
                 rest = r;
                 continue;
@@ -722,6 +731,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     name: "DELETE-KEY".to_string(),
                     args: vec![],
                     modifier: None,
+                    quoted: false,
                 };
                 continue;
             }
@@ -737,6 +747,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 name: "DELETE-KEY".to_string(),
                 args: vec![],
                 modifier: None,
+                quoted: false,
             };
             continue;
         }
@@ -851,6 +862,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 name: "i".to_string(),
                 args: vec![],
                 modifier: None,
+                quoted: false,
             };
             continue;
         }

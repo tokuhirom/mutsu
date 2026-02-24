@@ -98,6 +98,9 @@ pub(crate) enum Expr {
         name: String,
         args: Vec<Expr>,
         modifier: Option<char>,
+        /// True when the method name was quoted (e.g. `."DEFINITE"()`),
+        /// which bypasses pseudo-method macros like .DEFINITE, .WHAT, etc.
+        quoted: bool,
     },
     DynamicMethodCall {
         target: Box<Expr>,

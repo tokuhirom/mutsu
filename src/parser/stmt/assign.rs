@@ -201,6 +201,7 @@ pub(super) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr> {
                     name: method_name.to_string(),
                     args,
                     modifier: None,
+                    quoted: false,
                 }),
             },
         ));
@@ -518,6 +519,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             name: method_name,
             args,
             modifier: None,
+            quoted: false,
         };
         let stmt = Stmt::Assign {
             name,

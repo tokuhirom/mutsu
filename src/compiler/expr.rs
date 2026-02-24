@@ -370,6 +370,7 @@ impl Compiler {
                         name: name.clone(),
                         args: Vec::new(),
                         modifier: None,
+                        quoted: false,
                     };
                     self.compile_expr(&method_call);
                 }
@@ -383,6 +384,7 @@ impl Compiler {
                         name: name.clone(),
                         args: args[1..].to_vec(),
                         modifier: None,
+                        quoted: false,
                     };
                     self.compile_expr(&method_call);
                 }
@@ -451,6 +453,7 @@ impl Compiler {
                             name: "VAR".to_string(),
                             args: Vec::new(),
                             modifier: None,
+                            quoted: false,
                         };
                         self.compile_expr(&method_call);
                         return;
@@ -518,6 +521,7 @@ impl Compiler {
                 name,
                 args,
                 modifier,
+                quoted,
             } if matches!(
                 target.as_ref(),
                 Expr::Var(_)
@@ -556,6 +560,7 @@ impl Compiler {
                     arity,
                     target_name_idx,
                     modifier_idx,
+                    quoted: *quoted,
                 });
             }
             // Method call on non-variable target (no writeback needed)
@@ -564,6 +569,7 @@ impl Compiler {
                 name,
                 args,
                 modifier,
+                quoted,
             } => {
                 // Lower index :delete adverb to dedicated delete opcodes.
                 if name == "DELETE-KEY"
@@ -597,6 +603,7 @@ impl Compiler {
                     name_idx,
                     arity,
                     modifier_idx,
+                    quoted: *quoted,
                 });
             }
             // Dynamic method call: target."$name"(args)

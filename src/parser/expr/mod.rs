@@ -257,11 +257,13 @@ fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
             name,
             args,
             modifier,
+            quoted,
         } => Expr::MethodCall {
             target: Box::new(replace_whatever_numbered(target, counter)),
             name: name.clone(),
             args: args.clone(),
             modifier: *modifier,
+            quoted: *quoted,
         },
         Expr::Index { target, index } => Expr::Index {
             target: Box::new(replace_whatever_numbered(target, counter)),
@@ -289,6 +291,7 @@ fn rename_var(expr: &Expr, old_name: &str, new_name: &str) -> Expr {
             name,
             args,
             modifier,
+            quoted,
         } => Expr::MethodCall {
             target: Box::new(rename_var(target, old_name, new_name)),
             name: name.clone(),
@@ -297,6 +300,7 @@ fn rename_var(expr: &Expr, old_name: &str, new_name: &str) -> Expr {
                 .map(|a| rename_var(a, old_name, new_name))
                 .collect(),
             modifier: *modifier,
+            quoted: *quoted,
         },
         Expr::Index { target, index } => Expr::Index {
             target: Box::new(rename_var(target, old_name, new_name)),
@@ -376,11 +380,13 @@ fn replace_whatever_single(expr: &Expr) -> Expr {
             name,
             args,
             modifier,
+            quoted,
         } => Expr::MethodCall {
             target: Box::new(replace_whatever_single(target)),
             name: name.clone(),
             args: args.clone(),
             modifier: *modifier,
+            quoted: *quoted,
         },
         Expr::Index { target, index } => Expr::Index {
             target: Box::new(replace_whatever_single(target)),

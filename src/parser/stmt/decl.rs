@@ -451,6 +451,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             name: method_name,
             args,
             modifier: None,
+            quoted: false,
         };
         let stmt = Stmt::VarDecl {
             name,

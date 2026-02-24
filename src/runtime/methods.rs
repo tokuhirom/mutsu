@@ -182,8 +182,17 @@ impl Interpreter {
             }
         }
 
-        let bypass_native_fastpath = (matches!(method, "max" | "min")
-            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
+        // Skip native fast path for pseudo-methods when called with quoted syntax
+        let skip_pseudo = self
+            .skip_pseudo_method_native
+            .as_ref()
+            .is_some_and(|m| m == method);
+        if skip_pseudo {
+            self.skip_pseudo_method_native = None;
+        }
+        let bypass_native_fastpath = skip_pseudo
+            || (matches!(method, "max" | "min")
+                && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
             || (method == "Supply"
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supplier"));
         let native_result = if bypass_native_fastpath {
@@ -1767,6 +1776,7 @@ impl Interpreter {
                         name: method.to_string(),
                         args: method_args,
                         modifier: None,
+                        quoted: false,
                     })];
                     let id = COMPOSE_METHOD_ID.fetch_add(1, Ordering::Relaxed);
                     return Ok(Value::make_sub_with_id(

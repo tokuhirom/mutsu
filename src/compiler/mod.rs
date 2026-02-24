@@ -132,6 +132,7 @@ impl Compiler {
                             name: sub.name.clone(),
                             args: Vec::new(),
                             modifier: None,
+                            quoted: false,
                         },
                         op: AssignOp::Assign,
                     });

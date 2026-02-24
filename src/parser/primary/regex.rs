@@ -723,6 +723,7 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
                 name,
                 args,
                 modifier,
+                quoted: false,
             },
         ));
     }
@@ -752,6 +753,7 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
                 name,
                 args,
                 modifier,
+                quoted: false,
             },
         ));
     }
@@ -762,6 +764,7 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
             name,
             args: Vec::new(),
             modifier,
+            quoted: false,
         },
     ))
 }
