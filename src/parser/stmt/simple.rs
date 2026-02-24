@@ -703,8 +703,12 @@ pub(super) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
         (r, false)
     };
     let (rest, _) = ws(rest)?;
-    if rest.starts_with(';') || rest.is_empty() || rest.starts_with('}') {
-        let (rest, _) = opt_char(rest, ';');
+    // `die`/`fail` with no argument: followed by `;`, end, `}`, or a statement modifier
+    let no_arg = rest.starts_with(';')
+        || rest.is_empty()
+        || rest.starts_with('}')
+        || is_stmt_modifier_keyword(rest);
+    if no_arg {
         // `die`/`fail` with no argument should reuse current `$!` when present.
         // A later runtime fallback handles Nil -> default text.
         let stmt = if is_fail {
@@ -712,7 +716,7 @@ pub(super) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
         } else {
             Stmt::Die(Expr::Var("!".to_string()))
         };
-        return Ok((rest, stmt));
+        return parse_statement_modifier(rest, stmt);
     }
     let (rest, expr) = expression(rest)?;
     let stmt = if is_fail {

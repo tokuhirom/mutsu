@@ -568,14 +568,27 @@ pub(super) fn smart_single_quoted_string(input: &str) -> PResult<'_, Expr> {
     }
 }
 
-/// Parse corner bracket string literal: ｢...｣ (no interpolation)
+/// Parse corner bracket string literal: ｢...｣ (no interpolation, supports nesting)
 pub(super) fn corner_bracket_string(input: &str) -> PResult<'_, Expr> {
     let rest = input
         .strip_prefix('｢')
         .ok_or_else(|| PError::expected("corner bracket string"))?;
-    if let Some(end) = rest.find('｣') {
-        let content = &rest[..end];
-        let after = &rest[end + '｣'.len_utf8()..];
+    let mut depth: usize = 1;
+    let mut pos = 0;
+    for (i, ch) in rest.char_indices() {
+        if ch == '｢' {
+            depth += 1;
+        } else if ch == '｣' {
+            depth -= 1;
+            if depth == 0 {
+                pos = i;
+                break;
+            }
+        }
+    }
+    if depth == 0 {
+        let content = &rest[..pos];
+        let after = &rest[pos + '｣'.len_utf8()..];
         Ok((after, Expr::Literal(Value::Str(content.to_string()))))
     } else {
         Err(PError::expected("closing ｣"))

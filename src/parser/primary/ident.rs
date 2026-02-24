@@ -985,12 +985,14 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 
     // Check for listop: bareword followed by space and argument (but not statement modifier)
     // e.g., shift @a, push @a, 42, etc.
+    // Skip when followed by '.' — `func.method` is `(func()).method`, not `func(.method)`.
     if is_listop(&name)
         && !r.is_empty()
         && !r.starts_with(';')
         && !r.starts_with('}')
         && !r.starts_with(')')
         && !r.starts_with(',')
+        && !r.starts_with('.')
     {
         // Check if next token is a statement modifier keyword
         if !is_stmt_modifier_ahead(r) {

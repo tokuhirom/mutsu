@@ -178,13 +178,12 @@ impl Interpreter {
         self.env.insert("$*TMPDIR".to_string(), tmpdir_val.clone());
         self.env.insert("*TMPDIR".to_string(), tmpdir_val);
         if let Ok(home) = env::var("HOME") {
-            self.env
-                .insert("$*HOME".to_string(), Value::Str(home.clone()));
-            self.env.insert("*HOME".to_string(), Value::Str(home));
+            let home_val = self.make_io_path_instance(&home);
+            self.env.insert("$*HOME".to_string(), home_val.clone());
+            self.env.insert("*HOME".to_string(), home_val);
         } else {
-            self.env
-                .insert("$*HOME".to_string(), Value::Str(cwd_str.clone()));
-            self.env.insert("*HOME".to_string(), Value::Str(cwd_str));
+            self.env.insert("$*HOME".to_string(), Value::Nil);
+            self.env.insert("*HOME".to_string(), Value::Nil);
         }
         // $*EXECUTABLE - path to the interpreter binary
         let exe_path = std::env::current_exe()
@@ -542,7 +541,7 @@ impl Interpreter {
         path.to_string_lossy().to_string()
     }
 
-    pub(super) fn make_io_path_instance(&self, path: &str) -> Value {
+    pub(crate) fn make_io_path_instance(&self, path: &str) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("path".to_string(), Value::Str(path.to_string()));
         Value::make_instance("IO::Path".to_string(), attrs)
