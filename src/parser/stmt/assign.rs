@@ -405,6 +405,7 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 name: method_name.clone(),
                 args: Vec::new(),
                 modifier: None,
+                quoted: false,
             };
             let updated_value = Expr::Binary {
                 left: Box::new(current_value),
