@@ -9,7 +9,9 @@ impl Interpreter {
             .and_then(|(stmts, _)| self.eval_block_value(&stmts));
         // Fallback: parser still rejects forms like `~< foo bar >`.
         // Rewrite to an equivalent parenthesized form and try again.
-        if result.is_err() && let Some(rewritten) = rewrite_prefixed_angle_list(trimmed) {
+        if result.is_err()
+            && let Some(rewritten) = rewrite_prefixed_angle_list(trimmed)
+        {
             result = parse_dispatch::parse_source(&rewritten)
                 .and_then(|(stmts, _)| self.eval_block_value(&stmts));
         }

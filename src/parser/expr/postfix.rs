@@ -1,4 +1,4 @@
-use super::super::helpers::{is_ident_char, split_angle_words, ws};
+use super::super::helpers::{is_ident_char, is_non_breaking_space, split_angle_words, ws};
 use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 use super::super::primary::{colonpair_expr, parse_block_body, parse_call_arg_list, primary};
 
@@ -467,6 +467,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                                 || c == '?'
                                 || c == '+'
                                 || c == '/'
+                                || is_non_breaking_space(c)
                         })
                 })
             {
