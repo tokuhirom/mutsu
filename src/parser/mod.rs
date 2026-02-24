@@ -101,7 +101,6 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
     } else {
         (input, None)
     };
-
     let result = match stmt::program(source) {
         Ok((rest, stmts)) => {
             let rest_trimmed = rest.trim();

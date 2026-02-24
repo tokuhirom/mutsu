@@ -8,6 +8,34 @@ enum OpAssoc {
 }
 
 impl Interpreter {
+    fn has_invalid_anonymous_rw_trait(code: &str) -> bool {
+        let bytes = code.as_bytes();
+        let mut i = 0usize;
+        while i < bytes.len() {
+            if bytes[i] != b'$' {
+                i += 1;
+                continue;
+            }
+            let mut j = i + 1;
+            while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                j += 1;
+            }
+            if j + 1 >= bytes.len() || bytes[j] != b'i' || bytes[j + 1] != b's' {
+                i += 1;
+                continue;
+            }
+            j += 2;
+            while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                j += 1;
+            }
+            if j + 1 < bytes.len() && bytes[j] == b'r' && bytes[j + 1] == b'w' {
+                return true;
+            }
+            i += 1;
+        }
+        false
+    }
+
     fn coerce_to_enum_variant(
         &mut self,
         enum_name: &str,
@@ -101,7 +129,8 @@ impl Interpreter {
                 new_env.insert(k.clone(), v.clone());
             }
             self.env = new_env.clone();
-            self.bind_function_args_values(&data.param_defs, &data.params, &call_args)?;
+            let rw_bindings =
+                self.bind_function_args_values(&data.param_defs, &data.params, &call_args)?;
             new_env = self.env.clone();
             // Bind implicit $_ for bare blocks called with arguments
             if data.params.is_empty() && !call_args.is_empty() {
@@ -139,6 +168,7 @@ impl Interpreter {
             self.block_stack.pop();
             self.routine_stack.pop();
             let mut merged = saved_env;
+            self.apply_rw_bindings_to_env(&rw_bindings, &mut merged);
             for (k, v) in self.env.iter() {
                 if matches!(v, Value::Array(..)) {
                     merged.insert(k.clone(), v.clone());
@@ -469,14 +499,16 @@ impl Interpreter {
         }
         if let Some(def) = self.resolve_function_with_alias(name, args) {
             let saved_env = self.env.clone();
-            self.bind_function_args_values(&def.param_defs, &def.params, args)?;
+            let rw_bindings = self.bind_function_args_values(&def.param_defs, &def.params, args)?;
             let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
             self.routine_stack
                 .push((def.package.clone(), def.name.clone()));
             let result = self.eval_block_value(&def.body);
             self.routine_stack.pop();
             self.pop_test_assertion_context(pushed_assertion);
-            self.env = saved_env;
+            let mut restored_env = saved_env;
+            self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
+            self.env = restored_env;
             return match result {
                 Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
                 other => other,
@@ -839,6 +871,11 @@ impl Interpreter {
 
     fn builtin_eval(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let code = Self::positional_string(args, 0);
+        if Self::has_invalid_anonymous_rw_trait(&code) {
+            return Err(RuntimeError::new(
+                "X::Trait::Invalid: trait 'rw' is not valid on anonymous parameter",
+            ));
+        }
         if let Some(lang) = Self::named_value(args, "lang") {
             let lang = lang.to_string_value();
             if !lang.eq_ignore_ascii_case("raku") && !lang.eq_ignore_ascii_case("perl6") {

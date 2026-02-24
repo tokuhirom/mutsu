@@ -338,13 +338,25 @@ impl Compiler {
                         .all(|arg| matches!(arg, CallArg::Positional(_)))
                 {
                     let arity = rewritten_args.len() as u32;
+                    let positional_exprs: Vec<Expr> = rewritten_args
+                        .iter()
+                        .filter_map(|arg| match arg {
+                            CallArg::Positional(expr) => Some(expr.clone()),
+                            _ => None,
+                        })
+                        .collect();
+                    let arg_sources_idx = self.add_arg_sources_constant(&positional_exprs);
                     for arg in &rewritten_args {
                         if let CallArg::Positional(expr) = arg {
                             self.compile_expr(expr);
                         }
                     }
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
-                    self.code.emit(OpCode::ExecCall { name_idx, arity });
+                    self.code.emit(OpCode::ExecCall {
+                        name_idx,
+                        arity,
+                        arg_sources_idx,
+                    });
                     return;
                 }
 
@@ -392,6 +404,7 @@ impl Compiler {
                     self.code.emit(OpCode::ExecCallSlip {
                         name_idx,
                         regular_arity: regular_count,
+                        arg_sources_idx: None,
                     });
                     return;
                 }
@@ -712,7 +725,11 @@ impl Compiler {
                     let name_idx = self
                         .code
                         .add_constant(Value::Str("__mutsu_set_newline".to_string()));
-                    self.code.emit(OpCode::ExecCall { name_idx, arity: 1 });
+                    self.code.emit(OpCode::ExecCall {
+                        name_idx,
+                        arity: 1,
+                        arg_sources_idx: None,
+                    });
                 }
             }
             Stmt::Use { module, .. }

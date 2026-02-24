@@ -287,7 +287,11 @@ impl Interpreter {
                 main_call.emit(OpCode::LoadConst(arg_idx));
             }
             let name_idx = main_call.add_constant(Value::Str("MAIN".to_string()));
-            main_call.emit(OpCode::ExecCall { name_idx, arity });
+            main_call.emit(OpCode::ExecCall {
+                name_idx,
+                arity,
+                arg_sources_idx: None,
+            });
 
             let interp = std::mem::take(self);
             let vm = crate::vm::VM::new(interp);

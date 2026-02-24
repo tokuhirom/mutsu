@@ -112,12 +112,32 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "key" => match target {
             Value::Pair(k, _) => Some(Ok(Value::Str(k.clone()))),
             Value::ValuePair(k, _) => Some(Ok(*k.clone())),
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Pair" => {
+                Some(Ok(attributes.get("key").cloned().unwrap_or(Value::Nil)))
+            }
             Value::Bool(true) => Some(Ok(Value::Str("True".to_string()))),
             Value::Bool(false) => Some(Ok(Value::Str("False".to_string()))),
             _ => None,
         },
         "value" => match target {
             Value::Pair(_, v) | Value::ValuePair(_, v) => Some(Ok(*v.clone())),
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Pair" => {
+                if let (Some(Value::Hash(hash)), Some(Value::Str(key))) =
+                    (attributes.get("__mutsu_hash_ref"), attributes.get("key"))
+                {
+                    Some(Ok(hash.get(key).cloned().unwrap_or(Value::Nil)))
+                } else {
+                    Some(Ok(attributes.get("value").cloned().unwrap_or(Value::Nil)))
+                }
+            }
             Value::Bool(b) => Some(Ok(Value::Int(if *b { 1 } else { 0 }))),
             _ => None,
         },

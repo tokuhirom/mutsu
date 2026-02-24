@@ -749,15 +749,26 @@ impl VM {
             }
 
             // -- Calls --
-            OpCode::CallFunc { name_idx, arity } => {
-                self.exec_call_func_op(code, *name_idx, *arity, compiled_fns)?;
+            OpCode::CallFunc {
+                name_idx,
+                arity,
+                arg_sources_idx,
+            } => {
+                self.exec_call_func_op(code, *name_idx, *arity, *arg_sources_idx, compiled_fns)?;
                 *ip += 1;
             }
             OpCode::CallFuncSlip {
                 name_idx,
                 regular_arity,
+                arg_sources_idx,
             } => {
-                self.exec_call_func_slip_op(code, *name_idx, *regular_arity, compiled_fns)?;
+                self.exec_call_func_slip_op(
+                    code,
+                    *name_idx,
+                    *regular_arity,
+                    *arg_sources_idx,
+                    compiled_fns,
+                )?;
                 *ip += 1;
             }
             OpCode::CallMethod {
@@ -783,16 +794,27 @@ impl VM {
                 )?;
                 *ip += 1;
             }
-            OpCode::CallOnValue { arity } => {
-                self.exec_call_on_value_op(code, *arity)?;
+            OpCode::CallOnValue {
+                arity,
+                arg_sources_idx,
+            } => {
+                self.exec_call_on_value_op(code, *arity, *arg_sources_idx)?;
                 *ip += 1;
             }
-            OpCode::CallOnCodeVar { name_idx, arity } => {
-                self.exec_call_on_code_var_op(code, *name_idx, *arity)?;
+            OpCode::CallOnCodeVar {
+                name_idx,
+                arity,
+                arg_sources_idx,
+            } => {
+                self.exec_call_on_code_var_op(code, *name_idx, *arity, *arg_sources_idx)?;
                 *ip += 1;
             }
-            OpCode::ExecCall { name_idx, arity } => {
-                self.exec_exec_call_op(code, *name_idx, *arity, compiled_fns)?;
+            OpCode::ExecCall {
+                name_idx,
+                arity,
+                arg_sources_idx,
+            } => {
+                self.exec_exec_call_op(code, *name_idx, *arity, *arg_sources_idx, compiled_fns)?;
                 *ip += 1;
             }
             OpCode::ExecCallPairs { name_idx, arity } => {
@@ -802,8 +824,9 @@ impl VM {
             OpCode::ExecCallSlip {
                 name_idx,
                 regular_arity,
+                arg_sources_idx,
             } => {
-                self.exec_exec_call_slip_op(code, *name_idx, *regular_arity)?;
+                self.exec_exec_call_slip_op(code, *name_idx, *regular_arity, *arg_sources_idx)?;
                 *ip += 1;
             }
 

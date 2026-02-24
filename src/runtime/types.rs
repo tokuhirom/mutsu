@@ -235,6 +235,18 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
 }
 
 impl Interpreter {
+    pub(crate) fn apply_rw_bindings_to_env(
+        &self,
+        rw_bindings: &[(String, String)],
+        target_env: &mut std::collections::HashMap<String, Value>,
+    ) {
+        for (param_name, source_name) in rw_bindings {
+            if let Some(updated) = self.env.get(param_name).cloned() {
+                target_env.insert(source_name.clone(), updated);
+            }
+        }
+    }
+
     fn bind_param_value(&mut self, name: &str, value: Value) {
         self.env.insert(name.to_string(), value.clone());
         if matches!(
@@ -689,10 +701,12 @@ impl Interpreter {
         param_defs: &[ParamDef],
         params: &[String],
         args: &[Value],
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<Vec<(String, String)>, RuntimeError> {
         // Always set @_ for legacy Perl-style argument access
         self.env
             .insert("@_".to_string(), Value::array(args.to_vec()));
+        let arg_sources = self.take_pending_call_arg_sources();
+        let mut rw_bindings = Vec::new();
         if param_defs.is_empty() {
             // Legacy path: just bind by position
             for (i, param) in params.iter().enumerate() {
@@ -705,7 +719,7 @@ impl Interpreter {
                     )));
                 }
             }
-            return Ok(());
+            return Ok(rw_bindings);
         }
         let mut positional_idx = 0usize;
         for pd in param_defs {
@@ -796,6 +810,21 @@ impl Interpreter {
             } else {
                 // Positional param
                 if positional_idx < args.len() {
+                    let is_rw = pd.traits.iter().any(|t| t == "rw");
+                    if is_rw {
+                        let source_name = arg_sources
+                            .as_ref()
+                            .and_then(|names| names.get(positional_idx))
+                            .and_then(|name| name.as_ref())
+                            .cloned()
+                            .ok_or_else(|| {
+                                RuntimeError::new(format!(
+                                    "X::Parameter::RW: '{}' expects a writable variable argument",
+                                    pd.name
+                                ))
+                            })?;
+                        rw_bindings.push((pd.name.clone(), source_name));
+                    }
                     let mut value = args[positional_idx].clone();
                     if pd.name != "__type_only__"
                         && let Some(constraint) = &pd.type_constraint
@@ -846,6 +875,6 @@ impl Interpreter {
                 }
             }
         }
-        Ok(())
+        Ok(rw_bindings)
     }
 }

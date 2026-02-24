@@ -2,11 +2,32 @@ use super::*;
 use std::sync::Arc;
 
 impl VM {
+    fn decode_arg_sources(
+        &self,
+        code: &CompiledCode,
+        arg_sources_idx: Option<u32>,
+    ) -> Option<Vec<Option<String>>> {
+        let idx = arg_sources_idx?;
+        let Value::Array(items, ..) = &code.constants[idx as usize] else {
+            return None;
+        };
+        Some(
+            items
+                .iter()
+                .map(|item| match item {
+                    Value::Str(name) => Some(name.clone()),
+                    _ => None,
+                })
+                .collect(),
+        )
+    }
+
     pub(super) fn exec_call_func_op(
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
         arity: u32,
+        arg_sources_idx: Option<u32>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
@@ -24,17 +45,30 @@ impl VM {
                 other => args.push(other),
             }
         }
+        let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
+        let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
+            None
+        } else {
+            arg_sources
+        };
         if !self.interpreter.has_proto(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
+            self.interpreter
+                .set_pending_call_arg_sources(arg_sources.clone());
             let pkg = self.interpreter.current_package().to_string();
-            let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
+            let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
+            self.interpreter.set_pending_call_arg_sources(None);
+            let result = result?;
             self.stack.push(result);
             self.sync_locals_from_env(code);
         } else if let Some(native_result) = Self::try_native_function(&name, &args) {
             self.stack.push(native_result?);
         } else {
-            let result = self.interpreter.call_function(&name, args)?;
+            self.interpreter.set_pending_call_arg_sources(arg_sources);
+            let result = self.interpreter.call_function(&name, args);
+            self.interpreter.set_pending_call_arg_sources(None);
+            let result = result?;
             self.stack.push(result);
             self.sync_locals_from_env(code);
         }
@@ -48,6 +82,7 @@ impl VM {
         code: &CompiledCode,
         name_idx: u32,
         regular_arity: u32,
+        _arg_sources_idx: Option<u32>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
@@ -274,6 +309,7 @@ impl VM {
         &mut self,
         code: &CompiledCode,
         arity: u32,
+        arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
@@ -289,10 +325,19 @@ impl VM {
                 other => args.push(other),
             }
         }
+        let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
+        let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
+            None
+        } else {
+            arg_sources
+        };
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("VM stack underflow in CallOnValue target".to_string())
         })?;
-        let result = self.interpreter.eval_call_on_value(target, args)?;
+        self.interpreter.set_pending_call_arg_sources(arg_sources);
+        let result = self.interpreter.eval_call_on_value(target, args);
+        self.interpreter.set_pending_call_arg_sources(None);
+        let result = result?;
         self.stack.push(result);
         self.sync_locals_from_env(code);
         Ok(())
@@ -303,6 +348,7 @@ impl VM {
         code: &CompiledCode,
         name_idx: u32,
         arity: u32,
+        arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
@@ -311,14 +357,27 @@ impl VM {
         }
         let start = self.stack.len() - arity;
         let args: Vec<Value> = self.stack.drain(start..).collect();
+        let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
+        let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
+            None
+        } else {
+            arg_sources
+        };
         // resolve_code_var handles pseudo-package stripping internally
         let target = self.interpreter.resolve_code_var(&name);
         let result = if !matches!(target, Value::Nil) {
-            self.interpreter.eval_call_on_value(target, args)?
+            self.interpreter
+                .set_pending_call_arg_sources(arg_sources.clone());
+            let result = self.interpreter.eval_call_on_value(target, args);
+            self.interpreter.set_pending_call_arg_sources(None);
+            result?
         } else if let Some(native_result) = Self::try_native_function(&name, &args) {
             native_result?
         } else {
-            self.interpreter.call_function(&name, args)?
+            self.interpreter.set_pending_call_arg_sources(arg_sources);
+            let result = self.interpreter.call_function(&name, args);
+            self.interpreter.set_pending_call_arg_sources(None);
+            result?
         };
         self.stack.push(result);
         self.sync_locals_from_env(code);
@@ -363,6 +422,7 @@ impl VM {
         code: &CompiledCode,
         name_idx: u32,
         arity: u32,
+        arg_sources_idx: Option<u32>,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
@@ -380,14 +440,28 @@ impl VM {
                 other => args.push(other),
             }
         }
+        let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
+        let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
+            None
+        } else {
+            arg_sources
+        };
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
+            self.interpreter
+                .set_pending_call_arg_sources(arg_sources.clone());
             let pkg = self.interpreter.current_package().to_string();
-            let _result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
+            let call_result =
+                self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
+            self.interpreter.set_pending_call_arg_sources(None);
+            call_result?;
             self.sync_locals_from_env(code);
         } else if let Some(native_result) = Self::try_native_function(&name, &args) {
             native_result?;
         } else {
-            self.interpreter.exec_call_values(&name, args)?;
+            self.interpreter.set_pending_call_arg_sources(arg_sources);
+            let exec_result = self.interpreter.exec_call_values(&name, args);
+            self.interpreter.set_pending_call_arg_sources(None);
+            exec_result?;
             self.sync_locals_from_env(code);
         }
         Ok(())
@@ -418,6 +492,7 @@ impl VM {
         code: &CompiledCode,
         name_idx: u32,
         regular_arity: u32,
+        _arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
         let total = regular_arity as usize + 1; // +1 for the slip value

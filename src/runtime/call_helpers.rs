@@ -3,6 +3,14 @@ use super::*;
 const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
 
 impl Interpreter {
+    pub(crate) fn set_pending_call_arg_sources(&mut self, sources: Option<Vec<Option<String>>>) {
+        self.pending_call_arg_sources = sources;
+    }
+
+    pub(crate) fn take_pending_call_arg_sources(&mut self) -> Option<Vec<Option<String>>> {
+        self.pending_call_arg_sources.take()
+    }
+
     pub(crate) fn exec_call_values(
         &mut self,
         name: &str,

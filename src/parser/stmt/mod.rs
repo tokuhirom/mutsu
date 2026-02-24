@@ -449,7 +449,7 @@ fn consume_semicolons(mut input: &str) -> &str {
     input
 }
 
-pub(super) fn parse_pointy_param_pub(input: &str) -> PResult<'_, String> {
+pub(super) fn parse_pointy_param_pub(input: &str) -> PResult<'_, crate::ast::ParamDef> {
     control::parse_pointy_param(input)
 }
 

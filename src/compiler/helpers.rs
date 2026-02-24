@@ -513,6 +513,7 @@ impl Compiler {
                         self.code.emit(OpCode::CallFuncSlip {
                             name_idx,
                             regular_arity: regular_count,
+                            arg_sources_idx: None,
                         });
                         main_leaves_value = true;
                         continue;
@@ -538,9 +539,21 @@ impl Compiler {
                         }
                     }
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let arg_sources_idx = rewritten_args
+                        .iter()
+                        .map(|arg| match arg {
+                            CallArg::Positional(expr) => Some(expr),
+                            _ => None,
+                        })
+                        .collect::<Option<Vec<&Expr>>>()
+                        .and_then(|exprs| {
+                            let owned: Vec<Expr> = exprs.into_iter().cloned().collect();
+                            self.add_arg_sources_constant(&owned)
+                        });
                     self.code.emit(OpCode::CallFunc {
                         name_idx,
                         arity: rewritten_args.len() as u32,
+                        arg_sources_idx,
                     });
                     main_leaves_value = true;
                     continue;
