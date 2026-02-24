@@ -5,8 +5,13 @@ impl VM {
     pub(super) fn exec_add_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self
-            .eval_binary_with_junctions(left, right, |_, l, r| crate::builtins::arith_add(l, r))?;
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            if let Some(result) = vm.try_user_infix("infix:<+>", &l, &r)? {
+                Ok(result)
+            } else {
+                crate::builtins::arith_add(l, r)
+            }
+        })?;
         self.stack.push(result);
         Ok(())
     }

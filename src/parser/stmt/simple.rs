@@ -847,6 +847,31 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             ),
             remaining_len: err.remaining_len.or(Some(r.len())),
         })?;
+        if let Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier,
+        } = &expr
+            && args.is_empty()
+            && modifier.is_none()
+            && matches!(
+                target.as_ref(),
+                Expr::Var(_)
+                    | Expr::ArrayVar(_)
+                    | Expr::HashVar(_)
+                    | Expr::CodeVar(_)
+                    | Expr::BareWord(_)
+            )
+        {
+            let stmt = Stmt::Expr(Expr::MethodCall {
+                target: target.clone(),
+                name: name.clone(),
+                args: vec![rhs],
+                modifier: None,
+            });
+            return parse_statement_modifier(r, stmt);
+        }
         let stmt = Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)]);
         return parse_statement_modifier(r, stmt);
     }
