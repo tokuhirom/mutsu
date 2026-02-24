@@ -287,9 +287,15 @@ impl VM {
         self.interpreter.set_when_matched(false);
 
         let mut last = Value::Nil;
+        let stack_base = self.stack.len();
         let body_result = self.run_range(code, body_start, end, compiled_fns);
         match body_result {
-            Ok(()) => {}
+            Ok(()) => {
+                if self.stack.len() > stack_base {
+                    last = self.stack.pop().unwrap_or(Value::Nil);
+                }
+                self.stack.truncate(stack_base);
+            }
             Err(e) if e.is_succeed => {
                 if let Some(v) = e.return_value {
                     last = v;

@@ -455,9 +455,9 @@ impl Interpreter {
             return self
                 .regex_match_end_from_caps_in_pkg(&parsed, &chars, 0, &pkg)
                 .map(|(end, mut caps)| {
-                    caps.from = 0;
-                    caps.to = end;
-                    caps.matched = chars[0..end].iter().collect();
+                    caps.from = caps.capture_start.unwrap_or(0);
+                    caps.to = caps.capture_end.unwrap_or(end);
+                    caps.matched = chars[caps.from..caps.to].iter().collect();
                     caps
                 });
         }
@@ -465,9 +465,9 @@ impl Interpreter {
             if let Some((end, mut caps)) =
                 self.regex_match_end_from_caps_in_pkg(&parsed, &chars, start, &pkg)
             {
-                caps.from = start;
-                caps.to = end;
-                caps.matched = chars[start..end].iter().collect();
+                caps.from = caps.capture_start.unwrap_or(start);
+                caps.to = caps.capture_end.unwrap_or(end);
+                caps.matched = chars[caps.from..caps.to].iter().collect();
                 return Some(caps);
             }
         }
@@ -495,9 +495,9 @@ impl Interpreter {
             for (end, mut caps) in
                 self.regex_match_ends_from_caps_in_pkg(&parsed, &chars, start, &pkg)
             {
-                caps.from = start;
-                caps.to = end;
-                caps.matched = chars[start..end].iter().collect();
+                caps.from = caps.capture_start.unwrap_or(start);
+                caps.to = caps.capture_end.unwrap_or(end);
+                caps.matched = chars[caps.from..caps.to].iter().collect();
                 out.push(caps);
             }
         }
@@ -648,6 +648,20 @@ impl Interpreter {
         start: usize,
         pkg: &str,
     ) -> Option<(usize, RegexCaptures)> {
+        let apply_named_capture =
+            |token: &RegexToken, from: usize, to: usize, caps: RegexCaptures| -> RegexCaptures {
+                let Some(name) = token.named_capture.as_ref() else {
+                    return caps;
+                };
+                let mut updated = caps;
+                let captured: String = chars[from..to].iter().collect();
+                updated
+                    .named
+                    .entry(name.clone())
+                    .or_default()
+                    .push(captured);
+                updated
+            };
         let mut stack = Vec::new();
         stack.push((0usize, start, RegexCaptures::default()));
         while let Some((idx, pos, caps)) = stack.pop() {
@@ -672,7 +686,11 @@ impl Interpreter {
                         pkg,
                         pattern.ignore_case,
                     ) {
-                        stack.push((idx + 1, next, new_caps));
+                        stack.push((
+                            idx + 1,
+                            next,
+                            apply_named_capture(token, pos, next, new_caps),
+                        ));
                     }
                 }
                 RegexQuant::ZeroOrOne => {
@@ -685,7 +703,11 @@ impl Interpreter {
                         pkg,
                         pattern.ignore_case,
                     ) {
-                        stack.push((idx + 1, next, new_caps));
+                        stack.push((
+                            idx + 1,
+                            next,
+                            apply_named_capture(token, pos, next, new_caps),
+                        ));
                     }
                 }
                 RegexQuant::ZeroOrMore => {
@@ -704,6 +726,7 @@ impl Interpreter {
                         if next == current {
                             break;
                         }
+                        let new_caps = apply_named_capture(token, current, next, new_caps);
                         current_caps = new_caps.clone();
                         positions.push((next, new_caps));
                         current = next;
@@ -722,7 +745,10 @@ impl Interpreter {
                             pkg,
                             pattern.ignore_case,
                         ) {
-                        Some((next, new_caps)) => (next, new_caps),
+                        Some((next, new_caps)) => {
+                            let new_caps = apply_named_capture(token, pos, next, new_caps);
+                            (next, new_caps)
+                        }
                         None => continue,
                     };
                     let mut positions = Vec::new();
@@ -738,6 +764,7 @@ impl Interpreter {
                         if next == current {
                             break;
                         }
+                        let new_caps = apply_named_capture(token, current, next, new_caps);
                         current_caps = new_caps.clone();
                         positions.push((next, new_caps));
                         current = next;
@@ -758,6 +785,20 @@ impl Interpreter {
         start: usize,
         pkg: &str,
     ) -> Vec<(usize, RegexCaptures)> {
+        let apply_named_capture =
+            |token: &RegexToken, from: usize, to: usize, caps: RegexCaptures| -> RegexCaptures {
+                let Some(name) = token.named_capture.as_ref() else {
+                    return caps;
+                };
+                let mut updated = caps;
+                let captured: String = chars[from..to].iter().collect();
+                updated
+                    .named
+                    .entry(name.clone())
+                    .or_default()
+                    .push(captured);
+                updated
+            };
         let mut stack = Vec::new();
         stack.push((0usize, start, RegexCaptures::default()));
         let mut matches = Vec::new();
@@ -779,7 +820,11 @@ impl Interpreter {
                         pkg,
                         pattern.ignore_case,
                     ) {
-                        stack.push((idx + 1, next, new_caps));
+                        stack.push((
+                            idx + 1,
+                            next,
+                            apply_named_capture(token, pos, next, new_caps),
+                        ));
                     }
                 }
                 RegexQuant::ZeroOrOne => {
@@ -792,7 +837,11 @@ impl Interpreter {
                         pkg,
                         pattern.ignore_case,
                     ) {
-                        stack.push((idx + 1, next, new_caps));
+                        stack.push((
+                            idx + 1,
+                            next,
+                            apply_named_capture(token, pos, next, new_caps),
+                        ));
                     }
                 }
                 RegexQuant::ZeroOrMore => {
@@ -811,6 +860,7 @@ impl Interpreter {
                         if next == current {
                             break;
                         }
+                        let new_caps = apply_named_capture(token, current, next, new_caps);
                         current_caps = new_caps.clone();
                         positions.push((next, new_caps));
                         current = next;
@@ -829,7 +879,10 @@ impl Interpreter {
                             pkg,
                             pattern.ignore_case,
                         ) {
-                        Some((next, new_caps)) => (next, new_caps),
+                        Some((next, new_caps)) => {
+                            let new_caps = apply_named_capture(token, pos, next, new_caps);
+                            (next, new_caps)
+                        }
                         None => continue,
                     };
                     let mut positions = Vec::new();
@@ -845,6 +898,7 @@ impl Interpreter {
                         if next == current {
                             break;
                         }
+                        let new_caps = apply_named_capture(token, current, next, new_caps);
                         current_caps = new_caps.clone();
                         positions.push((next, new_caps));
                         current = next;
@@ -1062,6 +1116,9 @@ impl Interpreter {
                 // (we can't evaluate them without capture context)
                 return Some(pos);
             }
+            RegexAtom::CaptureStartMarker | RegexAtom::CaptureEndMarker => {
+                return Some(pos);
+            }
             RegexAtom::UnicodePropAssert { name, negated } => {
                 // Zero-width assertion: check next char but don't consume
                 if pos >= chars.len() {
@@ -1220,7 +1277,9 @@ impl Interpreter {
             | RegexAtom::NotNewline
             | RegexAtom::ZeroWidth
             | RegexAtom::CodeAssertion { .. }
-            | RegexAtom::UnicodePropAssert { .. } => unreachable!(),
+            | RegexAtom::UnicodePropAssert { .. }
+            | RegexAtom::CaptureStartMarker
+            | RegexAtom::CaptureEndMarker => unreachable!(),
         };
         if matched {
             match atom {
@@ -1287,6 +1346,16 @@ impl Interpreter {
                 } else {
                     None
                 };
+            }
+            RegexAtom::CaptureStartMarker => {
+                let mut new_caps = current_caps.clone();
+                new_caps.capture_start = Some(pos);
+                return Some((pos, new_caps));
+            }
+            RegexAtom::CaptureEndMarker => {
+                let mut new_caps = current_caps.clone();
+                new_caps.capture_end = Some(pos);
+                return Some((pos, new_caps));
             }
             _ => {}
         }

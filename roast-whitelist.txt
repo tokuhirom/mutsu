@@ -110,6 +110,7 @@ roast/S05-metasyntax/proto-token-ltm.t
 roast/S05-metasyntax/unicode-property-pair.t
 roast/S05-modifier/repetition-exhaustive.t
 roast/S05-substitution/67222.t
+roast/S05-substitution/match.t
 roast/S05-transliteration/79778.t
 roast/S06-advanced/stub.t
 roast/S06-currying/named.t
