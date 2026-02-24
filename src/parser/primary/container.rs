@@ -269,9 +269,23 @@ pub(super) fn array_literal(input: &str) -> PResult<'_, Expr> {
 
 /// Parse a < > quote-word list.
 pub(super) fn angle_list(input: &str) -> PResult<'_, Expr> {
-    let (input, _) = parse_char(input, '<')?;
-    // Make sure it's not <= or <=> etc.
-    if input.starts_with('=') || input.starts_with('-') {
+    parse_quote_word_list(input, '<', '>', true)
+}
+
+/// Parse a « » quote-word list.
+pub(super) fn french_quote_list(input: &str) -> PResult<'_, Expr> {
+    parse_quote_word_list(input, '«', '»', false)
+}
+
+fn parse_quote_word_list(
+    input: &str,
+    open: char,
+    close: char,
+    reject_lt_operators: bool,
+) -> PResult<'_, Expr> {
+    let (input, _) = parse_char(input, open)?;
+    // For `<...>`, make sure it's not <= or <=> etc.
+    if reject_lt_operators && (input.starts_with('=') || input.starts_with('-')) {
         return Err(PError::expected("angle list"));
     }
     let mut words = Vec::new();
@@ -282,15 +296,15 @@ pub(super) fn angle_list(input: &str) -> PResult<'_, Expr> {
             c.is_whitespace() && !is_non_breaking_space(c)
         });
         rest = r;
-        if rest.starts_with('>') {
-            rest = &rest[1..];
+        if rest.starts_with(close) {
+            rest = &rest[close.len_utf8()..];
             break;
         }
         if rest.is_empty() {
-            return Err(PError::expected("closing >"));
+            return Err(PError::expected("closing quote-word delimiter"));
         }
         let (r, word) = take_while1(rest, |c: char| {
-            c != '>' && (!c.is_whitespace() || is_non_breaking_space(c))
+            c != close && (!c.is_whitespace() || is_non_breaking_space(c))
         })?;
         words.push(word.to_string());
         rest = r;
