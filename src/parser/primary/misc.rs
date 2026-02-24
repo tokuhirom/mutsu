@@ -85,8 +85,8 @@ fn flatten_bracket_op(s: &str) -> String {
 /// Handles R/Z/X meta-prefix chains by stripping them to find the base op.
 fn is_valid_reduction_op(op: &str) -> bool {
     let mut s = op;
-    // Strip meta prefixes
-    loop {
+    // Strip meta prefixes while keeping bare operators like `X` intact.
+    while s.len() > 1 {
         if let Some(rest) = s.strip_prefix('R') {
             s = rest;
         } else if let Some(rest) = s.strip_prefix('Z') {

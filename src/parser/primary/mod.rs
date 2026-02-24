@@ -315,6 +315,13 @@ mod tests {
     }
 
     #[test]
+    fn primary_accepts_cross_reduction_operator() {
+        let (rest, expr) = primary("[X] Mu.new X Mu xx 2").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Reduction { ref op, .. } if op == "X"));
+    }
+
+    #[test]
     fn primary_reports_invalid_anon_sub_params() {
         let err = primary("sub ($x,)").unwrap_err();
         assert!(err.message().contains("anonymous sub parameter list/body"));
