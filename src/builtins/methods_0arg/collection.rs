@@ -134,6 +134,37 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             )))),
             _ => None,
         },
+        "pairup" => match target {
+            Value::Package(name) if name == "Any" => Some(Ok(Value::Seq(Vec::new().into()))),
+            _ => {
+                let items = crate::runtime::utils::value_to_list(target);
+                if !items.len().is_multiple_of(2) {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("got".to_string(), Value::Int(items.len() as i64));
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::Str(format!(
+                            "Cannot pair up odd number of elements ({})",
+                            items.len()
+                        )),
+                    );
+                    let ex = Value::make_instance("X::Pairup::OddNumber".to_string(), attrs);
+                    let mut err = RuntimeError::new(format!(
+                        "X::Pairup::OddNumber: Cannot pair up odd number of elements ({})",
+                        items.len()
+                    ));
+                    err.exception = Some(Box::new(ex));
+                    return Some(Err(err));
+                }
+                let pairs: Vec<Value> = items
+                    .chunks_exact(2)
+                    .map(|chunk| {
+                        Value::ValuePair(Box::new(chunk[0].clone()), Box::new(chunk[1].clone()))
+                    })
+                    .collect();
+                Some(Ok(Value::Seq(pairs.into())))
+            }
+        },
         "antipairs" => match target {
             Value::Hash(items) => Some(Ok(Value::array(
                 items
