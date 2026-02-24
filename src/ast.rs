@@ -99,6 +99,11 @@ pub(crate) enum Expr {
         args: Vec<Expr>,
         modifier: Option<char>,
     },
+    DynamicMethodCall {
+        target: Box<Expr>,
+        name_expr: Box<Expr>,
+        args: Vec<Expr>,
+    },
     HyperMethodCall {
         target: Box<Expr>,
         name: String,
@@ -585,7 +590,9 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             collect_ph_expr(right, out);
         }
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => collect_ph_expr(expr, out),
-        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
+        Expr::MethodCall { target, args, .. }
+        | Expr::DynamicMethodCall { target, args, .. }
+        | Expr::HyperMethodCall { target, args, .. } => {
             collect_ph_expr(target, out);
             for a in args {
                 collect_ph_expr(a, out);
@@ -768,7 +775,7 @@ fn check_bare_var_expr(expr: &Expr, bare_name: &str, found: &mut bool) {
             check_bare_var_expr(right, bare_name, found);
         }
         Expr::Unary { expr, .. } => check_bare_var_expr(expr, bare_name, found),
-        Expr::MethodCall { target, args, .. } => {
+        Expr::MethodCall { target, args, .. } | Expr::DynamicMethodCall { target, args, .. } => {
             check_bare_var_expr(target, bare_name, found);
             for a in args {
                 check_bare_var_expr(a, bare_name, found);

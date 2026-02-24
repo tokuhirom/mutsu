@@ -599,6 +599,20 @@ impl Compiler {
                     modifier_idx,
                 });
             }
+            // Dynamic method call: target."$name"(args)
+            Expr::DynamicMethodCall {
+                target,
+                name_expr,
+                args,
+            } => {
+                self.compile_expr(target);
+                self.compile_expr(name_expr);
+                let arity = args.len() as u32;
+                for arg in args {
+                    self.compile_method_arg(arg);
+                }
+                self.code.emit(OpCode::CallMethodDynamic { arity });
+            }
             // Hyper method call: target».method(args)
             Expr::HyperMethodCall { target, name, args } => {
                 self.compile_expr(target);

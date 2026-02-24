@@ -3,7 +3,7 @@ mod ident;
 mod misc;
 mod number;
 pub(crate) mod regex;
-mod string;
+pub(in crate::parser) mod string;
 mod var;
 
 use super::memo::{MemoEntry, MemoStats, ParseMemo};

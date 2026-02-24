@@ -41,35 +41,61 @@ fn append_call_arg(expr: &mut Expr, arg: Expr) -> bool {
     }
 }
 
-fn parse_quoted_method_name(input: &str) -> Option<(&str, String)> {
-    let (open, close) = if input.starts_with('"') {
-        ('"', '"')
-    } else if input.starts_with('“') {
-        ('“', '”')
-    } else {
-        return None;
-    };
-    let mut escaped = false;
-    let mut end = None;
-    for (i, c) in input[open.len_utf8()..].char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
+/// Result of parsing a quoted method name.
+enum QuotedMethodName {
+    /// Static method name (single-quoted or double-quoted without interpolation)
+    Static(String),
+    /// Dynamic method name (double-quoted with interpolation)
+    Dynamic(Expr),
+}
+
+fn parse_quoted_method_name(input: &str) -> Option<(&str, QuotedMethodName)> {
+    if input.starts_with('\'') {
+        // Single-quoted: no interpolation
+        let start = 1;
+        let mut end = None;
+        for (i, c) in input[start..].char_indices() {
+            if c == '\'' {
+                end = Some(i);
+                break;
+            }
         }
-        if c == '\\' {
-            escaped = true;
-            continue;
-        }
-        if c == close {
-            end = Some(i);
-            break;
-        }
+        let end = end?;
+        let content = &input[start..start + end];
+        let rest = &input[start + end + 1..];
+        return Some((rest, QuotedMethodName::Static(content.to_string())));
     }
-    let end = end?;
-    let start = open.len_utf8();
-    let content = &input[start..start + end];
-    let rest = &input[start + end + close.len_utf8()..];
-    Some((rest, content.to_string()))
+    if input.starts_with('"') {
+        // Double-quoted: may have interpolation
+        let start = 1;
+        let mut escaped = false;
+        let mut end = None;
+        for (i, c) in input[start..].char_indices() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if c == '\\' {
+                escaped = true;
+                continue;
+            }
+            if c == '"' {
+                end = Some(i);
+                break;
+            }
+        }
+        let end = end?;
+        let content = &input[start..start + end];
+        let rest = &input[start + end + 1..];
+        // Check if content has interpolation
+        if content.contains('$') || content.contains('@') || content.contains('{') {
+            use super::super::primary::string::interpolate_string_content;
+            let name_expr = interpolate_string_content(content);
+            return Some((rest, QuotedMethodName::Dynamic(name_expr)));
+        }
+        return Some((rest, QuotedMethodName::Static(content.to_string())));
+    }
+    None
 }
 
 fn parse_private_method_name(input: &str) -> Option<(&str, String)> {
@@ -385,31 +411,37 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = r;
                 continue;
             }
-            // Dynamic method call with quoted method name: ."$name"()
-            // TODO: Evaluate interpolated method-name expressions dynamically.
-            // For now we keep parsed source text as method name to unblock parsing.
-            if let Some((r, name)) = parse_quoted_method_name(r) {
-                if r.starts_with('(') {
-                    let (r, _) = parse_char(r, '(')?;
-                    let (r, _) = ws(r)?;
-                    let (r, args) = parse_call_arg_list(r)?;
-                    let (r, _) = ws(r)?;
-                    let (r, _) = parse_char(r, ')')?;
-                    expr = Expr::MethodCall {
-                        target: Box::new(expr),
-                        name,
-                        args,
-                        modifier,
-                    };
-                    rest = r;
-                    continue;
+            // Quoted method name: .'method'() or ."$name"()
+            // Quoted method names require parenthesized arguments.
+            if let Some((r, qname)) = parse_quoted_method_name(r) {
+                if !r.starts_with('(') {
+                    return Err(PError::expected_at(
+                        "parenthesized arguments after quoted method name",
+                        r,
+                    ));
                 }
-                expr = Expr::MethodCall {
-                    target: Box::new(expr),
-                    name,
-                    args: Vec::new(),
-                    modifier,
-                };
+                let (r, _) = parse_char(r, '(')?;
+                let (r, _) = ws(r)?;
+                let (r, args) = parse_call_arg_list(r)?;
+                let (r, _) = ws(r)?;
+                let (r, _) = parse_char(r, ')')?;
+                match qname {
+                    QuotedMethodName::Static(name) => {
+                        expr = Expr::MethodCall {
+                            target: Box::new(expr),
+                            name,
+                            args,
+                            modifier,
+                        };
+                    }
+                    QuotedMethodName::Dynamic(name_expr) => {
+                        expr = Expr::DynamicMethodCall {
+                            target: Box::new(expr),
+                            name_expr: Box::new(name_expr),
+                            args,
+                        };
+                    }
+                }
                 rest = r;
                 continue;
             }

@@ -94,6 +94,15 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     if !next_is_ident_or_twigil {
         return Ok((input, Expr::Var("__ANON_STATE__".to_string())));
     }
+    // $. followed by non-alphabetic: shorthand for self. (e.g., $.^name = self.^name)
+    // Return "self" as a BareWord and leave the '.' for postfix parsing.
+    if input.starts_with('.')
+        && input.len() > 1
+        && !input.as_bytes()[1].is_ascii_alphabetic()
+        && input.as_bytes()[1] != b'_'
+    {
+        return Ok((input, Expr::BareWord("self".to_string())));
+    }
     // Handle twigils: $*FOO, $?FILE, $!attr, $.attr
     let (rest, twigil) = if input.starts_with('*')
         || input.starts_with('?')
