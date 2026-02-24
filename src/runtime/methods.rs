@@ -346,7 +346,9 @@ impl Interpreter {
                 ));
             }
             "WHO" if args.is_empty() => {
-                // Return package stash as a hash (empty for now)
+                if let Value::Package(name) = &target {
+                    return Ok(self.package_stash_value(name));
+                }
                 return Ok(Value::Hash(Arc::new(HashMap::new())));
             }
             "WHY" if args.is_empty() => {

@@ -28,6 +28,7 @@ roast/S02-names/bare-sigil.t
 roast/S02-names/dynamic-scope.t
 roast/S02-one-pass-parsing/less-than.t
 roast/S02-one-pass-parsing/misc.t
+roast/S02-packages/package-lookup.t
 roast/S02-types/built-in.t
 roast/S02-types/fatrat.t
 roast/S02-types/hyperwhatever.t
