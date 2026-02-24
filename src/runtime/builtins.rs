@@ -189,7 +189,7 @@ impl Interpreter {
             "list" => self.builtin_list(&args),
             "lol" => Ok(Value::array(args.clone())),
             "flat" => self.builtin_flat(&args),
-            "slip" => self.builtin_slip(&args),
+            "slip" | "Slip" => self.builtin_slip(&args),
             "reverse" => self.builtin_reverse(&args),
             "sort" => self.builtin_sort(&args),
             // Higher-order functions

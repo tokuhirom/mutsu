@@ -684,6 +684,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_slip_prefix_with_reduction_expr() {
+        let (rest, expr) = expression("|[\\+] 1..*").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn parse_parenthesized_sequence_with_following_smartmatch() {
         let (rest, expr) = expression("(\"a\"...* ~~ / z /)").unwrap();
         assert_eq!(rest, "");

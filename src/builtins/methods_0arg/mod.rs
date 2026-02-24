@@ -729,6 +729,25 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     Some(Ok(Value::Str(s.clone())))
                 }
             }
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items)
+                if method == "gist" =>
+            {
+                fn gist_item(v: &Value) -> String {
+                    match v {
+                        Value::Array(inner, ..) | Value::Seq(inner) | Value::Slip(inner) => {
+                            let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
+                            format!("({})", elems)
+                        }
+                        other => other.to_string_value(),
+                    }
+                }
+                let inner = items.iter().map(gist_item).collect::<Vec<_>>().join(" ");
+                Some(Ok(Value::Str(format!("({})", inner))))
+            }
+            Value::Slip(items) if method == "raku" || method == "perl" => {
+                let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
+                Some(Ok(Value::Str(format!("slip({})", inner))))
+            }
             Value::Int(i) => Some(Ok(Value::Str(format!("{}", i)))),
             _ => Some(Ok(Value::Str(target.to_string_value()))),
         },

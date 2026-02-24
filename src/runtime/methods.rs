@@ -1333,6 +1333,12 @@ impl Interpreter {
                 Value::Package(_) => Ok(Value::Str(String::new())),
                 _ => Ok(Value::Str(target.to_string_value())),
             },
+            "EVAL" if args.is_empty() => match target {
+                Value::Str(code) => self.call_function("EVAL", vec![Value::Str(code)]),
+                _ => Err(RuntimeError::new(
+                    "X::Method::NotFound: Unknown method value dispatch (fallback disabled): EVAL",
+                )),
+            },
             // Metamodel::*HOW methods
             "new_type" if matches!(&target, Value::Package(n) if n.starts_with("Metamodel::")) => {
                 // Metamodel::PackageHOW.new_type(name => 'Foo')

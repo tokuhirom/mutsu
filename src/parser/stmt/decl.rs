@@ -220,7 +220,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         if r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>") {
             let r = &r[1..];
             let (r, _) = ws(r)?;
-            let (r, expr) = expression(r)?;
+            let (r, expr) = parse_assign_expr_or_comma(r)?;
             let stmt = Stmt::VarDecl {
                 name,
                 expr,
@@ -287,7 +287,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         if r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>") {
             let r = &r[1..];
             let (r, _) = ws(r)?;
-            let (r, expr) = expression(r)?;
+            let (r, expr) = parse_assign_expr_or_comma(r)?;
             let stmt = Stmt::VarDecl {
                 name,
                 expr,
