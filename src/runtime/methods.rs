@@ -182,8 +182,8 @@ impl Interpreter {
             }
         }
 
-        let bypass_native_fastpath = matches!(method, "max" | "min")
-            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
+        let bypass_native_fastpath = (matches!(method, "max" | "min")
+            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
             || (method == "Supply"
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supplier"));
         let native_result = if bypass_native_fastpath {

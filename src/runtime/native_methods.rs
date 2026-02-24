@@ -1098,6 +1098,18 @@ impl Interpreter {
                 }
                 Ok(Value::Promise(promise))
             }
+            "schedule-on" => {
+                let scheduler = args.first().cloned().unwrap_or(Value::Nil);
+                if !self.type_matches_value("Scheduler", &scheduler) {
+                    return Err(RuntimeError::new(
+                        "Supply.schedule-on expects a Scheduler argument",
+                    ));
+                }
+                let mut new_attrs = attributes.clone();
+                new_attrs.insert("scheduler".to_string(), scheduler);
+                new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+            }
             "Supply" | "supply" => {
                 // .Supply on a Supply is identity (noop) — return self
                 // Preserve the same id for === identity check
