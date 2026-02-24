@@ -212,6 +212,7 @@ roast/S17-promise/stress.t
 roast/S17-supply/do.t
 roast/S17-supply/grab.t
 roast/S17-supply/list.t
+roast/S17-supply/max.t
 roast/S17-supply/min.t
 roast/S17-supply/on-demand.t
 roast/S17-supply/repeated.t
