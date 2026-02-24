@@ -154,7 +154,7 @@ collect_candidates_tsv() {
                 title,
                 headRefName,
                 url,
-                reason,
+                reason: $reason,
                 updatedAt,
                 priority: (if $reason == "conflict" then 0 else 1 end)
               }
