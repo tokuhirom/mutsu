@@ -54,6 +54,26 @@ impl Interpreter {
         method_args: Vec<Value>,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        // Preserve existing accessor/setter assignment behavior for concrete variables.
+        if let Some(var_name) = target_var {
+            match self.call_method_mut_with_values(
+                var_name,
+                target.clone(),
+                method,
+                vec![value.clone()],
+            ) {
+                Ok(result) => return Ok(result),
+                Err(err) => {
+                    if !err
+                        .message
+                        .starts_with("No matching candidates for method:")
+                    {
+                        return Err(err);
+                    }
+                }
+            }
+        }
+
         let Value::Instance {
             class_name,
             attributes,

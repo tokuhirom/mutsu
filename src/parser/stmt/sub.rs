@@ -184,8 +184,6 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 is_test_assertion = true;
             } else if trait_name == "rw" {
                 is_rw = true;
-            } else if trait_name == "test-assertion" {
-                is_test_assertion = true;
             }
             // Skip optional parenthesized trait args: is export(:DEFAULT)
             let r = skip_balanced_parens(r);
