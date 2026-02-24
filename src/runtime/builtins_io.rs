@@ -382,9 +382,9 @@ impl Interpreter {
                 return Err(RuntimeError::new("homedir path must be a directory"));
             }
             let repr = Self::stringify_path(&path_buf);
-            self.env
-                .insert("$*HOME".to_string(), Value::Str(repr.clone()));
-            return Ok(Value::Str(repr));
+            let home_val = self.make_io_path_instance(&repr);
+            self.env.insert("$*HOME".to_string(), home_val);
+            return Ok(self.make_io_path_instance(&repr));
         }
         Ok(Value::Str(
             self.get_dynamic_string("$*HOME").unwrap_or_default(),

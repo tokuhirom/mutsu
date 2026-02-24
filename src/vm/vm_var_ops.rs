@@ -40,7 +40,14 @@ impl VM {
             } else if self.interpreter.has_class(name) || Self::is_builtin_type(name) {
                 Value::Package(name.to_string())
             } else if !name.starts_with('$') && !name.starts_with('@') && !name.starts_with('%') {
-                v.clone()
+                // If the env value is a Sub, call it (bare word = function call)
+                if matches!(v, Value::Sub(..)) {
+                    let result = self.interpreter.call_function(name, Vec::new())?;
+                    self.sync_locals_from_env(code);
+                    result
+                } else {
+                    v.clone()
+                }
             } else {
                 Value::Str(name.to_string())
             }
@@ -343,6 +350,21 @@ impl VM {
     pub(super) fn exec_delete_index_named_op(&mut self, code: &CompiledCode, name_idx: u32) {
         let var_name = Self::const_str(code, name_idx).to_string();
         let idx = self.stack.pop().unwrap_or(Value::Nil);
+        // Check if we're deleting HOME from %*ENV — need to sync $*HOME to Nil
+        if var_name == "%*ENV" {
+            let deletes_home = match &idx {
+                Value::Array(keys, ..) => keys.iter().any(|k| k.to_string_value() == "HOME"),
+                _ => idx.to_string_value() == "HOME",
+            };
+            if deletes_home {
+                self.interpreter
+                    .env_mut()
+                    .insert("$*HOME".to_string(), Value::Nil);
+                self.interpreter
+                    .env_mut()
+                    .insert("*HOME".to_string(), Value::Nil);
+            }
+        }
         let result = if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
             Self::delete_from_container(container, idx)
         } else {
@@ -517,14 +539,25 @@ impl VM {
                 let key = idx.to_string_value();
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
                     if let Value::Hash(ref mut hash) = *container {
-                        Arc::make_mut(hash).insert(key, val.clone());
+                        Arc::make_mut(hash).insert(key.clone(), val.clone());
                     }
                 } else {
                     let mut hash = std::collections::HashMap::new();
-                    hash.insert(key, val.clone());
+                    hash.insert(key.clone(), val.clone());
                     self.interpreter
                         .env_mut()
-                        .insert(var_name, Value::hash(hash));
+                        .insert(var_name.clone(), Value::hash(hash));
+                }
+                // Sync $*HOME when %*ENV<HOME> changes
+                if var_name == "%*ENV" && key == "HOME" {
+                    let home_str = val.to_string_value();
+                    let home_val = self.interpreter.make_io_path_instance(&home_str);
+                    self.interpreter
+                        .env_mut()
+                        .insert("$*HOME".to_string(), home_val.clone());
+                    self.interpreter
+                        .env_mut()
+                        .insert("*HOME".to_string(), home_val);
                 }
             }
         }

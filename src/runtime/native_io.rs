@@ -131,10 +131,11 @@ impl Interpreter {
                 Ok(Value::Bool(p.starts_with(&prefix)))
             }
             "resolve" => {
-                let canonical = fs::canonicalize(&path_buf).map_err(|err| {
-                    RuntimeError::new(format!("Failed to resolve '{}': {}", p, err))
-                })?;
-                let resolved = Self::stringify_path(&canonical);
+                // Try to canonicalize; if the path doesn't exist, return as-is
+                let resolved = match fs::canonicalize(&path_buf) {
+                    Ok(canonical) => Self::stringify_path(&canonical),
+                    Err(_) => p.clone(),
+                };
                 Ok(self.make_io_path_instance(&resolved))
             }
             "volume" => {
