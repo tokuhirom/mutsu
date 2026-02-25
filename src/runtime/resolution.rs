@@ -30,7 +30,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn resolve_token_defs(&self, name: &str) -> Option<Vec<FunctionDef>> {
+    pub(crate) fn resolve_token_defs(&self, name: &str) -> Option<Vec<FunctionDef>> {
         if name.contains("::") {
             let mut defs = Vec::new();
             if let Some(exact) = self.token_defs.get(name) {
@@ -72,7 +72,7 @@ impl Interpreter {
         if defs.is_empty() { None } else { Some(defs) }
     }
 
-    pub(super) fn has_proto_token(&self, name: &str) -> bool {
+    pub(crate) fn has_proto_token(&self, name: &str) -> bool {
         if name.contains("::") {
             return self.proto_tokens.contains(name);
         }
