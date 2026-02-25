@@ -416,6 +416,20 @@ impl VM {
             }
             list = flattened;
         }
+        if base_op == "," {
+            if scan {
+                let mut out = Vec::with_capacity(list.len());
+                let mut prefix = Vec::new();
+                for item in list {
+                    prefix.push(item);
+                    out.push(Value::array(prefix.clone()));
+                }
+                self.stack.push(Value::Seq(std::sync::Arc::new(out)));
+            } else {
+                self.stack.push(Value::array(list));
+            }
+            return Ok(());
+        }
         if scan {
             if list.is_empty() {
                 self.stack.push(Value::Seq(std::sync::Arc::new(Vec::new())));
@@ -425,7 +439,7 @@ impl VM {
             let mut out = Vec::with_capacity(list.len());
             out.push(acc.clone());
             for item in &list[1..] {
-                let v = Interpreter::apply_reduction_op(&base_op, &acc, item)?;
+                let v = self.eval_reduction_operator_values(&base_op, &acc, item)?;
                 acc = if negate { Value::Bool(!v.truthy()) } else { v };
                 out.push(acc.clone());
             }
@@ -460,7 +474,8 @@ impl VM {
             if is_comparison {
                 let mut result = true;
                 for i in 0..list.len() - 1 {
-                    let v = Interpreter::apply_reduction_op(&base_op, &list[i], &list[i + 1])?;
+                    let v =
+                        self.eval_reduction_operator_values(&base_op, &list[i], &list[i + 1])?;
                     let truthy = if negate { !v.truthy() } else { v.truthy() };
                     if !truthy {
                         result = false;
@@ -480,14 +495,14 @@ impl VM {
                 let acc = if base_op == "=>" {
                     let mut acc = list.last().cloned().unwrap_or(Value::Nil);
                     for item in list[..list.len() - 1].iter().rev() {
-                        let v = Interpreter::apply_reduction_op(&base_op, item, &acc)?;
+                        let v = self.eval_reduction_operator_values(&base_op, item, &acc)?;
                         acc = if negate { Value::Bool(!v.truthy()) } else { v };
                     }
                     acc
                 } else {
                     let mut acc = list[0].clone();
                     for item in &list[1..] {
-                        let v = Interpreter::apply_reduction_op(&base_op, &acc, item)?;
+                        let v = self.eval_reduction_operator_values(&base_op, &acc, item)?;
                         acc = if negate { Value::Bool(!v.truthy()) } else { v };
                     }
                     acc
