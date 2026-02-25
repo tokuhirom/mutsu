@@ -233,6 +233,11 @@ impl VM {
                 package: "GLOBAL".to_string(),
                 name: name.to_string(),
             }
+        } else if self.interpreter.is_name_suppressed(name) {
+            return Err(RuntimeError::new(format!(
+                "X::Undeclared::Symbols: Undeclared name:\n    {} used at line 1",
+                name,
+            )));
         } else if let Some(v) = self.interpreter.env().get(name) {
             if matches!(v, Value::Enum { .. } | Value::Nil) {
                 v.clone()
