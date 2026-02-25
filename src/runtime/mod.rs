@@ -291,6 +291,8 @@ pub struct Interpreter {
     method_dispatch_stack: Vec<MethodDispatchFrame>,
     /// Names suppressed by `anon class`. These bare words should error as undeclared.
     suppressed_names: HashSet<String>,
+    /// Last expression value from VM execution, used by REPL for auto-display.
+    pub(crate) last_value: Option<Value>,
 }
 
 /// An entry in the encoding registry.
@@ -956,6 +958,7 @@ impl Interpreter {
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),
             suppressed_names: HashSet::new(),
+            last_value: None,
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -1340,6 +1343,7 @@ impl Interpreter {
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),
             suppressed_names: self.suppressed_names.clone(),
+            last_value: None,
         }
     }
 
@@ -1450,6 +1454,23 @@ mod tests {
             .run("my $x = 0; while $x < 3 { say $x; $x = $x + 1; }")
             .unwrap();
         assert_eq!(output, "0\n1\n2\n");
+    }
+
+    #[test]
+    fn last_value_from_expression() {
+        use crate::value::Value;
+        let mut interp = Interpreter::new();
+        interp.run("3 + 4").unwrap();
+        assert_eq!(interp.last_value, Some(Value::Int(7)));
+    }
+
+    #[test]
+    fn last_value_none_for_say() {
+        let mut interp = Interpreter::new();
+        interp.run("say 42").unwrap();
+        // say is a statement (Stmt::Say), not an expression, so no last_value
+        // The REPL uses output detection instead for say/print
+        assert!(interp.last_value.is_none());
     }
 
     #[test]
