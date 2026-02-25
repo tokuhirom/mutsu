@@ -184,6 +184,13 @@ impl VM {
                 "Cannot resolve caller Numeric(Sub:D: ); none of these signatures matches:\n    (Mu:U \\v: *%_)",
             ));
         }
+        // Force LazyList before numeric coercion so we can count elements
+        let val = if let Value::LazyList(ll) = &val {
+            let items = self.interpreter.force_lazy_list_bridge(ll)?;
+            Value::Seq(std::sync::Arc::new(items))
+        } else {
+            val
+        };
         let result = crate::runtime::utils::coerce_to_numeric(val);
         self.stack.push(result);
         Ok(())
