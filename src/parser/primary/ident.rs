@@ -716,8 +716,10 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         "my" | "our" | "state" => {
             // my/our/state declaration in expression context
             // e.g., (my $x = 5) or (state $x = 3)
-            if let Ok((r, stmt)) = super::super::stmt::my_decl_expr_pub(input) {
-                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            match super::super::stmt::my_decl_expr_pub(input) {
+                Ok((r, stmt)) => return Ok((r, Expr::DoStmt(Box::new(stmt)))),
+                Err(err) if err.is_fatal() => return Err(err),
+                Err(_) => {}
             }
         }
         "constant" => {
