@@ -367,6 +367,7 @@ roast/S32-num/expmod.t
 roast/S32-num/log.t
 roast/S32-num/pi.t
 roast/S32-num/polar.t
+roast/S32-num/sqrt.t
 roast/S32-num/unpolar.t
 roast/S32-scalar/defined.t
 roast/S32-str/append.t
