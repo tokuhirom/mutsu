@@ -962,11 +962,23 @@ impl VM {
                             Arc::make_mut(hash).insert(key.clone(), val.clone());
                         }
                         Value::Array(..) => {
-                            Self::assign_array_multidim(
-                                container,
-                                std::slice::from_ref(&idx),
-                                val.clone(),
-                            )?;
+                            if Self::is_shaped_array(container) {
+                                Self::assign_array_multidim(
+                                    container,
+                                    std::slice::from_ref(&idx),
+                                    val.clone(),
+                                )?;
+                            } else if let Some(i) = Self::index_to_usize(&idx) {
+                                if let Value::Array(items, ..) = container {
+                                    let arr = Arc::make_mut(items);
+                                    if i >= arr.len() {
+                                        arr.resize(i + 1, Value::Package("Any".to_string()));
+                                    }
+                                    arr[i] = val.clone();
+                                }
+                            } else {
+                                return Err(RuntimeError::new("Index out of bounds"));
+                            }
                             if bind_mode {
                                 self.mark_bound_index(&var_name, encoded_idx.clone());
                             }

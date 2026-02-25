@@ -498,6 +498,9 @@ impl Interpreter {
         if constraint == "int" && value_type == "Int" {
             return true;
         }
+        if constraint == "atomicint" && value_type == "Int" {
+            return true;
+        }
         if constraint == "str" && value_type == "Str" {
             return true;
         }
