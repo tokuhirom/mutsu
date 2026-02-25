@@ -282,6 +282,7 @@ pub(super) fn parse_for_params(
                 optional_marker: false,
                 outer_sub_signature: None,
                 code_signature: None,
+                is_invocant: false,
             };
             return Ok((r, (Some(unpack_name), Some(unpack_def), Vec::new())));
         }
@@ -348,6 +349,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 optional_marker: false,
                 outer_sub_signature: None,
                 code_signature: None,
+                is_invocant: false,
             },
         ));
     }
@@ -420,6 +422,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             optional_marker: false,
             outer_sub_signature: None,
             code_signature: None,
+            is_invocant: false,
         },
     ))
 }
@@ -481,6 +484,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 where_constraint: None,
                 traits: Vec::new(),
                 optional_marker: false,
+                is_invocant: false,
             },
         ));
     }
@@ -566,6 +570,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             where_constraint: None,
             traits,
             optional_marker: false,
+            is_invocant: false,
         },
     ))
 }

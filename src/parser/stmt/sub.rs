@@ -537,6 +537,10 @@ pub(super) fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
         let (r, _) = ws(rest)?;
         // Handle invocant marker ':'
         if let Some(r) = r.strip_prefix(':') {
+            // Mark all params parsed so far as invocant
+            for p in params.iter_mut() {
+                p.is_invocant = true;
+            }
             let (r, _) = ws(r)?;
             if r.starts_with(')') {
                 mark_params_as_invocant(&mut params);
@@ -710,6 +714,7 @@ fn make_param(name: String) -> ParamDef {
         optional_marker: false,
         outer_sub_signature: None,
         code_signature: None,
+        is_invocant: false,
     }
 }
 
@@ -1516,10 +1521,10 @@ pub(super) fn method_decl(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         (r, false)
     };
-    method_decl_body(rest, multi)
+    method_decl_body(rest, multi, false)
 }
 
-pub(super) fn method_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
+pub(super) fn method_decl_body(input: &str, multi: bool, is_our: bool) -> PResult<'_, Stmt> {
     let (rest, is_private) = if let Some(rest) = input.strip_prefix('!') {
         (rest, true)
     } else {
@@ -1559,6 +1564,7 @@ pub(super) fn method_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
             multi,
             is_rw: traits.is_rw,
             is_private,
+            is_our,
         },
     ))
 }
