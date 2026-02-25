@@ -102,95 +102,8 @@ impl Interpreter {
             },
             other => other,
         };
-        if let Value::Sub(data) = target_val {
-            let mut call_args = args.clone();
-            if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
-                let mut positional = data.assumed_positional.clone();
-                let mut named = data.assumed_named.clone();
-                for arg in &args {
-                    if let Value::Pair(key, boxed) = arg {
-                        named.insert(key.clone(), *boxed.clone());
-                    } else {
-                        positional.push(arg.clone());
-                    }
-                }
-                call_args = positional;
-                for (key, value) in named {
-                    call_args.push(Value::Pair(key, Box::new(value)));
-                }
-            }
-            let saved_env = self.env.clone();
-            let mut new_env = saved_env.clone();
-            for (k, v) in &data.env {
-                if matches!(new_env.get(k), Some(Value::Array(..))) && matches!(v, Value::Array(..))
-                {
-                    continue;
-                }
-                new_env.insert(k.clone(), v.clone());
-            }
-            self.env = new_env.clone();
-            let rw_bindings =
-                self.bind_function_args_values(&data.param_defs, &data.params, &call_args)?;
-            new_env = self.env.clone();
-            if data.params.is_empty() {
-                for arg in &args {
-                    if let Value::Pair(name, value) = arg {
-                        new_env.insert(format!(":{}", name), *value.clone());
-                    }
-                }
-            }
-            // Bind implicit $_ for bare blocks called with arguments
-            if data.params.is_empty()
-                && !args.is_empty()
-                && let Some(first_positional) =
-                    args.iter().find(|v| !matches!(v, Value::Pair(_, _)))
-            {
-                new_env.insert("_".to_string(), first_positional.clone());
-            }
-            // &?BLOCK: weak self-reference to break reference cycles
-            let block_arc = std::sync::Arc::new(crate::value::SubData {
-                package: data.package.clone(),
-                name: data.name.clone(),
-                params: data.params.clone(),
-                param_defs: data.param_defs.clone(),
-                body: data.body.clone(),
-                env: new_env.clone(),
-                assumed_positional: data.assumed_positional.clone(),
-                assumed_named: data.assumed_named.clone(),
-                id: crate::value::next_instance_id(),
-            });
-            new_env.insert(
-                "&?BLOCK".to_string(),
-                Value::WeakSub(std::sync::Arc::downgrade(&block_arc)),
-            );
-            let block_sub = Value::make_sub(
-                data.package.clone(),
-                data.name.clone(),
-                data.params.clone(),
-                data.param_defs.clone(),
-                data.body.clone(),
-                new_env.clone(),
-            );
-            self.env = new_env;
-            self.routine_stack
-                .push((data.package.clone(), data.name.clone()));
-            self.block_stack.push(block_sub);
-            let result = self.eval_block_value(&data.body);
-            self.block_stack.pop();
-            self.routine_stack.pop();
-            let mut merged = saved_env;
-            self.apply_rw_bindings_to_env(&rw_bindings, &mut merged);
-            for (k, v) in self.env.iter() {
-                if matches!(v, Value::Array(..)) {
-                    merged.insert(k.clone(), v.clone());
-                }
-            }
-            self.merge_sigilless_alias_writes(&mut merged, &self.env);
-            self.env = merged;
-            return match result {
-                Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
-                other => other,
-            };
+        if matches!(target_val, Value::Sub(_)) {
+            return self.call_sub_value(target_val, args, true);
         }
         if matches!(target_val, Value::Routine { .. }) {
             return self.call_sub_value(target_val, args, false);
@@ -215,6 +128,10 @@ impl Interpreter {
             "fail" => self.builtin_fail(&args),
             "return-rw" => self.builtin_return_rw(&args),
             "__mutsu_assign_method_lvalue" => self.builtin_assign_method_lvalue(&args),
+            "__mutsu_bind_index_value" => Ok(Value::Pair(
+                "__mutsu_bind_index_value".to_string(),
+                Box::new(args.first().cloned().unwrap_or(Value::Nil)),
+            )),
             "__mutsu_stub_die" => self.builtin_stub_die(&args),
             "__mutsu_stub_warn" => self.builtin_stub_warn(&args),
             "exit" => self.builtin_exit(&args),
@@ -407,6 +324,7 @@ impl Interpreter {
             "chroot" => self.builtin_chroot(&args),
             "run" => self.builtin_run(&args),
             "shell" => self.builtin_shell(&args),
+            "QX" | "qx" => self.builtin_qx(&args),
             "kill" => self.builtin_kill(&args),
             "syscall" => self.builtin_syscall(&args),
             "sleep" => self.builtin_sleep(&args),
@@ -537,6 +455,9 @@ impl Interpreter {
             let pushed_dispatch = !remaining.is_empty();
             if pushed_dispatch {
                 self.multi_dispatch_stack.push((remaining, args.to_vec()));
+            }
+            if def.empty_sig && !args.is_empty() {
+                return Err(Self::reject_args_for_empty_sig(args));
             }
             let saved_env = self.env.clone();
             let rw_bindings = self.bind_function_args_values(&def.param_defs, &def.params, args)?;
@@ -946,7 +867,15 @@ impl Interpreter {
             .ok_or_else(|| RuntimeError::new("EVALFILE requires a filename"))?;
         let code = fs::read_to_string(&path)
             .map_err(|err| RuntimeError::new(format!("Failed to read {}: {}", path, err)))?;
-        self.eval_eval_string(&code)
+        let saved_file = self.env.get("?FILE").cloned();
+        self.env.insert("?FILE".to_string(), Value::Str(path));
+        let result = self.eval_eval_string(&code);
+        if let Some(prev) = saved_file {
+            self.env.insert("?FILE".to_string(), prev);
+        } else {
+            self.env.remove("?FILE");
+        }
+        result
     }
 
     fn builtin_eval(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -1047,6 +976,10 @@ impl Interpreter {
                 | "pop"
                 | "shift"
                 | "unshift"
+                | "dir"
+                | "chdir"
+                | "QX"
+                | "qx"
                 | "indir"
                 | "run"
                 | "splice"

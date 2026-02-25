@@ -73,6 +73,7 @@ struct ClassDef {
 struct RoleDef {
     attributes: Vec<(String, bool, Option<Expr>)>,
     methods: HashMap<String, Vec<MethodDef>>,
+    is_stub_role: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -253,8 +254,9 @@ pub struct Interpreter {
     pub(crate) suppress_exports: bool,
     pub(crate) newline_mode: NewlineMode,
     /// Stack of snapshots for lexical import scoping.
-    /// Each entry saves (function_keys, class_names, newline_mode) before a block with `use`.
-    import_scope_stack: Vec<(HashSet<String>, HashSet<String>, NewlineMode)>,
+    /// Each entry saves (function_keys, class_names, newline_mode, strict_mode) before a block with `use`.
+    import_scope_stack: Vec<(HashSet<String>, HashSet<String>, NewlineMode, bool)>,
+    pub(crate) strict_mode: bool,
     state_vars: HashMap<String, Value>,
     /// Variable dynamic-scope metadata used by `.VAR.dynamic`.
     var_dynamic_flags: HashMap<String, bool>,
@@ -552,6 +554,8 @@ impl Interpreter {
                 native_methods: [
                     "Str",
                     "gist",
+                    "raku",
+                    "perl",
                     "IO",
                     "basename",
                     "dirname",
@@ -608,12 +612,22 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: [
                     "close", "get", "getc", "lines", "words", "read", "write", "print", "say",
-                    "flush", "seek", "tell", "eof", "encoding", "opened", "slurp", "Supply",
+                    "put", "flush", "seek", "tell", "eof", "encoding", "opened", "slurp", "Supply",
                 ]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["IO::Handle".to_string()],
+            },
+        );
+        classes.insert(
+            "Backtrace".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Backtrace".to_string()],
             },
         );
         classes.insert(
@@ -894,6 +908,7 @@ impl Interpreter {
                     RoleDef {
                         attributes: Vec::new(),
                         methods: HashMap::new(),
+                        is_stub_role: false,
                     },
                 );
                 roles
@@ -910,6 +925,7 @@ impl Interpreter {
             suppress_exports: false,
             newline_mode: NewlineMode::Lf,
             import_scope_stack: Vec::new(),
+            strict_mode: false,
             state_vars: HashMap::new(),
             var_dynamic_flags: HashMap::new(),
             let_saves: Vec::new(),
@@ -1058,21 +1074,27 @@ impl Interpreter {
         let func_keys: HashSet<String> = self.functions.keys().cloned().collect();
         let class_keys: HashSet<String> = self.classes.keys().cloned().collect();
         self.import_scope_stack
-            .push((func_keys, class_keys, self.newline_mode));
+            .push((func_keys, class_keys, self.newline_mode, self.strict_mode));
     }
 
     /// Restore function/class registries to the last saved snapshot,
     /// removing any entries added since the push.
     pub(crate) fn pop_import_scope(&mut self) {
-        if let Some((func_snapshot, class_snapshot, newline_mode)) = self.import_scope_stack.pop() {
+        if let Some((func_snapshot, class_snapshot, newline_mode, strict_mode)) =
+            self.import_scope_stack.pop()
+        {
             self.functions.retain(|key, _| func_snapshot.contains(key));
             self.classes.retain(|key, _| class_snapshot.contains(key));
             self.newline_mode = newline_mode;
+            self.strict_mode = strict_mode;
         }
     }
 
     pub(crate) fn use_module(&mut self, module: &str) -> Result<(), RuntimeError> {
         if self.loaded_modules.contains(module) {
+            if module == "strict" {
+                self.strict_mode = true;
+            }
             return Ok(());
         }
         if self.module_load_stack.iter().any(|m| m == module) {
@@ -1115,6 +1137,9 @@ impl Interpreter {
 
         self.module_load_stack.pop();
         if result.is_ok() {
+            if module == "strict" {
+                self.strict_mode = true;
+            }
             self.loaded_modules.insert(module.to_string());
         }
         result
@@ -1143,6 +1168,13 @@ impl Interpreter {
             self.loaded_modules.insert(module.to_string());
         }
         result
+    }
+
+    pub(crate) fn no_module(&mut self, module: &str) -> Result<(), RuntimeError> {
+        if module == "strict" {
+            self.strict_mode = false;
+        }
+        Ok(())
     }
 
     pub fn output(&self) -> &str {
@@ -1264,6 +1296,7 @@ impl Interpreter {
             suppress_exports: false,
             newline_mode: self.newline_mode,
             import_scope_stack: Vec::new(),
+            strict_mode: self.strict_mode,
             state_vars: HashMap::new(),
             var_dynamic_flags: self.var_dynamic_flags.clone(),
             let_saves: Vec::new(),

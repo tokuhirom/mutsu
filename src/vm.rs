@@ -295,6 +295,12 @@ impl VM {
                     Value::Str(s) => s.clone(),
                     _ => unreachable!("SetGlobal name must be a string constant"),
                 };
+                if self.interpreter.strict_mode
+                    && !name.contains("::")
+                    && !self.interpreter.env().contains_key(&name)
+                {
+                    return Err(self.strict_undeclared_error(&name));
+                }
                 let val = self.stack.pop().unwrap();
                 let val = if name.starts_with('%') {
                     runtime::coerce_to_hash(val)
@@ -731,7 +737,7 @@ impl VM {
                         attrs,
                         "defined",
                         Vec::new(),
-                        None,
+                        Some(val.clone()),
                     ) {
                         Ok((result, _)) => result,
                         Err(_) => Value::Bool(runtime::types::value_is_defined(&val)),
@@ -899,11 +905,11 @@ impl VM {
                 *ip += 1;
             }
             OpCode::DeleteIndexNamed(name_idx) => {
-                self.exec_delete_index_named_op(code, *name_idx);
+                self.exec_delete_index_named_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::DeleteIndexExpr => {
-                self.exec_delete_index_expr_op();
+                self.exec_delete_index_expr_op()?;
                 *ip += 1;
             }
 
@@ -956,7 +962,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::IndexAssignExprNamed(name_idx) => {
-                self.exec_index_assign_expr_named_op(code, *name_idx);
+                self.exec_index_assign_expr_named_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::IndexAssignExprNested(name_idx) => {
@@ -1111,6 +1117,10 @@ impl VM {
             }
             OpCode::ExistsExpr => {
                 self.exec_exists_expr_op();
+                *ip += 1;
+            }
+            OpCode::ExistsIndexExpr => {
+                self.exec_exists_index_expr_op();
                 *ip += 1;
             }
 
@@ -1285,6 +1295,10 @@ impl VM {
             }
             OpCode::UseModule(name_idx) => {
                 self.exec_use_module_op(code, *name_idx)?;
+                *ip += 1;
+            }
+            OpCode::NoModule(name_idx) => {
+                self.exec_no_module_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::NeedModule(name_idx) => {

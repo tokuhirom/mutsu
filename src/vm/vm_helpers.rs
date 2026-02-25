@@ -78,6 +78,42 @@ impl VM {
         }
     }
 
+    pub(super) fn strict_undeclared_error(&self, name: &str) -> RuntimeError {
+        let suggestion = if name.is_empty() {
+            String::new()
+        } else {
+            let mut chars = name.chars();
+            let first = chars.next().unwrap().to_uppercase().collect::<String>();
+            format!("{}{}", first, chars.as_str())
+        };
+        let var_name = if name.starts_with('$')
+            || name.starts_with('@')
+            || name.starts_with('%')
+            || name.starts_with('&')
+        {
+            name.to_string()
+        } else {
+            format!("${name}")
+        };
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("variable".to_string(), Value::Str(var_name.clone()));
+        attrs.insert("suggestions".to_string(), Value::Str(suggestion.clone()));
+        attrs.insert(
+            "message".to_string(),
+            Value::Str(format!(
+                "Variable '{}' is not declared. Did you mean '{}'?",
+                var_name, suggestion
+            )),
+        );
+        let ex = Value::make_instance("X::Undeclared".to_string(), attrs);
+        let mut err = RuntimeError::new(format!(
+            "X::Undeclared: Variable '{}' is not declared. Did you mean '{}'?",
+            var_name, suggestion
+        ));
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
     pub(super) fn is_builtin_type(name: &str) -> bool {
         matches!(
             name,
@@ -367,6 +403,15 @@ impl VM {
         if !fn_name.is_empty() {
             self.interpreter
                 .push_routine(fn_package.to_string(), fn_name.to_string());
+        }
+
+        if cf.empty_sig && !args.is_empty() {
+            if !fn_name.is_empty() {
+                self.interpreter.pop_routine();
+            }
+            self.stack.truncate(saved_stack_depth);
+            self.locals = saved_locals;
+            return Err(Interpreter::reject_args_for_empty_sig(&args));
         }
 
         let rw_bindings =

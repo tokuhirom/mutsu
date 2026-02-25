@@ -204,7 +204,13 @@ fn inject_implicit_rule_ws(pattern: &str) -> String {
             let prev = out.chars().rev().find(|ch| !ch.is_whitespace());
             let next = chars[j..].iter().copied().find(|ch| !ch.is_whitespace());
             if let (Some(p), Some(n)) = (prev, next) {
-                if should_insert(p, n) {
+                if p == '^' {
+                    if !out.ends_with(' ') && !out.is_empty() {
+                        out.push(' ');
+                    }
+                    out.push_str("<.ws>?");
+                    out.push(' ');
+                } else if should_insert(p, n) {
                     if !out.ends_with(' ') && !out.is_empty() {
                         out.push(' ');
                     }
@@ -516,7 +522,21 @@ pub(super) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, body) = block(rest)?;
+    let mut r = rest;
+    while let Some(r2) = keyword("is", r) {
+        let (r2, _) = ws1(r2)?;
+        let (r2, _) = qualified_ident(r2)?;
+        let (r2, _) = ws(r2)?;
+        r = r2;
+    }
+    while let Some(r2) = keyword("does", r) {
+        let (r2, _) = ws1(r2)?;
+        let (r2, _) = qualified_ident(r2)?;
+        let (r2, _) = ws(r2)?;
+        let (r2, _) = skip_optional_role_args(r2)?;
+        r = r2;
+    }
+    let (rest, body) = block(r)?;
     Ok((rest, Stmt::Package { name, body }))
 }
 

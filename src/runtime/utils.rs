@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::value::{JunctionKind, Value};
+use crate::value::{JunctionKind, RuntimeError, Value};
 
 /// Maximum number of elements when expanding an infinite range to a list.
 const MAX_RANGE_EXPAND: i64 = 1_000_000;
@@ -149,6 +149,36 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             Value::hash(map)
         }
     }
+}
+
+pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeError> {
+    let total_items = items.len();
+    let last_item = items
+        .last()
+        .map(Value::to_string_value)
+        .unwrap_or_else(|| "Nil".to_string());
+    let mut map = HashMap::new();
+    let mut iter = items.into_iter();
+    while let Some(item) = iter.next() {
+        match item {
+            Value::Pair(key, boxed_val) => {
+                map.insert(key, *boxed_val);
+            }
+            Value::ValuePair(key, boxed_val) => {
+                map.insert(key.to_string_value(), *boxed_val);
+            }
+            other => {
+                let Some(value) = iter.next() else {
+                    let message = format!(
+                        "Odd number of elements found where hash initializer expected: found {total_items} element(s); last element seen: {last_item}"
+                    );
+                    return Err(RuntimeError::new(message));
+                };
+                map.insert(other.to_string_value(), value);
+            }
+        }
+    }
+    Ok(Value::hash(map))
 }
 
 pub(crate) fn coerce_to_array(value: Value) -> Value {

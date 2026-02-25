@@ -8,6 +8,7 @@ use std::sync::Mutex;
 pub(crate) struct SigParam {
     pub(crate) name: String,
     pub(crate) type_constraint: Option<String>,
+    pub(crate) multi_invocant: bool,
     pub(crate) named: bool,
     pub(crate) slurpy: bool,
     pub(crate) is_capture: bool,
@@ -87,6 +88,7 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
     SigParam {
         name,
         type_constraint: p.type_constraint.clone(),
+        multi_invocant: p.multi_invocant,
         named: p.named,
         slurpy: p.slurpy && !is_capture,
         is_capture,
@@ -126,12 +128,49 @@ pub(crate) fn make_signature_value(info: SigInfo) -> Value {
     attrs.insert("perl".to_string(), Value::Str(raku_str.clone()));
     attrs.insert("Str".to_string(), Value::Str(raku_str.clone()));
     attrs.insert("gist".to_string(), Value::Str(raku_str));
+    attrs.insert(
+        "params".to_string(),
+        make_params_value_from_sig_params(&info.params),
+    );
     let val = Value::make_instance("Signature".to_string(), attrs);
     // Register the SigInfo for later lookup (smartmatch, etc.)
     if let Value::Instance { id, .. } = &val {
         register_sig_info(*id, info);
     }
     val
+}
+
+fn make_params_value_from_sig_params(params: &[SigParam]) -> Value {
+    let values: Vec<Value> = params.iter().map(sig_param_to_parameter_instance).collect();
+    Value::array(values)
+}
+
+fn sig_param_to_parameter_instance(p: &SigParam) -> Value {
+    let mut attrs = HashMap::new();
+    attrs.insert("name".to_string(), Value::Str(p.name.clone()));
+    attrs.insert(
+        "type".to_string(),
+        p.type_constraint
+            .as_ref()
+            .map(|t| Value::Str(t.clone()))
+            .unwrap_or(Value::Nil),
+    );
+    attrs.insert("named".to_string(), Value::Bool(p.named));
+    attrs.insert("slurpy".to_string(), Value::Bool(p.slurpy));
+    attrs.insert("sigil".to_string(), Value::Str(p.sigil.to_string()));
+    attrs.insert("multi-invocant".to_string(), Value::Bool(p.multi_invocant));
+    if let Some(sub) = &p.sub_signature {
+        attrs.insert(
+            "sub-signature".to_string(),
+            make_params_value_from_sig_params(sub),
+        );
+    }
+    Value::make_instance("Parameter".to_string(), attrs)
+}
+
+pub(crate) fn make_params_value_from_param_defs(params: &[ParamDef]) -> Value {
+    let sig_params: Vec<SigParam> = params.iter().map(param_def_to_sig_param).collect();
+    make_params_value_from_sig_params(&sig_params)
 }
 
 /// Extract SigInfo from a Signature Instance value.

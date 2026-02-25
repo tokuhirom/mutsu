@@ -11,6 +11,7 @@ struct MatchAdverbs {
     exhaustive: bool,
     repeat: Option<usize>,
     ignore_case: bool,
+    sigspace: bool,
     perl5: bool,
 }
 
@@ -79,6 +80,8 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             adverbs.exhaustive = true;
         } else if name == "i" || name == "ignorecase" {
             adverbs.ignore_case = true;
+        } else if name == "s" || name == "sigspace" {
+            adverbs.sigspace = true;
         } else if name.eq_ignore_ascii_case("p5") {
             adverbs.perl5 = true;
         } else if name == "x" {
@@ -104,6 +107,50 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
         spec = r;
     }
     Ok((spec, adverbs))
+}
+
+fn parse_compact_match_adverbs<'a>(input: &'a str, adverbs: &mut MatchAdverbs) -> &'a str {
+    let mut rest = input;
+    loop {
+        if let Some(r) = rest.strip_prefix("p5") {
+            adverbs.perl5 = true;
+            rest = r;
+            continue;
+        }
+        if let Some(ch) = rest.chars().next() {
+            let consumed = match ch {
+                's' => {
+                    adverbs.sigspace = true;
+                    true
+                }
+                'i' => {
+                    adverbs.ignore_case = true;
+                    true
+                }
+                'g' => {
+                    adverbs.exhaustive = true;
+                    true
+                }
+                _ => false,
+            };
+            if consumed {
+                rest = &rest[ch.len_utf8()..];
+                continue;
+            }
+        }
+        break;
+    }
+    rest
+}
+
+fn apply_inline_match_adverbs(mut pattern: String, adverbs: &MatchAdverbs) -> String {
+    if adverbs.ignore_case {
+        pattern = format!(":i {pattern}");
+    }
+    if adverbs.sigspace {
+        pattern = format!(":s {pattern}");
+    }
+    pattern
 }
 
 /// Parse comma-separated call arguments inside parens.
@@ -599,7 +646,8 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // m with arbitrary delimiter: m/.../, m{...}, m[...], m^...^, m!...!, etc.
     // Also allow modifiers before delimiter: m:2x/.../, m:x(2)/.../, m:g:i/.../
     if let Some(after_m) = input.strip_prefix('m') {
-        let (spec, adverbs) = parse_match_adverbs(after_m)?;
+        let (spec, mut adverbs) = parse_match_adverbs(after_m)?;
+        let spec = parse_compact_match_adverbs(spec, &mut adverbs);
         if let Some(open_ch) = spec.chars().next() {
             let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
             if is_delim {
@@ -612,11 +660,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 };
                 let r = &spec[open_ch.len_utf8()..];
                 if let Some((pattern, rest)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
-                    let pattern = if adverbs.ignore_case {
-                        format!(":i {}", pattern)
-                    } else {
-                        pattern.to_string()
-                    };
+                    let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                     if adverbs.exhaustive || adverbs.repeat.is_some() || adverbs.perl5 {
                         return Ok((
                             rest,

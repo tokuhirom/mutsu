@@ -401,11 +401,51 @@ impl Interpreter {
         let left = Self::positional_value(args, 0);
         let right = Self::positional_value(args, 1);
         let ok = match (left, right) {
-            (Some(left), Some(right)) => left == right,
+            (Some(left), Some(right)) => {
+                // If either side is a Junction, thread eqv through the junction
+                // and check the boolean of the result (Raku semantics).
+                if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. })
+                {
+                    Self::eqv_with_junctions(left, right).truthy()
+                } else {
+                    // Convert Seq to List for comparison (per Raku spec:
+                    // Seq:D arguments to is-deeply get converted to Lists).
+                    Self::seq_to_list(left) == Self::seq_to_list(right)
+                }
+            }
             _ => false,
         };
         self.test_ok(ok, &desc, todo)?;
         Ok(Value::Bool(ok))
+    }
+
+    /// Convert Seq to List (Array) for is-deeply comparison, per Raku spec.
+    fn seq_to_list(v: &Value) -> Value {
+        if let Value::Seq(items) = v {
+            Value::Array(items.clone(), false)
+        } else {
+            v.clone()
+        }
+    }
+
+    /// Perform `eqv` comparison that threads through Junctions,
+    /// returning a Value (possibly a Junction of Bools).
+    fn eqv_with_junctions(left: &Value, right: &Value) -> Value {
+        if let Value::Junction { kind, values } = left {
+            let results: Vec<Value> = values
+                .iter()
+                .map(|v| Self::eqv_with_junctions(v, right))
+                .collect();
+            return Value::junction(kind.clone(), results);
+        }
+        if let Value::Junction { kind, values } = right {
+            let results: Vec<Value> = values
+                .iter()
+                .map(|v| Self::eqv_with_junctions(left, v))
+                .collect();
+            return Value::junction(kind.clone(), results);
+        }
+        Value::Bool(left.eqv(right))
     }
 
     fn test_fn_is_approx(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -571,10 +611,31 @@ impl Interpreter {
             _ => String::new(),
         };
         let mut nested = Interpreter::new();
+        nested.strict_mode = self.strict_mode;
         if let Some(Value::Int(pid)) = self.env.get("*PID") {
             nested.set_pid(pid.saturating_add(1));
         }
         nested.lib_paths = self.lib_paths.clone();
+        nested.functions = self.functions.clone();
+        nested.proto_functions = self.proto_functions.clone();
+        nested.token_defs = self.token_defs.clone();
+        nested.proto_subs = self.proto_subs.clone();
+        nested.proto_tokens = self.proto_tokens.clone();
+        nested.classes = self.classes.clone();
+        nested.class_trusts = self.class_trusts.clone();
+        nested.roles = self.roles.clone();
+        nested.subsets = self.subsets.clone();
+        nested.type_metadata = self.type_metadata.clone();
+        nested.current_package = self.current_package.clone();
+        for (k, v) in &self.env {
+            if k.contains("::") {
+                continue;
+            }
+            if matches!(v, Value::Sub(_) | Value::Routine { .. }) {
+                continue;
+            }
+            nested.env.insert(k.clone(), v.clone());
+        }
         let ok = nested.run(&code).is_ok();
         self.test_ok(ok, &desc, false)?;
         Ok(Value::Bool(ok))
@@ -588,10 +649,31 @@ impl Interpreter {
             _ => String::new(),
         };
         let mut nested = Interpreter::new();
+        nested.strict_mode = self.strict_mode;
         if let Some(Value::Int(pid)) = self.env.get("*PID") {
             nested.set_pid(pid.saturating_add(1));
         }
         nested.lib_paths = self.lib_paths.clone();
+        nested.functions = self.functions.clone();
+        nested.proto_functions = self.proto_functions.clone();
+        nested.token_defs = self.token_defs.clone();
+        nested.proto_subs = self.proto_subs.clone();
+        nested.proto_tokens = self.proto_tokens.clone();
+        nested.classes = self.classes.clone();
+        nested.class_trusts = self.class_trusts.clone();
+        nested.roles = self.roles.clone();
+        nested.subsets = self.subsets.clone();
+        nested.type_metadata = self.type_metadata.clone();
+        nested.current_package = self.current_package.clone();
+        for (k, v) in &self.env {
+            if k.contains("::") {
+                continue;
+            }
+            if matches!(v, Value::Sub(_) | Value::Routine { .. }) {
+                continue;
+            }
+            nested.env.insert(k.clone(), v.clone());
+        }
         let ok = nested.run(&code).is_err();
         self.test_ok(ok, &desc, false)?;
         Ok(Value::Bool(ok))
@@ -607,6 +689,7 @@ impl Interpreter {
             Value::Sub(data) => self.eval_block_value(&data.body),
             Value::Str(code) => {
                 let mut nested = Interpreter::new();
+                nested.strict_mode = self.strict_mode;
                 if let Some(Value::Int(pid)) = self.env.get("*PID") {
                     nested.set_pid(pid.saturating_add(1));
                 }

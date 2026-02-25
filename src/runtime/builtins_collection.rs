@@ -83,21 +83,7 @@ impl Interpreter {
         for arg in args {
             flat_values.extend(Self::value_to_list(arg));
         }
-        let mut map = HashMap::new();
-        let mut iter = flat_values.into_iter();
-        while let Some(item) = iter.next() {
-            match item {
-                Value::Pair(key, boxed_val) => {
-                    map.insert(key, *boxed_val);
-                }
-                other => {
-                    let key = other.to_string_value();
-                    let value = iter.next().unwrap_or(Value::Nil);
-                    map.insert(key, value);
-                }
-            }
-        }
-        Ok(Value::hash(map))
+        crate::runtime::utils::build_hash_from_items(flat_values)
     }
 
     pub(super) fn builtin_junction(

@@ -1,21 +1,55 @@
 use super::*;
 
 impl Interpreter {
+    fn eval_result_is_unresolved_bareword(&self, stmts: &[Stmt], result: &Value) -> bool {
+        let [Stmt::Expr(Expr::BareWord(name))] = stmts else {
+            return false;
+        };
+        matches!(result, Value::Str(s) if s == name)
+            && !self.env().contains_key(name)
+            && !self.has_class(name)
+            && !self.has_function(name)
+            && !self.has_multi_function(name)
+            && !matches!(name.as_str(), "NaN" | "Inf" | "Empty")
+    }
+
     pub(super) fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
         let routine_snapshot = self.snapshot_routine_registry();
         let trimmed = code.trim();
         let previous_pod = self.env.get("=pod").cloned();
         self.collect_pod_blocks(trimmed);
         // General case: parse and evaluate as Raku code
-        let mut result = parse_dispatch::parse_source(trimmed)
-            .and_then(|(stmts, _)| self.eval_block_value(&stmts));
+        let mut result = parse_dispatch::parse_source(trimmed).and_then(|(stmts, _)| {
+            let value = self.eval_block_value(&stmts)?;
+            if self.eval_result_is_unresolved_bareword(&stmts, &value) {
+                return Err(RuntimeError::new("X::Undeclared::Symbols"));
+            }
+            Ok(value)
+        });
         // Fallback: parser still rejects forms like `~< foo bar >`.
         // Rewrite to an equivalent parenthesized form and try again.
         if result.is_err()
             && let Some(rewritten) = rewrite_prefixed_angle_list(trimmed)
         {
-            result = parse_dispatch::parse_source(&rewritten)
-                .and_then(|(stmts, _)| self.eval_block_value(&stmts));
+            result = parse_dispatch::parse_source(&rewritten).and_then(|(stmts, _)| {
+                let value = self.eval_block_value(&stmts)?;
+                if self.eval_result_is_unresolved_bareword(&stmts, &value) {
+                    return Err(RuntimeError::new("X::Undeclared::Symbols"));
+                }
+                Ok(value)
+            });
+        }
+        // Accept parenthesized statement lists like `(6;)` in EVAL.
+        if result.is_err()
+            && let Some(inner) = unwrap_parenthesized_statements(trimmed)
+        {
+            result = parse_dispatch::parse_source(inner).and_then(|(stmts, _)| {
+                let value = self.eval_block_value(&stmts)?;
+                if self.eval_result_is_unresolved_bareword(&stmts, &value) {
+                    return Err(RuntimeError::new("X::Undeclared::Symbols"));
+                }
+                Ok(value)
+            });
         }
         if let Some(saved) = previous_pod {
             self.env.insert("=pod".to_string(), saved);
@@ -141,4 +175,28 @@ fn rewrite_prefixed_angle_list(code: &str) -> Option<String> {
         return None;
     }
     Some(format!("{}({})", prefix, inner))
+}
+
+fn unwrap_parenthesized_statements(code: &str) -> Option<&str> {
+    if !code.starts_with('(') || !code.ends_with(')') {
+        return None;
+    }
+    let mut depth = 0usize;
+    for (i, ch) in code.char_indices() {
+        if ch == '(' {
+            depth += 1;
+        } else if ch == ')' {
+            if depth == 0 {
+                return None;
+            }
+            depth -= 1;
+            if depth == 0 && i + ch.len_utf8() != code.len() {
+                return None;
+            }
+        }
+    }
+    if depth != 0 {
+        return None;
+    }
+    Some(&code[1..code.len() - 1])
 }

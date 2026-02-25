@@ -115,6 +115,46 @@ impl Interpreter {
             self.overwrite_hash_bindings_by_identity(source_hash, replacement);
             return Ok(value);
         }
+        if method == "value"
+            && let Value::Pair(key, current_value) = &target
+        {
+            let mut selected_hash: Option<
+                std::sync::Arc<std::collections::HashMap<String, Value>>,
+            > = None;
+
+            if let Some(var_name) = target_var
+                && let Some(Value::Hash(candidate)) = self.env.get(var_name)
+                && candidate.contains_key(key)
+            {
+                selected_hash = Some(candidate.clone());
+            }
+
+            if selected_hash.is_none() {
+                let mut candidates = self.env.values().filter_map(|bound| match bound {
+                    Value::Hash(map)
+                        if map
+                            .get(key)
+                            .is_some_and(|existing| existing == current_value.as_ref()) =>
+                    {
+                        Some(map.clone())
+                    }
+                    _ => None,
+                });
+                if let Some(first) = candidates.next()
+                    && candidates.all(|other| std::sync::Arc::ptr_eq(&first, &other))
+                {
+                    selected_hash = Some(first);
+                }
+            }
+
+            if let Some(source_hash) = selected_hash {
+                let mut updated = (*source_hash).clone();
+                updated.insert(key.clone(), value.clone());
+                let replacement = Value::hash(updated);
+                self.overwrite_hash_bindings_by_identity(&source_hash, replacement);
+                return Ok(value);
+            }
+        }
 
         // Preserve existing accessor/setter assignment behavior for concrete variables.
         if let Some(var_name) = target_var {
@@ -565,6 +605,29 @@ impl Interpreter {
                         } else {
                             index = len;
                             Value::Str("IterationEnd".to_string())
+                        }
+                    }
+                    "can" => {
+                        let method_name = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let supported = matches!(
+                            method_name.as_str(),
+                            "pull-one"
+                                | "push-exactly"
+                                | "push-at-least"
+                                | "push-all"
+                                | "push-until-lazy"
+                                | "sink-all"
+                                | "skip-one"
+                                | "skip-at-least"
+                                | "skip-at-least-pull-one"
+                        );
+                        if supported {
+                            return Ok(Value::array(vec![Value::Str(method_name)]));
+                        } else {
+                            return Ok(Value::array(Vec::new()));
                         }
                     }
                     _ => self.call_method_with_values(target, method, args)?,

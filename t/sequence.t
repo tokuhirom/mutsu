@@ -1,6 +1,6 @@
 use Test;
 
-plan 40;
+plan 44;
 
 # single-term sequences
 is ~(1 ... 1), '1', '1 ... 1';
@@ -65,3 +65,9 @@ is (1, 1 ...^ 1), (), 'exclusive constant same value';
 is (1, 2 ...^ 0, 'xyzzy', 'plugh').[lazy ^5].join(', '), 'xyzzy, plugh', 'exclusive with extra RHS';
 is ~(1 ...^ 0), '1', 'exclusive single past endpoint';
 is (4...^5).join(', '), '4', '4...^5 parses as 4 ...^ 5';
+
+# Unicode ellipsis aliases
+is (1…5).join(', '), '1, 2, 3, 4, 5', 'unicode … sequence';
+is (1, 3…9).join(', '), '1, 3, 5, 7, 9', 'unicode … arithmetic sequence';
+is (1…^5).join(', '), '1, 2, 3, 4', 'unicode …^ exclusive sequence';
+is (1, 3…^9).join(', '), '1, 3, 5, 7', 'unicode …^ arithmetic exclusive sequence';

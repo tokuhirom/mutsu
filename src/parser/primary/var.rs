@@ -374,6 +374,16 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
             }
         }
     }
+    // Handle package-qualified code refs: &ClassName::method
+    if let Ok((_, first_ident)) = parse_ident_with_hyphens(input) {
+        let after_first = &input[first_ident.len()..];
+        if let Some(after_sep) = after_first.strip_prefix("::")
+            && let Ok((rest, method_name)) = parse_ident_with_hyphens(after_sep)
+        {
+            let qualified = format!("{}::{}", first_ident, method_name);
+            return Ok((rest, Expr::CodeVar(qualified)));
+        }
+    }
     // Handle twigils on code vars: &?BLOCK, &!DISPATCHER, &^x, &*FOO
     let (rest, twigil) = if let Some(stripped) = input.strip_prefix('?') {
         (stripped, "?")
@@ -387,8 +397,10 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
         (input, "")
     };
     let (rest, name) = parse_ident_with_hyphens(rest)?;
-    // Check for operator reference: &infix:<OP>, &prefix:<OP>, &postfix:<OP>
-    if twigil.is_empty() && matches!(name, "infix" | "prefix" | "postfix") && rest.starts_with(":<")
+    // Check for operator reference: &infix:<OP>, &prefix:<OP>, &postfix:<OP>, &term:<OP>
+    if twigil.is_empty()
+        && matches!(name, "infix" | "prefix" | "postfix" | "term")
+        && rest.starts_with(":<")
     {
         let r = &rest[2..]; // skip ':' and '<'
         if let Some(end_pos) = r.find('>') {
