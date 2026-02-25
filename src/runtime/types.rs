@@ -388,6 +388,7 @@ impl Interpreter {
                 index,
             };
             self.env.insert(format!("Order::{}", key), enum_val.clone());
+            self.env.insert(key.clone(), enum_val);
         }
     }
 

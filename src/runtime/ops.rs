@@ -205,7 +205,7 @@ impl Interpreter {
                         if let (Some((an, ad)), Some((bn, bd))) =
                             (super::to_rat_parts(left), super::to_rat_parts(right))
                         {
-                            (an * bd).cmp(&(bn * ad))
+                            super::compare_rat_parts((an, ad), (bn, bd))
                         } else {
                             left.to_string_value().cmp(&right.to_string_value())
                         }
@@ -496,9 +496,9 @@ impl Interpreter {
         if let (Some((an, ad)), Some((bn, bd))) = (super::to_rat_parts(&l), super::to_rat_parts(&r))
             && (matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)))
         {
-            let lhs = an as i128 * bd as i128;
-            let rhs = bn as i128 * ad as i128;
-            return Ok(Value::Bool(f(lhs.cmp(&rhs) as i32)));
+            return Ok(Value::Bool(f(
+                super::compare_rat_parts((an, ad), (bn, bd)) as i32
+            )));
         }
         match (l, r) {
             (Value::Int(a), Value::Int(b)) => {
