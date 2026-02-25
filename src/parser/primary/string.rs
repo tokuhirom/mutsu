@@ -269,6 +269,67 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
     }
     let after_q = &input[1..];
 
+    // q:nfc, q:nfd, q:nfkc, q:nfkd — Unicode normalization adverbs
+    for nf_form in &[":nfkc", ":nfkd", ":nfc", ":nfd"] {
+        if let Some(rest_after_nf) = after_q.strip_prefix(nf_form) {
+            let form_upper = nf_form[1..].to_uppercase(); // "NFKC", "NFKD", etc.
+            // Parse the quoted content (can be single or double quoted)
+            let (rest, content) = match rest_after_nf.chars().next() {
+                Some('"') => {
+                    // q:nfkc"..." — double-quoted content (no interpolation for q:)
+                    let inner = &rest_after_nf[1..];
+                    let end = inner
+                        .find('"')
+                        .ok_or_else(|| PError::expected("closing \""))?;
+                    (&inner[end + 1..], &inner[..end])
+                }
+                Some('\'') => {
+                    // q:nfkc'...' — single-quoted content
+                    let inner = &rest_after_nf[1..];
+                    let end = inner
+                        .find('\'')
+                        .ok_or_else(|| PError::expected("closing '"))?;
+                    (&inner[end + 1..], &inner[..end])
+                }
+                Some(c) if !c.is_alphanumeric() && !c.is_whitespace() => {
+                    if let Some(close_char) = unicode_bracket_close(c) {
+                        let inner = &rest_after_nf[c.len_utf8()..];
+                        let end = inner
+                            .find(close_char)
+                            .ok_or_else(|| PError::expected("closing bracket"))?;
+                        (&inner[end + close_char.len_utf8()..], &inner[..end])
+                    } else {
+                        // Symmetric delimiter
+                        let inner = &rest_after_nf[c.len_utf8()..];
+                        let end = inner
+                            .find(c)
+                            .ok_or_else(|| PError::expected("closing delimiter"))?;
+                        (&inner[end + c.len_utf8()..], &inner[..end])
+                    }
+                }
+                _ => {
+                    return Err(PError::expected(
+                        "quote delimiter after normalization adverb",
+                    ));
+                }
+            };
+            use unicode_normalization::UnicodeNormalization;
+            let normalized: String = match form_upper.as_str() {
+                "NFC" => content.nfc().collect(),
+                "NFD" => content.nfd().collect(),
+                "NFKC" => content.nfkc().collect(),
+                _ => content.nfkd().collect(),
+            };
+            return Ok((
+                rest,
+                Expr::Literal(Value::Uni {
+                    form: form_upper,
+                    text: normalized,
+                }),
+            ));
+        }
+    }
+
     // q:to/DELIM/, q:to<DELIM>, qq:to/.../, qq:to<...> heredoc
     if after_q.starts_with(":to") || after_q.starts_with("q:to") {
         let r = if let Some(stripped) = after_q.strip_prefix("q:to") {
