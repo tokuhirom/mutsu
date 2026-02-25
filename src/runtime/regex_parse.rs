@@ -49,6 +49,92 @@ fn split_prop_args(s: &str) -> (&str, Option<&str>) {
 }
 
 impl Interpreter {
+    /// Split a regex pattern on top-level `|` or `||` alternation operators.
+    /// Respects grouping: `(...)`, `[...]`, `{...}`, `<...>` and escapes.
+    fn split_top_level_alternation(pattern: &str) -> Vec<String> {
+        let mut parts = Vec::new();
+        let mut current = String::new();
+        let mut depth_paren = 0i32;
+        let mut depth_bracket = 0i32;
+        let mut depth_brace = 0i32;
+        let mut depth_angle = 0i32;
+        let mut escaped = false;
+        let mut in_single_quote = false;
+        let mut chars = pattern.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if escaped {
+                current.push(ch);
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                current.push(ch);
+                escaped = true;
+                continue;
+            }
+            if ch == '\'' {
+                in_single_quote = !in_single_quote;
+                current.push(ch);
+                continue;
+            }
+            if in_single_quote {
+                current.push(ch);
+                continue;
+            }
+            match ch {
+                '(' => {
+                    depth_paren += 1;
+                    current.push(ch);
+                }
+                ')' => {
+                    depth_paren -= 1;
+                    current.push(ch);
+                }
+                '[' => {
+                    depth_bracket += 1;
+                    current.push(ch);
+                }
+                ']' => {
+                    depth_bracket -= 1;
+                    current.push(ch);
+                }
+                '{' => {
+                    depth_brace += 1;
+                    current.push(ch);
+                }
+                '}' => {
+                    depth_brace -= 1;
+                    current.push(ch);
+                }
+                '<' => {
+                    depth_angle += 1;
+                    current.push(ch);
+                }
+                '>' => {
+                    depth_angle -= 1;
+                    current.push(ch);
+                }
+                '|' if depth_paren == 0
+                    && depth_bracket == 0
+                    && depth_brace == 0
+                    && depth_angle == 0 =>
+                {
+                    // Skip second | for ||
+                    if chars.peek() == Some(&'|') {
+                        chars.next();
+                    }
+                    parts.push(std::mem::take(&mut current));
+                }
+                _ => current.push(ch),
+            }
+        }
+        if !current.is_empty() || !parts.is_empty() {
+            parts.push(current);
+        }
+        parts
+    }
+
     fn has_unquoted_ltm_separator(pattern: &str) -> bool {
         let mut in_single = false;
         let mut escaped = false;
@@ -302,6 +388,44 @@ impl Interpreter {
         } else if let Some(inner) = source.strip_prefix("<<").and_then(|s| s.strip_suffix(">>")) {
             source = inner.trim();
         }
+
+        // Handle top-level alternation (| or ||)
+        let top_alts = Self::split_top_level_alternation(source);
+        if top_alts.len() > 1 {
+            let mut alt_patterns = Vec::new();
+            for alt in &top_alts {
+                let alt_src = alt.trim();
+                if alt_src.is_empty() {
+                    continue;
+                }
+                // Re-apply inline adverbs for each alternative
+                let alt_pat = if ignore_case && !alt_src.starts_with(":i") {
+                    format!(":i {}", alt_src)
+                } else {
+                    alt_src.to_string()
+                };
+                if let Some(p) = self.parse_regex(&alt_pat) {
+                    alt_patterns.push(p);
+                }
+            }
+            if alt_patterns.len() > 1 {
+                return Some(RegexPattern {
+                    tokens: vec![RegexToken {
+                        atom: RegexAtom::Alternation(alt_patterns),
+                        quant: RegexQuant::One,
+                        named_capture: None,
+                        ratchet: false,
+                    }],
+                    anchor_start: false,
+                    anchor_end: false,
+                    ignore_case,
+                    ignore_mark,
+                });
+            } else if alt_patterns.len() == 1 {
+                return alt_patterns.into_iter().next();
+            }
+        }
+
         let expanded = Self::expand_ltm_pattern(source);
         let mut chars = expanded.chars().peekable();
         let mut tokens = Vec::new();

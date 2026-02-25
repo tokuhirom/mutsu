@@ -1370,11 +1370,14 @@ impl Interpreter {
                 }
                 let text = target.to_string_value();
                 let mut overlap = false;
+                let mut anchored_pos: Option<usize> = None;
                 let mut pattern_arg: Option<&Value> = None;
                 for arg in &args {
                     if let Value::Pair(key, value) = arg {
                         if (key == "ov" || key == "overlap") && value.truthy() {
                             overlap = true;
+                        } else if key == "p" || key == "pos" {
+                            anchored_pos = Some(value.to_f64() as usize);
                         }
                         continue;
                     }
@@ -1419,7 +1422,13 @@ impl Interpreter {
                                 .collect::<Vec<_>>();
                             return Ok(Value::array(matches));
                         }
-                        if let Some(captures) = self.regex_match_with_captures(pat, &text) {
+                        // Use anchored match if :p(N) or :pos(N) is specified
+                        let captures = if let Some(pos) = anchored_pos {
+                            self.regex_match_with_captures_at(pat, &text, pos)
+                        } else {
+                            self.regex_match_with_captures(pat, &text)
+                        };
+                        if let Some(captures) = captures {
                             let matched = captures.matched.clone();
                             let from = captures.from as i64;
                             let to = captures.to as i64;
@@ -1434,13 +1443,15 @@ impl Interpreter {
                                 };
                                 self.env.insert(format!("<{}>", k), value);
                             }
-                            Ok(Value::make_match_object_with_captures(
+                            let match_obj = Value::make_match_object_with_captures(
                                 matched,
                                 from,
                                 to,
                                 &captures.positional,
                                 &captures.named,
-                            ))
+                            );
+                            self.env.insert("/".to_string(), match_obj.clone());
+                            Ok(match_obj)
                         } else {
                             Ok(Value::Nil)
                         }

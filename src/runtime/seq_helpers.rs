@@ -293,6 +293,16 @@ impl Interpreter {
         }
     }
 
+    /// Get the match continuation position from `$/.to`, defaulting to 0.
+    fn get_match_to_position(&self) -> usize {
+        if let Some(Value::Instance { attributes, .. }) = self.env.get("/")
+            && let Some(Value::Int(to)) = attributes.get("to")
+        {
+            return *to as usize;
+        }
+        0
+    }
+
     fn regex_match_with_captures_p5(&self, pattern: &str, text: &str) -> Option<RegexCaptures> {
         let re = Self::compile_p5_regex(pattern)?;
         let captures = re.captures(text)?;
@@ -383,6 +393,25 @@ impl Interpreter {
                     Err(_) => false,
                 }
             }
+            // :pos/:p anchored match (non-exhaustive) — match at $/.to (or 0)
+            (
+                _,
+                Value::RegexWithAdverbs {
+                    pattern: pat,
+                    pos: true,
+                    exhaustive: false,
+                    ..
+                },
+            ) => {
+                let text = left.to_string_value();
+                let start_pos = self.get_match_to_position();
+                if let Some(captures) = self.regex_match_with_captures_at(pat, &text, start_pos) {
+                    self.apply_single_regex_captures(&captures);
+                    return true;
+                }
+                self.env.insert("/".to_string(), Value::Nil);
+                false
+            }
             (_, Value::Regex(pat))
             | (
                 _,
@@ -443,6 +472,7 @@ impl Interpreter {
                     exhaustive: true,
                     repeat,
                     perl5,
+                    ..
                 },
             ) => {
                 let text = left.to_string_value();

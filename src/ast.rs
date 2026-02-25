@@ -86,6 +86,8 @@ pub(crate) enum Expr {
     HashVar(String),
     CodeVar(String),
     EnvIndex(String),
+    /// m/pattern/ — match against $_ and return the result
+    MatchRegex(Value),
     Subst {
         pattern: String,
         replacement: String,

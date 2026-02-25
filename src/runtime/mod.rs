@@ -155,7 +155,7 @@ struct RegexPattern {
 }
 
 #[derive(Clone, Default)]
-struct RegexCaptures {
+pub(crate) struct RegexCaptures {
     named: HashMap<String, Vec<String>>,
     positional: Vec<String>,
     matched: String,
