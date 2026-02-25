@@ -2276,6 +2276,7 @@ impl Interpreter {
                             optional_marker: false,
                             outer_sub_signature: None,
                             code_signature: None,
+                            is_invocant: false,
                         })
                         .collect(),
                     body: sub_data.body.clone(),

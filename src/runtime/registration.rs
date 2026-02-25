@@ -845,6 +845,7 @@ impl Interpreter {
                     multi,
                     is_rw,
                     is_private,
+                    is_our,
                 } => {
                     self.validate_private_access_in_stmts(name, method_body)?;
                     let resolved_method_name = if let Some(expr) = name_expr {
@@ -863,11 +864,51 @@ impl Interpreter {
                     if *multi {
                         class_def
                             .methods
-                            .entry(resolved_method_name)
+                            .entry(resolved_method_name.clone())
                             .or_default()
                             .push(def);
                     } else {
-                        class_def.methods.insert(resolved_method_name, vec![def]);
+                        class_def
+                            .methods
+                            .insert(resolved_method_name.clone(), vec![def]);
+                    }
+                    // `our method` also registers as a package-scoped sub
+                    if *is_our {
+                        let qualified_name = format!("{}::{}", name, resolved_method_name);
+                        // Prepend "self" as first param so the first argument
+                        // gets bound as `self` when calling this as a function.
+                        let mut our_params = vec!["self".to_string()];
+                        our_params.extend(params.iter().filter(|p| *p != "self").cloned());
+                        let self_param = crate::ast::ParamDef {
+                            name: "self".to_string(),
+                            default: None,
+                            required: false,
+                            named: false,
+                            slurpy: false,
+                            double_slurpy: false,
+                            sigilless: false,
+                            type_constraint: None,
+                            literal_value: None,
+                            sub_signature: None,
+                            where_constraint: None,
+                            traits: Vec::new(),
+                            optional_marker: false,
+                            outer_sub_signature: None,
+                            code_signature: None,
+                            is_invocant: false,
+                        };
+                        let mut our_param_defs = vec![self_param];
+                        our_param_defs
+                            .extend(param_defs.iter().filter(|p| !p.is_invocant).cloned());
+                        let func_def = crate::ast::FunctionDef {
+                            package: name.to_string(),
+                            name: resolved_method_name.clone(),
+                            params: our_params,
+                            param_defs: our_param_defs,
+                            body: method_body.clone(),
+                            is_test_assertion: false,
+                        };
+                        self.functions.insert(qualified_name, func_def);
                     }
                 }
                 Stmt::DoesDecl { name: role_name } => {
@@ -960,6 +1001,7 @@ impl Interpreter {
                     multi,
                     is_rw,
                     is_private,
+                    is_our: _,
                 } => {
                     let resolved_method_name = if let Some(expr) = name_expr {
                         self.eval_block_value(&[Stmt::Expr(expr.clone())])?

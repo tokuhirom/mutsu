@@ -167,10 +167,10 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         return sub_decl_body(r, false, false, false);
     }
 
-    // my method name(...) { ... }
+    // my/our method name(...) { ... }
     if let Some(r) = keyword("method", rest) {
         let (r, _) = ws1(r)?;
-        return method_decl_body(r, false);
+        return method_decl_body(r, false, is_our);
     }
 
     // my class Name is Parent { ... }

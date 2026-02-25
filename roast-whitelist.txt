@@ -167,6 +167,7 @@ roast/S12-introspection/definite.t
 roast/S12-methods/calling_syntax.t
 roast/S12-methods/how.t
 roast/S12-methods/lvalue.t
+roast/S12-methods/method-vs-sub.t
 roast/S12-methods/syntax.t
 roast/S12-methods/trusts.t
 roast/S12-methods/typed-attributes.t

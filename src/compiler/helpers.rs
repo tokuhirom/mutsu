@@ -107,6 +107,7 @@ impl Compiler {
                     value: value.clone(),
                 },
                 CallArg::Slip(expr) => CallArg::Slip(expr.clone()),
+                CallArg::Invocant(expr) => CallArg::Invocant(expr.clone()),
             })
             .collect()
     }
@@ -562,7 +563,7 @@ impl Compiler {
                                     self.code.emit(OpCode::MakePair);
                                     regular_count += 1;
                                 }
-                                CallArg::Slip(_) => {}
+                                CallArg::Slip(_) | CallArg::Invocant(_) => {}
                             }
                         }
                         for arg in &rewritten_args {
@@ -596,7 +597,7 @@ impl Compiler {
                                 self.compile_expr(&Expr::Literal(Value::Bool(true)));
                                 self.code.emit(OpCode::MakePair);
                             }
-                            CallArg::Slip(_) => unreachable!(),
+                            CallArg::Slip(_) | CallArg::Invocant(_) => unreachable!(),
                         }
                     }
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));

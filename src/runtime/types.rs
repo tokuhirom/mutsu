@@ -797,7 +797,10 @@ impl Interpreter {
     }
 
     pub(super) fn method_args_match(&mut self, args: &[Value], param_defs: &[ParamDef]) -> bool {
-        let positional_params: Vec<&ParamDef> = param_defs.iter().filter(|p| !p.named).collect();
+        let positional_params: Vec<&ParamDef> = param_defs
+            .iter()
+            .filter(|p| !p.named && !p.is_invocant)
+            .collect();
         let mut required = 0usize;
         let mut has_slurpy = false;
         for pd in &positional_params {
@@ -844,6 +847,14 @@ impl Interpreter {
         }
         let mut positional_idx = 0usize;
         for pd in param_defs {
+            // Invocant params (e.g. `$a:` in method signatures) are bound to self,
+            // not to positional arguments.
+            if pd.is_invocant {
+                if let Some(self_val) = self.env.get("self").cloned() {
+                    self.bind_param_value(&pd.name, self_val);
+                }
+                continue;
+            }
             if pd.slurpy {
                 let is_hash_slurpy = pd.name.starts_with('%');
                 if pd.sigilless {
