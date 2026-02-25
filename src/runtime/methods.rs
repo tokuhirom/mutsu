@@ -489,6 +489,15 @@ impl Interpreter {
             return result;
         }
 
+        // Force LazyList and re-dispatch as Seq for methods that need element access
+        if let Value::LazyList(ll) = &target
+            && matches!(method, "elems" | "list" | "Array" | "Numeric" | "Int")
+        {
+            let items = self.force_lazy_list_bridge(ll)?;
+            let seq = Value::Seq(std::sync::Arc::new(items));
+            return self.call_method_with_values(seq, method, args);
+        }
+
         if let Value::Sub(data) = &target {
             if method == "assuming" {
                 let mut next = (**data).clone();
@@ -954,7 +963,7 @@ impl Interpreter {
                     | Value::GenericRange { .. } => "Range",
                     Value::Array(_, true) => "Array",
                     Value::Array(_, false) => "List",
-                    Value::LazyList(_) => "Array",
+                    Value::LazyList(_) => "Seq",
                     Value::Hash(_) => "Hash",
                     Value::Rat(_, _) => "Rat",
                     Value::FatRat(_, _) => "FatRat",
@@ -1342,7 +1351,7 @@ impl Interpreter {
                             | Value::GenericRange { .. } => {
                                 values.extend(Self::value_to_list(arg));
                             }
-                            Value::Slip(items) => {
+                            Value::Slip(items) | Value::Seq(items) => {
                                 values.extend(items.iter().cloned());
                             }
                             other => values.push(other.clone()),

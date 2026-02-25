@@ -820,7 +820,7 @@ ok asin(0) == 0e0, 'asin function';
 ok atan(0) == 0e0, 'atan function';
 
 # Functions: flat, first, min, max
-is flat([1,[2,3],4]).join(","), "1,2,3,4", 'flat function';
+is flat([1,[2,3],4]).join(","), "1,2 3,4", 'flat function';
 is first([5,6,7]), 5, 'first function';
 is min(3,1,2), 1, 'min function variadic';
 is max(3,1,2), 3, 'max function variadic';

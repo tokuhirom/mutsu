@@ -140,6 +140,22 @@ fn dispatch_capture(
         }
         "Bool" => Some(Ok(Value::Bool(!positional.is_empty() || !named.is_empty()))),
         "WHAT" => Some(Ok(Value::Package("Capture".to_string()))),
+        "flat" => {
+            // $(expr) produces a Capture representing an itemized container.
+            // .flat on it should return itself as opaque (don't descend).
+            let cap = Value::Capture {
+                positional: positional.to_vec(),
+                named: named.clone(),
+            };
+            Some(Ok(Value::Seq(Arc::new(vec![cap]))))
+        }
+        "Seq" | "List" => {
+            let cap = Value::Capture {
+                positional: positional.to_vec(),
+                named: named.clone(),
+            };
+            Some(Ok(Value::Seq(Arc::new(vec![cap]))))
+        }
         _ => None,
     }
 }
@@ -171,6 +187,11 @@ fn is_value_lazy(value: &Value) -> bool {
 fn flatten_deep_value(value: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
     match value {
         Value::Array(items, is_array) if !*is_array || flatten_arrays => {
+            for item in items.iter() {
+                flatten_deep_value(item, out, flatten_arrays);
+            }
+        }
+        Value::Seq(items) | Value::Slip(items) => {
             for item in items.iter() {
                 flatten_deep_value(item, out, flatten_arrays);
             }
@@ -516,6 +537,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         Value::Int(0)
                     }
                 }
+                // LazyList needs interpreter to force; fall through to runtime
+                Value::LazyList(_) => return None,
                 _ => Value::Int(1),
             };
             Some(Ok(result))
@@ -579,6 +602,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "flat" => match target {
             Value::Array(items, ..) => {
+                let mut result = Vec::new();
+                for item in items.iter() {
+                    flatten_deep_value(item, &mut result, false);
+                }
+                Some(Ok(Value::Seq(Arc::new(result))))
+            }
+            Value::Seq(items) | Value::Slip(items) => {
                 let mut result = Vec::new();
                 for item in items.iter() {
                     flatten_deep_value(item, &mut result, false);

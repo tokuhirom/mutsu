@@ -29,11 +29,14 @@ fn is_infinite_range(value: &Value) -> bool {
 
 fn flat_val_deep(v: &Value, out: &mut Vec<Value>) {
     match v {
-        Value::Array(items, ..) => {
+        // Lists (not true Arrays), Seqs, and Slips are flattened recursively
+        Value::Array(items, false) | Value::Seq(items) | Value::Slip(items) => {
             for item in items.iter() {
                 flat_val_deep(item, out);
             }
         }
+        // True Arrays (is_array=true) are itemized containers — don't descend
+        Value::Array(_, true) => out.push(v.clone()),
         Value::Range(..)
         | Value::RangeExcl(..)
         | Value::RangeExclStart(..)
@@ -400,8 +403,12 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 return Some(Ok(arg.clone()));
             }
             let mut flat = Vec::new();
-            flat_val_deep(arg, &mut flat);
-            Some(Ok(Value::array(flat)))
+            // Top-level: iterate the arg's elements and flatten each
+            let items = crate::runtime::utils::value_to_list(arg);
+            for item in &items {
+                flat_val_deep(item, &mut flat);
+            }
+            Some(Ok(Value::Seq(std::sync::Arc::new(flat))))
         }
         "first" => Some(Ok(match arg {
             Value::Array(items, ..) => items.first().cloned().unwrap_or(Value::Nil),
@@ -712,7 +719,7 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
             for arg in args {
                 flat_val_deep(arg, &mut result);
             }
-            Some(Ok(Value::array(result)))
+            Some(Ok(Value::Seq(std::sync::Arc::new(result))))
         }
         _ => None,
     }

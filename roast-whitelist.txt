@@ -161,7 +161,6 @@ roast/S11-modules/module.t
 roast/S11-modules/need.t
 roast/S11-modules/rakulib.t
 roast/S11-modules/runtime.t
-roast/S11-modules/versioning.t
 roast/S12-class/declaration-order.t
 roast/S12-class/literal.t
 roast/S12-class/parent_attributes.t

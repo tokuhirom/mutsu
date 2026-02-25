@@ -477,11 +477,20 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
                 Value::Int(0)
             }
         }
-        Value::Array(items, ..) => Value::Int(items.len() as i64),
+        Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+            Value::Int(items.len() as i64)
+        }
         Value::Hash(items) => Value::Int(items.len() as i64),
         Value::Set(items) => Value::Int(items.len() as i64),
         Value::Bag(items) => Value::Int(items.values().sum()),
         Value::Mix(items) => Value::Num(items.values().sum()),
+        Value::LazyList(ll) => {
+            if let Some(cached) = ll.cache.lock().unwrap().as_ref() {
+                Value::Int(cached.len() as i64)
+            } else {
+                Value::Int(0)
+            }
+        }
         Value::Nil => Value::Int(0),
         Value::Instance {
             ref class_name,

@@ -240,7 +240,7 @@ impl Interpreter {
         for arg in args {
             Self::flat_into(arg, &mut result);
         }
-        Ok(Value::array(result))
+        Ok(Value::Seq(std::sync::Arc::new(result)))
     }
 
     pub(crate) fn flat_into(val: &Value, out: &mut Vec<Value>) {
