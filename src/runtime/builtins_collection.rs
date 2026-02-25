@@ -342,6 +342,7 @@ impl Interpreter {
         let mut positional = Vec::new();
         let mut has_v = false;
         let mut has_neg_v = false;
+        let mut has_end = false;
         for arg in args {
             match arg {
                 Value::Pair(key, value) if key == "v" => {
@@ -349,6 +350,11 @@ impl Interpreter {
                         has_v = true;
                     } else {
                         has_neg_v = true;
+                    }
+                }
+                Value::Pair(key, value) if key == "end" => {
+                    if value.truthy() {
+                        has_end = true;
                     }
                 }
                 _ => positional.push(arg.clone()),
@@ -381,6 +387,9 @@ impl Interpreter {
                 }
                 other => list_items.push(other.clone()),
             }
+        }
+        if has_end {
+            list_items.reverse();
         }
         self.eval_first_over_items(func, list_items)
     }
