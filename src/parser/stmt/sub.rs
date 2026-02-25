@@ -1499,7 +1499,7 @@ pub(super) fn method_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
         let (rest, (name, expr)) = parse_indirect_decl_name(rest)?;
         (rest, name, Some(expr))
     } else {
-        let (rest, name) = ident(rest)?;
+        let (rest, name) = parse_sub_name(rest)?;
         (rest, name, None)
     };
     let (rest, _) = ws(rest)?;
