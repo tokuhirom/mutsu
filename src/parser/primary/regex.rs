@@ -78,7 +78,7 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             r = after;
         }
 
-        if name == "ex" || name == "exhaustive" {
+        if name == "ex" || name == "exhaustive" || name == "ov" || name == "overlap" {
             adverbs.exhaustive = true;
         } else if name == "i" || name == "ignorecase" {
             adverbs.ignore_case = true;
@@ -478,7 +478,9 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
 
     // s with arbitrary delimiter: s/pattern/replacement/, s^pattern^replacement^, etc.
     // Also supports adverbs: s:mm/pattern/replacement/, s:i:g/pattern/replacement/
+    // Skip if 's' has been declared as a user sub — it should be parsed as a function call.
     if let Some(after_s) = input.strip_prefix('s')
+        && !crate::parser::stmt::simple::is_user_declared_sub("s")
         && let Some(first_ch) = after_s.chars().next()
     {
         // Parse optional adverbs between s and delimiter
@@ -670,7 +672,10 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // m/pattern/ or m{pattern} or m[pattern]
     // m with arbitrary delimiter: m/.../, m{...}, m[...], m^...^, m!...!, etc.
     // Also allow modifiers before delimiter: m:2x/.../, m:x(2)/.../, m:g:i/.../
-    if let Some(after_m) = input.strip_prefix('m') {
+    // Skip if 'm' has been declared as a user sub — it should be parsed as a function call.
+    if let Some(after_m) = input.strip_prefix('m')
+        && !crate::parser::stmt::simple::is_user_declared_sub("m")
+    {
         let (spec, mut adverbs) = parse_match_adverbs(after_m)?;
         let spec = parse_compact_match_adverbs(spec, &mut adverbs);
         if let Some(open_ch) = spec.chars().next() {

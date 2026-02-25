@@ -184,6 +184,13 @@ impl VM {
                 "Cannot resolve caller Numeric(Sub:D: ); none of these signatures matches:\n    (Mu:U \\v: *%_)",
             ));
         }
+        // Force LazyList before numeric coercion so we can count elements
+        let val = if let Value::LazyList(ll) = &val {
+            let items = self.interpreter.force_lazy_list_bridge(ll)?;
+            Value::Seq(std::sync::Arc::new(items))
+        } else {
+            val
+        };
         let result = crate::runtime::utils::coerce_to_numeric(val);
         self.stack.push(result);
         Ok(())
@@ -319,6 +326,14 @@ impl VM {
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
         }
+        // For @ and % variables, the assignment expression should return the
+        // container, not the RHS value.
+        if (name.starts_with('@') || name.starts_with('%'))
+            && let Some(container) = self.interpreter.env().get(&name).cloned()
+            && let Some(top) = self.stack.last_mut()
+        {
+            *top = container;
+        }
         Ok(())
     }
 
@@ -416,6 +431,20 @@ impl VM {
             }
             list = flattened;
         }
+        if base_op == "," {
+            if scan {
+                let mut out = Vec::with_capacity(list.len());
+                let mut prefix = Vec::new();
+                for item in list {
+                    prefix.push(item);
+                    out.push(Value::array(prefix.clone()));
+                }
+                self.stack.push(Value::Seq(std::sync::Arc::new(out)));
+            } else {
+                self.stack.push(Value::array(list));
+            }
+            return Ok(());
+        }
         if scan {
             if list.is_empty() {
                 self.stack.push(Value::Seq(std::sync::Arc::new(Vec::new())));
@@ -425,7 +454,7 @@ impl VM {
             let mut out = Vec::with_capacity(list.len());
             out.push(acc.clone());
             for item in &list[1..] {
-                let v = Interpreter::apply_reduction_op(&base_op, &acc, item)?;
+                let v = self.eval_reduction_operator_values(&base_op, &acc, item)?;
                 acc = if negate { Value::Bool(!v.truthy()) } else { v };
                 out.push(acc.clone());
             }
@@ -435,32 +464,12 @@ impl VM {
         if list.is_empty() {
             self.stack.push(runtime::reduction_identity(&base_op));
         } else {
-            let is_comparison = matches!(
-                base_op.as_str(),
-                "eq" | "ne"
-                    | "lt"
-                    | "gt"
-                    | "le"
-                    | "ge"
-                    | "after"
-                    | "before"
-                    | "=="
-                    | "!="
-                    | "<"
-                    | ">"
-                    | "<="
-                    | ">="
-                    | "==="
-                    | "=:="
-                    | "eqv"
-                    | "~~"
-                    | "cmp"
-                    | "leg"
-            );
+            let is_comparison = runtime::is_chain_comparison_op(&base_op);
             if is_comparison {
                 let mut result = true;
                 for i in 0..list.len() - 1 {
-                    let v = Interpreter::apply_reduction_op(&base_op, &list[i], &list[i + 1])?;
+                    let v =
+                        self.eval_reduction_operator_values(&base_op, &list[i], &list[i + 1])?;
                     let truthy = if negate { !v.truthy() } else { v.truthy() };
                     if !truthy {
                         result = false;
@@ -480,14 +489,14 @@ impl VM {
                 let acc = if base_op == "=>" {
                     let mut acc = list.last().cloned().unwrap_or(Value::Nil);
                     for item in list[..list.len() - 1].iter().rev() {
-                        let v = Interpreter::apply_reduction_op(&base_op, item, &acc)?;
+                        let v = self.eval_reduction_operator_values(&base_op, item, &acc)?;
                         acc = if negate { Value::Bool(!v.truthy()) } else { v };
                     }
                     acc
                 } else {
                     let mut acc = list[0].clone();
                     for item in &list[1..] {
-                        let v = Interpreter::apply_reduction_op(&base_op, &acc, item)?;
+                        let v = self.eval_reduction_operator_values(&base_op, &acc, item)?;
                         acc = if negate { Value::Bool(!v.truthy()) } else { v };
                     }
                     acc
@@ -578,6 +587,15 @@ impl VM {
         let (base_constraint, _) = crate::runtime::types::strip_type_smiley(constraint);
         let value = self.stack.last().expect("TypeCheck: empty stack");
         if runtime::is_known_type_constraint(base_constraint) {
+            if let Value::Array(items, ..) = value {
+                let all_match = items
+                    .iter()
+                    .all(|item| self.interpreter.type_matches_value(constraint, item));
+                if !all_match {
+                    return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
+                }
+                return Ok(());
+            }
             if !matches!(value, Value::Nil)
                 && !self.interpreter.type_matches_value(constraint, value)
             {

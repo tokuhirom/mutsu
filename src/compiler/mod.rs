@@ -152,17 +152,32 @@ impl Compiler {
                     continue;
                 }
                 if sub.named {
-                    bind_stmts.push(Stmt::Assign {
+                    let method_result = Expr::MethodCall {
+                        target: Box::new(Expr::Var(target_name.clone())),
                         name: sub.name.clone(),
-                        expr: Expr::MethodCall {
-                            target: Box::new(Expr::Var(target_name.clone())),
+                        args: Vec::new(),
+                        modifier: None,
+                        quoted: false,
+                    };
+                    // If the named param has a sub_signature (e.g. :key($k)),
+                    // bind to the sub_signature variable instead of the param name.
+                    if let Some(inner_params) = &sub.sub_signature {
+                        for inner in inner_params {
+                            if !inner.name.is_empty() {
+                                bind_stmts.push(Stmt::Assign {
+                                    name: inner.name.clone(),
+                                    expr: method_result.clone(),
+                                    op: AssignOp::Assign,
+                                });
+                            }
+                        }
+                    } else {
+                        bind_stmts.push(Stmt::Assign {
                             name: sub.name.clone(),
-                            args: Vec::new(),
-                            modifier: None,
-                            quoted: false,
-                        },
-                        op: AssignOp::Assign,
-                    });
+                            expr: method_result,
+                            op: AssignOp::Assign,
+                        });
+                    }
                 } else {
                     bind_stmts.push(Stmt::Assign {
                         name: sub.name.clone(),

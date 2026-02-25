@@ -12,6 +12,7 @@ use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 use super::helpers::ws;
+pub(in crate::parser) use postfix::postfix_expr_continue;
 use precedence::{or_expr, ternary};
 
 thread_local! {
@@ -829,6 +830,41 @@ mod tests {
                 _ => panic!("Expected !=== to lower to !(===)"),
             },
             _ => panic!("Expected Binary expression"),
+        }
+    }
+
+    #[test]
+    fn parse_negated_comparison_meta_operators() {
+        let (rest, expr) = expression("2 !== 3").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr,
+            } => match *expr {
+                Expr::Binary {
+                    op: TokenKind::EqEq,
+                    ..
+                } => {}
+                _ => panic!("Expected !== to lower to !(==)"),
+            },
+            _ => panic!("Expected Unary expression"),
+        }
+
+        let (rest, expr) = expression("$a !eq $b").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr,
+            } => match *expr {
+                Expr::Binary {
+                    op: TokenKind::Ident(op),
+                    ..
+                } => assert_eq!(op, "eq"),
+                _ => panic!("Expected !eq to lower to !(eq)"),
+            },
+            _ => panic!("Expected Unary expression"),
         }
     }
 

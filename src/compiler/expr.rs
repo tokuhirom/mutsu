@@ -1006,6 +1006,12 @@ impl Compiler {
                         self.code.emit(OpCode::GetBareWord(name_idx));
                     }
                 }
+                Stmt::RoleDecl { name, .. } => {
+                    // Register the role and return the role type object.
+                    self.compile_stmt(stmt);
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::GetBareWord(name_idx));
+                }
                 Stmt::EnumDecl { name, .. } if name.is_empty() => {
                     // Anonymous enum: RegisterEnum pushes the Map result
                     self.compile_stmt(stmt);

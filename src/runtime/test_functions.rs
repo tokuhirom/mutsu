@@ -578,7 +578,8 @@ impl Interpreter {
         let desc = positionals
             .get(2)
             .map(|v| v.to_string_value())
-            .unwrap_or_default();
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| format!("The object is-a '{}'", type_name));
         (value, type_name, desc)
     }
 
@@ -980,7 +981,14 @@ impl Interpreter {
             Some(Value::Package(name)) => name.clone(),
             _ => Self::positional_string(args, 1),
         };
-        let desc = Self::positional_string(args, 2);
+        let desc = {
+            let explicit = Self::positional_string(args, 2);
+            if explicit.is_empty() {
+                format!("The object does '{}'", role_name)
+            } else {
+                explicit
+            }
+        };
         let todo = Self::named_bool(args, "todo");
         // NOTE: does_check currently delegates to isa_check (issue #91)
         let ok = value.does_check(&role_name);
@@ -993,7 +1001,14 @@ impl Interpreter {
             .cloned()
             .unwrap_or(Value::Nil);
         let method_name = Self::positional_string(args, 1);
-        let desc = Self::positional_string(args, 2);
+        let desc = {
+            let explicit = Self::positional_string(args, 2);
+            if explicit.is_empty() {
+                format!("The object can '{}'", method_name)
+            } else {
+                explicit
+            }
+        };
         let todo = Self::named_bool(args, "todo");
         let ok = self.value_can_method(&value, &method_name);
         self.test_ok(ok, &desc, todo)?;
