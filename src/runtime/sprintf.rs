@@ -15,7 +15,7 @@ pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
         }
         let mut flags = String::new();
         while let Some(f) = chars.peek().copied() {
-            if f == '-' || f == '+' || f == ' ' || f == '#' {
+            if f == '-' || f == '+' || f == ' ' || f == '#' || f == '0' {
                 flags.push(f);
                 chars.next();
             } else {
@@ -46,7 +46,7 @@ pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
         let spec = chars.next().unwrap_or('s');
         let width_num = width.parse::<usize>().unwrap_or(0);
         let prec_num = precision.parse::<usize>().ok();
-        let zero_pad = width.starts_with('0') && !flags.contains('-');
+        let zero_pad = flags.contains('0') && !flags.contains('-');
         let left_align = flags.contains('-');
         let plus_sign = flags.contains('+');
         let hash_flag = flags.contains('#');
@@ -76,7 +76,7 @@ pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
                 Some(v) => {
                     let s = v.to_string_value();
                     if let Some(p) = prec_num {
-                        s[..p.min(s.len())].to_string()
+                        s.chars().take(p).collect()
                     } else {
                         s
                     }
@@ -160,8 +160,9 @@ pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
                 None => String::new(),
             },
         };
-        if width_num > rendered.len() {
-            let pad_len = width_num - rendered.len();
+        let rendered_width = rendered.chars().count();
+        if width_num > rendered_width {
+            let pad_len = width_num - rendered_width;
             let pad_char = if zero_pad { '0' } else { ' ' };
             let pad: String = std::iter::repeat_n(pad_char, pad_len).collect();
             if left_align {
