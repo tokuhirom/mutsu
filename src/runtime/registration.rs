@@ -416,10 +416,16 @@ impl Interpreter {
     }
 
     pub(crate) fn has_function(&self, name: &str) -> bool {
+        self.has_declared_function(name)
+    }
+
+    pub(crate) fn has_declared_function(&self, name: &str) -> bool {
         let fq = format!("{}::{}", self.current_package, name);
-        self.functions.contains_key(&fq)
-            || self.functions.contains_key(name)
-            || Self::is_builtin_function(name)
+        self.functions.contains_key(&fq) || self.functions.contains_key(name)
+    }
+
+    pub(crate) fn is_implicit_zero_arg_builtin(name: &str) -> bool {
+        matches!(name, "dir")
     }
 
     /// Check if a multi-dispatched function with the given name exists (any arity).
