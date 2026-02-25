@@ -1282,6 +1282,133 @@ impl VM {
             format!("${}", name)
         }
     }
+
+    /// Execute HyperSlice opcode: recursively iterate a hash.
+    pub(super) fn exec_hyper_slice_op(&mut self, adverb: u8) -> Result<(), RuntimeError> {
+        use crate::ast::HyperSliceAdverb;
+
+        let target = self.stack.pop().unwrap();
+        let adverb = match adverb {
+            0 => HyperSliceAdverb::Kv,
+            1 => HyperSliceAdverb::K,
+            2 => HyperSliceAdverb::V,
+            3 => HyperSliceAdverb::Tree,
+            4 => HyperSliceAdverb::DeepK,
+            5 => HyperSliceAdverb::DeepKv,
+            _ => HyperSliceAdverb::Kv,
+        };
+
+        let hash = match target {
+            Value::Hash(h) => h,
+            _ => {
+                return Err(RuntimeError::new(
+                    "Cannot use {**} hyperslice on a non-Hash value".to_string(),
+                ));
+            }
+        };
+
+        let mut result = Vec::new();
+        let path: Vec<String> = Vec::new();
+        Self::hyperslice_recurse(&hash, &path, adverb, &mut result);
+        self.stack.push(Value::array(result));
+        Ok(())
+    }
+
+    fn hyperslice_recurse(
+        hash: &std::collections::HashMap<String, Value>,
+        path: &[String],
+        adverb: crate::ast::HyperSliceAdverb,
+        result: &mut Vec<Value>,
+    ) {
+        use crate::ast::HyperSliceAdverb;
+
+        for (key, value) in hash.iter() {
+            let mut cur_path: Vec<String> = path.to_vec();
+            cur_path.push(key.clone());
+
+            match adverb {
+                HyperSliceAdverb::Kv => {
+                    if let Value::Hash(inner) = value {
+                        Self::hyperslice_recurse(inner, &cur_path, adverb, result);
+                    } else {
+                        result.push(Value::Str(key.clone()));
+                        result.push(value.clone());
+                    }
+                }
+                HyperSliceAdverb::K => {
+                    if let Value::Hash(inner) = value {
+                        Self::hyperslice_recurse(inner, &cur_path, adverb, result);
+                    } else {
+                        result.push(Value::Str(key.clone()));
+                    }
+                }
+                HyperSliceAdverb::V => {
+                    if let Value::Hash(inner) = value {
+                        Self::hyperslice_recurse(inner, &cur_path, adverb, result);
+                    } else {
+                        result.push(value.clone());
+                    }
+                }
+                HyperSliceAdverb::Tree => {
+                    // Tree mode: yield key-value pairs for all entries,
+                    // including sub-hashes (as their original Value::Hash)
+                    result.push(Value::Str(key.clone()));
+                    result.push(value.clone());
+                    if let Value::Hash(inner) = value {
+                        Self::hyperslice_recurse(inner, &cur_path, adverb, result);
+                    }
+                }
+                HyperSliceAdverb::DeepK => {
+                    if let Value::Hash(inner) = value {
+                        Self::hyperslice_recurse(inner, &cur_path, adverb, result);
+                    } else {
+                        let key_array: Vec<Value> =
+                            cur_path.iter().map(|s| Value::Str(s.clone())).collect();
+                        result.push(Value::array(key_array));
+                    }
+                }
+                HyperSliceAdverb::DeepKv => {
+                    if let Value::Hash(inner) = value {
+                        Self::hyperslice_recurse(inner, &cur_path, adverb, result);
+                    } else {
+                        let key_array: Vec<Value> =
+                            cur_path.iter().map(|s| Value::Str(s.clone())).collect();
+                        result.push(Value::array(key_array));
+                        result.push(value.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    /// Execute HyperIndex opcode: drill into nested hash by key path.
+    pub(super) fn exec_hyper_index_op(&mut self) -> Result<(), RuntimeError> {
+        let keys = self.stack.pop().unwrap();
+        let target = self.stack.pop().unwrap();
+
+        let key_list = match keys {
+            Value::Array(items, ..) => items,
+            Value::Seq(items) => Arc::new(items.to_vec()),
+            _ => Arc::new(vec![keys]),
+        };
+
+        let mut current = target;
+        for key in key_list.iter() {
+            match current {
+                Value::Hash(ref h) => {
+                    let k = key.to_string_value();
+                    current = h.get(&k).cloned().unwrap_or(Value::Nil);
+                }
+                _ => {
+                    current = Value::Nil;
+                    break;
+                }
+            }
+        }
+
+        self.stack.push(current);
+        Ok(())
+    }
 }
 
 /// Extract (start, end, excl_start, excl_end) from a Range value.
