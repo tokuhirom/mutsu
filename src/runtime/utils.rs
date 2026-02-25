@@ -5,6 +5,13 @@ use crate::value::{JunctionKind, Value};
 /// Maximum number of elements when expanding an infinite range to a list.
 const MAX_RANGE_EXPAND: i64 = 1_000_000;
 
+pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
+    match (left, right) {
+        (Value::Instance { id: a, .. }, Value::Instance { id: b, .. }) => a == b,
+        _ => left == right,
+    }
+}
+
 pub(crate) fn make_order(ord: std::cmp::Ordering) -> Value {
     match ord {
         std::cmp::Ordering::Less => Value::Enum {
@@ -279,6 +286,13 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::Channel(_) => "Channel",
         Value::HyperWhatever => "HyperWhatever",
         Value::Capture { .. } => "Capture",
+        Value::Uni { form, .. } => match form.as_str() {
+            "NFC" => "NFC",
+            "NFD" => "NFD",
+            "NFKC" => "NFKC",
+            "NFKD" => "NFKD",
+            _ => "Uni",
+        },
         Value::Mixin(inner, _) => value_type_name(inner),
     }
 }
@@ -498,6 +512,7 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
 pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
     let l = match &left {
         Value::Int(_)
+        | Value::BigInt(_)
         | Value::Num(_)
         | Value::Rat(_, _)
         | Value::FatRat(_, _)
@@ -506,6 +521,7 @@ pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
     };
     let r = match &right {
         Value::Int(_)
+        | Value::BigInt(_)
         | Value::Num(_)
         | Value::Rat(_, _)
         | Value::FatRat(_, _)

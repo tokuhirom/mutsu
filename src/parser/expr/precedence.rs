@@ -1068,7 +1068,8 @@ fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
 
     // Try symbolic operators first (multi-char then single-char)
     let ops: &[&str] = &[
-        "**", "==", "!=", "<=", ">=", "~~", "%%", "//", "~", "+", "-", "*", "/", "%", "<", ">",
+        "**", "=>", "==", "!=", "<=", ">=", "~~", "%%", "//", "~", "+", "-", "*", "/", "%", "<",
+        ">",
     ];
     for op in ops {
         if r.starts_with(op) {

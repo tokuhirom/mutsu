@@ -92,6 +92,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(ident::keyword_literal(input));
         try_primary!(regex::topic_method_call(input));
         try_primary!(container::itemized_paren_expr(input));
+        try_primary!(container::itemized_bracket_expr(input));
         try_primary!(var::scalar_var(input));
         try_primary!(var::array_var(input));
         try_primary!(container::percent_hash_literal(input));
@@ -203,6 +204,22 @@ mod tests {
     }
 
     #[test]
+    fn parse_itemized_bracket_expr() {
+        let (rest, expr) = primary("$[1,2]").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::MethodCall {
+                target, name, args, ..
+            } => {
+                assert_eq!(name, "item");
+                assert!(args.is_empty());
+                assert!(matches!(*target, Expr::BracketArray(ref elems) if elems.len() == 2));
+            }
+            _ => panic!("expected itemized bracket method call"),
+        }
+    }
+
+    #[test]
     fn parse_dq_interpolation() {
         let (rest, expr) = primary("\"hello $x world\"").unwrap();
         assert_eq!(rest, "");
@@ -283,6 +300,13 @@ mod tests {
                 ..
             }) if s == "a"
         ));
+    }
+
+    #[test]
+    fn parse_match_regex_with_compact_adverbs() {
+        let (rest, expr) = primary("ms/ab cd/").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Literal(Value::Regex(ref s)) if s == ":s ab cd"));
     }
 
     #[test]

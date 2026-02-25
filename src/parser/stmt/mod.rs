@@ -1002,6 +1002,20 @@ mod tests {
     }
 
     #[test]
+    fn parse_method_decl_with_operator_name() {
+        let (rest, stmts) =
+            program("class A { method postcircumfix:<{ }>($key) { %!attrs{$key} } }").unwrap();
+        assert_eq!(rest, "");
+        if let Stmt::ClassDecl { body, .. } = &stmts[0] {
+            assert!(
+                matches!(&body[0], Stmt::MethodDecl { name, .. } if name == "postcircumfix:<{ }>")
+            );
+        } else {
+            panic!("expected ClassDecl");
+        }
+    }
+
+    #[test]
     fn parse_sub_decl_with_typed_invocant_marker() {
         let (rest, stmts) = program("sub f(A:D: $key) { $key }").unwrap();
         assert_eq!(rest, "");
@@ -1014,11 +1028,57 @@ mod tests {
     }
 
     #[test]
+    fn parse_method_decl_with_explicit_invocant_param() {
+        let (rest, stmts) = program("class Foo { method bar ($self: $num) { $num } }").unwrap();
+        assert_eq!(rest, "");
+        if let Stmt::ClassDecl { body, .. } = &stmts[0] {
+            if let Stmt::MethodDecl { param_defs, .. } = &body[0] {
+                assert_eq!(param_defs.len(), 2);
+                assert_eq!(param_defs[0].name, "self");
+                assert!(param_defs[0].traits.iter().any(|t| t == "invocant"));
+                assert_eq!(param_defs[1].name, "num");
+                assert!(!param_defs[1].traits.iter().any(|t| t == "invocant"));
+            } else {
+                panic!("expected MethodDecl");
+            }
+        } else {
+            panic!("expected ClassDecl");
+        }
+    }
+
+    #[test]
+    fn parse_method_decl_with_explicit_invocant_and_return_type() {
+        let (rest, stmts) =
+            program("class Foo { method bar ($self: $num --> Foo) returns Foo { $self } }")
+                .unwrap();
+        assert_eq!(rest, "");
+        if let Stmt::ClassDecl { body, .. } = &stmts[0] {
+            if let Stmt::MethodDecl { param_defs, .. } = &body[0] {
+                assert_eq!(param_defs.len(), 2);
+                assert!(param_defs[0].traits.iter().any(|t| t == "invocant"));
+                assert_eq!(param_defs[1].name, "num");
+            } else {
+                panic!("expected MethodDecl");
+            }
+        } else {
+            panic!("expected ClassDecl");
+        }
+    }
+
+    #[test]
     fn parse_role_decl_with_generics_and_does_clause() {
         let (rest, stmts) = program("role R2[Cool ::T] does R1[T] is ok { }").unwrap();
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
         assert!(matches!(&stmts[0], Stmt::RoleDecl { name, .. } if name == "R2"));
+    }
+
+    #[test]
+    fn parse_grammar_decl_with_does_clause() {
+        let (rest, stmts) = program("grammar G does R { rule TOP { ^ <x> } }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::Package { name, .. } if name == "G"));
     }
 
     #[test]

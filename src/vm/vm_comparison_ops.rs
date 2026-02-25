@@ -250,6 +250,12 @@ impl VM {
         self.stack.push(Value::Bool(left == right));
     }
 
+    pub(super) fn exec_strict_ne_op(&mut self) {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        self.stack.push(Value::Bool(left != right));
+    }
+
     pub(super) fn exec_eqv_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();

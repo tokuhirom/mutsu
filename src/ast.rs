@@ -373,6 +373,7 @@ pub(crate) enum Stmt {
         name: String,
         is_public: bool,
         default: Option<Expr>,
+        handles: Vec<String>,
         #[allow(dead_code)]
         is_rw: bool,
     },

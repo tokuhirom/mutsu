@@ -162,6 +162,25 @@ impl Compiler {
         }
     }
 
+    /// Compile a function-call positional argument.
+    /// Variable-like args are wrapped with source-name metadata so sigilless
+    /// parameters (`\x`) can bind as writable aliases.
+    pub(super) fn compile_call_arg(&mut self, arg: &Expr) {
+        self.compile_expr(arg);
+        let source_name = match arg {
+            Expr::Var(n) => Some(n.clone()),
+            Expr::ArrayVar(n) => Some(format!("@{}", n)),
+            Expr::HashVar(n) => Some(format!("%{}", n)),
+            Expr::CodeVar(n) => Some(format!("&{}", n)),
+            Expr::BareWord(n) => Some(n.clone()),
+            _ => None,
+        };
+        if let Some(name) = source_name {
+            let name_idx = self.code.add_constant(Value::Str(name));
+            self.code.emit(OpCode::WrapVarRef(name_idx));
+        }
+    }
+
     pub(super) fn stmt_has_placeholder(stmt: &Stmt) -> bool {
         match stmt {
             Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
@@ -541,7 +560,7 @@ impl Compiler {
                         for arg in &rewritten_args {
                             match arg {
                                 CallArg::Positional(expr) => {
-                                    self.compile_expr(expr);
+                                    self.compile_call_arg(expr);
                                     regular_count += 1;
                                 }
                                 CallArg::Named {
@@ -582,7 +601,7 @@ impl Compiler {
 
                     for arg in &rewritten_args {
                         match arg {
-                            CallArg::Positional(expr) => self.compile_expr(expr),
+                            CallArg::Positional(expr) => self.compile_call_arg(expr),
                             CallArg::Named {
                                 name,
                                 value: Some(expr),
