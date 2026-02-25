@@ -1156,6 +1156,31 @@ impl Interpreter {
                         return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
                     }
                     Value::Proxy { .. } => "Proxy",
+                    Value::ParametricRole {
+                        base_name,
+                        type_args,
+                    } => {
+                        let args_str: Vec<String> = type_args
+                            .iter()
+                            .map(|a| match a {
+                                Value::Package(n) => n.clone(),
+                                Value::ParametricRole { .. } => {
+                                    // Recursively get the WHAT name for nested parametric roles
+                                    if let Ok(Value::Package(n)) =
+                                        self.call_method_with_values(a.clone(), "WHAT", Vec::new())
+                                    {
+                                        // Strip surrounding parens from (Name)
+                                        n.trim_start_matches('(').trim_end_matches(')').to_string()
+                                    } else {
+                                        a.to_string_value()
+                                    }
+                                }
+                                _ => a.to_string_value(),
+                            })
+                            .collect();
+                        let name = format!("{}[{}]", base_name, args_str.join(","));
+                        return Ok(Value::Package(name));
+                    }
                 };
                 return Ok(Value::Package(type_name.to_string()));
             }
