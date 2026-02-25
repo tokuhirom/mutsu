@@ -271,8 +271,8 @@ my $p = Point.new(x => 3, y => 4);
 say "Distance: " ~ $p.distance;`,
   regex: `my $str = "Hello World 2026";
 if $str ~~ /(<[A..Z]>\\w+) \\s (\\w+) \\s (\\d+)/ {
-    say "Matched: ", $/;
-    say "Year: ", $/[2];
+    say "Match: $/";
+    say "Year: $/[2]";
 }`,
   reduce: `say [+] 1..10;
 say [*] 1..5;
