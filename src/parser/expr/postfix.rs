@@ -365,7 +365,7 @@ fn postfix_expr_tight(input: &str) -> PResult<'_, Expr> {
 /// Continue applying postfix operations (including whitespace-dotty) to an
 /// already-parsed expression.  Used after prefix operators like `^` to allow
 /// `^10 .method` to call `.method` on the range result.
-fn postfix_expr_continue(input: &str, expr: Expr) -> PResult<'_, Expr> {
+pub(in crate::parser) fn postfix_expr_continue(input: &str, expr: Expr) -> PResult<'_, Expr> {
     postfix_expr_loop(input, expr, true)
 }
 
@@ -845,7 +845,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         {
             let r = &rest[1..];
             let (r, _) = ws(r)?;
-            let (r, index) = expression(r)?;
+            let (r, index) = parse_bracket_indices(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, '}')?;
             // Allow whitespace before adverbs
@@ -959,6 +959,24 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     dwim_left: false,
                     dwim_right: true,
                 };
+                continue;
+            }
+            // Hyper indexing: expr»[idx] (or expr>>[idx]) => expr».AT-POS(idx)
+            if let Some(r) = after_hyper.strip_prefix('[') {
+                let (r, _) = ws(r)?;
+                if let Some(after) = r.strip_prefix(']') {
+                    rest = after;
+                    continue;
+                }
+                let (r, index) = parse_bracket_indices(r)?;
+                let (r, _) = ws(r)?;
+                let (r, _) = parse_char(r, ']')?;
+                expr = Expr::HyperMethodCall {
+                    target: Box::new(expr),
+                    name: "AT-POS".to_string(),
+                    args: vec![index],
+                };
+                rest = r;
                 continue;
             }
             // Check for ».method or >>.method

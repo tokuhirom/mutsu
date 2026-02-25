@@ -287,6 +287,13 @@ impl Value {
                 format!("CompUnit::DependencySpecification({})", short_name)
             }
             Value::Package(s) => format!("({})", s),
+            Value::ParametricRole {
+                base_name,
+                type_args,
+            } => {
+                let args: Vec<String> = type_args.iter().map(|a| a.to_string_value()).collect();
+                format!("({}[{}])", base_name, args.join(","))
+            }
             Value::Routine { package, name } => format!("{}::{}", package, name),
             Value::Sub(data) => data.name.clone(),
             Value::WeakSub(weak) => match weak.upgrade() {
@@ -376,6 +383,16 @@ impl Value {
                 .get("gist")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_else(|| format!("{}()", class_name)),
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Method" || class_name == "Sub" || class_name == "Routine" => {
+                attributes
+                    .get("name")
+                    .map(|v: &Value| v.to_string_value())
+                    .unwrap_or_else(|| format!("{}()", class_name))
+            }
             Value::Instance { class_name, .. } => format!("{}()", class_name),
             Value::Junction { kind, values } => {
                 let kind_str = match kind {
@@ -453,6 +470,7 @@ impl Value {
                     inner.to_string_value()
                 }
             }
+            Value::Proxy { .. } => "Proxy".to_string(),
         }
     }
 

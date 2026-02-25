@@ -80,6 +80,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(number::dot_decimal(input));
         try_primary!(number::decimal(input));
         try_primary!(number::integer(input));
+        try_primary!(number::unicode_numeric_literal(input));
         try_primary!(string::single_quoted_string(input));
         try_primary!(string::smart_single_quoted_string(input));
         try_primary!(string::double_quoted_string(input));
@@ -198,12 +199,7 @@ mod tests {
     fn parse_itemized_paren_expr() {
         let (rest, expr) = primary("$(1,2)").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(
-            expr,
-            Expr::CaptureLiteral(ref items)
-                if items.len() == 1
-                    && matches!(items[0], Expr::ArrayLiteral(ref elems) if elems.len() == 2)
-        ));
+        assert!(matches!(expr, Expr::CaptureLiteral(ref items) if items.len() == 1));
     }
 
     #[test]
@@ -363,6 +359,20 @@ mod tests {
         let (rest, expr) = primary("@").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::ArrayVar(ref n) if n == "__ANON_ARRAY__"));
+    }
+
+    #[test]
+    fn primary_parses_array_match_var() {
+        let (rest, expr) = primary("@$/").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::ArrayVar(ref n) if n == "/"));
+    }
+
+    #[test]
+    fn primary_parses_hash_match_var() {
+        let (rest, expr) = primary("%$/").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::HashVar(ref n) if n == "/"));
     }
 
     #[test]

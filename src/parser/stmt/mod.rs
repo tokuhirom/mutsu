@@ -14,7 +14,10 @@ use std::collections::HashMap;
 
 use crate::ast::Stmt;
 
-use super::helpers::{is_ident_char, ws, ws1};
+use super::helpers::{
+    is_ident_char, is_raku_identifier_continue, is_raku_identifier_start,
+    normalize_raku_identifier, ws, ws1,
+};
 
 // Re-export submodule items used across submodules
 use args::{parse_stmt_call_args, parse_stmt_call_args_no_paren};
@@ -59,26 +62,26 @@ pub(super) fn keyword<'a>(kw: &str, input: &'a str) -> Option<&'a str> {
 /// Hyphen is only allowed when followed by an alphabetic char (not a digit).
 fn ident(input: &str) -> PResult<'_, String> {
     let (rest, name) = parse_raku_ident(input)?;
-    Ok((rest, name.to_string()))
+    Ok((rest, normalize_raku_identifier(name)))
 }
 
 /// Parse a Raku-style identifier.
 /// Allows hyphens and apostrophes between word segments, but only when followed by a letter.
 /// e.g. `foo-bar` is valid, `doesn't` is valid, but `foo-3` stops at `foo`.
 pub(super) fn parse_raku_ident<'a>(input: &'a str) -> PResult<'a, &'a str> {
-    // Check first character: must be alphanumeric (including Unicode) or underscore
+    // Check first character: underscore or Unicode alphabetic character.
     let first = input
         .chars()
         .next()
         .ok_or_else(|| PError::expected("identifier"))?;
-    if !first.is_alphanumeric() && first != '_' {
+    if !is_raku_identifier_start(first) {
         return Err(PError::expected("identifier"));
     }
     let mut end = first.len_utf8();
     // Continue consuming identifier characters
     let mut chars = input[end..].chars().peekable();
     while let Some(&c) = chars.peek() {
-        if c.is_alphanumeric() || c == '_' {
+        if is_raku_identifier_continue(c) {
             end += c.len_utf8();
             chars.next();
         } else if c == '-' || c == '\'' {
@@ -86,7 +89,7 @@ pub(super) fn parse_raku_ident<'a>(input: &'a str) -> PResult<'a, &'a str> {
             let mut lookahead = chars.clone();
             lookahead.next(); // skip the hyphen/apostrophe
             if let Some(&next) = lookahead.peek() {
-                if next.is_alphabetic() {
+                if is_raku_identifier_start(next) {
                     end += 1; // consume the hyphen/apostrophe
                     chars.next();
                 } else {

@@ -25,6 +25,7 @@ fn regex_single_quote_atom(literal: String, ignore_case: bool) -> RegexAtom {
                 atom: RegexAtom::Literal(ch),
                 quant: RegexQuant::One,
                 named_capture: None,
+                ratchet: false,
             })
             .collect();
         RegexAtom::Group(RegexPattern {
@@ -32,6 +33,7 @@ fn regex_single_quote_atom(literal: String, ignore_case: bool) -> RegexAtom {
             anchor_start: false,
             anchor_end: false,
             ignore_case,
+            ignore_mark: false,
         })
     }
 }
@@ -47,6 +49,29 @@ fn split_prop_args(s: &str) -> (&str, Option<&str>) {
 }
 
 impl Interpreter {
+    fn has_unquoted_ltm_separator(pattern: &str) -> bool {
+        let mut in_single = false;
+        let mut escaped = false;
+        for ch in pattern.chars() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == '\'' {
+                in_single = !in_single;
+                continue;
+            }
+            if !in_single && ch == '%' {
+                return true;
+            }
+        }
+        false
+    }
+
     fn split_simple_quantified_atom(atom: &str) -> Option<(String, String)> {
         let quant = atom.chars().last()?;
         if !matches!(quant, '?' | '+' | '*') {
@@ -88,6 +113,9 @@ impl Interpreter {
             let sep_mode = caps.get(3).map(|m| m.as_str());
             let sep = caps.get(4).map(|m| m.as_str());
             return Self::build_ltm_expansion(atom, count_spec, sep_mode, sep);
+        }
+        if !Self::has_unquoted_ltm_separator(pattern) {
+            return pattern.to_string();
         }
         if let Some(caps) = bare_sep.captures(&compact) {
             let atom = caps
@@ -220,15 +248,26 @@ impl Interpreter {
         let interpolated = self.interpolate_regex_scalars(pattern);
         let mut source = interpolated.trim_start();
         let mut ignore_case = false;
+        let mut ignore_mark = false;
         let mut sigspace = false;
         loop {
+            if let Some(rest) = source.strip_prefix(":ignorecase") {
+                ignore_case = true;
+                source = rest.trim_start();
+                continue;
+            }
+            if let Some(rest) = source.strip_prefix(":ignoremark") {
+                ignore_mark = true;
+                source = rest.trim_start();
+                continue;
+            }
             if let Some(rest) = source.strip_prefix(":i") {
                 ignore_case = true;
                 source = rest.trim_start();
                 continue;
             }
-            if let Some(rest) = source.strip_prefix(":ignorecase") {
-                ignore_case = true;
+            if let Some(rest) = source.strip_prefix(":sigspace") {
+                sigspace = true;
                 source = rest.trim_start();
                 continue;
             }
@@ -237,10 +276,17 @@ impl Interpreter {
                 source = rest.trim_start();
                 continue;
             }
-            if let Some(rest) = source.strip_prefix(":sigspace") {
-                sigspace = true;
-                source = rest.trim_start();
-                continue;
+            if let Some(rest) = source.strip_prefix(":m") {
+                // Make sure it's :m and not :mm or :my or other identifiers
+                if rest.is_empty()
+                    || rest.starts_with(' ')
+                    || rest.starts_with(':')
+                    || rest.starts_with('/')
+                {
+                    ignore_mark = true;
+                    source = rest.trim_start();
+                    continue;
+                }
             }
             break;
         }
@@ -278,6 +324,7 @@ impl Interpreter {
                                 }),
                                 quant: RegexQuant::ZeroOrMore,
                                 named_capture: pending_named_capture.take(),
+                                ratchet: false,
                             });
                         }
                     } else {
@@ -291,6 +338,7 @@ impl Interpreter {
                             }),
                             quant: RegexQuant::OneOrMore,
                             named_capture: pending_named_capture.take(),
+                            ratchet: false,
                         });
                     }
                 }
@@ -331,6 +379,7 @@ impl Interpreter {
                     atom: RegexAtom::Literal('$'),
                     quant: RegexQuant::One,
                     named_capture: None,
+                    ratchet: false,
                 });
                 continue;
             }
@@ -447,6 +496,7 @@ impl Interpreter {
                                         atom: RegexAtom::Literal(c),
                                         quant: RegexQuant::One,
                                         named_capture: None,
+                                        ratchet: false,
                                     });
                                 }
                                 RegexAtom::Literal(*resolved.last().unwrap())
@@ -658,6 +708,7 @@ impl Interpreter {
                                                     }),
                                                     quant: RegexQuant::One,
                                                     named_capture: None,
+                                                    ratchet: false,
                                                 },
                                                 RegexToken {
                                                     atom: RegexAtom::CharClass(CharClass {
@@ -668,11 +719,13 @@ impl Interpreter {
                                                     }),
                                                     quant: RegexQuant::ZeroOrMore,
                                                     named_capture: None,
+                                                    ratchet: false,
                                                 },
                                             ],
                                             anchor_start: false,
                                             anchor_end: false,
                                             ignore_case,
+                                            ignore_mark,
                                         })
                                     }
                                     _ => RegexAtom::Named(name),
@@ -721,10 +774,12 @@ impl Interpreter {
                                 atom: RegexAtom::Alternation(alt_patterns),
                                 quant: RegexQuant::One,
                                 named_capture: None,
+                                ratchet: false,
                             }],
                             anchor_start: false,
                             anchor_end: false,
                             ignore_case,
+                            ignore_mark,
                         };
                         RegexAtom::CaptureGroup(group_pat)
                     } else {
@@ -810,13 +865,17 @@ impl Interpreter {
             // Handle ':' ratchet modifier (prevents backtracking)
             // For now, just consume it — our engine doesn't backtrack into
             // quantified atoms in the same way, so this is a no-op
-            if chars.peek() == Some(&':') {
+            let ratchet = if chars.peek() == Some(&':') {
                 chars.next();
-            }
+                true
+            } else {
+                false
+            };
             tokens.push(RegexToken {
                 atom,
                 quant,
                 named_capture: pending_named_capture.take(),
+                ratchet,
             });
         }
         Some(RegexPattern {
@@ -824,6 +883,7 @@ impl Interpreter {
             anchor_start,
             anchor_end,
             ignore_case,
+            ignore_mark,
         })
     }
 

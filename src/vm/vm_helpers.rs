@@ -1,6 +1,16 @@
 use super::*;
 
 impl VM {
+    fn twigil_dynamic_alias(name: &str) -> Option<String> {
+        if let Some(rest) = name.strip_prefix("$*") {
+            return Some(format!("*{}", rest));
+        }
+        if let Some(rest) = name.strip_prefix('*') {
+            return Some(format!("$*{}", rest));
+        }
+        None
+    }
+
     fn main_unqualified_name(name: &str) -> Option<String> {
         for sigil in ["$", "@", "%", "&"] {
             let prefix = format!("{sigil}Main::");
@@ -37,6 +47,9 @@ impl VM {
         if let Some(val) = self.interpreter.env().get(name) {
             return Some(val.clone());
         }
+        if let Some(alias) = Self::twigil_dynamic_alias(name) {
+            return self.interpreter.env().get(&alias).cloned();
+        }
         if let Some(alias) = Self::main_unqualified_name(name) {
             return self.interpreter.env().get(&alias).cloned();
         }
@@ -50,6 +63,9 @@ impl VM {
         self.interpreter
             .env_mut()
             .insert(name.to_string(), value.clone());
+        if let Some(alias) = Self::twigil_dynamic_alias(name) {
+            self.interpreter.env_mut().insert(alias, value.clone());
+        }
         if let Some(inner) = name
             .strip_prefix("&infix:<")
             .or_else(|| name.strip_prefix("&prefix:<"))
@@ -201,6 +217,7 @@ impl VM {
                 | "CX::Warn"
                 | "X::AdHoc"
                 | "CompUnit::DependencySpecification"
+                | "Proxy"
         )
     }
 
@@ -215,6 +232,16 @@ impl VM {
 
     pub(super) fn label_matches(error_label: &Option<String>, loop_label: &Option<String>) -> bool {
         error_label.as_deref() == loop_label.as_deref() || error_label.is_none()
+    }
+
+    /// Force a LazyList into a Seq by evaluating the gather body.
+    fn force_lazy_if_needed(&mut self, val: Value) -> Result<Value, RuntimeError> {
+        if let Value::LazyList(ll) = &val {
+            let items = self.interpreter.force_lazy_list_bridge(ll)?;
+            Ok(Value::Seq(std::sync::Arc::new(items)))
+        } else {
+            Ok(val)
+        }
     }
 
     pub(super) fn eval_binary_with_junctions(
@@ -239,6 +266,9 @@ impl VM {
                 .collect();
             return Ok(Value::junction(kind, results?));
         }
+        // Force LazyList values before arithmetic/comparison operations
+        let left = self.force_lazy_if_needed(left)?;
+        let right = self.force_lazy_if_needed(right)?;
         f(self, left, right)
     }
 
@@ -276,11 +306,72 @@ impl VM {
         ))
     }
 
+    pub(super) fn eval_reduction_operator_values(
+        &mut self,
+        op: &str,
+        left: &Value,
+        right: &Value,
+    ) -> Result<Value, RuntimeError> {
+        if let Some(inner_op) = op.strip_prefix('R')
+            && !inner_op.is_empty()
+        {
+            return self.eval_reduction_operator_values(inner_op, right, left);
+        }
+        let normalized_op = if op == "∘" { "o" } else { op };
+        match Interpreter::apply_reduction_op(normalized_op, left, right) {
+            Ok(v) => Ok(v),
+            Err(err) if err.message.starts_with("Unsupported reduction operator:") => {
+                let args = vec![left.clone(), right.clone()];
+                if let Some(name) = normalized_op.strip_prefix('&') {
+                    let callable = self.interpreter.resolve_code_var(name);
+                    if matches!(
+                        callable,
+                        Value::Sub(_)
+                            | Value::WeakSub(_)
+                            | Value::Routine { .. }
+                            | Value::Instance { .. }
+                    ) {
+                        return self.interpreter.eval_call_on_value(callable, args);
+                    }
+                } else {
+                    let infix_name = format!("infix:<{}>", normalized_op);
+                    if let Some(v) = self.try_user_infix(&infix_name, left, right)? {
+                        return Ok(v);
+                    }
+                    if let Some(callable) = self
+                        .interpreter
+                        .env()
+                        .get(&format!("&{}", infix_name))
+                        .cloned()
+                    {
+                        return self.interpreter.eval_call_on_value(callable, args.clone());
+                    }
+                    if let Some(callable) = self
+                        .interpreter
+                        .env()
+                        .get(&format!("&{}", normalized_op))
+                        .cloned()
+                    {
+                        return self.interpreter.eval_call_on_value(callable, args.clone());
+                    }
+                }
+                Err(err)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
     pub(super) fn sync_locals_from_env(&mut self, code: &CompiledCode) {
         for (i, name) in code.locals.iter().enumerate() {
             if let Some(val) = self.interpreter.env().get(name) {
                 self.locals[i] = val.clone();
             }
+        }
+    }
+
+    pub(super) fn sync_env_from_locals(&mut self, code: &CompiledCode) {
+        for (i, name) in code.locals.iter().enumerate() {
+            self.set_env_with_main_alias(name, self.locals[i].clone());
         }
     }
 

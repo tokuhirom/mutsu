@@ -178,6 +178,33 @@ pub(crate) fn native_method_1arg(
             let result: String = s.chars().skip(start).collect();
             Some(Ok(Value::Str(result)))
         }
+        "AT-POS" => {
+            let idx = match arg {
+                Value::Int(i) if *i >= 0 => *i as usize,
+                Value::Num(f) if *f >= 0.0 => *f as usize,
+                _ => return Some(Ok(Value::Nil)),
+            };
+            match target {
+                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                    Some(Ok(items.get(idx).cloned().unwrap_or(Value::Nil)))
+                }
+                Value::Str(s) => {
+                    let ch = s.chars().nth(idx).map(|c| Value::Str(c.to_string()));
+                    Some(Ok(ch.unwrap_or(Value::Nil)))
+                }
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name == "Match" => {
+                    if let Some(Value::Array(positional, ..)) = attributes.get("list") {
+                        return Some(Ok(positional.get(idx).cloned().unwrap_or(Value::Nil)));
+                    }
+                    Some(Ok(Value::Nil))
+                }
+                _ => None,
+            }
+        }
         "split" => {
             if let Value::Instance { class_name, .. } = target
                 && class_name == "Supply"

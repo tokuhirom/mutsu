@@ -89,10 +89,12 @@ pub(crate) enum Expr {
     Subst {
         pattern: String,
         replacement: String,
+        samemark: bool,
     },
     NonDestructiveSubst {
         pattern: String,
         replacement: String,
+        samemark: bool,
     },
     Transliterate {
         from: String,
@@ -379,6 +381,8 @@ pub(crate) enum Stmt {
         name: String,
         name_expr: Option<Expr>,
         parents: Vec<String>,
+        is_hidden: bool,
+        hidden_parents: Vec<String>,
         body: Vec<Stmt>,
     },
     HasDecl {
@@ -399,6 +403,7 @@ pub(crate) enum Stmt {
         is_rw: bool,
         is_private: bool,
         is_our: bool,
+        return_type: Option<String>,
     },
     RoleDecl {
         name: String,

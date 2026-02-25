@@ -30,6 +30,17 @@ fn typed_default_expr(type_name: &str) -> Expr {
     }
 }
 
+fn is_supported_variable_trait(trait_name: &str) -> bool {
+    if matches!(trait_name, "default" | "export") {
+        return true;
+    }
+    // Type-ish variable traits are accepted in roast (e.g. `is List`, `is Map`).
+    trait_name
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_uppercase())
+}
+
 fn parse_sigilless_decl_name(input: &str) -> PResult<'_, String> {
     super::parse_sub_name_pub(input)
 }
@@ -212,6 +223,10 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     if let Some(r) = keyword("class", rest) {
         let (r, _) = ws1(r)?;
         return class_decl_body(r);
+    }
+    // my grammar Name { ... }
+    if keyword("grammar", rest).is_some() {
+        return super::class::grammar_decl(rest);
     }
     // my role Name[...] { ... }
     if keyword("role", rest).is_some() {
@@ -436,13 +451,20 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         rest
     };
 
-    // Skip `is default(...)` or other `is` traits on variables
+    // Parse variable traits. Only a small set is currently supported on
+    // lexical/package variable declarations; unknown traits are compile-time errors.
     let rest = {
         let mut r = rest;
         while let Some(after_is) = keyword("is", r) {
             let (r2, _) = ws1(after_is)?;
             // Parse trait name
-            let (r2, _trait_name) = ident(r2)?;
+            let (r2, trait_name) = ident(r2)?;
+            if !is_supported_variable_trait(&trait_name) {
+                return Err(PError::fatal(format!(
+                    "X::Comp::Trait::Unknown: Unknown variable trait 'is {}'",
+                    trait_name
+                )));
+            }
             let (r2, _) = ws(r2)?;
             // Parse optional trait argument: (expr)
             if let Some(r3) = r2.strip_prefix('(') {
@@ -474,10 +496,33 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 
     // Assignment
     if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {
-        #[cfg(test)]
-        eprintln!("my_decl: taking assignment branch");
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
+        // class-scope routine aliasing form:
+        //   our &name = method name(...) { ... }
+        // This should register as a real method declaration (with is_our),
+        // not as a plain code-variable assignment.
+        if is_our && is_code {
+            if let Some(r) = keyword("method", rest) {
+                let (r, _) = ws1(r)?;
+                let (r, stmt) = method_decl_body(r, false, true)?;
+                if apply_modifier {
+                    return parse_statement_modifier(r, stmt);
+                }
+                return Ok((r, stmt));
+            }
+            if let Some(r) = keyword("multi", rest) {
+                let (r, _) = ws1(r)?;
+                if let Some(r) = keyword("method", r) {
+                    let (r, _) = ws1(r)?;
+                    let (r, stmt) = method_decl_body(r, true, true)?;
+                    if apply_modifier {
+                        return parse_statement_modifier(r, stmt);
+                    }
+                    return Ok((r, stmt));
+                }
+            }
+        }
         let (rest, expr) = parse_assign_expr_or_comma(rest)?;
         let stmt = Stmt::VarDecl {
             name,

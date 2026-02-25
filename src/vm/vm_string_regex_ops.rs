@@ -50,12 +50,59 @@ fn transliterate_str(text: &str, from_spec: &str, to_spec: &str) -> String {
         .collect()
 }
 
+/// Apply samemark on a per-word basis: split both source and target by whitespace,
+/// apply samemark to each word pair, then reassemble with the replacement's whitespace.
+fn samemark_per_word(target: &str, source: &str) -> String {
+    let src_words: Vec<&str> = source.split_whitespace().collect();
+    if src_words.is_empty() {
+        return target.to_string();
+    }
+
+    // Split target into words and whitespace segments
+    let mut result = String::new();
+    let mut word_idx = 0;
+    let mut chars = target.chars().peekable();
+    while chars.peek().is_some() {
+        // Collect leading whitespace
+        let mut ws = String::new();
+        while let Some(&ch) = chars.peek() {
+            if ch.is_whitespace() {
+                ws.push(ch);
+                chars.next();
+            } else {
+                break;
+            }
+        }
+        result.push_str(&ws);
+        // Collect word
+        let mut word = String::new();
+        while let Some(&ch) = chars.peek() {
+            if ch.is_whitespace() {
+                break;
+            }
+            word.push(ch);
+            chars.next();
+        }
+        if !word.is_empty() {
+            let src_word = if word_idx < src_words.len() {
+                src_words[word_idx]
+            } else {
+                src_words.last().unwrap()
+            };
+            result.push_str(&crate::builtins::samemark_string(&word, src_word));
+            word_idx += 1;
+        }
+    }
+    result
+}
+
 impl VM {
     pub(super) fn exec_subst_op(
         &mut self,
         code: &CompiledCode,
         pattern_idx: u32,
         replacement_idx: u32,
+        samemark: bool,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
         let replacement = Self::const_str(code, replacement_idx).to_string();
@@ -69,17 +116,29 @@ impl VM {
         if let Some((start, end)) = self.interpreter.regex_find_first_bridge(&pattern, &text) {
             let start_b = runtime::char_idx_to_byte(&text, start);
             let end_b = runtime::char_idx_to_byte(&text, end);
+            let matched_text = &text[start_b..end_b];
+            let replacement = if samemark {
+                // Use per-word samemark when both source and replacement contain whitespace
+                if matched_text.contains(char::is_whitespace)
+                    && replacement.contains(char::is_whitespace)
+                {
+                    samemark_per_word(&replacement, matched_text)
+                } else {
+                    crate::builtins::samemark_string(&replacement, matched_text)
+                }
+            } else {
+                replacement
+            };
             let mut out = String::new();
             out.push_str(&text[..start_b]);
             out.push_str(&replacement);
             out.push_str(&text[end_b..]);
             let result = Value::Str(out);
-            self.interpreter
-                .env_mut()
-                .insert("_".to_string(), result.clone());
-            self.stack.push(result);
+            self.interpreter.env_mut().insert("_".to_string(), result);
+            // Push Bool::True so `$x ~~ s///` returns True on match
+            self.stack.push(Value::Bool(true));
         } else {
-            self.stack.push(Value::Str(text));
+            self.stack.push(Value::Nil);
         }
         Ok(())
     }
@@ -89,6 +148,7 @@ impl VM {
         code: &CompiledCode,
         pattern_idx: u32,
         replacement_idx: u32,
+        samemark: bool,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
         let replacement = Self::const_str(code, replacement_idx).to_string();
@@ -102,6 +162,12 @@ impl VM {
         if let Some((start, end)) = self.interpreter.regex_find_first_bridge(&pattern, &text) {
             let start_b = runtime::char_idx_to_byte(&text, start);
             let end_b = runtime::char_idx_to_byte(&text, end);
+            let matched_text = &text[start_b..end_b];
+            let replacement = if samemark {
+                crate::builtins::samemark_string(&replacement, matched_text)
+            } else {
+                replacement
+            };
             let mut out = String::new();
             out.push_str(&text[..start_b]);
             out.push_str(&replacement);
@@ -144,8 +210,45 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap_or(Value::Nil);
         let left = self.stack.pop().unwrap_or(Value::Nil);
-        let op = Self::const_str(code, op_idx);
-        let result = Interpreter::eval_hyper_op(op, &left, &right, dwim_left, dwim_right)?;
+        let op = Self::const_str(code, op_idx).to_string();
+        let left_list = Interpreter::value_to_list(&left);
+        let right_list = Interpreter::value_to_list(&right);
+        let left_len = left_list.len();
+        let right_len = right_list.len();
+        if left_len == 0 && right_len == 0 {
+            self.stack.push(Value::array(Vec::new()));
+            return Ok(());
+        }
+        let result_len = if !dwim_left && !dwim_right {
+            if left_len != right_len {
+                return Err(RuntimeError::new(format!(
+                    "Non-dwimmy hyper operator: left has {} elements, right has {}",
+                    left_len, right_len
+                )));
+            }
+            left_len
+        } else if dwim_left && dwim_right {
+            std::cmp::max(left_len, right_len)
+        } else if dwim_right {
+            left_len
+        } else {
+            right_len
+        };
+        let mut results = Vec::with_capacity(result_len);
+        for i in 0..result_len {
+            let l = if left_len == 0 {
+                &Value::Int(0)
+            } else {
+                &left_list[i % left_len]
+            };
+            let r = if right_len == 0 {
+                &Value::Int(0)
+            } else {
+                &right_list[i % right_len]
+            };
+            results.push(self.eval_reduction_operator_values(&op, l, r)?);
+        }
+        let result = Value::array(results);
         self.stack.push(result);
         Ok(())
     }
@@ -169,7 +272,7 @@ impl VM {
                 } else if op == "~~" {
                     Value::Bool(self.interpreter.smart_match_values(&right, &left))
                 } else {
-                    Interpreter::apply_reduction_op(&op, &right, &left)?
+                    self.eval_reduction_operator_values(&op, &right, &left)?
                 }
             }
             "X" => {
@@ -191,7 +294,7 @@ impl VM {
                 } else {
                     for l in &left_list {
                         for r in &right_list {
-                            results.push(Interpreter::apply_reduction_op(&op, l, r)?);
+                            results.push(self.eval_reduction_operator_values(&op, l, r)?);
                         }
                     }
                 }
@@ -216,7 +319,7 @@ impl VM {
                     }
                 } else {
                     for i in 0..len {
-                        results.push(Interpreter::apply_reduction_op(
+                        results.push(self.eval_reduction_operator_values(
                             &op,
                             &left_list[i],
                             &right_list[i],

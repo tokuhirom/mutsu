@@ -52,10 +52,50 @@ fn substitute_type_params_in_method(
         body: method.body.clone(),
         is_rw: method.is_rw,
         is_private: method.is_private,
+        return_type: method.return_type.clone(),
     }
 }
 
 impl Interpreter {
+    fn has_explicit_named_slurpy(param_defs: &[ParamDef]) -> bool {
+        param_defs
+            .iter()
+            .any(|pd| pd.slurpy && (pd.name.starts_with('%') || pd.double_slurpy))
+    }
+
+    fn implicit_method_named_slurpy_param() -> ParamDef {
+        ParamDef {
+            name: "%_".to_string(),
+            default: None,
+            multi_invocant: true,
+            required: false,
+            named: false,
+            slurpy: true,
+            double_slurpy: false,
+            sigilless: false,
+            type_constraint: None,
+            literal_value: None,
+            sub_signature: None,
+            where_constraint: None,
+            traits: Vec::new(),
+            optional_marker: false,
+            outer_sub_signature: None,
+            code_signature: None,
+            is_invocant: false,
+        }
+    }
+
+    fn effective_method_param_defs(
+        param_defs: &[ParamDef],
+        class_is_hidden: bool,
+    ) -> Vec<ParamDef> {
+        let mut defs = param_defs.to_vec();
+        if !class_is_hidden && !Self::has_explicit_named_slurpy(&defs) {
+            defs.push(Self::implicit_method_named_slurpy_param());
+        }
+        defs
+    }
+
     fn is_stub_routine_body(body: &[Stmt]) -> bool {
         body.len() == 1
             && matches!(
@@ -72,7 +112,7 @@ impl Interpreter {
     fn method_positional_signature(def: &MethodDef) -> Vec<String> {
         def.param_defs
             .iter()
-            .filter(|pd| !pd.named)
+            .filter(|pd| !(pd.named || (pd.slurpy && pd.name.starts_with('%'))))
             .map(|pd| {
                 if pd.slurpy {
                     format!("*{}", pd.type_constraint.as_deref().unwrap_or("Any"))
@@ -130,7 +170,7 @@ impl Interpreter {
         }
         self.collect_class_attributes(class_name)
             .iter()
-            .any(|(attr_name, is_public, _)| *is_public && attr_name == method_name)
+            .any(|(attr_name, is_public, _, _)| *is_public && attr_name == method_name)
     }
 
     fn resolve_class_stub_requirements(
@@ -912,6 +952,8 @@ impl Interpreter {
         &mut self,
         name: &str,
         parents: &[String],
+        is_hidden: bool,
+        hidden_parents: &[String],
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
         // Validate that all parent classes exist
@@ -999,6 +1041,17 @@ impl Interpreter {
             native_methods: HashSet::new(),
             mro: Vec::new(),
         };
+        if is_hidden {
+            self.hidden_classes.insert(name.to_string());
+        } else {
+            self.hidden_classes.remove(name);
+        }
+        if hidden_parents.is_empty() {
+            self.hidden_defer_parents.remove(name);
+        } else {
+            self.hidden_defer_parents
+                .insert(name.to_string(), hidden_parents.iter().cloned().collect());
+        }
         // Compose roles listed in the parents (from "does Role" in class header)
         for parent in parents {
             // Strip role type arguments (e.g., "R[Str:D(Numeric)]" -> "R")
@@ -1029,7 +1082,7 @@ impl Interpreter {
                         Vec::new()
                     };
                 for attr in &role.attributes {
-                    if !class_def.attributes.iter().any(|(n, _, _)| n == &attr.0) {
+                    if !class_def.attributes.iter().any(|(n, _, _, _)| n == &attr.0) {
                         class_def.attributes.push(attr.clone());
                     }
                 }
@@ -1084,11 +1137,14 @@ impl Interpreter {
                     is_public,
                     default,
                     handles,
-                    is_rw: _,
+                    is_rw,
                 } => {
-                    class_def
-                        .attributes
-                        .push((attr_name.clone(), *is_public, default.clone()));
+                    class_def.attributes.push((
+                        attr_name.clone(),
+                        *is_public,
+                        default.clone(),
+                        *is_rw,
+                    ));
                     let attr_var_name = if *is_public {
                         format!(".{}", attr_name)
                     } else {
@@ -1111,19 +1167,21 @@ impl Interpreter {
                                 })],
                                 is_rw: false,
                                 is_private: false,
+                                return_type: None,
                             });
                     }
                 }
                 Stmt::MethodDecl {
                     name: method_name,
                     name_expr,
-                    params,
+                    params: _,
                     param_defs,
                     body: method_body,
                     multi,
                     is_rw,
                     is_private,
                     is_our,
+                    return_type,
                 } => {
                     self.validate_private_access_in_stmts(name, method_body)?;
                     let resolved_method_name = if let Some(expr) = name_expr {
@@ -1132,12 +1190,19 @@ impl Interpreter {
                     } else {
                         method_name.clone()
                     };
+                    let effective_param_defs =
+                        Self::effective_method_param_defs(param_defs, is_hidden);
+                    let effective_params: Vec<String> = effective_param_defs
+                        .iter()
+                        .map(|p| p.name.clone())
+                        .collect();
                     let def = MethodDef {
-                        params: params.clone(),
-                        param_defs: param_defs.clone(),
+                        params: effective_params.clone(),
+                        param_defs: effective_param_defs.clone(),
                         body: method_body.clone(),
                         is_rw: *is_rw,
                         is_private: *is_private,
+                        return_type: return_type.clone(),
                     };
                     if *multi {
                         class_def
@@ -1156,7 +1221,12 @@ impl Interpreter {
                         // Prepend "self" as first param so the first argument
                         // gets bound as `self` when calling this as a function.
                         let mut our_params = vec!["self".to_string()];
-                        our_params.extend(params.iter().filter(|p| *p != "self").cloned());
+                        our_params.extend(
+                            effective_params
+                                .iter()
+                                .filter(|p| p.as_str() != "self")
+                                .cloned(),
+                        );
                         let self_param = crate::ast::ParamDef {
                             name: "self".to_string(),
                             default: None,
@@ -1177,8 +1247,12 @@ impl Interpreter {
                             is_invocant: false,
                         };
                         let mut our_param_defs = vec![self_param];
-                        our_param_defs
-                            .extend(param_defs.iter().filter(|p| !p.is_invocant).cloned());
+                        our_param_defs.extend(
+                            effective_param_defs
+                                .iter()
+                                .filter(|p| !p.is_invocant)
+                                .cloned(),
+                        );
                         let func_def = crate::ast::FunctionDef {
                             package: name.to_string(),
                             name: resolved_method_name.clone(),
@@ -1200,7 +1274,7 @@ impl Interpreter {
                         return Err(RuntimeError::new("X::Role::Parametric::NoSuchCandidate"));
                     }
                     for attr in &role.attributes {
-                        if !class_def.attributes.iter().any(|(n, _, _)| n == &attr.0) {
+                        if !class_def.attributes.iter().any(|(n, _, _, _)| n == &attr.0) {
                             class_def.attributes.push(attr.clone());
                         }
                     }
@@ -1273,11 +1347,14 @@ impl Interpreter {
                     is_public,
                     default,
                     handles,
-                    is_rw: _,
+                    is_rw,
                 } => {
-                    role_def
-                        .attributes
-                        .push((attr_name.clone(), *is_public, default.clone()));
+                    role_def.attributes.push((
+                        attr_name.clone(),
+                        *is_public,
+                        default.clone(),
+                        *is_rw,
+                    ));
                     let attr_var_name = if *is_public {
                         format!(".{}", attr_name)
                     } else {
@@ -1300,7 +1377,29 @@ impl Interpreter {
                                 })],
                                 is_rw: false,
                                 is_private: false,
+                                return_type: None,
                             });
+                    }
+                }
+                Stmt::DoesDecl { name: role_name } => {
+                    let role =
+                        self.roles.get(role_name).cloned().ok_or_else(|| {
+                            RuntimeError::new(format!("Unknown role: {}", role_name))
+                        })?;
+                    if role.is_stub_role {
+                        return Err(RuntimeError::new("X::Role::Parametric::NoSuchCandidate"));
+                    }
+                    self.role_parents
+                        .entry(name.to_string())
+                        .or_default()
+                        .push(role_name.clone());
+                    for attr in &role.attributes {
+                        if !role_def.attributes.iter().any(|(n, _, _, _)| n == &attr.0) {
+                            role_def.attributes.push(attr.clone());
+                        }
+                    }
+                    for (mname, overloads) in role.methods {
+                        role_def.methods.entry(mname).or_default().extend(overloads);
                     }
                 }
                 Stmt::MethodDecl {
@@ -1313,6 +1412,7 @@ impl Interpreter {
                     is_rw,
                     is_private,
                     is_our: _,
+                    return_type,
                 } => {
                     let resolved_method_name = if let Some(expr) = name_expr {
                         self.eval_block_value(&[Stmt::Expr(expr.clone())])?
@@ -1326,6 +1426,7 @@ impl Interpreter {
                         body: method_body.clone(),
                         is_rw: *is_rw,
                         is_private: *is_private,
+                        return_type: return_type.clone(),
                     };
                     if *multi {
                         role_def

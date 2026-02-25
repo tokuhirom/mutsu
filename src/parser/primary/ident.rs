@@ -15,7 +15,7 @@ fn is_superscript_digit(c: char) -> bool {
 }
 
 use super::super::expr::{expression, or_expr_pub};
-use super::super::helpers::{ws, ws1};
+use super::super::helpers::{normalize_raku_identifier, ws, ws1};
 use super::current_line_number;
 use super::misc::parse_block_body;
 use super::regex::{parse_call_arg_list, scan_to_delim};
@@ -603,7 +603,7 @@ fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
 
 pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     let (rest, name) = super::super::stmt::parse_raku_ident(input)?;
-    let name = name.to_string();
+    let name = normalize_raku_identifier(name);
 
     // Handle special expression keywords before qualified name resolution
     match name.as_str() {
@@ -771,8 +771,10 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         "my" | "our" | "state" => {
             // my/our/state declaration in expression context
             // e.g., (my $x = 5) or (state $x = 3)
-            if let Ok((r, stmt)) = super::super::stmt::my_decl_expr_pub(input) {
-                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            match super::super::stmt::my_decl_expr_pub(input) {
+                Ok((r, stmt)) => return Ok((r, Expr::DoStmt(Box::new(stmt)))),
+                Err(err) if err.is_fatal() => return Err(err),
+                Err(_) => {}
             }
         }
         "constant" => {
@@ -853,6 +855,24 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
             // sub not followed by { or ( in expression context — not valid
             return Err(PError::expected_at("anonymous sub body '{' or '('", r));
+        }
+        "method" => {
+            // Anonymous method in expression context: method () { ... } or method { ... }
+            let (r, _) = ws(rest)?;
+            if r.starts_with('(') {
+                let (r, params_body) = parse_anon_sub_with_params(r).map_err(|err| PError {
+                    messages: merge_expected_messages(
+                        "expected anonymous method parameter list/body",
+                        &err.messages,
+                    ),
+                    remaining_len: err.remaining_len.or(Some(r.len())),
+                })?;
+                return Ok((r, params_body));
+            }
+            if r.starts_with('{') {
+                let (r, body) = parse_block_body(r)?;
+                return Ok((r, make_anon_sub(body)));
+            }
         }
         "token" | "regex" | "rule" => {
             // token/rule term literal: token { ... } / rule { ... }

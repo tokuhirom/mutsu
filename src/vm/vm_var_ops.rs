@@ -236,7 +236,10 @@ impl VM {
         } else if let Some(v) = self.interpreter.env().get(name) {
             if matches!(v, Value::Enum { .. } | Value::Nil) {
                 v.clone()
-            } else if self.interpreter.has_class(name) || Self::is_builtin_type(name) {
+            } else if self.interpreter.has_class(name)
+                || self.interpreter.is_role(name)
+                || Self::is_builtin_type(name)
+            {
                 Value::Package(name.to_string())
             } else if !name.starts_with('$') && !name.starts_with('@') && !name.starts_with('%') {
                 v.clone()
@@ -244,6 +247,7 @@ impl VM {
                 Value::Str(name.to_string())
             }
         } else if self.interpreter.has_class(name)
+            || self.interpreter.is_role(name)
             || Self::is_builtin_type(name)
             || Self::is_type_with_smiley(name, &self.interpreter)
         {
@@ -321,8 +325,25 @@ impl VM {
                 }
             }
             (target @ Value::Array(..), Value::Array(indices, ..)) => {
-                let strict_oob = indices.len() > 1;
-                Self::index_array_multidim(&target, indices.as_ref(), strict_oob)?
+                let depth = Self::array_depth(&target);
+                if depth <= 1 && indices.len() > 1 {
+                    // Positional slice: @a[0,1,2] returns (@a[0], @a[1], @a[2])
+                    let Value::Array(items, ..) = &target else {
+                        unreachable!()
+                    };
+                    let mut out = Vec::with_capacity(indices.len());
+                    for idx in indices.iter() {
+                        if let Some(i) = Self::index_to_usize(idx) {
+                            out.push(items.get(i).cloned().unwrap_or(Value::Nil));
+                        } else {
+                            out.push(Value::Nil);
+                        }
+                    }
+                    Value::array(out)
+                } else {
+                    let strict_oob = indices.len() > 1;
+                    Self::index_array_multidim(&target, indices.as_ref(), strict_oob)?
+                }
             }
             (Value::Array(items, ..), Value::Range(a, b)) => {
                 let start = a.max(0) as usize;
@@ -601,6 +622,17 @@ impl VM {
                     positional.get(i as usize).cloned().unwrap_or(Value::Nil)
                 }
             }
+            // Role parameterization: e.g. R1[C1] → ParametricRole
+            (Value::Package(name), idx) if self.interpreter.is_role(&name) => {
+                let type_args = match idx {
+                    Value::Array(items, ..) => items.as_ref().clone(),
+                    other => vec![other],
+                };
+                Value::ParametricRole {
+                    base_name: name,
+                    type_args,
+                }
+            }
             // Type parameterization: e.g. Buf[uint8] → returns the type unchanged
             (pkg @ Value::Package(_), _) => pkg,
             _ => Value::Nil,
@@ -841,15 +873,24 @@ impl VM {
                     self.stack.push(val);
                     return Ok(());
                 }
-                let vals = match &val {
+                let mut vals = match &val {
                     Value::Array(v, ..) => (**v).clone(),
                     _ => vec![val.clone()],
                 };
+                if vals.is_empty() {
+                    vals.push(Value::Nil);
+                }
+                if !matches!(self.interpreter.env().get(&var_name), Some(Value::Hash(_))) {
+                    self.interpreter.env_mut().insert(
+                        var_name.clone(),
+                        Value::hash(std::collections::HashMap::new()),
+                    );
+                }
                 if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(&var_name) {
                     let h = Arc::make_mut(hash);
                     for (i, key) in keys.iter().enumerate() {
                         let k = key.to_string_value();
-                        let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                        let v = vals[i % vals.len()].clone();
                         h.insert(k, v);
                     }
                 }
@@ -1027,15 +1068,15 @@ impl VM {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
-        let val = self.stack.last().unwrap().clone();
+        let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let idx = idx as usize;
         let name = &code.locals[idx];
         let val = if name.starts_with('%') {
-            runtime::coerce_to_hash(val)
+            runtime::coerce_to_hash(raw_val)
         } else if name.starts_with('@') {
-            runtime::coerce_to_array(val)
+            runtime::coerce_to_array(raw_val)
         } else {
-            val
+            raw_val
         };
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
@@ -1067,6 +1108,7 @@ impl VM {
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
         }
+        self.stack.push(val);
         Ok(())
     }
 

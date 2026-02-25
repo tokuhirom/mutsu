@@ -115,9 +115,54 @@ impl Interpreter {
                         return Some((cn.clone(), def));
                     }
                 }
+                // Method name is present on this class, but no candidate matched.
+                // Do not continue to parent classes; this preserves dispatch
+                // consistency for hidden/interface cases.
+                return None;
             }
         }
         None
+    }
+
+    pub(super) fn resolve_all_methods_with_owner(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        arg_values: &[Value],
+    ) -> Vec<(String, MethodDef)> {
+        let mro = self.class_mro(class_name);
+        let mut matches = Vec::new();
+        for cn in mro {
+            if let Some(overloads) = self
+                .classes
+                .get(&cn)
+                .and_then(|c| c.methods.get(method_name))
+                .cloned()
+            {
+                for def in overloads {
+                    if def.is_private {
+                        continue;
+                    }
+                    if self.method_args_match(arg_values, &def.param_defs) {
+                        matches.push((cn.clone(), def));
+                    }
+                }
+            }
+        }
+        matches
+    }
+
+    pub(super) fn should_skip_defer_method_candidate(
+        &self,
+        receiver_class: &str,
+        candidate_owner: &str,
+    ) -> bool {
+        if receiver_class != candidate_owner && self.hidden_classes.contains(candidate_owner) {
+            return true;
+        }
+        self.hidden_defer_parents
+            .get(receiver_class)
+            .is_some_and(|hidden| hidden.contains(candidate_owner))
     }
 
     pub(super) fn resolve_private_method_with_owner(
@@ -291,19 +336,40 @@ impl Interpreter {
         if let Value::Sub(data) = func {
             let mut call_args = args.clone();
             if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
-                let mut positional = data.assumed_positional.clone();
+                let mut positional = Vec::new();
                 let mut named = data.assumed_named.clone();
+                let mut incoming_positional = Vec::new();
                 for arg in &args {
                     if let Value::Pair(key, boxed) = arg {
                         named.insert(key.clone(), *boxed.clone());
                     } else {
-                        positional.push(arg.clone());
+                        incoming_positional.push(arg.clone());
                     }
                 }
+                // Fill bare `*` primers from incoming positional args in order.
+                // Remaining positional args are appended after all fixed primers.
+                let mut incoming_idx = 0usize;
+                for assumed in &data.assumed_positional {
+                    let is_placeholder = matches!(assumed, Value::Num(f) if f.is_infinite())
+                        || matches!(assumed, Value::Rat(_, 0));
+                    if is_placeholder {
+                        if incoming_idx < incoming_positional.len() {
+                            positional.push(incoming_positional[incoming_idx].clone());
+                            incoming_idx += 1;
+                        }
+                    } else {
+                        positional.push(assumed.clone());
+                    }
+                }
+                positional.extend(incoming_positional.into_iter().skip(incoming_idx));
                 call_args = positional;
                 for (key, value) in named {
                     call_args.push(Value::Pair(key, Box::new(value)));
                 }
+            }
+            // Routine wrapper from .assuming() on a multi-dispatch sub
+            if let Some(Value::Str(routine_name)) = data.env.get("__mutsu_routine_name").cloned() {
+                return self.call_function(&routine_name, call_args);
             }
             if let (Some(left), Some(right)) = (
                 data.env.get("__mutsu_compose_left").cloned(),

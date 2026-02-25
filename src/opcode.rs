@@ -371,12 +371,14 @@ pub(crate) enum OpCode {
     Subst {
         pattern_idx: u32,
         replacement_idx: u32,
+        samemark: bool,
     },
 
     // -- Non-destructive substitution (S///) --
     NonDestructiveSubst {
         pattern_idx: u32,
         replacement_idx: u32,
+        samemark: bool,
     },
 
     // -- Transliteration (tr///) --
@@ -436,6 +438,9 @@ pub(crate) enum OpCode {
         catch_start: u32,
         control_start: u32,
         body_end: u32,
+        /// True when CATCH { } is explicitly present — unhandled exceptions
+        /// (no `when`/`default` match) must be re-thrown.
+        explicit_catch: bool,
     },
 
     // -- Error handling --

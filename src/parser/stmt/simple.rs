@@ -51,6 +51,18 @@ thread_local! {
 
 static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
+fn parse_hyper_assign_op(input: &str) -> Option<&str> {
+    const HYPER_ASSIGN_OPS: &[&str] = &[
+        ">>=>>", "<<=<<", ">>=<<", "<<=>>", "»=»", "«=«", "»=«", "«=»",
+    ];
+    for op in HYPER_ASSIGN_OPS {
+        if let Some(rest) = input.strip_prefix(op) {
+            return Some(rest);
+        }
+    }
+    None
+}
+
 /// Set the library search paths for the parser (called before parsing).
 pub fn set_parser_lib_paths(paths: Vec<String>) {
     LIB_PATHS.with(|p| {
@@ -1180,8 +1192,17 @@ pub(super) fn subtest_stmt(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Parse a block statement: { ... }
+/// If the block is followed by `.method(...)`, treat it as a block expression
+/// with postfix operators (e.g. `{ $^a }.assuming(123)()`).
 pub(super) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, body) = block(input)?;
+    let (r_ws, _) = ws(rest)?;
+    if r_ws.starts_with('.') && !r_ws.starts_with("..") {
+        // Use AnonSub so the block compiles as a closure value, not inline code
+        let block_expr = Expr::AnonSub(body);
+        let (rest, expr) = super::super::expr::postfix_expr_continue(rest, block_expr)?;
+        return parse_statement_modifier(rest, Stmt::Expr(expr));
+    }
     parse_statement_modifier(rest, Stmt::Block(body))
 }
 
@@ -1261,6 +1282,24 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             });
             return parse_statement_modifier(rest, stmt);
         }
+    }
+    if let Expr::Index { target, index } = expr.clone()
+        && let Some(rest) = parse_hyper_assign_op(rest)
+    {
+        let (rest, _) = ws(rest)?;
+        let (rest, value) = parse_comma_or_expr(rest).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected assigned expression after hyper assignment",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(rest.len())),
+        })?;
+        let stmt = Stmt::Expr(Expr::IndexAssign {
+            target,
+            index,
+            value: Box::new(value),
+        });
+        return parse_statement_modifier(rest, stmt);
     }
     if matches!(&expr, Expr::Index { target, .. } if matches!(target.as_ref(), Expr::ArrayVar(_)))
         && rest.starts_with(":=")
