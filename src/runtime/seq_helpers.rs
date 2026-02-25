@@ -455,22 +455,49 @@ impl Interpreter {
                     self.env.insert("/".to_string(), Value::Nil);
                     return false;
                 }
-                let earliest = all.iter().map(|c| c.from).min().unwrap_or(0);
-                all.retain(|c| c.from == earliest);
-                let needed = repeat.unwrap_or(1);
-                if all.len() < needed {
+                let selected = if let Some(needed) = *repeat {
+                    let earliest = all.iter().map(|c| c.from).min().unwrap_or(0);
+                    all.retain(|c| c.from == earliest);
+                    if all.len() < needed {
+                        self.env.insert("/".to_string(), Value::Nil);
+                        return false;
+                    }
+                    all.into_iter().take(needed).collect::<Vec<_>>()
+                } else {
+                    let mut best_by_start: std::collections::BTreeMap<usize, RegexCaptures> =
+                        std::collections::BTreeMap::new();
+                    for capture in all {
+                        let key = capture.from;
+                        match best_by_start.get(&key) {
+                            Some(existing) if capture.to <= existing.to => {}
+                            _ => {
+                                best_by_start.insert(key, capture);
+                            }
+                        }
+                    }
+                    best_by_start.into_values().collect::<Vec<_>>()
+                };
+                if selected.is_empty() {
                     self.env.insert("/".to_string(), Value::Nil);
                     return false;
                 }
-                let selected = all.into_iter().take(needed).collect::<Vec<_>>();
                 let slash_list = selected
                     .iter()
-                    .map(|c| Value::Str(c.matched.clone()))
+                    .map(|c| {
+                        Value::make_match_object_with_captures(
+                            c.matched.clone(),
+                            c.from as i64,
+                            c.to as i64,
+                            &c.positional,
+                            &c.named,
+                        )
+                    })
                     .collect::<Vec<_>>();
                 self.env.insert("/".to_string(), Value::array(slash_list));
-                for (i, capture) in selected.iter().enumerate() {
-                    self.env
-                        .insert(i.to_string(), Value::Str(capture.matched.clone()));
+                if let Some(first) = selected.first() {
+                    for (i, cap) in first.positional.iter().enumerate() {
+                        self.env.insert(i.to_string(), Value::Str(cap.clone()));
+                    }
                 }
                 true
             }

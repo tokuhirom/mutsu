@@ -25,6 +25,7 @@ fn regex_single_quote_atom(literal: String, ignore_case: bool) -> RegexAtom {
                 atom: RegexAtom::Literal(ch),
                 quant: RegexQuant::One,
                 named_capture: None,
+                ratchet: false,
             })
             .collect();
         RegexAtom::Group(RegexPattern {
@@ -304,6 +305,7 @@ impl Interpreter {
                                 }),
                                 quant: RegexQuant::ZeroOrMore,
                                 named_capture: pending_named_capture.take(),
+                                ratchet: false,
                             });
                         }
                     } else {
@@ -317,6 +319,7 @@ impl Interpreter {
                             }),
                             quant: RegexQuant::OneOrMore,
                             named_capture: pending_named_capture.take(),
+                            ratchet: false,
                         });
                     }
                 }
@@ -357,6 +360,7 @@ impl Interpreter {
                     atom: RegexAtom::Literal('$'),
                     quant: RegexQuant::One,
                     named_capture: None,
+                    ratchet: false,
                 });
                 continue;
             }
@@ -473,6 +477,7 @@ impl Interpreter {
                                         atom: RegexAtom::Literal(c),
                                         quant: RegexQuant::One,
                                         named_capture: None,
+                                        ratchet: false,
                                     });
                                 }
                                 RegexAtom::Literal(*resolved.last().unwrap())
@@ -684,6 +689,7 @@ impl Interpreter {
                                                     }),
                                                     quant: RegexQuant::One,
                                                     named_capture: None,
+                                                    ratchet: false,
                                                 },
                                                 RegexToken {
                                                     atom: RegexAtom::CharClass(CharClass {
@@ -694,6 +700,7 @@ impl Interpreter {
                                                     }),
                                                     quant: RegexQuant::ZeroOrMore,
                                                     named_capture: None,
+                                                    ratchet: false,
                                                 },
                                             ],
                                             anchor_start: false,
@@ -747,6 +754,7 @@ impl Interpreter {
                                 atom: RegexAtom::Alternation(alt_patterns),
                                 quant: RegexQuant::One,
                                 named_capture: None,
+                                ratchet: false,
                             }],
                             anchor_start: false,
                             anchor_end: false,
@@ -836,13 +844,17 @@ impl Interpreter {
             // Handle ':' ratchet modifier (prevents backtracking)
             // For now, just consume it — our engine doesn't backtrack into
             // quantified atoms in the same way, so this is a no-op
-            if chars.peek() == Some(&':') {
+            let ratchet = if chars.peek() == Some(&':') {
                 chars.next();
-            }
+                true
+            } else {
+                false
+            };
             tokens.push(RegexToken {
                 atom,
                 quant,
                 named_capture: pending_named_capture.take(),
+                ratchet,
             });
         }
         Some(RegexPattern {

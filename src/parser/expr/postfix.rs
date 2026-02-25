@@ -956,6 +956,24 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 };
                 continue;
             }
+            // Hyper indexing: expr»[idx] (or expr>>[idx]) => expr».AT-POS(idx)
+            if let Some(r) = after_hyper.strip_prefix('[') {
+                let (r, _) = ws(r)?;
+                if let Some(after) = r.strip_prefix(']') {
+                    rest = after;
+                    continue;
+                }
+                let (r, index) = parse_bracket_indices(r)?;
+                let (r, _) = ws(r)?;
+                let (r, _) = parse_char(r, ']')?;
+                expr = Expr::HyperMethodCall {
+                    target: Box::new(expr),
+                    name: "AT-POS".to_string(),
+                    args: vec![index],
+                };
+                rest = r;
+                continue;
+            }
             // Check for ».method or >>.method
             let r = after_hyper.strip_prefix('.').unwrap_or(after_hyper);
             if let Ok((r, name)) =

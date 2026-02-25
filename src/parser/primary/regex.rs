@@ -76,7 +76,7 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             r = after;
         }
 
-        if name == "ex" || name == "exhaustive" {
+        if name == "ex" || name == "exhaustive" || name == "ov" || name == "overlap" {
             adverbs.exhaustive = true;
         } else if name == "i" || name == "ignorecase" {
             adverbs.ignore_case = true;

@@ -684,6 +684,11 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
             attributes,
             ..
         } if class_name == "Instant" => attributes.get("value").and_then(to_float_value),
+        Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "Match" => attributes.get("str").and_then(to_float_value),
         _ => None,
     }
 }
