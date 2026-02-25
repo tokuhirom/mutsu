@@ -81,6 +81,22 @@ impl Interpreter {
                 Ok(value)
             });
         }
+        // EVAL should accept routine declarations in snippet context.
+        // If unit-scope parsing rejects a declaration, retry inside an implicit block.
+        if result.is_err()
+            && trimmed.contains("sub ")
+            && let Some(err) = result.as_ref().err()
+            && err.message.contains("X::UnitScope::Invalid")
+        {
+            let wrapped = format!("{{ {}; }}", trimmed);
+            result = parse_dispatch::parse_source(&wrapped).and_then(|(stmts, _)| {
+                let value = self.eval_block_value(&stmts)?;
+                if self.eval_result_is_unresolved_bareword(&stmts, &value) {
+                    return Err(RuntimeError::new("X::Undeclared::Symbols"));
+                }
+                Ok(value)
+            });
+        }
         if let Some(saved) = previous_pod {
             self.env.insert("=pod".to_string(), saved);
         } else {

@@ -41,6 +41,12 @@ fn is_core_raku_type(name: &str) -> bool {
             | "Exception"
             | "Failure"
             | "Nil"
+            | "Int"
+            | "Num"
+            | "Rat"
+            | "Complex"
+            | "Str"
+            | "Bool"
             | "Whatever"
             | "HyperWhatever"
             | "WhateverCode"
@@ -604,22 +610,30 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let constraint = Self::const_str(code, tc_idx);
         let (base_constraint, _) = crate::runtime::types::strip_type_smiley(constraint);
-        let value = self.stack.last().expect("TypeCheck: empty stack");
-        if runtime::is_known_type_constraint(base_constraint) {
-            if let Value::Array(items, ..) = value {
-                let all_match = items
-                    .iter()
-                    .all(|item| self.interpreter.type_matches_value(constraint, item));
-                if !all_match {
-                    return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
-                }
-                return Ok(());
+        let declared_constraint = base_constraint
+            .split_once('(')
+            .map_or(base_constraint, |(target, _)| target);
+        let value = self.stack.last().expect("TypeCheck: empty stack").clone();
+        if let Value::Array(items, ..) = &value {
+            let all_match = items
+                .iter()
+                .all(|item| self.interpreter.type_matches_value(constraint, item));
+            if !all_match {
+                return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
             }
+            return Ok(());
+        }
+        if matches!(value, Value::Nil) && self.interpreter.is_definite_constraint(constraint) {
+            return Err(RuntimeError::new(
+                "X::Syntax::Variable::MissingInitializer: Definite typed variable requires initializer",
+            ));
+        }
+        if runtime::is_known_type_constraint(base_constraint) {
             if !matches!(value, Value::Nil)
-                && !self.interpreter.type_matches_value(constraint, value)
+                && !self.interpreter.type_matches_value(constraint, &value)
             {
                 let coerced = match base_constraint {
-                    "Str" => Some(Value::Str(crate::runtime::utils::coerce_to_str(value))),
+                    "Str" => Some(Value::Str(crate::runtime::utils::coerce_to_str(&value))),
                     _ => None,
                 };
                 if let Some(new_val) = coerced {
@@ -628,13 +642,26 @@ impl VM {
                     return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
                 }
             }
-        } else if !self.interpreter.has_type(base_constraint) && !is_core_raku_type(base_constraint)
+        } else if !self.interpreter.has_type(declared_constraint)
+            && !is_core_raku_type(declared_constraint)
         {
             // Unknown user-defined type — reject it
             return Err(RuntimeError::new(format!(
                 "Type '{}' is not declared",
                 constraint
             )));
+        }
+        if !matches!(value, Value::Nil) && !self.interpreter.type_matches_value(constraint, &value)
+        {
+            return Err(RuntimeError::new(
+                "X::TypeCheck::Assignment: Type check failed in assignment",
+            ));
+        }
+        if !matches!(value, Value::Nil) {
+            let coerced = self
+                .interpreter
+                .try_coerce_value_for_constraint(constraint, value.clone())?;
+            *self.stack.last_mut().unwrap() = coerced;
         }
         Ok(())
     }

@@ -1739,6 +1739,7 @@ impl Interpreter {
                 Ok((ret, attrs))
             }
             "kill" => {
+                #[cfg(feature = "native")]
                 if let Some(Value::Int(pid)) = attrs.get("pid") {
                     let sig = args
                         .first()
