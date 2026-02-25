@@ -86,7 +86,6 @@ impl Interpreter {
                     let _ = std::io::stderr().flush();
                 }
                 self.stderr_output.push_str(&payload);
-                self.emit_output(&payload);
                 Ok(())
             }
             IoHandleTarget::File => {

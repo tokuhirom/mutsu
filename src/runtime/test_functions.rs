@@ -210,8 +210,7 @@ impl Interpreter {
             if reason_str.is_empty() || reason_str == "True" {
                 self.emit_output("1..0 # Skipped: no reason given\n");
             } else {
-                self.output
-                    .push_str(&format!("1..0 # Skipped: {}\n", reason_str));
+                self.emit_output(&format!("1..0 # Skipped: {}\n", reason_str));
             }
             self.halted = true;
         } else {
@@ -256,11 +255,14 @@ impl Interpreter {
             Some(Value::Int(n)) => (*n).max(1) as usize,
             _ => 1usize,
         };
+        let mut lines = Vec::with_capacity(count);
         let state = self.test_state.get_or_insert_with(TestState::new);
         for _ in 0..count {
             state.ran += 1;
-            self.output
-                .push_str(&format!("ok {} - {} # SKIP\n", state.ran, desc));
+            lines.push(format!("ok {} - {} # SKIP\n", state.ran, desc));
+        }
+        for line in lines {
+            self.emit_output(&line);
         }
         Ok(Value::Nil)
     }
