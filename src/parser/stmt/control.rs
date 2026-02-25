@@ -244,6 +244,36 @@ pub(super) fn parse_for_params(
         if r.starts_with('{') {
             return Ok((r, (None, None, Vec::new())));
         }
+        // Named/mixed destructuring pointy param: -> (:key($k), :value($v)) { ... }
+        if r.starts_with('(') && r.len() > 1 && r[1..].trim_start().starts_with(':') {
+            let (r, _) = parse_char(r, '(')?;
+            let (r, _) = ws(r)?;
+            let (r, sub_params) = super::parse_param_list_pub(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ')')?;
+            let (r, _) = skip_pointy_return_type(r)?;
+            let unpack_name = "__for_unpack".to_string();
+            let unpack_def = ParamDef {
+                name: unpack_name.clone(),
+                default: None,
+                multi_invocant: true,
+                required: false,
+                named: false,
+                slurpy: false,
+                sigilless: false,
+                type_constraint: None,
+                literal_value: None,
+                sub_signature: Some(sub_params),
+                where_constraint: None,
+                traits: Vec::new(),
+                double_slurpy: false,
+                optional_marker: false,
+                outer_sub_signature: None,
+                code_signature: None,
+                is_invocant: false,
+            };
+            return Ok((r, (Some(unpack_name), Some(unpack_def), Vec::new())));
+        }
         // Positional destructuring pointy param: -> [$a, $b] { ... }
         if let Some(mut r) = r.strip_prefix('[') {
             let (r2, _) = ws(r)?;
@@ -269,6 +299,7 @@ pub(super) fn parse_for_params(
             let unpack_def = ParamDef {
                 name: unpack_name.clone(),
                 default: None,
+                multi_invocant: true,
                 required: false,
                 named: false,
                 slurpy: false,
@@ -282,6 +313,7 @@ pub(super) fn parse_for_params(
                 optional_marker: false,
                 outer_sub_signature: None,
                 code_signature: None,
+                is_invocant: false,
             };
             return Ok((r, (Some(unpack_name), Some(unpack_def), Vec::new())));
         }
@@ -335,6 +367,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             ParamDef {
                 name,
                 default: None,
+                multi_invocant: true,
                 required: false,
                 named: false,
                 slurpy: false,
@@ -348,6 +381,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 optional_marker: false,
                 outer_sub_signature: None,
                 code_signature: None,
+                is_invocant: false,
             },
         ));
     }
@@ -407,6 +441,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         ParamDef {
             name,
             default: None,
+            multi_invocant: true,
             required: false,
             named: false,
             slurpy: false,
@@ -420,6 +455,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             optional_marker: false,
             outer_sub_signature: None,
             code_signature: None,
+            is_invocant: false,
         },
     ))
 }
@@ -468,6 +504,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             ParamDef {
                 name,
                 default: None,
+                multi_invocant: true,
                 required: false,
                 named: false,
                 slurpy: false,
@@ -481,6 +518,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 where_constraint: None,
                 traits: Vec::new(),
                 optional_marker: false,
+                is_invocant: false,
             },
         ));
     }
@@ -553,6 +591,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         ParamDef {
             name,
             default,
+            multi_invocant: true,
             required: false,
             named: false,
             slurpy: false,
@@ -566,6 +605,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             where_constraint: None,
             traits,
             optional_marker: false,
+            is_invocant: false,
         },
     ))
 }

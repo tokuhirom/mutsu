@@ -7,6 +7,47 @@ use unicode_segmentation::UnicodeSegmentation;
 use super::rng::{builtin_rand, builtin_srand, builtin_srand_auto};
 use super::unicode::{titlecase_string, unicode_char_name};
 
+fn is_infinite_range(value: &Value) -> bool {
+    match value {
+        Value::Range(_, end)
+        | Value::RangeExcl(_, end)
+        | Value::RangeExclStart(_, end)
+        | Value::RangeExclBoth(_, end) => *end == i64::MAX,
+        Value::GenericRange { end, .. } => match end.as_ref() {
+            Value::HyperWhatever => true,
+            Value::Num(n) => n.is_infinite() && n.is_sign_positive(),
+            Value::Rat(n, d) => *d == 0 && *n > 0,
+            Value::FatRat(n, d) => *d == 0 && *n > 0,
+            other => {
+                let n = other.to_f64();
+                n.is_infinite() && n.is_sign_positive()
+            }
+        },
+        _ => false,
+    }
+}
+
+fn flat_val_deep(v: &Value, out: &mut Vec<Value>) {
+    match v {
+        // Lists (not true Arrays), Seqs, and Slips are flattened recursively
+        Value::Array(items, false) | Value::Seq(items) | Value::Slip(items) => {
+            for item in items.iter() {
+                flat_val_deep(item, out);
+            }
+        }
+        // True Arrays (is_array=true) are itemized containers — don't descend
+        Value::Array(_, true) => out.push(v.clone()),
+        Value::Range(..)
+        | Value::RangeExcl(..)
+        | Value::RangeExclStart(..)
+        | Value::RangeExclBoth(..)
+        | Value::GenericRange { .. } => {
+            out.extend(crate::runtime::utils::value_to_list(v));
+        }
+        other => out.push(other.clone()),
+    }
+}
+
 // ── Built-in function dispatch ───────────────────────────────────────
 /// Try to dispatch a built-in function call.
 pub(crate) fn native_function(name: &str, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
@@ -358,26 +399,16 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             _ => Value::Nil,
         })),
         "flat" => {
-            let mut flat = Vec::new();
-            fn flat_val(v: &Value, out: &mut Vec<Value>) {
-                match v {
-                    Value::Array(items, ..) => {
-                        for item in items.iter() {
-                            flat_val(item, out);
-                        }
-                    }
-                    Value::Range(..)
-                    | Value::RangeExcl(..)
-                    | Value::RangeExclStart(..)
-                    | Value::RangeExclBoth(..)
-                    | Value::GenericRange { .. } => {
-                        out.extend(crate::runtime::utils::value_to_list(v));
-                    }
-                    other => out.push(other.clone()),
-                }
+            if is_infinite_range(arg) {
+                return Some(Ok(arg.clone()));
             }
-            flat_val(arg, &mut flat);
-            Some(Ok(Value::array(flat)))
+            let mut flat = Vec::new();
+            // Top-level: iterate the arg's elements and flatten each
+            let items = crate::runtime::utils::value_to_list(arg);
+            for item in &items {
+                flat_val_deep(item, &mut flat);
+            }
+            Some(Ok(Value::Seq(std::sync::Arc::new(flat))))
         }
         "first" => Some(Ok(match arg {
             Value::Array(items, ..) => items.first().cloned().unwrap_or(Value::Nil),
@@ -681,28 +712,14 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
             Some(Ok(Value::array(result)))
         }
         "flat" => {
-            let mut result = Vec::new();
-            fn flat_val_deep(v: &Value, out: &mut Vec<Value>) {
-                match v {
-                    Value::Array(items, ..) => {
-                        for item in items.iter() {
-                            flat_val_deep(item, out);
-                        }
-                    }
-                    Value::Range(..)
-                    | Value::RangeExcl(..)
-                    | Value::RangeExclStart(..)
-                    | Value::RangeExclBoth(..)
-                    | Value::GenericRange { .. } => {
-                        out.extend(crate::runtime::utils::value_to_list(v));
-                    }
-                    other => out.push(other.clone()),
-                }
+            if args.len() == 1 && is_infinite_range(&args[0]) {
+                return Some(Ok(args[0].clone()));
             }
+            let mut result = Vec::new();
             for arg in args {
                 flat_val_deep(arg, &mut result);
             }
-            Some(Ok(Value::array(result)))
+            Some(Ok(Value::Seq(std::sync::Arc::new(result))))
         }
         _ => None,
     }

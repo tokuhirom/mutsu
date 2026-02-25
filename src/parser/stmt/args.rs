@@ -26,6 +26,40 @@ pub(super) fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
             messages: merge_expected_messages("expected first call argument", &err.messages),
             remaining_len: err.remaining_len.or(Some(r.len())),
         })?;
+        // Check for invocant colon: foo($obj:) or foo($obj: $a, $b)
+        {
+            let (r_ws, _) = ws(r)?;
+            if r_ws.starts_with(':') && !r_ws.starts_with("::") {
+                let after_colon = &r_ws[1..];
+                let (after_ws, _) = ws(after_colon)?;
+                // Invocant colon: extract the expression from the first arg
+                let invocant_expr = match first_arg {
+                    CallArg::Positional(expr) => expr,
+                    _ => {
+                        return Err(PError::expected(
+                            "positional argument before invocant colon",
+                        ));
+                    }
+                };
+                args.push(CallArg::Invocant(invocant_expr));
+                if after_ws.starts_with(')') {
+                    let (r2, _) = parse_char(after_ws, ')')?;
+                    return Ok((r2, args));
+                }
+                // Parse remaining args after invocant colon
+                let (r2, more) = parse_remaining_call_args(after_ws).map_err(|err| PError {
+                    messages: merge_expected_messages(
+                        "expected call arguments after invocant colon",
+                        &err.messages,
+                    ),
+                    remaining_len: err.remaining_len.or(Some(after_ws.len())),
+                })?;
+                args.extend(more);
+                let (r2, _) = ws(r2)?;
+                let (r2, _) = parse_char(r2, ')')?;
+                return Ok((r2, args));
+            }
+        }
         args.push(first_arg);
         let mut r = r;
         loop {

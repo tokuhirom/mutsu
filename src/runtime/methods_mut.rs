@@ -41,6 +41,143 @@ impl Interpreter {
         }
     }
 
+    pub(super) fn overwrite_instance_bindings_by_identity(
+        &mut self,
+        class_name: &str,
+        id: u64,
+        updated: std::collections::HashMap<String, Value>,
+    ) {
+        for bound in self.env.values_mut() {
+            let should_replace = match bound {
+                Value::Instance {
+                    class_name: existing_class,
+                    id: existing_id,
+                    ..
+                } => existing_class == class_name && *existing_id == id,
+                _ => false,
+            };
+            if should_replace {
+                *bound = Value::Instance {
+                    class_name: class_name.to_string(),
+                    attributes: std::sync::Arc::new(updated.clone()),
+                    id,
+                };
+            }
+        }
+    }
+
+    /// Call a Proxy callback (FETCH or STORE) in the context of an instance's attributes.
+    /// Sets up `!attr` bindings, runs the callback, and reads back attribute changes.
+    pub(crate) fn call_proxy_callback(
+        &mut self,
+        callback: &Value,
+        args: Vec<Value>,
+        instance_attrs: &HashMap<String, Value>,
+    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+        if let Value::Sub(data) = callback {
+            let saved_env = self.env.clone();
+            let mut new_env = saved_env.clone();
+            // Merge captured env
+            for (k, v) in &data.env {
+                new_env.insert(k.clone(), v.clone());
+            }
+            // Override !attr bindings with current instance attributes
+            for (attr_name, attr_val) in instance_attrs {
+                new_env.insert(format!("!{}", attr_name), attr_val.clone());
+                new_env.insert(format!(".{}", attr_name), attr_val.clone());
+            }
+            self.env = new_env;
+            if let Err(e) = self.bind_function_args_values(&data.param_defs, &data.params, &args) {
+                self.env = saved_env;
+                return Err(e);
+            }
+            let result = self.run_block(&data.body);
+            let implicit_return = self.env.get("_").cloned();
+            // Read back !attr changes
+            let mut updated_attrs = instance_attrs.clone();
+            for attr_name in instance_attrs.keys() {
+                if let Some(val) = self.env.get(&format!("!{}", attr_name)) {
+                    updated_attrs.insert(attr_name.clone(), val.clone());
+                }
+            }
+            // Propagate outer variable changes (e.g., our variables, closured scalars)
+            let mut restored = saved_env;
+            for (k, v) in &self.env {
+                if restored.contains_key(k)
+                    && !k.starts_with('!')
+                    && !k.starts_with('.')
+                    && k != "self"
+                    && k != "_"
+                {
+                    restored.insert(k.clone(), v.clone());
+                }
+            }
+            self.env = restored;
+            let value = match result {
+                Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
+                Err(e) => Err(e),
+                Ok(()) => Ok(implicit_return.unwrap_or(Value::Nil)),
+            }?;
+            Ok((value, updated_attrs))
+        } else {
+            // Non-sub callback
+            let result = self.call_sub_value(callback.clone(), args, false)?;
+            Ok((result, instance_attrs.clone()))
+        }
+    }
+
+    /// Call Proxy FETCH and return the fetched value, propagating attribute updates to the instance.
+    pub(crate) fn proxy_fetch(
+        &mut self,
+        fetcher: &Value,
+        target_var: Option<&str>,
+        class_name: &str,
+        attributes: &HashMap<String, Value>,
+        target_id: u64,
+    ) -> Result<Value, RuntimeError> {
+        let proxy_val = Value::Proxy {
+            fetcher: Box::new(fetcher.clone()),
+            storer: Box::new(Value::Nil),
+        };
+        let (result, _updated) = self.call_proxy_callback(fetcher, vec![proxy_val], attributes)?;
+        // For FETCH we don't propagate attribute changes (reads shouldn't mutate)
+        let _ = target_var;
+        let _ = class_name;
+        let _ = target_id;
+        Ok(result)
+    }
+
+    /// Call Proxy STORE with a new value, propagating attribute updates to the instance.
+    pub(crate) fn proxy_store(
+        &mut self,
+        storer: &Value,
+        target_var: Option<&str>,
+        class_name: &str,
+        attributes: &HashMap<String, Value>,
+        target_id: u64,
+        new_value: Value,
+    ) -> Result<Value, RuntimeError> {
+        let proxy_val = Value::Proxy {
+            fetcher: Box::new(Value::Nil),
+            storer: Box::new(storer.clone()),
+        };
+        let (result, updated) =
+            self.call_proxy_callback(storer, vec![proxy_val, new_value.clone()], attributes)?;
+        // Propagate attribute changes back to the instance
+        if let Some(var_name) = target_var {
+            self.overwrite_instance_bindings_by_identity(class_name, target_id, updated.clone());
+            self.env.insert(
+                var_name.to_string(),
+                Value::Instance {
+                    class_name: class_name.to_string(),
+                    attributes: std::sync::Arc::new(updated),
+                    id: target_id,
+                },
+            );
+        }
+        Ok(result)
+    }
+
     fn rw_method_attribute_target(body: &[Stmt]) -> Option<String> {
         let first = body.first()?;
         let extract_attr = |expr: &Expr| -> Option<String> {
@@ -90,6 +227,46 @@ impl Interpreter {
             self.overwrite_hash_bindings_by_identity(source_hash, replacement);
             return Ok(value);
         }
+        if method == "value"
+            && let Value::Pair(key, current_value) = &target
+        {
+            let mut selected_hash: Option<
+                std::sync::Arc<std::collections::HashMap<String, Value>>,
+            > = None;
+
+            if let Some(var_name) = target_var
+                && let Some(Value::Hash(candidate)) = self.env.get(var_name)
+                && candidate.contains_key(key)
+            {
+                selected_hash = Some(candidate.clone());
+            }
+
+            if selected_hash.is_none() {
+                let mut candidates = self.env.values().filter_map(|bound| match bound {
+                    Value::Hash(map)
+                        if map
+                            .get(key)
+                            .is_some_and(|existing| existing == current_value.as_ref()) =>
+                    {
+                        Some(map.clone())
+                    }
+                    _ => None,
+                });
+                if let Some(first) = candidates.next()
+                    && candidates.all(|other| std::sync::Arc::ptr_eq(&first, &other))
+                {
+                    selected_hash = Some(first);
+                }
+            }
+
+            if let Some(source_hash) = selected_hash {
+                let mut updated = (*source_hash).clone();
+                updated.insert(key.clone(), value.clone());
+                let replacement = Value::hash(updated);
+                self.overwrite_hash_bindings_by_identity(&source_hash, replacement);
+                return Ok(value);
+            }
+        }
 
         // Preserve existing accessor/setter assignment behavior for concrete variables.
         if let Some(var_name) = target_var {
@@ -114,7 +291,7 @@ impl Interpreter {
         let Value::Instance {
             class_name,
             attributes,
-            ..
+            id: target_id,
         } = target
         else {
             return Err(RuntimeError::new(format!(
@@ -134,22 +311,46 @@ impl Interpreter {
                 method
             )));
         }
-        let attr_name = Self::rw_method_attribute_target(&method_def.body).ok_or_else(|| {
-            RuntimeError::new(format!(
-                "X::Assignment::RO: rw method '{}' does not expose an assignable attribute",
-                method
-            ))
-        })?;
+        if let Some(attr_name) = Self::rw_method_attribute_target(&method_def.body) {
+            let mut updated = (*attributes).clone();
+            updated.insert(attr_name, value.clone());
+            if let Some(var_name) = target_var {
+                self.overwrite_instance_bindings_by_identity(
+                    &class_name,
+                    target_id,
+                    updated.clone(),
+                );
+                self.env.insert(
+                    var_name.to_string(),
+                    Value::Instance {
+                        class_name,
+                        attributes: std::sync::Arc::new(updated),
+                        id: target_id,
+                    },
+                );
+            }
+            return Ok(value);
+        }
 
-        let mut updated = (*attributes).clone();
-        updated.insert(attr_name, value.clone());
-        if let Some(var_name) = target_var {
-            self.env.insert(
-                var_name.to_string(),
-                Value::make_instance(class_name, updated),
+        // The method body doesn't directly expose an attribute — run it and check for Proxy
+        let attrs_map = (*attributes).clone();
+        let (method_result, updated_attrs) =
+            self.run_instance_method(&class_name, attrs_map, method, method_args, None)?;
+        if let Value::Proxy { storer, .. } = &method_result {
+            return self.proxy_store(
+                storer,
+                target_var,
+                &class_name,
+                &updated_attrs,
+                target_id,
+                value,
             );
         }
-        Ok(value)
+
+        Err(RuntimeError::new(format!(
+            "X::Assignment::RO: rw method '{}' does not expose an assignable attribute",
+            method
+        )))
     }
 
     pub(crate) fn call_method_mut_with_values(
@@ -160,6 +361,17 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         if method == "VAR" && args.is_empty() {
+            let readonly_key = format!("__mutsu_sigilless_readonly::{}", target_var);
+            let alias_key = format!("__mutsu_sigilless_alias::{}", target_var);
+            let has_sigilless_meta =
+                self.env.contains_key(&readonly_key) || self.env.contains_key(&alias_key);
+            if has_sigilless_meta {
+                let readonly = matches!(self.env.get(&readonly_key), Some(Value::Bool(true)));
+                let itemized_array = matches!(target, Value::Array(_, true));
+                if readonly && !itemized_array {
+                    return Ok(target);
+                }
+            }
             let class_name = if target_var.starts_with('@') {
                 "Array"
             } else if target_var.starts_with('%') {
@@ -428,7 +640,7 @@ impl Interpreter {
         if let Value::Instance {
             class_name,
             attributes,
-            ..
+            id: target_id,
         } = target.clone()
         {
             if class_name == "Iterator" {
@@ -526,35 +738,115 @@ impl Interpreter {
                             Value::Str("IterationEnd".to_string())
                         }
                     }
+                    "can" => {
+                        let method_name = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let supported = matches!(
+                            method_name.as_str(),
+                            "pull-one"
+                                | "push-exactly"
+                                | "push-at-least"
+                                | "push-all"
+                                | "push-until-lazy"
+                                | "sink-all"
+                                | "skip-one"
+                                | "skip-at-least"
+                                | "skip-at-least-pull-one"
+                        );
+                        if supported {
+                            return Ok(Value::array(vec![Value::Str(method_name)]));
+                        } else {
+                            return Ok(Value::array(Vec::new()));
+                        }
+                    }
                     _ => self.call_method_with_values(target, method, args)?,
                 };
 
                 updated.insert("index".to_string(), Value::Int(index as i64));
+                self.overwrite_instance_bindings_by_identity(
+                    &class_name,
+                    target_id,
+                    updated.clone(),
+                );
                 self.env.insert(
                     target_var.to_string(),
-                    Value::make_instance(class_name, updated),
+                    Value::Instance {
+                        class_name: class_name.clone(),
+                        attributes: std::sync::Arc::new(updated),
+                        id: target_id,
+                    },
                 );
                 return Ok(ret);
             }
 
             if args.len() == 1 {
                 let class_attrs = self.collect_class_attributes(&class_name);
-                let is_public_accessor = if class_attrs.is_empty() {
+                let is_public_rw_accessor = if class_attrs.is_empty() {
                     attributes.contains_key(method)
                 } else {
-                    class_attrs
-                        .iter()
-                        .any(|(attr_name, is_public, _)| *is_public && attr_name == method)
+                    class_attrs.iter().any(|(attr_name, is_public, _, is_rw)| {
+                        *is_public && attr_name == method && *is_rw
+                    })
                 };
-                if is_public_accessor {
-                    let mut updated = (*attributes).clone();
-                    let assigned = args[0].clone();
-                    updated.insert(method.to_string(), assigned.clone());
-                    self.env.insert(
-                        target_var.to_string(),
-                        Value::make_instance(class_name, updated),
-                    );
-                    return Ok(assigned);
+                if is_public_rw_accessor {
+                    // User-defined rw method takes priority over simple accessor
+                    let has_rw_method = self
+                        .resolve_method(&class_name, method, &[])
+                        .is_some_and(|m| m.is_rw);
+                    if !has_rw_method {
+                        let mut updated = (*attributes).clone();
+                        let assigned = args[0].clone();
+                        updated.insert(method.to_string(), assigned.clone());
+                        self.overwrite_instance_bindings_by_identity(
+                            &class_name,
+                            target_id,
+                            updated.clone(),
+                        );
+                        self.env.insert(
+                            target_var.to_string(),
+                            Value::Instance {
+                                class_name: class_name.clone(),
+                                attributes: std::sync::Arc::new(updated),
+                                id: target_id,
+                            },
+                        );
+                        return Ok(assigned);
+                    }
+                    // Signal to assign_method_lvalue to handle via Proxy
+                    return Err(RuntimeError::new(format!(
+                        "No matching candidates for method: {}",
+                        method
+                    )));
+                } else {
+                    // Check if there's a user-defined method with is_rw
+                    let has_rw_method = self
+                        .resolve_method(&class_name, method, &[])
+                        .is_some_and(|m| m.is_rw);
+                    if has_rw_method {
+                        // Signal to assign_method_lvalue to handle via Proxy
+                        return Err(RuntimeError::new(format!(
+                            "No matching candidates for method: {}",
+                            method
+                        )));
+                    }
+                    // Public accessor exists but is not rw — reject assignment
+                    let is_public_accessor = if class_attrs.is_empty() {
+                        false
+                    } else {
+                        class_attrs
+                            .iter()
+                            .any(|(attr_name, is_public, _, _)| *is_public && attr_name == method)
+                    };
+                    if is_public_accessor {
+                        let current = attributes.get(method).cloned().unwrap_or(Value::Nil);
+                        return Err(RuntimeError::new(format!(
+                            "Cannot modify an immutable {} ({})",
+                            super::utils::value_type_name(&current),
+                            current.to_string_value()
+                        )));
+                    }
                 }
             }
 
@@ -567,9 +859,18 @@ impl Interpreter {
                     args.clone(),
                 ) {
                     Ok((result, updated)) => {
+                        self.overwrite_instance_bindings_by_identity(
+                            &class_name,
+                            target_id,
+                            updated.clone(),
+                        );
                         self.env.insert(
                             target_var.to_string(),
-                            Value::make_instance(class_name, updated),
+                            Value::Instance {
+                                class_name: class_name.clone(),
+                                attributes: std::sync::Arc::new(updated),
+                                id: target_id,
+                            },
                         );
                         return Ok(result);
                     }
@@ -584,12 +885,37 @@ impl Interpreter {
                 }
             }
             if self.has_user_method(&class_name, method) {
-                let (result, updated) =
-                    self.run_instance_method(&class_name, (*attributes).clone(), method, args)?;
+                let (result, updated) = self.run_instance_method(
+                    &class_name,
+                    (*attributes).clone(),
+                    method,
+                    args,
+                    Some(target.clone()),
+                )?;
+                self.overwrite_instance_bindings_by_identity(
+                    &class_name,
+                    target_id,
+                    updated.clone(),
+                );
+                let updated_clone = updated.clone();
                 self.env.insert(
                     target_var.to_string(),
-                    Value::make_instance(class_name, updated),
+                    Value::Instance {
+                        class_name: class_name.clone(),
+                        attributes: std::sync::Arc::new(updated),
+                        id: target_id,
+                    },
                 );
+                // Auto-FETCH if the method returned a Proxy
+                if let Value::Proxy { ref fetcher, .. } = result {
+                    return self.proxy_fetch(
+                        fetcher,
+                        Some(target_var),
+                        &class_name,
+                        &updated_clone,
+                        target_id,
+                    );
+                }
                 return Ok(result);
             }
         }

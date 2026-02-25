@@ -1,6 +1,43 @@
 use super::*;
 use ::regex::Regex;
 
+fn regex_single_quote_closes(open: char, ch: char) -> bool {
+    match open {
+        '\'' => ch == '\'',
+        '\u{2018}' => ch == '\u{2019}',                     // ‘...’
+        '\u{201A}' => ch == '\u{2019}' || ch == '\u{2018}', // ‚...’ and ‚...‘
+        '\u{FF62}' => ch == '\u{FF63}',                     // ｢...｣
+        _ => false,
+    }
+}
+
+fn regex_single_quote_atom(literal: String, ignore_case: bool) -> RegexAtom {
+    let lit_chars: Vec<char> = literal.chars().collect();
+    if lit_chars.is_empty() {
+        // Empty string literal matches zero-width
+        RegexAtom::ZeroWidth
+    } else if lit_chars.len() == 1 {
+        RegexAtom::Literal(lit_chars[0])
+    } else {
+        let tokens = lit_chars
+            .into_iter()
+            .map(|ch| RegexToken {
+                atom: RegexAtom::Literal(ch),
+                quant: RegexQuant::One,
+                named_capture: None,
+                ratchet: false,
+            })
+            .collect();
+        RegexAtom::Group(RegexPattern {
+            tokens,
+            anchor_start: false,
+            anchor_end: false,
+            ignore_case,
+            ignore_mark: false,
+        })
+    }
+}
+
 /// Split a property name like "NumericValue(0 ^..^ 1)" into ("NumericValue", Some("0 ^..^ 1")).
 fn split_prop_args(s: &str) -> (&str, Option<&str>) {
     if let Some(open) = s.find('(')
@@ -12,6 +49,54 @@ fn split_prop_args(s: &str) -> (&str, Option<&str>) {
 }
 
 impl Interpreter {
+    fn has_unquoted_ltm_separator(pattern: &str) -> bool {
+        let mut in_single = false;
+        let mut escaped = false;
+        for ch in pattern.chars() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == '\'' {
+                in_single = !in_single;
+                continue;
+            }
+            if !in_single && ch == '%' {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn split_simple_quantified_atom(atom: &str) -> Option<(String, String)> {
+        let quant = atom.chars().last()?;
+        if !matches!(quant, '?' | '+' | '*') {
+            return None;
+        }
+        let body = &atom[..atom.len() - quant.len_utf8()];
+        if body.is_empty() {
+            return None;
+        }
+        let base = body.chars().last()?;
+        // Do not split when the quantified part is likely a grouped/paired atom,
+        // a quoted atom, or an escaped atom like \w.
+        if matches!(
+            base,
+            ']' | ')' | '}' | '>' | '\'' | '"' | '\u{2019}' | '\u{201D}' | '\u{00BB}' | '\u{FF63}'
+        ) {
+            return None;
+        }
+        let prefix = &body[..body.len() - base.len_utf8()];
+        if prefix.ends_with('\\') {
+            return None;
+        }
+        Some((prefix.to_string(), format!("{base}{quant}")))
+    }
+
     fn expand_ltm_pattern(pattern: &str) -> String {
         let compact: String = pattern.chars().filter(|ch| !ch.is_whitespace()).collect();
         if compact.is_empty() {
@@ -29,6 +114,9 @@ impl Interpreter {
             let sep = caps.get(4).map(|m| m.as_str());
             return Self::build_ltm_expansion(atom, count_spec, sep_mode, sep);
         }
+        if !Self::has_unquoted_ltm_separator(pattern) {
+            return pattern.to_string();
+        }
         if let Some(caps) = bare_sep.captures(&compact) {
             let atom = caps
                 .get(1)
@@ -37,16 +125,11 @@ impl Interpreter {
                 .to_string();
             let sep_mode = caps.get(2).map(|m| m.as_str());
             let sep = caps.get(3).map(|m| m.as_str());
-            if atom.len() >= 2 && matches!(atom.chars().last(), Some('?') | Some('+') | Some('*')) {
-                let mut chars: Vec<char> = atom.chars().collect();
-                let quant = chars.pop().unwrap();
-                let base = chars.pop().unwrap();
-                let prefix: String = chars.into_iter().collect();
-                let core = format!("{base}{quant}");
+            if let Some((prefix, quantified_tail)) = Self::split_simple_quantified_atom(&atom) {
                 return format!(
                     "{}{}",
                     prefix,
-                    Self::build_ltm_expansion(&core, "1..*", sep_mode, sep)
+                    Self::build_ltm_expansion(&quantified_tail, "1..*", sep_mode, sep)
                 );
             }
             return Self::build_ltm_expansion(&atom, "1..*", sep_mode, sep);
@@ -136,18 +219,82 @@ impl Interpreter {
     }
 
     pub(super) fn parse_regex(&self, pattern: &str) -> Option<RegexPattern> {
+        fn named_lookup_is_ws(name: &str) -> bool {
+            let mut raw = name.trim();
+            if let Some(stripped) = raw.strip_prefix('.') {
+                raw = stripped.trim();
+            }
+            if let Some(stripped) = raw.strip_prefix('&') {
+                raw = stripped.trim();
+            }
+            raw == "ws"
+        }
+
+        fn token_is_ws_like(token: &RegexToken) -> bool {
+            match &token.atom {
+                RegexAtom::CharClass(class) => {
+                    !class.negated
+                        && class.items.len() == 1
+                        && class
+                            .items
+                            .first()
+                            .is_some_and(|item| matches!(item, ClassItem::Space))
+                }
+                RegexAtom::Named(name) => named_lookup_is_ws(name),
+                _ => false,
+            }
+        }
+
         let interpolated = self.interpolate_regex_scalars(pattern);
-        let mut source = interpolated.trim();
+        let mut source = interpolated.trim_start();
         let mut ignore_case = false;
+        let mut ignore_mark = false;
+        let mut sigspace = false;
         loop {
+            if let Some(rest) = source.strip_prefix(":ignorecase") {
+                ignore_case = true;
+                source = rest.trim_start();
+                continue;
+            }
+            if let Some(rest) = source.strip_prefix(":ignoremark") {
+                ignore_mark = true;
+                source = rest.trim_start();
+                continue;
+            }
             if let Some(rest) = source.strip_prefix(":i") {
                 ignore_case = true;
                 source = rest.trim_start();
                 continue;
             }
+            if let Some(rest) = source.strip_prefix(":sigspace") {
+                sigspace = true;
+                source = rest.trim_start();
+                continue;
+            }
+            if let Some(rest) = source.strip_prefix(":s") {
+                sigspace = true;
+                source = rest.trim_start();
+                continue;
+            }
+            if let Some(rest) = source.strip_prefix(":m") {
+                // Make sure it's :m and not :mm or :my or other identifiers
+                if rest.is_empty()
+                    || rest.starts_with(' ')
+                    || rest.starts_with(':')
+                    || rest.starts_with('/')
+                {
+                    ignore_mark = true;
+                    source = rest.trim_start();
+                    continue;
+                }
+            }
             break;
         }
-        source = source.trim();
+        source = if sigspace {
+            source.trim_start()
+        } else {
+            source.trim()
+        };
         // Quote-word delimiters in regex patterns (e.g., «word») represent
         // literal text content, not literal guillemet characters.
         if let Some(inner) = source.strip_prefix('«').and_then(|s| s.strip_suffix('»')) {
@@ -164,6 +311,37 @@ impl Interpreter {
         while let Some(c) = chars.next() {
             // In Raku, unescaped whitespace in regex is insignificant
             if c.is_whitespace() {
+                if sigspace {
+                    while chars.peek().is_some_and(|next| next.is_whitespace()) {
+                        chars.next();
+                    }
+                    if tokens.is_empty() {
+                        if anchor_start {
+                            tokens.push(RegexToken {
+                                atom: RegexAtom::CharClass(CharClass {
+                                    negated: false,
+                                    items: vec![ClassItem::Space],
+                                }),
+                                quant: RegexQuant::ZeroOrMore,
+                                named_capture: pending_named_capture.take(),
+                                ratchet: false,
+                            });
+                        }
+                    } else {
+                        if tokens.last().is_some_and(token_is_ws_like) {
+                            continue;
+                        }
+                        tokens.push(RegexToken {
+                            atom: RegexAtom::CharClass(CharClass {
+                                negated: false,
+                                items: vec![ClassItem::Space],
+                            }),
+                            quant: RegexQuant::OneOrMore,
+                            named_capture: pending_named_capture.take(),
+                            ratchet: false,
+                        });
+                    }
+                }
                 continue;
             }
             // '#' starts a comment until end of line in Raku regex
@@ -201,6 +379,7 @@ impl Interpreter {
                     atom: RegexAtom::Literal('$'),
                     quant: RegexQuant::One,
                     named_capture: None,
+                    ratchet: false,
                 });
                 continue;
             }
@@ -317,6 +496,7 @@ impl Interpreter {
                                         atom: RegexAtom::Literal(c),
                                         quant: RegexQuant::One,
                                         named_capture: None,
+                                        ratchet: false,
                                     });
                                 }
                                 RegexAtom::Literal(*resolved.last().unwrap())
@@ -381,37 +561,16 @@ impl Interpreter {
                         other => RegexAtom::Literal(other),
                     }
                 }
-                '\'' => {
+                '\'' | '\u{2018}' | '\u{201A}' | '\u{FF62}' => {
                     // Quoted literal string in Raku regex: 'foo-bar' matches literally
                     let mut literal = String::new();
                     for ch in chars.by_ref() {
-                        if ch == '\'' {
+                        if regex_single_quote_closes(c, ch) {
                             break;
                         }
                         literal.push(ch);
                     }
-                    let lit_chars: Vec<char> = literal.chars().collect();
-                    if lit_chars.is_empty() {
-                        // Empty string literal matches zero-width
-                        RegexAtom::ZeroWidth
-                    } else if lit_chars.len() == 1 {
-                        RegexAtom::Literal(lit_chars[0])
-                    } else {
-                        let tokens = lit_chars
-                            .into_iter()
-                            .map(|ch| RegexToken {
-                                atom: RegexAtom::Literal(ch),
-                                quant: RegexQuant::One,
-                                named_capture: None,
-                            })
-                            .collect();
-                        RegexAtom::Group(RegexPattern {
-                            tokens,
-                            anchor_start: false,
-                            anchor_end: false,
-                            ignore_case,
-                        })
-                    }
+                    regex_single_quote_atom(literal, ignore_case)
                 }
                 '<' => {
                     if chars.peek() == Some(&'(') {
@@ -549,6 +708,7 @@ impl Interpreter {
                                                     }),
                                                     quant: RegexQuant::One,
                                                     named_capture: None,
+                                                    ratchet: false,
                                                 },
                                                 RegexToken {
                                                     atom: RegexAtom::CharClass(CharClass {
@@ -559,11 +719,13 @@ impl Interpreter {
                                                     }),
                                                     quant: RegexQuant::ZeroOrMore,
                                                     named_capture: None,
+                                                    ratchet: false,
                                                 },
                                             ],
                                             anchor_start: false,
                                             anchor_end: false,
                                             ignore_case,
+                                            ignore_mark,
                                         })
                                     }
                                     _ => RegexAtom::Named(name),
@@ -612,10 +774,12 @@ impl Interpreter {
                                 atom: RegexAtom::Alternation(alt_patterns),
                                 quant: RegexQuant::One,
                                 named_capture: None,
+                                ratchet: false,
                             }],
                             anchor_start: false,
                             anchor_end: false,
                             ignore_case,
+                            ignore_mark,
                         };
                         RegexAtom::CaptureGroup(group_pat)
                     } else {
@@ -701,13 +865,17 @@ impl Interpreter {
             // Handle ':' ratchet modifier (prevents backtracking)
             // For now, just consume it — our engine doesn't backtrack into
             // quantified atoms in the same way, so this is a no-op
-            if chars.peek() == Some(&':') {
+            let ratchet = if chars.peek() == Some(&':') {
                 chars.next();
-            }
+                true
+            } else {
+                false
+            };
             tokens.push(RegexToken {
                 atom,
                 quant,
                 named_capture: pending_named_capture.take(),
+                ratchet,
             });
         }
         Some(RegexPattern {
@@ -715,6 +883,7 @@ impl Interpreter {
             anchor_start,
             anchor_end,
             ignore_case,
+            ignore_mark,
         })
     }
 

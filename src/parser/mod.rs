@@ -299,4 +299,16 @@ mod tests {
             Expr::Literal(crate::value::Value::Str(s)) if s == "\r\nth"
         ));
     }
+
+    #[test]
+    fn parse_program_accepts_unicode_single_quoted_regex_atoms() {
+        let src = r#"
+ok("ab/cd" ~~ m/ab ‘/’ c d/, "curly single quote");
+ok("ab/cd" ~~ m/ab ‚/’ c d/, "low-high single quote");
+ok("ab/cd" ~~ m/ab ‚/‘ c d/, "low-curly single quote");
+ok("ab/cd" ~~ m/ab ｢/｣ c d/, "corner quote");
+"#;
+        let (stmts, _) = parse_program(src).unwrap();
+        assert_eq!(stmts.len(), 4);
+    }
 }

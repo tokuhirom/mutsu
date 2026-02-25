@@ -6,6 +6,7 @@ struct ProcOptions {
     env: HashMap<String, String>,
     capture_err: bool,
     capture_out: bool,
+    win_verbatim_args: bool,
 }
 
 impl Interpreter {
@@ -82,6 +83,7 @@ impl Interpreter {
             env: HashMap::new(),
             capture_err: false,
             capture_out: false,
+            win_verbatim_args: false,
         };
         for value in args.iter().skip(skip) {
             if let Value::Hash(map) = value {
@@ -103,6 +105,9 @@ impl Interpreter {
                         "out" => {
                             opts.capture_out = inner.truthy();
                         }
+                        "win-verbatim-args" => {
+                            opts.win_verbatim_args = inner.truthy();
+                        }
                         _ => {}
                     }
                 }
@@ -112,11 +117,31 @@ impl Interpreter {
                     "cwd" => opts.cwd = Some(inner.to_string_value()),
                     "err" => opts.capture_err = inner.truthy(),
                     "out" => opts.capture_out = inner.truthy(),
+                    "win-verbatim-args" => opts.win_verbatim_args = inner.truthy(),
                     _ => {}
                 }
             }
         }
         opts
+    }
+
+    #[cfg(windows)]
+    fn apply_run_args(cmd: &mut Command, args: &[String], win_verbatim_args: bool) {
+        use std::os::windows::process::CommandExt;
+
+        if win_verbatim_args {
+            if !args.is_empty() {
+                // Raku's :win-verbatim-args forwards argv payload without Win32 quoting.
+                cmd.raw_arg(args.join(" "));
+            }
+        } else {
+            cmd.args(args);
+        }
+    }
+
+    #[cfg(not(windows))]
+    fn apply_run_args(cmd: &mut Command, args: &[String], _win_verbatim_args: bool) {
+        cmd.args(args);
     }
 
     pub(super) fn builtin_run(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -162,7 +187,7 @@ impl Interpreter {
         let command_val = Value::array(positional.iter().map(|s| Value::Str(s.clone())).collect());
 
         let mut cmd = Command::new(program);
-        cmd.args(rest_args);
+        Self::apply_run_args(&mut cmd, rest_args, opts.win_verbatim_args);
 
         if opts.capture_out {
             cmd.stdout(std::process::Stdio::piped());
@@ -340,6 +365,27 @@ impl Interpreter {
             }
             Err(_) => Ok(Self::make_proc_instance(-1, 0, 0, command_val, None, None)),
         }
+    }
+
+    pub(super) fn builtin_qx(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let command = args
+            .first()
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+
+        let shell_args = vec![
+            Value::Str(command),
+            Value::Pair("out".to_string(), Box::new(Value::Bool(true))),
+        ];
+        let proc_value = self.builtin_shell(&shell_args)?;
+
+        if let Value::Instance { attributes, .. } = proc_value
+            && let Some(out_pipe) = attributes.get("out")
+        {
+            return self.call_method_with_values(out_pipe.clone(), "slurp", vec![]);
+        }
+
+        Ok(Value::Str(String::new()))
     }
 
     pub(super) fn builtin_kill(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -541,5 +587,29 @@ impl Interpreter {
         } else {
             Ok(Value::array(results))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_proc_options_reads_win_verbatim_pair() {
+        let args = vec![Value::Pair(
+            "win-verbatim-args".to_string(),
+            Box::new(Value::Bool(true)),
+        )];
+        let opts = Interpreter::extract_proc_options(&args, 0);
+        assert!(opts.win_verbatim_args);
+    }
+
+    #[test]
+    fn extract_proc_options_reads_win_verbatim_hash() {
+        let mut map = HashMap::new();
+        map.insert("win-verbatim-args".to_string(), Value::Bool(true));
+        let args = vec![Value::Hash(map.into())];
+        let opts = Interpreter::extract_proc_options(&args, 0);
+        assert!(opts.win_verbatim_args);
     }
 }

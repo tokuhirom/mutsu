@@ -46,6 +46,31 @@ impl Compiler {
         }
     }
 
+    pub(crate) fn qualify_variable_name(&self, name: &str) -> String {
+        if self.current_package.contains("::&") {
+            // Sub/method state scopes use package-like names (e.g. GLOBAL::&foo/1)
+            // that should not be used to qualify runtime variable access.
+            return name.to_string();
+        }
+        if self.current_package == "GLOBAL" || name.contains("::") {
+            return name.to_string();
+        }
+        if name.is_empty() {
+            return name.to_string();
+        }
+        let first = name.chars().next().unwrap();
+        if matches!(first, '_' | '/' | '!' | '?' | '*' | '.' | '=') {
+            return name.to_string();
+        }
+        if let Some(sigil) = name.chars().next()
+            && matches!(sigil, '$' | '@' | '%' | '&')
+            && name.len() > 1
+        {
+            return format!("{sigil}{}::{}", self.current_package, &name[1..]);
+        }
+        format!("{}::{}", self.current_package, name)
+    }
+
     fn alloc_local(&mut self, name: &str) -> u32 {
         if let Some(&slot) = self.local_map.get(name) {
             return slot;
@@ -60,7 +85,9 @@ impl Compiler {
         if let Some(&slot) = self.local_map.get(name) {
             self.code.emit(OpCode::SetLocal(slot));
         } else {
-            let idx = self.code.add_constant(Value::Str(name.to_string()));
+            let idx = self
+                .code
+                .add_constant(Value::Str(self.qualify_variable_name(name)));
             self.code.emit(OpCode::SetGlobal(idx));
         }
     }
@@ -125,17 +152,32 @@ impl Compiler {
                     continue;
                 }
                 if sub.named {
-                    bind_stmts.push(Stmt::Assign {
+                    let method_result = Expr::MethodCall {
+                        target: Box::new(Expr::Var(target_name.clone())),
                         name: sub.name.clone(),
-                        expr: Expr::MethodCall {
-                            target: Box::new(Expr::Var(target_name.clone())),
+                        args: Vec::new(),
+                        modifier: None,
+                        quoted: false,
+                    };
+                    // If the named param has a sub_signature (e.g. :key($k)),
+                    // bind to the sub_signature variable instead of the param name.
+                    if let Some(inner_params) = &sub.sub_signature {
+                        for inner in inner_params {
+                            if !inner.name.is_empty() {
+                                bind_stmts.push(Stmt::Assign {
+                                    name: inner.name.clone(),
+                                    expr: method_result.clone(),
+                                    op: AssignOp::Assign,
+                                });
+                            }
+                        }
+                    } else {
+                        bind_stmts.push(Stmt::Assign {
                             name: sub.name.clone(),
-                            args: Vec::new(),
-                            modifier: None,
-                            quoted: false,
-                        },
-                        op: AssignOp::Assign,
-                    });
+                            expr: method_result,
+                            op: AssignOp::Assign,
+                        });
+                    }
                 } else {
                     bind_stmts.push(Stmt::Assign {
                         name: sub.name.clone(),

@@ -107,6 +107,7 @@ impl Compiler {
                     value: value.clone(),
                 },
                 CallArg::Slip(expr) => CallArg::Slip(expr.clone()),
+                CallArg::Invocant(expr) => CallArg::Invocant(expr.clone()),
             })
             .collect()
     }
@@ -159,6 +160,25 @@ impl Compiler {
             self.code.emit(OpCode::MakePair);
         } else {
             self.compile_expr(arg);
+        }
+    }
+
+    /// Compile a function-call positional argument.
+    /// Variable-like args are wrapped with source-name metadata so sigilless
+    /// parameters (`\x`) can bind as writable aliases.
+    pub(super) fn compile_call_arg(&mut self, arg: &Expr) {
+        self.compile_expr(arg);
+        let source_name = match arg {
+            Expr::Var(n) => Some(n.clone()),
+            Expr::ArrayVar(n) => Some(format!("@{}", n)),
+            Expr::HashVar(n) => Some(format!("%{}", n)),
+            Expr::CodeVar(n) => Some(format!("&{}", n)),
+            Expr::BareWord(n) => Some(n.clone()),
+            _ => None,
+        };
+        if let Some(name) = source_name {
+            let name_idx = self.code.add_constant(Value::Str(name));
+            self.code.emit(OpCode::WrapVarRef(name_idx));
         }
     }
 
@@ -402,8 +422,19 @@ impl Compiler {
             params: params.to_vec(),
             param_defs: param_defs.to_vec(),
             fingerprint: crate::ast::function_body_fingerprint(params, param_defs, body),
+            // Named subs with no params and no param_defs that don't use @_/%_ have
+            // explicit empty signature :() and should reject any arguments.
+            empty_sig: params.is_empty()
+                && param_defs.is_empty()
+                && !Self::body_uses_legacy_args(body),
         };
         self.compiled_functions.insert(key, cf);
+    }
+
+    /// Check if the body uses @_ or %_ legacy argument variables.
+    fn body_uses_legacy_args(body: &[Stmt]) -> bool {
+        let body_str = format!("{:?}", body);
+        body_str.contains("\"@_\"") || body_str.contains("\"%_\"")
     }
 
     fn emit_nil_value(&mut self) {
@@ -496,11 +527,13 @@ impl Compiler {
                 main_stmts.push(stmt.clone());
             }
         }
+        let has_explicit_catch = catch_stmts.is_some();
         // Emit TryCatch placeholder.
         let try_idx = self.code.emit(OpCode::TryCatch {
             catch_start: 0,
             control_start: 0,
             body_end: 0,
+            explicit_catch: has_explicit_catch,
         });
         // Compile main body (last Stmt::Expr/Call leaves value on stack)
         let mut main_leaves_value = false;
@@ -541,7 +574,7 @@ impl Compiler {
                         for arg in &rewritten_args {
                             match arg {
                                 CallArg::Positional(expr) => {
-                                    self.compile_expr(expr);
+                                    self.compile_call_arg(expr);
                                     regular_count += 1;
                                 }
                                 CallArg::Named {
@@ -562,7 +595,7 @@ impl Compiler {
                                     self.code.emit(OpCode::MakePair);
                                     regular_count += 1;
                                 }
-                                CallArg::Slip(_) => {}
+                                CallArg::Slip(_) | CallArg::Invocant(_) => {}
                             }
                         }
                         for arg in &rewritten_args {
@@ -582,7 +615,7 @@ impl Compiler {
 
                     for arg in &rewritten_args {
                         match arg {
-                            CallArg::Positional(expr) => self.compile_expr(expr),
+                            CallArg::Positional(expr) => self.compile_call_arg(expr),
                             CallArg::Named {
                                 name,
                                 value: Some(expr),
@@ -596,7 +629,7 @@ impl Compiler {
                                 self.compile_expr(&Expr::Literal(Value::Bool(true)));
                                 self.code.emit(OpCode::MakePair);
                             }
-                            CallArg::Slip(_) => unreachable!(),
+                            CallArg::Slip(_) | CallArg::Invocant(_) => unreachable!(),
                         }
                     }
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
@@ -825,9 +858,11 @@ impl Compiler {
         false
     }
 
-    /// Check if a block directly contains a `use` statement (non-recursive).
+    /// Check if a block directly contains a `use`/`no` statement (non-recursive).
     pub(super) fn has_use_stmt(stmts: &[Stmt]) -> bool {
-        stmts.iter().any(|s| matches!(s, Stmt::Use { .. }))
+        stmts
+            .iter()
+            .any(|s| matches!(s, Stmt::Use { .. } | Stmt::No { .. }))
     }
 
     pub(super) fn expr_has_let_deep(expr: &Expr) -> bool {

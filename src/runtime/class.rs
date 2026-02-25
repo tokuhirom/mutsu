@@ -112,13 +112,13 @@ impl Interpreter {
     pub(super) fn collect_class_attributes(
         &mut self,
         class_name: &str,
-    ) -> Vec<(String, bool, Option<Expr>)> {
+    ) -> Vec<(String, bool, Option<Expr>, bool)> {
         let mro = self.class_mro(class_name);
-        let mut attrs: Vec<(String, bool, Option<Expr>)> = Vec::new();
+        let mut attrs: Vec<(String, bool, Option<Expr>, bool)> = Vec::new();
         for cn in mro.iter().rev() {
             if let Some(class_def) = self.classes.get(cn) {
                 for attr in &class_def.attributes {
-                    if let Some(pos) = attrs.iter().position(|(n, _, _)| n == &attr.0) {
+                    if let Some(pos) = attrs.iter().position(|(n, _, _, _)| n == &attr.0) {
                         attrs.remove(pos);
                     }
                     attrs.push(attr.clone());
@@ -134,22 +134,53 @@ impl Interpreter {
         attributes: HashMap<String, Value>,
         method_name: &str,
         args: Vec<Value>,
+        invocant: Option<Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
-        let (owner_class, method_def) = self
-            .resolve_method_with_owner(receiver_class_name, method_name, &args)
-            .ok_or_else(|| {
-                RuntimeError::new(format!(
-                    "No matching candidates for method: {}",
-                    method_name
-                ))
-            })?;
-        self.run_instance_method_resolved(
+        let Some((owner_class, method_def)) =
+            self.resolve_method_with_owner(receiver_class_name, method_name, &args)
+        else {
+            return Err(RuntimeError::new(format!(
+                "No matching candidates for method: {}",
+                method_name
+            )));
+        };
+        let all_candidates =
+            self.resolve_all_methods_with_owner(receiver_class_name, method_name, &args);
+        let invocant_for_dispatch = if let Some(inv) = &invocant {
+            inv.clone()
+        } else if attributes.is_empty() {
+            Value::Package(receiver_class_name.to_string())
+        } else {
+            Value::make_instance(receiver_class_name.to_string(), attributes.clone())
+        };
+        let remaining: Vec<(String, MethodDef)> = all_candidates
+            .into_iter()
+            .skip(1)
+            .filter(|(candidate_owner, _)| {
+                !self.should_skip_defer_method_candidate(receiver_class_name, candidate_owner)
+            })
+            .collect();
+        let pushed_dispatch = !remaining.is_empty();
+        if pushed_dispatch {
+            self.method_dispatch_stack.push(MethodDispatchFrame {
+                receiver_class: receiver_class_name.to_string(),
+                invocant: invocant_for_dispatch,
+                args: args.clone(),
+                remaining,
+            });
+        }
+        let result = self.run_instance_method_resolved(
             receiver_class_name,
             &owner_class,
             method_def,
             attributes,
             args,
-        )
+            invocant,
+        );
+        if pushed_dispatch {
+            self.method_dispatch_stack.pop();
+        }
+        result
     }
 
     pub(super) fn run_instance_method_resolved(
@@ -159,9 +190,12 @@ impl Interpreter {
         method_def: MethodDef,
         mut attributes: HashMap<String, Value>,
         args: Vec<Value>,
+        invocant: Option<Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
         // For type-object calls (no attributes), use Package so self.new works
-        let base = if attributes.is_empty() {
+        let base = if let Some(invocant) = invocant {
+            invocant
+        } else if attributes.is_empty() {
             Value::Package(receiver_class_name.to_string())
         } else {
             Value::make_instance(receiver_class_name.to_string(), attributes.clone())
@@ -169,39 +203,38 @@ impl Interpreter {
         let saved_env = self.env.clone();
         self.method_class_stack.push(owner_class.to_string());
         self.env.insert("self".to_string(), base.clone());
+
+        let mut bind_params = Vec::new();
+        let mut bind_param_defs = Vec::new();
+        for (idx, param_name) in method_def.params.iter().enumerate() {
+            let is_invocant = method_def
+                .param_defs
+                .get(idx)
+                .map(|pd| pd.traits.iter().any(|t| t == "invocant"))
+                .unwrap_or(false);
+            if is_invocant {
+                self.env.insert(param_name.clone(), base.clone());
+                continue;
+            }
+            bind_params.push(param_name.clone());
+            if let Some(pd) = method_def.param_defs.get(idx) {
+                bind_param_defs.push(pd.clone());
+            }
+        }
+
         for (attr_name, attr_val) in &attributes {
             self.env.insert(format!("!{}", attr_name), attr_val.clone());
             self.env.insert(format!(".{}", attr_name), attr_val.clone());
         }
-        if attributes.is_empty() {
-            // Type-object method calls (e.g. COERCE) need full signature binding.
-            match self.bind_function_args_values(&method_def.param_defs, &method_def.params, &args)
-            {
-                Ok(_) => {}
-                Err(e) => {
-                    self.method_class_stack.pop();
-                    self.env = saved_env;
-                    return Err(e);
-                }
-            }
-        } else {
-            // Instance methods keep the simple positional/default binding fast-path.
-            for (i, param) in method_def.params.iter().enumerate() {
-                if let Some(val) = args.get(i) {
-                    self.env.insert(param.clone(), val.clone());
-                } else if let Some(pd) = method_def.param_defs.get(i)
-                    && let Some(default_expr) = &pd.default
-                {
-                    let val = match self.eval_block_value(&[Stmt::Expr(default_expr.clone())]) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            self.method_class_stack.pop();
-                            self.env = saved_env;
-                            return Err(e);
-                        }
-                    };
-                    self.env.insert(param.clone(), val);
-                }
+        // Method signatures must support full parameter binding semantics
+        // (coercions, slurpy params, defaults, and named args) for both
+        // type-object and instance invocations.
+        match self.bind_function_args_values(&bind_param_defs, &bind_params, &args) {
+            Ok(_) => {}
+            Err(e) => {
+                self.method_class_stack.pop();
+                self.env = saved_env;
+                return Err(e);
             }
         }
         let block_result = self.run_block(&method_def.body);
@@ -230,6 +263,23 @@ impl Interpreter {
         }
         self.method_class_stack.pop();
         self.env = merged_env;
-        result.map(|v| (v, attributes))
+        result.map(|v| {
+            let adjusted = match (&base, &v) {
+                (
+                    Value::Instance {
+                        class_name,
+                        id: base_id,
+                        ..
+                    },
+                    Value::Instance { id: ret_id, .. },
+                ) if base_id == ret_id => Value::Instance {
+                    class_name: class_name.clone(),
+                    attributes: std::sync::Arc::new(attributes.clone()),
+                    id: *base_id,
+                },
+                _ => v,
+            };
+            (adjusted, attributes)
+        })
     }
 }

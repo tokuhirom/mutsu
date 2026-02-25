@@ -204,7 +204,13 @@ fn inject_implicit_rule_ws(pattern: &str) -> String {
             let prev = out.chars().rev().find(|ch| !ch.is_whitespace());
             let next = chars[j..].iter().copied().find(|ch| !ch.is_whitespace());
             if let (Some(p), Some(n)) = (prev, next) {
-                if should_insert(p, n) {
+                if p == '^' {
+                    if !out.ends_with(' ') && !out.is_empty() {
+                        out.push(' ');
+                    }
+                    out.push_str("<.ws>?");
+                    out.push(' ');
+                } else if should_insert(p, n) {
                     if !out.ends_with(' ') && !out.is_empty() {
                         out.push(' ');
                     }
@@ -252,12 +258,18 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
 
     // Parent classes: is Parent
+    let mut is_hidden = false;
+    let mut hidden_parents = Vec::new();
     let mut parents = Vec::new();
     let mut r = rest;
     while let Some(r2) = keyword("is", r) {
         let (r2, _) = ws1(r2)?;
         let (r2, parent) = qualified_ident(r2)?;
-        parents.push(parent);
+        if parent == "hidden" {
+            is_hidden = true;
+        } else {
+            parents.push(parent);
+        }
         let (r2, _) = ws(r2)?;
         r = r2;
     }
@@ -291,12 +303,24 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
             r = r2;
         }
     }
+    // hides Parent — like inheritance for method lookup, but the hidden parent
+    // is skipped by deferal (`nextsame`/`callsame`) candidate selection.
+    while let Some(r2) = keyword("hides", r) {
+        let (r2, _) = ws1(r2)?;
+        let (r2, parent) = qualified_ident(r2)?;
+        parents.push(parent.clone());
+        hidden_parents.push(parent);
+        let (r2, _) = ws(r2)?;
+        r = r2;
+    }
 
     let (rest, body) = block(r)?;
     let class_stmt = Stmt::ClassDecl {
         name: name.clone(),
         name_expr,
         parents,
+        is_hidden,
+        hidden_parents,
         body,
     };
     let mut stmts = Vec::new();
@@ -389,6 +413,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
     let (mut rest, type_params) = parse_optional_role_type_params(rest)?;
+    let mut parent_roles: Vec<String> = Vec::new();
 
     // Optional `does Role[...]` clauses.
     while let Some(r) = keyword("does", rest) {
@@ -400,6 +425,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
                 name
             )));
         }
+        parent_roles.push(role_name);
         let (r, _) = skip_optional_role_args(r)?;
         rest = r;
     }
@@ -413,10 +439,13 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
         rest = r;
     }
 
-    let (rest, body) = match block(rest) {
+    let (rest, mut body) = match block(rest) {
         Ok(ok) => ok,
         Err(_) => consume_raw_braced_body(rest)?,
     };
+    for role_name in parent_roles.into_iter().rev() {
+        body.insert(0, Stmt::DoesDecl { name: role_name });
+    }
     Ok((
         rest,
         Stmt::RoleDecl {
@@ -516,7 +545,21 @@ pub(super) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, body) = block(rest)?;
+    let mut r = rest;
+    while let Some(r2) = keyword("is", r) {
+        let (r2, _) = ws1(r2)?;
+        let (r2, _) = qualified_ident(r2)?;
+        let (r2, _) = ws(r2)?;
+        r = r2;
+    }
+    while let Some(r2) = keyword("does", r) {
+        let (r2, _) = ws1(r2)?;
+        let (r2, _) = qualified_ident(r2)?;
+        let (r2, _) = ws(r2)?;
+        let (r2, _) = skip_optional_role_args(r2)?;
+        r = r2;
+    }
+    let (rest, body) = block(r)?;
     Ok((rest, Stmt::Package { name, body }))
 }
 
@@ -561,6 +604,8 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 name,
                 name_expr: None,
                 parents: Vec::new(),
+                is_hidden: false,
+                hidden_parents: Vec::new(),
                 body: Vec::new(),
             },
         ));

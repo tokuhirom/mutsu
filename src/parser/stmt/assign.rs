@@ -107,6 +107,44 @@ pub(crate) fn parse_compound_assign_op(input: &str) -> Option<(&str, CompoundAss
     None
 }
 
+fn parse_custom_compound_assign_op(input: &str) -> Option<(&str, String)> {
+    let mut chars = input.char_indices();
+    let (_, first) = chars.next()?;
+    if !first.is_alphabetic() && first != '_' {
+        return None;
+    }
+    let mut end = first.len_utf8();
+    for (idx, ch) in chars {
+        if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+            end = idx + ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+    let name = &input[..end];
+    if matches!(
+        name,
+        "if" | "unless"
+            | "for"
+            | "while"
+            | "until"
+            | "given"
+            | "when"
+            | "with"
+            | "without"
+            | "and"
+            | "or"
+            | "not"
+    ) {
+        return None;
+    }
+    let rest = &input[end..];
+    if let Some(rest) = rest.strip_prefix('=') {
+        return Some((rest, name.to_string()));
+    }
+    None
+}
+
 pub(super) fn parse_assign_expr_or_comma(input: &str) -> PResult<'_, Expr> {
     // Try to parse a chained assignment: $var op= ...
     if let Ok((rest, assign_expr)) = try_parse_assign_expr(input) {
@@ -222,6 +260,26 @@ pub(super) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr> {
                     left: Box::new(Expr::Var(var.to_string())),
                     op: op.token_kind(),
                     right: Box::new(rhs),
+                }),
+            },
+        ));
+    }
+    if let Some((stripped, op_name)) = parse_custom_compound_assign_op(r2) {
+        let (rest, _) = ws(stripped)?;
+        let (rest, rhs) = match try_parse_assign_expr(rest) {
+            Ok(r) => r,
+            Err(_) => expression(rest)?,
+        };
+        let name = format!("{}{}", prefix, var);
+        return Ok((
+            rest,
+            Expr::AssignExpr {
+                name: name.clone(),
+                expr: Box::new(Expr::InfixFunc {
+                    name: op_name,
+                    left: Box::new(Expr::Var(name)),
+                    right: vec![rhs],
+                    modifier: None,
                 }),
             },
         ));
@@ -479,6 +537,27 @@ pub(super) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         let stmt = Stmt::Assign {
             name,
             expr,
+            op: AssignOp::Assign,
+        };
+        return parse_statement_modifier(rest, stmt);
+    }
+    if let Some((stripped, op_name)) = parse_custom_compound_assign_op(rest) {
+        let (rest, _) = ws(stripped)?;
+        let (rest, rhs) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected right-hand expression after compound assignment",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(rest.len())),
+        })?;
+        let stmt = Stmt::Assign {
+            name: name.clone(),
+            expr: Expr::InfixFunc {
+                name: op_name,
+                left: Box::new(var_expr),
+                right: vec![rhs],
+                modifier: None,
+            },
             op: AssignOp::Assign,
         };
         return parse_statement_modifier(rest, stmt);

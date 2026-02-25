@@ -205,7 +205,7 @@ impl Interpreter {
                         if let (Some((an, ad)), Some((bn, bd))) =
                             (super::to_rat_parts(left), super::to_rat_parts(right))
                         {
-                            (an * bd).cmp(&(bn * ad))
+                            super::compare_rat_parts((an, ad), (bn, bd))
                         } else {
                             left.to_string_value().cmp(&right.to_string_value())
                         }
@@ -274,7 +274,15 @@ impl Interpreter {
                 Ok(Value::Bool(left == right))
             }
             "eqv" => Ok(Value::Bool(left.eqv(right))),
-            "=:=" => Ok(Value::Bool(left == right)),
+            "=:=" => Ok(Value::Bool(super::values_identical(left, right))),
+            "===" => Ok(Value::Bool(super::values_identical(left, right))),
+            "=>" => match left {
+                Value::Str(_) => Ok(Value::Pair(left.to_string_value(), Box::new(right.clone()))),
+                _ => Ok(Value::ValuePair(
+                    Box::new(left.clone()),
+                    Box::new(right.clone()),
+                )),
+            },
             "&" => {
                 let mut vals = match left {
                     Value::Junction {
@@ -374,6 +382,14 @@ impl Interpreter {
                 }
                 Ok(Value::array(results))
             }
+            "," => {
+                let mut items = match left {
+                    Value::Array(values, ..) => values.to_vec(),
+                    other => vec![other.clone()],
+                };
+                items.push(right.clone());
+                Ok(Value::array(items))
+            }
             _ => Err(RuntimeError::new(format!(
                 "Unsupported reduction operator: {}",
                 op
@@ -423,55 +439,6 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn eval_hyper_op(
-        op: &str,
-        left: &Value,
-        right: &Value,
-        dwim_left: bool,
-        dwim_right: bool,
-    ) -> Result<Value, RuntimeError> {
-        let left_list = Self::value_to_list(left);
-        let right_list = Self::value_to_list(right);
-        let left_len = left_list.len();
-        let right_len = right_list.len();
-
-        if left_len == 0 && right_len == 0 {
-            return Ok(Value::array(Vec::new()));
-        }
-
-        let result_len = if !dwim_left && !dwim_right {
-            if left_len != right_len {
-                return Err(RuntimeError::new(format!(
-                    "Non-dwimmy hyper operator: left has {} elements, right has {}",
-                    left_len, right_len
-                )));
-            }
-            left_len
-        } else if dwim_left && dwim_right {
-            std::cmp::max(left_len, right_len)
-        } else if dwim_right {
-            left_len
-        } else {
-            right_len
-        };
-
-        let mut results = Vec::with_capacity(result_len);
-        for i in 0..result_len {
-            let l = if left_len == 0 {
-                &Value::Int(0)
-            } else {
-                &left_list[i % left_len]
-            };
-            let r = if right_len == 0 {
-                &Value::Int(0)
-            } else {
-                &right_list[i % right_len]
-            };
-            results.push(Self::apply_reduction_op(op, l, r)?);
-        }
-        Ok(Value::array(results))
-    }
-
     pub(crate) fn compare(
         left: Value,
         right: Value,
@@ -488,9 +455,9 @@ impl Interpreter {
         if let (Some((an, ad)), Some((bn, bd))) = (super::to_rat_parts(&l), super::to_rat_parts(&r))
             && (matches!(l, Value::Rat(_, _)) || matches!(r, Value::Rat(_, _)))
         {
-            let lhs = an as i128 * bd as i128;
-            let rhs = bn as i128 * ad as i128;
-            return Ok(Value::Bool(f(lhs.cmp(&rhs) as i32)));
+            return Ok(Value::Bool(f(
+                super::compare_rat_parts((an, ad), (bn, bd)) as i32
+            )));
         }
         match (l, r) {
             (Value::Int(a), Value::Int(b)) => {

@@ -1,6 +1,81 @@
 use super::*;
 
 impl Interpreter {
+    fn inferred_operator_arity(name: &str) -> Option<usize> {
+        if name.starts_with("infix:<") && name.ends_with('>') {
+            return Some(2);
+        }
+        if (name.starts_with("prefix:<") || name.starts_with("postfix:<")) && name.ends_with('>') {
+            return Some(1);
+        }
+        None
+    }
+
+    fn callable_return_type_inner(callable: &Value) -> Option<String> {
+        match callable {
+            Value::Sub(data) => match data.env.get("__mutsu_return_type") {
+                Some(Value::Str(rt)) => Some(rt.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    pub(crate) fn callable_return_type(&self, callable: &Value) -> Option<String> {
+        Self::callable_return_type_inner(callable)
+    }
+
+    pub(crate) fn callable_signature(&self, callable: &Value) -> (Vec<String>, Vec<ParamDef>) {
+        match callable {
+            Value::Sub(data) => (data.params.clone(), data.param_defs.clone()),
+            Value::Routine { name, .. } => {
+                if let Some(def) = self.resolve_function(name) {
+                    return (def.params, def.param_defs);
+                }
+                if let Some(arity) = Self::inferred_operator_arity(name) {
+                    let params = (0..arity).map(|i| format!("arg{}", i)).collect();
+                    return (params, Vec::new());
+                }
+                (vec!["arg0".to_string()], Vec::new())
+            }
+            _ => (vec!["arg0".to_string()], Vec::new()),
+        }
+    }
+
+    pub(crate) fn compose_callables(&self, left: Value, right: Value) -> Value {
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static COMPOSE_ID: AtomicU64 = AtomicU64::new(1_000_000);
+        let id = COMPOSE_ID.fetch_add(1, Ordering::Relaxed);
+
+        let (mut params, param_defs) = self.callable_signature(&right);
+        if params.is_empty() {
+            if !param_defs.is_empty() {
+                params = param_defs.iter().map(|pd| pd.name.clone()).collect();
+            } else {
+                params = vec!["arg0".to_string()];
+            }
+        }
+
+        let left_return_type = self.callable_return_type(&left);
+        let mut env = std::collections::HashMap::new();
+        env.insert("__mutsu_compose_left".to_string(), left);
+        env.insert("__mutsu_compose_right".to_string(), right);
+        if let Some(rt) = left_return_type {
+            env.insert("__mutsu_return_type".to_string(), Value::Str(rt));
+        }
+
+        Value::make_sub_with_id(
+            String::new(),
+            "<composed>".to_string(),
+            params,
+            param_defs,
+            Vec::new(),
+            env,
+            id,
+        )
+    }
+
     pub(crate) fn env_mut(&mut self) -> &mut HashMap<String, Value> {
         &mut self.env
     }
@@ -19,6 +94,10 @@ impl Interpreter {
 
     pub(crate) fn set_when_matched(&mut self, v: bool) {
         self.when_matched = v;
+    }
+
+    pub(crate) fn is_role(&self, name: &str) -> bool {
+        self.roles.contains_key(name)
     }
 
     pub(crate) fn smart_match_values(&mut self, left: &Value, right: &Value) -> bool {
@@ -49,6 +128,7 @@ impl Interpreter {
         // resolve the bare function name.
         let bare_name = Self::strip_pseudo_packages(name);
         let has_packages = bare_name != name;
+        let lookup_name = bare_name.strip_prefix('*').unwrap_or(bare_name);
         if bare_name == "?ROUTINE" {
             if let Some((package, routine)) = self.routine_stack.last() {
                 return Value::Routine {
@@ -63,10 +143,10 @@ impl Interpreter {
         // user-defined overrides.
         // When pseudo-package qualifiers are present (e.g. SETTING::), resolve
         // to the builtin directly, bypassing user-defined overrides.
-        if has_packages && Self::is_builtin_function(bare_name) {
+        if has_packages && Self::is_builtin_function(lookup_name) {
             return Value::Routine {
                 package: "GLOBAL".to_string(),
-                name: bare_name.to_string(),
+                name: lookup_name.to_string(),
             };
         }
         // Check if stored as a variable first (my &f = ...)
@@ -82,11 +162,11 @@ impl Interpreter {
             return val.clone();
         }
         // Look up as a function reference (including multi subs)
-        let def = self.resolve_function(bare_name);
+        let def = self.resolve_function(lookup_name);
         let is_multi = if def.is_none() {
             // Check if there are multi-dispatch variants (stored with arity/type suffixes)
-            let prefix_local = format!("{}::{}/", self.current_package, bare_name);
-            let prefix_global = format!("GLOBAL::{}/", bare_name);
+            let prefix_local = format!("{}::{}/", self.current_package, lookup_name);
+            let prefix_global = format!("GLOBAL::{}/", lookup_name);
             self.functions
                 .keys()
                 .any(|k| k.starts_with(&prefix_local) || k.starts_with(&prefix_global))
@@ -97,7 +177,7 @@ impl Interpreter {
             // Multi subs should resolve via the dispatcher at call time
             Value::Routine {
                 package: self.current_package.clone(),
-                name: bare_name.to_string(),
+                name: lookup_name.to_string(),
             }
         } else if let Some(def) = def {
             Value::make_sub(
@@ -108,10 +188,17 @@ impl Interpreter {
                 def.body,
                 self.env.clone(),
             )
-        } else if Self::is_builtin_function(bare_name) {
+        } else if Self::is_builtin_function(lookup_name) {
             Value::Routine {
                 package: "GLOBAL".to_string(),
-                name: bare_name.to_string(),
+                name: lookup_name.to_string(),
+            }
+        } else if bare_name.starts_with('*') {
+            // Dynamic code vars (&*foo) can point to routines that are resolved
+            // at call time (including builtins not listed in is_builtin_function).
+            Value::Routine {
+                package: "GLOBAL".to_string(),
+                name: lookup_name.to_string(),
             }
         } else {
             Value::Nil

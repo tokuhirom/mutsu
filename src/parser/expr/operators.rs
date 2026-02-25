@@ -6,6 +6,8 @@ use super::super::parse_result::{PError, merge_expected_messages};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ComparisonOp {
     StrictEq,
+    #[allow(dead_code)]
+    StrictNe,
     NumEq,
     NotDivisibleBy,
     NumNe,
@@ -35,6 +37,7 @@ impl ComparisonOp {
     pub(super) fn token_kind(self) -> TokenKind {
         match self {
             ComparisonOp::StrictEq => TokenKind::EqEqEq,
+            ComparisonOp::StrictNe => TokenKind::BangEqEqEq,
             ComparisonOp::NumEq => TokenKind::EqEq,
             ComparisonOp::NotDivisibleBy => TokenKind::BangPercentPercent,
             ComparisonOp::NumNe => TokenKind::BangEq,
@@ -320,6 +323,20 @@ impl JunctiveOp {
 
 pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize)> {
     let next_non_ws = |s: &str| s.trim_start().chars().next();
+    let unary_term_start = |c: char| {
+        c == '$'
+            || c == '@'
+            || c == '%'
+            || c == '&'
+            || c == '('
+            || c == '['
+            || c == '{'
+            || c == '"'
+            || c == '\''
+            || c == '*'
+            || c.is_ascii_digit()
+            || c.is_ascii_alphabetic()
+    };
     if input.starts_with('!')
         && !input.starts_with("!!")
         && !input.starts_with("!~~")
@@ -344,18 +361,8 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
         && !input.starts_with("--")
         && !input.starts_with("->")
         && let Some(c) = next_non_ws(&input[1..])
-        && (c == '$'
-            || c == '@'
-            || c == '%'
-            || c == '&'
-            || c == '('
-            || c == '"'
-            || c == '\''
-            || c == '*'
-            || c == '.'  // topic method call: -.method
-            || c == '\u{221E}' // ∞
-            || c.is_ascii_digit()
-            || c.is_ascii_alphabetic())
+        && (unary_term_start(c) || c == '.' || c == '\u{221E}')
+    // topic call / ∞
     {
         Some((PrefixUnaryOp::Negate, 1))
     } else if input.starts_with('\u{2212}') {
@@ -366,31 +373,13 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
     } else if input.starts_with('+')
         && !input.starts_with("++")
         && let Some(c) = next_non_ws(&input[1..])
-        && (c == '$'
-            || c == '@'
-            || c == '%'
-            || c == '&'
-            || c == '('
-            || c == '"'
-            || c == '\''
-            || c == '*'
-            || c.is_ascii_digit()
-            || c.is_ascii_alphabetic())
+        && unary_term_start(c)
     {
         Some((PrefixUnaryOp::Positive, 1))
     } else if input.starts_with('~')
         && !input.starts_with("~~")
         && let Some(c) = next_non_ws(&input[1..])
-        && (c == '$'
-            || c == '@'
-            || c == '%'
-            || c == '&'
-            || c == '('
-            || c == '"'
-            || c == '\''
-            || c == '*'
-            || c.is_ascii_digit()
-            || c.is_ascii_alphabetic())
+        && unary_term_start(c)
     {
         Some((PrefixUnaryOp::Stringify, 1))
     } else {

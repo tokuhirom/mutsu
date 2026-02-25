@@ -280,45 +280,40 @@ impl VM {
     pub(super) fn exec_function_compose_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        use crate::ast::{Expr, Stmt};
-        static COMPOSE_ID: std::sync::atomic::AtomicU64 =
-            std::sync::atomic::AtomicU64::new(1_000_000);
-        let id = COMPOSE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let left_name = format!("__compose_left_{}__", id);
-        let right_name = format!("__compose_right_{}__", id);
-        let env = {
-            let mut env = std::collections::HashMap::new();
-            env.insert(left_name.clone(), left);
-            env.insert(right_name.clone(), right);
-            env
-        };
-        let composed = Value::make_sub_with_id(
-            String::new(),
-            "<composed>".to_string(),
-            vec!["x".to_string()],
-            Vec::new(),
-            vec![Stmt::Expr(Expr::Call {
-                name: left_name,
-                args: vec![Expr::Call {
-                    name: right_name,
-                    args: vec![Expr::Var("x".to_string())],
-                }],
-            })],
-            env,
-            id,
-        );
+        let composed = self.interpreter.compose_callables(left, right);
         self.stack.push(composed);
     }
 
-    pub(super) fn exec_but_mixin_op(&mut self) {
+    pub(super) fn exec_but_mixin_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let role_composed = match &right {
+            Value::Pair(name, boxed)
+                if self.interpreter.has_role(name)
+                    && matches!(boxed.as_ref(), Value::Array(..)) =>
+            {
+                Some(
+                    self.interpreter
+                        .eval_does_values(left.clone(), right.clone()),
+                )
+            }
+            Value::Package(name) | Value::Str(name) if self.interpreter.has_role(name) => Some(
+                self.interpreter
+                    .eval_does_values(left.clone(), right.clone()),
+            ),
+            _ => None,
+        };
+        if let Some(composed) = role_composed {
+            self.stack.push(composed?);
+            return Ok(());
+        }
         // Determine the mixin type from the right-hand value
         let mixin_type = match &right {
             Value::Bool(_) => "Bool".to_string(),
             Value::Int(_) | Value::BigInt(_) => "Int".to_string(),
             Value::Num(_) => "Num".to_string(),
             Value::Str(_) => "Str".to_string(),
+            Value::Package(name) => name.clone(),
             Value::Enum { enum_type, .. } => enum_type.clone(),
             _ => "Any".to_string(),
         };
@@ -335,6 +330,7 @@ impl VM {
             }
         };
         self.stack.push(result);
+        Ok(())
     }
 
     pub(super) fn exec_isa_op(&mut self) {
