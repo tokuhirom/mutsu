@@ -337,7 +337,7 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Parse optional role type parameters like `[::T]` or `[::T1, ::T2]`.
-/// Returns the type parameter names (without the `::` prefix).
+/// Returns parameter names for either type params (`::T`) or value params (`$x`).
 fn parse_optional_role_type_params(input: &str) -> PResult<'_, Vec<String>> {
     let (r, _) = ws(input)?;
     if !r.starts_with('[') {
@@ -359,7 +359,7 @@ fn parse_optional_role_type_params(input: &str) -> PResult<'_, Vec<String>> {
     }
     let content = &r[1..end]; // content between [ and ]
     let rest = &r[end + 1..];
-    // Parse type params: split by comma and look for ::Name patterns
+    // Parse params: split by comma and look for ::Name or sigiled vars like $x.
     let mut params = Vec::new();
     for part in content.split(',') {
         let trimmed = part.trim();
@@ -369,10 +369,24 @@ fn parse_optional_role_type_params(input: &str) -> PResult<'_, Vec<String>> {
             if let Ok((_, name)) = ident(name_part) {
                 params.push(name);
             }
+        } else if let Some(stripped) = trimmed
+            .strip_prefix('$')
+            .or_else(|| trimmed.strip_prefix('@'))
+            .or_else(|| trimmed.strip_prefix('%'))
+            .or_else(|| trimmed.strip_prefix('&'))
+        {
+            if let Ok((_, name)) = ident(stripped.trim()) {
+                params.push(name);
+            }
         } else {
-            // Could be "Cool ::T" pattern — look for :: within
+            // Could be "Cool ::T" or "Int $x" pattern — look for marker within.
             if let Some(pos) = trimmed.find("::") {
                 let after = &trimmed[pos + 2..];
+                if let Ok((_, name)) = ident(after.trim()) {
+                    params.push(name);
+                }
+            } else if let Some(pos) = trimmed.find('$') {
+                let after = &trimmed[pos + 1..];
                 if let Ok((_, name)) = ident(after.trim()) {
                     params.push(name);
                 }

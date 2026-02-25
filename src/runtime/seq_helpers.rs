@@ -637,6 +637,36 @@ impl Interpreter {
                 },
                 Value::Package(rhs_name),
             ) => lhs_base == rhs_name,
+            // Value instance/mixin ~~ parametric role: check composed role + type arguments.
+            (
+                left_value,
+                Value::ParametricRole {
+                    base_name: rhs_base,
+                    type_args: rhs_args,
+                },
+            ) => {
+                if !left_value.does_check(rhs_base) {
+                    return false;
+                }
+                let lhs_args = if let Value::Mixin(_, mixins) = left_value {
+                    match mixins.get(&format!("__mutsu_role_typeargs__{}", rhs_base)) {
+                        Some(Value::Array(items, ..)) => Some(items.as_ref().clone()),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+                let Some(lhs_args) = lhs_args else {
+                    return false;
+                };
+                if lhs_args.len() != rhs_args.len() {
+                    return false;
+                }
+                lhs_args
+                    .iter()
+                    .zip(rhs_args.iter())
+                    .all(|(lhs, rhs)| self.parametric_arg_subtypes(lhs, rhs))
+            }
             // When RHS is a type/Package, check type membership
             (_, Value::Package(type_name)) => {
                 // Handle type smileys (:U, :D, :_)
@@ -928,7 +958,7 @@ impl Interpreter {
                     .zip(ra.iter())
                     .all(|(l, r)| self.parametric_arg_subtypes(l, r))
             }
-            _ => false,
+            _ => lhs == rhs,
         }
     }
 
