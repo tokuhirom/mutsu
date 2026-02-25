@@ -96,6 +96,8 @@ try {
   assert(fbLines[2] === 'Fizz', `FizzBuzz line 3 = "Fizz" (got: ${JSON.stringify(fbLines[2])})`);
   assert(fbLines[4] === 'Buzz', `FizzBuzz line 5 = "Buzz" (got: ${JSON.stringify(fbLines[4])})`);
   assert(fbLines[14] === 'FizzBuzz', `FizzBuzz line 15 = "FizzBuzz" (got: ${JSON.stringify(fbLines[14])})`);
+  assert(fbLines.length === 100, `FizzBuzz has 100 lines (got: ${fbLines.length})`);
+  assert(fbLines[99] === 'Buzz', `FizzBuzz line 100 = "Buzz" (got: ${JSON.stringify(fbLines[99])})`);
 
   // --- Test: Ctrl+Enter shortcut ---
   console.log('Test: Ctrl+Enter shortcut');
