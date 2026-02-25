@@ -424,6 +424,42 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
     Ok((rest, Expr::Literal(Value::Str(s))))
 }
 
+/// Parse qx{...}, qx[...], qx(...), qx<...>, qx/.../, qx`...` forms.
+/// qx executes the command and returns captured stdout as a string.
+pub(super) fn qx_string(input: &str) -> PResult<'_, Expr> {
+    let after_qx = input
+        .strip_prefix("qx")
+        .ok_or_else(|| PError::expected("qx string"))?;
+    let delim = after_qx
+        .chars()
+        .next()
+        .ok_or_else(|| PError::expected("qx string delimiter"))?;
+    if delim.is_alphanumeric() || delim.is_whitespace() {
+        return Err(PError::expected("qx string delimiter"));
+    }
+
+    let (rest, command_expr) = if let Some(close_char) = unicode_bracket_close(delim) {
+        let (rest, content) = read_bracketed(after_qx, delim, close_char, true)?;
+        (rest, interpolate_string_content(content))
+    } else {
+        let body = &after_qx[delim.len_utf8()..];
+        let end = body
+            .find(delim)
+            .ok_or_else(|| PError::expected(&format!("closing '{delim}'")))?;
+        let content = &body[..end];
+        let rest = &body[end + delim.len_utf8()..];
+        (rest, interpolate_string_content(content))
+    };
+
+    Ok((
+        rest,
+        Expr::Call {
+            name: "QX".to_string(),
+            args: vec![command_expr],
+        },
+    ))
+}
+
 /// Process an escape sequence starting at `rest` (which begins with `\`).
 /// `extra_escapes` lists additional simple single-char escapes (e.g., `'"'`, `'{'`).
 /// Returns `Some((remaining_input, true))` if a continuation-style escape was handled
@@ -740,6 +776,61 @@ pub(in crate::parser) fn interpolate_string_content(content: &str) -> Expr {
     finalize_interpolation(parts, current)
 }
 
+fn parse_single_quote_qq(content: &str) -> Expr {
+    let mut parts: Vec<Expr> = Vec::new();
+    let mut current = String::new();
+    let mut rest = content;
+
+    while !rest.is_empty() {
+        if let Some(after_qq) = rest.strip_prefix("\\qq")
+            && let Some(open) = after_qq.chars().next()
+            && !open.is_alphanumeric()
+            && !open.is_whitespace()
+        {
+            let parsed = if let Some(close) = unicode_bracket_close(open) {
+                read_bracketed(after_qq, open, close, true)
+                    .map(|(after, inner)| (after, interpolate_string_content(inner)))
+            } else {
+                let body = &after_qq[open.len_utf8()..];
+                body.find(open)
+                    .map(|end| {
+                        let inner = &body[..end];
+                        let after = &body[end + open.len_utf8()..];
+                        (after, interpolate_string_content(inner))
+                    })
+                    .ok_or_else(|| PError::expected("closing qq delimiter"))
+            };
+            if let Ok((after, interpolated)) = parsed {
+                if !current.is_empty() {
+                    parts.push(Expr::Literal(Value::Str(std::mem::take(&mut current))));
+                }
+                parts.push(interpolated);
+                rest = after;
+                continue;
+            }
+        }
+
+        if let Some(after_backslash) = rest.strip_prefix('\\')
+            && let Some(next) = after_backslash.chars().next()
+        {
+            if next == '\'' || next == '\\' {
+                current.push(next);
+            } else {
+                current.push('\\');
+                current.push(next);
+            }
+            rest = &after_backslash[next.len_utf8()..];
+            continue;
+        }
+
+        let ch = rest.chars().next().unwrap();
+        current.push(ch);
+        rest = &rest[ch.len_utf8()..];
+    }
+
+    finalize_interpolation(parts, current)
+}
+
 pub(super) fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '\'')?;
     let start = input;
@@ -750,8 +841,7 @@ pub(super) fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
         }
         if let Some(after_quote) = rest.strip_prefix('\'') {
             let content = &start[..start.len() - rest.len()];
-            let s = content.replace("\\'", "'").replace("\\\\", "\\");
-            return Ok((after_quote, Expr::Literal(Value::Str(s))));
+            return Ok((after_quote, parse_single_quote_qq(content)));
         }
         if rest.starts_with('\\') && rest.len() > 1 {
             // Skip backslash + next character (which may be multi-byte)

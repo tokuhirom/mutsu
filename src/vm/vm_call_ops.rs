@@ -39,7 +39,7 @@ impl VM {
             .cloned()
             .map(Self::unwrap_var_ref_value)
             .collect();
-        if self.interpreter.has_function(name)
+        if self.interpreter.has_declared_function(name)
             || self.interpreter.has_multi_function(name)
             || self.interpreter.has_proto(name)
         {

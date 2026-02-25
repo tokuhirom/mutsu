@@ -81,7 +81,7 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
     // If sequence syntax appears, try full expression parsing first.
     // This avoids mis-parsing cases like ("a"...* ~~ / z /) where
     // sequence is followed by another infix operator.
-    if input.starts_with("...")
+    if starts_with_sequence_op(input)
         && let Ok((r_full, full_expr)) = expression(content_start)
     {
         let (r_full_ws, _) = ws(r_full)?;
@@ -244,8 +244,12 @@ pub(super) fn itemized_bracket_expr(input: &str) -> PResult<'_, Expr> {
 fn try_parse_sequence_in_paren<'a>(input: &'a str, seeds: &[Expr]) -> Option<PResult<'a, Expr>> {
     let (is_excl, rest) = if let Some(stripped) = input.strip_prefix("...^") {
         (true, stripped)
+    } else if let Some(stripped) = input.strip_prefix("…^") {
+        (true, stripped)
     } else if input.starts_with("...") && !input.starts_with("....") {
         (false, &input[3..])
+    } else if let Some(stripped) = input.strip_prefix("…") {
+        (false, stripped)
     } else {
         return None;
     };
@@ -311,6 +315,10 @@ fn try_parse_sequence_in_paren<'a>(input: &'a str, seeds: &[Expr]) -> Option<PRe
         Ok((r, seq))
     })();
     Some(result)
+}
+
+fn starts_with_sequence_op(input: &str) -> bool {
+    input.starts_with("...") || input.starts_with("…")
 }
 
 /// Try to parse an inline statement modifier inside parenthesized expression.
@@ -411,6 +419,13 @@ pub(super) fn percent_hash_literal(input: &str) -> PResult<'_, Expr> {
             if let Ok((r_after, _)) = parse_char(r, ')') {
                 return Ok((r_after, Expr::Hash(pairs)));
             }
+            rest = r;
+            continue;
+        }
+        // Newline-separated colonpairs without commas: treat as separate
+        // statements (like Raku), keeping only the last entry.
+        if r.starts_with(':') {
+            pairs.clear();
             rest = r;
             continue;
         }

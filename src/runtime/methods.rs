@@ -613,6 +613,7 @@ impl Interpreter {
                             Value::make_instance("X::TypeCheck::Binding".to_string(), ex_attrs);
                         let mut failure_attrs = std::collections::HashMap::new();
                         failure_attrs.insert("exception".to_string(), exception);
+                        failure_attrs.insert("handled".to_string(), Value::Bool(false));
                         let failure = Value::make_instance("Failure".to_string(), failure_attrs);
                         let mut mixins = std::collections::HashMap::new();
                         mixins.insert("Failure".to_string(), failure);
@@ -757,6 +758,12 @@ impl Interpreter {
                 );
                 return Ok(Value::make_instance("Signature".to_string(), attrs));
             }
+            if method == "of" && args.is_empty() {
+                let type_name = self
+                    .callable_return_type(&target)
+                    .unwrap_or_else(|| "Mu".to_string());
+                return Ok(Value::Package(type_name));
+            }
             if method == "can" {
                 let method_name = args
                     .first()
@@ -764,7 +771,15 @@ impl Interpreter {
                     .unwrap_or_default();
                 let can = matches!(
                     method_name.as_str(),
-                    "assuming" | "signature" | "name" | "raku" | "perl" | "Str" | "gist" | "can"
+                    "assuming"
+                        | "signature"
+                        | "of"
+                        | "name"
+                        | "raku"
+                        | "perl"
+                        | "Str"
+                        | "gist"
+                        | "can"
                 );
                 return Ok(Value::Bool(can));
             }
@@ -803,7 +818,19 @@ impl Interpreter {
                     "exception".to_string(),
                     args.first().cloned().unwrap_or(Value::Nil),
                 );
+                attrs.insert("handled".to_string(), Value::Bool(false));
                 return Ok(Value::make_instance("Failure".to_string(), attrs));
+            }
+            "handled"
+                if args.is_empty()
+                    && matches!(&target, Value::Instance { class_name, .. } if class_name == "Failure") =>
+            {
+                if let Value::Instance { attributes, .. } = &target {
+                    return Ok(attributes
+                        .get("handled")
+                        .cloned()
+                        .unwrap_or(Value::Bool(false)));
+                }
             }
             "are" => {
                 return self.dispatch_are(target, &args);

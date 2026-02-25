@@ -2,6 +2,26 @@ use super::*;
 use std::sync::Arc;
 
 impl VM {
+    fn term_symbol_from_name(name: &str) -> Option<&str> {
+        let bytes = name.as_bytes();
+        if bytes.is_empty() {
+            return None;
+        }
+        let starts_like_term = if bytes[0] == b't' {
+            name.starts_with("term:<")
+        } else if bytes[0] == b'&' {
+            name.starts_with("&term:<")
+        } else {
+            false
+        };
+        if !starts_like_term {
+            return None;
+        }
+        name.strip_prefix("term:<")
+            .or_else(|| name.strip_prefix("&term:<"))
+            .and_then(|s| s.strip_suffix('>'))
+    }
+
     fn array_depth(value: &Value) -> usize {
         match value {
             Value::Array(items, ..) => {
@@ -204,6 +224,15 @@ impl VM {
                 value: 1,
                 index: 2,
             }
+        } else if (name.starts_with("infix:<")
+            || name.starts_with("prefix:<")
+            || name.starts_with("postfix:<"))
+            && name.ends_with('>')
+        {
+            Value::Routine {
+                package: "GLOBAL".to_string(),
+                name: name.to_string(),
+            }
         } else if let Some(v) = self.interpreter.env().get(name) {
             if matches!(v, Value::Enum { .. } | Value::Nil) {
                 v.clone()
@@ -223,7 +252,9 @@ impl VM {
             || Self::is_type_with_smiley(name, &self.interpreter)
         {
             Value::Package(name.to_string())
-        } else if self.interpreter.has_function(name) {
+        } else if self.interpreter.has_function(name)
+            || Interpreter::is_implicit_zero_arg_builtin(name)
+        {
             if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
                 let pkg = self.interpreter.current_package().to_string();
                 let result =
@@ -952,6 +983,17 @@ impl VM {
         }
         self.locals[idx] = val.clone();
         self.set_env_with_main_alias(name, val.clone());
+        if let Some(symbol) = Self::term_symbol_from_name(name) {
+            self.interpreter
+                .env_mut()
+                .insert(symbol.to_string(), val.clone());
+            let pkg = self.interpreter.current_package().to_string();
+            if pkg != "GLOBAL" {
+                self.interpreter
+                    .env_mut()
+                    .insert(format!("{pkg}::term:<{symbol}>"), val.clone());
+            }
+        }
         if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
             if let Value::Str(name) = v {
                 Some(name.clone())

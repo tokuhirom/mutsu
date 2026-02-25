@@ -280,33 +280,7 @@ impl VM {
     pub(super) fn exec_function_compose_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        use crate::ast::{Expr, Stmt};
-        static COMPOSE_ID: std::sync::atomic::AtomicU64 =
-            std::sync::atomic::AtomicU64::new(1_000_000);
-        let id = COMPOSE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let left_name = format!("__compose_left_{}__", id);
-        let right_name = format!("__compose_right_{}__", id);
-        let env = {
-            let mut env = std::collections::HashMap::new();
-            env.insert(left_name.clone(), left);
-            env.insert(right_name.clone(), right);
-            env
-        };
-        let composed = Value::make_sub_with_id(
-            String::new(),
-            "<composed>".to_string(),
-            vec!["x".to_string()],
-            Vec::new(),
-            vec![Stmt::Expr(Expr::Call {
-                name: left_name,
-                args: vec![Expr::Call {
-                    name: right_name,
-                    args: vec![Expr::Var("x".to_string())],
-                }],
-            })],
-            env,
-            id,
-        );
+        let composed = self.interpreter.compose_callables(left, right);
         self.stack.push(composed);
     }
 

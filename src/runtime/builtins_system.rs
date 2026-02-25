@@ -342,6 +342,27 @@ impl Interpreter {
         }
     }
 
+    pub(super) fn builtin_qx(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let command = args
+            .first()
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+
+        let shell_args = vec![
+            Value::Str(command),
+            Value::Pair("out".to_string(), Box::new(Value::Bool(true))),
+        ];
+        let proc_value = self.builtin_shell(&shell_args)?;
+
+        if let Value::Instance { attributes, .. } = proc_value
+            && let Some(out_pipe) = attributes.get("out")
+        {
+            return self.call_method_with_values(out_pipe.clone(), "slurp", vec![]);
+        }
+
+        Ok(Value::Str(String::new()))
+    }
+
     pub(super) fn builtin_kill(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let signal = args.first().map(super::to_int).unwrap_or(15);
         let mut success = true;
