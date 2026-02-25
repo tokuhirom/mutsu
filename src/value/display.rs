@@ -1,4 +1,6 @@
 use super::*;
+use num_bigint::BigInt as NumBigInt;
+use num_traits::{Signed, ToPrimitive, Zero};
 
 pub(crate) fn is_internal_anon_type_name(name: &str) -> bool {
     name.starts_with("__ANON_") && name.ends_with("__")
@@ -147,6 +149,51 @@ fn format_terminating_ratio_exact(
     format!("{}{}.{}", if sign { "-" } else { "" }, int_part, frac)
 }
 
+fn format_ratio_bigint_decimal(
+    numer: &NumBigInt,
+    denom: &NumBigInt,
+    append_dot_zero_for_integer: bool,
+    max_fraction_digits: Option<usize>,
+) -> String {
+    if denom.is_zero() {
+        if numer.is_zero() {
+            return "NaN".to_string();
+        }
+        return if numer.is_positive() {
+            "Inf".to_string()
+        } else {
+            "-Inf".to_string()
+        };
+    }
+
+    let sign = numer.is_negative() ^ denom.is_negative();
+    let n = numer.abs();
+    let d = denom.abs();
+    let int_part = &n / &d;
+    let mut rem = n % &d;
+
+    if rem.is_zero() {
+        if append_dot_zero_for_integer {
+            return format!("{}{}.0", if sign { "-" } else { "" }, int_part);
+        }
+        return format!("{}{}", if sign { "-" } else { "" }, int_part);
+    }
+
+    let mut frac = String::new();
+    while !rem.is_zero() {
+        if max_fraction_digits.is_some_and(|limit| frac.len() >= limit) {
+            break;
+        }
+        rem *= 10u8;
+        let digit = &rem / &d;
+        rem %= &d;
+        let ch = digit.to_u8().unwrap_or(0);
+        frac.push(char::from(b'0' + ch));
+    }
+
+    format!("{}{}.{}", if sign { "-" } else { "" }, int_part, frac)
+}
+
 fn has_terminating_decimal(denom: i64) -> bool {
     if denom == 0 {
         return false;
@@ -159,6 +206,20 @@ fn has_terminating_decimal(denom: i64) -> bool {
         dd /= 5;
     }
     dd == 1
+}
+
+fn has_terminating_decimal_bigint(denom: &NumBigInt) -> bool {
+    if denom.is_zero() {
+        return false;
+    }
+    let mut dd = denom.abs();
+    while (&dd % 2u8).is_zero() {
+        dd /= 2u8;
+    }
+    while (&dd % 5u8).is_zero() {
+        dd /= 5u8;
+    }
+    dd == NumBigInt::from(1u8)
 }
 
 impl Value {
@@ -280,6 +341,23 @@ impl Value {
                 } else {
                     let whole = *a as f64 / *b as f64;
                     format!("{:.6}", whole)
+                }
+            }
+            Value::BigRat(n, d) => {
+                if d.is_zero() {
+                    if n.is_zero() {
+                        "NaN".to_string()
+                    } else if n.is_positive() {
+                        "Inf".to_string()
+                    } else {
+                        "-Inf".to_string()
+                    }
+                } else if (n % d).is_zero() {
+                    format!("{}", n / d)
+                } else if has_terminating_decimal_bigint(d) {
+                    format_ratio_bigint_decimal(n, d, false, None)
+                } else {
+                    format_ratio_bigint_decimal(n, d, false, Some(6))
                 }
             }
             Value::Complex(r, i) => format_complex(*r, *i),
