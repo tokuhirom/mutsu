@@ -962,17 +962,17 @@ impl Interpreter {
                 return self.dispatch_are(target, &args);
             }
             "say" if args.is_empty() => {
-                self.output.push_str(&crate::runtime::gist_value(&target));
-                self.output.push('\n');
+                let s = format!("{}\n", crate::runtime::gist_value(&target));
+                self.emit_output(&s);
                 return Ok(Value::Nil);
             }
             "print" if args.is_empty() => {
-                self.output.push_str(&target.to_string_value());
+                self.emit_output(&target.to_string_value());
                 return Ok(Value::Nil);
             }
             "put" if args.is_empty() => {
-                self.output.push_str(&crate::runtime::gist_value(&target));
-                self.output.push('\n');
+                let s = format!("{}\n", crate::runtime::gist_value(&target));
+                self.emit_output(&s);
                 return Ok(Value::Nil);
             }
             "shape" if args.is_empty() => {

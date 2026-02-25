@@ -346,6 +346,7 @@ impl Interpreter {
             // Concurrency (single-threaded simulation)
             "start" => self.builtin_start(args),
             "await" => self.builtin_await(&args),
+            "signal" => self.builtin_signal(&args),
             // Boolean coercion functions
             "not" => Ok(Value::Bool(!args.first().unwrap_or(&Value::Nil).truthy())),
             "so" => Ok(Value::Bool(args.first().unwrap_or(&Value::Nil).truthy())),
@@ -1008,7 +1009,7 @@ impl Interpreter {
 
     fn builtin_dd(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let val = args.first().cloned().unwrap_or(Value::Nil);
-        self.output.push_str(&format!("{:?}\n", val));
+        self.emit_output(&format!("{:?}\n", val));
         Ok(val)
     }
 

@@ -455,6 +455,31 @@ impl VM {
         Ok(())
     }
 
+    pub(super) fn exec_react_scope_op(
+        &mut self,
+        code: &CompiledCode,
+        body_end: u32,
+        ip: &mut usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
+        let end = body_end as usize;
+        let body_start = *ip + 1;
+
+        // Enter react mode: whenever blocks will register subscriptions
+        self.interpreter.enter_react();
+        let saved_depth = self.stack.len();
+        let run_result = self.run_range(code, body_start, end, compiled_fns);
+        self.stack.truncate(saved_depth);
+
+        // Run the react event loop (processes all registered subscriptions)
+        let event_result = self.interpreter.run_react_event_loop();
+        self.sync_locals_from_env(code);
+
+        *ip = end;
+        run_result?;
+        event_result
+    }
+
     pub(super) fn exec_whenever_scope_op(
         &mut self,
         code: &CompiledCode,

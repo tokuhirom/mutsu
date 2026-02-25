@@ -406,6 +406,45 @@ impl Interpreter {
         }
     }
 
+    pub(super) fn init_signal_enum(&mut self) {
+        let variants = vec![
+            ("SIGHUP".to_string(), libc::SIGHUP as i64),
+            ("SIGINT".to_string(), libc::SIGINT as i64),
+            ("SIGQUIT".to_string(), libc::SIGQUIT as i64),
+            ("SIGILL".to_string(), libc::SIGILL as i64),
+            ("SIGABRT".to_string(), libc::SIGABRT as i64),
+            ("SIGFPE".to_string(), libc::SIGFPE as i64),
+            ("SIGKILL".to_string(), libc::SIGKILL as i64),
+            ("SIGSEGV".to_string(), libc::SIGSEGV as i64),
+            ("SIGPIPE".to_string(), libc::SIGPIPE as i64),
+            ("SIGALRM".to_string(), libc::SIGALRM as i64),
+            ("SIGTERM".to_string(), libc::SIGTERM as i64),
+            ("SIGUSR1".to_string(), libc::SIGUSR1 as i64),
+            ("SIGUSR2".to_string(), libc::SIGUSR2 as i64),
+            ("SIGCHLD".to_string(), libc::SIGCHLD as i64),
+            ("SIGCONT".to_string(), libc::SIGCONT as i64),
+            ("SIGSTOP".to_string(), libc::SIGSTOP as i64),
+            ("SIGTSTP".to_string(), libc::SIGTSTP as i64),
+            ("SIGTTIN".to_string(), libc::SIGTTIN as i64),
+            ("SIGTTOU".to_string(), libc::SIGTTOU as i64),
+        ];
+        self.enum_types
+            .insert("Signal".to_string(), variants.clone());
+        self.env
+            .insert("Signal".to_string(), Value::Str("Signal".to_string()));
+        for (index, (key, val)) in variants.iter().enumerate() {
+            let enum_val = Value::Enum {
+                enum_type: "Signal".to_string(),
+                key: key.clone(),
+                value: *val,
+                index,
+            };
+            self.env
+                .insert(format!("Signal::{}", key), enum_val.clone());
+            self.env.insert(key.clone(), enum_val);
+        }
+    }
+
     pub(super) fn version_from_value(arg: Value) -> Value {
         use crate::value::VersionPart;
         match arg {
