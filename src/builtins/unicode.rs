@@ -68,6 +68,161 @@ pub(crate) fn samemark_string(target: &str, source: &str) -> String {
     result
 }
 
+/// Apply samecase transformation: transfer the case pattern from `source` (the matched text)
+/// to `target` (the replacement text), character by character.
+/// If `source` is shorter than `target` and ended with a cased character, that case extends.
+/// If `source` ended with a caseless character (space, digit, etc.), positions beyond the
+/// source keep their original case.
+/// Non-alphabetic source characters don't affect the corresponding target character.
+pub(crate) fn samecase_string(target: &str, source: &str) -> String {
+    let source_chars: Vec<char> = source.chars().collect();
+    let mut result = String::new();
+    let mut last_case: Option<bool> = None; // true = upper, false = lower
+    // Track if the last source character was cased (for extension rule)
+    let source_ends_cased = source_chars
+        .last()
+        .is_some_and(|c| c.is_uppercase() || c.is_lowercase());
+
+    for (idx, target_ch) in target.chars().enumerate() {
+        if !target_ch.is_alphabetic() {
+            result.push(target_ch);
+            continue;
+        }
+        // Find the case from the corresponding source position
+        let case = if idx < source_chars.len() {
+            let src_ch = source_chars[idx];
+            if src_ch.is_uppercase() {
+                last_case = Some(true);
+                Some(true)
+            } else if src_ch.is_lowercase() {
+                last_case = Some(false);
+                Some(false)
+            } else {
+                // Non-cased source char: target keeps its original case
+                None
+            }
+        } else if source_ends_cased {
+            // Beyond source length and source ended with a cased char: extend last case
+            last_case
+        } else {
+            // Beyond source length but source ended caseless: keep original
+            None
+        };
+        match case {
+            Some(true) => {
+                for c in target_ch.to_uppercase() {
+                    result.push(c);
+                }
+            }
+            Some(false) => {
+                for c in target_ch.to_lowercase() {
+                    result.push(c);
+                }
+            }
+            None => result.push(target_ch),
+        }
+    }
+    result
+}
+
+/// Apply samecase on a per-word basis for :ii with :sigspace.
+/// Determines the case pattern of each word in the matched text and applies
+/// the corresponding transformation (uc, lc, ucfirst, lcfirst(uc)) to each
+/// word in the replacement.
+pub(crate) fn samecase_per_word(target: &str, source: &str) -> String {
+    let src_words: Vec<&str> = source.split_whitespace().collect();
+    if src_words.is_empty() {
+        return target.to_string();
+    }
+
+    let mut result = String::new();
+    let mut word_idx = 0;
+    let mut chars = target.chars().peekable();
+    while chars.peek().is_some() {
+        // Collect leading whitespace
+        while let Some(&ch) = chars.peek() {
+            if ch.is_whitespace() {
+                result.push(ch);
+                chars.next();
+            } else {
+                break;
+            }
+        }
+        // Collect word
+        let mut word = String::new();
+        while let Some(&ch) = chars.peek() {
+            if ch.is_whitespace() {
+                break;
+            }
+            word.push(ch);
+            chars.next();
+        }
+        if !word.is_empty() {
+            let src_word = if word_idx < src_words.len() {
+                src_words[word_idx]
+            } else {
+                src_words.last().unwrap()
+            };
+            result.push_str(&apply_word_case_pattern(&word, src_word));
+            word_idx += 1;
+        }
+    }
+    result
+}
+
+/// Determine the case pattern of a source word and apply it to the target word.
+fn apply_word_case_pattern(target: &str, source: &str) -> String {
+    let cased: Vec<char> = source.chars().filter(|c| c.is_alphabetic()).collect();
+    if cased.is_empty() {
+        return target.to_string();
+    }
+    let all_upper = cased.iter().all(|c| c.is_uppercase());
+    let all_lower = cased.iter().all(|c| c.is_lowercase());
+    let first_upper = cased[0].is_uppercase();
+
+    if all_upper {
+        // uc: all uppercase
+        target.to_uppercase()
+    } else if all_lower {
+        // lc: all lowercase
+        target.to_lowercase()
+    } else if first_upper {
+        // ucfirst(lc): titlecase — first char uppercase, rest lowercase
+        let mut result = String::new();
+        let mut first = true;
+        for ch in target.chars() {
+            if first && ch.is_alphabetic() {
+                for c in ch.to_uppercase() {
+                    result.push(c);
+                }
+                first = false;
+            } else {
+                for c in ch.to_lowercase() {
+                    result.push(c);
+                }
+            }
+        }
+        result
+    } else {
+        // lcfirst(uc): first char lowercase, rest uppercase
+        let mut result = String::new();
+        let mut first = true;
+        for ch in target.chars() {
+            if first && ch.is_alphabetic() {
+                for c in ch.to_lowercase() {
+                    result.push(c);
+                }
+                first = false;
+            } else {
+                for c in ch.to_uppercase() {
+                    result.push(c);
+                }
+            }
+        }
+        result
+    }
+}
+
 /// Return the Rat (numerator, denominator) for a Unicode vulgar fraction character.
 pub(crate) fn unicode_rat_value(c: char) -> Option<(i64, i64)> {
     match c {

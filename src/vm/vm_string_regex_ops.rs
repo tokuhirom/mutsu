@@ -51,11 +51,12 @@ impl VM {
         &mut self,
         code: &CompiledCode,
         pattern_idx: u32,
-        replacement_idx: u32,
         samemark: bool,
+        samecase: bool,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
-        let replacement = Self::const_str(code, replacement_idx).to_string();
+        // Replacement value was compiled as an expression and is on top of the stack
+        let replacement = self.stack.pop().unwrap_or(Value::Nil).to_string_value();
         let target = self
             .interpreter
             .env()
@@ -67,7 +68,15 @@ impl VM {
             let start_b = runtime::char_idx_to_byte(&text, start);
             let end_b = runtime::char_idx_to_byte(&text, end);
             let matched_text = &text[start_b..end_b];
-            let replacement = if samemark {
+            let replacement = if samecase {
+                // :ii — apply case pattern from matched text to replacement
+                let has_sigspace = pattern.starts_with(":s ");
+                if has_sigspace {
+                    crate::builtins::samecase_per_word(&replacement, matched_text)
+                } else {
+                    crate::builtins::samecase_string(&replacement, matched_text)
+                }
+            } else if samemark {
                 // Use per-word samemark when both source and replacement contain whitespace
                 if matched_text.contains(char::is_whitespace)
                     && replacement.contains(char::is_whitespace)
@@ -97,11 +106,12 @@ impl VM {
         &mut self,
         code: &CompiledCode,
         pattern_idx: u32,
-        replacement_idx: u32,
         samemark: bool,
+        samecase: bool,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
-        let replacement = Self::const_str(code, replacement_idx).to_string();
+        // Replacement value was compiled as an expression and is on top of the stack
+        let replacement = self.stack.pop().unwrap_or(Value::Nil).to_string_value();
         let target = self
             .interpreter
             .env()
@@ -113,7 +123,14 @@ impl VM {
             let start_b = runtime::char_idx_to_byte(&text, start);
             let end_b = runtime::char_idx_to_byte(&text, end);
             let matched_text = &text[start_b..end_b];
-            let replacement = if samemark {
+            let replacement = if samecase {
+                let has_sigspace = pattern.starts_with(":s ");
+                if has_sigspace {
+                    crate::builtins::samecase_per_word(&replacement, matched_text)
+                } else {
+                    crate::builtins::samecase_string(&replacement, matched_text)
+                }
+            } else if samemark {
                 crate::builtins::samemark_string(&replacement, matched_text)
             } else {
                 replacement
