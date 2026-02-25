@@ -54,6 +54,7 @@ roast/S03-operators/boolean-bitwise.t
 roast/S03-operators/brainos.t
 roast/S03-operators/chained-declarators.t
 roast/S03-operators/comparison-simple.t
+roast/S03-operators/composition.t
 roast/S03-operators/custom.t
 roast/S03-operators/div.t
 roast/S03-operators/gcd.t

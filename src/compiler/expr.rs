@@ -1048,6 +1048,7 @@ impl Compiler {
             Expr::AnonSubParams {
                 params,
                 param_defs,
+                return_type,
                 body,
             } => {
                 // Validate for placeholder conflicts
@@ -1062,6 +1063,7 @@ impl Compiler {
                     name_expr: None,
                     params: params.clone(),
                     param_defs: param_defs.clone(),
+                    return_type: return_type.clone(),
                     signature_alternates: Vec::new(),
                     body: body.clone(),
                     multi: false,
@@ -1081,6 +1083,7 @@ impl Compiler {
                         vec![param.clone()]
                     },
                     param_defs: Vec::new(),
+                    return_type: None,
                     signature_alternates: Vec::new(),
                     body: body.clone(),
                     multi: false,
