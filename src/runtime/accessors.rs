@@ -49,6 +49,7 @@ impl Interpreter {
         // resolve the bare function name.
         let bare_name = Self::strip_pseudo_packages(name);
         let has_packages = bare_name != name;
+        let lookup_name = bare_name.strip_prefix('*').unwrap_or(bare_name);
         if bare_name == "?ROUTINE" {
             if let Some((package, routine)) = self.routine_stack.last() {
                 return Value::Routine {
@@ -63,10 +64,10 @@ impl Interpreter {
         // user-defined overrides.
         // When pseudo-package qualifiers are present (e.g. SETTING::), resolve
         // to the builtin directly, bypassing user-defined overrides.
-        if has_packages && Self::is_builtin_function(bare_name) {
+        if has_packages && Self::is_builtin_function(lookup_name) {
             return Value::Routine {
                 package: "GLOBAL".to_string(),
-                name: bare_name.to_string(),
+                name: lookup_name.to_string(),
             };
         }
         // Check if stored as a variable first (my &f = ...)
@@ -82,11 +83,11 @@ impl Interpreter {
             return val.clone();
         }
         // Look up as a function reference (including multi subs)
-        let def = self.resolve_function(bare_name);
+        let def = self.resolve_function(lookup_name);
         let is_multi = if def.is_none() {
             // Check if there are multi-dispatch variants (stored with arity/type suffixes)
-            let prefix_local = format!("{}::{}/", self.current_package, bare_name);
-            let prefix_global = format!("GLOBAL::{}/", bare_name);
+            let prefix_local = format!("{}::{}/", self.current_package, lookup_name);
+            let prefix_global = format!("GLOBAL::{}/", lookup_name);
             self.functions
                 .keys()
                 .any(|k| k.starts_with(&prefix_local) || k.starts_with(&prefix_global))
@@ -97,7 +98,7 @@ impl Interpreter {
             // Multi subs should resolve via the dispatcher at call time
             Value::Routine {
                 package: self.current_package.clone(),
-                name: bare_name.to_string(),
+                name: lookup_name.to_string(),
             }
         } else if let Some(def) = def {
             Value::make_sub(
@@ -108,10 +109,17 @@ impl Interpreter {
                 def.body,
                 self.env.clone(),
             )
-        } else if Self::is_builtin_function(bare_name) {
+        } else if Self::is_builtin_function(lookup_name) {
             Value::Routine {
                 package: "GLOBAL".to_string(),
-                name: bare_name.to_string(),
+                name: lookup_name.to_string(),
+            }
+        } else if bare_name.starts_with('*') {
+            // Dynamic code vars (&*foo) can point to routines that are resolved
+            // at call time (including builtins not listed in is_builtin_function).
+            Value::Routine {
+                package: "GLOBAL".to_string(),
+                name: lookup_name.to_string(),
             }
         } else {
             Value::Nil
