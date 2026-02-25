@@ -1180,23 +1180,18 @@ impl VM {
             // -- Substitution --
             OpCode::Subst {
                 pattern_idx,
-                replacement_idx,
                 samemark,
+                samecase,
             } => {
-                self.exec_subst_op(code, *pattern_idx, *replacement_idx, *samemark)?;
+                self.exec_subst_op(code, *pattern_idx, *samemark, *samecase)?;
                 *ip += 1;
             }
             OpCode::NonDestructiveSubst {
                 pattern_idx,
-                replacement_idx,
                 samemark,
+                samecase,
             } => {
-                self.exec_non_destructive_subst_op(
-                    code,
-                    *pattern_idx,
-                    *replacement_idx,
-                    *samemark,
-                )?;
+                self.exec_non_destructive_subst_op(code, *pattern_idx, *samemark, *samecase)?;
                 *ip += 1;
             }
             OpCode::Transliterate {

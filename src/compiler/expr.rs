@@ -877,13 +877,15 @@ impl Compiler {
                 pattern,
                 replacement,
                 samemark,
+                samecase,
             } => {
+                // Compile replacement expression — its value will be on top of the stack
+                self.compile_expr(replacement);
                 let pattern_idx = self.code.add_constant(Value::Str(pattern.clone()));
-                let replacement_idx = self.code.add_constant(Value::Str(replacement.clone()));
                 self.code.emit(OpCode::Subst {
                     pattern_idx,
-                    replacement_idx,
                     samemark: *samemark,
+                    samecase: *samecase,
                 });
             }
             // S/// non-destructive substitution
@@ -891,13 +893,15 @@ impl Compiler {
                 pattern,
                 replacement,
                 samemark,
+                samecase,
             } => {
+                // Compile replacement expression — its value will be on top of the stack
+                self.compile_expr(replacement);
                 let pattern_idx = self.code.add_constant(Value::Str(pattern.clone()));
-                let replacement_idx = self.code.add_constant(Value::Str(replacement.clone()));
                 self.code.emit(OpCode::NonDestructiveSubst {
                     pattern_idx,
-                    replacement_idx,
                     samemark: *samemark,
+                    samecase: *samecase,
                 });
             }
             // tr/// transliteration

@@ -1,4 +1,5 @@
 use super::super::parse_result::{PError, PResult, parse_char, parse_tag, take_while1};
+use super::string::interpolate_string_content;
 
 use crate::ast::Expr;
 use crate::value::Value;
@@ -13,6 +14,7 @@ struct MatchAdverbs {
     ignore_case: bool,
     ignore_mark: bool,
     samemark: bool,
+    samecase: bool,
     sigspace: bool,
     perl5: bool,
     pos: bool,
@@ -95,7 +97,10 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
         } else if name == "mm" || name == "samemark" {
             adverbs.samemark = true;
             adverbs.ignore_mark = true; // :mm implies :m
-        } else if name == "s" || name == "sigspace" {
+        } else if name == "ii" || name == "samecase" {
+            adverbs.samecase = true;
+            adverbs.ignore_case = true; // :ii implies :i
+        } else if name == "ss" || name == "samespace" || name == "s" || name == "sigspace" {
             adverbs.sigspace = true;
         } else if name == "p" || name == "pos" {
             adverbs.pos = true;
@@ -575,12 +580,14 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         scan_to_delim(r2, open_ch, close_ch, is_paired)
                     {
                         let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                        let repl_expr = interpolate_string_content(replacement);
                         return Ok((
                             rest,
                             Expr::Subst {
                                 pattern,
-                                replacement: replacement.to_string(),
+                                replacement: Box::new(repl_expr),
                                 samemark: adverbs.samemark,
+                                samecase: adverbs.samecase,
                             },
                         ));
                     }
@@ -619,12 +626,14 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         scan_to_delim(r2, open_ch, close_ch, is_paired)
                     {
                         let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                        let repl_expr = interpolate_string_content(replacement);
                         return Ok((
                             rest,
                             Expr::NonDestructiveSubst {
                                 pattern,
-                                replacement: replacement.to_string(),
+                                replacement: Box::new(repl_expr),
                                 samemark: adverbs.samemark,
+                                samecase: adverbs.samecase,
                             },
                         ));
                     }
@@ -667,12 +676,14 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             } else {
                 &r[rend..]
             };
+            let repl_expr = interpolate_string_content(replacement);
             return Ok((
                 rest,
                 Expr::NonDestructiveSubst {
                     pattern: pattern.to_string(),
-                    replacement: replacement.to_string(),
+                    replacement: Box::new(repl_expr),
                     samemark: false,
+                    samecase: false,
                 },
             ));
         }
