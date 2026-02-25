@@ -1779,18 +1779,25 @@ impl Interpreter {
                     let stdout_handle = child_stdout.map(|stdout| {
                         let tx = stdout_channel;
                         std::thread::spawn(move || {
-                            let reader = std::io::BufReader::new(stdout);
+                            let mut reader = std::io::BufReader::new(stdout);
                             let mut collected = String::new();
-                            for line in reader.lines() {
-                                match line {
-                                    Ok(line) => {
-                                        // Send through channel for react event loop
+                            let mut line = String::new();
+                            loop {
+                                line.clear();
+                                match reader.read_line(&mut line) {
+                                    Ok(0) => break,
+                                    Ok(_) => {
+                                        // Keep event payload line-oriented (without trailing newline),
+                                        // while preserving exact stream bytes in `collected`.
+                                        let emit_line = line.strip_suffix('\n').unwrap_or(&line);
+                                        let emit_line =
+                                            emit_line.strip_suffix('\r').unwrap_or(emit_line);
                                         if let Some(ref tx) = tx {
-                                            let _ = tx
-                                                .send(SupplyEvent::Emit(Value::Str(line.clone())));
+                                            let _ = tx.send(SupplyEvent::Emit(Value::Str(
+                                                emit_line.to_string(),
+                                            )));
                                         }
                                         collected.push_str(&line);
-                                        collected.push('\n');
                                     }
                                     Err(_) => break,
                                 }
@@ -1806,17 +1813,23 @@ impl Interpreter {
                     let stderr_handle = child_stderr.map(|stderr| {
                         let tx = stderr_channel;
                         std::thread::spawn(move || {
-                            let reader = std::io::BufReader::new(stderr);
+                            let mut reader = std::io::BufReader::new(stderr);
                             let mut collected = String::new();
-                            for line in reader.lines() {
-                                match line {
-                                    Ok(line) => {
+                            let mut line = String::new();
+                            loop {
+                                line.clear();
+                                match reader.read_line(&mut line) {
+                                    Ok(0) => break,
+                                    Ok(_) => {
+                                        let emit_line = line.strip_suffix('\n').unwrap_or(&line);
+                                        let emit_line =
+                                            emit_line.strip_suffix('\r').unwrap_or(emit_line);
                                         if let Some(ref tx) = tx {
-                                            let _ = tx
-                                                .send(SupplyEvent::Emit(Value::Str(line.clone())));
+                                            let _ = tx.send(SupplyEvent::Emit(Value::Str(
+                                                emit_line.to_string(),
+                                            )));
                                         }
                                         collected.push_str(&line);
-                                        collected.push('\n');
                                     }
                                     Err(_) => break,
                                 }
