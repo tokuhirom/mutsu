@@ -191,3 +191,22 @@ pub(super) fn dot_decimal(input: &str) -> PResult<'_, Expr> {
         Ok((rest, Expr::Literal(crate::value::make_rat(numer, denom))))
     }
 }
+
+/// Parse a single Unicode numeric literal (vulgar fractions and superscript digits).
+pub(super) fn unicode_numeric_literal(input: &str) -> PResult<'_, Expr> {
+    let first = input
+        .chars()
+        .next()
+        .ok_or_else(|| PError::expected("unicode numeric literal"))?;
+    let rest = &input[first.len_utf8()..];
+    if rest.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
+        return Err(PError::expected("unicode numeric literal"));
+    }
+    if let Some((n, d)) = crate::builtins::unicode::unicode_rat_value(first) {
+        return Ok((rest, Expr::Literal(crate::value::make_rat(n, d))));
+    }
+    if let Some(n) = crate::builtins::unicode::unicode_numeric_int_value(first) {
+        return Ok((rest, Expr::Literal(Value::Int(n))));
+    }
+    Err(PError::expected("unicode numeric literal"))
+}
