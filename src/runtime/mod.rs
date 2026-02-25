@@ -289,6 +289,8 @@ pub struct Interpreter {
     /// Each entry is (remaining_candidates, original_args).
     multi_dispatch_stack: Vec<(Vec<FunctionDef>, Vec<Value>)>,
     method_dispatch_stack: Vec<MethodDispatchFrame>,
+    /// Names suppressed by `anon class`. These bare words should error as undeclared.
+    suppressed_names: HashSet<String>,
 }
 
 /// An entry in the encoding registry.
@@ -953,6 +955,7 @@ impl Interpreter {
             skip_pseudo_method_native: None,
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),
+            suppressed_names: HashSet::new(),
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -1064,6 +1067,14 @@ impl Interpreter {
         }
         self.encoding_registry.push(entry);
         Ok(())
+    }
+
+    pub(crate) fn suppress_name(&mut self, name: &str) {
+        self.suppressed_names.insert(name.to_string());
+    }
+
+    pub(crate) fn is_name_suppressed(&self, name: &str) -> bool {
+        self.suppressed_names.contains(name)
     }
 
     pub fn set_pid(&mut self, pid: i64) {
@@ -1328,6 +1339,7 @@ impl Interpreter {
             skip_pseudo_method_native: None,
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),
+            suppressed_names: self.suppressed_names.clone(),
         }
     }
 

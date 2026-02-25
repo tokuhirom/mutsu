@@ -155,6 +155,15 @@ impl Interpreter {
                 }
                 self.call_method_with_values(args[0].clone(), "HOW", vec![])
             }
+            "__MUTSU_UNREGISTER_CLASS__" => {
+                if let Some(name) = args.first() {
+                    let class_name = name.to_string_value();
+                    self.classes.remove(&class_name);
+                    self.env.remove(&class_name);
+                    self.suppress_name(&class_name);
+                }
+                Ok(Value::Nil)
+            }
             "__MUTSU_SET_META__" => {
                 if args.len() < 3 {
                     return Ok(Value::Nil);

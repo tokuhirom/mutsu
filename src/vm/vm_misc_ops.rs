@@ -184,6 +184,15 @@ impl VM {
                 "Cannot resolve caller Numeric(Sub:D: ); none of these signatures matches:\n    (Mu:U \\v: *%_)",
             ));
         }
+        // If the value is an Instance, try calling the Numeric method
+        if let Value::Instance { .. } = &val
+            && let Ok(result) =
+                self.interpreter
+                    .call_method_with_values(val.clone(), "Numeric", vec![])
+        {
+            self.stack.push(result);
+            return Ok(());
+        }
         // Force LazyList before numeric coercion so we can count elements
         let val = if let Value::LazyList(ll) = &val {
             let items = self.interpreter.force_lazy_list_bridge(ll)?;
@@ -196,10 +205,20 @@ impl VM {
         Ok(())
     }
 
-    pub(super) fn exec_str_coerce_op(&mut self) {
+    pub(super) fn exec_str_coerce_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
+        // If the value is an Instance, try calling the Stringy method
+        if let Value::Instance { .. } = &val
+            && let Ok(result) =
+                self.interpreter
+                    .call_method_with_values(val.clone(), "Stringy", vec![])
+        {
+            self.stack.push(result);
+            return Ok(());
+        }
         self.stack
             .push(Value::Str(crate::runtime::utils::coerce_to_str(&val)));
+        Ok(())
     }
 
     pub(super) fn exec_upto_range_op(&mut self) {
