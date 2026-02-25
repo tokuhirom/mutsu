@@ -1067,6 +1067,13 @@ impl VM {
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
         }
+        // For @ and % variables, the assignment expression should return the
+        // container, not the RHS value.
+        if (name.starts_with('@') || name.starts_with('%'))
+            && let Some(top) = self.stack.last_mut()
+        {
+            *top = val;
+        }
         Ok(())
     }
 

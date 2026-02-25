@@ -1078,12 +1078,14 @@ impl VM {
                 catch_start,
                 control_start,
                 body_end,
+                explicit_catch,
             } => {
                 self.exec_try_catch_op(
                     code,
                     *catch_start,
                     *control_start,
                     *body_end,
+                    *explicit_catch,
                     ip,
                     compiled_fns,
                 )?;

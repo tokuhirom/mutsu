@@ -597,6 +597,43 @@ impl Interpreter {
             return result;
         }
 
+        // Resolve Value::Routine to Value::Sub for method dispatch
+        if let Value::Routine {
+            ref name,
+            ref package,
+        } = target
+            && method == "assuming"
+        {
+            // Create a wrapper Sub that delegates to the multi-dispatch routine
+            let mut sub_data = crate::value::SubData {
+                package: package.clone(),
+                name: name.clone(),
+                params: Vec::new(),
+                param_defs: Vec::new(),
+                body: vec![],
+                env: self.env().clone(),
+                assumed_positional: Vec::new(),
+                assumed_named: std::collections::HashMap::new(),
+                id: crate::value::next_instance_id(),
+                empty_sig: false,
+            };
+            // Store the routine name so call_sub_value can dispatch
+            sub_data
+                .env
+                .insert("__mutsu_routine_name".to_string(), Value::Str(name.clone()));
+            // Apply assumed args
+            for arg in &args {
+                if let Value::Pair(key, boxed) = arg {
+                    if key == "__mutsu_test_callsite_line" {
+                        continue;
+                    }
+                    sub_data.assumed_named.insert(key.clone(), *boxed.clone());
+                } else {
+                    sub_data.assumed_positional.push(arg.clone());
+                }
+            }
+            return Ok(Value::Sub(std::sync::Arc::new(sub_data)));
+        }
         if let Value::Sub(data) = &target {
             if method == "assuming" {
                 let mut next = (**data).clone();

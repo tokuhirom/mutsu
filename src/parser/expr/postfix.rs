@@ -360,7 +360,7 @@ fn postfix_expr_tight(input: &str) -> PResult<'_, Expr> {
 /// Continue applying postfix operations (including whitespace-dotty) to an
 /// already-parsed expression.  Used after prefix operators like `^` to allow
 /// `^10 .method` to call `.method` on the range result.
-fn postfix_expr_continue(input: &str, expr: Expr) -> PResult<'_, Expr> {
+pub(in crate::parser) fn postfix_expr_continue(input: &str, expr: Expr) -> PResult<'_, Expr> {
     postfix_expr_loop(input, expr, true)
 }
 
