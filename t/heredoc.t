@@ -1,5 +1,5 @@
 use Test;
-plan 5;
+plan 6;
 
 my $text = q:to/END/;
 Hello
@@ -28,3 +28,9 @@ my $indented = q:to/TERM/;
 alpha
     TERM
 is $indented, "alpha\n", 'q:to heredoc accepts indented terminator';
+
+my $dedented = q:to/END/;
+    red
+    green
+    END
+is $dedented, "red\ngreen\n", 'q:to strips terminator indentation from content';

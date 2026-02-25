@@ -618,6 +618,7 @@ pub(crate) fn native_method_2arg(
     arg2: &Value,
 ) -> Option<Result<Value, RuntimeError>> {
     match method {
+        "expmod" => Some(crate::builtins::expmod(target, arg1, arg2)),
         "substr" => {
             let s = target.to_string_value();
             let start = match arg1 {

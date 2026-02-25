@@ -700,10 +700,13 @@ impl VM {
                         Value::Instance { attributes, .. } => (**attributes).clone(),
                         _ => std::collections::HashMap::new(),
                     };
-                    match self
-                        .interpreter
-                        .run_instance_method(&cn, attrs, "defined", Vec::new())
-                    {
+                    match self.interpreter.run_instance_method(
+                        &cn,
+                        attrs,
+                        "defined",
+                        Vec::new(),
+                        None,
+                    ) {
                         Ok((result, _)) => result,
                         Err(_) => Value::Bool(runtime::types::value_is_defined(&val)),
                     }
