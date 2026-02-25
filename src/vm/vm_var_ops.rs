@@ -956,17 +956,41 @@ impl VM {
             _ => {
                 // Check if the target is an array variable — use numeric index assignment
                 let key = idx.to_string_value();
+                let array_elem_constraint = self.interpreter.var_type_constraint(&var_name);
+                if let Some(constraint) = array_elem_constraint
+                    && !matches!(val, Value::Nil)
+                    && !self.interpreter.type_matches_value(&constraint, &val)
+                {
+                    return Err(RuntimeError::new(format!(
+                        "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
+                        var_name,
+                        constraint,
+                        runtime::utils::value_type_name(&val)
+                    )));
+                }
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
                     match *container {
                         Value::Hash(ref mut hash) => {
                             Arc::make_mut(hash).insert(key.clone(), val.clone());
                         }
                         Value::Array(..) => {
-                            Self::assign_array_multidim(
-                                container,
-                                std::slice::from_ref(&idx),
-                                val.clone(),
-                            )?;
+                            if Self::is_shaped_array(container) {
+                                Self::assign_array_multidim(
+                                    container,
+                                    std::slice::from_ref(&idx),
+                                    val.clone(),
+                                )?;
+                            } else if let Some(i) = Self::index_to_usize(&idx) {
+                                if let Value::Array(items, ..) = container {
+                                    let arr = Arc::make_mut(items);
+                                    if i >= arr.len() {
+                                        arr.resize(i + 1, Value::Package("Any".to_string()));
+                                    }
+                                    arr[i] = val.clone();
+                                }
+                            } else {
+                                return Err(RuntimeError::new("Index out of bounds"));
+                            }
                             if bind_mode {
                                 self.mark_bound_index(&var_name, encoded_idx.clone());
                             }

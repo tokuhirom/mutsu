@@ -70,6 +70,16 @@ fn is_core_raku_type(name: &str) -> bool {
 }
 
 impl VM {
+    fn array_elements_match_constraint(&mut self, constraint: &str, value: &Value) -> bool {
+        match value {
+            Value::Array(items, ..) => items
+                .iter()
+                .all(|item| self.array_elements_match_constraint(constraint, item)),
+            Value::Nil => true,
+            _ => self.interpreter.type_matches_value(constraint, value),
+        }
+    }
+
     pub(super) fn exec_make_range_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -626,11 +636,8 @@ impl VM {
             .split_once('(')
             .map_or(base_constraint, |(target, _)| target);
         let value = self.stack.last().expect("TypeCheck: empty stack").clone();
-        if let Value::Array(items, ..) = &value {
-            let all_match = items
-                .iter()
-                .all(|item| self.interpreter.type_matches_value(constraint, item));
-            if !all_match {
+        if let Value::Array(..) = &value {
+            if !self.array_elements_match_constraint(constraint, &value) {
                 return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
             }
             return Ok(());

@@ -3,6 +3,7 @@ use super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
 
 use crate::ast::{Expr, Stmt};
+use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 use super::sub::parse_type_constraint_expr;
@@ -44,6 +45,52 @@ fn is_supported_variable_trait(trait_name: &str) -> bool {
 
 fn parse_sigilless_decl_name(input: &str) -> PResult<'_, String> {
     super::parse_sub_name_pub(input)
+}
+
+fn parse_array_shape_suffix(input: &str) -> PResult<'_, Vec<Expr>> {
+    let (rest, _) = parse_char(input, '[')?;
+    let (rest, _) = ws(rest)?;
+    let mut dims = Vec::new();
+    let mut rest = rest;
+
+    while !rest.starts_with(']') {
+        let (r, dim) = expression(rest)?;
+        dims.push(dim);
+        let (r, _) = ws(r)?;
+        if r.starts_with(',') || (r.starts_with(';') && !r.starts_with(";;")) {
+            let sep = if r.starts_with(',') { ',' } else { ';' };
+            let (r, _) = parse_char(r, sep)?;
+            let (r, _) = ws(r)?;
+            rest = r;
+            continue;
+        }
+        rest = r;
+    }
+
+    let (rest, _) = parse_char(rest, ']')?;
+    Ok((rest, dims))
+}
+
+fn shaped_array_new_expr(dims: Vec<Expr>) -> Expr {
+    let shape_value = if dims.len() == 1 {
+        dims.into_iter()
+            .next()
+            .unwrap_or(Expr::Literal(Value::Int(0)))
+    } else {
+        Expr::ArrayLiteral(dims)
+    };
+
+    Expr::MethodCall {
+        target: Box::new(Expr::BareWord("Array".to_string())),
+        name: "new".to_string(),
+        args: vec![Expr::Binary {
+            left: Box::new(Expr::Literal(Value::Str("shape".to_string()))),
+            op: TokenKind::FatArrow,
+            right: Box::new(shape_value),
+        }],
+        modifier: None,
+        quoted: false,
+    }
 }
 
 fn register_term_symbol_from_decl_name(name: &str) {
@@ -432,6 +479,15 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         rest
     };
 
+    // Optional shaped-array declaration suffix: my @arr[2;2];
+    let (rest, shape_dims) = if is_array && rest.starts_with('[') {
+        let (rest, dims) = parse_array_shape_suffix(rest)?;
+        let (rest, _) = ws(rest)?;
+        (rest, Some(dims))
+    } else {
+        (rest, None)
+    };
+
     // Parse variable traits. Only a small set is currently supported on
     // lexical/package variable declarations; unknown traits are compile-time errors.
     let rest = {
@@ -588,7 +644,11 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 
     let (rest, _) = opt_char(rest, ';');
     let expr = if is_array {
-        Expr::Literal(Value::real_array(Vec::new()))
+        if let Some(dims) = shape_dims {
+            shaped_array_new_expr(dims)
+        } else {
+            Expr::Literal(Value::real_array(Vec::new()))
+        }
     } else if is_hash {
         Expr::Hash(Vec::new())
     } else if let Some(tc) = type_constraint.as_deref() {
