@@ -1486,6 +1486,7 @@ impl Interpreter {
             .spawn()
             .map_err(|e| RuntimeError::new(format!("doesn't-hang: spawn failed: {}", e)))?;
 
+        #[cfg(unix)]
         let pid = child.id();
         let timeout = std::time::Duration::from_secs(wait_secs);
         let start = std::time::Instant::now();
@@ -1497,9 +1498,12 @@ impl Interpreter {
                 Ok(None) => {
                     if start.elapsed() >= timeout {
                         // Kill the hung process
+                        #[cfg(unix)]
                         unsafe {
                             libc::kill(pid as i32, libc::SIGKILL);
                         }
+                        #[cfg(not(unix))]
+                        let _ = child.kill();
                         let _ = child.wait();
                         break false;
                     }
@@ -1583,11 +1587,11 @@ impl Interpreter {
                 .map_err(|e| RuntimeError::new(format!("make-temp-file: cannot create: {}", e)))?;
         }
 
-        if let Some(Value::Int(mode)) = chmod_val {
+        if let Some(Value::Int(_mode)) = chmod_val {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let perms = std::fs::Permissions::from_mode(mode as u32);
+                let perms = std::fs::Permissions::from_mode(_mode as u32);
                 let _ = std::fs::set_permissions(&path, perms);
             }
         }
@@ -1612,11 +1616,11 @@ impl Interpreter {
         std::fs::create_dir_all(&path)
             .map_err(|e| RuntimeError::new(format!("make-temp-dir: cannot create: {}", e)))?;
 
-        if let Some(Value::Int(mode)) = chmod_val {
+        if let Some(Value::Int(_mode)) = chmod_val {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let perms = std::fs::Permissions::from_mode(mode as u32);
+                let perms = std::fs::Permissions::from_mode(_mode as u32);
                 let _ = std::fs::set_permissions(&path, perms);
             }
         }
