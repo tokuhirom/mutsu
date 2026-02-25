@@ -313,6 +313,7 @@ impl VM {
             Value::Int(_) | Value::BigInt(_) => "Int".to_string(),
             Value::Num(_) => "Num".to_string(),
             Value::Str(_) => "Str".to_string(),
+            Value::Package(name) => name.clone(),
             Value::Enum { enum_type, .. } => enum_type.clone(),
             _ => "Any".to_string(),
         };

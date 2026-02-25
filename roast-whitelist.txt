@@ -46,6 +46,7 @@ roast/S02-types/stash.t
 roast/S02-types/unicode.t
 roast/S02-types/version-stress.t
 roast/S02-types/version.t
+roast/S03-binding/closure.t
 roast/S03-buf/read-num.t
 roast/S03-operators/also.t
 roast/S03-operators/assign-is-not-binding.t
@@ -82,6 +83,7 @@ roast/S03-smartmatch/any-str.t
 roast/S03-smartmatch/any-sub.t
 roast/S03-smartmatch/array-hash.t
 roast/S03-smartmatch/array-map.t
+roast/S03-smartmatch/capture-signature.t
 roast/S03-smartmatch/range-range.t
 roast/S03-smartmatch/regex-hash.t
 roast/S03-smartmatch/scalar-hash.t
@@ -170,6 +172,7 @@ roast/S11-modules/runtime.t
 roast/S11-modules/versioning.t
 roast/S12-attributes/mutators.t
 roast/S12-class/declaration-order.t
+roast/S12-class/extending-arrays.t
 roast/S12-class/interface-consistency.t
 roast/S12-class/literal.t
 roast/S12-class/parent_attributes.t
