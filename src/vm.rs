@@ -899,11 +899,11 @@ impl VM {
                 *ip += 1;
             }
             OpCode::DeleteIndexNamed(name_idx) => {
-                self.exec_delete_index_named_op(code, *name_idx);
+                self.exec_delete_index_named_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::DeleteIndexExpr => {
-                self.exec_delete_index_expr_op();
+                self.exec_delete_index_expr_op()?;
                 *ip += 1;
             }
 
@@ -956,7 +956,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::IndexAssignExprNamed(name_idx) => {
-                self.exec_index_assign_expr_named_op(code, *name_idx);
+                self.exec_index_assign_expr_named_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::IndexAssignExprNested(name_idx) => {
@@ -1111,6 +1111,10 @@ impl VM {
             }
             OpCode::ExistsExpr => {
                 self.exec_exists_expr_op();
+                *ip += 1;
+            }
+            OpCode::ExistsIndexExpr => {
+                self.exec_exists_index_expr_op();
                 *ip += 1;
             }
 

@@ -358,6 +358,7 @@ pub(crate) enum OpCode {
     // -- Exists check --
     ExistsEnvIndex(u32),
     ExistsExpr,
+    ExistsIndexExpr,
 
     // -- Reduction ([+] @arr) --
     Reduction(u32),
