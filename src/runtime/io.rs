@@ -291,6 +291,7 @@ impl Interpreter {
             target,
             mode,
             path: path.clone(),
+            line_separators: self.default_line_separators(),
             encoding: "utf-8".to_string(),
             file: None,
             socket: None,
