@@ -512,14 +512,11 @@ impl Interpreter {
     }
 
     fn call_infix_routine(&mut self, op: &str, args: &[Value]) -> Result<Value, RuntimeError> {
-        if args.len() == 1 && matches!(op, "=:=" | "===" | "eqv") {
-            return Ok(Value::Bool(true));
-        }
         // 1-arg Iterable gets flattened (like +@foo slurpy)
         let args: Vec<Value> = if args.len() == 1 {
             match &args[0] {
                 Value::Array(items, ..) => items.to_vec(),
-                _ => return Ok(args[0].clone()),
+                _ => args.to_vec(),
             }
         } else {
             args.to_vec()
@@ -528,6 +525,9 @@ impl Interpreter {
             return Ok(reduction_identity(op));
         }
         if args.len() == 1 {
+            if is_chain_comparison_op(op) {
+                return Ok(Value::Bool(true));
+            }
             return Ok(args[0].clone());
         }
         // Sequence operators: dispatch directly to eval_sequence

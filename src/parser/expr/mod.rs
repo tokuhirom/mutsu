@@ -833,6 +833,41 @@ mod tests {
     }
 
     #[test]
+    fn parse_negated_comparison_meta_operators() {
+        let (rest, expr) = expression("2 !== 3").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr,
+            } => match *expr {
+                Expr::Binary {
+                    op: TokenKind::EqEq,
+                    ..
+                } => {}
+                _ => panic!("Expected !== to lower to !(==)"),
+            },
+            _ => panic!("Expected Unary expression"),
+        }
+
+        let (rest, expr) = expression("$a !eq $b").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr,
+            } => match *expr {
+                Expr::Binary {
+                    op: TokenKind::Ident(op),
+                    ..
+                } => assert_eq!(op, "eq"),
+                _ => panic!("Expected !eq to lower to !(eq)"),
+            },
+            _ => panic!("Expected Unary expression"),
+        }
+    }
+
+    #[test]
     fn chained_comparison_requires_rhs_expression() {
         let err = expression("1 < 2 <").unwrap_err();
         assert!(err.message().contains("chained comparison operator"));
