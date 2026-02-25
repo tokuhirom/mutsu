@@ -134,7 +134,13 @@ impl Compiler {
             } => {
                 let is_dynamic = self.var_is_dynamic(name);
                 self.compile_expr(expr);
-                if let Some(tc) = type_constraint {
+                // Skip TypeCheck for hash declarations: the type constraint
+                // applies to element values, not to the collection itself.
+                // TODO: enforce per-element type constraints at assignment time.
+                let is_hash = name.starts_with('%');
+                if let Some(tc) = type_constraint
+                    && !is_hash
+                {
                     let tc_idx = self.code.add_constant(Value::Str(tc.clone()));
                     self.code.emit(OpCode::TypeCheck(tc_idx));
                 }
