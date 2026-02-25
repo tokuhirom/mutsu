@@ -453,6 +453,7 @@ impl Value {
                     inner.to_string_value()
                 }
             }
+            Value::Proxy { .. } => "Proxy".to_string(),
         }
     }
 

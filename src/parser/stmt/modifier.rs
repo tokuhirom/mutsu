@@ -2,7 +2,7 @@ use super::super::expr::expression;
 use super::super::helpers::{ws, ws1};
 use super::super::parse_result::{PError, PResult, merge_expected_messages, opt_char};
 
-use crate::ast::{Expr, Stmt};
+use crate::ast::{CallArg, Expr, Stmt};
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
@@ -230,9 +230,30 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
 
     if let Some(r) = keyword("with", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = parse_comma_or_expr(r)?;
-        let (r, _) = ws(r)?;
-        let (r, _) = opt_char(r, ';');
+        let (r, cond) = expression(r)?;
+        let mut stmt_for_branch = stmt.clone();
+        let mut r_tail = r;
+        if let Stmt::Call { name, args } = &stmt_for_branch {
+            let mut call_args = args.clone();
+            loop {
+                let (r_ws, _) = ws(r_tail)?;
+                if !r_ws.starts_with(',') {
+                    r_tail = r_ws;
+                    break;
+                }
+                let after_comma = &r_ws[1..];
+                let (after_comma, _) = ws(after_comma)?;
+                let (after_comma, arg_expr) = expression(after_comma)?;
+                call_args.push(CallArg::Positional(arg_expr));
+                r_tail = after_comma;
+            }
+            stmt_for_branch = Stmt::Call {
+                name: name.clone(),
+                args: call_args,
+            };
+        }
+        let (r_tail, _) = ws(r_tail)?;
+        let (r_tail, _) = opt_char(r_tail, ';');
         // `stmt with expr` is like `given expr { if .defined { stmt } }`.
         // When the modified statement is an expression statement, preserve
         // expression semantics via do-given.
@@ -245,14 +266,14 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                     modifier: None,
                     quoted: false,
                 },
-                then_branch: vec![stmt.clone()],
+                then_branch: vec![stmt_for_branch.clone()],
                 else_branch: Vec::new(),
             };
             let given_stmt = Stmt::Given {
                 topic: cond,
                 body: vec![Stmt::Expr(Expr::DoStmt(Box::new(if_stmt)))],
             };
-            return Ok((r, Stmt::Expr(Expr::DoStmt(Box::new(given_stmt)))));
+            return Ok((r_tail, Stmt::Expr(Expr::DoStmt(Box::new(given_stmt)))));
         }
         let given_stmt = Stmt::Given {
             topic: cond,
@@ -264,17 +285,38 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                     modifier: None,
                     quoted: false,
                 },
-                then_branch: vec![stmt.clone()],
+                then_branch: vec![stmt_for_branch],
                 else_branch: Vec::new(),
             }],
         };
-        return Ok((r, given_stmt));
+        return Ok((r_tail, given_stmt));
     }
     if let Some(r) = keyword("without", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = parse_comma_or_expr(r)?;
-        let (r, _) = ws(r)?;
-        let (r, _) = opt_char(r, ';');
+        let (r, cond) = expression(r)?;
+        let mut stmt_for_branch = stmt.clone();
+        let mut r_tail = r;
+        if let Stmt::Call { name, args } = &stmt_for_branch {
+            let mut call_args = args.clone();
+            loop {
+                let (r_ws, _) = ws(r_tail)?;
+                if !r_ws.starts_with(',') {
+                    r_tail = r_ws;
+                    break;
+                }
+                let after_comma = &r_ws[1..];
+                let (after_comma, _) = ws(after_comma)?;
+                let (after_comma, arg_expr) = expression(after_comma)?;
+                call_args.push(CallArg::Positional(arg_expr));
+                r_tail = after_comma;
+            }
+            stmt_for_branch = Stmt::Call {
+                name: name.clone(),
+                args: call_args,
+            };
+        }
+        let (r_tail, _) = ws(r_tail)?;
+        let (r_tail, _) = opt_char(r_tail, ';');
         // `stmt without expr` is like `given expr { unless .defined { stmt } }`.
         // Sets $_ to the condition value, then runs stmt if $_ is not defined.
         let not_defined = Expr::Unary {
@@ -287,7 +329,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 quoted: false,
             }),
         };
-        let modified_stmt = rewrite_placeholder_block_modifier_stmt(stmt.clone(), &cond);
+        let modified_stmt = rewrite_placeholder_block_modifier_stmt(stmt_for_branch.clone(), &cond);
         if matches!(stmt, Stmt::Expr(_)) {
             let if_stmt = Stmt::If {
                 cond: not_defined,
@@ -298,7 +340,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 topic: cond,
                 body: vec![Stmt::Expr(Expr::DoStmt(Box::new(if_stmt)))],
             };
-            return Ok((r, Stmt::Expr(Expr::DoStmt(Box::new(given_stmt)))));
+            return Ok((r_tail, Stmt::Expr(Expr::DoStmt(Box::new(given_stmt)))));
         }
         let given_stmt = Stmt::Given {
             topic: cond,
@@ -308,7 +350,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 else_branch: Vec::new(),
             }],
         };
-        return Ok((r, given_stmt));
+        return Ok((r_tail, given_stmt));
     }
 
     Ok((rest, stmt))

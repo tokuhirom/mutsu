@@ -165,6 +165,11 @@ pub enum Value {
         form: String,
         text: String,
     },
+    /// A Proxy container with FETCH and STORE callbacks.
+    Proxy {
+        fetcher: Box<Value>,
+        storer: Box<Value>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

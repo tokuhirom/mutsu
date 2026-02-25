@@ -68,6 +68,7 @@ roast/S03-operators/reduce-le1arg.t
 roast/S03-operators/scalar-assign.t
 roast/S03-operators/so.t
 roast/S03-operators/spaceship-and-containers.t
+roast/S03-operators/spaceship.t
 roast/S03-operators/subscript-vs-lt.t
 roast/S03-sequence/arity-2-or-more.t
 roast/S03-sequence/exhaustive.t
@@ -93,6 +94,7 @@ roast/S04-statement-modifiers/values_in_bool_context.t
 roast/S04-statement-modifiers/while.t
 roast/S04-statement-modifiers/without.t
 roast/S04-statement-parsing/hash.t
+roast/S04-statements/for-scope.t
 roast/S04-statements/last.t
 roast/S04-statements/map-and-sort-in-for.t
 roast/S04-statements/next.t
@@ -125,6 +127,7 @@ roast/S05-substitution/67222.t
 roast/S05-substitution/match.t
 roast/S05-transliteration/79778.t
 roast/S06-advanced/stub.t
+roast/S06-currying/assuming-and-mmd.t
 roast/S06-currying/misc.t
 roast/S06-currying/named.t
 roast/S06-multi/compile-time.t
@@ -165,7 +168,9 @@ roast/S11-modules/need.t
 roast/S11-modules/rakulib.t
 roast/S11-modules/runtime.t
 roast/S11-modules/versioning.t
+roast/S12-attributes/mutators.t
 roast/S12-class/declaration-order.t
+roast/S12-class/interface-consistency.t
 roast/S12-class/literal.t
 roast/S12-class/parent_attributes.t
 roast/S12-class/self-inheritance.t
@@ -258,6 +263,7 @@ roast/S16-filehandles/unlink.t
 roast/S16-io/cwd.t
 roast/S16-io/home.t
 roast/S16-io/newline.t
+roast/S16-io/note.t
 roast/S16-io/say-and-ref.t
 roast/S16-io/supply.t
 roast/S16-unfiled/getpeername.t
