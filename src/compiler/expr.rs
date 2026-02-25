@@ -398,7 +398,7 @@ impl Compiler {
                     let arity = rewritten_args.len() as u32;
                     let arg_sources_idx = self.add_arg_sources_constant(&rewritten_args);
                     for arg in &rewritten_args {
-                        self.compile_expr(arg);
+                        self.compile_call_arg(arg);
                     }
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
                     self.code.emit(OpCode::CallFunc {
@@ -479,7 +479,7 @@ impl Compiler {
                             {
                                 // skip slip args in first pass
                             } else {
-                                self.compile_expr(arg);
+                                self.compile_call_arg(arg);
                                 regular_count += 1;
                             }
                         }
@@ -504,7 +504,7 @@ impl Compiler {
                         let arity = args.len() as u32;
                         let arg_sources_idx = self.add_arg_sources_constant(args);
                         for arg in args {
-                            self.compile_expr(arg);
+                            self.compile_call_arg(arg);
                         }
                         let name_idx = self.code.add_constant(Value::Str(name.clone()));
                         self.code.emit(OpCode::CallFunc {
@@ -919,9 +919,15 @@ impl Compiler {
                         let jump_have_value = self.code.emit(OpCode::JumpIfNotNil(0));
                         self.code.emit(OpCode::Pop);
                         self.compile_expr(expr);
-                        self.code.emit(OpCode::Dup);
                         let name_idx = self.code.add_constant(Value::Str(name.clone()));
                         self.code.emit(OpCode::SetGlobal(name_idx));
+                        // Read back the coerced value (SetGlobal coerces list→hash for %)
+                        let name_idx2 = self.code.add_constant(Value::Str(name.clone()));
+                        if name.starts_with('@') {
+                            self.code.emit(OpCode::GetArrayVar(name_idx2));
+                        } else {
+                            self.code.emit(OpCode::GetHashVar(name_idx2));
+                        }
                         self.code.emit(OpCode::Dup);
                         self.code.emit(OpCode::SetLocal(marker_slot));
                         let jump_end = self.code.emit(OpCode::Jump(0));
@@ -1156,6 +1162,7 @@ impl Compiler {
             TokenKind::Ident(name) if name == "leg" => Some(OpCode::Leg),
             // Identity/value equality
             TokenKind::EqEqEq => Some(OpCode::StrictEq),
+            TokenKind::BangEqEqEq => Some(OpCode::StrictNe),
             TokenKind::Ident(name) if name == "eqv" => Some(OpCode::Eqv),
             TokenKind::Ident(name) if name == "=~=" => Some(OpCode::ApproxEq),
             TokenKind::Ident(name) if name == "=:=" => Some(OpCode::ContainerEq),

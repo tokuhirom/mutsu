@@ -109,9 +109,9 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("open requires a path argument"))?;
         check_null_in_path(&path)?;
-        let (read, write, append, bin) = Self::parse_io_flags_values(&args[1..]);
+        let (read, write, append, bin, line_separators) = self.parse_io_flags_values(&args[1..]);
         let path_buf = self.resolve_path(&path);
-        self.open_file_handle(&path_buf, read, write, append, bin)
+        self.open_file_handle(&path_buf, read, write, append, bin, line_separators)
     }
 
     pub(super) fn builtin_close(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -470,7 +470,9 @@ impl Interpreter {
             .unwrap_or_default();
         self.write_to_named_handle("$*OUT", &msg, false)?;
         if let Some(handle) = self.default_input_handle() {
-            let line = self.read_line_from_handle_value(&handle)?;
+            let line = self
+                .read_line_from_handle_value(&handle)?
+                .unwrap_or_default();
             return Ok(Value::Str(line));
         }
         Ok(Value::Str(String::new()))
@@ -482,10 +484,12 @@ impl Interpreter {
             .cloned()
             .or_else(|| self.default_input_handle());
         if let Some(handle) = handle {
-            let line = self.read_line_from_handle_value(&handle)?;
-            return Ok(Value::Str(line));
+            return Ok(self
+                .read_line_from_handle_value(&handle)?
+                .map(Value::Str)
+                .unwrap_or(Value::Nil));
         }
-        Ok(Value::Str(String::new()))
+        Ok(Value::Nil)
     }
 
     pub(super) fn builtin_lines(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -533,11 +537,7 @@ impl Interpreter {
             .or_else(|| self.default_input_handle());
         if let Some(handle) = handle {
             let mut lines = Vec::new();
-            loop {
-                let line = self.read_line_from_handle_value(&handle)?;
-                if line.is_empty() {
-                    break;
-                }
+            while let Some(line) = self.read_line_from_handle_value(&handle)? {
                 lines.push(Value::Str(line));
             }
             return Ok(Value::array(lines));
@@ -555,11 +555,7 @@ impl Interpreter {
         };
         if let Some(handle) = handle {
             let mut words = Vec::new();
-            loop {
-                let line = self.read_line_from_handle_value(&handle)?;
-                if line.is_empty() {
-                    break;
-                }
+            while let Some(line) = self.read_line_from_handle_value(&handle)? {
                 for token in line.split_whitespace() {
                     words.push(Value::Str(token.to_string()));
                 }

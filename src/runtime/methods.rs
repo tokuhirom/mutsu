@@ -606,6 +606,7 @@ impl Interpreter {
                     Value::Channel(_) => "Channel",
                     Value::HyperWhatever => "HyperWhatever",
                     Value::Capture { .. } => "Capture",
+                    Value::Uni { form, .. } => form.as_str(),
                     Value::Mixin(inner, _) => {
                         return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
                     }
@@ -1060,13 +1061,23 @@ impl Interpreter {
                 }
                 // Run BUILD/TWEAK if defined
                 if self.class_has_method(&class_name, "BUILD") {
-                    let (_v, updated) =
-                        self.run_instance_method(&class_name, attributes, "BUILD", Vec::new())?;
+                    let (_v, updated) = self.run_instance_method(
+                        &class_name,
+                        attributes.clone(),
+                        "BUILD",
+                        Vec::new(),
+                        Some(Value::make_instance(class_name.clone(), attributes.clone())),
+                    )?;
                     attributes = updated;
                 }
                 if self.class_has_method(&class_name, "TWEAK") {
-                    let (_v, updated) =
-                        self.run_instance_method(&class_name, attributes, "TWEAK", Vec::new())?;
+                    let (_v, updated) = self.run_instance_method(
+                        &class_name,
+                        attributes.clone(),
+                        "TWEAK",
+                        Vec::new(),
+                        Some(Value::make_instance(class_name.clone(), attributes.clone())),
+                    )?;
                     attributes = updated;
                 }
                 return Ok(Value::make_instance(class_name, attributes));
@@ -1493,9 +1504,24 @@ impl Interpreter {
         if let Value::Instance {
             class_name,
             attributes,
-            ..
+            id: target_id,
         } = &target
         {
+            if let Some(private_method_name) = method.strip_prefix('!')
+                && let Some((resolved_owner, method_def)) =
+                    self.resolve_private_method_any_owner(class_name, private_method_name, &args)
+            {
+                let (result, _updated) = self.run_instance_method_resolved(
+                    class_name,
+                    &resolved_owner,
+                    method_def,
+                    (**attributes).clone(),
+                    args,
+                    Some(target.clone()),
+                )?;
+                return Ok(result);
+            }
+
             if let Some((owner_class, private_method_name)) = method.split_once("::")
                 && let Some((resolved_owner, method_def)) = self.resolve_private_method_with_owner(
                     class_name,
@@ -1517,13 +1543,15 @@ impl Interpreter {
                 if !caller_allowed {
                     return Err(RuntimeError::new("X::Method::Private::Permission"));
                 }
-                let (result, _updated) = self.run_instance_method_resolved(
+                let (result, updated) = self.run_instance_method_resolved(
                     class_name,
                     &resolved_owner,
                     method_def,
                     (**attributes).clone(),
                     args,
+                    Some(target.clone()),
                 )?;
+                self.overwrite_instance_bindings_by_identity(class_name, *target_id, updated);
                 return Ok(result);
             }
 
@@ -1671,8 +1699,14 @@ impl Interpreter {
                 }
             }
             if self.has_user_method(class_name, method) {
-                let (result, _updated) =
-                    self.run_instance_method(class_name, (**attributes).clone(), method, args)?;
+                let (result, updated) = self.run_instance_method(
+                    class_name,
+                    (**attributes).clone(),
+                    method,
+                    args,
+                    Some(target.clone()),
+                )?;
+                self.overwrite_instance_bindings_by_identity(class_name, *target_id, updated);
                 return Ok(result);
             }
         }
@@ -1682,12 +1716,16 @@ impl Interpreter {
             && self.has_user_method(name, method)
         {
             let attrs = HashMap::new();
-            let (result, _updated) = self.run_instance_method(name, attrs, method, args)?;
+            let (result, _updated) = self.run_instance_method(name, attrs, method, args, None)?;
             return Ok(result);
         }
 
         // Fallback methods
         match method {
+            "DUMP" if args.is_empty() => match target {
+                Value::Package(name) => Ok(Value::Str(format!("{}()", name))),
+                other => Ok(Value::Str(other.to_string_value())),
+            },
             "gist" if args.is_empty() => match target {
                 Value::Package(name) => {
                     let short = name.split("::").last().unwrap_or(&name);
@@ -1695,6 +1733,22 @@ impl Interpreter {
                 }
                 other => Ok(Value::Str(other.to_string_value())),
             },
+            "WHERE" if args.is_empty() => {
+                if let Value::Package(name) | Value::Str(name) = target {
+                    if !self.roles.contains_key(&name) {
+                        return Err(RuntimeError::new(format!(
+                            "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
+                            method
+                        )));
+                    }
+                    Ok(Value::Str(format!("{}|type-object", name)))
+                } else {
+                    Err(RuntimeError::new(format!(
+                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
+                        method
+                    )))
+                }
+            }
             "raku" | "perl" if args.is_empty() => match target {
                 Value::Package(name) => Ok(Value::Str(name.clone())),
                 other => Ok(Value::Str(other.to_string_value())),
@@ -1716,6 +1770,23 @@ impl Interpreter {
                 Value::Package(_) => Ok(Value::Str(String::new())),
                 _ => Ok(Value::Str(target.to_string_value())),
             },
+            "Numeric" | "Real" if args.is_empty() => {
+                if let Value::Package(name) | Value::Str(name) = target {
+                    if self.roles.contains_key(&name) {
+                        Ok(Value::Int(0))
+                    } else {
+                        Err(RuntimeError::new(format!(
+                            "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
+                            method
+                        )))
+                    }
+                } else {
+                    Err(RuntimeError::new(format!(
+                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
+                        method
+                    )))
+                }
+            }
             "EVAL" if args.is_empty() => match target {
                 Value::Str(code) => self.call_function("EVAL", vec![Value::Str(code)]),
                 _ => Err(RuntimeError::new(
@@ -3406,6 +3477,17 @@ impl Interpreter {
                     };
                     return Ok(Value::Complex(re, im));
                 }
+                "Backtrace" => {
+                    let file = self
+                        .env
+                        .get("?FILE")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    let mut frame_attrs = HashMap::new();
+                    frame_attrs.insert("file".to_string(), Value::Str(file));
+                    let frame = Value::make_instance("Backtrace::Frame".to_string(), frame_attrs);
+                    return Ok(Value::array(vec![frame]));
+                }
                 "Lock" => {
                     let mut attrs = HashMap::new();
                     let lock_id = super::native_methods::next_lock_id() as i64;
@@ -3429,7 +3511,7 @@ impl Interpreter {
                 if self.has_user_method(class_name, "new") {
                     let empty_attrs = HashMap::new();
                     let (result, _updated) =
-                        self.run_instance_method(class_name, empty_attrs, "new", args)?;
+                        self.run_instance_method(class_name, empty_attrs, "new", args, None)?;
                     return Ok(result);
                 }
                 let mut attrs = HashMap::new();
@@ -3462,13 +3544,23 @@ impl Interpreter {
                     }
                 }
                 if self.class_has_method(class_name, "BUILD") {
-                    let (_v, updated) =
-                        self.run_instance_method(class_name, attrs, "BUILD", Vec::new())?;
+                    let (_v, updated) = self.run_instance_method(
+                        class_name,
+                        attrs.clone(),
+                        "BUILD",
+                        Vec::new(),
+                        Some(Value::make_instance(class_name.clone(), attrs.clone())),
+                    )?;
                     attrs = updated;
                 }
                 if self.class_has_method(class_name, "TWEAK") {
-                    let (_v, updated) =
-                        self.run_instance_method(class_name, attrs, "TWEAK", Vec::new())?;
+                    let (_v, updated) = self.run_instance_method(
+                        class_name,
+                        attrs.clone(),
+                        "TWEAK",
+                        Vec::new(),
+                        Some(Value::make_instance(class_name.clone(), attrs.clone())),
+                    )?;
                     attrs = updated;
                 }
                 return Ok(Value::make_instance(class_name.clone(), attrs));
@@ -3737,6 +3829,7 @@ impl Interpreter {
             target: IoHandleTarget::Socket,
             mode: IoHandleMode::ReadWrite,
             path: None,
+            line_separators: self.default_line_separators(),
             encoding: "utf-8".to_string(),
             file: None,
             socket: Some(stream),

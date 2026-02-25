@@ -65,6 +65,136 @@ impl Interpreter {
             )
     }
 
+    fn is_stub_method_def(def: &MethodDef) -> bool {
+        Self::is_stub_routine_body(&def.body)
+    }
+
+    fn method_positional_signature(def: &MethodDef) -> Vec<String> {
+        def.param_defs
+            .iter()
+            .filter(|pd| !pd.named)
+            .map(|pd| {
+                if pd.slurpy {
+                    format!("*{}", pd.type_constraint.as_deref().unwrap_or("Any"))
+                } else {
+                    pd.type_constraint.as_deref().unwrap_or("Any").to_string()
+                }
+            })
+            .collect()
+    }
+
+    fn method_signatures_match(required: &MethodDef, candidate: &MethodDef) -> bool {
+        Self::method_positional_signature(required) == Self::method_positional_signature(candidate)
+            && required.is_private == candidate.is_private
+    }
+
+    fn stub_is_nullary(def: &MethodDef) -> bool {
+        def.param_defs.iter().all(|pd| pd.named || pd.slurpy)
+    }
+
+    fn inherited_matching_method_count(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        required: &MethodDef,
+    ) -> usize {
+        let mut count = 0usize;
+        let mro = self.class_mro(class_name);
+        for parent in mro.into_iter().skip(1) {
+            let Some(class_def) = self.classes.get(&parent) else {
+                continue;
+            };
+            let Some(defs) = class_def.methods.get(method_name) else {
+                continue;
+            };
+            for def in defs {
+                if Self::is_stub_method_def(def) {
+                    continue;
+                }
+                if Self::method_signatures_match(required, def) {
+                    count += 1;
+                }
+            }
+        }
+        count
+    }
+
+    fn accessor_matches_stub(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        required: &MethodDef,
+    ) -> bool {
+        if !Self::stub_is_nullary(required) {
+            return false;
+        }
+        self.collect_class_attributes(class_name)
+            .iter()
+            .any(|(attr_name, is_public, _)| *is_public && attr_name == method_name)
+    }
+
+    fn resolve_class_stub_requirements(
+        &mut self,
+        class_name: &str,
+        class_def: &mut ClassDef,
+    ) -> Result<(), RuntimeError> {
+        let method_names: Vec<String> = class_def.methods.keys().cloned().collect();
+        for method_name in method_names {
+            let Some(all_defs) = class_def.methods.get(&method_name).cloned() else {
+                continue;
+            };
+            let mut stubs = Vec::new();
+            let mut concrete = Vec::new();
+            for def in all_defs {
+                if Self::is_stub_method_def(&def) {
+                    stubs.push(def);
+                } else {
+                    concrete.push(def);
+                }
+            }
+            if stubs.is_empty() {
+                continue;
+            }
+            for required in &stubs {
+                let local_matches = concrete
+                    .iter()
+                    .filter(|candidate| Self::method_signatures_match(required, candidate))
+                    .count();
+                if local_matches > 1 {
+                    return Err(RuntimeError::new(format!(
+                        "X::Role::Composition::Conflict: multiple candidates for required method '{}'",
+                        method_name
+                    )));
+                }
+                if local_matches == 0 {
+                    let inherited_matches =
+                        self.inherited_matching_method_count(class_name, &method_name, required);
+                    let accessor_match =
+                        usize::from(self.accessor_matches_stub(class_name, &method_name, required));
+                    let total = inherited_matches + accessor_match;
+                    if total == 0 {
+                        return Err(RuntimeError::new(format!(
+                            "X::Role::Composition::Unimplemented: required method '{}'",
+                            method_name
+                        )));
+                    }
+                    if total > 1 {
+                        return Err(RuntimeError::new(format!(
+                            "X::Role::Composition::Conflict: multiple inherited candidates for required method '{}'",
+                            method_name
+                        )));
+                    }
+                }
+            }
+            if concrete.is_empty() {
+                class_def.methods.remove(&method_name);
+            } else {
+                class_def.methods.insert(method_name, concrete);
+            }
+        }
+        Ok(())
+    }
+
     fn validate_private_access_in_stmts(
         &self,
         caller_class: &str,
@@ -760,6 +890,9 @@ impl Interpreter {
                 parent.as_str()
             };
             if let Some(role) = self.roles.get(base_role_name).cloned() {
+                if role.is_stub_role {
+                    return Err(RuntimeError::new("X::Role::Parametric::NoSuchCandidate"));
+                }
                 // Collect type parameter substitutions if this is a parametric role
                 let type_subs: Vec<(String, String)> =
                     if let Some(role_type_params) = self.role_type_params.get(base_role_name) {
@@ -830,11 +963,36 @@ impl Interpreter {
                     name: attr_name,
                     is_public,
                     default,
+                    handles,
                     is_rw: _,
                 } => {
                     class_def
                         .attributes
                         .push((attr_name.clone(), *is_public, default.clone()));
+                    let attr_var_name = if *is_public {
+                        format!(".{}", attr_name)
+                    } else {
+                        format!("!{}", attr_name)
+                    };
+                    for handle_name in handles {
+                        class_def
+                            .methods
+                            .entry(handle_name.clone())
+                            .or_default()
+                            .push(MethodDef {
+                                params: Vec::new(),
+                                param_defs: Vec::new(),
+                                body: vec![Stmt::Expr(Expr::MethodCall {
+                                    target: Box::new(Expr::Var(attr_var_name.clone())),
+                                    name: handle_name.clone(),
+                                    args: Vec::new(),
+                                    modifier: None,
+                                    quoted: false,
+                                })],
+                                is_rw: false,
+                                is_private: false,
+                            });
+                    }
                 }
                 Stmt::MethodDecl {
                     name: method_name,
@@ -916,6 +1074,9 @@ impl Interpreter {
                         self.roles.get(role_name).cloned().ok_or_else(|| {
                             RuntimeError::new(format!("Unknown role: {}", role_name))
                         })?;
+                    if role.is_stub_role {
+                        return Err(RuntimeError::new("X::Role::Parametric::NoSuchCandidate"));
+                    }
                     for attr in &role.attributes {
                         if !class_def.attributes.iter().any(|(n, _, _)| n == &attr.0) {
                             class_def.attributes.push(attr.clone());
@@ -964,6 +1125,7 @@ impl Interpreter {
             }
             self.classes.insert(name.to_string(), class_def.clone());
         }
+        self.resolve_class_stub_requirements(name, &mut class_def)?;
         self.classes.insert(name.to_string(), class_def);
         let mut stack = Vec::new();
         let _ = self.compute_class_mro(name, &mut stack)?;
@@ -979,6 +1141,7 @@ impl Interpreter {
         let mut role_def = RoleDef {
             attributes: Vec::new(),
             methods: HashMap::new(),
+            is_stub_role: false,
         };
         for stmt in body {
             match stmt {
@@ -986,11 +1149,36 @@ impl Interpreter {
                     name: attr_name,
                     is_public,
                     default,
+                    handles,
                     is_rw: _,
                 } => {
                     role_def
                         .attributes
                         .push((attr_name.clone(), *is_public, default.clone()));
+                    let attr_var_name = if *is_public {
+                        format!(".{}", attr_name)
+                    } else {
+                        format!("!{}", attr_name)
+                    };
+                    for handle_name in handles {
+                        role_def
+                            .methods
+                            .entry(handle_name.clone())
+                            .or_default()
+                            .push(MethodDef {
+                                params: Vec::new(),
+                                param_defs: Vec::new(),
+                                body: vec![Stmt::Expr(Expr::MethodCall {
+                                    target: Box::new(Expr::Var(attr_var_name.clone())),
+                                    name: handle_name.clone(),
+                                    args: Vec::new(),
+                                    modifier: None,
+                                    quoted: false,
+                                })],
+                                is_rw: false,
+                                is_private: false,
+                            });
+                    }
                 }
                 Stmt::MethodDecl {
                     name: method_name,
@@ -1025,6 +1213,11 @@ impl Interpreter {
                     } else {
                         role_def.methods.insert(resolved_method_name, vec![def]);
                     }
+                }
+                Stmt::Expr(Expr::Call { name, .. })
+                    if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn" =>
+                {
+                    role_def.is_stub_role = true;
                 }
                 _ => {
                     self.run_block_raw(std::slice::from_ref(stmt))?;

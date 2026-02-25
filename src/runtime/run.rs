@@ -48,6 +48,15 @@ impl Interpreter {
             // Count-based skip: skip the next N non-comment, non-empty lines
             if skip_lines_remaining > 0 {
                 if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                    // If the next non-empty line is a block opening `{`,
+                    // convert to block-level skip so the entire block is skipped.
+                    if trimmed.starts_with('{') {
+                        skip_lines_remaining -= 1;
+                        skip_block_depth = 1;
+                        skip_block_reason = skip_reason.clone();
+                        output.push('\n');
+                        continue;
+                    }
                     skip_lines_remaining -= 1;
                     // Emit a skip() call for each skipped test line
                     output.push_str(&format!("skip '{}', 1;\n", skip_reason));

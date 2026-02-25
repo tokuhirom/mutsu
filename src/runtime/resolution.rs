@@ -1,6 +1,15 @@
 use super::*;
 
 impl Interpreter {
+    fn is_stub_method_body(body: &[Stmt]) -> bool {
+        body.len() == 1
+            && matches!(
+                &body[0],
+                Stmt::Expr(Expr::Call { name, .. })
+                    if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
+            )
+    }
+
     pub(super) fn resolve_function(&self, name: &str) -> Option<FunctionDef> {
         if name.contains("::") {
             return self.functions.get(name).cloned();
@@ -142,6 +151,44 @@ impl Interpreter {
         None
     }
 
+    pub(super) fn resolve_private_method_any_owner(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        arg_values: &[Value],
+    ) -> Option<(String, MethodDef)> {
+        let mro = self.class_mro(class_name);
+        for cn in mro {
+            if let Some(overloads) = self
+                .classes
+                .get(&cn)
+                .and_then(|c| c.methods.get(method_name))
+                .cloned()
+            {
+                for def in &overloads {
+                    if !def.is_private {
+                        continue;
+                    }
+                    if Self::is_stub_method_body(&def.body) {
+                        continue;
+                    }
+                    if self.method_args_match(arg_values, &def.param_defs) {
+                        return Some((cn.clone(), def.clone()));
+                    }
+                }
+                for def in overloads {
+                    if !def.is_private {
+                        continue;
+                    }
+                    if self.method_args_match(arg_values, &def.param_defs) {
+                        return Some((cn.clone(), def));
+                    }
+                }
+            }
+        }
+        None
+    }
+
     pub(super) fn class_mro(&mut self, class_name: &str) -> Vec<String> {
         if let Some(class_def) = self.classes.get(class_name)
             && !class_def.mro.is_empty()
@@ -246,11 +293,11 @@ impl Interpreter {
             if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
                 let mut positional = data.assumed_positional.clone();
                 let mut named = data.assumed_named.clone();
-                for arg in args {
+                for arg in &args {
                     if let Value::Pair(key, boxed) = arg {
-                        named.insert(key, *boxed);
+                        named.insert(key.clone(), *boxed.clone());
                     } else {
-                        positional.push(arg);
+                        positional.push(arg.clone());
                     }
                 }
                 call_args = positional;
@@ -275,9 +322,20 @@ impl Interpreter {
             let rw_bindings =
                 self.bind_function_args_values(&data.param_defs, &data.params, &call_args)?;
             new_env = self.env.clone();
+            if data.params.is_empty() {
+                for arg in &args {
+                    if let Value::Pair(name, value) = arg {
+                        new_env.insert(format!(":{}", name), *value.clone());
+                    }
+                }
+            }
             // Bind implicit $_ for bare blocks called with arguments
-            if data.params.is_empty() && !call_args.is_empty() {
-                new_env.insert("_".to_string(), call_args[0].clone());
+            if data.params.is_empty()
+                && !args.is_empty()
+                && let Some(first_positional) =
+                    args.iter().find(|v| !matches!(v, Value::Pair(_, _)))
+            {
+                new_env.insert("_".to_string(), first_positional.clone());
             }
             // &?BLOCK: weak self-reference to break reference cycles
             let block_arc = std::sync::Arc::new(crate::value::SubData {
@@ -338,6 +396,7 @@ impl Interpreter {
                     }
                 }
             }
+            self.merge_sigilless_alias_writes(&mut merged, &self.env);
             // Apply rw bindings after merge so they take precedence
             self.apply_rw_bindings_to_env(&rw_bindings, &mut merged);
             self.env = merged;

@@ -654,6 +654,25 @@ mod tests {
     }
 
     #[test]
+    fn parse_strict_not_equal_operator() {
+        let (rest, expr) = expression("1 !=== 2").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr,
+            } => match *expr {
+                Expr::Binary {
+                    op: TokenKind::EqEqEq,
+                    ..
+                } => {}
+                _ => panic!("Expected !=== to lower to !(===)"),
+            },
+            _ => panic!("Expected Binary expression"),
+        }
+    }
+
+    #[test]
     fn chained_comparison_requires_rhs_expression() {
         let err = expression("1 < 2 <").unwrap_err();
         assert!(err.message().contains("chained comparison operator"));

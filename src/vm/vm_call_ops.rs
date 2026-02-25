@@ -22,6 +22,33 @@ impl VM {
         )
     }
 
+    fn unwrap_var_ref_value(value: Value) -> Value {
+        if let Value::Capture { positional, named } = &value
+            && positional.is_empty()
+            && let Some(Value::Str(_)) = named.get("__mutsu_varref_name")
+            && let Some(inner) = named.get("__mutsu_varref_value")
+        {
+            return inner.clone();
+        }
+        value
+    }
+
+    fn normalize_call_args_for_target(&mut self, name: &str, raw_args: Vec<Value>) -> Vec<Value> {
+        let plain_args: Vec<Value> = raw_args
+            .iter()
+            .cloned()
+            .map(Self::unwrap_var_ref_value)
+            .collect();
+        if self.interpreter.has_function(name)
+            || self.interpreter.has_multi_function(name)
+            || self.interpreter.has_proto(name)
+        {
+            raw_args
+        } else {
+            plain_args
+        }
+    }
+
     pub(super) fn exec_call_func_op(
         &mut self,
         code: &CompiledCode,
@@ -63,6 +90,7 @@ impl VM {
         } else {
             arg_sources
         };
+        let args = self.normalize_call_args_for_target(&name, args);
         if !self.interpreter.has_proto(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
@@ -134,6 +162,7 @@ impl VM {
                 args.push(other);
             }
         }
+        let args = self.normalize_call_args_for_target(&name, args);
         if !self.interpreter.has_proto(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
@@ -161,11 +190,12 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let method_raw = Self::const_str(code, name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
-        // For ^ (meta) modifier, prepend ^ to method name for dispatch
-        let method = if modifier.as_deref() == Some("^") {
-            format!("^{}", method_raw)
-        } else {
-            method_raw
+        // Modifiers that need method-name rewriting before runtime dispatch.
+        let method = match modifier.as_deref() {
+            Some("^") => format!("^{}", method_raw),
+            Some("!") if method_raw.contains("::") => method_raw,
+            Some("!") => format!("!{}", method_raw),
+            _ => method_raw,
         };
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
@@ -328,10 +358,11 @@ impl VM {
         let method_raw = Self::const_str(code, name_idx).to_string();
         let target_name = Self::const_str(code, target_name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
-        let method = if modifier.as_deref() == Some("^") {
-            format!("^{}", method_raw)
-        } else {
-            method_raw
+        let method = match modifier.as_deref() {
+            Some("^") => format!("^{}", method_raw),
+            Some("!") if method_raw.contains("::") => method_raw,
+            Some("!") => format!("!{}", method_raw),
+            _ => method_raw,
         };
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
@@ -601,6 +632,7 @@ impl VM {
         } else {
             arg_sources
         };
+        let args = self.normalize_call_args_for_target(&name, args);
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
             self.interpreter
                 .set_pending_call_arg_sources(arg_sources.clone());

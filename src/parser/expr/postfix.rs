@@ -405,6 +405,11 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 }
             }
         }
+        if rest.starts_with("->") {
+            return Err(PError::fatal(
+                "X::Obsolete: Perl -> is dead. Please use '.' instead.".to_string(),
+            ));
+        }
         // Method call: .method or .method(args) or .method: args
         // Also handles modifiers: .?method, .!method
         // Also handles: .^method (meta-method)
