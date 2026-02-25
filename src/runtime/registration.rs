@@ -417,7 +417,9 @@ impl Interpreter {
 
     pub(crate) fn has_function(&self, name: &str) -> bool {
         let fq = format!("{}::{}", self.current_package, name);
-        self.functions.contains_key(&fq) || self.functions.contains_key(name)
+        self.functions.contains_key(&fq)
+            || self.functions.contains_key(name)
+            || Self::is_builtin_function(name)
     }
 
     /// Check if a multi-dispatched function with the given name exists (any arity).

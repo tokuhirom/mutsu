@@ -553,6 +553,8 @@ impl Interpreter {
                 native_methods: [
                     "Str",
                     "gist",
+                    "raku",
+                    "perl",
                     "IO",
                     "basename",
                     "dirname",

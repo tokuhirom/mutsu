@@ -320,6 +320,7 @@ impl Interpreter {
             "chroot" => self.builtin_chroot(&args),
             "run" => self.builtin_run(&args),
             "shell" => self.builtin_shell(&args),
+            "QX" | "qx" => self.builtin_qx(&args),
             "kill" => self.builtin_kill(&args),
             "syscall" => self.builtin_syscall(&args),
             "sleep" => self.builtin_sleep(&args),
@@ -968,6 +969,10 @@ impl Interpreter {
                 | "pop"
                 | "shift"
                 | "unshift"
+                | "dir"
+                | "chdir"
+                | "QX"
+                | "qx"
                 | "indir"
                 | "run"
                 | "splice"
