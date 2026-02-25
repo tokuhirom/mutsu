@@ -6,6 +6,63 @@ use num_traits::{Signed, ToPrimitive, Zero};
 /// Maximum number of elements when expanding an infinite range to a list.
 const MAX_RANGE_EXPAND: i64 = 1_000_000;
 
+/// Check if an array is a shaped (multidimensional) array.
+/// A shaped array has nested Array elements as its first element.
+pub(crate) fn is_shaped_array(value: &Value) -> bool {
+    if let Value::Array(items, ..) = value {
+        matches!(items.first(), Some(Value::Array(..)))
+    } else {
+        false
+    }
+}
+
+/// Collect all leaf values from a shaped (multidimensional) array.
+pub(crate) fn shaped_array_leaves(value: &Value) -> Vec<Value> {
+    let mut leaves = Vec::new();
+    collect_leaves(value, &mut leaves);
+    leaves
+}
+
+fn collect_leaves(value: &Value, out: &mut Vec<Value>) {
+    if let Value::Array(items, ..) = value {
+        if items.iter().any(|v| matches!(v, Value::Array(..))) {
+            for item in items.iter() {
+                collect_leaves(item, out);
+            }
+        } else {
+            out.extend(items.iter().cloned());
+        }
+    } else {
+        out.push(value.clone());
+    }
+}
+
+/// Collect all (index-tuple, leaf-value) pairs from a shaped array.
+pub(crate) fn shaped_array_indexed_leaves(value: &Value) -> Vec<(Vec<i64>, Value)> {
+    let mut result = Vec::new();
+    let mut indices = Vec::new();
+    collect_indexed_leaves(value, &mut indices, &mut result);
+    result
+}
+
+fn collect_indexed_leaves(value: &Value, indices: &mut Vec<i64>, out: &mut Vec<(Vec<i64>, Value)>) {
+    if let Value::Array(items, ..) = value {
+        if items.iter().any(|v| matches!(v, Value::Array(..))) {
+            for (i, item) in items.iter().enumerate() {
+                indices.push(i as i64);
+                collect_indexed_leaves(item, indices, out);
+                indices.pop();
+            }
+        } else {
+            for (i, item) in items.iter().enumerate() {
+                let mut idx = indices.clone();
+                idx.push(i as i64);
+                out.push((idx, item.clone()));
+            }
+        }
+    }
+}
+
 pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
     match (left, right) {
         (Value::Instance { id: a, .. }, Value::Instance { id: b, .. }) => a == b,

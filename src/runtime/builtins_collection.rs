@@ -309,10 +309,14 @@ impl Interpreter {
                 let comparator = first.clone();
                 let mut items: Vec<Value> = Vec::new();
                 for arg in args.iter().skip(1) {
-                    match arg {
-                        Value::Array(elems, ..) => items.extend(elems.iter().cloned()),
-                        Value::Seq(elems) => items.extend(elems.iter().cloned()),
-                        other => items.push(other.clone()),
+                    if crate::runtime::utils::is_shaped_array(arg) {
+                        items.extend(crate::runtime::utils::shaped_array_leaves(arg));
+                    } else {
+                        match arg {
+                            Value::Array(elems, ..) => items.extend(elems.iter().cloned()),
+                            Value::Seq(elems) => items.extend(elems.iter().cloned()),
+                            other => items.push(other.clone()),
+                        }
                     }
                 }
                 // Delegate to dispatch_sort which handles all callable types
@@ -321,6 +325,11 @@ impl Interpreter {
         }
         let val = args.first().cloned();
         Ok(match val {
+            Some(ref v) if crate::runtime::utils::is_shaped_array(v) => {
+                let mut leaves = crate::runtime::utils::shaped_array_leaves(v);
+                leaves.sort_by_key(|a| a.to_string_value());
+                Value::array(leaves)
+            }
             Some(Value::Array(mut items, ..)) => {
                 Arc::make_mut(&mut items).sort_by_key(|a| a.to_string_value());
                 Value::Array(items, false)
@@ -333,16 +342,20 @@ impl Interpreter {
         let func = args.first().cloned();
         let mut list_items = Vec::new();
         for arg in args.iter().skip(1) {
-            match arg {
-                Value::Array(items, ..) => list_items.extend(items.iter().cloned()),
-                Value::Range(a, b) => list_items.extend((*a..=*b).map(Value::Int)),
-                Value::RangeExcl(a, b) => list_items.extend((*a..*b).map(Value::Int)),
-                Value::RangeExclStart(a, b) => list_items.extend((*a + 1..=*b).map(Value::Int)),
-                Value::RangeExclBoth(a, b) => list_items.extend((*a + 1..*b).map(Value::Int)),
-                v if v.is_range() => {
-                    list_items.extend(crate::runtime::utils::value_to_list(v));
+            if crate::runtime::utils::is_shaped_array(arg) {
+                list_items.extend(crate::runtime::utils::shaped_array_leaves(arg));
+            } else {
+                match arg {
+                    Value::Array(items, ..) => list_items.extend(items.iter().cloned()),
+                    Value::Range(a, b) => list_items.extend((*a..=*b).map(Value::Int)),
+                    Value::RangeExcl(a, b) => list_items.extend((*a..*b).map(Value::Int)),
+                    Value::RangeExclStart(a, b) => list_items.extend((*a + 1..=*b).map(Value::Int)),
+                    Value::RangeExclBoth(a, b) => list_items.extend((*a + 1..*b).map(Value::Int)),
+                    v if v.is_range() => {
+                        list_items.extend(crate::runtime::utils::value_to_list(v));
+                    }
+                    other => list_items.push(other.clone()),
                 }
-                other => list_items.push(other.clone()),
             }
         }
         self.eval_map_over_items(func, list_items)

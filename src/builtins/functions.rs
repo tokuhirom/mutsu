@@ -381,24 +381,66 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             Value::LazyList(_) => None,
             _ => Some(Ok(Value::Int(1))),
         },
-        "reverse" => Some(Ok(match arg {
-            Value::Array(items, ..) => {
-                let mut reversed = (**items).clone();
-                reversed.reverse();
-                Value::array(reversed)
+        "reverse" => {
+            if crate::runtime::utils::is_shaped_array(arg) {
+                return Some(Err(RuntimeError::illegal_on_fixed_dimension_array(
+                    "reverse",
+                )));
             }
-            Value::Str(s) => Value::Str(s.chars().rev().collect()),
-            _ => Value::Nil,
-        })),
-        "sort" => Some(Ok(match arg {
-            Value::Array(items, ..) => {
-                let mut sorted = (**items).clone();
-                sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
-                Value::array(sorted)
+            Some(Ok(match arg {
+                Value::Array(items, ..) => {
+                    let mut reversed = (**items).clone();
+                    reversed.reverse();
+                    Value::array(reversed)
+                }
+                Value::Str(s) => Value::Str(s.chars().rev().collect()),
+                _ => Value::Nil,
+            }))
+        }
+        "sort" => {
+            if crate::runtime::utils::is_shaped_array(arg) {
+                let mut leaves = crate::runtime::utils::shaped_array_leaves(arg);
+                leaves.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
+                return Some(Ok(Value::array(leaves)));
             }
-            _ => Value::Nil,
-        })),
+            Some(Ok(match arg {
+                Value::Array(items, ..) => {
+                    let mut sorted = (**items).clone();
+                    sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
+                    Value::array(sorted)
+                }
+                _ => Value::Nil,
+            }))
+        }
+        "rotate" => {
+            if crate::runtime::utils::is_shaped_array(arg) {
+                return Some(Err(RuntimeError::illegal_on_fixed_dimension_array(
+                    "rotate",
+                )));
+            }
+            Some(Ok(match arg {
+                Value::Array(items, ..) => {
+                    // rotate with no count defaults to 1
+                    let n = 1usize;
+                    let len = items.len();
+                    if len == 0 {
+                        Value::array(Vec::new())
+                    } else {
+                        let n = n % len;
+                        let mut rotated = Vec::with_capacity(len);
+                        rotated.extend_from_slice(&items[n..]);
+                        rotated.extend_from_slice(&items[..n]);
+                        Value::array(rotated)
+                    }
+                }
+                _ => Value::Nil,
+            }))
+        }
         "flat" => {
+            if crate::runtime::utils::is_shaped_array(arg) {
+                let leaves = crate::runtime::utils::shaped_array_leaves(arg);
+                return Some(Ok(Value::Seq(std::sync::Arc::new(leaves))));
+            }
             if is_infinite_range(arg) {
                 return Some(Ok(arg.clone()));
             }
@@ -486,6 +528,15 @@ fn native_function_2arg(
         }
         "join" => {
             let sep = arg1.to_string_value();
+            if crate::runtime::utils::is_shaped_array(arg2) {
+                let leaves = crate::runtime::utils::shaped_array_leaves(arg2);
+                let joined = leaves
+                    .iter()
+                    .map(|v| v.to_string_value())
+                    .collect::<Vec<_>>()
+                    .join(&sep);
+                return Some(Ok(Value::Str(joined)));
+            }
             match arg2 {
                 Value::Array(items, ..) => {
                     let joined = items
@@ -496,6 +547,29 @@ fn native_function_2arg(
                     Some(Ok(Value::Str(joined)))
                 }
                 _ => Some(Ok(Value::Str(String::new()))),
+            }
+        }
+        "rotate" => {
+            if crate::runtime::utils::is_shaped_array(arg1) {
+                return Some(Err(RuntimeError::illegal_on_fixed_dimension_array(
+                    "rotate",
+                )));
+            }
+            match arg1 {
+                Value::Array(items, ..) => {
+                    let count = runtime::to_int(arg2);
+                    let len = items.len() as i64;
+                    if len == 0 {
+                        return Some(Ok(Value::array(Vec::new())));
+                    }
+                    let n = ((count % len) + len) % len;
+                    let n = n as usize;
+                    let mut rotated = Vec::with_capacity(items.len());
+                    rotated.extend_from_slice(&items[n..]);
+                    rotated.extend_from_slice(&items[..n]);
+                    Some(Ok(Value::array(rotated)))
+                }
+                _ => Some(Ok(Value::Nil)),
             }
         }
         "index" => {

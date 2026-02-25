@@ -4406,7 +4406,7 @@ impl Interpreter {
                             self.env.insert("_".to_string(), b.clone());
                             let key_b = self.eval_block_value(&data.body).unwrap_or(Value::Nil);
                             self.env = saved;
-                            key_a.to_string_value().cmp(&key_b.to_string_value())
+                            compare_values(&key_a, &key_b).cmp(&0)
                         });
                     } else {
                         items_mut.sort_by(|a, b| {
@@ -4560,7 +4560,7 @@ impl Interpreter {
 
         if let Value::Package(class_name) = &target {
             match class_name.as_str() {
-                "Array" | "List" | "Positional" => {
+                "Array" | "List" | "Positional" | "array" => {
                     if let Some(dims) = Self::shaped_dims_from_new_args(&args) {
                         return Ok(Self::make_shaped_array(&dims));
                     }

@@ -142,6 +142,19 @@ impl RuntimeError {
         }
     }
 
+    pub(crate) fn illegal_on_fixed_dimension_array(operation: &str) -> Self {
+        let mut attrs = HashMap::new();
+        attrs.insert("operation".to_string(), Value::Str(operation.to_string()));
+        attrs.insert(
+            "message".to_string(),
+            Value::Str(format!("Cannot {} a fixed-dimension array", operation)),
+        );
+        let ex = Value::make_instance("X::IllegalOnFixedDimensionArray".to_string(), attrs);
+        let mut err = Self::new(format!("Cannot {} a fixed-dimension array", operation));
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
     pub(crate) fn numeric_divide_by_zero() -> Self {
         let mut attrs = HashMap::new();
         attrs.insert(

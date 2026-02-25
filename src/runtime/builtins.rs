@@ -1074,6 +1074,7 @@ impl Interpreter {
                 | "pairs"
                 | "sort"
                 | "reverse"
+                | "rotate"
                 | "join"
                 | "map"
                 | "grep"
