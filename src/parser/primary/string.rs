@@ -73,8 +73,15 @@ fn unicode_bracket_close(open: char) -> Option<char> {
     }
 }
 
-/// Read a bracketed string with nesting support (e.g., `{...{...}...}`)
-pub(super) fn read_bracketed(input: &str, open: char, close: char) -> PResult<'_, &str> {
+/// Read a bracketed string with nesting support (e.g., `{...{...}...}`).
+/// When `allow_escape` is true, `\x` consumes both chars so escaped delimiters
+/// do not affect nesting.
+pub(super) fn read_bracketed(
+    input: &str,
+    open: char,
+    close: char,
+    allow_escape: bool,
+) -> PResult<'_, &str> {
     if !input.starts_with(open) {
         return Err(PError::expected(&format!("'{}'", open)));
     }
@@ -86,7 +93,7 @@ pub(super) fn read_bracketed(input: &str, open: char, close: char) -> PResult<'_
             return Err(PError::expected(&format!("closing '{}'", close)));
         }
         let ch = rest.chars().next().unwrap();
-        if ch == '\\' && rest.len() > 1 {
+        if allow_escape && ch == '\\' && rest.len() > 1 {
             rest = &rest[2..]; // skip escape
             continue;
         }
@@ -129,7 +136,7 @@ pub(super) fn big_q_string(input: &str) -> PResult<'_, Expr> {
     }
     // Check for bracket-style delimiter
     if let Some(close_char) = unicode_bracket_close(delim_char) {
-        let (after, content) = read_bracketed(rest, delim_char, close_char)?;
+        let (after, content) = read_bracketed(rest, delim_char, close_char, false)?;
         if is_scalar_interp {
             return Ok((after, interpolate_string_content(content)));
         }
@@ -248,7 +255,7 @@ fn parse_to_heredoc_delimiter(input: &str) -> PResult<'_, &'_ str> {
     }
 
     if let Some(close) = unicode_bracket_close(open) {
-        let (rest, delimiter) = read_bracketed(input, open, close)?;
+        let (rest, delimiter) = read_bracketed(input, open, close, false)?;
         return Ok((rest, delimiter));
     }
 
@@ -409,7 +416,7 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
         }
         _ => return Err(PError::expected("q string delimiter")),
     };
-    let (rest, content) = read_bracketed(after_prefix, open, close)?;
+    let (rest, content) = read_bracketed(after_prefix, open, close, true)?;
     if is_qq {
         return Ok((rest, interpolate_string_content(content)));
     }
