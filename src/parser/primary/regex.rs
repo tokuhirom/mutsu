@@ -2,7 +2,13 @@ use super::super::parse_result::{PError, PResult, parse_char, parse_tag, take_wh
 use super::string::interpolate_string_content;
 
 use crate::ast::Expr;
+use crate::regex_validate::validate_regex_syntax;
 use crate::value::Value;
+
+/// Validate a regex pattern at parse time, converting any RuntimeError to PError.
+fn validate_regex_pattern_or_perror(pattern: &str) -> Result<(), PError> {
+    validate_regex_syntax(pattern).map_err(|e| PError::fatal(e.message))
+}
 
 use super::super::expr::expression;
 use super::super::helpers::{consume_unspace, skip_balanced_parens, ws};
@@ -445,6 +451,9 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         };
         let r = &spec[1..];
         if let Some((pattern, rest)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
+            if !adverbs.perl5 {
+                validate_regex_pattern_or_perror(pattern)?;
+            }
             let has_adverbs = adverbs.exhaustive
                 || adverbs.repeat.is_some()
                 || adverbs.perl5
@@ -580,6 +589,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         scan_to_delim(r2, open_ch, close_ch, is_paired)
                     {
                         let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                        validate_regex_pattern_or_perror(&pattern)?;
                         let repl_expr = interpolate_string_content(replacement);
                         return Ok((
                             rest,
@@ -626,6 +636,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         scan_to_delim(r2, open_ch, close_ch, is_paired)
                     {
                         let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                        validate_regex_pattern_or_perror(&pattern)?;
                         let repl_expr = interpolate_string_content(replacement);
                         return Ok((
                             rest,
@@ -676,6 +687,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             } else {
                 &r[rend..]
             };
+            validate_regex_pattern_or_perror(pattern)?;
             let repl_expr = interpolate_string_content(replacement);
             return Ok((
                 rest,
@@ -764,6 +776,9 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 let r = &spec[open_ch.len_utf8()..];
                 if let Some((pattern, rest)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
                     let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                    if !adverbs.perl5 {
+                        validate_regex_pattern_or_perror(&pattern)?;
+                    }
                     let has_adverbs = adverbs.exhaustive
                         || adverbs.repeat.is_some()
                         || adverbs.perl5
@@ -793,6 +808,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         if let Some((pattern, rest)) = scan_to_delim(r, '/', '/', false)
             && !pattern.is_empty()
         {
+            validate_regex_pattern_or_perror(pattern)?;
             return Ok((rest, Expr::Literal(Value::Regex(pattern.to_string()))));
         }
     }
