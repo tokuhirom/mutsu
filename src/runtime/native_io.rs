@@ -443,7 +443,7 @@ impl Interpreter {
                 self.write_to_handle_value(&target_val, &content, false)?;
                 Ok(Value::Bool(true))
             }
-            "say" => {
+            "say" | "put" => {
                 let content = args
                     .first()
                     .map(|v| v.to_string_value())

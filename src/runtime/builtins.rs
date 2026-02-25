@@ -946,7 +946,15 @@ impl Interpreter {
             .ok_or_else(|| RuntimeError::new("EVALFILE requires a filename"))?;
         let code = fs::read_to_string(&path)
             .map_err(|err| RuntimeError::new(format!("Failed to read {}: {}", path, err)))?;
-        self.eval_eval_string(&code)
+        let saved_file = self.env.get("?FILE").cloned();
+        self.env.insert("?FILE".to_string(), Value::Str(path));
+        let result = self.eval_eval_string(&code);
+        if let Some(prev) = saved_file {
+            self.env.insert("?FILE".to_string(), prev);
+        } else {
+            self.env.remove("?FILE");
+        }
+        result
     }
 
     fn builtin_eval(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

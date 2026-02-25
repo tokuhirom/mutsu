@@ -618,6 +618,9 @@ pub(super) fn say_stmt(input: &str) -> PResult<'_, Stmt> {
     check_bare_io_func("say", rest)?;
     let (rest, _) = ws1(rest)?;
     check_io_func_followed_by_loop("say", rest)?;
+    if let Ok((rest, stmt)) = parse_io_colon_invocant_stmt(rest, "say") {
+        return parse_statement_modifier(rest, stmt);
+    }
     let (rest, args) = parse_expr_list(rest)?;
     let stmt = Stmt::Say(args);
     parse_statement_modifier(rest, stmt)
@@ -629,6 +632,9 @@ pub(super) fn print_stmt(input: &str) -> PResult<'_, Stmt> {
     check_bare_io_func("print", rest)?;
     let (rest, _) = ws1(rest)?;
     check_io_func_followed_by_loop("print", rest)?;
+    if let Ok((rest, stmt)) = parse_io_colon_invocant_stmt(rest, "print") {
+        return parse_statement_modifier(rest, stmt);
+    }
     let (rest, args) = parse_expr_list(rest)?;
     let stmt = Stmt::Print(args);
     parse_statement_modifier(rest, stmt)
@@ -640,6 +646,9 @@ pub(super) fn put_stmt(input: &str) -> PResult<'_, Stmt> {
     check_bare_io_func("put", rest)?;
     let (rest, _) = ws1(rest)?;
     check_io_func_followed_by_loop("put", rest)?;
+    if let Ok((rest, stmt)) = parse_io_colon_invocant_stmt(rest, "put") {
+        return parse_statement_modifier(rest, stmt);
+    }
     let (rest, args) = parse_expr_list(rest)?;
     let stmt = Stmt::Say(args);
     parse_statement_modifier(rest, stmt)
@@ -682,6 +691,54 @@ pub(super) fn parse_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
         items.push(next);
         rest = r;
     }
+}
+
+fn parse_io_colon_invocant_stmt<'a>(input: &'a str, method_name: &str) -> PResult<'a, Stmt> {
+    let (rest_after_target, target) = expression(input)?;
+    let (rest_after_target, _) = ws(rest_after_target)?;
+    if !rest_after_target.starts_with(':') || rest_after_target.starts_with("::") {
+        return Err(PError::expected("io colon invocant call"));
+    }
+    let mut rest = &rest_after_target[1..];
+    let (r, _) = ws(rest)?;
+    rest = r;
+    let (mut rest_after_args, first_arg) = expression(rest).map_err(|err| PError {
+        messages: merge_expected_messages(
+            "expected expression after ':' in io invocant call",
+            &err.messages,
+        ),
+        remaining_len: err.remaining_len.or(Some(rest.len())),
+    })?;
+    let mut args = vec![first_arg];
+    loop {
+        let (r, _) = ws(rest_after_args)?;
+        if !r.starts_with(',') {
+            break;
+        }
+        let r = &r[1..];
+        let (r, _) = ws(r)?;
+        if r.starts_with(';')
+            || r.is_empty()
+            || r.starts_with('}')
+            || r.starts_with(')')
+            || is_stmt_modifier_keyword(r)
+        {
+            break;
+        }
+        let (r, next) = expression(r)?;
+        args.push(next);
+        rest_after_args = r;
+    }
+    Ok((
+        rest_after_args,
+        Stmt::Expr(Expr::MethodCall {
+            target: Box::new(target),
+            name: method_name.to_string(),
+            args,
+            modifier: None,
+            quoted: false,
+        }),
+    ))
 }
 
 /// Parse `return` statement.
