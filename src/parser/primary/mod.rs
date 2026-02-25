@@ -264,11 +264,12 @@ mod tests {
         assert_eq!(rest1, "");
         assert!(matches!(
             expr1,
-            Expr::Literal(Value::RegexWithAdverbs {
+            Expr::MatchRegex(Value::RegexWithAdverbs {
                 pattern: ref s,
                 exhaustive: false,
                 repeat: Some(2),
                 perl5: false,
+                ..
             }) if s == "ab"
         ));
 
@@ -276,11 +277,12 @@ mod tests {
         assert_eq!(rest2, "");
         assert!(matches!(
             expr2,
-            Expr::Literal(Value::RegexWithAdverbs {
+            Expr::MatchRegex(Value::RegexWithAdverbs {
                 pattern: ref s,
                 exhaustive: false,
                 repeat: Some(2),
                 perl5: false,
+                ..
             }) if s == "ab"
         ));
     }
@@ -291,7 +293,7 @@ mod tests {
         assert_eq!(rest1, "");
         assert!(matches!(
             expr1,
-            Expr::Literal(Value::RegexWithAdverbs {
+            Expr::MatchRegex(Value::RegexWithAdverbs {
                 pattern: ref s,
                 perl5: true,
                 ..
@@ -314,7 +316,7 @@ mod tests {
     fn parse_match_regex_with_compact_adverbs() {
         let (rest, expr) = primary("ms/ab cd/").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::Literal(Value::Regex(ref s)) if s == ":s ab cd"));
+        assert!(matches!(expr, Expr::MatchRegex(Value::Regex(ref s)) if s == ":s ab cd"));
     }
 
     #[test]

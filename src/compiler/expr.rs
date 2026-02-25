@@ -26,6 +26,10 @@ impl Compiler {
                     self.code.emit(OpCode::LoadConst(idx));
                 }
             },
+            // m/regex/ — compile as $_ ~~ /regex/, matching against $_
+            Expr::MatchRegex(v) => {
+                self.compile_match_regex(v);
+            }
             Expr::Var(name) => {
                 // Compile-time package/module variables
                 if name == "?PACKAGE" || name == "?MODULE" {
@@ -255,7 +259,15 @@ impl Compiler {
                             negate: matches!(op, TokenKind::BangTilde),
                             lhs_var,
                         });
-                        self.compile_expr(right);
+                        // When RHS is m/regex/, unwrap to the regex value since
+                        // SmartMatchExpr already handles the matching against LHS
+                        match right.as_ref() {
+                            Expr::MatchRegex(v) => {
+                                let idx = self.code.add_constant(v.clone());
+                                self.code.emit(OpCode::LoadConst(idx));
+                            }
+                            _ => self.compile_expr(right),
+                        }
                         self.code.patch_smart_match_rhs_end(sm_idx);
                         return;
                     }
@@ -1325,5 +1337,26 @@ impl Compiler {
             TokenKind::DotDotDotCaret => Some(OpCode::Sequence { exclude_end: true }),
             _ => None,
         }
+    }
+
+    /// Compile a regex value as `$_ ~~ /regex/`, so it matches against $_
+    /// and sets $/ with the match result.
+    fn compile_match_regex(&mut self, v: &Value) {
+        let lhs_var = Some("_".to_string());
+        // Load $_ as the LHS
+        let name_idx = self
+            .code
+            .add_constant(Value::Str(self.qualify_variable_name("_")));
+        self.code.emit(OpCode::GetGlobal(name_idx));
+        // SmartMatchExpr will set $_ to LHS, run RHS, then smartmatch
+        let sm_idx = self.code.emit(OpCode::SmartMatchExpr {
+            rhs_end: 0,
+            negate: false,
+            lhs_var,
+        });
+        // RHS: load the regex constant
+        let idx = self.code.add_constant(v.clone());
+        self.code.emit(OpCode::LoadConst(idx));
+        self.code.patch_smart_match_rhs_end(sm_idx);
     }
 }

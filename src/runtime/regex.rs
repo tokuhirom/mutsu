@@ -474,6 +474,29 @@ impl Interpreter {
         None
     }
 
+    /// Match regex anchored at a specific character position.
+    /// Returns captures only if the match starts exactly at `pos`.
+    pub(crate) fn regex_match_with_captures_at(
+        &self,
+        pattern: &str,
+        text: &str,
+        pos: usize,
+    ) -> Option<RegexCaptures> {
+        let parsed = self.parse_regex(pattern)?;
+        let pkg = self.current_package.clone();
+        let chars: Vec<char> = text.chars().collect();
+        if pos > chars.len() {
+            return None;
+        }
+        self.regex_match_end_from_caps_in_pkg(&parsed, &chars, pos, &pkg)
+            .map(|(end, mut caps)| {
+                caps.from = caps.capture_start.unwrap_or(pos);
+                caps.to = caps.capture_end.unwrap_or(end);
+                caps.matched = chars[caps.from..caps.to].iter().collect();
+                caps
+            })
+    }
+
     pub(super) fn regex_match_all_with_captures(
         &self,
         pattern: &str,
