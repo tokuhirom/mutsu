@@ -1367,7 +1367,7 @@ impl Interpreter {
                 }
             }
         }
-        Self {
+        let mut cloned = Self {
             env: self.env.clone(),
             output: String::new(),
             stderr_output: String::new(),
@@ -1429,7 +1429,9 @@ impl Interpreter {
             method_dispatch_stack: Vec::new(),
             suppressed_names: self.suppressed_names.clone(),
             last_value: None,
-        }
+        };
+        cloned.init_io_environment();
+        cloned
     }
 
     /// Read a shared array variable. If the variable is in shared_vars, return
