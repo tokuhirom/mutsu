@@ -1106,10 +1106,7 @@ impl Interpreter {
             "at" => {
                 if let Some(cls) = self.promise_class_name(&target) {
                     let at_time = args.first().map(|v| v.to_f64()).unwrap_or(0.0);
-                    let now = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs_f64();
+                    let now = crate::value::current_time_secs_f64();
                     let delay = (at_time - now).max(0.0);
                     let promise = SharedPromise::new_with_class(cls);
                     let ret = Value::Promise(promise.clone());
@@ -1695,6 +1692,37 @@ impl Interpreter {
                     return Ok(Value::make_instance("Supply".to_string(), attrs));
                 }
             }
+            "repository-for-name" => {
+                if let Value::Package(ref class_name) = target
+                    && class_name == "CompUnit::RepositoryRegistry"
+                {
+                    let name = args.first().map(Value::to_string_value).unwrap_or_default();
+                    if let Some(prefix) = name.strip_prefix("file#") {
+                        let new_args = vec![Value::Pair(
+                            "prefix".to_string(),
+                            Box::new(Value::Str(prefix.to_string())),
+                        )];
+                        return self.call_method_with_values(
+                            Value::Package("CompUnit::Repository::FileSystem".to_string()),
+                            "new",
+                            new_args,
+                        );
+                    }
+                    return Ok(Value::Nil);
+                }
+            }
+            "signal" => {
+                if let Value::Package(ref class_name) = target
+                    && class_name == "Supply"
+                {
+                    let mut attrs = HashMap::new();
+                    attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    attrs.insert("live".to_string(), Value::Bool(true));
+                    attrs.insert("signals".to_string(), Value::array(args.clone()));
+                    return Ok(Value::make_instance("Supply".to_string(), attrs));
+                }
+            }
             "on-demand" => {
                 if let Value::Package(ref class_name) = target
                     && class_name == "Supply"
@@ -1799,10 +1827,7 @@ impl Interpreter {
                 if let Value::Package(ref class_name) = target
                     && class_name == "DateTime"
                 {
-                    let secs = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .map(|d| d.as_secs_f64())
-                        .unwrap_or(0.0);
+                    let secs = crate::value::current_time_secs_f64();
                     let mut attrs = HashMap::new();
                     attrs.insert("epoch".to_string(), Value::Num(secs));
                     return Ok(Value::make_instance("DateTime".to_string(), attrs));
@@ -1812,10 +1837,7 @@ impl Interpreter {
                 if let Value::Package(ref class_name) = target
                     && class_name == "Date"
                 {
-                    let secs = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0);
+                    let secs = crate::value::current_time_secs_f64() as u64;
                     let days = secs / 86_400;
                     let mut attrs = HashMap::new();
                     attrs.insert("days".to_string(), Value::Int(days as i64));
@@ -2334,6 +2356,53 @@ impl Interpreter {
                             result.push_str(&file);
                         }
                         return Ok(Value::Str(result));
+                    }
+                    _ => {}
+                }
+            }
+            if class_name == "CompUnit::Repository::FileSystem" {
+                match method {
+                    "install" => {
+                        return Err(RuntimeError::new("Cannot install on CUR::FileSystem"));
+                    }
+                    "need" => {
+                        let short_name = match args.first() {
+                            Some(Value::CompUnitDepSpec { short_name }) => short_name.clone(),
+                            _ => return Ok(Value::Nil),
+                        };
+                        let prefix = attributes
+                            .get("prefix")
+                            .map(Value::to_string_value)
+                            .unwrap_or_default();
+                        let canonical_prefix = std::fs::canonicalize(&prefix)
+                            .unwrap_or_else(|_| std::path::PathBuf::from(&prefix))
+                            .to_string_lossy()
+                            .to_string();
+                        let cache_key =
+                            format!("__mutsu_compunit::{}::{}", canonical_prefix, short_name);
+                        if let Some(existing) = self.env.get(&cache_key).cloned() {
+                            return Ok(existing);
+                        }
+                        let relative = short_name.replace("::", "/");
+                        let mut found = None;
+                        for ext in [".rakumod", ".pm6", ".raku", ".pm"] {
+                            let candidate = std::path::Path::new(&canonical_prefix)
+                                .join(format!("{relative}{ext}"));
+                            if candidate.exists() {
+                                found = Some(candidate);
+                                break;
+                            }
+                        }
+                        if found.is_none() {
+                            return Ok(Value::Nil);
+                        }
+                        let mut attrs = HashMap::new();
+                        attrs.insert("from".to_string(), Value::Str("Raku".to_string()));
+                        attrs.insert("short-name".to_string(), Value::Str(short_name));
+                        attrs.insert("precompiled".to_string(), Value::Bool(false));
+                        let compunit = Value::make_instance("CompUnit".to_string(), attrs);
+                        self.env.insert(cache_key, compunit.clone());
+                        return Ok(compunit);
                     }
                     _ => {}
                 }
@@ -4086,13 +4155,32 @@ impl Interpreter {
             let mut best: Option<Value> = None;
             let mut out: Vec<Value> = Vec::new();
             for (idx, item) in items.iter().enumerate() {
-                if matches!(item, Value::Nil) {
+                if matches!(item, Value::Nil) || matches!(item, Value::Package(n) if n == "Any") {
                     continue;
                 }
                 let ord = if let Some(current) = &best {
-                    match (to_float_value(item), to_float_value(current)) {
-                        (Some(a), Some(b)) => {
-                            a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
+                    // Use `cmp` semantics: numeric comparison for numeric
+                    // pairs, string comparison otherwise
+                    match (item, current) {
+                        (Value::Int(a), Value::Int(b)) => a.cmp(b),
+                        (Value::Num(a), Value::Num(b)) => {
+                            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                        }
+                        (Value::Int(a), Value::Num(b)) => (*a as f64)
+                            .partial_cmp(b)
+                            .unwrap_or(std::cmp::Ordering::Equal),
+                        (Value::Num(a), Value::Int(b)) => a
+                            .partial_cmp(&(*b as f64))
+                            .unwrap_or(std::cmp::Ordering::Equal),
+                        (Value::Rat(..), _) | (_, Value::Rat(..)) => {
+                            if let (Some((an, ad)), Some((bn, bd))) = (
+                                crate::runtime::to_rat_parts(item),
+                                crate::runtime::to_rat_parts(current),
+                            ) {
+                                crate::runtime::compare_rat_parts((an, ad), (bn, bd))
+                            } else {
+                                item.to_string_value().cmp(&current.to_string_value())
+                            }
                         }
                         _ => item.to_string_value().cmp(&current.to_string_value()),
                     }
@@ -4105,16 +4193,25 @@ impl Interpreter {
                 if replace {
                     best = Some(item.clone());
                     out.clear();
-                    out.push(Value::Pair(idx.to_string(), Box::new(item.clone())));
+                    out.push(Value::ValuePair(
+                        Box::new(Value::Int(idx as i64)),
+                        Box::new(item.clone()),
+                    ));
                 } else if ord == std::cmp::Ordering::Equal {
-                    out.push(Value::Pair(idx.to_string(), Box::new(item.clone())));
+                    out.push(Value::ValuePair(
+                        Box::new(Value::Int(idx as i64)),
+                        Box::new(item.clone()),
+                    ));
                 }
             }
-            Value::array(out)
+            Value::Seq(Arc::new(out))
         };
         Ok(match target {
             Value::Array(items, ..) => to_pairs(&items),
-            other => Value::array(vec![Value::Pair("0".to_string(), Box::new(other))]),
+            other => Value::Seq(Arc::new(vec![Value::ValuePair(
+                Box::new(Value::Int(0)),
+                Box::new(other),
+            )])),
         })
     }
 
@@ -4543,6 +4640,34 @@ impl Interpreter {
                     })?;
                     return Ok(Value::CompUnitDepSpec { short_name });
                 }
+                "CompUnit::Repository::FileSystem" => {
+                    let mut prefix = ".".to_string();
+                    for arg in &args {
+                        if let Value::Pair(key, value) = arg
+                            && key == "prefix"
+                        {
+                            prefix = value.to_string_value();
+                        }
+                    }
+                    let prefix_path = if prefix.is_empty() { "." } else { &prefix };
+                    let canonical_prefix = std::fs::canonicalize(prefix_path)
+                        .unwrap_or_else(|_| std::path::PathBuf::from(prefix_path))
+                        .to_string_lossy()
+                        .to_string();
+                    let cache_key = format!("__mutsu_repo_fs::{}", canonical_prefix);
+                    if let Some(existing) = self.env.get(&cache_key).cloned() {
+                        return Ok(existing);
+                    }
+                    let mut attrs = HashMap::new();
+                    attrs.insert(
+                        "prefix".to_string(),
+                        self.make_io_path_instance(&canonical_prefix),
+                    );
+                    attrs.insert("short-id".to_string(), Value::Str("file".to_string()));
+                    let repo = Value::make_instance(class_name.clone(), attrs);
+                    self.env.insert(cache_key, repo.clone());
+                    return Ok(repo);
+                }
                 "Proc::Async" => {
                     let mut positional = Vec::new();
                     let mut w_flag = false;
@@ -4732,11 +4857,11 @@ impl Interpreter {
                     let frame = Value::make_instance("Backtrace::Frame".to_string(), frame_attrs);
                     return Ok(Value::array(vec![frame]));
                 }
-                "Lock" => {
+                "Lock" | "Lock::Async" => {
                     let mut attrs = HashMap::new();
                     let lock_id = super::native_methods::next_lock_id() as i64;
                     attrs.insert("lock-id".to_string(), Value::Int(lock_id));
-                    return Ok(Value::make_instance("Lock".to_string(), attrs));
+                    return Ok(Value::make_instance(class_name.clone(), attrs));
                 }
                 "Slip" => {
                     return Ok(Value::slip(args.clone()));
@@ -4939,11 +5064,17 @@ impl Interpreter {
         // Separate named args (Pairs) from positional args
         let mut positional = Vec::new();
         let mut has_neg_v = false;
+        let mut has_end = false;
         for arg in args {
             match arg {
                 Value::Pair(key, value) if key == "v" => {
                     if !value.truthy() {
                         has_neg_v = true;
+                    }
+                }
+                Value::Pair(key, value) if key == "end" => {
+                    if value.truthy() {
+                        has_end = true;
                     }
                 }
                 _ => positional.push(arg.clone()),
@@ -4964,7 +5095,10 @@ impl Interpreter {
             return Err(err);
         }
         let func = positional.first().cloned();
-        let items = crate::runtime::utils::value_to_list(&target);
+        let mut items = crate::runtime::utils::value_to_list(&target);
+        if has_end {
+            items.reverse();
+        }
         self.eval_first_over_items(func, items)
     }
 

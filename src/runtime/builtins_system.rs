@@ -416,7 +416,16 @@ impl Interpreter {
                     Value::Int(i) => Some(*i),
                     _ => None,
                 })
-                .unwrap_or_else(|| std::process::id() as i64);
+                .unwrap_or_else(|| {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        std::process::id() as i64
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        0
+                    }
+                });
             return Ok(Value::Int(pid));
         }
         Ok(Value::Int(-1))
@@ -440,7 +449,8 @@ impl Interpreter {
 
     pub(super) fn builtin_sleep_till(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         if let Some(target_time) = Self::system_time_from_value(args.first().cloned()) {
-            let now = SystemTime::now();
+            let now = std::time::SystemTime::UNIX_EPOCH
+                + std::time::Duration::from_secs_f64(crate::value::current_time_secs_f64());
             if target_time <= now {
                 return Ok(Value::Bool(false));
             }

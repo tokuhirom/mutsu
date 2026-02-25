@@ -336,6 +336,9 @@ impl Interpreter {
             "shell" => self.builtin_shell(&args),
             "QX" | "qx" => self.builtin_qx(&args),
             "kill" => self.builtin_kill(&args),
+            "signal" => {
+                self.call_method_with_values(Value::Package("Supply".to_string()), "signal", args)
+            }
             "syscall" => self.builtin_syscall(&args),
             "sleep" => self.builtin_sleep(&args),
             "sleep-timer" => self.builtin_sleep_timer(&args),

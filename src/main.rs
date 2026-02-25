@@ -1,6 +1,8 @@
 use std::env;
 use std::fs;
-use std::io::{self, IsTerminal, Read};
+#[cfg(feature = "native")]
+use std::io::IsTerminal;
+use std::io::{self, Read};
 
 use mutsu::{Interpreter, RuntimeError};
 
@@ -90,9 +92,15 @@ fn main() {
         lib_paths = env_paths;
     }
 
+    #[cfg(feature = "native")]
     if repl_flag || (filtered_args.is_empty() && io::stdin().is_terminal()) {
         mutsu::repl::run_repl();
         return;
+    }
+    #[cfg(not(feature = "native"))]
+    if repl_flag {
+        eprintln!("REPL is not available in this build");
+        std::process::exit(1);
     }
 
     let (input, program_name) = if !filtered_args.is_empty() && filtered_args[0] == "-e" {

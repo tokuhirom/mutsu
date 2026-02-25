@@ -614,7 +614,8 @@ pub(super) fn try_interpolate_var<'a>(
     parts: &mut Vec<Expr>,
     current: &mut String,
 ) -> Option<&'a str> {
-    let parse_angle_index = |input: &'a str, target: Expr| -> (Expr, &'a str) {
+    let parse_postcircumfix_index = |input: &'a str, target: Expr| -> (Expr, &'a str) {
+        // Angle bracket indexing: $var<key>
         if let Some(after_lt) = input.strip_prefix('<')
             && let Some(end) = after_lt.find('>')
         {
@@ -638,6 +639,30 @@ pub(super) fn try_interpolate_var<'a>(
                 &after_lt[end + 1..],
             );
         }
+        // Square bracket indexing: $var[expr]
+        if let Some(after_bracket) = input.strip_prefix('[')
+            && let Some(end) = after_bracket.find(']')
+        {
+            let content = after_bracket[..end].trim();
+            // Parse the index expression (integer literal or simple expression)
+            let index = if let Ok(n) = content.parse::<i64>() {
+                Expr::Literal(Value::Int(n))
+            } else {
+                // Try parsing as an expression
+                if let Ok((_, expr)) = crate::parser::expr::expression(content) {
+                    expr
+                } else {
+                    Expr::Literal(Value::Str(content.to_string()))
+                }
+            };
+            return (
+                Expr::Index {
+                    target: Box::new(target),
+                    index: Box::new(index),
+                },
+                &after_bracket[end + 1..],
+            );
+        }
         (target, input)
     };
 
@@ -648,8 +673,31 @@ pub(super) fn try_interpolate_var<'a>(
             if !current.is_empty() {
                 parts.push(Expr::Literal(Value::Str(std::mem::take(current))));
             }
-            parts.push(Expr::Var("/".to_string()));
-            return Some(&rest[2..]);
+            let var_expr = Expr::Var("/".to_string());
+            let (expr, var_rest) = parse_postcircumfix_index(&rest[2..], var_expr);
+            let (expr, var_rest) = try_parse_interp_method_call(var_rest, expr);
+            parts.push(expr);
+            return Some(var_rest);
+        }
+        // Numeric capture variables: $0, $1, $2, ...
+        if next.is_ascii_digit() {
+            if !current.is_empty() {
+                parts.push(Expr::Literal(Value::Str(std::mem::take(current))));
+            }
+            let var_rest = &rest[1..];
+            let end = var_rest
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(var_rest.len());
+            let digits = &var_rest[..end];
+            // $0, $1 etc. are positional captures — Index into $/
+            let index_val: i64 = digits.parse().unwrap_or(0);
+            let expr = Expr::Index {
+                target: Box::new(Expr::Var("/".to_string())),
+                index: Box::new(Expr::Literal(Value::Int(index_val))),
+            };
+            let (expr, var_rest) = try_parse_interp_method_call(&var_rest[end..], expr);
+            parts.push(expr);
+            return Some(var_rest);
         }
         if next.is_alphabetic()
             || next == '_'
@@ -663,7 +711,7 @@ pub(super) fn try_interpolate_var<'a>(
             }
             let var_rest = &rest[1..];
             let (var_rest, var_name) = parse_var_name_from_str(var_rest);
-            let (expr, var_rest) = parse_angle_index(var_rest, Expr::Var(var_name));
+            let (expr, var_rest) = parse_postcircumfix_index(var_rest, Expr::Var(var_name));
             // Handle method call interpolation: "$var.method()" or "$var.method"
             let (expr, var_rest) = try_parse_interp_method_call(var_rest, expr);
             parts.push(expr);
@@ -682,7 +730,7 @@ pub(super) fn try_interpolate_var<'a>(
                         .unwrap_or(after_dot.len());
                     let var_name = format!(".{}", &after_dot[..end]);
                     let (expr, remainder) =
-                        parse_angle_index(&after_dot[end..], Expr::Var(var_name));
+                        parse_postcircumfix_index(&after_dot[end..], Expr::Var(var_name));
                     let (expr, remainder) = try_parse_interp_method_call(remainder, expr);
                     parts.push(expr);
                     return Some(remainder);
@@ -708,7 +756,7 @@ pub(super) fn try_interpolate_var<'a>(
             if let Some(r) = remainder.strip_prefix("[]") {
                 remainder = r;
             }
-            let (expr, remainder) = parse_angle_index(remainder, expr);
+            let (expr, remainder) = parse_postcircumfix_index(remainder, expr);
             parts.push(expr);
             return Some(remainder);
         }
@@ -725,7 +773,7 @@ pub(super) fn try_interpolate_var<'a>(
                 .unwrap_or(var_rest.len());
             let name = &var_rest[..end];
             let expr = Expr::HashVar(name.to_string());
-            let (expr, remainder) = parse_angle_index(&var_rest[end..], expr);
+            let (expr, remainder) = parse_postcircumfix_index(&var_rest[end..], expr);
             parts.push(expr);
             return Some(remainder);
         }

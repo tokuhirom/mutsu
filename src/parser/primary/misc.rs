@@ -856,13 +856,15 @@ fn is_hash_literal_start(input: &str) -> bool {
 static ANON_CLASS_COUNTER: AtomicU64 = AtomicU64::new(0);
 static ANON_ROLE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// Parse an anonymous class expression: `class { ... }` or `class :: is Parent { ... }`
+/// Parse a class expression: `class { ... }`, `class Foo { ... }`, or `class :: is Parent { ... }`
+/// Named classes in expression context register the class AND return the type object.
 pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
     let rest = keyword("class", input).ok_or_else(|| PError::expected("anonymous class"))?;
     let (rest, _) = ws(rest)?;
 
-    // Accept `class { ... }` or `class :: ...` (anonymous with optional traits)
-    let (rest, parents) = if let Some(r) = rest.strip_prefix("::") {
+    // Accept `class { ... }`, `class :: ...` (anonymous with optional traits),
+    // or `class Name ...` (named class in expression context)
+    let (rest, name, parents) = if let Some(r) = rest.strip_prefix("::") {
         // Skip `::` (anonymous name placeholder)
         let (r, _) = ws(r)?;
         // Parse `is Parent` clauses
@@ -875,9 +877,26 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             let (r2, _) = ws(r2)?;
             r = r2;
         }
-        (r, parents)
+        let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
+        (r, format!("__ANON_CLASS_{id}__"), parents)
     } else if rest.starts_with('{') {
-        (rest, Vec::new())
+        let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
+        (rest, format!("__ANON_CLASS_{id}__"), Vec::new())
+    } else if rest.starts_with(|c: char| c.is_ascii_uppercase() || c == '_') {
+        // Named class in expression context: `class Foo { ... }`
+        let (r, class_name) = parse_ident_with_hyphens(rest)?;
+        let (r, _) = ws(r)?;
+        // Parse optional `is Parent` / `does Role` clauses
+        let mut parents = Vec::new();
+        let mut r = r;
+        while let Some(r2) = keyword("is", r).or_else(|| keyword("does", r)) {
+            let (r2, _) = super::super::helpers::ws1(r2)?;
+            let (r2, parent) = parse_ident_with_hyphens(r2)?;
+            parents.push(parent.to_string());
+            let (r2, _) = ws(r2)?;
+            r = r2;
+        }
+        (r, class_name.to_string(), parents)
     } else {
         return Err(PError::expected("'{' for anonymous class"));
     };
@@ -886,8 +905,6 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("'{' for anonymous class body"));
     }
 
-    let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let name = format!("__ANON_CLASS_{id}__");
     let (rest, body) = parse_block_body(rest)?;
     Ok((
         rest,
