@@ -161,11 +161,12 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let method_raw = Self::const_str(code, name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
-        // For ^ (meta) modifier, prepend ^ to method name for dispatch
-        let method = if modifier.as_deref() == Some("^") {
-            format!("^{}", method_raw)
-        } else {
-            method_raw
+        // Modifiers that need method-name rewriting before runtime dispatch.
+        let method = match modifier.as_deref() {
+            Some("^") => format!("^{}", method_raw),
+            Some("!") if method_raw.contains("::") => method_raw,
+            Some("!") => format!("!{}", method_raw),
+            _ => method_raw,
         };
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
@@ -328,10 +329,11 @@ impl VM {
         let method_raw = Self::const_str(code, name_idx).to_string();
         let target_name = Self::const_str(code, target_name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
-        let method = if modifier.as_deref() == Some("^") {
-            format!("^{}", method_raw)
-        } else {
-            method_raw
+        let method = match modifier.as_deref() {
+            Some("^") => format!("^{}", method_raw),
+            Some("!") if method_raw.contains("::") => method_raw,
+            Some("!") => format!("!{}", method_raw),
+            _ => method_raw,
         };
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {

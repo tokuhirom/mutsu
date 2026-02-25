@@ -134,6 +134,7 @@ impl Interpreter {
         attributes: HashMap<String, Value>,
         method_name: &str,
         args: Vec<Value>,
+        is_type_object: bool,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
         let (owner_class, method_def) = self
             .resolve_method_with_owner(receiver_class_name, method_name, &args)
@@ -149,6 +150,7 @@ impl Interpreter {
             method_def,
             attributes,
             args,
+            is_type_object,
         )
     }
 
@@ -159,9 +161,10 @@ impl Interpreter {
         method_def: MethodDef,
         mut attributes: HashMap<String, Value>,
         args: Vec<Value>,
+        is_type_object: bool,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
-        // For type-object calls (no attributes), use Package so self.new works
-        let base = if attributes.is_empty() {
+        // Keep instance calls as instances even when there are no attributes.
+        let base = if is_type_object {
             Value::Package(receiver_class_name.to_string())
         } else {
             Value::make_instance(receiver_class_name.to_string(), attributes.clone())
@@ -173,7 +176,7 @@ impl Interpreter {
             self.env.insert(format!("!{}", attr_name), attr_val.clone());
             self.env.insert(format!(".{}", attr_name), attr_val.clone());
         }
-        if attributes.is_empty() {
+        if is_type_object {
             // Type-object method calls (e.g. COERCE) need full signature binding.
             match self.bind_function_args_values(&method_def.param_defs, &method_def.params, &args)
             {

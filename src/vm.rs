@@ -700,10 +700,14 @@ impl VM {
                         Value::Instance { attributes, .. } => (**attributes).clone(),
                         _ => std::collections::HashMap::new(),
                     };
-                    match self
-                        .interpreter
-                        .run_instance_method(&cn, attrs, "defined", Vec::new())
-                    {
+                    let is_type_object = matches!(val, Value::Package(_));
+                    match self.interpreter.run_instance_method(
+                        &cn,
+                        attrs,
+                        "defined",
+                        Vec::new(),
+                        is_type_object,
+                    ) {
                         Ok((result, _)) => result,
                         Err(_) => Value::Bool(runtime::types::value_is_defined(&val)),
                     }

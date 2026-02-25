@@ -584,8 +584,13 @@ impl Interpreter {
                 }
             }
             if self.has_user_method(&class_name, method) {
-                let (result, updated) =
-                    self.run_instance_method(&class_name, (*attributes).clone(), method, args)?;
+                let (result, updated) = self.run_instance_method(
+                    &class_name,
+                    (*attributes).clone(),
+                    method,
+                    args,
+                    false,
+                )?;
                 self.env.insert(
                     target_var.to_string(),
                     Value::make_instance(class_name, updated),
