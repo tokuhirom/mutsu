@@ -247,6 +247,7 @@ impl Interpreter {
             // Higher-order functions
             "map" => self.builtin_map(&args),
             "grep" => self.builtin_grep(&args),
+            "first" => self.builtin_first(&args),
             "classify" | "categorize" => self.builtin_classify(name, &args),
             // String functions
             "index" => {

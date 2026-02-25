@@ -1888,6 +1888,9 @@ impl Interpreter {
             "grep" => {
                 return self.dispatch_grep(target, &args);
             }
+            "first" if !args.is_empty() => {
+                return self.dispatch_first(target, &args);
+            }
             "tree" if !args.is_empty() => {
                 return self.dispatch_tree(target, &args);
             }
@@ -4922,6 +4925,39 @@ impl Interpreter {
             }
             other => Ok(other),
         }
+    }
+
+    fn dispatch_first(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        // Separate named args (Pairs) from positional args
+        let mut positional = Vec::new();
+        let mut has_neg_v = false;
+        for arg in args {
+            match arg {
+                Value::Pair(key, value) if key == "v" => {
+                    if !value.truthy() {
+                        has_neg_v = true;
+                    }
+                }
+                _ => positional.push(arg.clone()),
+            }
+        }
+        if has_neg_v {
+            return Err(RuntimeError::new(
+                "Throwing `:!v` on first is not supported",
+            ));
+        }
+        // Check for Bool matcher (X::Match::Bool)
+        if matches!(positional.first(), Some(Value::Bool(_))) {
+            let mut err = RuntimeError::new("Cannot use Bool as a matcher");
+            err.exception = Some(Box::new(Value::make_instance(
+                "X::Match::Bool".to_string(),
+                std::collections::HashMap::new(),
+            )));
+            return Err(err);
+        }
+        let func = positional.first().cloned();
+        let items = crate::runtime::utils::value_to_list(&target);
+        self.eval_first_over_items(func, items)
     }
 
     /// `$n.polymod(@divisors)` — successive modular decomposition.
