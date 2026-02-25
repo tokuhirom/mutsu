@@ -138,6 +138,7 @@ struct RegexPattern {
     anchor_start: bool,
     anchor_end: bool,
     ignore_case: bool,
+    ignore_mark: bool,
 }
 
 #[derive(Clone, Default)]

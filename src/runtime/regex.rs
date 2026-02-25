@@ -508,6 +508,49 @@ impl Interpreter {
     pub(super) fn regex_find_first(&self, pattern: &str, text: &str) -> Option<(usize, usize)> {
         let parsed = self.parse_regex(pattern)?;
         let pkg = self.current_package.clone();
+
+        // When :m (ignoremark) is set, strip combining marks from input and match,
+        // then map positions back to the original text.
+        if parsed.ignore_mark {
+            use unicode_normalization::UnicodeNormalization;
+            // Build stripped text and position map (stripped char index -> original char index)
+            let orig_chars: Vec<char> = text.chars().collect();
+            let mut stripped_chars: Vec<char> = Vec::new();
+            let mut pos_map: Vec<usize> = Vec::new(); // stripped idx -> original idx
+            for (orig_idx, ch) in orig_chars.iter().enumerate() {
+                // Decompose char and check if it has combining marks
+                let decomposed: Vec<char> = ch.to_string().nfd().collect();
+                for dch in &decomposed {
+                    if !unicode_normalization::char::is_combining_mark(*dch) {
+                        stripped_chars.push(*dch);
+                        pos_map.push(orig_idx);
+                    }
+                }
+            }
+            // Also map end position (one past last char)
+            pos_map.push(orig_chars.len());
+
+            if parsed.anchor_start {
+                return self
+                    .regex_match_end_from_in_pkg(&parsed, &stripped_chars, 0, &pkg)
+                    .map(|end| (pos_map[0], pos_map[end]));
+            }
+            for start in 0..=stripped_chars.len() {
+                if let Some(end) =
+                    self.regex_match_end_from_in_pkg(&parsed, &stripped_chars, start, &pkg)
+                {
+                    let orig_start = pos_map[start];
+                    let orig_end = if end < pos_map.len() {
+                        pos_map[end]
+                    } else {
+                        orig_chars.len()
+                    };
+                    return Some((orig_start, orig_end));
+                }
+            }
+            return None;
+        }
+
         let chars: Vec<char> = text.chars().collect();
         if parsed.anchor_start {
             return self

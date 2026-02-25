@@ -89,10 +89,12 @@ pub(crate) enum Expr {
     Subst {
         pattern: String,
         replacement: String,
+        samemark: bool,
     },
     NonDestructiveSubst {
         pattern: String,
         replacement: String,
+        samemark: bool,
     },
     Transliterate {
         from: String,

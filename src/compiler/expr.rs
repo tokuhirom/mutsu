@@ -800,24 +800,28 @@ impl Compiler {
             Expr::Subst {
                 pattern,
                 replacement,
+                samemark,
             } => {
                 let pattern_idx = self.code.add_constant(Value::Str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::Str(replacement.clone()));
                 self.code.emit(OpCode::Subst {
                     pattern_idx,
                     replacement_idx,
+                    samemark: *samemark,
                 });
             }
             // S/// non-destructive substitution
             Expr::NonDestructiveSubst {
                 pattern,
                 replacement,
+                samemark,
             } => {
                 let pattern_idx = self.code.add_constant(Value::Str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::Str(replacement.clone()));
                 self.code.emit(OpCode::NonDestructiveSubst {
                     pattern_idx,
                     replacement_idx,
+                    samemark: *samemark,
                 });
             }
             // tr/// transliteration

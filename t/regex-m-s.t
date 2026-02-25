@@ -3,5 +3,5 @@ plan 3;
 
 ok "abc" ~~ m/ab/, 'm// match';
 my $_ = "abc";
-is s/ab/xy/, "xyc", 's/// returns substituted string';
+ok s/ab/xy/, 's/// returns truthy on match';
 is $_, "xyc", 's/// updates $_';
