@@ -8,6 +8,10 @@ pub(crate) struct ReactSubscription {
     pub receiver: mpsc::Receiver<SupplyEvent>,
     pub callback: Value,
     pub done: bool,
+    /// When true, split incoming chunks into lines before calling the callback.
+    pub is_lines: bool,
+    /// Buffer for incomplete lines (when is_lines is true).
+    pub line_buffer: String,
 }
 
 impl Interpreter {
@@ -86,6 +90,8 @@ impl Interpreter {
                     } if class_name == "Supply" => {
                         // Find the supply channel
                         let supply_id = self.resolve_supply_channel_id(attributes);
+                        let is_lines =
+                            matches!(attributes.get("is_lines"), Some(Value::Bool(true)));
                         if let Some(sid) = supply_id
                             && let Some(rx) = take_supply_channel(sid)
                         {
@@ -93,6 +99,8 @@ impl Interpreter {
                                 receiver: rx,
                                 callback,
                                 done: false,
+                                is_lines,
+                                line_buffer: String::new(),
                             });
                             continue;
                         }
@@ -130,6 +138,8 @@ impl Interpreter {
                             receiver: rx,
                             callback,
                             done: false,
+                            is_lines: false,
+                            line_buffer: String::new(),
                         });
                     }
                     _ => {}
@@ -153,9 +163,33 @@ impl Interpreter {
                 // Try to receive with a short timeout
                 match sub.receiver.recv_timeout(timeout) {
                     Ok(SupplyEvent::Emit(value)) => {
-                        self.call_sub_value(sub.callback.clone(), vec![value], true)?;
+                        if sub.is_lines {
+                            // Split incoming chunks into lines
+                            let chunk = value.to_string_value();
+                            sub.line_buffer.push_str(&chunk);
+                            while let Some(pos) = sub.line_buffer.find('\n') {
+                                let line = sub.line_buffer[..pos].to_string();
+                                sub.line_buffer = sub.line_buffer[pos + 1..].to_string();
+                                self.call_sub_value(
+                                    sub.callback.clone(),
+                                    vec![Value::Str(line)],
+                                    true,
+                                )?;
+                            }
+                        } else {
+                            self.call_sub_value(sub.callback.clone(), vec![value], true)?;
+                        }
                     }
                     Ok(SupplyEvent::Done) => {
+                        // Emit any remaining buffered content as a final line
+                        if sub.is_lines && !sub.line_buffer.is_empty() {
+                            let remaining = std::mem::take(&mut sub.line_buffer);
+                            self.call_sub_value(
+                                sub.callback.clone(),
+                                vec![Value::Str(remaining)],
+                                true,
+                            )?;
+                        }
                         sub.done = true;
                     }
                     Err(mpsc::RecvTimeoutError::Timeout) => {}

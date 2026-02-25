@@ -1193,6 +1193,19 @@ impl Interpreter {
                     register_supply_tap(*sid as u64, tap_cb.clone());
                 }
 
+                // For live/async supplies (e.g., signal), spawn a background thread
+                // to consume events from the channel and call the callback.
+                if let Some(Value::Int(sid)) = attributes.get("supply_id")
+                    && let Some(rx) = take_supply_channel(*sid as u64)
+                {
+                    let mut thread_interp = self.clone_for_thread();
+                    let cb = tap_cb.clone();
+                    std::thread::spawn(move || {
+                        Self::run_supply_act_loop(&mut thread_interp, &rx, &cb);
+                    });
+                    return Ok(Value::make_instance("Tap".to_string(), HashMap::new()));
+                }
+
                 // For on-demand supplies, execute the callback to produce values
                 let values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
                     let emitter = Value::make_instance("Supplier".to_string(), {
@@ -1528,6 +1541,20 @@ impl Interpreter {
                     register_supply_tap(*sid as u64, tap_cb.clone());
                 }
 
+                // For live/async supplies (e.g., signal), spawn a background thread
+                // to consume events from the channel and call the callback.
+                if let Some(Value::Int(sid)) = attrs.get("supply_id")
+                    && let Some(rx) = take_supply_channel(*sid as u64)
+                {
+                    let mut thread_interp = self.clone_for_thread();
+                    let cb = tap_cb.clone();
+                    std::thread::spawn(move || {
+                        Self::run_supply_act_loop(&mut thread_interp, &rx, &cb);
+                    });
+                    let tap_instance = Value::make_instance("Tap".to_string(), HashMap::new());
+                    return Ok((tap_instance, attrs));
+                }
+
                 // For on-demand supplies, execute the callback to produce values
                 let values = if let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned() {
                     let emitter = Value::make_instance("Supplier".to_string(), {
@@ -1641,7 +1668,6 @@ impl Interpreter {
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
         match method {
             "start" => {
-                use std::io::BufRead;
                 use std::process::{Command, Stdio};
 
                 attrs.insert("started".to_string(), Value::Bool(true));
@@ -1739,22 +1765,24 @@ impl Interpreter {
                 let cmd_arr_clone = cmd_arr.clone();
 
                 std::thread::spawn(move || {
-                    // Spawn stdout reader thread — streams lines through channel
+                    // Spawn stdout reader thread — reads raw bytes to preserve exact output
                     let stdout_handle = child_stdout.map(|stdout| {
                         let tx = stdout_channel;
                         std::thread::spawn(move || {
-                            let reader = std::io::BufReader::new(stdout);
+                            use std::io::Read;
+                            let mut stdout = stdout;
                             let mut collected = String::new();
-                            for line in reader.lines() {
-                                match line {
-                                    Ok(line) => {
-                                        // Send through channel for react event loop
+                            let mut buf = [0u8; 4096];
+                            loop {
+                                match stdout.read(&mut buf) {
+                                    Ok(0) => break,
+                                    Ok(n) => {
+                                        let chunk = String::from_utf8_lossy(&buf[..n]).into_owned();
                                         if let Some(ref tx) = tx {
                                             let _ = tx
-                                                .send(SupplyEvent::Emit(Value::Str(line.clone())));
+                                                .send(SupplyEvent::Emit(Value::Str(chunk.clone())));
                                         }
-                                        collected.push_str(&line);
-                                        collected.push('\n');
+                                        collected.push_str(&chunk);
                                     }
                                     Err(_) => break,
                                 }
@@ -1766,21 +1794,24 @@ impl Interpreter {
                         })
                     });
 
-                    // Spawn stderr reader thread
+                    // Spawn stderr reader thread — reads raw bytes
                     let stderr_handle = child_stderr.map(|stderr| {
                         let tx = stderr_channel;
                         std::thread::spawn(move || {
-                            let reader = std::io::BufReader::new(stderr);
+                            use std::io::Read;
+                            let mut stderr = stderr;
                             let mut collected = String::new();
-                            for line in reader.lines() {
-                                match line {
-                                    Ok(line) => {
+                            let mut buf = [0u8; 4096];
+                            loop {
+                                match stderr.read(&mut buf) {
+                                    Ok(0) => break,
+                                    Ok(n) => {
+                                        let chunk = String::from_utf8_lossy(&buf[..n]).into_owned();
                                         if let Some(ref tx) = tx {
                                             let _ = tx
-                                                .send(SupplyEvent::Emit(Value::Str(line.clone())));
+                                                .send(SupplyEvent::Emit(Value::Str(chunk.clone())));
                                         }
-                                        collected.push_str(&line);
-                                        collected.push('\n');
+                                        collected.push_str(&chunk);
                                     }
                                     Err(_) => break,
                                 }
@@ -2346,6 +2377,36 @@ impl Interpreter {
             }
             "WHAT" => Value::Package("Encoding::Decoder".to_string()),
             _ => Value::Nil,
+        }
+    }
+
+    /// Background event loop for Supply.act on live supplies (e.g., signal).
+    /// Receives events from the channel and calls the callback.
+    /// If the callback calls `exit`, terminates the entire process.
+    fn run_supply_act_loop(
+        interp: &mut Interpreter,
+        rx: &std::sync::mpsc::Receiver<SupplyEvent>,
+        cb: &Value,
+    ) {
+        use std::io::Write;
+        while let Ok(SupplyEvent::Emit(value)) = rx.recv() {
+            let _ = interp.call_sub_value(cb.clone(), vec![value], true);
+            // Flush stdout
+            if !interp.output.is_empty() {
+                print!("{}", interp.output);
+                let _ = std::io::stdout().flush();
+                interp.output.clear();
+            }
+            // Flush stderr
+            if !interp.stderr_output.is_empty() {
+                eprint!("{}", interp.stderr_output);
+                let _ = std::io::stderr().flush();
+                interp.stderr_output.clear();
+            }
+            // If the callback called exit, terminate the process
+            if interp.halted {
+                std::process::exit(interp.exit_code as i32);
+            }
         }
     }
 }
