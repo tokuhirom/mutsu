@@ -117,6 +117,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(misc::anon_role_expr(input));
         // anonymous class: class { ... }
         try_primary!(misc::anon_class_expr(input));
+        try_primary!(ident::declared_circumfix_op(input));
         try_primary!(ident::declared_term_symbol(input));
 
         match ident::identifier_or_call(input) {
