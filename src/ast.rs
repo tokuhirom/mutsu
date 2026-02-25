@@ -7,6 +7,7 @@ use std::hash::{Hash, Hasher};
 pub(crate) struct ParamDef {
     pub(crate) name: String,
     pub(crate) default: Option<Expr>,
+    pub(crate) multi_invocant: bool,
     pub(crate) required: bool,
     pub(crate) named: bool,
     pub(crate) slurpy: bool,
@@ -814,6 +815,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                 .map(|name| ParamDef {
                     name: name.clone(),
                     default: None,
+                    multi_invocant: true,
                     required: false,
                     named: false,
                     slurpy: false,

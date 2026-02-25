@@ -511,6 +511,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
 /// Parse parameter list inside parens.
 pub(super) fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
     let mut params = Vec::new();
+    let mut multi_invocant = true;
     let mut rest = input;
     if rest.starts_with(')') {
         return Ok((rest, params));
@@ -520,21 +521,43 @@ pub(super) fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
         let r = skip_return_type_annotation(stripped)?;
         return Ok((r, params));
     }
+    if let Some(r) = rest.strip_prefix(";;") {
+        multi_invocant = false;
+        let (r, _) = ws(r)?;
+        if r.starts_with(')') {
+            return Ok((r, params));
+        }
+        rest = r;
+    }
     if let Some((r, _invocant_type)) = parse_implicit_invocant_marker(rest) {
         rest = r;
         if rest.starts_with(')') {
             return Ok((rest, params));
         }
-        let (r, p) = parse_single_param(rest)?;
+        let (r, mut p) = parse_single_param(rest)?;
+        p.multi_invocant = multi_invocant;
         params.push(p);
         rest = r;
     } else {
-        let (r, p) = parse_single_param(rest)?;
+        let (r, mut p) = parse_single_param(rest)?;
+        p.multi_invocant = multi_invocant;
         params.push(p);
         rest = r;
     }
     loop {
         let (r, _) = ws(rest)?;
+        if let Some(r) = r.strip_prefix(";;") {
+            multi_invocant = false;
+            let (r, _) = ws(r)?;
+            if r.starts_with(')') {
+                return Ok((r, params));
+            }
+            let (r, mut p) = parse_single_param(r)?;
+            p.multi_invocant = multi_invocant;
+            params.push(p);
+            rest = r;
+            continue;
+        }
         // Handle invocant marker ':'
         if let Some(r) = r.strip_prefix(':') {
             let (r, _) = ws(r)?;
@@ -550,7 +573,8 @@ pub(super) fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
             if r.starts_with(')') {
                 return Ok((r, params));
             }
-            let (r, p) = parse_single_param(r)?;
+            let (r, mut p) = parse_single_param(r)?;
+            p.multi_invocant = multi_invocant;
             params.push(p);
             rest = r;
             continue;
@@ -573,7 +597,8 @@ pub(super) fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
             let r = skip_return_type_annotation(stripped)?;
             return Ok((r, params));
         }
-        let (r, p) = parse_single_param(r)?;
+        let (r, mut p) = parse_single_param(r)?;
+        p.multi_invocant = multi_invocant;
         params.push(p);
         rest = r;
     }
@@ -611,6 +636,7 @@ pub(super) fn parse_param_list_with_return(
 ) -> PResult<'_, (Vec<ParamDef>, Option<String>)> {
     let mut params = Vec::new();
     let mut return_type = None;
+    let mut multi_invocant = true;
     let mut rest = input;
     if rest.starts_with(')') {
         return Ok((rest, (params, None)));
@@ -619,21 +645,43 @@ pub(super) fn parse_param_list_with_return(
         let (r, rt) = parse_return_type_annotation(stripped)?;
         return Ok((r, (params, Some(rt))));
     }
+    if let Some(r) = rest.strip_prefix(";;") {
+        multi_invocant = false;
+        let (r, _) = ws(r)?;
+        if r.starts_with(')') {
+            return Ok((r, (params, return_type)));
+        }
+        rest = r;
+    }
     if let Some((r, _invocant_type)) = parse_implicit_invocant_marker(rest) {
         rest = r;
         if rest.starts_with(')') {
             return Ok((rest, (params, return_type)));
         }
-        let (r, p) = parse_single_param(rest)?;
+        let (r, mut p) = parse_single_param(rest)?;
+        p.multi_invocant = multi_invocant;
         params.push(p);
         rest = r;
     } else {
-        let (r, p) = parse_single_param(rest)?;
+        let (r, mut p) = parse_single_param(rest)?;
+        p.multi_invocant = multi_invocant;
         params.push(p);
         rest = r;
     }
     loop {
         let (r, _) = ws(rest)?;
+        if let Some(r) = r.strip_prefix(";;") {
+            multi_invocant = false;
+            let (r, _) = ws(r)?;
+            if r.starts_with(')') {
+                return Ok((r, (params, return_type)));
+            }
+            let (r, mut p) = parse_single_param(r)?;
+            p.multi_invocant = multi_invocant;
+            params.push(p);
+            rest = r;
+            continue;
+        }
         if let Some(r) = r.strip_prefix(':') {
             let (r, _) = ws(r)?;
             if r.starts_with(')') {
@@ -647,7 +695,8 @@ pub(super) fn parse_param_list_with_return(
             if r.starts_with(')') {
                 return Ok((r, (params, return_type)));
             }
-            let (r, p) = parse_single_param(r)?;
+            let (r, mut p) = parse_single_param(r)?;
+            p.multi_invocant = multi_invocant;
             params.push(p);
             rest = r;
             continue;
@@ -670,7 +719,8 @@ pub(super) fn parse_param_list_with_return(
             return_type = Some(rt);
             return Ok((r, (params, return_type)));
         }
-        let (r, p) = parse_single_param(r)?;
+        let (r, mut p) = parse_single_param(r)?;
+        p.multi_invocant = multi_invocant;
         params.push(p);
         rest = r;
     }
@@ -681,6 +731,7 @@ fn make_param(name: String) -> ParamDef {
     ParamDef {
         name,
         default: None,
+        multi_invocant: true,
         required: false,
         named: false,
         slurpy: false,

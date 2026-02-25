@@ -334,6 +334,7 @@ fn wrap_whatevercode(expr: &Expr) -> Expr {
                 .map(|name| crate::ast::ParamDef {
                     name: name.clone(),
                     default: None,
+                    multi_invocant: true,
                     required: false,
                     named: false,
                     slurpy: false,
