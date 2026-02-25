@@ -1195,6 +1195,12 @@ pub(super) fn subtest_stmt(input: &str) -> PResult<'_, Stmt> {
 /// If the block is followed by `.method(...)`, treat it as a block expression
 /// with postfix operators (e.g. `{ $^a }.assuming(123)()`).
 pub(super) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
+    // Try to parse as a hash expression first (e.g. `{:a(4)}`, `{a => 1}`)
+    if let Ok((rest, hash_expr)) = crate::parser::primary::misc::block_or_hash_expr(input)
+        && matches!(hash_expr, Expr::Hash(_))
+    {
+        return parse_statement_modifier(rest, Stmt::Expr(hash_expr));
+    }
     let (rest, body) = block(input)?;
     let (r_ws, _) = ws(rest)?;
     if r_ws.starts_with('.') && !r_ws.starts_with("..") {

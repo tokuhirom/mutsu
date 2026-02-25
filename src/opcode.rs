@@ -372,19 +372,17 @@ pub(crate) enum OpCode {
     BlockMagic,
 
     // -- Substitution (s///) --
-    // Replacement value is on top of the stack (compiled as an expression before this op).
     Subst {
         pattern_idx: u32,
+        replacement_idx: u32,
         samemark: bool,
-        samecase: bool,
     },
 
     // -- Non-destructive substitution (S///) --
-    // Replacement value is on top of the stack (compiled as an expression before this op).
     NonDestructiveSubst {
         pattern_idx: u32,
+        replacement_idx: u32,
         samemark: bool,
-        samecase: bool,
     },
 
     // -- Transliteration (tr///) --

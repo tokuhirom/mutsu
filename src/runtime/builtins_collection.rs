@@ -219,18 +219,26 @@ impl Interpreter {
             .first()
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        let list = args.get(1).cloned();
-        Ok(match list {
-            Some(Value::Array(items, ..)) => {
-                let joined = items
-                    .iter()
-                    .map(|v| v.to_string_value())
-                    .collect::<Vec<_>>()
-                    .join(&sep);
-                Value::Str(joined)
-            }
-            _ => Value::Str(String::new()),
-        })
+        if args.len() == 2
+            && let Some(Value::Array(items, ..)) = args.get(1)
+        {
+            let joined = items
+                .iter()
+                .map(|v| v.to_string_value())
+                .collect::<Vec<_>>()
+                .join(&sep);
+            return Ok(Value::Str(joined));
+        }
+        // Multi-arg: join(sep, item1, item2, ...)
+        if args.len() > 1 {
+            let joined = args[1..]
+                .iter()
+                .map(|v| v.to_string_value())
+                .collect::<Vec<_>>()
+                .join(&sep);
+            return Ok(Value::Str(joined));
+        }
+        Ok(Value::Str(String::new()))
     }
 
     pub(super) fn builtin_list(&self, args: &[Value]) -> Result<Value, RuntimeError> {
