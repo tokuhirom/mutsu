@@ -34,7 +34,7 @@ impl Interpreter {
 
     fn preprocess_roast_directives(input: &str) -> String {
         let mut output = String::new();
-        let mut pending_todo: Option<String> = None;
+        let mut pending_todo: Option<(String, usize)> = None; // (reason, remaining_count)
         let mut skip_lines_remaining: usize = 0;
         let mut skip_reason: String = String::new();
         // Count-based skip where the skipped line is a block opener `{`.
@@ -219,36 +219,56 @@ impl Interpreter {
                 continue;
             }
 
-            // #?rakudo todo 'reason' — mark the next test as todo.
+            // #?rakudo todo 'reason' or #?rakudo N todo 'reason' — mark tests as todo.
             // Although mutsu is not rakudo, we honor todo directives because
             // they indicate known spec issues that also affect mutsu.
             if trimmed.starts_with("#?rakudo")
                 && !trimmed.contains(".jvm")
                 && trimmed.contains("todo")
             {
-                // Extract the reason string if present
                 let after = trimmed.trim_start_matches("#?rakudo").trim_start();
-                let reason = if let Some(start) = after.find('\'') {
-                    if let Some(end) = after[start + 1..].find('\'') {
-                        &after[start + 1..start + 1 + end]
+                // Check for count: #?rakudo N todo "reason"
+                let (count, after_count) = if let Some(first_char) = after.chars().next()
+                    && first_char.is_ascii_digit()
+                {
+                    let num_str: String =
+                        after.chars().take_while(|c| c.is_ascii_digit()).collect();
+                    let n: usize = num_str.parse().unwrap_or(1);
+                    (n, after[num_str.len()..].trim_start())
+                } else {
+                    (1, after)
+                };
+                // Extract the reason string (single or double quoted)
+                let reason = if let Some(start) = after_count.find('\'') {
+                    if let Some(end) = after_count[start + 1..].find('\'') {
+                        &after_count[start + 1..start + 1 + end]
+                    } else {
+                        "todo"
+                    }
+                } else if let Some(start) = after_count.find('"') {
+                    if let Some(end) = after_count[start + 1..].find('"') {
+                        &after_count[start + 1..start + 1 + end]
                     } else {
                         "todo"
                     }
                 } else {
                     "todo"
                 };
-                pending_todo = Some(reason.to_string());
+                pending_todo = Some((reason.to_string(), count));
                 output.push('\n');
                 continue;
             }
 
             // Emit pending todo before next non-comment, non-empty line
-            if let Some(ref reason) = pending_todo
+            if let Some((ref reason, ref mut remaining)) = pending_todo
                 && !trimmed.is_empty()
                 && !trimmed.starts_with('#')
             {
                 output.push_str(&format!("todo '{}';\n", reason));
-                pending_todo = None;
+                *remaining -= 1;
+                if *remaining == 0 {
+                    pending_todo = None;
+                }
             }
 
             // #?rakudo N skip 'reason' — count-based skip directive.

@@ -437,13 +437,66 @@ impl Interpreter {
         is_test_assertion: bool,
         supersede: bool,
     ) -> Result<(), RuntimeError> {
+        // Auto-detect @_ / %_ usage for subs without explicit signatures
+        let (effective_param_defs, empty_sig) = if param_defs.is_empty() && params.is_empty() {
+            let (use_positional, use_named) = Self::auto_signature_uses(body);
+            let mut defs = Vec::new();
+            if use_positional {
+                defs.push(ParamDef {
+                    name: "@_".to_string(),
+                    default: None,
+                    multi_invocant: true,
+                    required: false,
+                    named: false,
+                    slurpy: true,
+                    double_slurpy: false,
+                    sigilless: false,
+                    type_constraint: None,
+                    literal_value: None,
+                    sub_signature: None,
+                    where_constraint: None,
+                    traits: Vec::new(),
+                    optional_marker: false,
+                    outer_sub_signature: None,
+                    code_signature: None,
+                    is_invocant: false,
+                });
+            }
+            if use_named {
+                defs.push(ParamDef {
+                    name: "%_".to_string(),
+                    default: None,
+                    multi_invocant: true,
+                    required: false,
+                    named: false,
+                    slurpy: true,
+                    double_slurpy: false,
+                    sigilless: false,
+                    type_constraint: None,
+                    literal_value: None,
+                    sub_signature: None,
+                    where_constraint: None,
+                    traits: Vec::new(),
+                    optional_marker: false,
+                    outer_sub_signature: None,
+                    code_signature: None,
+                    is_invocant: false,
+                });
+            }
+            // If neither @_ nor %_ is used, this is a true empty signature
+            let is_empty = defs.is_empty();
+            (defs, is_empty)
+        } else {
+            (param_defs.to_vec(), false)
+        };
         let new_def = FunctionDef {
             package: self.current_package.clone(),
             name: name.to_string(),
             params: params.to_vec(),
-            param_defs: param_defs.to_vec(),
+            param_defs: effective_param_defs,
             body: body.to_vec(),
             is_test_assertion,
+            empty_sig,
         };
         let single_key = format!("{}::{}", self.current_package, name);
         let multi_prefix = format!("{}::{}/", self.current_package, name);
@@ -550,6 +603,7 @@ impl Interpreter {
             param_defs: param_defs.to_vec(),
             body: body.to_vec(),
             is_test_assertion: false,
+            empty_sig: false,
         };
         self.insert_token_def(name, def, multi);
     }
@@ -585,6 +639,7 @@ impl Interpreter {
                 param_defs: param_defs.to_vec(),
                 body: body.to_vec(),
                 is_test_assertion: false,
+                empty_sig: false,
             },
         );
         Ok(())
@@ -602,13 +657,65 @@ impl Interpreter {
         is_test_assertion: bool,
         supersede: bool,
     ) -> Result<(), RuntimeError> {
+        // Auto-detect @_ / %_ usage for subs without explicit signatures
+        let (effective_param_defs, empty_sig) = if param_defs.is_empty() && params.is_empty() {
+            let (use_positional, use_named) = Self::auto_signature_uses(body);
+            let mut defs = Vec::new();
+            if use_positional {
+                defs.push(ParamDef {
+                    name: "@_".to_string(),
+                    default: None,
+                    multi_invocant: true,
+                    required: false,
+                    named: false,
+                    slurpy: true,
+                    double_slurpy: false,
+                    sigilless: false,
+                    type_constraint: None,
+                    literal_value: None,
+                    sub_signature: None,
+                    where_constraint: None,
+                    traits: Vec::new(),
+                    optional_marker: false,
+                    outer_sub_signature: None,
+                    code_signature: None,
+                    is_invocant: false,
+                });
+            }
+            if use_named {
+                defs.push(ParamDef {
+                    name: "%_".to_string(),
+                    default: None,
+                    multi_invocant: true,
+                    required: false,
+                    named: false,
+                    slurpy: true,
+                    double_slurpy: false,
+                    sigilless: false,
+                    type_constraint: None,
+                    literal_value: None,
+                    sub_signature: None,
+                    where_constraint: None,
+                    traits: Vec::new(),
+                    optional_marker: false,
+                    outer_sub_signature: None,
+                    code_signature: None,
+                    is_invocant: false,
+                });
+            }
+            let is_empty = defs.is_empty();
+            (defs, is_empty)
+        } else {
+            (param_defs.to_vec(), false)
+        };
         let def = FunctionDef {
             package: "GLOBAL".to_string(),
             name: name.to_string(),
             params: params.to_vec(),
-            param_defs: param_defs.to_vec(),
+            param_defs: effective_param_defs,
             body: body.to_vec(),
             is_test_assertion,
+            empty_sig,
         };
         let single_key = format!("GLOBAL::{}", name);
         let multi_prefix = format!("GLOBAL::{}/", name);
@@ -727,6 +834,7 @@ impl Interpreter {
                 param_defs: param_defs.to_vec(),
                 body: body.to_vec(),
                 is_test_assertion: false,
+                empty_sig: false,
             },
         );
         Ok(())
@@ -1042,7 +1150,7 @@ impl Interpreter {
                         let self_param = crate::ast::ParamDef {
                             name: "self".to_string(),
                             default: None,
-                            multi_invocant: false,
+                            multi_invocant: true,
                             required: false,
                             named: false,
                             slurpy: false,
@@ -1068,6 +1176,7 @@ impl Interpreter {
                             param_defs: our_param_defs,
                             body: method_body.clone(),
                             is_test_assertion: false,
+                            empty_sig: false,
                         };
                         self.functions.insert(qualified_name, func_def);
                     }

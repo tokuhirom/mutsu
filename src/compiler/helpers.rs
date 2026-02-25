@@ -422,8 +422,19 @@ impl Compiler {
             params: params.to_vec(),
             param_defs: param_defs.to_vec(),
             fingerprint: crate::ast::function_body_fingerprint(params, param_defs, body),
+            // Named subs with no params and no param_defs that don't use @_/%_ have
+            // explicit empty signature :() and should reject any arguments.
+            empty_sig: params.is_empty()
+                && param_defs.is_empty()
+                && !Self::body_uses_legacy_args(body),
         };
         self.compiled_functions.insert(key, cf);
+    }
+
+    /// Check if the body uses @_ or %_ legacy argument variables.
+    fn body_uses_legacy_args(body: &[Stmt]) -> bool {
+        let body_str = format!("{:?}", body);
+        body_str.contains("\"@_\"") || body_str.contains("\"%_\"")
     }
 
     fn emit_nil_value(&mut self) {

@@ -405,6 +405,15 @@ impl VM {
                 .push_routine(fn_package.to_string(), fn_name.to_string());
         }
 
+        if cf.empty_sig && !args.is_empty() {
+            if !fn_name.is_empty() {
+                self.interpreter.pop_routine();
+            }
+            self.stack.truncate(saved_stack_depth);
+            self.locals = saved_locals;
+            return Err(Interpreter::reject_args_for_empty_sig(&args));
+        }
+
         let rw_bindings =
             match self
                 .interpreter

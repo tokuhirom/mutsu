@@ -348,6 +348,7 @@ impl Interpreter {
                 assumed_positional: data.assumed_positional.clone(),
                 assumed_named: data.assumed_named.clone(),
                 id: crate::value::next_instance_id(),
+                empty_sig: data.empty_sig,
             });
             new_env.insert(
                 "&?BLOCK".to_string(),
