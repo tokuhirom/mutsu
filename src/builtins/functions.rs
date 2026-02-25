@@ -54,6 +54,9 @@ pub(crate) fn native_function(name: &str, args: &[Value]) -> Option<Result<Value
     // Always-variadic functions: route regardless of arity.
     // zip:with needs interpreter access (for calling the combiner), so return None
     // when a :with Pair is present to fall through to the interpreter.
+    if name == "sum" {
+        return native_function_variadic(name, args);
+    }
     if name == "zip" {
         if args
             .iter()
@@ -717,6 +720,76 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
                 flat_val_deep(arg, &mut result);
             }
             Some(Ok(Value::Seq(std::sync::Arc::new(result))))
+        }
+        "sum" => {
+            let mut total: i64 = 0;
+            let mut has_num = false;
+            let mut total_f: f64 = 0.0;
+            for arg in args {
+                match arg {
+                    Value::Int(i) => {
+                        if has_num {
+                            total_f += *i as f64;
+                        } else {
+                            total += i;
+                        }
+                    }
+                    Value::Num(f) => {
+                        if !has_num {
+                            total_f = total as f64;
+                            has_num = true;
+                        }
+                        total_f += f;
+                    }
+                    Value::Range(a, b) => {
+                        let n = b - a + 1;
+                        if n > 0 {
+                            let s = n * (a + b) / 2;
+                            if has_num {
+                                total_f += s as f64;
+                            } else {
+                                total += s;
+                            }
+                        }
+                    }
+                    Value::RangeExcl(a, b) => {
+                        let n = b - a;
+                        if n > 0 {
+                            let b_adj = b - 1;
+                            let s = n * (a + b_adj) / 2;
+                            if has_num {
+                                total_f += s as f64;
+                            } else {
+                                total += s;
+                            }
+                        }
+                    }
+                    Value::Array(items, ..) | Value::Seq(items) => {
+                        for item in items.iter() {
+                            if has_num {
+                                total_f += item.to_f64();
+                            } else if let Value::Num(_) = item {
+                                total_f = total as f64 + item.to_f64();
+                                has_num = true;
+                            } else {
+                                total += item.to_f64() as i64;
+                            }
+                        }
+                    }
+                    _ => {
+                        if has_num {
+                            total_f += arg.to_f64();
+                        } else {
+                            total += arg.to_f64() as i64;
+                        }
+                    }
+                }
+            }
+            if has_num {
+                Some(Ok(Value::Num(total_f)))
+            } else {
+                Some(Ok(Value::Int(total)))
+            }
         }
         _ => None,
     }

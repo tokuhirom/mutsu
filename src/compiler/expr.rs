@@ -743,6 +743,17 @@ impl Compiler {
                     self.code.emit(OpCode::Index);
                 }
             }
+            // Hash hyperslice: %hash{**}:adverb
+            Expr::HyperSlice { target, adverb } => {
+                self.compile_expr(target);
+                self.code.emit(OpCode::HyperSlice(*adverb as u8));
+            }
+            // Hash hyperindex: %hash{||@keys}
+            Expr::HyperIndex { target, keys } => {
+                self.compile_expr(target);
+                self.compile_expr(keys);
+                self.code.emit(OpCode::HyperIndex);
+            }
             // String interpolation
             Expr::StringInterpolation(parts) => {
                 let n = parts.len() as u32;
