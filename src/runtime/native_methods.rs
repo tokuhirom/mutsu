@@ -506,7 +506,7 @@ impl Interpreter {
             "IO::Handle" => self.native_io_handle(attributes, method, args),
             "IO::Socket::INET" => self.native_socket_inet(attributes, method, args),
             "IO::Pipe" => self.native_io_pipe(attributes, method),
-            "Lock" => self.native_lock(attributes, method, args),
+            "Lock" | "Lock::Async" => self.native_lock(attributes, method, args),
             "Lock::ConditionVariable" => self.native_condition_variable(attributes, method, args),
             "Distro" => self.native_distro(attributes, method),
             "Perl" => Ok(self.native_perl(attributes, method)),

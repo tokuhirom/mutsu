@@ -140,25 +140,9 @@ impl Interpreter {
             .unwrap_or_default();
         let ok = match (left.as_ref(), right.as_ref()) {
             (Some(left), Some(right)) => {
-                // Handle Junction on the left side (auto-threading)
-                if let Value::Junction { kind, values } = left {
-                    let right_str = self.stringify_test_value(right)?;
-                    let results: Vec<bool> = values
-                        .iter()
-                        .map(|v| {
-                            self.stringify_test_value(v)
-                                .map(|s| s == right_str)
-                                .unwrap_or(false)
-                        })
-                        .collect();
-                    match kind {
-                        crate::value::JunctionKind::Any => results.iter().any(|&b| b),
-                        crate::value::JunctionKind::All => results.iter().all(|&b| b),
-                        crate::value::JunctionKind::One => {
-                            results.iter().filter(|&&b| b).count() == 1
-                        }
-                        crate::value::JunctionKind::None => results.iter().all(|&b| !b),
-                    }
+                if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. })
+                {
+                    Self::eqv_with_junctions(left, right).truthy()
                 } else {
                     self.stringify_test_value(left)? == self.stringify_test_value(right)?
                 }
