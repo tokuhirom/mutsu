@@ -373,6 +373,7 @@ roast/S32-list/batch.t
 roast/S32-list/cross.t
 roast/S32-list/first-end-k.t
 roast/S32-list/first-end-v.t
+roast/S32-list/first-end.t
 roast/S32-list/first-p.t
 roast/S32-list/first-v.t
 roast/S32-list/flat.t
