@@ -6,6 +6,7 @@ mod interpreter;
 mod opcode;
 mod parse_dispatch;
 mod parser;
+mod regex_validate;
 #[cfg(feature = "native")]
 pub mod repl;
 mod runtime;
