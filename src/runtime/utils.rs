@@ -183,24 +183,24 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
 
 pub(crate) fn coerce_to_array(value: Value) -> Value {
     match value {
-        Value::Array(items, _) => Value::Array(items, true),
-        Value::Nil => Value::real_array(Vec::new()),
+        Value::Array(..) => value,
+        Value::Nil => Value::array(Vec::new()),
         Value::Range(a, b) if b == i64::MAX || a == i64::MIN => value,
-        Value::Range(a, b) => Value::real_array((a..=b).map(Value::Int).collect()),
+        Value::Range(a, b) => Value::array((a..=b).map(Value::Int).collect()),
         Value::RangeExcl(a, b) if b == i64::MAX || a == i64::MIN => value,
-        Value::RangeExcl(a, b) => Value::real_array((a..b).map(Value::Int).collect()),
+        Value::RangeExcl(a, b) => Value::array((a..b).map(Value::Int).collect()),
         Value::RangeExclStart(a, b) if b == i64::MAX || a == i64::MIN => value,
-        Value::RangeExclStart(a, b) => Value::real_array((a + 1..=b).map(Value::Int).collect()),
+        Value::RangeExclStart(a, b) => Value::array((a + 1..=b).map(Value::Int).collect()),
         Value::RangeExclBoth(a, b) if b == i64::MAX || a == i64::MIN => value,
-        Value::RangeExclBoth(a, b) => Value::real_array((a + 1..b).map(Value::Int).collect()),
+        Value::RangeExclBoth(a, b) => Value::array((a + 1..b).map(Value::Int).collect()),
         Value::GenericRange {
             ref start, ref end, ..
         } if matches!(start.as_ref(), Value::Str(_)) && matches!(end.as_ref(), Value::Str(_)) => {
-            Value::real_array(value_to_list(&value))
+            Value::array(value_to_list(&value))
         }
         Value::GenericRange { .. } => value,
-        Value::Slip(items) | Value::Seq(items) => Value::Array(items, true),
-        other => Value::real_array(vec![other]),
+        Value::Slip(items) | Value::Seq(items) => Value::Array(items, false),
+        other => Value::array(vec![other]),
     }
 }
 

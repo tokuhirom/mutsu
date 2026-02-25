@@ -2286,10 +2286,21 @@ impl Interpreter {
         // Non-instance values still need to find methods declared on their type object.
         if !matches!(target, Value::Instance { .. } | Value::Package(_)) {
             let class_name = crate::runtime::utils::value_type_name(&target);
-            if self.has_user_method(class_name, method) {
+            let dispatch_class = if self.has_user_method(class_name, method) {
+                Some(class_name)
+            } else if matches!(target, Value::Array(_, false))
+                && self.has_user_method("Array", method)
+            {
+                // @-sigiled values are list-like internally, but augmenting Array methods
+                // should still apply to them.
+                Some("Array")
+            } else {
+                None
+            };
+            if let Some(dispatch_class) = dispatch_class {
                 let attrs = HashMap::new();
                 let (result, _updated) = self.run_instance_method(
-                    class_name,
+                    dispatch_class,
                     attrs,
                     method,
                     args,
