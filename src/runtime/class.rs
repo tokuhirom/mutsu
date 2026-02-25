@@ -136,22 +136,51 @@ impl Interpreter {
         args: Vec<Value>,
         invocant: Option<Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
-        let (owner_class, method_def) = self
-            .resolve_method_with_owner(receiver_class_name, method_name, &args)
-            .ok_or_else(|| {
-                RuntimeError::new(format!(
-                    "No matching candidates for method: {}",
-                    method_name
-                ))
-            })?;
-        self.run_instance_method_resolved(
+        let Some((owner_class, method_def)) =
+            self.resolve_method_with_owner(receiver_class_name, method_name, &args)
+        else {
+            return Err(RuntimeError::new(format!(
+                "No matching candidates for method: {}",
+                method_name
+            )));
+        };
+        let all_candidates =
+            self.resolve_all_methods_with_owner(receiver_class_name, method_name, &args);
+        let invocant_for_dispatch = if let Some(inv) = &invocant {
+            inv.clone()
+        } else if attributes.is_empty() {
+            Value::Package(receiver_class_name.to_string())
+        } else {
+            Value::make_instance(receiver_class_name.to_string(), attributes.clone())
+        };
+        let remaining: Vec<(String, MethodDef)> = all_candidates
+            .into_iter()
+            .skip(1)
+            .filter(|(candidate_owner, _)| {
+                !self.should_skip_defer_method_candidate(receiver_class_name, candidate_owner)
+            })
+            .collect();
+        let pushed_dispatch = !remaining.is_empty();
+        if pushed_dispatch {
+            self.method_dispatch_stack.push(MethodDispatchFrame {
+                receiver_class: receiver_class_name.to_string(),
+                invocant: invocant_for_dispatch,
+                args: args.clone(),
+                remaining,
+            });
+        }
+        let result = self.run_instance_method_resolved(
             receiver_class_name,
             &owner_class,
             method_def,
             attributes,
             args,
             invocant,
-        )
+        );
+        if pushed_dispatch {
+            self.method_dispatch_stack.pop();
+        }
+        result
     }
 
     pub(super) fn run_instance_method_resolved(
