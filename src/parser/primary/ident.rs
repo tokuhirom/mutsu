@@ -15,7 +15,7 @@ fn is_superscript_digit(c: char) -> bool {
 }
 
 use super::super::expr::{expression, or_expr_pub};
-use super::super::helpers::{ws, ws1};
+use super::super::helpers::{normalize_raku_identifier, ws, ws1};
 use super::current_line_number;
 use super::misc::parse_block_body;
 use super::regex::{parse_call_arg_list, scan_to_delim};
@@ -548,7 +548,7 @@ fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
 
 pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     let (rest, name) = super::super::stmt::parse_raku_ident(input)?;
-    let name = name.to_string();
+    let name = normalize_raku_identifier(name);
 
     // Handle special expression keywords before qualified name resolution
     match name.as_str() {

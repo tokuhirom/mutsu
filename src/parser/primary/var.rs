@@ -1,10 +1,12 @@
-use super::super::parse_result::{PError, PResult, parse_char, take_while1};
+use super::super::parse_result::{PError, PResult, parse_char};
 
 use crate::ast::Expr;
 use crate::value::Value;
 
 use super::super::expr::expression;
-use super::super::helpers::ws;
+use super::super::helpers::{
+    is_raku_identifier_continue, is_raku_identifier_start, normalize_raku_identifier, ws,
+};
 use super::container::paren_expr;
 use super::current_line_number;
 
@@ -68,7 +70,11 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     }
     // Handle $_ special variable
     if input.starts_with('_')
-        && (input.len() == 1 || !input[1..].chars().next().unwrap().is_alphanumeric())
+        && (input.len() == 1
+            || !input[1..]
+                .chars()
+                .next()
+                .is_some_and(is_raku_identifier_continue))
     {
         return Ok((&input[1..], Expr::Var("_".to_string())));
     }
@@ -80,11 +86,8 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     if let Some(after) = input.strip_prefix('!') {
         // If next char is alphanumeric or _, it's a twigil (e.g. $!attr)
         // If not, it's the bare $! variable
-        let is_twigil = !after.is_empty()
-            && after
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_alphanumeric() || c == '_');
+        let is_twigil =
+            !after.is_empty() && after.chars().next().is_some_and(is_raku_identifier_start);
         if !is_twigil {
             return Ok((after, Expr::Var("!".to_string())));
         }
@@ -114,8 +117,8 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     // If next char is not a valid identifier start, twigil, or special char, it's an anonymous var
     let next_is_ident_or_twigil = !input.is_empty() && {
         let first_char = input.chars().next().unwrap();
-        first_char.is_alphanumeric()
-            || first_char == '_'
+        is_raku_identifier_start(first_char)
+            || first_char.is_numeric()
             || first_char == '*'
             || first_char == '?'
             || first_char == '!'
@@ -143,7 +146,7 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         // Look ahead past the identifier to check for ( or :
         let after_dot = &input[1..];
         let ident_end = after_dot
-            .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+            .find(|c: char| !is_raku_identifier_continue(c) && c != '-')
             .unwrap_or(after_dot.len());
         let after_ident = &after_dot[ident_end..];
         if after_ident.starts_with('(')
@@ -181,8 +184,21 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
 /// A hyphen/apostrophe is only part of the name if followed by an alphabetic char or `_`,
 /// so `$pd--` parses as `$pd` + postfix `--`.
 pub(super) fn parse_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, &'a str> {
-    let (rest, _first) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_')?;
-    let mut end = input.len() - rest.len();
+    let first = input
+        .chars()
+        .next()
+        .ok_or_else(|| PError::expected("identifier"))?;
+    if !is_raku_identifier_start(first) && !first.is_numeric() {
+        return Err(PError::expected("identifier"));
+    }
+    let mut end = first.len_utf8();
+    for c in input[end..].chars() {
+        if is_raku_identifier_continue(c) {
+            end += c.len_utf8();
+        } else {
+            break;
+        }
+    }
     loop {
         let remaining = &input[end..];
         let sep = if remaining.starts_with('-') {
@@ -195,11 +211,11 @@ pub(super) fn parse_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, &'a st
         if let Some(sep) = sep {
             let after_sep = &remaining[sep.len_utf8()..];
             if let Some(next) = after_sep.chars().next()
-                && (next.is_alphabetic() || next == '_')
+                && is_raku_identifier_start(next)
             {
                 end += sep.len_utf8();
                 for c in after_sep.chars() {
-                    if c.is_alphanumeric() || c == '_' {
+                    if is_raku_identifier_continue(c) {
                         end += c.len_utf8();
                     } else {
                         break;
@@ -222,7 +238,7 @@ fn parse_qualified_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, String>
         full.push_str(part);
         rest = r2;
     }
-    Ok((rest, full))
+    Ok((rest, normalize_raku_identifier(&full)))
 }
 
 fn parse_qualified_ident_with_hyphens_or_empty(input: &str) -> (&str, String) {
@@ -243,11 +259,8 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
         (input, "")
     };
     // Bare @ (anonymous array variable)
-    let next_is_ident = !rest.is_empty()
-        && rest
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_alphanumeric() || c == '_');
+    let next_is_ident =
+        !rest.is_empty() && rest.chars().next().is_some_and(is_raku_identifier_start);
     if !next_is_ident && twigil.is_empty() {
         return Ok((rest, Expr::ArrayVar("__ANON_ARRAY__".to_string())));
     }
@@ -270,11 +283,8 @@ pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
         (input, "")
     };
     // Bare % (anonymous hash variable)
-    let next_is_ident = !rest.is_empty()
-        && rest
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_alphanumeric() || c == '_');
+    let next_is_ident =
+        !rest.is_empty() && rest.chars().next().is_some_and(is_raku_identifier_start);
     if !next_is_ident && twigil.is_empty() {
         return Ok((rest, Expr::HashVar("__ANON_HASH__".to_string())));
     }
@@ -322,7 +332,7 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
                 rest,
                 Expr::IndirectCodeLookup {
                     package: Box::new(expr),
-                    name: name.to_string(),
+                    name: normalize_raku_identifier(name),
                 },
             ));
         }
@@ -339,7 +349,7 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
                 rest,
                 Expr::IndirectCodeLookup {
                     package: Box::new(expr),
-                    name: name.to_string(),
+                    name: normalize_raku_identifier(name),
                 },
             ));
         }
@@ -366,7 +376,7 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
                         continue;
                     }
                     // This is the final name
-                    qualified.push_str(ident);
+                    qualified.push_str(&normalize_raku_identifier(ident));
                     pos += ident.len();
                     return Ok((&input[pos..], Expr::CodeVar(qualified)));
                 }
@@ -380,7 +390,11 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
         if let Some(after_sep) = after_first.strip_prefix("::")
             && let Ok((rest, method_name)) = parse_ident_with_hyphens(after_sep)
         {
-            let qualified = format!("{}::{}", first_ident, method_name);
+            let qualified = format!(
+                "{}::{}",
+                normalize_raku_identifier(first_ident),
+                normalize_raku_identifier(method_name)
+            );
             return Ok((rest, Expr::CodeVar(qualified)));
         }
     }
@@ -411,9 +425,9 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
         }
     }
     let full_name = if twigil.is_empty() {
-        name.to_string()
+        normalize_raku_identifier(name)
     } else {
-        format!("{}{}", twigil, name)
+        format!("{}{}", twigil, normalize_raku_identifier(name))
     };
     Ok((rest, Expr::CodeVar(full_name)))
 }

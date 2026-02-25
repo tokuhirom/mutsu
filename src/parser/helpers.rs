@@ -1,4 +1,5 @@
 use super::parse_result::{PError, PResult, take_while_opt, take_while1};
+use unicode_normalization::UnicodeNormalization;
 
 /// Skip whitespace, line comments (`#` to end of line), and Pod blocks.
 pub(super) fn ws(input: &str) -> PResult<'_, ()> {
@@ -213,6 +214,23 @@ pub(super) fn is_ident_char(b: Option<u8>) -> bool {
         Some(c) => c.is_ascii_alphanumeric() || c == b'_' || c == b'-',
         None => false,
     }
+}
+
+/// Raku identifier start: underscore or Unicode alphabetic character.
+pub(super) fn is_raku_identifier_start(c: char) -> bool {
+    c == '_' || c.is_alphabetic()
+}
+
+/// Raku identifier continuation: start chars, decimal digits, and combining marks.
+pub(super) fn is_raku_identifier_continue(c: char) -> bool {
+    is_raku_identifier_start(c)
+        || c.is_numeric()
+        || unicode_normalization::char::is_combining_mark(c)
+}
+
+/// Normalize an identifier using canonical composition only (NFC).
+pub(super) fn normalize_raku_identifier(name: &str) -> String {
+    name.nfc().collect()
 }
 
 /// Skip balanced parentheses starting from an opening `(`.
