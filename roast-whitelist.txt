@@ -47,6 +47,7 @@ roast/S02-types/unicode.t
 roast/S02-types/version-stress.t
 roast/S02-types/version.t
 roast/S03-binding/closure.t
+roast/S03-binding/ro.t
 roast/S03-buf/read-num.t
 roast/S03-operators/also.t
 roast/S03-operators/assign-is-not-binding.t
@@ -146,7 +147,6 @@ roast/S06-operator-overloading/term.t
 roast/S06-other/main-eval.t
 roast/S06-other/main-semicolon.t
 roast/S06-signature/closure-over-parameters.t
-roast/S06-signature/multi-invocant.t
 roast/S06-signature/multi-invocant.t
 roast/S06-signature/multidimensional.t
 roast/S06-signature/passing-hashes.t
