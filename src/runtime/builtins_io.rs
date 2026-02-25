@@ -498,6 +498,10 @@ impl Interpreter {
         let mut content = String::new();
         if args.is_empty() && name == "note" {
             content.push_str("Noted");
+        } else if name == "note" {
+            for arg in args {
+                content.push_str(&self.render_gist_value(arg));
+            }
         } else {
             for arg in args {
                 content.push_str(&arg.to_string_value());
