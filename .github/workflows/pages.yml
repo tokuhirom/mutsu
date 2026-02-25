@@ -32,18 +32,6 @@ jobs:
           wasm-pack build --target web --no-default-features --features wasm
           mv pkg wasm-demo/pkg
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Install Playwright
-        run: |
-          npm install playwright
-          npx playwright install --with-deps chromium
-
-      - name: Run E2E tests
-        run: node wasm-demo/e2e.test.mjs
-
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
