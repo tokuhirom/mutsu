@@ -1,8 +1,8 @@
 #![allow(clippy::result_large_err)]
 
 use crate::runtime;
-use crate::value::{RuntimeError, Value, make_rat};
-use num_traits::Signed;
+use crate::value::{RuntimeError, Value, make_big_rat, make_rat};
+use num_traits::{Signed, ToPrimitive};
 use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
@@ -238,6 +238,32 @@ fn raku_value(v: &Value) -> String {
                     } else {
                         format!("{}.0", whole)
                     }
+                } else {
+                    format!("<{}/{}>", n, d)
+                }
+            }
+        }
+        Value::BigRat(n, d) => {
+            if d == &num_bigint::BigInt::from(0) {
+                if n == &num_bigint::BigInt::from(0) {
+                    "NaN".to_string()
+                } else if n > &num_bigint::BigInt::from(0) {
+                    "Inf".to_string()
+                } else {
+                    "-Inf".to_string()
+                }
+            } else if (n % d) == num_bigint::BigInt::from(0) {
+                format!("{}.0", n / d)
+            } else {
+                let mut dd = d.abs();
+                while (&dd % 2u8) == num_bigint::BigInt::from(0) {
+                    dd /= 2u8;
+                }
+                while (&dd % 5u8) == num_bigint::BigInt::from(0) {
+                    dd /= 5u8;
+                }
+                if dd == num_bigint::BigInt::from(1u8) {
+                    v.to_string_value()
                 } else {
                     format!("<{}/{}>", n, d)
                 }
@@ -1004,8 +1030,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "log" => match target {
             Value::Int(i) => Some(Ok(Value::Num((*i as f64).ln()))),
+            Value::BigInt(i) => Some(Ok(Value::Num(i.to_f64().unwrap_or(f64::INFINITY).ln()))),
             Value::Num(f) => Some(Ok(Value::Num(f.ln()))),
             Value::Rat(n, d) if *d != 0 => Some(Ok(Value::Num((*n as f64 / *d as f64).ln()))),
+            Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::Num(
+                (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).ln(),
+            ))),
             Value::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
                 let arg = i.atan2(*r);
@@ -1015,6 +1045,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "log2" => match target {
             Value::Int(i) => Some(Ok(Value::Num((*i as f64).log2()))),
+            Value::BigInt(i) => Some(Ok(Value::Num(i.to_f64().unwrap_or(f64::INFINITY).log2()))),
             Value::Num(f) => Some(Ok(Value::Num(f.log2()))),
             Value::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
@@ -1026,6 +1057,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "log10" => match target {
             Value::Int(i) => Some(Ok(Value::Num((*i as f64).log10()))),
+            Value::BigInt(i) => Some(Ok(Value::Num(i.to_f64().unwrap_or(f64::INFINITY).log10()))),
             Value::Num(f) => Some(Ok(Value::Num(f.log10()))),
             Value::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
@@ -1037,8 +1069,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "exp" => match target {
             Value::Int(i) => Some(Ok(Value::Num((*i as f64).exp()))),
+            Value::BigInt(i) => Some(Ok(Value::Num(i.to_f64().unwrap_or(f64::INFINITY).exp()))),
             Value::Num(f) => Some(Ok(Value::Num(f.exp()))),
             Value::Rat(n, d) if *d != 0 => Some(Ok(Value::Num((*n as f64 / *d as f64).exp()))),
+            Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::Num(
+                (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).exp(),
+            ))),
             Value::Complex(r, i) => {
                 // exp(a+bi) = exp(a) * (cos(b) + i*sin(b))
                 let ea = r.exp();
@@ -1050,9 +1086,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             // .atan2 with no args defaults to x=1
             let y = match target {
                 Value::Int(i) => *i as f64,
+                Value::BigInt(i) => i.to_f64().unwrap_or(f64::INFINITY),
                 Value::Num(f) => *f,
                 Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
                 Value::FatRat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
+                    n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)
+                }
                 Value::Str(s) => match s.parse::<f64>() {
                     Ok(f) => f,
                     Err(_) => return Some(Ok(Value::Num(f64::NAN))),
@@ -1071,9 +1111,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             let x = match target {
                 Value::Int(i) => *i as f64,
+                Value::BigInt(i) => i.to_f64().unwrap_or(f64::INFINITY),
                 Value::Num(f) => *f,
                 Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
                 Value::FatRat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
+                    n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)
+                }
                 Value::Str(s) => match s.parse::<f64>() {
                     Ok(f) => f,
                     Err(_) => return Some(Ok(Value::Num(f64::NAN))),
@@ -1111,6 +1155,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
         "Rat" => match target {
             Value::Rat(_, _) => Some(Ok(target.clone())),
+            Value::BigRat(_, _) => Some(Ok(target.clone())),
             Value::Int(i) => Some(Ok(make_rat(*i, 1))),
             Value::Num(f) => {
                 let denom = 1_000_000i64;
@@ -1125,8 +1170,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "FatRat" => match target {
             Value::FatRat(_, _) => Some(Ok(target.clone())),
             Value::Rat(n, d) => Some(Ok(Value::FatRat(*n, *d))),
+            Value::BigRat(_, _) => Some(Ok(target.clone())),
             Value::Int(i) => Some(Ok(Value::FatRat(*i, 1))),
-            Value::BigInt(i) => Some(Ok(Value::from_bigint(i.clone()))),
+            Value::BigInt(i) => Some(Ok(make_big_rat(i.clone(), num_bigint::BigInt::from(1)))),
             Value::Num(f) => {
                 let denom = 1_000_000i64;
                 let numer = (f * denom as f64).round() as i64;

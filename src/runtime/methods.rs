@@ -1217,6 +1217,7 @@ impl Interpreter {
                     Value::Hash(_) => "Hash",
                     Value::Rat(_, _) => "Rat",
                     Value::FatRat(_, _) => "FatRat",
+                    Value::BigRat(_, _) => "Rat",
                     Value::Complex(_, _) => "Complex",
                     Value::Set(_) => "Set",
                     Value::Bag(_) => "Bag",

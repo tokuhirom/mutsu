@@ -50,6 +50,7 @@ impl Value {
             | (Value::Bool(_), Value::Bool(_))
             | (Value::Rat(_, _), Value::Rat(_, _))
             | (Value::FatRat(_, _), Value::FatRat(_, _))
+            | (Value::BigRat(_, _), Value::BigRat(_, _))
             | (Value::Complex(_, _), Value::Complex(_, _))
             | (Value::Set(_), Value::Set(_))
             | (Value::Bag(_), Value::Bag(_))
@@ -95,6 +96,7 @@ impl Value {
             Value::Hash(items) => !items.is_empty(),
             Value::Rat(n, _) => *n != 0,
             Value::FatRat(n, _) => !n.is_zero(),
+            Value::BigRat(n, _) => !n.is_zero(),
             Value::Complex(r, i) => *r != 0.0 || *i != 0.0,
             Value::Set(s) => !s.is_empty(),
             Value::Bag(b) => !b.is_empty(),
@@ -159,6 +161,7 @@ impl Value {
             Value::Bool(_) => "Bool",
             Value::Rat(_, _) => "Rat",
             Value::FatRat(_, _) => "FatRat",
+            Value::BigRat(_, _) => "Rat",
             Value::Complex(_, _) => "Complex",
             Value::Array(..) | Value::LazyList(_) => "Array",
             Value::Seq(_) => "Seq",
@@ -217,6 +220,7 @@ impl Value {
                     | Value::Bool(_)
                     | Value::Rat(_, _)
                     | Value::FatRat(_, _)
+                    | Value::BigRat(_, _)
                     | Value::Complex(_, _)
                     | Value::Array(..)
                     | Value::Hash(_)
@@ -228,6 +232,7 @@ impl Value {
                     | Value::Num(_)
                     | Value::Rat(_, _)
                     | Value::FatRat(_, _)
+                    | Value::BigRat(_, _)
                     | Value::Complex(_, _)
             ),
             "Real" => matches!(
@@ -237,6 +242,7 @@ impl Value {
                     | Value::Num(_)
                     | Value::Rat(_, _)
                     | Value::FatRat(_, _)
+                    | Value::BigRat(_, _)
             ),
             "Dateish" => matches!(
                 self,
