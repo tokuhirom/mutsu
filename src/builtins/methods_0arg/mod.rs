@@ -324,6 +324,25 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
+    // Array of Match objects: .to returns last element's .to, .from returns first element's .from
+    if let Value::Array(arr, _) = target {
+        match method {
+            "to" | "pos" => {
+                if let Some(last) = arr.last() {
+                    return native_method_0arg(last, method);
+                }
+                return Some(Ok(Value::Int(0)));
+            }
+            "from" => {
+                if let Some(first) = arr.first() {
+                    return native_method_0arg(first, method);
+                }
+                return Some(Ok(Value::Int(0)));
+            }
+            _ => {}
+        }
+    }
+
     // Match object methods: from, to, Str, pos; delegates unknown to string
     if let Value::Instance {
         class_name,

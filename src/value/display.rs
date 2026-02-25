@@ -536,6 +536,7 @@ impl Value {
                 exhaustive,
                 repeat,
                 perl5,
+                ..
             } => {
                 let mut prefix = String::new();
                 if *exhaustive {

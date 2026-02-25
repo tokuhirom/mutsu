@@ -167,6 +167,7 @@ pub enum Value {
         exhaustive: bool,
         repeat: Option<usize>,
         perl5: bool,
+        pos: bool,
     },
     Sub(Arc<SubData>),
     /// A weak reference to a Sub (used for &?BLOCK self-references to break cycles).
@@ -576,14 +577,16 @@ impl PartialEq for Value {
                     exhaustive: aex,
                     repeat: ar,
                     perl5: ap5,
+                    pos: apos,
                 },
                 Value::RegexWithAdverbs {
                     pattern: bp,
                     exhaustive: bex,
                     repeat: br,
                     perl5: bp5,
+                    pos: bpos,
                 },
-            ) => ap == bp && aex == bex && ar == br && ap5 == bp5,
+            ) => ap == bp && aex == bex && ar == br && ap5 == bp5 && apos == bpos,
             (
                 Value::Routine {
                     package: ap,
