@@ -43,6 +43,7 @@ roast/S02-types/nested_pairs.t
 roast/S02-types/nominalizables.t
 roast/S02-types/parsing-bool.t
 roast/S02-types/range-iterator.t
+roast/S02-types/sigils-and-types.t
 roast/S02-types/stash.t
 roast/S02-types/unicode.t
 roast/S02-types/version-stress.t
@@ -286,6 +287,7 @@ roast/S16-io/supply.t
 roast/S16-unfiled/getpeername.t
 roast/S17-channel/stress.t
 roast/S17-channel/subscription-drain-in-react.t
+roast/S17-procasync/kill.t
 roast/S17-procasync/many-processes-no-close-stdin.t
 roast/S17-procasync/no-runaway-file-limit.t
 roast/S17-procasync/windows-arg-quoting.t
@@ -364,6 +366,7 @@ roast/S32-io/other.t
 roast/S32-list/batch.t
 roast/S32-list/cross.t
 roast/S32-list/first-end-v.t
+roast/S32-list/first-p.t
 roast/S32-list/first-v.t
 roast/S32-list/flat.t
 roast/S32-num/abs.t
@@ -373,6 +376,7 @@ roast/S32-num/log.t
 roast/S32-num/pi.t
 roast/S32-num/polar.t
 roast/S32-num/sqrt.t
+roast/S32-num/stringify.t
 roast/S32-num/unpolar.t
 roast/S32-scalar/defined.t
 roast/S32-str/append.t

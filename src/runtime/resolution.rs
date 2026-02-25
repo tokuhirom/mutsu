@@ -30,7 +30,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn resolve_token_defs(&self, name: &str) -> Option<Vec<FunctionDef>> {
+    pub(crate) fn resolve_token_defs(&self, name: &str) -> Option<Vec<FunctionDef>> {
         if name.contains("::") {
             let mut defs = Vec::new();
             if let Some(exact) = self.token_defs.get(name) {
@@ -72,7 +72,7 @@ impl Interpreter {
         if defs.is_empty() { None } else { Some(defs) }
     }
 
-    pub(super) fn has_proto_token(&self, name: &str) -> bool {
+    pub(crate) fn has_proto_token(&self, name: &str) -> bool {
         if name.contains("::") {
             return self.proto_tokens.contains(name);
         }
@@ -310,9 +310,11 @@ impl Interpreter {
     }
 
     pub(super) fn make_supply_instance(&self) -> Value {
+        let sid = super::native_methods::next_supply_id();
         let mut attrs = HashMap::new();
         attrs.insert("values".to_string(), Value::array(Vec::new()));
         attrs.insert("taps".to_string(), Value::array(Vec::new()));
+        attrs.insert("supply_id".to_string(), Value::Int(sid as i64));
         Value::make_instance("Supply".to_string(), attrs)
     }
 
@@ -334,12 +336,14 @@ impl Interpreter {
             return self.call_function(name, args);
         }
         if let Value::Sub(data) = func {
-            let mut call_args = args.clone();
+            let (sanitized_args, callsite_line) = self.sanitize_call_args(&args);
+            self.test_pending_callsite_line = callsite_line;
+            let mut call_args = sanitized_args.clone();
             if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
                 let mut positional = Vec::new();
                 let mut named = data.assumed_named.clone();
                 let mut incoming_positional = Vec::new();
-                for arg in &args {
+                for arg in &sanitized_args {
                     if let Value::Pair(key, boxed) = arg {
                         named.insert(key.clone(), *boxed.clone());
                     } else {
@@ -406,7 +410,7 @@ impl Interpreter {
                 self.bind_function_args_values(&data.param_defs, &data.params, &call_args)?;
             new_env = self.env.clone();
             if data.params.is_empty() {
-                for arg in &args {
+                for arg in &sanitized_args {
                     if let Value::Pair(name, value) = arg {
                         new_env.insert(format!(":{}", name), *value.clone());
                     }
@@ -414,9 +418,10 @@ impl Interpreter {
             }
             // Bind implicit $_ for bare blocks called with arguments
             if data.params.is_empty()
-                && !args.is_empty()
-                && let Some(first_positional) =
-                    args.iter().find(|v| !matches!(v, Value::Pair(_, _)))
+                && !sanitized_args.is_empty()
+                && let Some(first_positional) = sanitized_args
+                    .iter()
+                    .find(|v| !matches!(v, Value::Pair(_, _)))
             {
                 new_env.insert("_".to_string(), first_positional.clone());
             }
@@ -888,30 +893,35 @@ impl Interpreter {
         Ok(Value::array(list_items))
     }
 
-    /// Like `eval_grep_over_items` but returns only the first matching item (or Nil).
-    pub(super) fn eval_first_over_items(
+    pub(super) fn find_first_match_over_items(
         &mut self,
         func: Option<Value>,
-        list_items: Vec<Value>,
-    ) -> Result<Value, RuntimeError> {
-        if let Some(matcher) = func {
-            if matches!(&matcher, Value::Sub(_)) {
-                // Use call_sub_value directly for proper closure variable propagation
-                for item in list_items {
-                    let result = self.call_sub_value(matcher.clone(), vec![item.clone()], true)?;
-                    if result.truthy() {
-                        return Ok(item);
-                    }
-                }
-                return Ok(Value::Nil);
-            }
-            for item in list_items {
-                if self.smart_match(&item, &matcher) {
-                    return Ok(item);
-                }
-            }
-            return Ok(Value::Nil);
+        list_items: &[Value],
+        from_end: bool,
+    ) -> Result<Option<(usize, Value)>, RuntimeError> {
+        if list_items.is_empty() {
+            return Ok(None);
         }
-        Ok(list_items.into_iter().next().unwrap_or(Value::Nil))
+        let matcher = func;
+        let len = list_items.len();
+        for idx in 0..len {
+            let actual_idx = if from_end { len - 1 - idx } else { idx };
+            let item = list_items[actual_idx].clone();
+            let matched = if let Some(pattern) = &matcher {
+                if matches!(pattern, Value::Sub(_)) {
+                    // Use call_sub_value directly for proper closure variable propagation.
+                    self.call_sub_value(pattern.clone(), vec![item.clone()], true)?
+                        .truthy()
+                } else {
+                    self.smart_match(&item, pattern)
+                }
+            } else {
+                true
+            };
+            if matched {
+                return Ok(Some((actual_idx, item)));
+            }
+        }
+        Ok(None)
     }
 }

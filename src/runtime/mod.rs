@@ -60,6 +60,7 @@ mod resolution;
 mod run;
 mod seq_helpers;
 mod sequence;
+mod signal_watcher;
 mod sprintf;
 mod subtest;
 mod system;
@@ -241,6 +242,8 @@ pub struct Interpreter {
     subtest_depth: usize,
     halted: bool,
     exit_code: i64,
+    /// When true, output is flushed to real stdout immediately (for Proc::Async children).
+    immediate_stdout: bool,
     bailed_out: bool,
     functions: HashMap<String, FunctionDef>,
     proto_functions: HashMap<String, FunctionDef>,
@@ -422,6 +425,8 @@ impl Interpreter {
                     "tail",
                     "min",
                     "collate",
+                    "lines",
+                    "merge",
                     "Supply",
                     "Promise",
                     "schedule-on",
@@ -480,6 +485,9 @@ impl Interpreter {
                     "kill",
                     "write",
                     "close-stdin",
+                    "ready",
+                    "print",
+                    "say",
                 ]
                 .iter()
                 .map(|s| s.to_string())
@@ -922,6 +930,7 @@ impl Interpreter {
             subtest_depth: 0,
             halted: false,
             exit_code: 0,
+            immediate_stdout: false,
             bailed_out: false,
             functions: HashMap::new(),
             proto_functions: HashMap::new(),
@@ -988,6 +997,7 @@ impl Interpreter {
         interpreter.init_io_environment();
         interpreter.init_order_enum();
         interpreter.init_endian_enum();
+        interpreter.init_signal_enum();
         interpreter.env.insert("Any".to_string(), Value::Nil);
         interpreter
     }
@@ -1239,6 +1249,22 @@ impl Interpreter {
         &self.output
     }
 
+    /// Write to the output buffer and also flush to real stdout
+    /// when not inside a subtest.
+    pub(crate) fn emit_output(&mut self, text: &str) {
+        self.output.push_str(text);
+        if self.subtest_depth == 0 && self.immediate_stdout {
+            use std::io::Write;
+            let _ = std::io::stdout().write_all(text.as_bytes());
+            let _ = std::io::stdout().flush();
+        }
+    }
+
+    /// Enable immediate flushing of output to stdout.
+    pub fn set_immediate_stdout(&mut self, val: bool) {
+        self.immediate_stdout = val;
+    }
+
     pub fn exit_code(&self) -> i64 {
         self.exit_code
     }
@@ -1341,7 +1367,7 @@ impl Interpreter {
                 }
             }
         }
-        Self {
+        let mut cloned = Self {
             env: self.env.clone(),
             output: String::new(),
             stderr_output: String::new(),
@@ -1351,6 +1377,7 @@ impl Interpreter {
             subtest_depth: 0,
             halted: false,
             exit_code: 0,
+            immediate_stdout: false,
             bailed_out: false,
             functions: self.functions.clone(),
             proto_functions: self.proto_functions.clone(),
@@ -1402,7 +1429,9 @@ impl Interpreter {
             method_dispatch_stack: Vec::new(),
             suppressed_names: self.suppressed_names.clone(),
             last_value: None,
-        }
+        };
+        cloned.init_io_environment();
+        cloned
     }
 
     /// Read a shared array variable. If the variable is in shared_vars, return
