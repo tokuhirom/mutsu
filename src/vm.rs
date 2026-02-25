@@ -38,6 +38,7 @@ pub(crate) struct VM {
     interpreter: Interpreter,
     stack: Vec<Value>,
     locals: Vec<Value>,
+    in_smartmatch_rhs: bool,
 }
 
 impl VM {
@@ -78,6 +79,7 @@ impl VM {
             interpreter,
             stack: Vec::new(),
             locals: Vec::new(),
+            in_smartmatch_rhs: false,
         }
     }
 
@@ -978,7 +980,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::StrCoerce => {
-                self.exec_str_coerce_op();
+                self.exec_str_coerce_op()?;
                 *ip += 1;
             }
             OpCode::UptoRange => {
@@ -1166,8 +1168,21 @@ impl VM {
                 )?;
                 *ip += 1;
             }
-            OpCode::Transliterate { from_idx, to_idx } => {
-                self.exec_transliterate_op(code, *from_idx, *to_idx);
+            OpCode::Transliterate {
+                from_idx,
+                to_idx,
+                delete,
+                complement,
+                squash,
+            } => {
+                self.exec_transliterate_op(
+                    code,
+                    *from_idx,
+                    *to_idx,
+                    *delete,
+                    *complement,
+                    *squash,
+                )?;
                 *ip += 1;
             }
 

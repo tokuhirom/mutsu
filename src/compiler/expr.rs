@@ -825,10 +825,22 @@ impl Compiler {
                 });
             }
             // tr/// transliteration
-            Expr::Transliterate { from, to } => {
+            Expr::Transliterate {
+                from,
+                to,
+                delete,
+                complement,
+                squash,
+            } => {
                 let from_idx = self.code.add_constant(Value::Str(from.clone()));
                 let to_idx = self.code.add_constant(Value::Str(to.clone()));
-                self.code.emit(OpCode::Transliterate { from_idx, to_idx });
+                self.code.emit(OpCode::Transliterate {
+                    from_idx,
+                    to_idx,
+                    delete: *delete,
+                    complement: *complement,
+                    squash: *squash,
+                });
             }
             // HyperOp (>>op<<): compile sub-expressions, delegate operation
             Expr::HyperOp {

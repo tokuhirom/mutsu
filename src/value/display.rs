@@ -1,5 +1,9 @@
 use super::*;
 
+pub(crate) fn is_internal_anon_type_name(name: &str) -> bool {
+    name.starts_with("__ANON_") && name.ends_with("__")
+}
+
 /// Format a Num in scientific notation matching Raku's output (e.g. `1e+40`, `-1e-05`).
 fn format_num_scientific(f: f64) -> String {
     // Use Rust's {:e} format and ensure the exponent has an explicit sign
@@ -79,18 +83,31 @@ pub fn wordcase_str(s: &str) -> String {
 
 pub fn format_complex(r: f64, i: f64) -> String {
     fn fmt_num(v: f64) -> String {
-        if v.fract() == 0.0 && v.is_finite() {
+        if v.is_nan() {
+            "NaN".to_string()
+        } else if v.is_infinite() {
+            if v > 0.0 {
+                "Inf".to_string()
+            } else {
+                "-Inf".to_string()
+            }
+        } else if v.fract() == 0.0 {
             format!("{}", v as i64)
         } else {
             format!("{}", v)
         }
     }
+    // Use \i notation when imaginary part is Inf, -Inf, or NaN
+    let imag_special = i.is_infinite() || i.is_nan();
+    let suffix = if imag_special { "\\i" } else { "i" };
     if i == 0.0 {
         format!("{}+0i", fmt_num(r))
-    } else if i < 0.0 {
-        format!("{}{}i", fmt_num(r), fmt_num(i))
+    } else if i.is_nan() {
+        format!("{}+NaN\\i", fmt_num(r))
+    } else if i < 0.0 || (i.is_infinite() && i.is_sign_negative()) {
+        format!("{}-{}{}", fmt_num(r), fmt_num(i.abs()), suffix)
     } else {
-        format!("{}+{}i", fmt_num(r), fmt_num(i))
+        format!("{}+{}{}", fmt_num(r), fmt_num(i), suffix)
     }
 }
 
@@ -286,7 +303,13 @@ impl Value {
             Value::CompUnitDepSpec { short_name } => {
                 format!("CompUnit::DependencySpecification({})", short_name)
             }
-            Value::Package(s) => format!("({})", s),
+            Value::Package(s) => {
+                if is_internal_anon_type_name(s) {
+                    "()".to_string()
+                } else {
+                    format!("({})", s)
+                }
+            }
             Value::ParametricRole {
                 base_name,
                 type_args,
