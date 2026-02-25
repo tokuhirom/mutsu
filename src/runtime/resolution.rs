@@ -310,9 +310,11 @@ impl Interpreter {
     }
 
     pub(super) fn make_supply_instance(&self) -> Value {
+        let sid = super::native_methods::next_supply_id();
         let mut attrs = HashMap::new();
         attrs.insert("values".to_string(), Value::array(Vec::new()));
         attrs.insert("taps".to_string(), Value::array(Vec::new()));
+        attrs.insert("supply_id".to_string(), Value::Int(sid as i64));
         Value::make_instance("Supply".to_string(), attrs)
     }
 

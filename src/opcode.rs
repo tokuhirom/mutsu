@@ -463,6 +463,9 @@ pub(crate) enum OpCode {
     SubtestScope {
         body_end: u32,
     },
+    ReactScope {
+        body_end: u32,
+    },
     WheneverScope {
         body_idx: u32,
         param_idx: Option<u32>,
@@ -615,6 +618,7 @@ impl CompiledCode {
             OpCode::DoBlockExpr { body_end, .. } => *body_end = target,
             OpCode::DoGivenExpr { body_end, .. } => *body_end = target,
             OpCode::SubtestScope { body_end, .. } => *body_end = target,
+            OpCode::ReactScope { body_end, .. } => *body_end = target,
             _ => panic!("patch_body_end on opcode without body_end"),
         }
     }

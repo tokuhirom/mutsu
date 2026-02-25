@@ -80,7 +80,7 @@ impl Interpreter {
                 self.halted = true;
             }
         }
-        self.output.push_str(&line);
+        self.emit_output(&line);
         Ok(())
     }
 

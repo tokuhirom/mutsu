@@ -496,7 +496,7 @@ impl Interpreter {
             match arg {
                 Value::Promise(shared) => {
                     let (result, output, stderr) = shared.wait();
-                    self.output.push_str(&output);
+                    self.emit_output(&output);
                     self.stderr_output.push_str(&stderr);
                     if shared.status() == "Broken" {
                         self.sync_shared_vars_to_env();
@@ -554,7 +554,7 @@ impl Interpreter {
                         match elem {
                             Value::Promise(shared) => {
                                 let (result, output, stderr) = shared.wait();
-                                self.output.push_str(&output);
+                                self.emit_output(&output);
                                 self.stderr_output.push_str(&stderr);
                                 if shared.status() == "Broken" {
                                     self.sync_shared_vars_to_env();
@@ -587,6 +587,42 @@ impl Interpreter {
         } else {
             Ok(Value::array(results))
         }
+    }
+    /// `signal(SIGINT, ...)` — returns a Supply that emits Signal enum values
+    /// when the process receives the specified OS signals.
+    pub(super) fn builtin_signal(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        use std::sync::mpsc;
+
+        // Extract signal numbers and their enum representations
+        let signals: Vec<(i64, Value)> = args
+            .iter()
+            .filter_map(|v| match v {
+                Value::Enum { value, .. } => Some((*value, v.clone())),
+                Value::Int(i) => Some((*i, v.clone())),
+                _ => None,
+            })
+            .collect();
+
+        let supply_id = super::native_methods::next_supply_id();
+
+        // Create channel for the Supply
+        let (tx, rx) = mpsc::channel();
+
+        // Register the channel in the supply channel map
+        if let Ok(mut map) = super::native_methods::supply_channel_map_pub().lock() {
+            map.insert(supply_id, rx);
+        }
+
+        // Set up real signal handling using pipe + sigaction
+        for (signum, sig_val) in &signals {
+            signal_watcher::register_signal(*signum as i32, supply_id, tx.clone(), sig_val.clone());
+        }
+
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("values".to_string(), Value::array(Vec::new()));
+        attrs.insert("taps".to_string(), Value::array(Vec::new()));
+        attrs.insert("supply_id".to_string(), Value::Int(supply_id as i64));
+        Ok(Value::make_instance("Supply".to_string(), attrs))
     }
 }
 
