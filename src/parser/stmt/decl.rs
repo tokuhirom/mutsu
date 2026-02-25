@@ -5,6 +5,7 @@ use super::super::parse_result::{PError, PResult, opt_char, parse_char, take_whi
 use crate::ast::{Expr, Stmt};
 use crate::value::Value;
 
+use super::sub::parse_type_constraint_expr;
 use super::{
     class::{module_decl, package_decl, proto_decl, role_decl},
     ident, keyword, parse_assign_expr_or_comma, parse_statement_modifier, qualified_ident,
@@ -315,30 +316,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     let (rest, type_constraint) = {
         // Try to parse a type name followed by a sigil or \
         let saved = rest;
-        if let Ok((r, tc)) = ident(rest) {
-            // Preserve type smileys :D, :U, :_ as part of the type constraint.
-            let (r, tc) = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
-                let smiley = &r[..2];
-                (&r[2..], format!("{}{}", tc, smiley))
-            } else {
-                (r, tc)
-            };
-            // Check for coercion type syntax: Type(FromType)
-            let (r, tc) = if let Some(inner) = r.strip_prefix('(') {
-                // Parse the coercion type: e.g. Str(Match)
-                if let Ok((r2, _from_type)) = ident(inner) {
-                    if let Some(after) = r2.strip_prefix(')') {
-                        // Successfully parsed Type(FromType) — use the target type
-                        (after, tc)
-                    } else {
-                        (r, tc)
-                    }
-                } else {
-                    (r, tc)
-                }
-            } else {
-                (r, tc)
-            };
+        if let Some((r, tc)) = parse_type_constraint_expr(rest) {
             let (r2, _) = ws(r)?;
             if r2.starts_with('$')
                 || r2.starts_with('@')
@@ -1049,7 +1027,7 @@ pub(super) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
     let (rest, base) = if let Some(r) = keyword("of", rest) {
         let (r, _) = ws1(r)?;
-        let (r, base) = ident(r)?;
+        let (r, base) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
         let (r, _) = ws(r)?;
         (r, base)
     } else {

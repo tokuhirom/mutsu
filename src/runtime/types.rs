@@ -225,7 +225,7 @@ fn bind_sub_signature_from_value(
             continue;
         };
         if let Some(constraint) = &sub_pd.type_constraint {
-            if let Some((target, source)) = parse_coercion_type(constraint) {
+            if let Some((_target, source)) = parse_coercion_type(constraint) {
                 if let Some(src) = source
                     && !interpreter.type_matches_value(src, &candidate)
                 {
@@ -236,7 +236,7 @@ fn bind_sub_signature_from_value(
                         super::value_type_name(&candidate)
                     )));
                 }
-                candidate = coerce_value(target, candidate);
+                candidate = interpreter.try_coerce_value_for_constraint(constraint, candidate)?;
             } else if !interpreter.type_matches_value(constraint, &candidate) {
                 return Err(RuntimeError::new(format!(
                     "X::TypeCheck::Argument: Type check failed for {}: expected {}, got {}",
@@ -553,10 +553,25 @@ impl Interpreter {
         self.classes.contains_key(name)
             || self.roles.contains_key(name)
             || self.enum_types.contains_key(name)
+            || self.subsets.contains_key(name)
     }
 
     pub(crate) fn has_role(&self, name: &str) -> bool {
         self.roles.contains_key(name)
+    }
+
+    pub(crate) fn is_definite_constraint(&self, constraint: &str) -> bool {
+        let (base_constraint, smiley) = strip_type_smiley(constraint);
+        if smiley == Some(":D") {
+            return true;
+        }
+        if let Some((target, _source)) = parse_coercion_type(base_constraint) {
+            return self.is_definite_constraint(target);
+        }
+        if let Some(subset) = self.subsets.get(base_constraint) {
+            return self.is_definite_constraint(&subset.base);
+        }
+        false
     }
 
     pub(crate) fn eval_does_values(
@@ -622,10 +637,35 @@ impl Interpreter {
     }
 
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
+        let package_matches_type = |package_name: &str, type_name: &str| -> bool {
+            if Self::type_matches(type_name, package_name) {
+                return true;
+            }
+            if let Some(class_def) = self.classes.get(package_name) {
+                return class_def
+                    .parents
+                    .clone()
+                    .iter()
+                    .any(|parent| Self::type_matches(type_name, parent));
+            }
+            false
+        };
+        if let Value::Package(package_name) = value
+            && let Some((target, source)) = parse_coercion_type(constraint)
+        {
+            let target_ok = package_matches_type(package_name, target);
+            let source_ok = source.is_some_and(|src| self.type_matches_value(src, value));
+            return target_ok || source_ok;
+        }
+        if let Value::Package(package_name) = value
+            && package_matches_type(package_name, constraint)
+        {
+            return true;
+        }
         // Handle coercion types: Int() matches anything, Int(Rat) matches Rat
-        if let Some((_, source)) = parse_coercion_type(constraint) {
+        if let Some((target, source)) = parse_coercion_type(constraint) {
             return if let Some(src) = source {
-                self.type_matches_value(src, value)
+                self.type_matches_value(src, value) || self.type_matches_value(target, value)
             } else {
                 true
             };
@@ -680,8 +720,9 @@ impl Interpreter {
             if !self.type_matches_value(&subset.base, value) {
                 return false;
             }
+            let predicate_value = self.coerce_value_for_constraint(&subset.base, value.clone());
             let saved = self.env.get("_").cloned();
-            self.env.insert("_".to_string(), value.clone());
+            self.env.insert("_".to_string(), predicate_value);
             let ok = if let Some(pred) = &subset.predicate {
                 self.eval_block_value(&[Stmt::Expr(pred.clone())])
                     .map(|v| v.truthy())
@@ -1191,19 +1232,13 @@ impl Interpreter {
                     if pd.name != "__type_only__"
                         && let Some(constraint) = &pd.type_constraint
                     {
-                        let type_error_kind = if constraint.chars().all(|c| c.is_ascii_uppercase())
-                            && self.env.contains_key(constraint)
-                        {
-                            "X::TypeCheck::Binding"
-                        } else {
-                            "X::TypeCheck::Argument"
-                        };
+                        let type_error_kind = "X::TypeCheck::Binding::Parameter";
                         if let Some(captured_name) = constraint.strip_prefix("::") {
                             self.env.insert(
                                 captured_name.to_string(),
                                 Self::captured_type_object(&value),
                             );
-                        } else if let Some((target, source)) = parse_coercion_type(constraint) {
+                        } else if let Some((_target, source)) = parse_coercion_type(constraint) {
                             // Coercion type: check source type if specified, then coerce
                             if let Some(src) = source
                                 && !self.type_matches_value(src, &value)
@@ -1224,7 +1259,7 @@ impl Interpreter {
                                 err.exception = Some(Box::new(exception));
                                 return Err(err);
                             }
-                            value = self.coerce_value_with_method(target, value);
+                            value = self.try_coerce_value_for_constraint(constraint, value)?;
                         } else if pd.name.starts_with('@') {
                             let ok = match &value {
                                 Value::Array(items, ..) => {
@@ -1275,6 +1310,8 @@ impl Interpreter {
                                 constraint,
                                 super::value_type_name(&value)
                             )));
+                        } else {
+                            value = self.try_coerce_value_for_constraint(constraint, value)?;
                         }
                         if (constraint.starts_with("Associative[")
                             || constraint.starts_with("Hash["))
@@ -1381,15 +1418,38 @@ impl Interpreter {
 
     /// Coerce a value to the target type, trying built-in coercions first,
     /// then falling back to target class COERCE when available.
-    fn coerce_value_with_method(&mut self, target: &str, value: Value) -> Value {
+    fn try_coerce_value_with_method(
+        &mut self,
+        target: &str,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        let base_target =
+            if target.ends_with(":D") || target.ends_with(":U") || target.ends_with(":_") {
+                &target[..target.len() - 2]
+            } else {
+                target
+            };
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &value
+            && self.class_has_method(class_name, base_target)
+        {
+            let (coerced, _) = self.run_instance_method(
+                class_name,
+                (**attributes).clone(),
+                base_target,
+                vec![],
+                Some(value.clone()),
+            )?;
+            return Ok(coerced);
+        }
         let result = coerce_value(target, value.clone());
         if std::mem::discriminant(&result) == std::mem::discriminant(&value) {
-            let base_target =
-                if target.ends_with(":D") || target.ends_with(":U") || target.ends_with(":_") {
-                    &target[..target.len() - 2]
-                } else {
-                    target
-                };
+            if let Ok(coerced) = self.call_method_with_values(value.clone(), base_target, vec![]) {
+                return Ok(coerced);
+            }
             if self.classes.contains_key(base_target)
                 && let Ok(coerced) = self.call_method_with_values(
                     Value::Package(base_target.to_string()),
@@ -1397,9 +1457,36 @@ impl Interpreter {
                     vec![value],
                 )
             {
-                return coerced;
+                return Ok(coerced);
             }
         }
-        result
+        Ok(result)
+    }
+
+    pub(crate) fn coerce_value_for_constraint(&mut self, constraint: &str, value: Value) -> Value {
+        self.try_coerce_value_for_constraint(constraint, value.clone())
+            .unwrap_or(value)
+    }
+
+    pub(crate) fn try_coerce_value_for_constraint(
+        &mut self,
+        constraint: &str,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        let (constraint, _) = strip_type_smiley(constraint);
+        if let Some((target, source)) = parse_coercion_type(constraint) {
+            let intermediate = if let Some(src) = source {
+                self.try_coerce_value_for_constraint(src, value)?
+            } else {
+                value
+            };
+            return self.try_coerce_value_with_method(target, intermediate);
+        }
+        if let Some(subset) = self.subsets.get(constraint).cloned()
+            && subset.base != constraint
+        {
+            return self.try_coerce_value_for_constraint(&subset.base, value);
+        }
+        Ok(value)
     }
 }

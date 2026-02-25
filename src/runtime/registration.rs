@@ -1469,5 +1469,7 @@ impl Interpreter {
                 predicate: predicate.cloned(),
             },
         );
+        self.env
+            .insert(name.to_string(), Value::Package(name.to_string()));
     }
 }

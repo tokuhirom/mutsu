@@ -617,11 +617,6 @@ impl Interpreter {
             nested.set_pid(pid.saturating_add(1));
         }
         nested.lib_paths = self.lib_paths.clone();
-        nested.functions = self.functions.clone();
-        nested.proto_functions = self.proto_functions.clone();
-        nested.token_defs = self.token_defs.clone();
-        nested.proto_subs = self.proto_subs.clone();
-        nested.proto_tokens = self.proto_tokens.clone();
         nested.classes = self.classes.clone();
         nested.class_trusts = self.class_trusts.clone();
         nested.roles = self.roles.clone();
@@ -637,7 +632,7 @@ impl Interpreter {
             }
             nested.env.insert(k.clone(), v.clone());
         }
-        let ok = nested.run(&code).is_ok();
+        let ok = nested.eval_eval_string(&code).is_ok();
         self.test_ok(ok, &desc, false)?;
         Ok(Value::Bool(ok))
     }
@@ -655,11 +650,6 @@ impl Interpreter {
             nested.set_pid(pid.saturating_add(1));
         }
         nested.lib_paths = self.lib_paths.clone();
-        nested.functions = self.functions.clone();
-        nested.proto_functions = self.proto_functions.clone();
-        nested.token_defs = self.token_defs.clone();
-        nested.proto_subs = self.proto_subs.clone();
-        nested.proto_tokens = self.proto_tokens.clone();
         nested.classes = self.classes.clone();
         nested.class_trusts = self.class_trusts.clone();
         nested.roles = self.roles.clone();
@@ -675,7 +665,7 @@ impl Interpreter {
             }
             nested.env.insert(k.clone(), v.clone());
         }
-        let ok = nested.run(&code).is_err();
+        let ok = nested.eval_eval_string(&code).is_err();
         self.test_ok(ok, &desc, false)?;
         Ok(Value::Bool(ok))
     }
@@ -1184,7 +1174,31 @@ impl Interpreter {
             (label, block)
         };
         let ctx = self.begin_subtest();
+        let saved_env = self.env.clone();
+        let saved_functions = self.functions.clone();
+        let saved_proto_functions = self.proto_functions.clone();
+        let saved_token_defs = self.token_defs.clone();
+        let saved_proto_subs = self.proto_subs.clone();
+        let saved_proto_tokens = self.proto_tokens.clone();
+        let saved_classes = self.classes.clone();
+        let saved_class_trusts = self.class_trusts.clone();
+        let saved_roles = self.roles.clone();
+        let saved_subsets = self.subsets.clone();
+        let saved_type_metadata = self.type_metadata.clone();
+        let saved_var_type_constraints = self.snapshot_var_type_constraints();
         let run_result = self.call_sub_value(block, vec![], true);
+        self.env = saved_env;
+        self.functions = saved_functions;
+        self.proto_functions = saved_proto_functions;
+        self.token_defs = saved_token_defs;
+        self.proto_subs = saved_proto_subs;
+        self.proto_tokens = saved_proto_tokens;
+        self.classes = saved_classes;
+        self.class_trusts = saved_class_trusts;
+        self.roles = saved_roles;
+        self.subsets = saved_subsets;
+        self.type_metadata = saved_type_metadata;
+        self.restore_var_type_constraints(saved_var_type_constraints);
         self.finish_subtest(ctx, &label, run_result.map(|_| ()))?;
         Ok(Value::Bool(true))
     }
@@ -1216,8 +1230,32 @@ impl Interpreter {
         };
         let desc = desc_key.to_string_value();
         let ctx = self.begin_subtest();
+        let saved_env = self.env.clone();
+        let saved_functions = self.functions.clone();
+        let saved_proto_functions = self.proto_functions.clone();
+        let saved_token_defs = self.token_defs.clone();
+        let saved_proto_subs = self.proto_subs.clone();
+        let saved_proto_tokens = self.proto_tokens.clone();
+        let saved_classes = self.classes.clone();
+        let saved_class_trusts = self.class_trusts.clone();
+        let saved_roles = self.roles.clone();
+        let saved_subsets = self.subsets.clone();
+        let saved_type_metadata = self.type_metadata.clone();
+        let saved_var_type_constraints = self.snapshot_var_type_constraints();
         self.test_fn_plan(&[Value::Int(plan)])?;
         let run_result = self.call_sub_value(block, vec![], true);
+        self.env = saved_env;
+        self.functions = saved_functions;
+        self.proto_functions = saved_proto_functions;
+        self.token_defs = saved_token_defs;
+        self.proto_subs = saved_proto_subs;
+        self.proto_tokens = saved_proto_tokens;
+        self.classes = saved_classes;
+        self.class_trusts = saved_class_trusts;
+        self.roles = saved_roles;
+        self.subsets = saved_subsets;
+        self.type_metadata = saved_type_metadata;
+        self.restore_var_type_constraints(saved_var_type_constraints);
         self.finish_subtest(ctx, &desc, run_result.map(|_| ()))?;
         Ok(Value::Bool(true))
     }

@@ -274,6 +274,8 @@ pub struct Interpreter {
     state_vars: HashMap<String, Value>,
     /// Variable dynamic-scope metadata used by `.VAR.dynamic`.
     var_dynamic_flags: HashMap<String, bool>,
+    /// Variable type constraints used to enforce typed re-assignment across closures.
+    var_type_constraints: HashMap<String, String>,
     let_saves: Vec<(String, Value)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
     /// Shared variables between threads. When `start` spawns a thread,
@@ -948,6 +950,7 @@ impl Interpreter {
             strict_mode: false,
             state_vars: HashMap::new(),
             var_dynamic_flags: HashMap::new(),
+            var_type_constraints: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
             shared_vars: Arc::new(Mutex::new(HashMap::new())),
@@ -1255,6 +1258,38 @@ impl Interpreter {
         self.var_dynamic_flags.insert(key, dynamic);
     }
 
+    pub(crate) fn set_var_type_constraint(&mut self, name: &str, constraint: Option<String>) {
+        let key = name.to_string();
+        let meta_key = format!("__mutsu_type::{}", key);
+        if let Some(constraint) = constraint {
+            self.var_type_constraints.insert(key, constraint.clone());
+            self.env.insert(meta_key, Value::Str(constraint));
+        } else {
+            self.var_type_constraints.remove(&key);
+            self.env.remove(&meta_key);
+        }
+    }
+
+    pub(crate) fn var_type_constraint(&self, name: &str) -> Option<String> {
+        let key = name;
+        let meta_key = format!("__mutsu_type::{}", key);
+        if let Some(Value::Str(tc)) = self.env.get(&meta_key) {
+            return Some(tc.clone());
+        }
+        if let Some(tc) = self.var_type_constraints.get(key) {
+            return Some(tc.clone());
+        }
+        None
+    }
+
+    pub(crate) fn snapshot_var_type_constraints(&self) -> HashMap<String, String> {
+        self.var_type_constraints.clone()
+    }
+
+    pub(crate) fn restore_var_type_constraints(&mut self, snapshot: HashMap<String, String>) {
+        self.var_type_constraints = snapshot;
+    }
+
     pub(crate) fn is_var_dynamic(&self, name: &str) -> bool {
         self.var_dynamic_flags
             .get(Self::normalize_var_meta_name(name))
@@ -1332,6 +1367,7 @@ impl Interpreter {
             strict_mode: self.strict_mode,
             state_vars: HashMap::new(),
             var_dynamic_flags: self.var_dynamic_flags.clone(),
+            var_type_constraints: self.var_type_constraints.clone(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
             shared_vars: Arc::clone(&self.shared_vars),
