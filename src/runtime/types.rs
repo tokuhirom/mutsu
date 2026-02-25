@@ -407,26 +407,27 @@ impl Interpreter {
     }
 
     pub(super) fn init_signal_enum(&mut self) {
+        // Use libc constants on Unix, standard POSIX numbers on other platforms
         let variants = vec![
-            ("SIGHUP".to_string(), libc::SIGHUP as i64),
-            ("SIGINT".to_string(), libc::SIGINT as i64),
-            ("SIGQUIT".to_string(), libc::SIGQUIT as i64),
-            ("SIGILL".to_string(), libc::SIGILL as i64),
-            ("SIGABRT".to_string(), libc::SIGABRT as i64),
-            ("SIGFPE".to_string(), libc::SIGFPE as i64),
-            ("SIGKILL".to_string(), libc::SIGKILL as i64),
-            ("SIGSEGV".to_string(), libc::SIGSEGV as i64),
-            ("SIGPIPE".to_string(), libc::SIGPIPE as i64),
-            ("SIGALRM".to_string(), libc::SIGALRM as i64),
-            ("SIGTERM".to_string(), libc::SIGTERM as i64),
-            ("SIGUSR1".to_string(), libc::SIGUSR1 as i64),
-            ("SIGUSR2".to_string(), libc::SIGUSR2 as i64),
-            ("SIGCHLD".to_string(), libc::SIGCHLD as i64),
-            ("SIGCONT".to_string(), libc::SIGCONT as i64),
-            ("SIGSTOP".to_string(), libc::SIGSTOP as i64),
-            ("SIGTSTP".to_string(), libc::SIGTSTP as i64),
-            ("SIGTTIN".to_string(), libc::SIGTTIN as i64),
-            ("SIGTTOU".to_string(), libc::SIGTTOU as i64),
+            ("SIGHUP".to_string(), Self::sig_num(1)),
+            ("SIGINT".to_string(), Self::sig_num(2)),
+            ("SIGQUIT".to_string(), Self::sig_num(3)),
+            ("SIGILL".to_string(), Self::sig_num(4)),
+            ("SIGABRT".to_string(), Self::sig_num(6)),
+            ("SIGFPE".to_string(), Self::sig_num(8)),
+            ("SIGKILL".to_string(), Self::sig_num(9)),
+            ("SIGSEGV".to_string(), Self::sig_num(11)),
+            ("SIGPIPE".to_string(), Self::sig_num(13)),
+            ("SIGALRM".to_string(), Self::sig_num(14)),
+            ("SIGTERM".to_string(), Self::sig_num(15)),
+            ("SIGUSR1".to_string(), Self::sig_num(10)),
+            ("SIGUSR2".to_string(), Self::sig_num(12)),
+            ("SIGCHLD".to_string(), Self::sig_num(17)),
+            ("SIGCONT".to_string(), Self::sig_num(18)),
+            ("SIGSTOP".to_string(), Self::sig_num(19)),
+            ("SIGTSTP".to_string(), Self::sig_num(20)),
+            ("SIGTTIN".to_string(), Self::sig_num(21)),
+            ("SIGTTOU".to_string(), Self::sig_num(22)),
         ];
         self.enum_types
             .insert("Signal".to_string(), variants.clone());
@@ -443,6 +444,11 @@ impl Interpreter {
                 .insert(format!("Signal::{}", key), enum_val.clone());
             self.env.insert(key.clone(), enum_val);
         }
+    }
+
+    /// Get signal number — use the POSIX default value on all platforms.
+    fn sig_num(default: i64) -> i64 {
+        default
     }
 
     pub(super) fn version_from_value(arg: Value) -> Value {
