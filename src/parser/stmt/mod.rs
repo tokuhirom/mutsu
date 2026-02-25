@@ -1074,6 +1074,14 @@ mod tests {
     }
 
     #[test]
+    fn parse_grammar_decl_with_does_clause() {
+        let (rest, stmts) = program("grammar G does R { rule TOP { ^ <x> } }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::Package { name, .. } if name == "G"));
+    }
+
+    #[test]
     fn parse_token_decl_with_regex_like_body() {
         let (rest, stmts) = program("token TOP { <fred>+ }").unwrap();
         assert_eq!(rest, "");

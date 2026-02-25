@@ -191,18 +191,64 @@ impl Interpreter {
     }
 
     pub(super) fn parse_regex(&self, pattern: &str) -> Option<RegexPattern> {
+        fn named_lookup_is_ws(name: &str) -> bool {
+            let mut raw = name.trim();
+            if let Some(stripped) = raw.strip_prefix('.') {
+                raw = stripped.trim();
+            }
+            if let Some(stripped) = raw.strip_prefix('&') {
+                raw = stripped.trim();
+            }
+            raw == "ws"
+        }
+
+        fn token_is_ws_like(token: &RegexToken) -> bool {
+            match &token.atom {
+                RegexAtom::CharClass(class) => {
+                    !class.negated
+                        && class.items.len() == 1
+                        && class
+                            .items
+                            .first()
+                            .is_some_and(|item| matches!(item, ClassItem::Space))
+                }
+                RegexAtom::Named(name) => named_lookup_is_ws(name),
+                _ => false,
+            }
+        }
+
         let interpolated = self.interpolate_regex_scalars(pattern);
-        let mut source = interpolated.trim();
+        let mut source = interpolated.trim_start();
         let mut ignore_case = false;
+        let mut sigspace = false;
         loop {
             if let Some(rest) = source.strip_prefix(":i") {
                 ignore_case = true;
                 source = rest.trim_start();
                 continue;
             }
+            if let Some(rest) = source.strip_prefix(":ignorecase") {
+                ignore_case = true;
+                source = rest.trim_start();
+                continue;
+            }
+            if let Some(rest) = source.strip_prefix(":s") {
+                sigspace = true;
+                source = rest.trim_start();
+                continue;
+            }
+            if let Some(rest) = source.strip_prefix(":sigspace") {
+                sigspace = true;
+                source = rest.trim_start();
+                continue;
+            }
             break;
         }
-        source = source.trim();
+        source = if sigspace {
+            source.trim_start()
+        } else {
+            source.trim()
+        };
         // Quote-word delimiters in regex patterns (e.g., «word») represent
         // literal text content, not literal guillemet characters.
         if let Some(inner) = source.strip_prefix('«').and_then(|s| s.strip_suffix('»')) {
@@ -219,6 +265,35 @@ impl Interpreter {
         while let Some(c) = chars.next() {
             // In Raku, unescaped whitespace in regex is insignificant
             if c.is_whitespace() {
+                if sigspace {
+                    while chars.peek().is_some_and(|next| next.is_whitespace()) {
+                        chars.next();
+                    }
+                    if tokens.is_empty() {
+                        if anchor_start {
+                            tokens.push(RegexToken {
+                                atom: RegexAtom::CharClass(CharClass {
+                                    negated: false,
+                                    items: vec![ClassItem::Space],
+                                }),
+                                quant: RegexQuant::ZeroOrMore,
+                                named_capture: pending_named_capture.take(),
+                            });
+                        }
+                    } else {
+                        if tokens.last().is_some_and(token_is_ws_like) {
+                            continue;
+                        }
+                        tokens.push(RegexToken {
+                            atom: RegexAtom::CharClass(CharClass {
+                                negated: false,
+                                items: vec![ClassItem::Space],
+                            }),
+                            quant: RegexQuant::OneOrMore,
+                            named_capture: pending_named_capture.take(),
+                        });
+                    }
+                }
                 continue;
             }
             // '#' starts a comment until end of line in Raku regex

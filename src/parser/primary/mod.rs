@@ -303,6 +303,13 @@ mod tests {
     }
 
     #[test]
+    fn parse_match_regex_with_compact_adverbs() {
+        let (rest, expr) = primary("ms/ab cd/").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Literal(Value::Regex(ref s)) if s == ":s ab cd"));
+    }
+
+    #[test]
     fn parse_hash_literal_with_semicolon_separator() {
         let (rest, expr) = primary("{ out => \"x\"; }").unwrap();
         assert_eq!(rest, "");
