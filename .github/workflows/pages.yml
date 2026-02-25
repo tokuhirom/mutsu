@@ -28,7 +28,9 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build WASM
-        run: wasm-pack build --target web --no-default-features --features wasm --out-dir wasm-demo/pkg
+        run: |
+          wasm-pack build --target web --no-default-features --features wasm
+          mv pkg wasm-demo/pkg
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
