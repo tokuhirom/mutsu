@@ -1249,6 +1249,11 @@ impl Interpreter {
         &self.output
     }
 
+    /// Clear the output buffer (used by the REPL after each iteration).
+    pub fn clear_output(&mut self) {
+        self.output.clear();
+    }
+
     /// Write to the output buffer and also flush to real stdout
     /// when not inside a subtest.
     pub(crate) fn emit_output(&mut self, text: &str) {
