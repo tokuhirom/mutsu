@@ -414,6 +414,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         r
     };
 
+    let mut traits = Vec::new();
     loop {
         let (r, _) = ws(rest)?;
         let Some(after_is) = keyword("is", r) else {
@@ -421,7 +422,8 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             break;
         };
         let (after_is, _) = ws1(after_is)?;
-        let (after_is, _trait_name) = ident(after_is)?;
+        let (after_is, trait_name) = ident(after_is)?;
+        traits.push(trait_name);
         rest = after_is;
     }
 
@@ -451,7 +453,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             literal_value: None,
             sub_signature: None,
             where_constraint: None,
-            traits: Vec::new(),
+            traits,
             optional_marker: false,
             outer_sub_signature: None,
             code_signature: None,

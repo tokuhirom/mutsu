@@ -249,12 +249,16 @@ impl Compiler {
                     merged.extend(loop_body);
                     loop_body = merged;
                 }
+                if let Some(writeback) = Self::for_rw_writeback_stmt(param, param_def, iterable) {
+                    loop_body.push(writeback);
+                }
                 let arity = if !params.is_empty() {
                     params.len() as u32
                 } else {
                     1
                 };
-                self.compile_expr(iterable);
+                let normalized_iterable = Self::normalize_for_iterable(iterable);
+                self.compile_expr(&normalized_iterable);
                 let loop_idx = self.code.emit(OpCode::ForLoop {
                     param_idx,
                     param_local: None,
