@@ -240,28 +240,40 @@ impl Interpreter {
         let spec = self.make_io_spec_instance();
         self.env.insert("$*SPEC".to_string(), spec.clone());
         self.env.insert("*SPEC".to_string(), spec);
-        let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let cwd_str = cwd.to_string_lossy().to_string();
+        #[cfg(not(target_arch = "wasm32"))]
+        let cwd_str = env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .to_string_lossy()
+            .to_string();
+        #[cfg(target_arch = "wasm32")]
+        let cwd_str = "/".to_string();
         let cwd_val = self.make_io_path_instance(&cwd_str);
         self.env.insert("$*CWD".to_string(), cwd_val.clone());
         self.env.insert("*CWD".to_string(), cwd_val);
-        let tmpdir = env::temp_dir();
-        let tmpdir_str = tmpdir.to_string_lossy().to_string();
+        #[cfg(not(target_arch = "wasm32"))]
+        let tmpdir_str = env::temp_dir().to_string_lossy().to_string();
+        #[cfg(target_arch = "wasm32")]
+        let tmpdir_str = "/tmp".to_string();
         let tmpdir_val = self.make_io_path_instance(&tmpdir_str);
         self.env.insert("$*TMPDIR".to_string(), tmpdir_val.clone());
         self.env.insert("*TMPDIR".to_string(), tmpdir_val);
-        if let Ok(home) = env::var("HOME") {
-            let home_val = self.make_io_path_instance(&home);
-            self.env.insert("$*HOME".to_string(), home_val.clone());
-            self.env.insert("*HOME".to_string(), home_val);
+        #[cfg(not(target_arch = "wasm32"))]
+        let home_val = if let Ok(home) = env::var("HOME") {
+            self.make_io_path_instance(&home)
         } else {
-            self.env.insert("$*HOME".to_string(), Value::Nil);
-            self.env.insert("*HOME".to_string(), Value::Nil);
-        }
+            Value::Nil
+        };
+        #[cfg(target_arch = "wasm32")]
+        let home_val = Value::Nil;
+        self.env.insert("$*HOME".to_string(), home_val.clone());
+        self.env.insert("*HOME".to_string(), home_val);
         // $*EXECUTABLE - path to the interpreter binary
+        #[cfg(not(target_arch = "wasm32"))]
         let exe_path = std::env::current_exe()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| "mutsu".to_string());
+        #[cfg(target_arch = "wasm32")]
+        let exe_path = "mutsu".to_string();
         let exe_io = self.make_io_path_instance(&exe_path);
         self.env.insert("$*EXECUTABLE".to_string(), exe_io.clone());
         self.env.insert("*EXECUTABLE".to_string(), exe_io);

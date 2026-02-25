@@ -32,6 +32,7 @@ use wasm_bindgen::prelude::*;
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn evaluate(code: &str) -> String {
+    console_error_panic_hook::set_once();
     let mut interpreter = Interpreter::new();
     match interpreter.run(code) {
         Ok(output) => output,
