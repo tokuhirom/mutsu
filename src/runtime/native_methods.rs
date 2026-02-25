@@ -2,6 +2,7 @@ use super::*;
 use std::process::ChildStdin;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc;
 use unicode_segmentation::UnicodeSegmentation;
 
 type StdinMap = std::sync::Mutex<HashMap<u32, Arc<std::sync::Mutex<Option<ChildStdin>>>>>;
@@ -23,6 +24,37 @@ type CancellationMap = std::sync::Mutex<HashMap<u64, Arc<AtomicBool>>>;
 fn cancellation_map() -> &'static CancellationMap {
     static MAP: OnceLock<CancellationMap> = OnceLock::new();
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+/// Supply channel registry: supply_id -> Receiver for streaming data from
+/// Proc::Async stdout/stderr reader threads.
+type SupplyChannelMap = std::sync::Mutex<HashMap<u64, mpsc::Receiver<SupplyEvent>>>;
+
+fn supply_channel_map() -> &'static SupplyChannelMap {
+    static MAP: OnceLock<SupplyChannelMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+/// Events sent through supply channels
+#[derive(Debug, Clone)]
+pub(crate) enum SupplyEvent {
+    Emit(Value),
+    Done,
+}
+
+/// Take a receiver from the supply channel registry (can only be consumed once)
+pub(crate) fn take_supply_channel(supply_id: u64) -> Option<mpsc::Receiver<SupplyEvent>> {
+    if let Ok(mut map) = supply_channel_map().lock() {
+        map.remove(&supply_id)
+    } else {
+        None
+    }
+}
+
+/// Public access to the supply channel map for signal registration
+pub(super) fn supply_channel_map_pub()
+-> &'static std::sync::Mutex<HashMap<u64, mpsc::Receiver<SupplyEvent>>> {
+    supply_channel_map()
 }
 
 #[derive(Debug, Default)]
@@ -1155,10 +1187,23 @@ impl Interpreter {
                     register_supplier_tap(*supplier_id as u64, tap_cb.clone());
                 }
 
-                // If this Supply has a supply_id (belongs to Proc::Async),
-                // register tap in the global registry so .start can find it
+                // If this Supply has a supply_id (belongs to Proc::Async or signal()),
+                // check if there's a live channel — if so, start a background reader thread
                 if let Some(Value::Int(sid)) = attributes.get("supply_id") {
                     register_supply_tap(*sid as u64, tap_cb.clone());
+                }
+
+                // For live/async supplies (e.g., signal), spawn a background thread
+                // to consume events from the channel and call the callback.
+                if let Some(Value::Int(sid)) = attributes.get("supply_id")
+                    && let Some(rx) = take_supply_channel(*sid as u64)
+                {
+                    let mut thread_interp = self.clone_for_thread();
+                    let cb = tap_cb.clone();
+                    std::thread::spawn(move || {
+                        Self::run_supply_act_loop(&mut thread_interp, &rx, &cb);
+                    });
+                    return Ok(Value::make_instance("Tap".to_string(), HashMap::new()));
                 }
 
                 // For on-demand supplies, execute the callback to produce values
@@ -1270,6 +1315,43 @@ impl Interpreter {
                 let mut new_attrs = attributes.clone();
                 new_attrs.insert("scheduler".to_string(), scheduler);
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+            }
+            "lines" => {
+                // Create a derived Supply that splits values into lines.
+                // If the parent has a supply_id (for Proc::Async streaming),
+                // propagate it as parent_supply_id so the react event loop
+                // can find the underlying channel.
+                let new_id = next_supply_id();
+                let mut new_attrs = HashMap::new();
+                new_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                new_attrs.insert("supply_id".to_string(), Value::Int(new_id as i64));
+                new_attrs.insert("is_lines".to_string(), Value::Bool(true));
+                if let Some(parent_id) = attributes.get("supply_id") {
+                    new_attrs.insert("parent_supply_id".to_string(), parent_id.clone());
+                }
+                Ok(Value::make_instance("Supply".to_string(), new_attrs))
+            }
+            "merge" => {
+                // Supply.merge: merge multiple supplies into one
+                // For now, just concatenate values from all supplies
+                let new_id = next_supply_id();
+                let mut all_values = Vec::new();
+                if let Some(Value::Array(items, ..)) = attributes.get("values") {
+                    all_values.extend(items.iter().cloned());
+                }
+                for arg in &args {
+                    if let Value::Instance { attributes, .. } = arg
+                        && let Some(Value::Array(items, ..)) = attributes.get("values")
+                    {
+                        all_values.extend(items.iter().cloned());
+                    }
+                }
+                let mut new_attrs = HashMap::new();
+                new_attrs.insert("values".to_string(), Value::array(all_values));
+                new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                new_attrs.insert("supply_id".to_string(), Value::Int(new_id as i64));
                 Ok(Value::make_instance("Supply".to_string(), new_attrs))
             }
             "Supply" | "supply" => {
@@ -1459,6 +1541,20 @@ impl Interpreter {
                     register_supply_tap(*sid as u64, tap_cb.clone());
                 }
 
+                // For live/async supplies (e.g., signal), spawn a background thread
+                // to consume events from the channel and call the callback.
+                if let Some(Value::Int(sid)) = attrs.get("supply_id")
+                    && let Some(rx) = take_supply_channel(*sid as u64)
+                {
+                    let mut thread_interp = self.clone_for_thread();
+                    let cb = tap_cb.clone();
+                    std::thread::spawn(move || {
+                        Self::run_supply_act_loop(&mut thread_interp, &rx, &cb);
+                    });
+                    let tap_instance = Value::make_instance("Tap".to_string(), HashMap::new());
+                    return Ok((tap_instance, attrs));
+                }
+
                 // For on-demand supplies, execute the callback to produce values
                 let values = if let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned() {
                     let emitter = Value::make_instance("Supplier".to_string(), {
@@ -1572,7 +1668,6 @@ impl Interpreter {
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
         match method {
             "start" => {
-                use std::io::Read;
                 use std::process::{Command, Stdio};
 
                 attrs.insert("started".to_string(), Value::Bool(true));
@@ -1590,7 +1685,7 @@ impl Interpreter {
                     (prog, a)
                 };
 
-                // Get stdout/stderr taps from the global registry (populated by .tap)
+                // Get stdout/stderr supply IDs
                 let stdout_supply_id = attrs.get("stdout").and_then(|v| {
                     if let Value::Instance { attributes, .. } = v
                         && let Some(Value::Int(id)) = attributes.get("supply_id")
@@ -1607,6 +1702,8 @@ impl Interpreter {
                     }
                     None
                 });
+
+                // Get taps for non-streaming (backward compat) replay
                 let stdout_taps = stdout_supply_id.map(get_supply_taps).unwrap_or_default();
                 let stderr_taps = stderr_supply_id.map(get_supply_taps).unwrap_or_default();
 
@@ -1629,6 +1726,11 @@ impl Interpreter {
                 let pid = child.id();
                 attrs.insert("pid".to_string(), Value::Int(pid as i64));
 
+                // Resolve ready promise if set
+                if let Some(Value::Promise(ready)) = attrs.get("ready_promise") {
+                    ready.try_keep(Value::Int(pid as i64)).ok();
+                }
+
                 // Store stdin in global registry if piped
                 if let Some(stdin) = child.stdin.take() {
                     let stdin_arc = Arc::new(std::sync::Mutex::new(Some(stdin)));
@@ -1636,6 +1738,23 @@ impl Interpreter {
                         map.insert(pid, stdin_arc);
                     }
                 }
+
+                // Create streaming channels for stdout/stderr
+                // These will be consumed by the react event loop
+                let stdout_channel = stdout_supply_id.map(|sid| {
+                    let (tx, rx) = mpsc::channel();
+                    if let Ok(mut map) = supply_channel_map().lock() {
+                        map.insert(sid, rx);
+                    }
+                    tx
+                });
+                let stderr_channel = stderr_supply_id.map(|sid| {
+                    let (tx, rx) = mpsc::channel();
+                    if let Ok(mut map) = supply_channel_map().lock() {
+                        map.insert(sid, rx);
+                    }
+                    tx
+                });
 
                 // Take stdout/stderr handles before moving child into thread
                 let child_stdout = child.stdout.take();
@@ -1646,39 +1765,59 @@ impl Interpreter {
                 let cmd_arr_clone = cmd_arr.clone();
 
                 std::thread::spawn(move || {
-                    // Spawn stdout reader thread — collects all output as a string
+                    // Spawn stdout reader thread — streams raw chunks through channel
                     let stdout_handle = child_stdout.map(|stdout| {
+                        let tx = stdout_channel;
                         std::thread::spawn(move || {
-                            let mut reader = std::io::BufReader::new(stdout);
+                            use std::io::Read;
+                            let mut stdout = stdout;
                             let mut collected = String::new();
                             let mut buf = [0u8; 4096];
                             loop {
-                                match reader.read(&mut buf) {
+                                match stdout.read(&mut buf) {
                                     Ok(0) => break,
                                     Ok(n) => {
-                                        collected.push_str(&String::from_utf8_lossy(&buf[..n]));
+                                        let chunk = String::from_utf8_lossy(&buf[..n]).into_owned();
+                                        if let Some(ref tx) = tx {
+                                            let _ = tx
+                                                .send(SupplyEvent::Emit(Value::Str(chunk.clone())));
+                                        }
+                                        collected.push_str(&chunk);
                                     }
                                     Err(_) => break,
                                 }
+                            }
+                            if let Some(ref tx) = tx {
+                                let _ = tx.send(SupplyEvent::Done);
                             }
                             collected
                         })
                     });
 
-                    // Spawn stderr reader thread — collects all output as a string
+                    // Spawn stderr reader thread — streams raw chunks through channel
                     let stderr_handle = child_stderr.map(|stderr| {
+                        let tx = stderr_channel;
                         std::thread::spawn(move || {
-                            let mut reader = std::io::BufReader::new(stderr);
+                            use std::io::Read;
+                            let mut stderr = stderr;
                             let mut collected = String::new();
                             let mut buf = [0u8; 4096];
                             loop {
-                                match reader.read(&mut buf) {
+                                match stderr.read(&mut buf) {
                                     Ok(0) => break,
                                     Ok(n) => {
-                                        collected.push_str(&String::from_utf8_lossy(&buf[..n]));
+                                        let chunk = String::from_utf8_lossy(&buf[..n]).into_owned();
+                                        if let Some(ref tx) = tx {
+                                            let _ = tx
+                                                .send(SupplyEvent::Emit(Value::Str(chunk.clone())));
+                                        }
+                                        collected.push_str(&chunk);
                                     }
                                     Err(_) => break,
                                 }
+                            }
+                            if let Some(ref tx) = tx {
+                                let _ = tx.send(SupplyEvent::Done);
                             }
                             collected
                         })
@@ -1718,15 +1857,11 @@ impl Interpreter {
                         map.remove(&pid);
                     }
 
-                    // Fire stdout taps on the thread interpreter
-                    // (this runs in the spawned thread, but we pass
-                    // collected data and taps for replaying on .result)
                     let mut proc_attrs = HashMap::new();
                     proc_attrs.insert("exitcode".to_string(), Value::Int(exit_code));
                     proc_attrs.insert("signal".to_string(), Value::Int(signal));
                     proc_attrs.insert("command".to_string(), Value::real_array(cmd_arr_clone));
                     proc_attrs.insert("pid".to_string(), Value::Int(pid as i64));
-                    // Store collected output and taps for deferred tap replay
                     proc_attrs.insert("collected_stdout".to_string(), Value::Str(collected_stdout));
                     proc_attrs.insert("collected_stderr".to_string(), Value::Str(collected_stderr));
                     proc_attrs.insert("stdout_taps".to_string(), Value::array(stdout_taps));
@@ -1745,6 +1880,16 @@ impl Interpreter {
                         .first()
                         .and_then(|v| match v {
                             Value::Int(s) => Some(*s as i32),
+                            Value::Enum { value, .. } => Some(*value as i32),
+                            Value::Str(s) => match s.as_str() {
+                                "HUP" | "SIGHUP" => Some(libc::SIGHUP),
+                                "INT" | "SIGINT" => Some(libc::SIGINT),
+                                "QUIT" | "SIGQUIT" => Some(libc::SIGQUIT),
+                                "KILL" | "SIGKILL" => Some(libc::SIGKILL),
+                                "TERM" | "SIGTERM" => Some(libc::SIGTERM),
+                                "PIPE" | "SIGPIPE" => Some(libc::SIGPIPE),
+                                _ => s.parse::<i32>().ok(),
+                            },
                             _ => None,
                         })
                         .unwrap_or(libc::SIGHUP);
@@ -1813,6 +1958,43 @@ impl Interpreter {
                     }
                 }
                 Ok((Value::Nil, attrs))
+            }
+            "ready" => {
+                // Returns a Promise that resolves with the PID when the process
+                // has been started. If already started, resolves immediately.
+                let promise = SharedPromise::new();
+                if let Some(Value::Int(pid)) = attrs.get("pid") {
+                    promise.keep(Value::Int(*pid), String::new(), String::new());
+                }
+                // Store the ready promise so start can resolve it
+                attrs.insert("ready_promise".to_string(), Value::Promise(promise.clone()));
+                Ok((Value::Promise(promise), attrs))
+            }
+            "print" | "say" => {
+                // Write string to stdin of process
+                let data = args.first().cloned().unwrap_or(Value::Nil);
+                let mut s = data.to_string_value();
+                if method == "say" {
+                    s.push('\n');
+                }
+                if let Some(Value::Int(pid)) = attrs.get("pid") {
+                    let pid = *pid as u32;
+                    if let Ok(map) = proc_stdin_map().lock()
+                        && let Some(stdin_arc) = map.get(&pid).cloned()
+                    {
+                        drop(map);
+                        if let Ok(mut guard) = stdin_arc.lock()
+                            && let Some(ref mut stdin) = *guard
+                        {
+                            use std::io::Write;
+                            let _ = stdin.write_all(s.as_bytes());
+                            let _ = stdin.flush();
+                        }
+                    }
+                }
+                let p = SharedPromise::new();
+                p.keep(Value::Bool(true), String::new(), String::new());
+                Ok((Value::Promise(p), attrs))
             }
             _ => Err(RuntimeError::new(format!(
                 "No native mutable method '{}' on Proc::Async",
@@ -2195,6 +2377,36 @@ impl Interpreter {
             }
             "WHAT" => Value::Package("Encoding::Decoder".to_string()),
             _ => Value::Nil,
+        }
+    }
+
+    /// Background event loop for Supply.act on live supplies (e.g., signal).
+    /// Receives events from the channel and calls the callback.
+    /// If the callback calls `exit`, terminates the entire process.
+    fn run_supply_act_loop(
+        interp: &mut Interpreter,
+        rx: &std::sync::mpsc::Receiver<SupplyEvent>,
+        cb: &Value,
+    ) {
+        use std::io::Write;
+        while let Ok(SupplyEvent::Emit(value)) = rx.recv() {
+            let _ = interp.call_sub_value(cb.clone(), vec![value], true);
+            // Flush stdout
+            if !interp.output.is_empty() {
+                print!("{}", interp.output);
+                let _ = std::io::stdout().flush();
+                interp.output.clear();
+            }
+            // Flush stderr
+            if !interp.stderr_output.is_empty() {
+                eprint!("{}", interp.stderr_output);
+                let _ = std::io::stderr().flush();
+                interp.stderr_output.clear();
+            }
+            // If the callback called exit, terminate the process
+            if interp.halted {
+                std::process::exit(interp.exit_code as i32);
+            }
         }
     }
 }

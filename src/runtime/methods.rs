@@ -646,7 +646,8 @@ impl Interpreter {
             || (matches!(method, "max" | "min")
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
             || (method == "Supply"
-                && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supplier"));
+                && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supplier"))
+            || (matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(class_name, method)));
         let native_result = if bypass_native_fastpath {
             None
         } else {
@@ -962,17 +963,17 @@ impl Interpreter {
                 return self.dispatch_are(target, &args);
             }
             "say" if args.is_empty() => {
-                self.output.push_str(&crate::runtime::gist_value(&target));
-                self.output.push('\n');
+                let s = format!("{}\n", crate::runtime::gist_value(&target));
+                self.emit_output(&s);
                 return Ok(Value::Nil);
             }
             "print" if args.is_empty() => {
-                self.output.push_str(&target.to_string_value());
+                self.emit_output(&target.to_string_value());
                 return Ok(Value::Nil);
             }
             "put" if args.is_empty() => {
-                self.output.push_str(&crate::runtime::gist_value(&target));
-                self.output.push('\n');
+                let s = format!("{}\n", crate::runtime::gist_value(&target));
+                self.emit_output(&s);
                 return Ok(Value::Nil);
             }
             "shape" if args.is_empty() => {
@@ -1216,6 +1217,7 @@ impl Interpreter {
                     Value::Hash(_) => "Hash",
                     Value::Rat(_, _) => "Rat",
                     Value::FatRat(_, _) => "FatRat",
+                    Value::BigRat(_, _) => "Rat",
                     Value::Complex(_, _) => "Complex",
                     Value::Set(_) => "Set",
                     Value::Bag(_) => "Bag",
@@ -5091,6 +5093,9 @@ impl Interpreter {
         let mut positional = Vec::new();
         let mut has_neg_v = false;
         let mut has_end = false;
+        let mut has_k = false;
+        let mut has_kv = false;
+        let mut has_p = false;
         for arg in args {
             match arg {
                 Value::Pair(key, value) if key == "v" => {
@@ -5102,6 +5107,15 @@ impl Interpreter {
                     if value.truthy() {
                         has_end = true;
                     }
+                }
+                Value::Pair(key, value) if key == "k" => {
+                    has_k = value.truthy();
+                }
+                Value::Pair(key, value) if key == "kv" => {
+                    has_kv = value.truthy();
+                }
+                Value::Pair(key, value) if key == "p" => {
+                    has_p = value.truthy();
                 }
                 _ => positional.push(arg.clone()),
             }
@@ -5121,11 +5135,13 @@ impl Interpreter {
             return Err(err);
         }
         let func = positional.first().cloned();
-        let mut items = crate::runtime::utils::value_to_list(&target);
-        if has_end {
-            items.reverse();
+        let items = crate::runtime::utils::value_to_list(&target);
+        if let Some((idx, value)) = self.find_first_match_over_items(func, &items, has_end)? {
+            return Ok(super::builtins_collection::format_first_result(
+                idx, value, has_k, has_kv, has_p,
+            ));
         }
-        self.eval_first_over_items(func, items)
+        Ok(Value::Nil)
     }
 
     /// `$n.polymod(@divisors)` — successive modular decomposition.

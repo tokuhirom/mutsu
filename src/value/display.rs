@@ -1,4 +1,6 @@
 use super::*;
+use num_bigint::BigInt as NumBigInt;
+use num_traits::{Signed, ToPrimitive, Zero};
 
 pub(crate) fn is_internal_anon_type_name(name: &str) -> bool {
     name.starts_with("__ANON_") && name.ends_with("__")
@@ -111,6 +113,115 @@ pub fn format_complex(r: f64, i: f64) -> String {
     }
 }
 
+fn format_terminating_ratio_exact(
+    numer: i64,
+    denom: i64,
+    append_dot_zero_for_integer: bool,
+) -> String {
+    if denom == 0 {
+        if numer == 0 {
+            return "NaN".to_string();
+        }
+        return if numer > 0 { "Inf" } else { "-Inf" }.to_string();
+    }
+
+    let sign = (numer < 0) ^ (denom < 0);
+    let n = (numer as i128).abs();
+    let d = (denom as i128).abs();
+    let int_part = n / d;
+    let mut rem = n % d;
+
+    if rem == 0 {
+        if append_dot_zero_for_integer {
+            return format!("{}{}.0", if sign { "-" } else { "" }, int_part);
+        }
+        return format!("{}{}", if sign { "-" } else { "" }, int_part);
+    }
+
+    let mut frac = String::new();
+    while rem != 0 {
+        rem *= 10;
+        let digit = rem / d;
+        rem %= d;
+        frac.push(char::from(b'0' + (digit as u8)));
+    }
+
+    format!("{}{}.{}", if sign { "-" } else { "" }, int_part, frac)
+}
+
+fn format_ratio_bigint_decimal(
+    numer: &NumBigInt,
+    denom: &NumBigInt,
+    append_dot_zero_for_integer: bool,
+    max_fraction_digits: Option<usize>,
+) -> String {
+    if denom.is_zero() {
+        if numer.is_zero() {
+            return "NaN".to_string();
+        }
+        return if numer.is_positive() {
+            "Inf".to_string()
+        } else {
+            "-Inf".to_string()
+        };
+    }
+
+    let sign = numer.is_negative() ^ denom.is_negative();
+    let n = numer.abs();
+    let d = denom.abs();
+    let int_part = &n / &d;
+    let mut rem = n % &d;
+
+    if rem.is_zero() {
+        if append_dot_zero_for_integer {
+            return format!("{}{}.0", if sign { "-" } else { "" }, int_part);
+        }
+        return format!("{}{}", if sign { "-" } else { "" }, int_part);
+    }
+
+    let mut frac = String::new();
+    while !rem.is_zero() {
+        if max_fraction_digits.is_some_and(|limit| frac.len() >= limit) {
+            break;
+        }
+        rem *= 10u8;
+        let digit = &rem / &d;
+        rem %= &d;
+        let ch = digit.to_u8().unwrap_or(0);
+        frac.push(char::from(b'0' + ch));
+    }
+
+    format!("{}{}.{}", if sign { "-" } else { "" }, int_part, frac)
+}
+
+fn has_terminating_decimal(denom: i64) -> bool {
+    if denom == 0 {
+        return false;
+    }
+    let mut dd = (denom as i128).abs();
+    while dd % 2 == 0 {
+        dd /= 2;
+    }
+    while dd % 5 == 0 {
+        dd /= 5;
+    }
+    dd == 1
+}
+
+fn has_terminating_decimal_bigint(denom: &NumBigInt) -> bool {
+    if denom.is_zero() {
+        return false;
+    }
+    let mut dd = denom.abs();
+    while (&dd % 2u8).is_zero() {
+        dd /= 2u8;
+    }
+    while (&dd % 5u8).is_zero() {
+        dd /= 5u8;
+    }
+    dd == NumBigInt::from(1u8)
+}
+
 impl Value {
     pub(crate) fn to_string_value(&self) -> String {
         match self {
@@ -206,27 +317,12 @@ impl Value {
                 } else if *n % *d == 0 {
                     // Exact integer: Rat(10, 2) => "5"
                     format!("{}", *n / *d)
+                } else if has_terminating_decimal(*d) {
+                    // Exact decimal representation without f64 rounding.
+                    format_terminating_ratio_exact(*n, *d, false)
                 } else {
                     let whole = *n as f64 / *d as f64;
-                    // Check if it can be represented as exact decimal
-                    let mut dd = *d;
-                    while dd % 2 == 0 {
-                        dd /= 2;
-                    }
-                    while dd % 5 == 0 {
-                        dd /= 5;
-                    }
-                    if dd == 1 {
-                        // Exact decimal representation
-                        let s = format!("{}", whole);
-                        if s.contains('.') {
-                            s
-                        } else {
-                            format!("{}.0", whole)
-                        }
-                    } else {
-                        format!("{:.6}", whole)
-                    }
+                    format!("{:.6}", whole)
                 }
             }
             Value::FatRat(a, b) => {
@@ -240,25 +336,28 @@ impl Value {
                     }
                 } else if *a % *b == 0 {
                     format!("{}", *a / *b)
+                } else if has_terminating_decimal(*b) {
+                    format_terminating_ratio_exact(*a, *b, false)
                 } else {
                     let whole = *a as f64 / *b as f64;
-                    let mut dd = *b;
-                    while dd % 2 == 0 {
-                        dd /= 2;
-                    }
-                    while dd % 5 == 0 {
-                        dd /= 5;
-                    }
-                    if dd == 1 {
-                        let s = format!("{}", whole);
-                        if s.contains('.') {
-                            s
-                        } else {
-                            format!("{}.0", whole)
-                        }
+                    format!("{:.6}", whole)
+                }
+            }
+            Value::BigRat(n, d) => {
+                if d.is_zero() {
+                    if n.is_zero() {
+                        "NaN".to_string()
+                    } else if n.is_positive() {
+                        "Inf".to_string()
                     } else {
-                        format!("{:.6}", whole)
+                        "-Inf".to_string()
                     }
+                } else if (n % d).is_zero() {
+                    format!("{}", n / d)
+                } else if has_terminating_decimal_bigint(d) {
+                    format_ratio_bigint_decimal(n, d, false, None)
+                } else {
+                    format_ratio_bigint_decimal(n, d, false, Some(6))
                 }
             }
             Value::Complex(r, i) => format_complex(*r, *i),

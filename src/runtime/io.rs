@@ -612,7 +612,7 @@ impl Interpreter {
             if name == "$*ERR" {
                 self.stderr_output.push_str(&payload);
             }
-            self.output.push_str(&payload);
+            self.emit_output(&payload);
             return Ok(());
         }
         let payload = if newline {
@@ -623,7 +623,7 @@ impl Interpreter {
         if name == "$*ERR" {
             self.stderr_output.push_str(&payload);
         }
-        self.output.push_str(&payload);
+        self.emit_output(&payload);
         Ok(())
     }
 

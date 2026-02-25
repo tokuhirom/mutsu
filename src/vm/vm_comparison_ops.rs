@@ -3,10 +3,19 @@ use super::*;
 pub(super) fn value_to_f64(v: &Value) -> f64 {
     match v {
         Value::Int(n) => *n as f64,
+        Value::BigInt(n) => num_traits::ToPrimitive::to_f64(n).unwrap_or(0.0),
         Value::Num(n) => *n,
         Value::Rat(n, d) => {
             if *d != 0 {
                 *n as f64 / *d as f64
+            } else {
+                0.0
+            }
+        }
+        Value::BigRat(n, d) => {
+            if d != &num_bigint::BigInt::from(0) {
+                num_traits::ToPrimitive::to_f64(n).unwrap_or(0.0)
+                    / num_traits::ToPrimitive::to_f64(d).unwrap_or(1.0)
             } else {
                 0.0
             }

@@ -70,6 +70,16 @@ fn is_core_raku_type(name: &str) -> bool {
 }
 
 impl VM {
+    fn array_elements_match_constraint(&mut self, constraint: &str, value: &Value) -> bool {
+        match value {
+            Value::Array(items, ..) => items
+                .iter()
+                .all(|item| self.array_elements_match_constraint(constraint, item)),
+            Value::Nil => true,
+            _ => self.interpreter.type_matches_value(constraint, value),
+        }
+    }
+
     pub(super) fn exec_make_range_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -320,6 +330,18 @@ impl VM {
             Value::Str(s) => s.clone(),
             _ => unreachable!("AssignExpr name must be a string constant"),
         };
+        if name.starts_with('&') && !name.contains("::") {
+            let bare = name.trim_start_matches('&');
+            let has_variable_slot = self.interpreter.env().contains_key(&name);
+            let is_routine_symbol = self.interpreter.has_function(bare)
+                || self.interpreter.has_multi_function(bare)
+                || self.interpreter.has_proto(bare)
+                || self.interpreter.resolve_token_defs(bare).is_some()
+                || self.interpreter.has_proto_token(bare);
+            if is_routine_symbol && !has_variable_slot {
+                return Err(RuntimeError::new("X::Assignment::RO"));
+            }
+        }
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let val = if name.starts_with('%') {
             runtime::coerce_to_hash(raw_val)
@@ -614,11 +636,8 @@ impl VM {
             .split_once('(')
             .map_or(base_constraint, |(target, _)| target);
         let value = self.stack.last().expect("TypeCheck: empty stack").clone();
-        if let Value::Array(items, ..) = &value {
-            let all_match = items
-                .iter()
-                .all(|item| self.interpreter.type_matches_value(constraint, item));
-            if !all_match {
+        if let Value::Array(..) = &value {
+            if !self.array_elements_match_constraint(constraint, &value) {
                 return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
             }
             return Ok(());

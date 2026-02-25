@@ -3,7 +3,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::ast::{ParamDef, Stmt};
 use num_bigint::BigInt as NumBigInt;
-use num_traits::{ToPrimitive, Zero};
+use num_integer::Integer;
+use num_traits::{Signed, ToPrimitive, Zero};
 use std::sync::{Arc, Condvar, Mutex, Weak};
 
 mod display;
@@ -27,7 +28,7 @@ pub(crate) fn current_time_secs_f64() -> f64 {
 }
 
 pub(crate) use display::is_internal_anon_type_name;
-pub use display::{tclc_str, wordcase_str};
+pub use display::{format_complex, tclc_str, wordcase_str};
 pub use error::{RuntimeError, RuntimeErrorCode};
 // SubData is re-exported so callers can destructure Value::Sub(data)
 
@@ -90,6 +91,31 @@ pub fn make_rat(num: i64, den: i64) -> Value {
     Value::Rat(n, d)
 }
 
+pub fn make_big_rat(num: NumBigInt, den: NumBigInt) -> Value {
+    if den.is_zero() {
+        if num.is_zero() {
+            return Value::Rat(0, 0);
+        }
+        return if num.is_positive() {
+            Value::Rat(1, 0)
+        } else {
+            Value::Rat(-1, 0)
+        };
+    }
+    let g = num.gcd(&den);
+    let mut n = num / &g;
+    let mut d = den / &g;
+    if d.is_negative() {
+        n = -n;
+        d = -d;
+    }
+    if let (Some(n_i64), Some(d_i64)) = (n.to_i64(), d.to_i64()) {
+        Value::Rat(n_i64, d_i64)
+    } else {
+        Value::BigRat(n, d)
+    }
+}
+
 #[allow(private_interfaces)]
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -113,6 +139,7 @@ pub enum Value {
     Hash(Arc<HashMap<String, Value>>),
     Rat(i64, i64),
     FatRat(i64, i64),
+    BigRat(NumBigInt, NumBigInt),
     Complex(f64, f64),
     Set(Arc<HashSet<String>>),
     Bag(Arc<HashMap<String, i64>>),
@@ -493,6 +520,22 @@ impl PartialEq for Value {
                 }
                 (*n as f64 / *d as f64) == *f
             }
+            (Value::BigRat(an, ad), Value::BigRat(bn, bd)) => an == bn && ad == bd,
+            (Value::BigRat(n, d), Value::Int(i)) | (Value::Int(i), Value::BigRat(n, d)) => {
+                !d.is_zero() && *n == NumBigInt::from(*i) * d
+            }
+            (Value::BigRat(n, d), Value::Rat(rn, rd))
+            | (Value::Rat(rn, rd), Value::BigRat(n, d)) => {
+                !d.is_zero()
+                    && *rd != 0
+                    && n.clone() * NumBigInt::from(*rd) == NumBigInt::from(*rn) * d
+            }
+            (Value::BigRat(n, d), Value::Num(f)) | (Value::Num(f), Value::BigRat(n, d)) => {
+                if d.is_zero() {
+                    return false;
+                }
+                (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)) == *f
+            }
             (Value::Complex(r1, i1), Value::Complex(r2, i2)) => {
                 let f_eq = |a: &f64, b: &f64| (a.is_nan() && b.is_nan()) || a == b;
                 f_eq(r1, r2) && f_eq(i1, i2)
@@ -813,6 +856,7 @@ impl Value {
                 | Value::Num(_)
                 | Value::Rat(_, _)
                 | Value::FatRat(_, _)
+                | Value::BigRat(_, _)
         )
     }
 
@@ -839,6 +883,17 @@ impl Value {
                 } else if *n == 0 {
                     f64::NAN
                 } else if *n > 0 {
+                    f64::INFINITY
+                } else {
+                    f64::NEG_INFINITY
+                }
+            }
+            Value::BigRat(n, d) => {
+                if !d.is_zero() {
+                    n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)
+                } else if n.is_zero() {
+                    f64::NAN
+                } else if n.is_positive() {
                     f64::INFINITY
                 } else {
                     f64::NEG_INFINITY
@@ -872,6 +927,13 @@ impl Value {
             Value::Rat(n, d) => {
                 if *d != 0 {
                     NumBigInt::from(n / d)
+                } else {
+                    NumBigInt::from(0)
+                }
+            }
+            Value::BigRat(n, d) => {
+                if !d.is_zero() {
+                    n / d
                 } else {
                     NumBigInt::from(0)
                 }

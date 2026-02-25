@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::value::{JunctionKind, RuntimeError, Value};
+use num_traits::{Signed, ToPrimitive, Zero};
 
 /// Maximum number of elements when expanding an infinite range to a list.
 const MAX_RANGE_EXPAND: i64 = 1_000_000;
@@ -271,6 +272,7 @@ pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
             | "Rat"
             | "FatRat"
             | "Complex"
+            | "atomicint"
             | "int"
             | "num"
             | "str"
@@ -296,6 +298,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::Pair(_, _) | Value::ValuePair(_, _) => "Pair",
         Value::Rat(_, _) => "Rat",
         Value::FatRat(_, _) => "FatRat",
+        Value::BigRat(_, _) => "Rat",
         Value::Complex(_, _) => "Complex",
         Value::Set(_) => "Set",
         Value::Bag(_) => "Bag",
@@ -655,6 +658,7 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
     match val {
         Value::Num(f) => Some(*f),
         Value::Int(i) => Some(*i as f64),
+        Value::BigInt(n) => n.to_f64(),
         Value::Rat(n, d) => {
             if *d != 0 {
                 Some(*n as f64 / *d as f64)
@@ -672,6 +676,17 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
             } else if *n > 0 {
                 Some(f64::INFINITY)
             } else if *n < 0 {
+                Some(f64::NEG_INFINITY)
+            } else {
+                Some(f64::NAN)
+            }
+        }
+        Value::BigRat(n, d) => {
+            if !d.is_zero() {
+                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
+            } else if n.is_positive() {
+                Some(f64::INFINITY)
+            } else if n.is_negative() {
                 Some(f64::NEG_INFINITY)
             } else {
                 Some(f64::NAN)
@@ -724,8 +739,29 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
             version_cmp_parts(ap, bp) as i32
         }
         (Value::Int(a), Value::Int(b)) => a.cmp(b) as i32,
+        (Value::BigInt(a), Value::BigInt(b)) => a.cmp(b) as i32,
+        (Value::BigInt(a), Value::Int(b)) => a.cmp(&num_bigint::BigInt::from(*b)) as i32,
+        (Value::Int(a), Value::BigInt(b)) => num_bigint::BigInt::from(*a).cmp(b) as i32,
         (Value::Num(a), Value::Num(b)) => {
             a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal) as i32
+        }
+        (Value::BigInt(a), Value::Num(b)) => {
+            a.to_f64()
+                .unwrap_or(if a.is_positive() {
+                    f64::INFINITY
+                } else {
+                    f64::NEG_INFINITY
+                })
+                .partial_cmp(b)
+                .unwrap_or(std::cmp::Ordering::Equal) as i32
+        }
+        (Value::Num(a), Value::BigInt(b)) => {
+            a.partial_cmp(&b.to_f64().unwrap_or(if b.is_positive() {
+                f64::INFINITY
+            } else {
+                f64::NEG_INFINITY
+            }))
+            .unwrap_or(std::cmp::Ordering::Equal) as i32
         }
         (Value::Int(a), Value::Num(b)) => (*a as f64)
             .partial_cmp(b)

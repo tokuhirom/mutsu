@@ -414,6 +414,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         r
     };
 
+    let mut traits = Vec::new();
     loop {
         let (r, _) = ws(rest)?;
         let Some(after_is) = keyword("is", r) else {
@@ -421,7 +422,8 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             break;
         };
         let (after_is, _) = ws1(after_is)?;
-        let (after_is, _trait_name) = ident(after_is)?;
+        let (after_is, trait_name) = ident(after_is)?;
+        traits.push(trait_name);
         rest = after_is;
     }
 
@@ -451,7 +453,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             literal_value: None,
             sub_signature: None,
             where_constraint: None,
-            traits: Vec::new(),
+            traits,
             optional_marker: false,
             outer_sub_signature: None,
             code_signature: None,
@@ -922,10 +924,40 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, cond_expr) = expression(rest)?;
     let (rest, _) = ws(rest)?;
+
+    // Check for optional pointy block: -> $param { ... }
+    let (rest, param_name) = if let Some(r) = rest.strip_prefix("->") {
+        let (r, _) = ws(r)?;
+        // Parse parameter like $proc
+        if let Some(r_after_sigil) = r.strip_prefix('$') {
+            let end = r_after_sigil
+                .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                .unwrap_or(r_after_sigil.len());
+            let name = &r_after_sigil[..end];
+            let r = &r_after_sigil[end..];
+            let (r, _) = ws(r)?;
+            (r, Some(name.to_string()))
+        } else {
+            (rest, None)
+        }
+    } else {
+        (rest, None)
+    };
+
     let (rest, body) = block(rest)?;
 
     // Prepend $_ = <cond_expr> to the body for topicalization
     let mut with_body = vec![topicalize(&cond_expr)];
+    // If a named parameter was given (-> $param), also assign it
+    if let Some(ref pname) = param_name {
+        with_body.push(Stmt::VarDecl {
+            name: pname.clone(),
+            expr: cond_expr.clone(),
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+        });
+    }
     with_body.extend(body);
 
     let cond = Expr::MethodCall {

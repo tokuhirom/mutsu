@@ -43,8 +43,9 @@ impl Compiler {
                 }
             }
             Expr::ArrayVar(name) => {
-                let var_name = if self.local_map.contains_key(name) {
-                    format!("@{}", name)
+                let sigiled = format!("@{}", name);
+                let var_name = if self.local_map.contains_key(sigiled.as_str()) {
+                    sigiled
                 } else {
                     self.qualify_variable_name(&format!("@{}", name))
                 };
@@ -52,8 +53,9 @@ impl Compiler {
                 self.code.emit(OpCode::GetArrayVar(name_idx));
             }
             Expr::HashVar(name) => {
-                let var_name = if self.local_map.contains_key(name) {
-                    format!("%{}", name)
+                let sigiled = format!("%{}", name);
+                let var_name = if self.local_map.contains_key(sigiled.as_str()) {
+                    sigiled
                 } else {
                     self.qualify_variable_name(&format!("%{}", name))
                 };
@@ -418,6 +420,68 @@ impl Compiler {
                         arity,
                         arg_sources_idx,
                     });
+                }
+                // Rewrite cas($target, $expected, $new) into:
+                // do {
+                //   my $__cas_seen = $target;
+                //   if $__cas_seen == $expected { $target = $new }
+                //   $__cas_seen
+                // }
+                else if name == "cas" && args.len() == 3 {
+                    let assign_stmt = match &args[0] {
+                        Expr::Var(target_name) => Some(Stmt::Assign {
+                            name: target_name.clone(),
+                            expr: args[2].clone(),
+                            op: AssignOp::Assign,
+                        }),
+                        Expr::Index { target, index } => Some(Stmt::Expr(Expr::IndexAssign {
+                            target: target.clone(),
+                            index: index.clone(),
+                            value: Box::new(args[2].clone()),
+                        })),
+                        _ => None,
+                    };
+                    if let Some(assign_stmt) = assign_stmt {
+                        let seen_name = format!(
+                            "__mutsu_cas_seen_{}",
+                            STATE_COUNTER.fetch_add(1, Ordering::Relaxed)
+                        );
+                        let cas_expr = Expr::DoBlock {
+                            body: vec![
+                                Stmt::VarDecl {
+                                    name: seen_name.clone(),
+                                    expr: args[0].clone(),
+                                    type_constraint: None,
+                                    is_state: false,
+                                    is_our: false,
+                                },
+                                Stmt::If {
+                                    cond: Expr::Binary {
+                                        left: Box::new(Expr::Var(seen_name.clone())),
+                                        op: TokenKind::EqEq,
+                                        right: Box::new(args[1].clone()),
+                                    },
+                                    then_branch: vec![assign_stmt],
+                                    else_branch: vec![],
+                                },
+                                Stmt::Expr(Expr::Var(seen_name)),
+                            ],
+                            label: None,
+                        };
+                        self.compile_expr(&cas_expr);
+                    } else {
+                        let arity = args.len() as u32;
+                        let arg_sources_idx = self.add_arg_sources_constant(args);
+                        for arg in args {
+                            self.compile_expr(arg);
+                        }
+                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        self.code.emit(OpCode::CallFunc {
+                            name_idx,
+                            arity,
+                            arg_sources_idx,
+                        });
+                    }
                 }
                 // Rewrite cas($var, &fn) to assignment expression:
                 // $var = fn($var)

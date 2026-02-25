@@ -1,7 +1,17 @@
 #![allow(clippy::result_large_err)]
 
 use crate::runtime;
-use crate::value::{RuntimeError, Value, make_rat};
+use crate::value::{RuntimeError, Value, make_big_rat, make_rat};
+use num_bigint::BigInt as NumBigInt;
+use num_traits::Zero;
+
+fn as_bigint(value: &Value) -> Option<NumBigInt> {
+    match value {
+        Value::Int(i) => Some(NumBigInt::from(*i)),
+        Value::BigInt(i) => Some(i.clone()),
+        _ => None,
+    }
+}
 
 // ── Arithmetic operators ─────────────────────────────────────────────
 pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError> {
@@ -115,7 +125,13 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
             make_rat(an * bn, ad * bd)
         } else {
             match (l, r) {
-                (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_mul(b)),
+                (Value::Int(a), Value::Int(b)) => {
+                    if let Some(product) = a.checked_mul(b) {
+                        Value::Int(product)
+                    } else {
+                        Value::BigInt(NumBigInt::from(a) * NumBigInt::from(b))
+                    }
+                }
                 (Value::Num(a), Value::Num(b)) => Value::Num(a * b),
                 (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 * b),
                 (Value::Num(a), Value::Int(b)) => Value::Num(a * b as f64),
@@ -130,7 +146,13 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
             Value::Num(a * b)
         } else {
             match (l, r) {
-                (Value::Int(a), Value::Int(b)) => Value::Int(a.wrapping_mul(b)),
+                (Value::Int(a), Value::Int(b)) => {
+                    if let Some(product) = a.checked_mul(b) {
+                        Value::Int(product)
+                    } else {
+                        Value::BigInt(NumBigInt::from(a) * NumBigInt::from(b))
+                    }
+                }
                 (Value::Num(a), Value::Num(b)) => Value::Num(a * b),
                 (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 * b),
                 (Value::Num(a), Value::Int(b)) => Value::Num(a * b as f64),
@@ -166,7 +188,52 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
             }
             return Ok(Value::Num(lf / rf));
         }
+        if (matches!(l, Value::BigInt(_)) || matches!(r, Value::BigInt(_)))
+            && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
+        {
+            if b.is_zero() {
+                return Err(RuntimeError::numeric_divide_by_zero());
+            }
+            if (&a % &b).is_zero() {
+                return Ok(Value::from_bigint(a / b));
+            }
+        }
         Ok(match (&l, &r) {
+            (Value::BigInt(a), Value::Int(b)) => {
+                if *b == 0 {
+                    return Err(RuntimeError::numeric_divide_by_zero());
+                }
+                let bb = NumBigInt::from(*b);
+                if (a % &bb).is_zero() {
+                    Value::from_bigint(a / bb)
+                } else {
+                    Value::Num((a.to_string().parse::<f64>().unwrap_or(0.0)) / (*b as f64))
+                }
+            }
+            (Value::Int(a), Value::BigInt(b)) => {
+                if b.is_zero() {
+                    return Err(RuntimeError::numeric_divide_by_zero());
+                }
+                let aa = NumBigInt::from(*a);
+                if (&aa % b).is_zero() {
+                    Value::from_bigint(aa / b)
+                } else {
+                    Value::Num((*a as f64) / b.to_string().parse::<f64>().unwrap_or(1.0))
+                }
+            }
+            (Value::BigInt(a), Value::BigInt(b)) => {
+                if b.is_zero() {
+                    return Err(RuntimeError::numeric_divide_by_zero());
+                }
+                if (a % b).is_zero() {
+                    Value::from_bigint(a / b)
+                } else {
+                    Value::Num(
+                        a.to_string().parse::<f64>().unwrap_or(0.0)
+                            / b.to_string().parse::<f64>().unwrap_or(1.0),
+                    )
+                }
+            }
             (Value::Rat(_, _), _) | (_, Value::Rat(_, _)) | (Value::Int(_), Value::Int(_)) => {
                 let (an, ad) = runtime::to_rat_parts(&l).unwrap_or((0, 1));
                 let (bn, bd) = runtime::to_rat_parts(&r).unwrap_or((0, 1));
@@ -292,7 +359,9 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                 if let (Some(np), Some(dp)) = (n.checked_pow(p), d.checked_pow(p)) {
                     make_rat(np, dp)
                 } else {
-                    Value::Num((n as f64 / d as f64).powi(b as i32))
+                    let nn = NumBigInt::from(n).pow(p);
+                    let dd = NumBigInt::from(d).pow(p);
+                    make_big_rat(nn, dd)
                 }
             }
             (Value::Rat(n, d), Value::Int(b)) => {
@@ -300,8 +369,18 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                 if let (Some(dp), Some(np)) = (d.checked_pow(p), n.checked_pow(p)) {
                     make_rat(dp, np)
                 } else {
-                    Value::Num((d as f64 / n as f64).powi(p as i32))
+                    let nn = NumBigInt::from(d).pow(p);
+                    let dd = NumBigInt::from(n).pow(p);
+                    make_big_rat(nn, dd)
                 }
+            }
+            (Value::BigRat(n, d), Value::Int(b)) if b >= 0 => {
+                let p = b as u32;
+                make_big_rat(n.pow(p), d.pow(p))
+            }
+            (Value::BigRat(n, d), Value::Int(b)) => {
+                let p = (-b) as u32;
+                make_big_rat(d.pow(p), n.pow(p))
             }
             (Value::Num(a), Value::Int(b)) => Value::Num(a.powi(b as i32)),
             (Value::Int(a), Value::Num(b)) => {
@@ -345,6 +424,7 @@ pub(crate) fn arith_negate(val: Value) -> Result<Value, RuntimeError> {
                 Ok(Value::Num(-(i as f64)))
             }
         }
+        Value::BigInt(i) => Ok(Value::BigInt(-i)),
         Value::Num(f) => Ok(Value::Num(-f)),
         Value::Rat(n, d) => {
             if let Some(neg) = n.checked_neg() {
@@ -353,6 +433,7 @@ pub(crate) fn arith_negate(val: Value) -> Result<Value, RuntimeError> {
                 Ok(Value::Num(-(n as f64) / d as f64))
             }
         }
+        Value::BigRat(n, d) => Ok(crate::value::make_big_rat(-n, d)),
         Value::Complex(r, i) => Ok(Value::Complex(-r, -i)),
         Value::Str(ref s) => {
             if let Ok(i) = s.trim().parse::<i64>() {
