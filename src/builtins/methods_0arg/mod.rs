@@ -754,6 +754,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Some(Ok(Value::Int(s.chars().count() as i64)))
         }
         "lines" => {
+            // Skip for Supply instances — handled by native Supply.lines
+            if let Value::Instance { class_name, .. } = target
+                && (class_name == "Supply"
+                    || class_name == "IO::Handle"
+                    || class_name == "IO::Path")
+            {
+                return None;
+            }
             let s = target.to_string_value();
             let lines: Vec<Value> = crate::builtins::split_lines_chomped(&s)
                 .into_iter()

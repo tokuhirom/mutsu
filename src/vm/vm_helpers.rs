@@ -144,6 +144,7 @@ impl VM {
                 | "Bool"
                 | "Pair"
                 | "Map"
+                | "QuantHash"
                 | "Set"
                 | "Bag"
                 | "Mix"

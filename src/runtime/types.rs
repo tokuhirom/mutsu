@@ -406,6 +406,51 @@ impl Interpreter {
         }
     }
 
+    pub(super) fn init_signal_enum(&mut self) {
+        // Use libc constants on Unix, standard POSIX numbers on other platforms
+        let variants = vec![
+            ("SIGHUP".to_string(), Self::sig_num(1)),
+            ("SIGINT".to_string(), Self::sig_num(2)),
+            ("SIGQUIT".to_string(), Self::sig_num(3)),
+            ("SIGILL".to_string(), Self::sig_num(4)),
+            ("SIGABRT".to_string(), Self::sig_num(6)),
+            ("SIGFPE".to_string(), Self::sig_num(8)),
+            ("SIGKILL".to_string(), Self::sig_num(9)),
+            ("SIGSEGV".to_string(), Self::sig_num(11)),
+            ("SIGPIPE".to_string(), Self::sig_num(13)),
+            ("SIGALRM".to_string(), Self::sig_num(14)),
+            ("SIGTERM".to_string(), Self::sig_num(15)),
+            ("SIGUSR1".to_string(), Self::sig_num(10)),
+            ("SIGUSR2".to_string(), Self::sig_num(12)),
+            ("SIGCHLD".to_string(), Self::sig_num(17)),
+            ("SIGCONT".to_string(), Self::sig_num(18)),
+            ("SIGSTOP".to_string(), Self::sig_num(19)),
+            ("SIGTSTP".to_string(), Self::sig_num(20)),
+            ("SIGTTIN".to_string(), Self::sig_num(21)),
+            ("SIGTTOU".to_string(), Self::sig_num(22)),
+        ];
+        self.enum_types
+            .insert("Signal".to_string(), variants.clone());
+        self.env
+            .insert("Signal".to_string(), Value::Str("Signal".to_string()));
+        for (index, (key, val)) in variants.iter().enumerate() {
+            let enum_val = Value::Enum {
+                enum_type: "Signal".to_string(),
+                key: key.clone(),
+                value: *val,
+                index,
+            };
+            self.env
+                .insert(format!("Signal::{}", key), enum_val.clone());
+            self.env.insert(key.clone(), enum_val);
+        }
+    }
+
+    /// Get signal number — use the POSIX default value on all platforms.
+    fn sig_num(default: i64) -> i64 {
+        default
+    }
+
     pub(super) fn version_from_value(arg: Value) -> Value {
         use crate::value::VersionPart;
         match arg {
@@ -538,7 +583,7 @@ impl Interpreter {
             return true;
         }
         if matches!(constraint, "Callable" | "Code" | "Block")
-            && matches!(value_type, "Sub" | "Routine")
+            && matches!(value_type, "Sub" | "Routine" | "Method" | "Block")
         {
             return true;
         }
@@ -546,7 +591,12 @@ impl Interpreter {
             return true;
         }
         // Role-like type relationships
-        if constraint == "Positional" && matches!(value_type, "Array" | "List" | "Seq") {
+        if constraint == "Positional"
+            && matches!(
+                value_type,
+                "Array" | "List" | "Seq" | "Range" | "Buf" | "Blob" | "Capture"
+            )
+        {
             return true;
         }
         // Array is-a List in Raku type hierarchy
@@ -554,7 +604,10 @@ impl Interpreter {
             return true;
         }
         if constraint == "Associative"
-            && matches!(value_type, "Hash" | "Map" | "Bag" | "Set" | "Mix")
+            && matches!(
+                value_type,
+                "Hash" | "Map" | "Pair" | "Bag" | "Set" | "Mix" | "QuantHash" | "Capture"
+            )
         {
             return true;
         }

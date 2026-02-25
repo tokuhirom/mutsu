@@ -180,6 +180,13 @@ impl Compiler {
                 expr,
                 op: AssignOp::Assign | AssignOp::Bind,
             } if name != "*PID" => {
+                if name.starts_with('&')
+                    && !name.contains("::")
+                    && !self.local_map.contains_key(name.as_str())
+                {
+                    self.code.emit(OpCode::AssignReadOnly);
+                    return;
+                }
                 self.compile_expr(expr);
                 self.emit_set_named_var(name);
             }
@@ -242,12 +249,16 @@ impl Compiler {
                     merged.extend(loop_body);
                     loop_body = merged;
                 }
+                if let Some(writeback) = Self::for_rw_writeback_stmt(param, param_def, iterable) {
+                    loop_body.push(writeback);
+                }
                 let arity = if !params.is_empty() {
                     params.len() as u32
                 } else {
                     1
                 };
-                self.compile_expr(iterable);
+                let normalized_iterable = Self::normalize_for_iterable(iterable);
+                self.compile_expr(&normalized_iterable);
                 let loop_idx = self.code.emit(OpCode::ForLoop {
                     param_idx,
                     param_local: None,
@@ -590,11 +601,8 @@ impl Compiler {
             // --- No-ops: these statements are handled elsewhere ---
             // CATCH/CONTROL are extracted by compile_try/compile_body_with_implicit_try
             Stmt::Catch(_) | Stmt::Control(_) => {}
-            // HasDecl/MethodDecl/DoesDecl/TrustsDecl outside class context are no-ops
-            Stmt::HasDecl { .. }
-            | Stmt::MethodDecl { .. }
-            | Stmt::DoesDecl { .. }
-            | Stmt::TrustsDecl { .. } => {}
+            // HasDecl/DoesDecl/TrustsDecl outside class context are no-ops
+            Stmt::HasDecl { .. } | Stmt::DoesDecl { .. } | Stmt::TrustsDecl { .. } => {}
 
             // --- Take (gather/take) ---
             Stmt::Take(expr) => {
@@ -602,11 +610,13 @@ impl Compiler {
                 self.code.emit(OpCode::Take);
             }
 
-            // --- React: just run the body block ---
+            // --- React: event loop scope ---
             Stmt::React { body } => {
+                let idx = self.code.emit(OpCode::ReactScope { body_end: 0 });
                 for s in body {
                     self.compile_stmt(s);
                 }
+                self.code.patch_body_end(idx);
             }
 
             // --- Package scope ---
@@ -715,6 +725,37 @@ impl Compiler {
                         *multi,
                         state_group.as_deref(),
                     );
+                }
+            }
+            Stmt::MethodDecl {
+                name,
+                name_expr,
+                params,
+                param_defs,
+                body,
+                multi,
+                return_type,
+                ..
+            } => {
+                // Top-level/package method declarations should still produce callable
+                // code objects (&name), so lower them through sub registration.
+                let lowered = Stmt::SubDecl {
+                    name: name.clone(),
+                    name_expr: name_expr.clone(),
+                    params: params.clone(),
+                    param_defs: param_defs.clone(),
+                    return_type: return_type.clone(),
+                    signature_alternates: Vec::new(),
+                    body: body.clone(),
+                    multi: *multi,
+                    is_export: false,
+                    is_test_assertion: false,
+                    supersede: false,
+                };
+                let idx = self.code.add_stmt(lowered);
+                self.code.emit(OpCode::RegisterSub(idx));
+                if name_expr.is_none() {
+                    self.compile_sub_body(name, params, param_defs, body, *multi, None);
                 }
             }
             Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => {

@@ -5,7 +5,9 @@ fn positional_pairs(values: &[Value]) -> Vec<Value> {
     values
         .iter()
         .enumerate()
-        .map(|(idx, value)| Value::Pair(idx.to_string(), Box::new(value.clone())))
+        .map(|(idx, value)| {
+            Value::ValuePair(Box::new(Value::Int(idx as i64)), Box::new(value.clone()))
+        })
         .collect()
 }
 
@@ -13,17 +15,27 @@ fn positional_keys(values: &[Value]) -> Vec<Value> {
     values
         .iter()
         .enumerate()
-        .map(|(idx, _)| Value::Str(idx.to_string()))
+        .map(|(idx, _)| Value::Int(idx as i64))
         .collect()
 }
 
 fn positional_kv(values: &[Value]) -> Vec<Value> {
     let mut kv = Vec::with_capacity(values.len() * 2);
     for (idx, value) in values.iter().enumerate() {
-        kv.push(Value::Str(idx.to_string()));
+        kv.push(Value::Int(idx as i64));
         kv.push(value.clone());
     }
     kv
+}
+
+fn positional_antipairs(values: &[Value]) -> Vec<Value> {
+    values
+        .iter()
+        .enumerate()
+        .map(|(idx, value)| {
+            Value::ValuePair(Box::new(value.clone()), Box::new(Value::Int(idx as i64)))
+        })
+        .collect()
 }
 
 fn push_permutations(
@@ -83,10 +95,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Mix(m) => Some(Ok(Value::array(
                 m.keys().map(|k| Value::Str(k.clone())).collect(),
             ))),
+            Value::Package(_) => Some(Ok(Value::array(Vec::new()))),
             v if v.is_range() => Some(Ok(Value::array(positional_keys(
                 &crate::runtime::utils::value_to_list(v),
             )))),
-            _ => None,
+            other => Some(Ok(Value::array(positional_keys(
+                &crate::runtime::utils::value_to_list(other),
+            )))),
         },
         "values" => match target {
             Value::Hash(map) => {
@@ -106,8 +121,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Mix(m) => Some(Ok(Value::array(
                 m.values().map(|v| Value::Num(*v)).collect(),
             ))),
+            Value::Package(_) => Some(Ok(Value::array(Vec::new()))),
             v if v.is_range() => Some(Ok(Value::array(crate::runtime::utils::value_to_list(v)))),
-            _ => None,
+            other => Some(Ok(Value::array(crate::runtime::utils::value_to_list(
+                other,
+            )))),
         },
         "kv" => match target {
             Value::Hash(items) => {
@@ -154,10 +172,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Value::Str(key.clone()),
                 Value::Int(*value),
             ]))),
+            Value::Package(_) => Some(Ok(Value::array(Vec::new()))),
             v if v.is_range() => Some(Ok(Value::array(positional_kv(
                 &crate::runtime::utils::value_to_list(v),
             )))),
-            _ => None,
+            other => Some(Ok(Value::array(positional_kv(
+                &crate::runtime::utils::value_to_list(other),
+            )))),
         },
         "pairs" => match target {
             Value::Hash(items) => Some(Ok(Value::array(
@@ -181,10 +202,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::Num(*v))))
                     .collect(),
             ))),
+            Value::Package(_) => Some(Ok(Value::array(Vec::new()))),
             v if v.is_range() => Some(Ok(Value::array(positional_pairs(
                 &crate::runtime::utils::value_to_list(v),
             )))),
-            _ => None,
+            other => Some(Ok(Value::array(positional_pairs(
+                &crate::runtime::utils::value_to_list(other),
+            )))),
         },
         "pairup" => match target {
             Value::Package(name) if name == "Any" => Some(Ok(Value::Seq(Vec::new().into()))),
@@ -227,25 +251,15 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     })
                     .collect(),
             ))),
+            Value::Package(_) => Some(Ok(Value::array(Vec::new()))),
             v if v.is_range() => {
                 let values = crate::runtime::utils::value_to_list(v);
-                Some(Ok(Value::array(
-                    values
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, value)| match value {
-                            Value::Str(s) => {
-                                Value::Pair(s.clone(), Box::new(Value::Str(idx.to_string())))
-                            }
-                            _ => Value::ValuePair(
-                                Box::new(value.clone()),
-                                Box::new(Value::Str(idx.to_string())),
-                            ),
-                        })
-                        .collect(),
-                )))
+                Some(Ok(Value::array(positional_antipairs(&values))))
             }
-            _ => None,
+            other => {
+                let values = crate::runtime::utils::value_to_list(other);
+                Some(Ok(Value::array(positional_antipairs(&values))))
+            }
         },
         "invert" => match target {
             Value::Hash(items) => {

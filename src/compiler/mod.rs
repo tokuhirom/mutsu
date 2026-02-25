@@ -204,6 +204,45 @@ impl Compiler {
         bind_stmts
     }
 
+    fn for_iterable_source_name(iterable: &Expr) -> Option<String> {
+        match iterable {
+            Expr::Var(name) => Some(name.clone()),
+            Expr::ArrayLiteral(items) if items.len() == 1 => match &items[0] {
+                Expr::Var(name) => Some(name.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn normalize_for_iterable(iterable: &Expr) -> Expr {
+        match iterable {
+            // Scalar variables are item containers in `for` and should not be flattened.
+            Expr::Var(_) => Expr::ArrayLiteral(vec![iterable.clone()]),
+            _ => iterable.clone(),
+        }
+    }
+
+    fn for_rw_writeback_stmt(
+        param: &Option<String>,
+        param_def: &Option<crate::ast::ParamDef>,
+        iterable: &Expr,
+    ) -> Option<Stmt> {
+        let has_rw = param_def
+            .as_ref()
+            .is_some_and(|def| def.traits.iter().any(|t| t == "rw"));
+        if !has_rw {
+            return None;
+        }
+        let param_name = param.as_ref()?;
+        let source_name = Self::for_iterable_source_name(iterable)?;
+        Some(Stmt::Assign {
+            name: source_name,
+            expr: Expr::Var(param_name.clone()),
+            op: AssignOp::Assign,
+        })
+    }
+
     pub(crate) fn compile(
         mut self,
         stmts: &[Stmt],

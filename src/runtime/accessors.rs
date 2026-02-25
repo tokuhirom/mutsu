@@ -179,6 +179,14 @@ impl Interpreter {
                 package: self.current_package.clone(),
                 name: lookup_name.to_string(),
             }
+        } else if self.has_proto(lookup_name)
+            || self.resolve_token_defs(lookup_name).is_some()
+            || self.has_proto_token(lookup_name)
+        {
+            Value::Routine {
+                package: self.current_package.clone(),
+                name: lookup_name.to_string(),
+            }
         } else if let Some(def) = def {
             Value::make_sub(
                 def.package,

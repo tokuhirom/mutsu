@@ -1120,4 +1120,14 @@ mod tests {
             _ => panic!("expected dot-postfix operator call"),
         }
     }
+
+    #[test]
+    fn parse_ampersand_sigiled_callable_invocation() {
+        let (rest, expr) = expression("&$x()").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::CallOn { target, args } if args.is_empty() && matches!(*target, Expr::Var(ref n) if n == "x")
+        ));
+    }
 }
