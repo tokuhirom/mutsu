@@ -152,13 +152,15 @@ fn main() {
     }
 
     let mut interpreter = Interpreter::new();
+    interpreter.set_immediate_stdout(true);
     for path in lib_paths {
         interpreter.add_lib_path(path);
     }
     interpreter.set_program_path(&program_name);
     match interpreter.run(&input) {
-        Ok(output) => {
-            print!("{}", output);
+        Ok(_output) => {
+            // Output is written directly to stdout during execution.
+            // Subtest-indented output is also flushed here.
             let code = interpreter.exit_code();
             if code != 0 {
                 std::process::exit(code as i32);
@@ -166,12 +168,6 @@ fn main() {
         }
         Err(err) => {
             print_error("Runtime error", &err);
-            let output_buf = interpreter.output();
-            if !output_buf.is_empty() {
-                eprintln!("--- buffered TAP output ---");
-                print!("{}", output_buf);
-                eprintln!("--- end buffered TAP output ---");
-            }
             let code = interpreter.exit_code();
             std::process::exit(if code != 0 { code as i32 } else { 1 });
         }

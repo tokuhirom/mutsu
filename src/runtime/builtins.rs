@@ -230,6 +230,8 @@ impl Interpreter {
             "pair" => self.builtin_pair(&args),
             "keys" => self.builtin_keys(&args),
             "values" => self.builtin_values(&args),
+            "kv" => self.builtin_kv(&args),
+            "pairs" => self.builtin_pairs(&args),
             "abs" => self.builtin_abs(&args),
             "min" => self.builtin_min(&args),
             "max" => self.builtin_max(&args),
@@ -336,9 +338,6 @@ impl Interpreter {
             "shell" => self.builtin_shell(&args),
             "QX" | "qx" => self.builtin_qx(&args),
             "kill" => self.builtin_kill(&args),
-            "signal" => {
-                self.call_method_with_values(Value::Package("Supply".to_string()), "signal", args)
-            }
             "syscall" => self.builtin_syscall(&args),
             "sleep" => self.builtin_sleep(&args),
             "sleep-timer" => self.builtin_sleep_timer(&args),
@@ -346,6 +345,7 @@ impl Interpreter {
             // Concurrency (single-threaded simulation)
             "start" => self.builtin_start(args),
             "await" => self.builtin_await(&args),
+            "signal" => self.builtin_signal(&args),
             // Boolean coercion functions
             "not" => Ok(Value::Bool(!args.first().unwrap_or(&Value::Nil).truthy())),
             "so" => Ok(Value::Bool(args.first().unwrap_or(&Value::Nil).truthy())),
@@ -1008,7 +1008,7 @@ impl Interpreter {
 
     fn builtin_dd(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let val = args.first().cloned().unwrap_or(Value::Nil);
-        self.output.push_str(&format!("{:?}\n", val));
+        self.emit_output(&format!("{:?}\n", val));
         Ok(val)
     }
 

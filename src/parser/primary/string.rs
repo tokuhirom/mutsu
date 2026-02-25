@@ -233,14 +233,20 @@ fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
         let after_terminator = after_terminator
             .strip_prefix('\n')
             .unwrap_or(after_terminator);
+        // Check if content has \qq[...] escapes that need processing
+        let expr = if content.contains("\\qq") {
+            parse_single_quote_qq(&content)
+        } else {
+            Expr::Literal(Value::Str(content))
+        };
         // Return rest_of_line + after_terminator as remaining input.
         if rest_of_line.trim().is_empty() || rest_of_line.trim() == ";" {
-            return Ok((after_terminator, Expr::Literal(Value::Str(content))));
+            return Ok((after_terminator, expr));
         }
         // We cannot return a disjoint slice pair, so concatenate.
         let combined = format!("{}\n{}", rest_of_line, after_terminator);
         let leaked: &'static str = Box::leak(combined.into_boxed_str());
-        return Ok((leaked, Expr::Literal(Value::Str(content))));
+        return Ok((leaked, expr));
     }
     Err(PError::expected("heredoc terminator"))
 }

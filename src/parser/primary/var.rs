@@ -330,6 +330,23 @@ pub(crate) fn is_pseudo_package(name: &str) -> bool {
 /// lookups like `&::($expr)::name` or `&CALLER::($expr)::name`.
 pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '&')?;
+    // Dereference callable stored in a variable/expression:
+    // &$x, &@x, &%x, &($expr)
+    if input.starts_with('$') {
+        return scalar_var(input);
+    }
+    if input.starts_with('@') {
+        return array_var(input);
+    }
+    if input.starts_with('%') {
+        return hash_var(input);
+    }
+    if let Some(after_paren) = input.strip_prefix('(') {
+        let (rest, expr) = expression(after_paren)?;
+        let (rest, _) = ws(rest)?;
+        let (rest, _) = parse_char(rest, ')')?;
+        return Ok((rest, expr));
+    }
     // Handle &[op] — short form for &infix:<op>
     if let Some(after_bracket) = input.strip_prefix('[')
         && let Some(end_pos) = after_bracket.find(']')

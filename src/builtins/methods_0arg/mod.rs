@@ -258,6 +258,7 @@ fn raku_value(v: &Value) -> String {
                 format!("{}", f)
             }
         }
+        Value::Complex(r, i) => format!("<{}>", crate::value::format_complex(*r, *i)),
         Value::Pair(key, value) => format!("{} => {}", key, raku_value(value)),
         Value::ValuePair(key, value) => {
             let key_repr = match key.as_ref() {
@@ -727,6 +728,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Some(Ok(Value::Int(s.chars().count() as i64)))
         }
         "lines" => {
+            // Skip for Supply instances — handled by native Supply.lines
+            if let Value::Instance { class_name, .. } = target
+                && (class_name == "Supply"
+                    || class_name == "IO::Handle"
+                    || class_name == "IO::Path")
+            {
+                return None;
+            }
             let s = target.to_string_value();
             let lines: Vec<Value> = crate::builtins::split_lines_chomped(&s)
                 .into_iter()
@@ -809,6 +818,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         Some(Ok(Value::Str(format!("{}", *n / *d))))
                     }
                 } else {
+                    if method == "gist" {
+                        return Some(Ok(Value::Str(target.to_string_value())));
+                    }
                     let mut dd = *d;
                     while dd % 2 == 0 {
                         dd /= 2;
@@ -900,7 +912,24 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     Some(Ok(Value::Str(target.to_string_value())))
                 }
             }
+            Value::BigInt(i) => {
+                if method == "raku" || method == "perl" {
+                    Some(Ok(Value::Str(format!("{i}.0"))))
+                } else {
+                    Some(Ok(Value::Str(i.to_string())))
+                }
+            }
             Value::Int(i) => Some(Ok(Value::Str(format!("{}", i)))),
+            Value::Complex(r, i) => {
+                if method == "raku" || method == "perl" {
+                    Some(Ok(Value::Str(format!(
+                        "<{}>",
+                        crate::value::format_complex(*r, *i)
+                    ))))
+                } else {
+                    Some(Ok(Value::Str(crate::value::format_complex(*r, *i))))
+                }
+            }
             _ => Some(Ok(Value::Str(target.to_string_value()))),
         },
         "head" => match target {
@@ -1097,6 +1126,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::FatRat(_, _) => Some(Ok(target.clone())),
             Value::Rat(n, d) => Some(Ok(Value::FatRat(*n, *d))),
             Value::Int(i) => Some(Ok(Value::FatRat(*i, 1))),
+            Value::BigInt(i) => Some(Ok(Value::from_bigint(i.clone()))),
             Value::Num(f) => {
                 let denom = 1_000_000i64;
                 let numer = (f * denom as f64).round() as i64;
