@@ -63,15 +63,15 @@ use self::unicode::{check_unicode_property, check_unicode_property_with_args};
 #[derive(Clone)]
 struct ClassDef {
     parents: Vec<String>,
-    attributes: Vec<(String, bool, Option<Expr>)>, // (name, is_public, default)
-    methods: HashMap<String, Vec<MethodDef>>,      // name -> overloads
+    attributes: Vec<(String, bool, Option<Expr>, bool)>, // (name, is_public, default, is_rw)
+    methods: HashMap<String, Vec<MethodDef>>,            // name -> overloads
     native_methods: HashSet<String>,
     mro: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
 struct RoleDef {
-    attributes: Vec<(String, bool, Option<Expr>)>,
+    attributes: Vec<(String, bool, Option<Expr>, bool)>,
     methods: HashMap<String, Vec<MethodDef>>,
     is_stub_role: bool,
 }
@@ -89,6 +89,14 @@ struct MethodDef {
     body: Vec<Stmt>,
     is_rw: bool,
     is_private: bool,
+}
+
+#[derive(Debug, Clone)]
+struct MethodDispatchFrame {
+    receiver_class: String,
+    invocant: Value,
+    args: Vec<Value>,
+    remaining: Vec<(String, MethodDef)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -239,6 +247,8 @@ pub struct Interpreter {
     gather_items: Vec<Vec<Value>>,
     enum_types: HashMap<String, Vec<(String, i64)>>,
     classes: HashMap<String, ClassDef>,
+    hidden_classes: HashSet<String>,
+    hidden_defer_parents: HashMap<String, HashSet<String>>,
     class_trusts: HashMap<String, HashSet<String>>,
     roles: HashMap<String, RoleDef>,
     role_type_params: HashMap<String, Vec<String>>,
@@ -274,6 +284,7 @@ pub struct Interpreter {
     /// Stack of remaining multi dispatch candidates for callsame/nextsame/nextcallee.
     /// Each entry is (remaining_candidates, original_args).
     multi_dispatch_stack: Vec<(Vec<FunctionDef>, Vec<Value>)>,
+    method_dispatch_stack: Vec<MethodDispatchFrame>,
 }
 
 /// An entry in the encoding registry.
@@ -900,6 +911,8 @@ impl Interpreter {
             gather_items: Vec::new(),
             enum_types: HashMap::new(),
             classes,
+            hidden_classes: HashSet::new(),
+            hidden_defer_parents: HashMap::new(),
             class_trusts: HashMap::new(),
             roles: {
                 let mut roles = HashMap::new();
@@ -934,6 +947,7 @@ impl Interpreter {
             encoding_registry: Self::builtin_encodings(),
             skip_pseudo_method_native: None,
             multi_dispatch_stack: Vec::new(),
+            method_dispatch_stack: Vec::new(),
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -1282,6 +1296,8 @@ impl Interpreter {
             gather_items: Vec::new(),
             enum_types: self.enum_types.clone(),
             classes: self.classes.clone(),
+            hidden_classes: self.hidden_classes.clone(),
+            hidden_defer_parents: self.hidden_defer_parents.clone(),
             class_trusts: self.class_trusts.clone(),
             roles: self.roles.clone(),
             role_type_params: self.role_type_params.clone(),
@@ -1305,6 +1321,7 @@ impl Interpreter {
             encoding_registry: self.encoding_registry.clone(),
             skip_pseudo_method_native: None,
             multi_dispatch_stack: Vec::new(),
+            method_dispatch_stack: Vec::new(),
         }
     }
 

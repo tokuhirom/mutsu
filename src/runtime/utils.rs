@@ -324,6 +324,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
             _ => "Uni",
         },
         Value::Mixin(inner, _) => value_type_name(inner),
+        Value::Proxy { .. } => "Proxy",
     }
 }
 
@@ -615,6 +616,31 @@ pub(crate) fn to_rat_parts(val: &Value) -> Option<(i64, i64)> {
     }
 }
 
+fn rat_parts_to_f64(num: i64, den: i64) -> f64 {
+    if den != 0 {
+        num as f64 / den as f64
+    } else if num > 0 {
+        f64::INFINITY
+    } else if num < 0 {
+        f64::NEG_INFINITY
+    } else {
+        f64::NAN
+    }
+}
+
+pub(crate) fn compare_rat_parts(a: (i64, i64), b: (i64, i64)) -> std::cmp::Ordering {
+    let (an, ad) = a;
+    let (bn, bd) = b;
+    if ad == 0 || bd == 0 {
+        return rat_parts_to_f64(an, ad)
+            .partial_cmp(&rat_parts_to_f64(bn, bd))
+            .unwrap_or(std::cmp::Ordering::Equal);
+    }
+    let lhs = an as i128 * bd as i128;
+    let rhs = bn as i128 * ad as i128;
+    lhs.cmp(&rhs)
+}
+
 pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
     match val {
         Value::Num(f) => Some(*f),
@@ -694,9 +720,7 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
             .unwrap_or(std::cmp::Ordering::Equal) as i32,
         _ => {
             if let (Some((an, ad)), Some((bn, bd))) = (to_rat_parts(a), to_rat_parts(b)) {
-                let lhs = an as i128 * bd as i128;
-                let rhs = bn as i128 * ad as i128;
-                return lhs.cmp(&rhs) as i32;
+                return compare_rat_parts((an, ad), (bn, bd)) as i32;
             }
             a.to_string_value().cmp(&b.to_string_value()) as i32
         }

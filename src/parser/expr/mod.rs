@@ -12,6 +12,7 @@ use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 use super::helpers::ws;
+pub(in crate::parser) use postfix::postfix_expr_continue;
 use precedence::{or_expr, ternary};
 
 thread_local! {
