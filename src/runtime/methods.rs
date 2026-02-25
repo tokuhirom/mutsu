@@ -18,6 +18,7 @@ impl Interpreter {
                             CallArg::Positional(e) | CallArg::Slip(e) => {
                                 scan_expr(e, positional, named)
                             }
+                            CallArg::Invocant(e) => scan_expr(e, positional, named),
                             CallArg::Named { value: Some(e), .. } => {
                                 scan_expr(e, positional, named)
                             }
@@ -545,6 +546,7 @@ impl Interpreter {
                                 optional_marker: false,
                                 outer_sub_signature: None,
                                 code_signature: None,
+                                is_invocant: false,
                             })
                             .collect()
                     } else {
@@ -568,6 +570,7 @@ impl Interpreter {
                                 optional_marker: false,
                                 outer_sub_signature: None,
                                 code_signature: None,
+                                is_invocant: false,
                             });
                         }
                         if use_named {
@@ -588,6 +591,7 @@ impl Interpreter {
                                 optional_marker: false,
                                 outer_sub_signature: None,
                                 code_signature: None,
+                                is_invocant: false,
                             });
                         }
                         defs

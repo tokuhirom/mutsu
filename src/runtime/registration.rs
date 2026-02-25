@@ -1040,6 +1040,7 @@ impl Interpreter {
                         let self_param = crate::ast::ParamDef {
                             name: "self".to_string(),
                             default: None,
+                            multi_invocant: false,
                             required: false,
                             named: false,
                             slurpy: false,
