@@ -696,6 +696,10 @@ impl Interpreter {
             }
             return ok;
         }
+        // Role constraints should accept composed role instances/mixins.
+        if self.roles.contains_key(constraint) && value.does_check(constraint) {
+            return true;
+        }
         // Check Instance class name against constraint (including parent classes)
         if let Value::Instance { class_name, .. } = value {
             if Self::type_matches(constraint, class_name) {
