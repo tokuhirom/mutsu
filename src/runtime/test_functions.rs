@@ -1581,11 +1581,12 @@ impl Interpreter {
             let text = c.to_string_value();
             std::fs::write(&path, &text)
                 .map_err(|e| RuntimeError::new(format!("make-temp-file: cannot write: {}", e)))?;
-        } else {
-            // Touch the file
+        } else if chmod_val.is_some() {
+            // :chmod without :content — create empty file
             std::fs::write(&path, "")
                 .map_err(|e| RuntimeError::new(format!("make-temp-file: cannot create: {}", e)))?;
         }
+        // When neither :content nor :chmod is given, don't create the file
 
         if let Some(Value::Int(_mode)) = chmod_val {
             #[cfg(unix)]
