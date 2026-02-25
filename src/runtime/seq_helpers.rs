@@ -577,6 +577,39 @@ impl Interpreter {
                 let key = left.to_string_value();
                 map.contains_key(&key)
             }
+            // Parametric role smartmatch: R1[C2] ~~ R1[C1] (subtyping)
+            (
+                Value::ParametricRole {
+                    base_name: lhs_base,
+                    type_args: lhs_args,
+                },
+                Value::ParametricRole {
+                    base_name: rhs_base,
+                    type_args: rhs_args,
+                },
+            ) => {
+                if lhs_args.len() != rhs_args.len() {
+                    return false;
+                }
+                if lhs_base != rhs_base && !self.role_is_subtype(lhs_base, rhs_base) {
+                    return false;
+                }
+                // Each LHS type arg must be a subtype of (or equal to) the corresponding RHS type arg
+                for (l_arg, r_arg) in lhs_args.iter().zip(rhs_args.iter()) {
+                    if !self.parametric_arg_subtypes(l_arg, r_arg) {
+                        return false;
+                    }
+                }
+                true
+            }
+            // Parametric role ~~ base role: R1[C1] ~~ R1
+            (
+                Value::ParametricRole {
+                    base_name: lhs_base,
+                    ..
+                },
+                Value::Package(rhs_name),
+            ) => lhs_base == rhs_name,
             // When RHS is a type/Package, check type membership
             (_, Value::Package(type_name)) => {
                 // Handle type smileys (:U, :D, :_)
@@ -798,6 +831,77 @@ impl Interpreter {
             (l, r) if r.is_range() => Self::value_in_range(l, r),
             // Default: compare equality
             _ => left.to_string_value() == right.to_string_value(),
+        }
+    }
+
+    fn role_is_subtype(&self, lhs_role: &str, rhs_role: &str) -> bool {
+        if lhs_role == rhs_role {
+            return true;
+        }
+        let mut stack = vec![lhs_role.to_string()];
+        let mut seen = HashSet::new();
+        while let Some(role) = stack.pop() {
+            if !seen.insert(role.clone()) {
+                continue;
+            }
+            if let Some(parents) = self.role_parents.get(&role) {
+                for parent in parents {
+                    if parent == rhs_role {
+                        return true;
+                    }
+                    stack.push(parent.clone());
+                }
+            }
+        }
+        false
+    }
+
+    /// Check if `lhs` type arg is a subtype of `rhs` type arg for parametric role subtyping.
+    /// E.g., Package("C2") subtypes Package("C1") if C2 isa C1.
+    fn parametric_arg_subtypes(&self, lhs: &Value, rhs: &Value) -> bool {
+        match (lhs, rhs) {
+            // Both are packages (type objects): check class hierarchy
+            (Value::Package(l_name), Value::Package(r_name)) => {
+                if l_name == r_name {
+                    return true;
+                }
+                // Built-in type hierarchy relationships (e.g. Int <: Cool <: Any)
+                if Self::type_matches(r_name, l_name) {
+                    return true;
+                }
+                // Check if l_name is a subclass of r_name
+                if let Some(class_def) = self.classes.get(l_name.as_str()) {
+                    if class_def.parents.iter().any(|p| p == r_name) {
+                        return true;
+                    }
+                    // Transitive: check if any parent subtypes r_name
+                    for parent in &class_def.parents {
+                        if self.parametric_arg_subtypes(&Value::Package(parent.clone()), rhs) {
+                            return true;
+                        }
+                    }
+                }
+                false
+            }
+            // Both are parametric roles: recursively check
+            (
+                Value::ParametricRole {
+                    base_name: lb,
+                    type_args: la,
+                },
+                Value::ParametricRole {
+                    base_name: rb,
+                    type_args: ra,
+                },
+            ) => {
+                if lb != rb || la.len() != ra.len() {
+                    return false;
+                }
+                la.iter()
+                    .zip(ra.iter())
+                    .all(|(l, r)| self.parametric_arg_subtypes(l, r))
+            }
+            _ => false,
         }
     }
 

@@ -1163,6 +1163,31 @@ impl Interpreter {
                         return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
                     }
                     Value::Proxy { .. } => "Proxy",
+                    Value::ParametricRole {
+                        base_name,
+                        type_args,
+                    } => {
+                        let args_str: Vec<String> = type_args
+                            .iter()
+                            .map(|a| match a {
+                                Value::Package(n) => n.clone(),
+                                Value::ParametricRole { .. } => {
+                                    // Recursively get the WHAT name for nested parametric roles
+                                    if let Ok(Value::Package(n)) =
+                                        self.call_method_with_values(a.clone(), "WHAT", Vec::new())
+                                    {
+                                        // Strip surrounding parens from (Name)
+                                        n.trim_start_matches('(').trim_end_matches(')').to_string()
+                                    } else {
+                                        a.to_string_value()
+                                    }
+                                }
+                                _ => a.to_string_value(),
+                            })
+                            .collect();
+                        let name = format!("{}[{}]", base_name, args_str.join(","));
+                        return Ok(Value::Package(name));
+                    }
                 };
                 return Ok(Value::Package(type_name.to_string()));
             }
@@ -4116,6 +4141,35 @@ impl Interpreter {
                     )));
                 }
                 _ => {}
+            }
+            if let Some(role) = self.roles.get(class_name).cloned() {
+                let mut named_args: HashMap<String, Value> = HashMap::new();
+                let mut positional_args: Vec<Value> = Vec::new();
+                for arg in &args {
+                    if let Value::Pair(key, value) = arg {
+                        named_args.insert(key.clone(), *value.clone());
+                    } else {
+                        positional_args.push(arg.clone());
+                    }
+                }
+
+                let mut mixins = HashMap::new();
+                mixins.insert(format!("__mutsu_role__{}", class_name), Value::Bool(true));
+                for (idx, (attr_name, _is_public, default_expr, _is_rw)) in
+                    role.attributes.iter().enumerate()
+                {
+                    let value = if let Some(v) = named_args.get(attr_name) {
+                        v.clone()
+                    } else if let Some(v) = positional_args.get(idx) {
+                        v.clone()
+                    } else if let Some(expr) = default_expr {
+                        self.eval_block_value(&[Stmt::Expr(expr.clone())])?
+                    } else {
+                        Value::Nil
+                    };
+                    mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
+                }
+                return Ok(Value::Mixin(Box::new(Value::Nil), mixins));
             }
             if self.classes.contains_key(class_name) {
                 // Check for user-defined .new method first

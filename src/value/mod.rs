@@ -170,6 +170,12 @@ pub enum Value {
         fetcher: Box<Value>,
         storer: Box<Value>,
     },
+    /// A parametric role type, e.g. `R1[C1]` or `R1[C1, C2]`.
+    /// `base_name` is the role name, `type_args` are the type arguments.
+    ParametricRole {
+        base_name: String,
+        type_args: Vec<Value>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

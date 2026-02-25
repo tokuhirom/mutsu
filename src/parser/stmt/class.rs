@@ -413,6 +413,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
     let (mut rest, type_params) = parse_optional_role_type_params(rest)?;
+    let mut parent_roles: Vec<String> = Vec::new();
 
     // Optional `does Role[...]` clauses.
     while let Some(r) = keyword("does", rest) {
@@ -424,6 +425,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
                 name
             )));
         }
+        parent_roles.push(role_name);
         let (r, _) = skip_optional_role_args(r)?;
         rest = r;
     }
@@ -437,10 +439,13 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
         rest = r;
     }
 
-    let (rest, body) = match block(rest) {
+    let (rest, mut body) = match block(rest) {
         Ok(ok) => ok,
         Err(_) => consume_raw_braced_body(rest)?,
     };
+    for role_name in parent_roles.into_iter().rev() {
+        body.insert(0, Stmt::DoesDecl { name: role_name });
+    }
     Ok((
         rest,
         Stmt::RoleDecl {

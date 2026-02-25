@@ -601,6 +601,15 @@ impl VM {
         let (base_constraint, _) = crate::runtime::types::strip_type_smiley(constraint);
         let value = self.stack.last().expect("TypeCheck: empty stack");
         if runtime::is_known_type_constraint(base_constraint) {
+            if let Value::Array(items, ..) = value {
+                let all_match = items
+                    .iter()
+                    .all(|item| self.interpreter.type_matches_value(constraint, item));
+                if !all_match {
+                    return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
+                }
+                return Ok(());
+            }
             if !matches!(value, Value::Nil)
                 && !self.interpreter.type_matches_value(constraint, value)
             {

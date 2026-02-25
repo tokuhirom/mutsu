@@ -84,7 +84,7 @@ impl Value {
             Value::Pair(_, _) | Value::ValuePair(_, _) => true,
             Value::Enum { .. } => true,
             Value::CompUnitDepSpec { .. } => true,
-            Value::Package(_) => false,
+            Value::Package(_) | Value::ParametricRole { .. } => false,
             Value::Routine { .. } => true,
             Value::Sub(_) | Value::WeakSub(_) => true,
             Value::Instance {
@@ -181,6 +181,7 @@ impl Value {
             Value::Uni { form, .. } => form.as_str(),
             Value::Mixin(inner, _) => return inner.isa_check(type_name),
             Value::Proxy { .. } => "Proxy",
+            Value::ParametricRole { base_name, .. } => base_name.as_str(),
         };
         if my_type == type_name {
             return true;

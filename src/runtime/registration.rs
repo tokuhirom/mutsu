@@ -1376,6 +1376,27 @@ impl Interpreter {
                             });
                     }
                 }
+                Stmt::DoesDecl { name: role_name } => {
+                    let role =
+                        self.roles.get(role_name).cloned().ok_or_else(|| {
+                            RuntimeError::new(format!("Unknown role: {}", role_name))
+                        })?;
+                    if role.is_stub_role {
+                        return Err(RuntimeError::new("X::Role::Parametric::NoSuchCandidate"));
+                    }
+                    self.role_parents
+                        .entry(name.to_string())
+                        .or_default()
+                        .push(role_name.clone());
+                    for attr in &role.attributes {
+                        if !role_def.attributes.iter().any(|(n, _, _, _)| n == &attr.0) {
+                            role_def.attributes.push(attr.clone());
+                        }
+                    }
+                    for (mname, overloads) in role.methods {
+                        role_def.methods.entry(mname).or_default().extend(overloads);
+                    }
+                }
                 Stmt::MethodDecl {
                     name: method_name,
                     name_expr,
