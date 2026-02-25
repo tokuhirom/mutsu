@@ -56,6 +56,45 @@ fn substitute_type_params_in_method(
 }
 
 impl Interpreter {
+    fn has_explicit_named_slurpy(param_defs: &[ParamDef]) -> bool {
+        param_defs
+            .iter()
+            .any(|pd| pd.slurpy && (pd.name.starts_with('%') || pd.double_slurpy))
+    }
+
+    fn implicit_method_named_slurpy_param() -> ParamDef {
+        ParamDef {
+            name: "%_".to_string(),
+            default: None,
+            multi_invocant: true,
+            required: false,
+            named: false,
+            slurpy: true,
+            double_slurpy: false,
+            sigilless: false,
+            type_constraint: None,
+            literal_value: None,
+            sub_signature: None,
+            where_constraint: None,
+            traits: Vec::new(),
+            optional_marker: false,
+            outer_sub_signature: None,
+            code_signature: None,
+            is_invocant: false,
+        }
+    }
+
+    fn effective_method_param_defs(
+        param_defs: &[ParamDef],
+        class_is_hidden: bool,
+    ) -> Vec<ParamDef> {
+        let mut defs = param_defs.to_vec();
+        if !class_is_hidden && !Self::has_explicit_named_slurpy(&defs) {
+            defs.push(Self::implicit_method_named_slurpy_param());
+        }
+        defs
+    }
+
     fn is_stub_routine_body(body: &[Stmt]) -> bool {
         body.len() == 1
             && matches!(
@@ -72,7 +111,7 @@ impl Interpreter {
     fn method_positional_signature(def: &MethodDef) -> Vec<String> {
         def.param_defs
             .iter()
-            .filter(|pd| !pd.named)
+            .filter(|pd| !(pd.named || (pd.slurpy && pd.name.starts_with('%'))))
             .map(|pd| {
                 if pd.slurpy {
                     format!("*{}", pd.type_constraint.as_deref().unwrap_or("Any"))
@@ -912,6 +951,8 @@ impl Interpreter {
         &mut self,
         name: &str,
         parents: &[String],
+        is_hidden: bool,
+        hidden_parents: &[String],
         body: &[Stmt],
     ) -> Result<(), RuntimeError> {
         // Validate that all parent classes exist
@@ -999,6 +1040,17 @@ impl Interpreter {
             native_methods: HashSet::new(),
             mro: Vec::new(),
         };
+        if is_hidden {
+            self.hidden_classes.insert(name.to_string());
+        } else {
+            self.hidden_classes.remove(name);
+        }
+        if hidden_parents.is_empty() {
+            self.hidden_defer_parents.remove(name);
+        } else {
+            self.hidden_defer_parents
+                .insert(name.to_string(), hidden_parents.iter().cloned().collect());
+        }
         // Compose roles listed in the parents (from "does Role" in class header)
         for parent in parents {
             // Strip role type arguments (e.g., "R[Str:D(Numeric)]" -> "R")
@@ -1120,7 +1172,7 @@ impl Interpreter {
                 Stmt::MethodDecl {
                     name: method_name,
                     name_expr,
-                    params,
+                    params: _,
                     param_defs,
                     body: method_body,
                     multi,
@@ -1135,9 +1187,15 @@ impl Interpreter {
                     } else {
                         method_name.clone()
                     };
+                    let effective_param_defs =
+                        Self::effective_method_param_defs(param_defs, is_hidden);
+                    let effective_params: Vec<String> = effective_param_defs
+                        .iter()
+                        .map(|p| p.name.clone())
+                        .collect();
                     let def = MethodDef {
-                        params: params.clone(),
-                        param_defs: param_defs.clone(),
+                        params: effective_params.clone(),
+                        param_defs: effective_param_defs.clone(),
                         body: method_body.clone(),
                         is_rw: *is_rw,
                         is_private: *is_private,
@@ -1159,7 +1217,12 @@ impl Interpreter {
                         // Prepend "self" as first param so the first argument
                         // gets bound as `self` when calling this as a function.
                         let mut our_params = vec!["self".to_string()];
-                        our_params.extend(params.iter().filter(|p| *p != "self").cloned());
+                        our_params.extend(
+                            effective_params
+                                .iter()
+                                .filter(|p| p.as_str() != "self")
+                                .cloned(),
+                        );
                         let self_param = crate::ast::ParamDef {
                             name: "self".to_string(),
                             default: None,
@@ -1180,8 +1243,12 @@ impl Interpreter {
                             is_invocant: false,
                         };
                         let mut our_param_defs = vec![self_param];
-                        our_param_defs
-                            .extend(param_defs.iter().filter(|p| !p.is_invocant).cloned());
+                        our_param_defs.extend(
+                            effective_param_defs
+                                .iter()
+                                .filter(|p| !p.is_invocant)
+                                .cloned(),
+                        );
                         let func_def = crate::ast::FunctionDef {
                             package: name.to_string(),
                             name: resolved_method_name.clone(),

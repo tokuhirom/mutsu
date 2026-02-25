@@ -856,15 +856,24 @@ impl VM {
                     self.stack.push(val);
                     return Ok(());
                 }
-                let vals = match &val {
+                let mut vals = match &val {
                     Value::Array(v, ..) => (**v).clone(),
                     _ => vec![val.clone()],
                 };
+                if vals.is_empty() {
+                    vals.push(Value::Nil);
+                }
+                if !matches!(self.interpreter.env().get(&var_name), Some(Value::Hash(_))) {
+                    self.interpreter.env_mut().insert(
+                        var_name.clone(),
+                        Value::hash(std::collections::HashMap::new()),
+                    );
+                }
                 if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(&var_name) {
                     let h = Arc::make_mut(hash);
                     for (i, key) in keys.iter().enumerate() {
                         let k = key.to_string_value();
-                        let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                        let v = vals[i % vals.len()].clone();
                         h.insert(k, v);
                     }
                 }
