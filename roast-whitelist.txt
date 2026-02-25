@@ -135,6 +135,7 @@ roast/S06-signature/multidimensional.t
 roast/S06-signature/passing-hashes.t
 roast/S06-signature/positional-placeholders.t
 roast/S06-signature/scalar-type.t
+roast/S06-signature/sigilless.t
 roast/S06-signature/unpack-object.t
 roast/S06-traits/as.t
 roast/S06-traits/is-readonly.t

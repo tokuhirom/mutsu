@@ -190,6 +190,17 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         if method == "VAR" && args.is_empty() {
+            let readonly_key = format!("__mutsu_sigilless_readonly::{}", target_var);
+            let alias_key = format!("__mutsu_sigilless_alias::{}", target_var);
+            let has_sigilless_meta =
+                self.env.contains_key(&readonly_key) || self.env.contains_key(&alias_key);
+            if has_sigilless_meta {
+                let readonly = matches!(self.env.get(&readonly_key), Some(Value::Bool(true)));
+                let itemized_array = matches!(target, Value::Array(_, true));
+                if readonly && !itemized_array {
+                    return Ok(target);
+                }
+            }
             let class_name = if target_var.starts_with('@') {
                 "Array"
             } else if target_var.starts_with('%') {

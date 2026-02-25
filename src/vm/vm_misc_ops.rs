@@ -279,14 +279,37 @@ impl VM {
         self.stack.push(val);
     }
 
-    pub(super) fn exec_assign_expr_op(&mut self, code: &CompiledCode, name_idx: u32) {
+    pub(super) fn exec_assign_expr_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
         let name = match &code.constants[name_idx as usize] {
             Value::Str(s) => s.clone(),
             _ => unreachable!("AssignExpr name must be a string constant"),
         };
         let val = self.stack.last().unwrap().clone();
+        let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
+        let alias_key = format!("__mutsu_sigilless_alias::{}", name);
+        if matches!(
+            self.interpreter.env().get(&readonly_key),
+            Some(Value::Bool(true))
+        ) && !matches!(self.interpreter.env().get(&alias_key), Some(Value::Str(_)))
+        {
+            return Err(RuntimeError::new("X::Assignment::RO"));
+        }
         self.update_local_if_exists(code, &name, &val);
         self.set_env_with_main_alias(&name, val.clone());
+        if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
+            if let Value::Str(name) = v {
+                Some(name.clone())
+            } else {
+                None
+            }
+        }) {
+            self.update_local_if_exists(code, &alias_name, &val);
+            self.interpreter.env_mut().insert(alias_name, val.clone());
+        }
         if let Some(attr) = name.strip_prefix('.') {
             self.interpreter
                 .env_mut()
@@ -296,6 +319,19 @@ impl VM {
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
         }
+        Ok(())
+    }
+
+    pub(super) fn exec_wrap_var_ref_op(&mut self, code: &CompiledCode, name_idx: u32) {
+        let value = self.stack.pop().unwrap_or(Value::Nil);
+        let name = Self::const_str(code, name_idx).to_string();
+        let mut named = std::collections::HashMap::new();
+        named.insert("__mutsu_varref_name".to_string(), Value::Str(name));
+        named.insert("__mutsu_varref_value".to_string(), value);
+        self.stack.push(Value::Capture {
+            positional: Vec::new(),
+            named,
+        });
     }
 
     pub(super) fn exec_get_env_index_op(&mut self, code: &CompiledCode, key_idx: u32) {

@@ -1,6 +1,25 @@
 use super::*;
 
 impl Interpreter {
+    fn unwrap_test_arg_value(value: &Value) -> Value {
+        match value {
+            Value::Capture { positional, named }
+                if positional.is_empty()
+                    && matches!(named.get("__mutsu_varref_name"), Some(Value::Str(_)))
+                    && named.contains_key("__mutsu_varref_value") =>
+            {
+                named
+                    .get("__mutsu_varref_value")
+                    .cloned()
+                    .unwrap_or(Value::Nil)
+            }
+            Value::Pair(key, val) => {
+                Value::Pair(key.clone(), Box::new(Self::unwrap_test_arg_value(val)))
+            }
+            _ => value.clone(),
+        }
+    }
+
     /// Dispatch Test module functions. Returns `Ok(Some(value))` if the name
     /// matched a Test function, `Ok(None)` if it did not.
     pub(crate) fn call_test_function(
@@ -8,6 +27,8 @@ impl Interpreter {
         name: &str,
         args: &[Value],
     ) -> Result<Option<Value>, RuntimeError> {
+        let normalized_args: Vec<Value> = args.iter().map(Self::unwrap_test_arg_value).collect();
+        let args = normalized_args.as_slice();
         match name {
             "ok" => self.test_fn_ok(args).map(Some),
             "nok" => self.test_fn_nok(args).map(Some),
@@ -316,6 +337,7 @@ impl Interpreter {
                 ">" => super::to_float_value(&left) > super::to_float_value(&right),
                 ">=" => super::to_float_value(&left) >= super::to_float_value(&right),
                 "===" => left == right,
+                "!===" => left != right,
                 "=:=" => left == right,
                 _ => {
                     return Err(RuntimeError::new(format!(

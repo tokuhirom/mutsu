@@ -687,8 +687,27 @@ impl VM {
         } else {
             val
         };
+        let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
+        let alias_key = format!("__mutsu_sigilless_alias::{}", name);
+        if matches!(
+            self.interpreter.env().get(&readonly_key),
+            Some(Value::Bool(true))
+        ) && !matches!(self.interpreter.env().get(&alias_key), Some(Value::Str(_)))
+        {
+            return Err(RuntimeError::new("X::Assignment::RO"));
+        }
         self.locals[idx] = val.clone();
         self.set_env_with_main_alias(name, val.clone());
+        if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
+            if let Value::Str(name) = v {
+                Some(name.clone())
+            } else {
+                None
+            }
+        }) {
+            self.update_local_if_exists(code, &alias_name, &val);
+            self.interpreter.env_mut().insert(alias_name, val.clone());
+        }
         if let Some(attr) = name.strip_prefix('.') {
             self.interpreter
                 .env_mut()
@@ -711,7 +730,11 @@ impl VM {
         self.interpreter.set_var_dynamic(name, dynamic);
     }
 
-    pub(super) fn exec_assign_expr_local_op(&mut self, code: &CompiledCode, idx: u32) {
+    pub(super) fn exec_assign_expr_local_op(
+        &mut self,
+        code: &CompiledCode,
+        idx: u32,
+    ) -> Result<(), RuntimeError> {
         let val = self.stack.last().unwrap().clone();
         let idx = idx as usize;
         let name = &code.locals[idx];
@@ -722,8 +745,27 @@ impl VM {
         } else {
             val
         };
+        let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
+        let alias_key = format!("__mutsu_sigilless_alias::{}", name);
+        if matches!(
+            self.interpreter.env().get(&readonly_key),
+            Some(Value::Bool(true))
+        ) && !matches!(self.interpreter.env().get(&alias_key), Some(Value::Str(_)))
+        {
+            return Err(RuntimeError::new("X::Assignment::RO"));
+        }
         self.locals[idx] = val.clone();
         self.set_env_with_main_alias(name, val.clone());
+        if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
+            if let Value::Str(name) = v {
+                Some(name.clone())
+            } else {
+                None
+            }
+        }) {
+            self.update_local_if_exists(code, &alias_name, &val);
+            self.interpreter.env_mut().insert(alias_name, val.clone());
+        }
         if let Some(attr) = name.strip_prefix('.') {
             self.interpreter
                 .env_mut()
@@ -733,6 +775,7 @@ impl VM {
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
         }
+        Ok(())
     }
 
     pub(super) fn exec_get_pseudo_stash_op(&mut self, code: &CompiledCode, name_idx: u32) {
