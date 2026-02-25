@@ -4086,13 +4086,32 @@ impl Interpreter {
             let mut best: Option<Value> = None;
             let mut out: Vec<Value> = Vec::new();
             for (idx, item) in items.iter().enumerate() {
-                if matches!(item, Value::Nil) {
+                if matches!(item, Value::Nil) || matches!(item, Value::Package(n) if n == "Any") {
                     continue;
                 }
                 let ord = if let Some(current) = &best {
-                    match (to_float_value(item), to_float_value(current)) {
-                        (Some(a), Some(b)) => {
-                            a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
+                    // Use `cmp` semantics: numeric comparison for numeric
+                    // pairs, string comparison otherwise
+                    match (item, current) {
+                        (Value::Int(a), Value::Int(b)) => a.cmp(b),
+                        (Value::Num(a), Value::Num(b)) => {
+                            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                        }
+                        (Value::Int(a), Value::Num(b)) => (*a as f64)
+                            .partial_cmp(b)
+                            .unwrap_or(std::cmp::Ordering::Equal),
+                        (Value::Num(a), Value::Int(b)) => a
+                            .partial_cmp(&(*b as f64))
+                            .unwrap_or(std::cmp::Ordering::Equal),
+                        (Value::Rat(..), _) | (_, Value::Rat(..)) => {
+                            if let (Some((an, ad)), Some((bn, bd))) = (
+                                crate::runtime::to_rat_parts(item),
+                                crate::runtime::to_rat_parts(current),
+                            ) {
+                                crate::runtime::compare_rat_parts((an, ad), (bn, bd))
+                            } else {
+                                item.to_string_value().cmp(&current.to_string_value())
+                            }
                         }
                         _ => item.to_string_value().cmp(&current.to_string_value()),
                     }
@@ -4105,16 +4124,25 @@ impl Interpreter {
                 if replace {
                     best = Some(item.clone());
                     out.clear();
-                    out.push(Value::Pair(idx.to_string(), Box::new(item.clone())));
+                    out.push(Value::ValuePair(
+                        Box::new(Value::Int(idx as i64)),
+                        Box::new(item.clone()),
+                    ));
                 } else if ord == std::cmp::Ordering::Equal {
-                    out.push(Value::Pair(idx.to_string(), Box::new(item.clone())));
+                    out.push(Value::ValuePair(
+                        Box::new(Value::Int(idx as i64)),
+                        Box::new(item.clone()),
+                    ));
                 }
             }
-            Value::array(out)
+            Value::Seq(Arc::new(out))
         };
         Ok(match target {
             Value::Array(items, ..) => to_pairs(&items),
-            other => Value::array(vec![Value::Pair("0".to_string(), Box::new(other))]),
+            other => Value::Seq(Arc::new(vec![Value::ValuePair(
+                Box::new(Value::Int(0)),
+                Box::new(other),
+            )])),
         })
     }
 

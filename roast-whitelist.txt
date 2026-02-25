@@ -335,6 +335,7 @@ roast/S28-named-variables/init-instant.t
 roast/S28-named-variables/slangs.t
 roast/S29-any/are.t
 roast/S29-any/cmp.t
+roast/S29-any/minpairs-maxpairs.t
 roast/S29-context/die.t
 roast/S29-context/evalfile.t
 roast/S29-context/exit-in-if.t
