@@ -435,12 +435,14 @@ impl VM {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_try_catch_op(
         &mut self,
         code: &CompiledCode,
         catch_start: u32,
         control_start: u32,
         body_end: u32,
+        explicit_catch: bool,
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
@@ -522,17 +524,23 @@ impl VM {
                 self.interpreter.env_mut().insert("_".to_string(), err_val);
                 let saved_when = self.interpreter.when_matched();
                 self.interpreter.set_when_matched(false);
-                match self.run_range(code, catch_begin, control_begin, compiled_fns) {
-                    Ok(()) => {}
-                    // succeed from `when` inside CATCH means exception was handled
-                    Err(e) if e.is_succeed => {}
-                    Err(e) => return Err(e),
-                }
+                let when_handled =
+                    match self.run_range(code, catch_begin, control_begin, compiled_fns) {
+                        Ok(()) => self.interpreter.when_matched(),
+                        // succeed from `when` inside CATCH means exception was handled
+                        Err(catch_err) if catch_err.is_succeed => true,
+                        Err(catch_err) => return Err(catch_err),
+                    };
                 self.interpreter.set_when_matched(saved_when);
                 if let Some(v) = saved_topic {
                     self.interpreter.env_mut().insert("_".to_string(), v);
                 } else {
                     self.interpreter.env_mut().remove("_");
+                }
+                // If there's an explicit CATCH block but no `when`/`default`
+                // matched, re-throw the exception (Raku semantics).
+                if explicit_catch && !when_handled {
+                    return Err(e);
                 }
                 *ip = end;
                 Ok(())

@@ -361,6 +361,8 @@ impl VM {
             name,
             name_expr,
             parents,
+            is_hidden,
+            hidden_parents,
             body,
         } = stmt
         {
@@ -371,8 +373,13 @@ impl VM {
             } else {
                 name.clone()
             };
-            self.interpreter
-                .register_class_decl(&resolved_name, parents, body)?;
+            self.interpreter.register_class_decl(
+                &resolved_name,
+                parents,
+                *is_hidden,
+                hidden_parents,
+                body,
+            )?;
             self.interpreter
                 .env_mut()
                 .insert("_".to_string(), Value::Package(resolved_name));
@@ -397,6 +404,9 @@ impl VM {
         {
             self.interpreter
                 .register_role_decl(name, type_params, body)?;
+            self.interpreter
+                .env_mut()
+                .insert("_".to_string(), Value::Package(name.clone()));
             self.sync_locals_from_env(code);
             Ok(())
         } else {

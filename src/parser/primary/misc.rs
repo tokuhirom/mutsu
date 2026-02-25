@@ -107,8 +107,38 @@ fn is_valid_reduction_op(op: &str) -> bool {
     if REDUCTION_OPS.contains(&s) {
         return true;
     }
-    if let Some(stripped) = s.strip_prefix('!') {
-        return REDUCTION_OPS.contains(&stripped);
+    if let Some(stripped) = s.strip_prefix('!')
+        && REDUCTION_OPS.contains(&stripped)
+    {
+        return true;
+    }
+    is_custom_reduction_op(s)
+}
+
+fn is_custom_reduction_op(op: &str) -> bool {
+    if let Some(name) = op.strip_prefix('&') {
+        return is_callable_reduction_name(name);
+    }
+    if let Ok((rest, _)) = parse_ident_with_hyphens(op) {
+        return rest.is_empty();
+    }
+    false
+}
+
+fn is_callable_reduction_name(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    if (name.starts_with("infix:<")
+        || name.starts_with("prefix:<")
+        || name.starts_with("postfix:<")
+        || name.starts_with("term:<"))
+        && name.ends_with('>')
+    {
+        return true;
+    }
+    if let Ok((rest, _)) = parse_ident_with_hyphens(name) {
+        return rest.is_empty();
     }
     false
 }
@@ -135,6 +165,7 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("known reduction operator"));
     }
     let r = &input[end + 1..];
+    let call_style_operand = r.starts_with('(') && is_custom_reduction_op(&op);
     // Must be followed by whitespace and an expression (not just `]`)
     if r.is_empty() || r.starts_with(';') || r.starts_with('}') || r.starts_with(')') {
         return Err(PError::expected("expression after reduction operator"));
@@ -144,31 +175,33 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
     let (r, first) = parse_reduction_operand(r)?;
     let mut items = vec![first];
     let mut rest = r;
-    loop {
-        let (r, _) = ws_inner(rest);
-        if !r.starts_with(',') {
-            break;
-        }
-        let r = &r[1..];
-        let (r, _) = ws_inner(r);
-        // Stop at end-of-input, semicolon, closing brackets, or statement modifiers
-        if r.is_empty()
-            || r.starts_with(';')
-            || r.starts_with('}')
-            || r.starts_with(')')
-            || r.starts_with(']')
-        {
-            rest = r;
-            break;
-        }
-        if let Ok((r, next)) = parse_reduction_operand(r) {
-            items.push(next);
-            rest = r;
-        } else {
-            return Err(PError::expected_at(
-                "expression after ',' in reduction list",
-                r,
-            ));
+    if !call_style_operand {
+        loop {
+            let (r, _) = ws_inner(rest);
+            if !r.starts_with(',') {
+                break;
+            }
+            let r = &r[1..];
+            let (r, _) = ws_inner(r);
+            // Stop at end-of-input, semicolon, closing brackets, or statement modifiers
+            if r.is_empty()
+                || r.starts_with(';')
+                || r.starts_with('}')
+                || r.starts_with(')')
+                || r.starts_with(']')
+            {
+                rest = r;
+                break;
+            }
+            if let Ok((r, next)) = parse_reduction_operand(r) {
+                items.push(next);
+                rest = r;
+            } else {
+                return Err(PError::expected_at(
+                    "expression after ',' in reduction list",
+                    r,
+                ));
+            }
         }
     }
     let expr = if items.len() == 1 {
@@ -833,6 +866,8 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             name,
             name_expr: None,
             parents: Vec::new(),
+            is_hidden: false,
+            hidden_parents: Vec::new(),
             body,
         })),
     ))

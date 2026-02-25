@@ -96,6 +96,10 @@ impl Interpreter {
         self.when_matched = v;
     }
 
+    pub(crate) fn is_role(&self, name: &str) -> bool {
+        self.roles.contains_key(name)
+    }
+
     pub(crate) fn smart_match_values(&mut self, left: &Value, right: &Value) -> bool {
         self.smart_match(left, right)
     }

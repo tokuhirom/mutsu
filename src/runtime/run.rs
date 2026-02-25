@@ -15,6 +15,8 @@ impl Interpreter {
                 name,
                 name_expr,
                 parents,
+                is_hidden,
+                hidden_parents,
                 body: _,
             } = &stmts[idx]
             {
@@ -23,6 +25,8 @@ impl Interpreter {
                     name: name.clone(),
                     name_expr: name_expr.clone(),
                     parents: parents.clone(),
+                    is_hidden: *is_hidden,
+                    hidden_parents: hidden_parents.clone(),
                     body,
                 });
             }

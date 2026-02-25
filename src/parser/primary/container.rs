@@ -422,6 +422,13 @@ pub(super) fn percent_hash_literal(input: &str) -> PResult<'_, Expr> {
             rest = r;
             continue;
         }
+        // Newline-separated colonpairs without commas: treat as separate
+        // statements (like Raku), keeping only the last entry.
+        if r.starts_with(':') {
+            pairs.clear();
+            rest = r;
+            continue;
+        }
         let (r, _) = parse_char(r, ')')?;
         return Ok((r, Expr::Hash(pairs)));
     }
@@ -452,8 +459,17 @@ fn parse_quote_word_list<'a>(
     let Some(input) = input.strip_prefix(open) else {
         return Err(PError::expected("quote-word list"));
     };
-    // For `<...>`, make sure it's not <= or <=> etc.
-    if reject_lt_operators && (input.starts_with('=') || input.starts_with('-')) {
+    // For `<...>`, reject leading operator forms like <= and <=>.
+    // Allow negative words/numerics such as <-1/0>.
+    if reject_lt_operators
+        && (input.starts_with('=')
+            || (input.starts_with('-')
+                && !input
+                    .as_bytes()
+                    .get(1)
+                    .copied()
+                    .is_some_and(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'/' | b'.'))))
+    {
         return Err(PError::expected("angle list"));
     }
     let end = if quoted_words {
