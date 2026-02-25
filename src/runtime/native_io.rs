@@ -23,6 +23,22 @@ impl Interpreter {
         let original = Path::new(&p);
         match method {
             "Str" | "gist" => Ok(Value::Str(p.clone())),
+            "raku" | "perl" => {
+                let escape = |s: &str| {
+                    s.replace('\\', "\\\\")
+                        .replace('"', "\\\"")
+                        .replace('\n', "\\n")
+                        .replace('\t', "\\t")
+                        .replace('\r', "\\r")
+                        .replace('\0', "\\0")
+                };
+                let cwd = instance_cwd.unwrap_or_else(|| Self::stringify_path(&cwd_path));
+                Ok(Value::Str(format!(
+                    "IO::Path.new(\"{}\", :CWD(\"{}\"))",
+                    escape(&p),
+                    escape(&cwd)
+                )))
+            }
             "IO" => Ok(Value::make_instance(
                 "IO::Path".to_string(),
                 attributes.clone(),
@@ -252,8 +268,8 @@ impl Interpreter {
                 Ok(Value::Str(content))
             }
             "open" => {
-                let (read, write, append, bin) = Self::parse_io_flags_values(&args);
-                self.open_file_handle(&path_buf, read, write, append, bin)
+                let (read, write, append, bin, line_separators) = self.parse_io_flags_values(&args);
+                self.open_file_handle(&path_buf, read, write, append, bin, line_separators)
             }
             "copy" => {
                 let dest = args
@@ -387,36 +403,24 @@ impl Interpreter {
         let target_val = Value::make_instance("IO::Handle".to_string(), target.clone());
         match method {
             "close" => Ok(Value::Bool(self.close_handle_value(&target_val)?)),
-            "get" => {
-                let line = self.read_line_from_handle_value(&target_val)?;
-                if line.is_empty() {
-                    Ok(Value::Nil)
-                } else {
-                    Ok(Value::Str(line))
-                }
-            }
+            "get" => Ok(self
+                .read_line_from_handle_value(&target_val)?
+                .map(Value::Str)
+                .unwrap_or(Value::Nil)),
             "getc" => {
                 let bytes = self.read_bytes_from_handle_value(&target_val, 1)?;
                 Ok(Value::Str(String::from_utf8_lossy(&bytes).to_string()))
             }
             "lines" => {
                 let mut lines = Vec::new();
-                loop {
-                    let line = self.read_line_from_handle_value(&target_val)?;
-                    if line.is_empty() {
-                        break;
-                    }
+                while let Some(line) = self.read_line_from_handle_value(&target_val)? {
                     lines.push(Value::Str(line));
                 }
                 Ok(Value::array(lines))
             }
             "words" => {
                 let mut words = Vec::new();
-                loop {
-                    let line = self.read_line_from_handle_value(&target_val)?;
-                    if line.is_empty() {
-                        break;
-                    }
+                while let Some(line) = self.read_line_from_handle_value(&target_val)? {
                     for token in line.split_whitespace() {
                         words.push(Value::Str(token.to_string()));
                     }
@@ -455,7 +459,7 @@ impl Interpreter {
                 self.write_to_handle_value(&target_val, &content, false)?;
                 Ok(Value::Bool(true))
             }
-            "say" => {
+            "say" | "put" => {
                 let content = args
                     .first()
                     .map(|v| v.to_string_value())
@@ -580,11 +584,7 @@ impl Interpreter {
             } else {
                 // Read from handle
                 let mut all = String::new();
-                loop {
-                    let line = self.read_line_from_handle_value(&target_val)?;
-                    if line.is_empty() {
-                        break;
-                    }
+                while let Some(line) = self.read_line_from_handle_value(&target_val)? {
                     all.push_str(&line);
                     all.push('\n');
                 }

@@ -81,7 +81,7 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
     // If sequence syntax appears, try full expression parsing first.
     // This avoids mis-parsing cases like ("a"...* ~~ / z /) where
     // sequence is followed by another infix operator.
-    if input.starts_with("...")
+    if starts_with_sequence_op(input)
         && let Ok((r_full, full_expr)) = expression(content_start)
     {
         let (r_full_ws, _) = ws(r_full)?;
@@ -105,7 +105,14 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
     }
     // Comma-separated list with sequence operator detection
     // Use expression_no_sequence so that `...` is not consumed as part of an item
-    let (input, _) = parse_char(input, ',')?;
+    let sep = if input.starts_with(',') {
+        ','
+    } else if input.starts_with(';') && !input.starts_with(";;") {
+        ';'
+    } else {
+        return Err(PError::expected("',' or ';' in parenthesized list"));
+    };
+    let (input, _) = parse_char(input, sep)?;
     let (input, _) = ws(input)?;
     let mut items = vec![first];
     if let Some(result) = try_inline_modifier(input, finalize_paren_list(items.clone())) {
@@ -133,7 +140,14 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         if let Some(seq) = try_parse_sequence_in_paren(input, &items) {
             return seq;
         }
-        let (input, _) = parse_char(input, ',')?;
+        let sep = if input.starts_with(',') {
+            ','
+        } else if input.starts_with(';') && !input.starts_with(";;") {
+            ';'
+        } else {
+            return Err(PError::expected("',' or ';' in parenthesized list"));
+        };
+        let (input, _) = parse_char(input, sep)?;
         let (input, _) = ws(input)?;
         if let Some(result) = try_inline_modifier(input, finalize_paren_list(items.clone())) {
             let (rest, modified_expr) = result?;
@@ -202,13 +216,40 @@ pub(super) fn itemized_paren_expr(input: &str) -> PResult<'_, Expr> {
     Ok((rest, Expr::CaptureLiteral(vec![inner])))
 }
 
+/// Parse itemized bracket expression: `$[...]`.
+///
+/// Rakudo lowers this as a normal bracket constructor followed by `.item`.
+pub(super) fn itemized_bracket_expr(input: &str) -> PResult<'_, Expr> {
+    let Some(rest) = input.strip_prefix('$') else {
+        return Err(PError::expected("itemized bracket expression"));
+    };
+    if !rest.starts_with('[') {
+        return Err(PError::expected("itemized bracket expression"));
+    }
+    let (rest, inner) = array_literal(rest)?;
+    Ok((
+        rest,
+        Expr::MethodCall {
+            target: Box::new(inner),
+            name: "item".to_string(),
+            args: vec![],
+            modifier: None,
+            quoted: false,
+        },
+    ))
+}
+
 /// Try to parse a sequence operator (...) inside a paren expression.
 /// If the input starts with ... or ...^, treat all collected items as seeds.
 fn try_parse_sequence_in_paren<'a>(input: &'a str, seeds: &[Expr]) -> Option<PResult<'a, Expr>> {
     let (is_excl, rest) = if let Some(stripped) = input.strip_prefix("...^") {
         (true, stripped)
+    } else if let Some(stripped) = input.strip_prefix("…^") {
+        (true, stripped)
     } else if input.starts_with("...") && !input.starts_with("....") {
         (false, &input[3..])
+    } else if let Some(stripped) = input.strip_prefix("…") {
+        (false, stripped)
     } else {
         return None;
     };
@@ -274,6 +315,10 @@ fn try_parse_sequence_in_paren<'a>(input: &'a str, seeds: &[Expr]) -> Option<PRe
         Ok((r, seq))
     })();
     Some(result)
+}
+
+fn starts_with_sequence_op(input: &str) -> bool {
+    input.starts_with("...") || input.starts_with("…")
 }
 
 /// Try to parse an inline statement modifier inside parenthesized expression.

@@ -1,6 +1,25 @@
 use super::*;
 
 impl Interpreter {
+    fn unwrap_test_arg_value(value: &Value) -> Value {
+        match value {
+            Value::Capture { positional, named }
+                if positional.is_empty()
+                    && matches!(named.get("__mutsu_varref_name"), Some(Value::Str(_)))
+                    && named.contains_key("__mutsu_varref_value") =>
+            {
+                named
+                    .get("__mutsu_varref_value")
+                    .cloned()
+                    .unwrap_or(Value::Nil)
+            }
+            Value::Pair(key, val) => {
+                Value::Pair(key.clone(), Box::new(Self::unwrap_test_arg_value(val)))
+            }
+            _ => value.clone(),
+        }
+    }
+
     /// Dispatch Test module functions. Returns `Ok(Some(value))` if the name
     /// matched a Test function, `Ok(None)` if it did not.
     pub(crate) fn call_test_function(
@@ -8,6 +27,8 @@ impl Interpreter {
         name: &str,
         args: &[Value],
     ) -> Result<Option<Value>, RuntimeError> {
+        let normalized_args: Vec<Value> = args.iter().map(Self::unwrap_test_arg_value).collect();
+        let args = normalized_args.as_slice();
         match name {
             "ok" => self.test_fn_ok(args).map(Some),
             "nok" => self.test_fn_nok(args).map(Some),
@@ -316,6 +337,7 @@ impl Interpreter {
                 ">" => super::to_float_value(&left) > super::to_float_value(&right),
                 ">=" => super::to_float_value(&left) >= super::to_float_value(&right),
                 "===" => left == right,
+                "!===" => left != right,
                 "=:=" => left == right,
                 _ => {
                     return Err(RuntimeError::new(format!(
@@ -549,10 +571,31 @@ impl Interpreter {
             _ => String::new(),
         };
         let mut nested = Interpreter::new();
+        nested.strict_mode = self.strict_mode;
         if let Some(Value::Int(pid)) = self.env.get("*PID") {
             nested.set_pid(pid.saturating_add(1));
         }
         nested.lib_paths = self.lib_paths.clone();
+        nested.functions = self.functions.clone();
+        nested.proto_functions = self.proto_functions.clone();
+        nested.token_defs = self.token_defs.clone();
+        nested.proto_subs = self.proto_subs.clone();
+        nested.proto_tokens = self.proto_tokens.clone();
+        nested.classes = self.classes.clone();
+        nested.class_trusts = self.class_trusts.clone();
+        nested.roles = self.roles.clone();
+        nested.subsets = self.subsets.clone();
+        nested.type_metadata = self.type_metadata.clone();
+        nested.current_package = self.current_package.clone();
+        for (k, v) in &self.env {
+            if k.contains("::") {
+                continue;
+            }
+            if matches!(v, Value::Sub(_) | Value::Routine { .. }) {
+                continue;
+            }
+            nested.env.insert(k.clone(), v.clone());
+        }
         let ok = nested.run(&code).is_ok();
         self.test_ok(ok, &desc, false)?;
         Ok(Value::Bool(ok))
@@ -566,10 +609,31 @@ impl Interpreter {
             _ => String::new(),
         };
         let mut nested = Interpreter::new();
+        nested.strict_mode = self.strict_mode;
         if let Some(Value::Int(pid)) = self.env.get("*PID") {
             nested.set_pid(pid.saturating_add(1));
         }
         nested.lib_paths = self.lib_paths.clone();
+        nested.functions = self.functions.clone();
+        nested.proto_functions = self.proto_functions.clone();
+        nested.token_defs = self.token_defs.clone();
+        nested.proto_subs = self.proto_subs.clone();
+        nested.proto_tokens = self.proto_tokens.clone();
+        nested.classes = self.classes.clone();
+        nested.class_trusts = self.class_trusts.clone();
+        nested.roles = self.roles.clone();
+        nested.subsets = self.subsets.clone();
+        nested.type_metadata = self.type_metadata.clone();
+        nested.current_package = self.current_package.clone();
+        for (k, v) in &self.env {
+            if k.contains("::") {
+                continue;
+            }
+            if matches!(v, Value::Sub(_) | Value::Routine { .. }) {
+                continue;
+            }
+            nested.env.insert(k.clone(), v.clone());
+        }
         let ok = nested.run(&code).is_err();
         self.test_ok(ok, &desc, false)?;
         Ok(Value::Bool(ok))
@@ -585,6 +649,7 @@ impl Interpreter {
             Value::Sub(data) => self.eval_block_value(&data.body),
             Value::Str(code) => {
                 let mut nested = Interpreter::new();
+                nested.strict_mode = self.strict_mode;
                 if let Some(Value::Int(pid)) = self.env.get("*PID") {
                     nested.set_pid(pid.saturating_add(1));
                 }

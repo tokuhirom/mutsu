@@ -142,10 +142,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => None,
         },
         "antipair" => match target {
-            Value::Pair(k, v) => Some(Ok(Value::Pair(
-                v.to_string_value(),
-                Box::new(Value::Str(k.clone())),
-            ))),
+            Value::Pair(k, v) => Some(Ok(match v.as_ref() {
+                Value::Str(s) => Value::Pair(s.clone(), Box::new(Value::Str(k.clone()))),
+                _ => Value::ValuePair(v.clone(), Box::new(Value::Str(k.clone()))),
+            })),
             Value::ValuePair(k, v) => Some(Ok(Value::ValuePair(
                 Box::new(*v.clone()),
                 Box::new(*k.clone()),

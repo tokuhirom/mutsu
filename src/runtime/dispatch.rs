@@ -127,14 +127,24 @@ impl Interpreter {
             format!("{}::{}/{}", self.current_package, name, arity),
             format!("GLOBAL::{}/{}", name, arity),
         ];
-        for key in generic_keys {
+        let mut found_multi_candidates = false;
+        for key in &generic_keys {
             let mut candidates: Vec<(String, FunctionDef)> = self
                 .functions
                 .iter()
-                .filter(|(k, _)| *k == &key || k.starts_with(&format!("{}__m", key)))
+                .filter(|(k, _)| *k == key || k.starts_with(&format!("{}__m", key)))
                 .map(|(k, def)| (k.clone(), def.clone()))
                 .collect();
-            candidates.sort_by(|a, b| a.0.cmp(&b.0));
+            if candidates.len() > 1 {
+                found_multi_candidates = true;
+            }
+            // Sort candidates: those with sub-signatures first (more specific),
+            // then by key name for stable ordering
+            candidates.sort_by(|a, b| {
+                let a_has_subsig = a.1.param_defs.iter().any(|p| p.sub_signature.is_some());
+                let b_has_subsig = b.1.param_defs.iter().any(|p| p.sub_signature.is_some());
+                b_has_subsig.cmp(&a_has_subsig).then(a.0.cmp(&b.0))
+            });
             for (_, def) in candidates {
                 if self.args_match_param_types(arg_values, &def.param_defs) {
                     return Some(def);
@@ -156,18 +166,115 @@ impl Interpreter {
             })
             .map(|(k, def)| (k.clone(), def.clone()))
             .collect();
+        if !slurpy_candidates.is_empty() {
+            found_multi_candidates = true;
+        }
         slurpy_candidates.sort_by(|a, b| a.0.cmp(&b.0));
         for (_, def) in slurpy_candidates {
             if self.args_match_param_types(arg_values, &def.param_defs) {
                 return Some(def);
             }
         }
-        // Fall back to arity-only if no proto declared
-        if self.has_proto(name) {
+        // Fall back to arity-only if no proto declared and no multi candidates were found.
+        // When multi candidates exist but none matched (e.g., sub-signature arity mismatch),
+        // falling back would bypass the sub-signature check.
+        if self.has_proto(name) || found_multi_candidates {
             None
         } else {
             self.resolve_function_with_arity(name, arity)
         }
+    }
+
+    /// Collect all matching multi dispatch candidates for a function call,
+    /// sorted by specificity (most specific first). Used by callsame/nextcallee.
+    pub(crate) fn resolve_all_matching_candidates(
+        &mut self,
+        name: &str,
+        arg_values: &[Value],
+    ) -> Vec<FunctionDef> {
+        let arity = arg_values.len();
+        let mut all_matches = Vec::new();
+
+        // Collect from typed candidates
+        for prefix_base in [
+            format!("{}::{}/{}:", self.current_package, name, arity),
+            format!("GLOBAL::{}/{}:", name, arity),
+        ] {
+            let candidates: Vec<FunctionDef> = self
+                .functions
+                .iter()
+                .filter(|(key, _)| key.starts_with(&prefix_base))
+                .map(|(_, def)| def.clone())
+                .collect();
+            for def in candidates {
+                if self.args_match_param_types(arg_values, &def.param_defs) {
+                    all_matches.push(def);
+                }
+            }
+        }
+
+        // Collect from generic (untyped) candidates
+        let generic_keys = [
+            format!("{}::{}/{}", self.current_package, name, arity),
+            format!("GLOBAL::{}/{}", name, arity),
+        ];
+        for key in &generic_keys {
+            let mut candidates: Vec<(String, FunctionDef)> = self
+                .functions
+                .iter()
+                .filter(|(k, _)| *k == key || k.starts_with(&format!("{}__m", key)))
+                .map(|(k, def)| (k.clone(), def.clone()))
+                .collect();
+            candidates.sort_by(|a, b| {
+                let a_has_subsig = a.1.param_defs.iter().any(|p| p.sub_signature.is_some());
+                let b_has_subsig = b.1.param_defs.iter().any(|p| p.sub_signature.is_some());
+                b_has_subsig.cmp(&a_has_subsig).then(a.0.cmp(&b.0))
+            });
+            for (_, def) in candidates {
+                if self.args_match_param_types(arg_values, &def.param_defs) {
+                    let fp = crate::ast::function_body_fingerprint(
+                        &def.params,
+                        &def.param_defs,
+                        &def.body,
+                    );
+                    if !all_matches.iter().any(|m: &FunctionDef| {
+                        crate::ast::function_body_fingerprint(&m.params, &m.param_defs, &m.body)
+                            == fp
+                    }) {
+                        all_matches.push(def);
+                    }
+                }
+            }
+        }
+
+        // Collect from slurpy candidates
+        let slurpy_prefixes = [
+            format!("{}::{}/", self.current_package, name),
+            format!("GLOBAL::{}/", name),
+        ];
+        let mut slurpy_candidates: Vec<(String, FunctionDef)> = self
+            .functions
+            .iter()
+            .filter(|(k, def)| {
+                slurpy_prefixes.iter().any(|prefix| k.starts_with(prefix))
+                    && def.param_defs.iter().any(|p| p.slurpy)
+            })
+            .map(|(k, def)| (k.clone(), def.clone()))
+            .collect();
+        slurpy_candidates.sort_by(|a, b| a.0.cmp(&b.0));
+        for (_, def) in slurpy_candidates {
+            if self.args_match_param_types(arg_values, &def.param_defs) {
+                let fp =
+                    crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+                if !all_matches.iter().any(|m: &FunctionDef| {
+                    crate::ast::function_body_fingerprint(&m.params, &m.param_defs, &m.body) == fp
+                }) {
+                    all_matches.push(def);
+                }
+            }
+        }
+
+        all_matches
     }
 
     pub(super) fn eval_token_call_values(
@@ -218,6 +325,9 @@ impl Interpreter {
         def: &FunctionDef,
         arg_values: &[Value],
     ) -> Result<Option<String>, RuntimeError> {
+        if def.empty_sig && !arg_values.is_empty() {
+            return Err(Self::reject_args_for_empty_sig(arg_values));
+        }
         let saved_env = self.env.clone();
         let rw_bindings =
             self.bind_function_args_values(&def.param_defs, &def.params, arg_values)?;
@@ -227,6 +337,7 @@ impl Interpreter {
         self.routine_stack.pop();
         let mut restored_env = saved_env;
         self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
+        self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
         self.env = restored_env;
         let value = match result {
             Ok(v) => v,
@@ -289,6 +400,9 @@ impl Interpreter {
         def: &FunctionDef,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        if def.empty_sig && !args.is_empty() {
+            return Err(Self::reject_args_for_empty_sig(args));
+        }
         let saved_env = self.env.clone();
         let rw_bindings = self.bind_function_args_values(&def.param_defs, &def.params, args)?;
         self.routine_stack
@@ -325,6 +439,9 @@ impl Interpreter {
                 proto_name
             )));
         };
+        if def.empty_sig && !args.is_empty() {
+            return Err(Self::reject_args_for_empty_sig(&args));
+        }
         let saved_env = self.env.clone();
         let rw_bindings = self.bind_function_args_values(&def.param_defs, &def.params, &args)?;
         self.routine_stack
@@ -622,10 +739,12 @@ impl Interpreter {
             Expr::AnonSubParams {
                 params,
                 param_defs,
+                return_type,
                 body,
             } => Expr::AnonSubParams {
                 params: params.clone(),
                 param_defs: param_defs.clone(),
+                return_type: return_type.clone(),
                 body: Self::rewrite_proto_dispatch_stmts(body),
             },
             other => other.clone(),

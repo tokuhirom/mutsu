@@ -36,6 +36,7 @@ pub(crate) enum OpCode {
     // -- Logic / coercion --
     Not,
     BoolCoerce,
+    WrapVarRef(u32),
 
     // -- String --
     Concat,
@@ -69,6 +70,7 @@ pub(crate) enum OpCode {
 
     // -- Identity/value equality --
     StrictEq,
+    StrictNe,
     Eqv,
     /// Smart match with compiled RHS expression at [ip+1..rhs_end).
     SmartMatchExpr {
@@ -356,6 +358,7 @@ pub(crate) enum OpCode {
     // -- Exists check --
     ExistsEnvIndex(u32),
     ExistsExpr,
+    ExistsIndexExpr,
 
     // -- Reduction ([+] @arr) --
     Reduction(u32),
@@ -458,6 +461,7 @@ pub(crate) enum OpCode {
         target_var_idx: Option<u32>,
     },
     UseModule(u32),
+    NoModule(u32),
     /// `need Module;` — load module without importing exports.
     NeedModule(u32),
     UseLibPath,
@@ -691,4 +695,6 @@ pub(crate) struct CompiledFunction {
     pub(crate) params: Vec<String>,
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) fingerprint: u64,
+    /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
+    pub(crate) empty_sig: bool,
 }

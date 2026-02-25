@@ -197,34 +197,15 @@ impl Interpreter {
             self.env.insert(format!("!{}", attr_name), attr_val.clone());
             self.env.insert(format!(".{}", attr_name), attr_val.clone());
         }
-        if attributes.is_empty() {
-            // Type-object method calls (e.g. COERCE) need full signature binding.
-            match self.bind_function_args_values(&bind_param_defs, &bind_params, &args) {
-                Ok(_) => {}
-                Err(e) => {
-                    self.method_class_stack.pop();
-                    self.env = saved_env;
-                    return Err(e);
-                }
-            }
-        } else {
-            // Instance methods keep the simple positional/default binding fast-path.
-            for (i, param) in bind_params.iter().enumerate() {
-                if let Some(val) = args.get(i) {
-                    self.env.insert(param.clone(), val.clone());
-                } else if let Some(pd) = bind_param_defs.get(i)
-                    && let Some(default_expr) = &pd.default
-                {
-                    let val = match self.eval_block_value(&[Stmt::Expr(default_expr.clone())]) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            self.method_class_stack.pop();
-                            self.env = saved_env;
-                            return Err(e);
-                        }
-                    };
-                    self.env.insert(param.clone(), val);
-                }
+        // Method signatures must support full parameter binding semantics
+        // (coercions, slurpy params, defaults, and named args) for both
+        // type-object and instance invocations.
+        match self.bind_function_args_values(&bind_param_defs, &bind_params, &args) {
+            Ok(_) => {}
+            Err(e) => {
+                self.method_class_stack.pop();
+                self.env = saved_env;
+                return Err(e);
             }
         }
         let block_result = self.run_block(&method_def.body);

@@ -327,32 +327,20 @@ fn sequence_expr(input: &str) -> PResult<'_, Expr> {
     loop {
         let (r, _) = ws(rest)?;
 
-        // ...^ (exclusive-end sequence)
-        if let Some(r2) = r.strip_prefix("...^") {
+        // ...^ / …^ (exclusive-end sequence), ... / … (sequence)
+        if let Some((r2, op, op_str)) = strip_sequence_op(r) {
             let (r2, _) = ws(r2)?;
             let (r2, right) = range_expr(r2).map_err(|err| {
-                enrich_expected_error(err, "expected expression after '...^'", r2.len())
+                enrich_expected_error(
+                    err,
+                    format!("expected expression after '{op_str}'").as_str(),
+                    r2.len(),
+                )
             })?;
             maybe_wrap_lhs(&mut left);
             left = Expr::Binary {
                 left: Box::new(left),
-                op: TokenKind::DotDotDotCaret,
-                right: Box::new(right),
-            };
-            rest = r2;
-            continue;
-        }
-        // ... (sequence)
-        if r.starts_with("...") && !r.starts_with("....") {
-            let r2 = &r[3..];
-            let (r2, _) = ws(r2)?;
-            let (r2, right) = range_expr(r2).map_err(|err| {
-                enrich_expected_error(err, "expected expression after '...'", r2.len())
-            })?;
-            maybe_wrap_lhs(&mut left);
-            left = Expr::Binary {
-                left: Box::new(left),
-                op: TokenKind::DotDotDot,
+                op,
                 right: Box::new(right),
             };
             rest = r2;
@@ -435,8 +423,12 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
                 BracketInfix::MetaOp(meta, op, len) => {
                     let r = &r[len..];
                     let (r, _) = ws(r)?;
-                    let needs_comma_list =
-                        meta == "Z" || meta == "X" || op == "..." || op == "...^";
+                    let needs_comma_list = meta == "Z"
+                        || meta == "X"
+                        || op == "..."
+                        || op == "...^"
+                        || op == "…"
+                        || op == "…^";
                     let (r, right) = if needs_comma_list {
                         let (r, items) = parse_comma_list_of_range_raw(r)?;
                         if items.len() == 1 {
@@ -487,8 +479,11 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
         if let Some((meta, op, len)) = parse_meta_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let needs_comma_list =
-                ((meta == "Z" || meta == "X") && op.is_empty()) || op == "..." || op == "...^";
+            let needs_comma_list = ((meta == "Z" || meta == "X") && op.is_empty())
+                || op == "..."
+                || op == "...^"
+                || op == "…"
+                || op == "…^";
             let (r, right) = if needs_comma_list {
                 let (r, items) = parse_comma_list_of_range_raw(r)?;
                 if items.len() == 1 {
@@ -954,6 +949,8 @@ fn parse_infix_func_op(input: &str) -> Option<(Option<String>, String, usize)> {
 /// Convert an operator string to its TokenKind for bracket infix notation.
 fn op_str_to_token_kind(op: &str) -> Option<TokenKind> {
     match op {
+        "..." | "…" => Some(TokenKind::DotDotDot),
+        "...^" | "…^" => Some(TokenKind::DotDotDotCaret),
         "+" => Some(TokenKind::Plus),
         "-" => Some(TokenKind::Minus),
         "*" => Some(TokenKind::Star),
@@ -1033,9 +1030,10 @@ fn flatten_bracket_op(s: &str) -> String {
 
 /// Known operators for bracket infix and meta-op bracket notation.
 const KNOWN_OPS: &[&str] = &[
-    "**", "==", "!=", "<=", ">=", "<=>", "===", "~~", "%%", "//", "||", "&&", "~", "+", "-", "*",
-    "/", "%", "<", ">", "+&", "+|", "+^", "?&", "?|", "?^", "cmp", "min", "max", "eq", "ne", "lt",
-    "gt", "le", "ge", "leg", "and", "or", "not", "after", "before", "gcd", "lcm", ",",
+    "...^", "...", "…^", "…", "**", "==", "!=", "<=", ">=", "<=>", "===", "~~", "%%", "//", "||",
+    "&&", "~", "+", "-", "*", "/", "%", "<", ">", "+&", "+|", "+^", "?&", "?|", "?^", "cmp", "min",
+    "max", "eq", "ne", "lt", "gt", "le", "ge", "leg", "and", "or", "not", "after", "before", "gcd",
+    "lcm", ",",
 ];
 
 /// Parse meta operator: R-, X+, Zcmp, R[+], Z[~], R[R[R-]], RR[R-], etc.
@@ -1068,7 +1066,8 @@ fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
 
     // Try symbolic operators first (multi-char then single-char)
     let ops: &[&str] = &[
-        "**", "==", "!=", "<=", ">=", "~~", "%%", "//", "~", "+", "-", "*", "/", "%", "<", ">",
+        "...^", "...", "…^", "…", "**", "=>", "==", "!=", "<=", ">=", "~~", "%%", "//", "~", "+",
+        "-", "*", "/", "%", "<", ">",
     ];
     for op in ops {
         if r.starts_with(op) {
@@ -1089,6 +1088,20 @@ fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
         return Some((meta.to_string(), String::new(), 1));
     }
     None
+}
+
+fn strip_sequence_op(input: &str) -> Option<(&str, TokenKind, &str)> {
+    if let Some(rest) = input.strip_prefix("...^") {
+        Some((rest, TokenKind::DotDotDotCaret, "...^"))
+    } else if let Some(rest) = input.strip_prefix("…^") {
+        Some((rest, TokenKind::DotDotDotCaret, "…^"))
+    } else if input.starts_with("...") && !input.starts_with("....") {
+        Some((&input[3..], TokenKind::DotDotDot, "..."))
+    } else if let Some(rest) = input.strip_prefix("…") {
+        Some((rest, TokenKind::DotDotDot, "…"))
+    } else {
+        None
+    }
 }
 
 /// Parse bracket infix operator: [+], [R-], [Z*], [Z[cmp]], [blue], etc.
