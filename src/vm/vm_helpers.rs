@@ -217,6 +217,7 @@ impl VM {
                 | "CX::Warn"
                 | "X::AdHoc"
                 | "CompUnit::DependencySpecification"
+                | "Proxy"
         )
     }
 

@@ -324,6 +324,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
             _ => "Uni",
         },
         Value::Mixin(inner, _) => value_type_name(inner),
+        Value::Proxy { .. } => "Proxy",
     }
 }
 
