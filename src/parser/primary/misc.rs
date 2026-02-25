@@ -383,12 +383,13 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         let (r, _) = ws(after_paren)?;
         let (r, first) = expression(r)?;
         let (r, _) = ws(r)?;
-        // Check for comma-separated list: :name(a, b, ...)
-        if r.starts_with(',') {
+        // Check for separated list: :name(a, b, ...) or :name(a; b; ...)
+        if r.starts_with(',') || (r.starts_with(';') && !r.starts_with(";;")) {
             let mut items = vec![first];
             let mut r = r;
-            while r.starts_with(',') {
-                let (r2, _) = parse_char(r, ',')?;
+            while r.starts_with(',') || (r.starts_with(';') && !r.starts_with(";;")) {
+                let sep = if r.starts_with(',') { ',' } else { ';' };
+                let (r2, _) = parse_char(r, sep)?;
                 let (r2, _) = ws(r2)?;
                 let (r2, next) = expression(r2)?;
                 let (r2, _) = ws(r2)?;

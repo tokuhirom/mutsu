@@ -29,6 +29,7 @@ roast/S02-names/SETTING-6e.t
 roast/S02-names/bare-sigil.t
 roast/S02-names/dynamic-scope.t
 roast/S02-names/indirect.t
+roast/S02-names/strict.t
 roast/S02-one-pass-parsing/less-than.t
 roast/S02-one-pass-parsing/misc.t
 roast/S02-packages/package-lookup.t
@@ -147,6 +148,7 @@ roast/S06-traits/is-rw.t
 roast/S06-traits/native-is-copy.t
 roast/S07-hyperrace/stress.t
 roast/S07-slip/slip.t
+roast/S09-multidim/indexing.t
 roast/S10-packages/joined-namespaces.t
 roast/S10-packages/require-and-use.t
 roast/S10-packages/use-with-class.t

@@ -282,6 +282,17 @@ impl VM {
         Ok(())
     }
 
+    pub(super) fn exec_no_module_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let module = Self::const_str(code, name_idx);
+        self.interpreter.no_module(module)?;
+        self.sync_locals_from_env(code);
+        Ok(())
+    }
+
     pub(super) fn exec_need_module_op(
         &mut self,
         code: &CompiledCode,

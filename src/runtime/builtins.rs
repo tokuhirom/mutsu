@@ -128,6 +128,10 @@ impl Interpreter {
             "fail" => self.builtin_fail(&args),
             "return-rw" => self.builtin_return_rw(&args),
             "__mutsu_assign_method_lvalue" => self.builtin_assign_method_lvalue(&args),
+            "__mutsu_bind_index_value" => Ok(Value::Pair(
+                "__mutsu_bind_index_value".to_string(),
+                Box::new(args.first().cloned().unwrap_or(Value::Nil)),
+            )),
             "__mutsu_stub_die" => self.builtin_stub_die(&args),
             "__mutsu_stub_warn" => self.builtin_stub_warn(&args),
             "exit" => self.builtin_exit(&args),
