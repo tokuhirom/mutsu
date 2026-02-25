@@ -73,6 +73,7 @@ struct ClassDef {
 struct RoleDef {
     attributes: Vec<(String, bool, Option<Expr>)>,
     methods: HashMap<String, Vec<MethodDef>>,
+    is_stub_role: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -904,6 +905,7 @@ impl Interpreter {
                     RoleDef {
                         attributes: Vec::new(),
                         methods: HashMap::new(),
+                        is_stub_role: false,
                     },
                 );
                 roles

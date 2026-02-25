@@ -731,7 +731,7 @@ impl VM {
                         attrs,
                         "defined",
                         Vec::new(),
-                        None,
+                        Some(val.clone()),
                     ) {
                         Ok((result, _)) => result,
                         Err(_) => Value::Bool(runtime::types::value_is_defined(&val)),

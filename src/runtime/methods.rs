@@ -1063,20 +1063,20 @@ impl Interpreter {
                 if self.class_has_method(&class_name, "BUILD") {
                     let (_v, updated) = self.run_instance_method(
                         &class_name,
-                        attributes,
+                        attributes.clone(),
                         "BUILD",
                         Vec::new(),
-                        None,
+                        Some(Value::make_instance(class_name.clone(), attributes.clone())),
                     )?;
                     attributes = updated;
                 }
                 if self.class_has_method(&class_name, "TWEAK") {
                     let (_v, updated) = self.run_instance_method(
                         &class_name,
-                        attributes,
+                        attributes.clone(),
                         "TWEAK",
                         Vec::new(),
-                        None,
+                        Some(Value::make_instance(class_name.clone(), attributes.clone())),
                     )?;
                     attributes = updated;
                 }
@@ -1507,6 +1507,21 @@ impl Interpreter {
             id: target_id,
         } = &target
         {
+            if let Some(private_method_name) = method.strip_prefix('!')
+                && let Some((resolved_owner, method_def)) =
+                    self.resolve_private_method_any_owner(class_name, private_method_name, &args)
+            {
+                let (result, _updated) = self.run_instance_method_resolved(
+                    class_name,
+                    &resolved_owner,
+                    method_def,
+                    (**attributes).clone(),
+                    args,
+                    Some(target.clone()),
+                )?;
+                return Ok(result);
+            }
+
             if let Some((owner_class, private_method_name)) = method.split_once("::")
                 && let Some((resolved_owner, method_def)) = self.resolve_private_method_with_owner(
                     class_name,
@@ -1707,6 +1722,10 @@ impl Interpreter {
 
         // Fallback methods
         match method {
+            "DUMP" if args.is_empty() => match target {
+                Value::Package(name) => Ok(Value::Str(format!("{}()", name))),
+                other => Ok(Value::Str(other.to_string_value())),
+            },
             "gist" if args.is_empty() => match target {
                 Value::Package(name) => {
                     let short = name.split("::").last().unwrap_or(&name);
@@ -1714,6 +1733,22 @@ impl Interpreter {
                 }
                 other => Ok(Value::Str(other.to_string_value())),
             },
+            "WHERE" if args.is_empty() => {
+                if let Value::Package(name) | Value::Str(name) = target {
+                    if !self.roles.contains_key(&name) {
+                        return Err(RuntimeError::new(format!(
+                            "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
+                            method
+                        )));
+                    }
+                    Ok(Value::Str(format!("{}|type-object", name)))
+                } else {
+                    Err(RuntimeError::new(format!(
+                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
+                        method
+                    )))
+                }
+            }
             "raku" | "perl" if args.is_empty() => match target {
                 Value::Package(name) => Ok(Value::Str(name.clone())),
                 other => Ok(Value::Str(other.to_string_value())),
@@ -1735,6 +1770,23 @@ impl Interpreter {
                 Value::Package(_) => Ok(Value::Str(String::new())),
                 _ => Ok(Value::Str(target.to_string_value())),
             },
+            "Numeric" | "Real" if args.is_empty() => {
+                if let Value::Package(name) | Value::Str(name) = target {
+                    if self.roles.contains_key(&name) {
+                        Ok(Value::Int(0))
+                    } else {
+                        Err(RuntimeError::new(format!(
+                            "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
+                            method
+                        )))
+                    }
+                } else {
+                    Err(RuntimeError::new(format!(
+                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
+                        method
+                    )))
+                }
+            }
             "EVAL" if args.is_empty() => match target {
                 Value::Str(code) => self.call_function("EVAL", vec![Value::Str(code)]),
                 _ => Err(RuntimeError::new(
@@ -3491,13 +3543,23 @@ impl Interpreter {
                     }
                 }
                 if self.class_has_method(class_name, "BUILD") {
-                    let (_v, updated) =
-                        self.run_instance_method(class_name, attrs, "BUILD", Vec::new(), None)?;
+                    let (_v, updated) = self.run_instance_method(
+                        class_name,
+                        attrs.clone(),
+                        "BUILD",
+                        Vec::new(),
+                        Some(Value::make_instance(class_name.clone(), attrs.clone())),
+                    )?;
                     attrs = updated;
                 }
                 if self.class_has_method(class_name, "TWEAK") {
-                    let (_v, updated) =
-                        self.run_instance_method(class_name, attrs, "TWEAK", Vec::new(), None)?;
+                    let (_v, updated) = self.run_instance_method(
+                        class_name,
+                        attrs.clone(),
+                        "TWEAK",
+                        Vec::new(),
+                        Some(Value::make_instance(class_name.clone(), attrs.clone())),
+                    )?;
                     attrs = updated;
                 }
                 return Ok(Value::make_instance(class_name.clone(), attrs));

@@ -1,6 +1,15 @@
 use super::*;
 
 impl Interpreter {
+    fn is_stub_method_body(body: &[Stmt]) -> bool {
+        body.len() == 1
+            && matches!(
+                &body[0],
+                Stmt::Expr(Expr::Call { name, .. })
+                    if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
+            )
+    }
+
     pub(super) fn resolve_function(&self, name: &str) -> Option<FunctionDef> {
         if name.contains("::") {
             return self.functions.get(name).cloned();
@@ -129,6 +138,44 @@ impl Interpreter {
                 .and_then(|c| c.methods.get(method_name))
                 .cloned()
             {
+                for def in overloads {
+                    if !def.is_private {
+                        continue;
+                    }
+                    if self.method_args_match(arg_values, &def.param_defs) {
+                        return Some((cn.clone(), def));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub(super) fn resolve_private_method_any_owner(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        arg_values: &[Value],
+    ) -> Option<(String, MethodDef)> {
+        let mro = self.class_mro(class_name);
+        for cn in mro {
+            if let Some(overloads) = self
+                .classes
+                .get(&cn)
+                .and_then(|c| c.methods.get(method_name))
+                .cloned()
+            {
+                for def in &overloads {
+                    if !def.is_private {
+                        continue;
+                    }
+                    if Self::is_stub_method_body(&def.body) {
+                        continue;
+                    }
+                    if self.method_args_match(arg_values, &def.param_defs) {
+                        return Some((cn.clone(), def.clone()));
+                    }
+                }
                 for def in overloads {
                     if !def.is_private {
                         continue;

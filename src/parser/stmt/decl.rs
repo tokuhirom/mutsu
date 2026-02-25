@@ -673,6 +673,34 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         rest = r;
     }
 
+    // `handles` trait, e.g. `has $.x handles <a b>`
+    let mut handles = Vec::new();
+    while let Some(r) = keyword("handles", rest) {
+        let (r, _) = ws1(r)?;
+        if let Some(r) = r.strip_prefix('<') {
+            let mut cursor = r;
+            loop {
+                let (r_ws, _) = ws(cursor)?;
+                cursor = r_ws;
+                if let Some(r_end) = cursor.strip_prefix('>') {
+                    rest = r_end;
+                    break;
+                }
+                let (r_name, method_name) = take_while1(cursor, |c: char| {
+                    c.is_alphanumeric() || c == '_' || c == '-'
+                })?;
+                handles.push(method_name.to_string());
+                cursor = r_name;
+            }
+        } else {
+            let (r_name, method_name) = ident(r)?;
+            handles.push(method_name.to_string());
+            rest = r_name;
+        }
+        let (r, _) = ws(rest)?;
+        rest = r;
+    }
+
     // Default value
     let (rest, default) = if rest.starts_with('=') && !rest.starts_with("==") {
         let rest = &rest[1..];
@@ -691,6 +719,7 @@ pub(super) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             name,
             is_public,
             default,
+            handles,
             is_rw,
         },
     ))
