@@ -646,7 +646,8 @@ impl Interpreter {
             || (matches!(method, "max" | "min")
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
             || (method == "Supply"
-                && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supplier"));
+                && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supplier"))
+            || (matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(class_name, method)));
         let native_result = if bypass_native_fastpath {
             None
         } else {

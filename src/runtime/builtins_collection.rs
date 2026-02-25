@@ -117,28 +117,29 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_keys(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let val = args.first().cloned();
-        Ok(match val {
-            Some(Value::Hash(items)) => {
-                Value::array(items.keys().map(|k| Value::Str(k.clone())).collect())
-            }
-            Some(Value::Pair(key, _)) => Value::array(vec![Value::Str(key)]),
-            Some(Value::ValuePair(key, _)) => Value::array(vec![*key]),
-            Some(Value::Nil) | None => Value::array(Vec::new()),
-            _ => Value::array(Vec::new()),
-        })
+        self.builtin_unary_collection_method(args, "keys")
     }
 
     pub(super) fn builtin_values(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let val = args.first().cloned();
-        Ok(match val {
-            Some(Value::Hash(items)) => Value::array(items.values().cloned().collect()),
-            Some(Value::Pair(_, value)) | Some(Value::ValuePair(_, value)) => {
-                Value::array(vec![*value])
-            }
-            Some(Value::Nil) | None => Value::array(Vec::new()),
-            _ => Value::array(Vec::new()),
-        })
+        self.builtin_unary_collection_method(args, "values")
+    }
+
+    pub(super) fn builtin_kv(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.builtin_unary_collection_method(args, "kv")
+    }
+
+    pub(super) fn builtin_pairs(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.builtin_unary_collection_method(args, "pairs")
+    }
+
+    fn builtin_unary_collection_method(
+        &self,
+        args: &[Value],
+        method: &str,
+    ) -> Result<Value, RuntimeError> {
+        let target = args.first().cloned().unwrap_or(Value::Nil);
+        crate::builtins::native_method_0arg(&target, method)
+            .unwrap_or_else(|| Ok(Value::array(Vec::new())))
     }
 
     pub(super) fn builtin_abs(&self, args: &[Value]) -> Result<Value, RuntimeError> {

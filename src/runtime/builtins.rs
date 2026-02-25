@@ -230,6 +230,8 @@ impl Interpreter {
             "pair" => self.builtin_pair(&args),
             "keys" => self.builtin_keys(&args),
             "values" => self.builtin_values(&args),
+            "kv" => self.builtin_kv(&args),
+            "pairs" => self.builtin_pairs(&args),
             "abs" => self.builtin_abs(&args),
             "min" => self.builtin_min(&args),
             "max" => self.builtin_max(&args),
