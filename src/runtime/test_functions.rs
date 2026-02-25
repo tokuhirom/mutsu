@@ -159,6 +159,24 @@ impl Interpreter {
                         }
                         crate::value::JunctionKind::None => results.iter().all(|&b| !b),
                     }
+                } else if let Value::Junction { kind, values } = right {
+                    let left_str = self.stringify_test_value(left)?;
+                    let results: Vec<bool> = values
+                        .iter()
+                        .map(|v| {
+                            self.stringify_test_value(v)
+                                .map(|s| s == left_str)
+                                .unwrap_or(false)
+                        })
+                        .collect();
+                    match kind {
+                        crate::value::JunctionKind::Any => results.iter().any(|&b| b),
+                        crate::value::JunctionKind::All => results.iter().all(|&b| b),
+                        crate::value::JunctionKind::One => {
+                            results.iter().filter(|&&b| b).count() == 1
+                        }
+                        crate::value::JunctionKind::None => results.iter().all(|&b| !b),
+                    }
                 } else {
                     self.stringify_test_value(left)? == self.stringify_test_value(right)?
                 }

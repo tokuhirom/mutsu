@@ -118,19 +118,40 @@ impl Interpreter {
         let mut out = Vec::with_capacity(args.len());
         let mut callsite_line = None;
         for arg in args {
-            if let Value::Pair(key, value) = arg
-                && key == TEST_CALLSITE_LINE_KEY
-            {
-                callsite_line = match value.as_ref() {
-                    Value::Int(i) => Some(*i),
-                    Value::BigInt(i) => i.to_string().parse::<i64>().ok(),
-                    Value::Num(n) => Some(*n as i64),
-                    Value::Str(s) => s.parse::<i64>().ok(),
-                    _ => None,
-                };
-                continue;
+            match arg {
+                Value::Pair(key, value) => {
+                    if key == TEST_CALLSITE_LINE_KEY {
+                        callsite_line = match value.as_ref() {
+                            Value::Int(i) => Some(*i),
+                            Value::BigInt(i) => i.to_string().parse::<i64>().ok(),
+                            Value::Num(n) => Some(*n as i64),
+                            Value::Str(s) => s.parse::<i64>().ok(),
+                            _ => None,
+                        };
+                        continue;
+                    }
+                    out.push(arg.clone());
+                }
+                Value::ValuePair(key, value) => {
+                    if let Value::Str(name) = key.as_ref() {
+                        if name == TEST_CALLSITE_LINE_KEY {
+                            callsite_line = match value.as_ref() {
+                                Value::Int(i) => Some(*i),
+                                Value::BigInt(i) => i.to_string().parse::<i64>().ok(),
+                                Value::Num(n) => Some(*n as i64),
+                                Value::Str(s) => s.parse::<i64>().ok(),
+                                _ => None,
+                            };
+                            continue;
+                        }
+                        // Normalize named call args represented as ValuePair(Str, value).
+                        out.push(Value::Pair(name.clone(), value.clone()));
+                        continue;
+                    }
+                    out.push(arg.clone());
+                }
+                _ => out.push(arg.clone()),
             }
-            out.push(arg.clone());
         }
         (out, callsite_line)
     }
