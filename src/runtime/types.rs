@@ -525,7 +525,7 @@ impl Interpreter {
             return true;
         }
         if matches!(constraint, "Callable" | "Code" | "Block")
-            && matches!(value_type, "Sub" | "Routine")
+            && matches!(value_type, "Sub" | "Routine" | "Method" | "Block")
         {
             return true;
         }
@@ -533,7 +533,12 @@ impl Interpreter {
             return true;
         }
         // Role-like type relationships
-        if constraint == "Positional" && matches!(value_type, "Array" | "List" | "Seq") {
+        if constraint == "Positional"
+            && matches!(
+                value_type,
+                "Array" | "List" | "Seq" | "Range" | "Buf" | "Blob" | "Capture"
+            )
+        {
             return true;
         }
         // Array is-a List in Raku type hierarchy
@@ -541,7 +546,10 @@ impl Interpreter {
             return true;
         }
         if constraint == "Associative"
-            && matches!(value_type, "Hash" | "Map" | "Bag" | "Set" | "Mix")
+            && matches!(
+                value_type,
+                "Hash" | "Map" | "Pair" | "Bag" | "Set" | "Mix" | "QuantHash" | "Capture"
+            )
         {
             return true;
         }

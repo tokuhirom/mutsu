@@ -43,6 +43,7 @@ roast/S02-types/nested_pairs.t
 roast/S02-types/nominalizables.t
 roast/S02-types/parsing-bool.t
 roast/S02-types/range-iterator.t
+roast/S02-types/sigils-and-types.t
 roast/S02-types/stash.t
 roast/S02-types/unicode.t
 roast/S02-types/version-stress.t
