@@ -337,6 +337,54 @@ impl Interpreter {
         self.eval_grep_over_items(func, list_items)
     }
 
+    pub(super) fn builtin_first(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // Separate named args (Pairs) from positional args
+        let mut positional = Vec::new();
+        let mut has_v = false;
+        let mut has_neg_v = false;
+        for arg in args {
+            match arg {
+                Value::Pair(key, value) if key == "v" => {
+                    if value.truthy() {
+                        has_v = true;
+                    } else {
+                        has_neg_v = true;
+                    }
+                }
+                _ => positional.push(arg.clone()),
+            }
+        }
+        if has_neg_v {
+            return Err(RuntimeError::new(
+                "Throwing `:!v` on first is not supported",
+            ));
+        }
+        let _ = has_v; // :v is the default behavior
+        // Check for Bool matcher (X::Match::Bool)
+        if matches!(positional.first(), Some(Value::Bool(_))) {
+            let mut err = RuntimeError::new("Cannot use Bool as a matcher");
+            err.exception = Some(Box::new(Value::make_instance(
+                "X::Match::Bool".to_string(),
+                std::collections::HashMap::new(),
+            )));
+            return Err(err);
+        }
+        let func = positional.first().cloned();
+        let mut list_items = Vec::new();
+        for arg in positional.iter().skip(1) {
+            match arg {
+                Value::Array(items, ..) => list_items.extend(items.iter().cloned()),
+                Value::Range(a, b) => list_items.extend((*a..=*b).map(Value::Int)),
+                Value::RangeExcl(a, b) => list_items.extend((*a..*b).map(Value::Int)),
+                v if v.is_range() => {
+                    list_items.extend(crate::runtime::utils::value_to_list(v));
+                }
+                other => list_items.push(other.clone()),
+            }
+        }
+        self.eval_first_over_items(func, list_items)
+    }
+
     pub(super) fn builtin_classify(
         &mut self,
         name: &str,

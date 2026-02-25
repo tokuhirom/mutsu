@@ -525,14 +525,34 @@ impl Interpreter {
                                 .map(|attr| (attr.to_string(), value.clone()))
                         })
                         .collect();
-                    let (result, _updated) = self.run_instance_method_resolved(
+                    let role_param_bindings: Vec<(String, Value)> = mixins
+                        .iter()
+                        .filter_map(|(key, value)| {
+                            key.strip_prefix("__mutsu_role_param__")
+                                .map(|name| (name.to_string(), value.clone()))
+                        })
+                        .collect();
+                    let mut saved_role_params: Vec<(String, Option<Value>)> = Vec::new();
+                    for (name, value) in &role_param_bindings {
+                        saved_role_params.push((name.clone(), self.env.get(name).cloned()));
+                        self.env.insert(name.clone(), value.clone());
+                    }
+                    let method_result = self.run_instance_method_resolved(
                         &role_name,
                         &role_name,
                         def,
                         role_attrs,
                         args,
                         Some(target.clone()),
-                    )?;
+                    );
+                    for (name, previous) in saved_role_params {
+                        if let Some(prev) = previous {
+                            self.env.insert(name, prev);
+                        } else {
+                            self.env.remove(&name);
+                        }
+                    }
+                    let (result, _updated) = method_result?;
                     return Ok(result);
                 }
             }
@@ -581,6 +601,36 @@ impl Interpreter {
                     other => inner.does_check(&other.to_string_value()),
                 };
                 return Ok(Value::Bool(does));
+            }
+        }
+
+        // Role type-object method punning: calling a role method on the type object
+        // first instantiates the role, then dispatches the method on that instance.
+        if method != "new" {
+            if let Value::Package(role_name) = &target
+                && let Some(role) = self.roles.get(role_name)
+            {
+                let is_public_attr_accessor = args.is_empty()
+                    && role
+                        .attributes
+                        .iter()
+                        .any(|(attr_name, is_public, _, _)| *is_public && attr_name == method);
+                if role.methods.contains_key(method) || is_public_attr_accessor {
+                    let instance = self.dispatch_new(target.clone(), Vec::new())?;
+                    return self.call_method_with_values(instance, method, args);
+                }
+            } else if let Value::ParametricRole { base_name, .. } = &target
+                && let Some(role) = self.roles.get(base_name)
+            {
+                let is_public_attr_accessor = args.is_empty()
+                    && role
+                        .attributes
+                        .iter()
+                        .any(|(attr_name, is_public, _, _)| *is_public && attr_name == method);
+                if role.methods.contains_key(method) || is_public_attr_accessor {
+                    let instance = self.dispatch_new(target.clone(), Vec::new())?;
+                    return self.call_method_with_values(instance, method, args);
+                }
             }
         }
 
@@ -1221,7 +1271,12 @@ impl Interpreter {
                         return Ok(Value::Package(name));
                     }
                 };
-                return Ok(Value::Package(type_name.to_string()));
+                let visible_type_name = if crate::value::is_internal_anon_type_name(type_name) {
+                    ""
+                } else {
+                    type_name
+                };
+                return Ok(Value::Package(visible_type_name.to_string()));
             }
             "HOW" => {
                 if !args.is_empty() {
@@ -1838,6 +1893,9 @@ impl Interpreter {
             "grep" => {
                 return self.dispatch_grep(target, &args);
             }
+            "first" if !args.is_empty() => {
+                return self.dispatch_first(target, &args);
+            }
             "tree" if !args.is_empty() => {
                 return self.dispatch_tree(target, &args);
             }
@@ -2438,6 +2496,9 @@ impl Interpreter {
             },
             "gist" if args.is_empty() => match target {
                 Value::Package(name) => {
+                    if crate::value::is_internal_anon_type_name(&name) {
+                        return Ok(Value::Str("()".to_string()));
+                    }
                     let short = name.split("::").last().unwrap_or(&name);
                     Ok(Value::Str(format!("({})", short)))
                 }
@@ -4311,6 +4372,56 @@ impl Interpreter {
     }
 
     fn dispatch_new(&mut self, target: Value, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        if let Value::ParametricRole {
+            base_name,
+            type_args,
+        } = &target
+            && let Some(role) = self.roles.get(base_name).cloned()
+        {
+            let mut named_args: HashMap<String, Value> = HashMap::new();
+            let mut positional_args: Vec<Value> = Vec::new();
+            for arg in &args {
+                if let Value::Pair(key, value) = arg {
+                    named_args.insert(key.clone(), *value.clone());
+                } else {
+                    positional_args.push(arg.clone());
+                }
+            }
+
+            let mut mixins = HashMap::new();
+            mixins.insert(format!("__mutsu_role__{}", base_name), Value::Bool(true));
+            mixins.insert(
+                format!("__mutsu_role_typeargs__{}", base_name),
+                Value::array(type_args.clone()),
+            );
+            if let Some(param_names) = self.role_type_params.get(base_name) {
+                for (param_name, type_arg) in param_names.iter().zip(type_args.iter()) {
+                    mixins.insert(
+                        format!("__mutsu_role_param__{}", param_name),
+                        type_arg.clone(),
+                    );
+                }
+            }
+            for (idx, (attr_name, _is_public, default_expr, _is_rw)) in
+                role.attributes.iter().enumerate()
+            {
+                let value = if let Some(v) = named_args.get(attr_name) {
+                    v.clone()
+                } else if let Some(v) = positional_args.get(idx) {
+                    v.clone()
+                } else if let Some(expr) = default_expr {
+                    self.eval_block_value(&[Stmt::Expr(expr.clone())])?
+                } else {
+                    Value::Nil
+                };
+                mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
+            }
+            return Ok(Value::Mixin(
+                Box::new(Value::make_instance(base_name.clone(), HashMap::new())),
+                mixins,
+            ));
+        }
+
         if let Value::Package(class_name) = &target {
             match class_name.as_str() {
                 "Array" | "List" | "Positional" => {
@@ -4666,7 +4777,10 @@ impl Interpreter {
                     };
                     mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
                 }
-                return Ok(Value::Mixin(Box::new(Value::Nil), mixins));
+                return Ok(Value::Mixin(
+                    Box::new(Value::make_instance(class_name.clone(), HashMap::new())),
+                    mixins,
+                ));
             }
             if self.classes.contains_key(class_name) {
                 // Check for user-defined .new method first
@@ -4819,6 +4933,39 @@ impl Interpreter {
             }
             other => Ok(other),
         }
+    }
+
+    fn dispatch_first(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        // Separate named args (Pairs) from positional args
+        let mut positional = Vec::new();
+        let mut has_neg_v = false;
+        for arg in args {
+            match arg {
+                Value::Pair(key, value) if key == "v" => {
+                    if !value.truthy() {
+                        has_neg_v = true;
+                    }
+                }
+                _ => positional.push(arg.clone()),
+            }
+        }
+        if has_neg_v {
+            return Err(RuntimeError::new(
+                "Throwing `:!v` on first is not supported",
+            ));
+        }
+        // Check for Bool matcher (X::Match::Bool)
+        if matches!(positional.first(), Some(Value::Bool(_))) {
+            let mut err = RuntimeError::new("Cannot use Bool as a matcher");
+            err.exception = Some(Box::new(Value::make_instance(
+                "X::Match::Bool".to_string(),
+                std::collections::HashMap::new(),
+            )));
+            return Err(err);
+        }
+        let func = positional.first().cloned();
+        let items = crate::runtime::utils::value_to_list(&target);
+        self.eval_first_over_items(func, items)
     }
 
     /// `$n.polymod(@divisors)` — successive modular decomposition.
