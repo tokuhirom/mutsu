@@ -553,7 +553,7 @@ impl Interpreter {
         }
         let value = interp.env().get("_").cloned().unwrap_or(Value::Nil);
         *self = interp;
-        result.map(|_| value)
+        result.map(|_last_value| value)
     }
 
     pub(super) fn eval_map_over_items(
