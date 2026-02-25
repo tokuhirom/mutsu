@@ -1,6 +1,16 @@
 use super::*;
 
 impl VM {
+    fn twigil_dynamic_alias(name: &str) -> Option<String> {
+        if let Some(rest) = name.strip_prefix("$*") {
+            return Some(format!("*{}", rest));
+        }
+        if let Some(rest) = name.strip_prefix('*') {
+            return Some(format!("$*{}", rest));
+        }
+        None
+    }
+
     fn main_unqualified_name(name: &str) -> Option<String> {
         for sigil in ["$", "@", "%", "&"] {
             let prefix = format!("{sigil}Main::");
@@ -37,6 +47,9 @@ impl VM {
         if let Some(val) = self.interpreter.env().get(name) {
             return Some(val.clone());
         }
+        if let Some(alias) = Self::twigil_dynamic_alias(name) {
+            return self.interpreter.env().get(&alias).cloned();
+        }
         if let Some(alias) = Self::main_unqualified_name(name) {
             return self.interpreter.env().get(&alias).cloned();
         }
@@ -50,6 +63,9 @@ impl VM {
         self.interpreter
             .env_mut()
             .insert(name.to_string(), value.clone());
+        if let Some(alias) = Self::twigil_dynamic_alias(name) {
+            self.interpreter.env_mut().insert(alias, value.clone());
+        }
         if let Some(inner) = name
             .strip_prefix("&infix:<")
             .or_else(|| name.strip_prefix("&prefix:<"))
@@ -201,6 +217,7 @@ impl VM {
                 | "CX::Warn"
                 | "X::AdHoc"
                 | "CompUnit::DependencySpecification"
+                | "Proxy"
         )
     }
 
@@ -336,6 +353,12 @@ impl VM {
             if let Some(val) = self.interpreter.env().get(name) {
                 self.locals[i] = val.clone();
             }
+        }
+    }
+
+    pub(super) fn sync_env_from_locals(&mut self, code: &CompiledCode) {
+        for (i, name) in code.locals.iter().enumerate() {
+            self.set_env_with_main_alias(name, self.locals[i].clone());
         }
     }
 
