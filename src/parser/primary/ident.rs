@@ -42,6 +42,20 @@ fn make_call_expr(name: String, input: &str, args: Vec<Expr>) -> Expr {
     }
 }
 
+pub(super) fn declared_term_symbol(input: &str) -> PResult<'_, Expr> {
+    if let Some((name, consumed_len, callable)) =
+        crate::parser::stmt::simple::match_user_declared_term_symbol(input)
+    {
+        let expr = if callable {
+            Expr::Call { name, args: vec![] }
+        } else {
+            Expr::BareWord(name)
+        };
+        return Ok((&input[consumed_len..], expr));
+    }
+    Err(PError::expected("declared term symbol"))
+}
+
 fn parse_raw_braced_regex_body(input: &str) -> PResult<'_, String> {
     let after_open = input
         .strip_prefix('{')
@@ -926,9 +940,9 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 r = &after_bracket[end + 1..];
                 continue;
             }
-            if let Ok((rest2, part)) = super::super::stmt::parse_raku_ident(after) {
+            if let Ok((rest2, part)) = super::super::stmt::parse_sub_name_pub(after) {
                 full_name.push_str("::");
-                full_name.push_str(part);
+                full_name.push_str(&part);
                 r = rest2;
             } else if after.starts_with('.')
                 || after.is_empty()

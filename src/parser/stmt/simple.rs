@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use regex::Regex;
@@ -14,11 +14,18 @@ use crate::ast::{AssignOp, Expr, PhaserKind, Stmt};
 use crate::value::Value;
 
 /// A single lexical scope frame tracking both user-declared subs and module imports.
+#[derive(Clone)]
+enum TermBinding {
+    Value(String),
+    Callable(String),
+}
+
 #[derive(Clone, Default)]
 struct LexicalScope {
     user_subs: HashSet<String>,
     test_assertion_subs: HashSet<String>,
     imported_functions: HashSet<String>,
+    term_symbols: HashMap<String, TermBinding>,
 }
 
 thread_local! {
@@ -275,6 +282,92 @@ pub(in crate::parser) fn match_user_declared_prefix_op(input: &str) -> Option<(S
                     .is_none_or(|(_, best_len)| consumed > *best_len)
                 {
                     best = Some((name.clone(), consumed));
+                }
+            }
+        }
+        best
+    })
+}
+
+/// Register a user-declared term symbol.
+/// The canonical name must be in `term:<...>` form.
+pub(in crate::parser) fn register_user_term_symbol(name: &str) {
+    let Some(symbol) = name
+        .strip_prefix("term:<")
+        .and_then(|s| s.strip_suffix('>'))
+    else {
+        return;
+    };
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let current = scopes
+            .last_mut()
+            .expect("scope stack should never be empty");
+        current
+            .term_symbols
+            .insert(symbol.to_string(), TermBinding::Value(name.to_string()));
+    });
+}
+
+pub(in crate::parser) fn register_user_callable_term_symbol(name: &str) {
+    let Some(symbol) = name
+        .strip_prefix("term:<")
+        .and_then(|s| s.strip_suffix('>'))
+    else {
+        return;
+    };
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let current = scopes
+            .last_mut()
+            .expect("scope stack should never be empty");
+        current
+            .term_symbols
+            .insert(symbol.to_string(), TermBinding::Callable(name.to_string()));
+    });
+}
+
+/// Resolve an in-scope term symbol from the current input.
+/// Returns `(canonical_name, consumed_len)` when the input begins with a declared symbol.
+pub(in crate::parser) fn match_user_declared_term_symbol(
+    input: &str,
+) -> Option<(String, usize, bool)> {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        let mut best: Option<(String, usize, bool)> = None;
+
+        for scope in scopes.iter().rev() {
+            for (symbol, binding) in &scope.term_symbols {
+                if !input.starts_with(symbol) {
+                    continue;
+                }
+                let consumed = symbol.len();
+                // For word-like symbols, require identifier boundary.
+                if symbol
+                    .as_bytes()
+                    .last()
+                    .copied()
+                    .is_some_and(|b| crate::parser::helpers::is_ident_char(Some(b)))
+                    && input
+                        .as_bytes()
+                        .get(consumed)
+                        .copied()
+                        .is_some_and(|b| crate::parser::helpers::is_ident_char(Some(b)))
+                {
+                    continue;
+                }
+                if best
+                    .as_ref()
+                    .is_none_or(|(_, best_len, _)| consumed > *best_len)
+                {
+                    match binding {
+                        TermBinding::Value(canonical) => {
+                            best = Some((canonical.clone(), consumed, false));
+                        }
+                        TermBinding::Callable(canonical) => {
+                            best = Some((canonical.clone(), consumed, true));
+                        }
+                    }
                 }
             }
         }

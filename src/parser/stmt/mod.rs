@@ -158,7 +158,7 @@ fn var_name(input: &str) -> PResult<'_, String> {
         }
         // Handle callable operator references: &infix:<...>, &prefix:<...>, ...
         if input.starts_with('&') {
-            for op_kind in ["infix", "prefix", "postfix", "circumfix"] {
+            for op_kind in ["infix", "prefix", "postfix", "term", "circumfix"] {
                 if let Some(after_kind) = r.strip_prefix(op_kind)
                     && let Some(after_colon) = after_kind.strip_prefix(':')
                 {
@@ -243,6 +243,10 @@ pub(super) fn parse_param_list_with_return_pub(
     input: &str,
 ) -> PResult<'_, (Vec<crate::ast::ParamDef>, Option<String>)> {
     sub::parse_param_list_with_return(input)
+}
+
+pub(super) fn parse_sub_name_pub(input: &str) -> PResult<'_, String> {
+    sub::parse_sub_name(input)
 }
 
 /// Public accessor for constant declaration parser (used by primary.rs in expression context).
