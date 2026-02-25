@@ -202,6 +202,29 @@ pub(super) fn itemized_paren_expr(input: &str) -> PResult<'_, Expr> {
     Ok((rest, Expr::CaptureLiteral(vec![inner])))
 }
 
+/// Parse itemized bracket expression: `$[...]`.
+///
+/// Rakudo lowers this as a normal bracket constructor followed by `.item`.
+pub(super) fn itemized_bracket_expr(input: &str) -> PResult<'_, Expr> {
+    let Some(rest) = input.strip_prefix('$') else {
+        return Err(PError::expected("itemized bracket expression"));
+    };
+    if !rest.starts_with('[') {
+        return Err(PError::expected("itemized bracket expression"));
+    }
+    let (rest, inner) = array_literal(rest)?;
+    Ok((
+        rest,
+        Expr::MethodCall {
+            target: Box::new(inner),
+            name: "item".to_string(),
+            args: vec![],
+            modifier: None,
+            quoted: false,
+        },
+    ))
+}
+
 /// Try to parse a sequence operator (...) inside a paren expression.
 /// If the input starts with ... or ...^, treat all collected items as seeds.
 fn try_parse_sequence_in_paren<'a>(input: &'a str, seeds: &[Expr]) -> Option<PResult<'a, Expr>> {

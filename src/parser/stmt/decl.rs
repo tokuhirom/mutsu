@@ -385,6 +385,19 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 
     let (rest, _) = ws(rest)?;
 
+    // Skip hash key-type parameterization: %h{Any}, %{Str}, etc.
+    let rest = if is_hash
+        && rest.starts_with('{')
+        && !rest.starts_with("{{")
+        && let Some(end) = rest.find('}')
+    {
+        let after = &rest[end + 1..];
+        let (after, _) = ws(after)?;
+        after
+    } else {
+        rest
+    };
+
     // Skip `is default(...)` or other `is` traits on variables
     let rest = {
         let mut r = rest;

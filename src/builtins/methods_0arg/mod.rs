@@ -28,6 +28,39 @@ pub(crate) fn native_method_0arg(
         }
         return native_method_0arg(inner, method);
     }
+    // Uni types: override .chars, .codes, .comb to work on codepoints
+    if let Value::Uni { text, .. } = target {
+        match method {
+            "chars" | "codes" => {
+                return Some(Ok(Value::Int(text.chars().count() as i64)));
+            }
+            "comb" => {
+                let parts: Vec<Value> = text.chars().map(|c| Value::Str(c.to_string())).collect();
+                return Some(Ok(Value::array(parts)));
+            }
+            "Str" => return Some(Ok(Value::Str(text.clone()))),
+            "list" => {
+                let codepoints: Vec<Value> = text.chars().map(|c| Value::Int(c as i64)).collect();
+                return Some(Ok(Value::array(codepoints)));
+            }
+            "elems" => {
+                return Some(Ok(Value::Int(text.chars().count() as i64)));
+            }
+            "NFC" | "NFD" | "NFKC" | "NFKD" => {
+                let normalized: String = match method {
+                    "NFC" => text.nfc().collect(),
+                    "NFD" => text.nfd().collect(),
+                    "NFKC" => text.nfkc().collect(),
+                    _ => text.nfkd().collect(),
+                };
+                return Some(Ok(Value::Uni {
+                    form: method.to_string(),
+                    text: normalized,
+                }));
+            }
+            _ => {}
+        }
+    }
     // CompUnit::DependencySpecification methods
     if let Value::CompUnitDepSpec { short_name } = target {
         return match method {
@@ -1023,8 +1056,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 "NFKC" => s.nfkc().collect(),
                 _ => s.nfkd().collect(),
             };
-            let codepoints: Vec<Value> = normalized.chars().map(|c| Value::Int(c as i64)).collect();
-            Some(Ok(Value::array(codepoints)))
+            Some(Ok(Value::Uni {
+                form: method.to_string(),
+                text: normalized,
+            }))
         }
         _ => None,
     }

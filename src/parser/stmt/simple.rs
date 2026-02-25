@@ -812,6 +812,7 @@ pub(super) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
         || rest.starts_with('}')
         || is_stmt_modifier_keyword(rest);
     if no_arg {
+        let (rest, _) = opt_char(rest, ';');
         // `die`/`fail` with no argument should reuse current `$!` when present.
         // A later runtime fallback handles Nil -> default text.
         let stmt = if is_fail {
