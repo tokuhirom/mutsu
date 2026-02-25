@@ -1106,10 +1106,7 @@ impl Interpreter {
             "at" => {
                 if let Some(cls) = self.promise_class_name(&target) {
                     let at_time = args.first().map(|v| v.to_f64()).unwrap_or(0.0);
-                    let now = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs_f64();
+                    let now = crate::value::current_time_secs_f64();
                     let delay = (at_time - now).max(0.0);
                     let promise = SharedPromise::new_with_class(cls);
                     let ret = Value::Promise(promise.clone());
@@ -1799,10 +1796,7 @@ impl Interpreter {
                 if let Value::Package(ref class_name) = target
                     && class_name == "DateTime"
                 {
-                    let secs = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .map(|d| d.as_secs_f64())
-                        .unwrap_or(0.0);
+                    let secs = crate::value::current_time_secs_f64();
                     let mut attrs = HashMap::new();
                     attrs.insert("epoch".to_string(), Value::Num(secs));
                     return Ok(Value::make_instance("DateTime".to_string(), attrs));
@@ -1812,10 +1806,7 @@ impl Interpreter {
                 if let Value::Package(ref class_name) = target
                     && class_name == "Date"
                 {
-                    let secs = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0);
+                    let secs = crate::value::current_time_secs_f64() as u64;
                     let days = secs / 86_400;
                     let mut attrs = HashMap::new();
                     attrs.insert("days".to_string(), Value::Int(days as i64));

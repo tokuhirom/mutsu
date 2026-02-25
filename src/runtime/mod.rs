@@ -22,6 +22,18 @@ use crate::value::{
 };
 use num_traits::Signed;
 
+/// Get the current process ID (returns 0 on WASM where process IDs don't exist).
+fn current_process_id() -> i64 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::process::id() as i64
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        0
+    }
+}
+
 mod accessors;
 mod builtins;
 mod builtins_coerce;
@@ -338,7 +350,7 @@ impl Default for Interpreter {
 impl Interpreter {
     pub fn new() -> Self {
         let mut env = HashMap::new();
-        env.insert("*PID".to_string(), Value::Int(std::process::id() as i64));
+        env.insert("*PID".to_string(), Value::Int(current_process_id()));
         env.insert("@*ARGS".to_string(), Value::array(Vec::new()));
         env.insert("*INIT-INSTANT".to_string(), Value::make_instant_now());
         env.insert(
