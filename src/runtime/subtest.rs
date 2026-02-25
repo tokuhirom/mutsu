@@ -3,9 +3,23 @@ use super::*;
 impl Interpreter {
     pub(crate) fn begin_subtest(&mut self) -> SubtestContext {
         let parent_test_state = self.test_state.take();
+        let force_todo_inner = parent_test_state
+            .as_ref()
+            .map(|state| {
+                let next = state.ran + 1;
+                state
+                    .force_todo
+                    .iter()
+                    .any(|(start, end)| next >= *start && next <= *end)
+            })
+            .unwrap_or(false);
         let parent_output = std::mem::take(&mut self.output);
         let parent_halted = self.halted;
-        self.test_state = Some(TestState::new());
+        let mut subtest_state = TestState::new();
+        if force_todo_inner {
+            subtest_state.force_todo.push((1, usize::MAX));
+        }
+        self.test_state = Some(subtest_state);
         self.halted = false;
         self.subtest_depth += 1;
         SubtestContext {
