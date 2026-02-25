@@ -219,7 +219,9 @@ impl VM {
             || Self::is_type_with_smiley(name, &self.interpreter)
         {
             Value::Package(name.to_string())
-        } else if self.interpreter.has_function(name) {
+        } else if self.interpreter.has_function(name)
+            || Interpreter::is_implicit_zero_arg_builtin(name)
+        {
             if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
                 let pkg = self.interpreter.current_package().to_string();
                 let result =

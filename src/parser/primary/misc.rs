@@ -579,12 +579,17 @@ fn parse_signature_fragment(input: &str) -> PResult<'_, String> {
     Ok(("", frag.to_string()))
 }
 
-/// Parse `\(...)` Capture literal.
+/// Parse capture literals: `\(...)` and `\expr`.
 pub(super) fn capture_literal(input: &str) -> PResult<'_, Expr> {
-    if !input.starts_with("\\(") {
+    if !input.starts_with('\\') {
         return Err(PError::expected("capture literal"));
     }
-    let r = &input[1..]; // skip backslash, keep (
+    let r = &input[1..]; // skip backslash
+    if !r.starts_with('(') {
+        let (r, item) = super::super::expr::expression(r)?;
+        return Ok((r, Expr::CaptureLiteral(vec![item])));
+    }
+    // Parenthesized capture literal: \(a, b, :c)
     let (r, _) = parse_char(r, '(')?;
     let (r, _) = ws(r)?;
     let (r, items) = super::parse_call_arg_list(r)?;

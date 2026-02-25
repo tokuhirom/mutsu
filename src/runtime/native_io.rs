@@ -23,6 +23,22 @@ impl Interpreter {
         let original = Path::new(&p);
         match method {
             "Str" | "gist" => Ok(Value::Str(p.clone())),
+            "raku" | "perl" => {
+                let escape = |s: &str| {
+                    s.replace('\\', "\\\\")
+                        .replace('"', "\\\"")
+                        .replace('\n', "\\n")
+                        .replace('\t', "\\t")
+                        .replace('\r', "\\r")
+                        .replace('\0', "\\0")
+                };
+                let cwd = instance_cwd.unwrap_or_else(|| Self::stringify_path(&cwd_path));
+                Ok(Value::Str(format!(
+                    "IO::Path.new(\"{}\", :CWD(\"{}\"))",
+                    escape(&p),
+                    escape(&cwd)
+                )))
+            }
             "IO" => Ok(Value::make_instance(
                 "IO::Path".to_string(),
                 attributes.clone(),

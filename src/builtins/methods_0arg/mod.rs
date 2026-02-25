@@ -3,6 +3,7 @@
 use crate::runtime;
 use crate::value::{RuntimeError, Value, make_rat};
 use num_traits::Signed;
+use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -140,6 +141,46 @@ fn dispatch_capture(
         "Bool" => Some(Ok(Value::Bool(!positional.is_empty() || !named.is_empty()))),
         "WHAT" => Some(Ok(Value::Package("Capture".to_string()))),
         _ => None,
+    }
+}
+
+fn is_infinite_range(value: &Value) -> bool {
+    match value {
+        Value::Range(_, end)
+        | Value::RangeExcl(_, end)
+        | Value::RangeExclStart(_, end)
+        | Value::RangeExclBoth(_, end) => *end == i64::MAX,
+        Value::GenericRange { end, .. } => match end.as_ref() {
+            Value::HyperWhatever => true,
+            Value::Num(n) => n.is_infinite() && n.is_sign_positive(),
+            Value::Rat(n, d) => *d == 0 && *n > 0,
+            Value::FatRat(n, d) => *d == 0 && *n > 0,
+            other => {
+                let n = other.to_f64();
+                n.is_infinite() && n.is_sign_positive()
+            }
+        },
+        _ => false,
+    }
+}
+
+fn is_value_lazy(value: &Value) -> bool {
+    matches!(value, Value::LazyList(_)) || is_infinite_range(value)
+}
+
+fn flatten_deep_value(value: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
+    match value {
+        Value::Array(items, is_array) if !*is_array || flatten_arrays => {
+            for item in items.iter() {
+                flatten_deep_value(item, out, flatten_arrays);
+            }
+        }
+        Value::Range(..)
+        | Value::RangeExcl(..)
+        | Value::RangeExclStart(..)
+        | Value::RangeExclBoth(..)
+        | Value::GenericRange { .. } => out.extend(crate::runtime::utils::value_to_list(value)),
+        other => out.push(other.clone()),
     }
 }
 
@@ -540,14 +581,16 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Array(items, ..) => {
                 let mut result = Vec::new();
                 for item in items.iter() {
-                    match item {
-                        Value::Array(inner, ..) => result.extend(inner.iter().cloned()),
-                        other => result.push(other.clone()),
-                    }
+                    flatten_deep_value(item, &mut result, false);
                 }
-                Some(Ok(Value::array(result)))
+                Some(Ok(Value::Seq(Arc::new(result))))
             }
-            _ => Some(Ok(Value::array(vec![target.clone()]))),
+            other if is_infinite_range(other) => Some(Ok(other.clone())),
+            _ => {
+                let mut result = Vec::new();
+                flatten_deep_value(target, &mut result, false);
+                Some(Ok(Value::Seq(Arc::new(result))))
+            }
         },
         "sort" => match target {
             Value::Array(items, ..) => {
@@ -675,7 +718,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
         "so" => Some(Ok(Value::Bool(target.truthy()))),
         "not" => Some(Ok(Value::Bool(!target.truthy()))),
-        "is-lazy" => Some(Ok(Value::Bool(false))),
+        "is-lazy" => Some(Ok(Value::Bool(is_value_lazy(target)))),
         "chomp" => Some(Ok(Value::Str(
             target.to_string_value().trim_end_matches('\n').to_string(),
         ))),
