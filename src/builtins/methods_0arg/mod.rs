@@ -1110,6 +1110,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Some(Ok(make_rat(numer, denom)))
             }
             Value::FatRat(n, d) => Some(Ok(make_rat(*n, *d))),
+            Value::Instance { .. } => None,
             Value::Package(_) => Some(Ok(make_rat(0, 1))),
             _ => Some(Ok(make_rat(0, 1))),
         },

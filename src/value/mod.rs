@@ -11,6 +11,21 @@ mod error;
 pub(crate) mod signature;
 mod types;
 
+/// Get current time as seconds since UNIX epoch (returns 0.0 on WASM).
+pub(crate) fn current_time_secs_f64() -> f64 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        0.0
+    }
+}
+
 pub(crate) use display::is_internal_anon_type_name;
 pub use display::{format_complex, tclc_str, wordcase_str};
 pub use error::{RuntimeError, RuntimeErrorCode};
@@ -723,10 +738,7 @@ impl Value {
 
     /// Create an Instant value from the current system time.
     pub(crate) fn make_instant_now() -> Self {
-        let secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs_f64())
-            .unwrap_or(0.0);
+        let secs = current_time_secs_f64();
         let mut attrs = HashMap::new();
         attrs.insert("value".to_string(), Value::Num(secs));
         Value::make_instance("Instant".to_string(), attrs)

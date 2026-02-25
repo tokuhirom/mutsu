@@ -15,6 +15,10 @@ pub(crate) enum OpCode {
     SetLocal(u32),
     GetGlobal(u32),
     SetGlobal(u32),
+    SetVarType {
+        name_idx: u32,
+        tc_idx: u32,
+    },
     SetTopic,
     GetArrayVar(u32),
     GetHashVar(u32),

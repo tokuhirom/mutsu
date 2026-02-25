@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mutsu - Raku in the Browser</title>
+<style>
+  :root {
+    --purple: #7B2D8B;
+    --pink: #E91E8C;
+    --dark-bg: #1a0a20;
+    --panel-bg: #2a1235;
+    --border: #4a2555;
+    --text: #f0e6f6;
+    --dim: #9a7fa8;
+    --green: #7deba0;
+    --red: #ff6b8a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: linear-gradient(135deg, var(--dark-bg) 0%, #2d1040 50%, #1a0a30 100%);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    text-align: center;
+    padding: 2rem 1rem 1rem;
+  }
+  header h1 {
+    font-size: 2.2rem;
+    background: linear-gradient(90deg, var(--purple), var(--pink));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  header p {
+    color: var(--dim);
+    margin-top: 0.3rem;
+    font-size: 0.95rem;
+  }
+  .container {
+    max-width: 900px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 0 1rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .examples {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    justify-content: center;
+  }
+  .examples button {
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    color: var(--dim);
+    padding: 0.3rem 0.7rem;
+    border-radius: 1rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .examples button:hover {
+    border-color: var(--pink);
+    color: var(--text);
+  }
+  .editor-area {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  textarea {
+    width: 100%;
+    min-height: 180px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    color: var(--text);
+    font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace;
+    font-size: 0.95rem;
+    padding: 1rem;
+    resize: vertical;
+    outline: none;
+    line-height: 1.5;
+  }
+  textarea:focus {
+    border-color: var(--pink);
+    box-shadow: 0 0 0 2px rgba(233, 30, 140, 0.15);
+  }
+  .toolbar {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  #run-btn {
+    background: linear-gradient(135deg, var(--purple), var(--pink));
+    border: none;
+    color: white;
+    padding: 0.6rem 1.5rem;
+    border-radius: 0.4rem;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  #run-btn:hover { opacity: 0.9; }
+  #run-btn:disabled { opacity: 0.5; cursor: wait; }
+  .shortcut-hint {
+    color: var(--dim);
+    font-size: 0.8rem;
+  }
+  .output-area {
+    flex: 1;
+    min-height: 120px;
+  }
+  #output {
+    width: 100%;
+    min-height: 120px;
+    background: #0d0514;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    color: var(--green);
+    font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace;
+    font-size: 0.9rem;
+    padding: 1rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-y: auto;
+    max-height: 400px;
+  }
+  #output.error { color: var(--red); }
+  #output.loading { color: var(--dim); font-style: italic; }
+  footer {
+    text-align: center;
+    padding: 1.5rem;
+    color: var(--dim);
+    font-size: 0.8rem;
+  }
+  footer a {
+    color: var(--pink);
+    text-decoration: none;
+  }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>mutsu</h1>
+  <p>A Raku interpreter in the browser, powered by Rust + WebAssembly</p>
+</header>
+
+<div class="container">
+  <div class="examples">
+    <button onclick="loadExample('hello')">Hello World</button>
+    <button onclick="loadExample('fizzbuzz')">FizzBuzz</button>
+    <button onclick="loadExample('fibonacci')">Fibonacci</button>
+    <button onclick="loadExample('mapgrep')">Map &amp; Grep</button>
+    <button onclick="loadExample('junctions')">Junctions</button>
+    <button onclick="loadExample('classes')">Classes</button>
+    <button onclick="loadExample('regex')">Regex</button>
+    <button onclick="loadExample('reduce')">Reduce</button>
+  </div>
+
+  <div class="editor-area">
+    <textarea id="code" spellcheck="false" placeholder="Write your Raku code here...">say "Hello from mutsu!";</textarea>
+    <div class="toolbar">
+      <button id="run-btn" onclick="runCode()">Run</button>
+      <span class="shortcut-hint">Ctrl+Enter to run</span>
+    </div>
+  </div>
+
+  <div class="output-area">
+    <div id="output"></div>
+  </div>
+</div>
+
+<footer>
+  <a href="https://github.com/tokuhirom/mutsu">mutsu</a> &mdash; a Raku interpreter written in Rust
+</footer>
+
+<script type="module">
+import init, { evaluate } from './pkg/mutsu.js';
+
+const codeEl = document.getElementById('code');
+const outputEl = document.getElementById('output');
+const runBtn = document.getElementById('run-btn');
+
+const loadingMessages = [
+  "Camelia is metamorphosing your code...",
+  "Butterflies are parsing your program...",
+  "Weaving bytecode silk...",
+  "Fluttering through the AST...",
+  "Interpreting with grace...",
+];
+
+function randomLoading() {
+  return loadingMessages[Math.floor(Math.random() * loadingMessages.length)];
+}
+
+let wasmReady = false;
+
+async function initWasm() {
+  outputEl.className = 'loading';
+  outputEl.textContent = 'Loading mutsu WASM module...';
+  try {
+    await init();
+    wasmReady = true;
+    outputEl.className = '';
+    outputEl.textContent = 'Ready! Write some Raku code and click Run.';
+  } catch (e) {
+    outputEl.className = 'error';
+    outputEl.textContent = 'Failed to load WASM module: ' + e.message;
+  }
+}
+
+window.runCode = function() {
+  if (!wasmReady) return;
+  const code = codeEl.value;
+  if (!code.trim()) return;
+
+  outputEl.className = 'loading';
+  outputEl.textContent = randomLoading();
+  runBtn.disabled = true;
+
+  // Use setTimeout to let the loading message render
+  setTimeout(() => {
+    try {
+      const result = evaluate(code);
+      outputEl.className = result.startsWith('Error:') ? 'error' : '';
+      outputEl.textContent = result || '(no output)';
+    } catch (e) {
+      outputEl.className = 'error';
+      outputEl.textContent = 'WASM error: ' + e.message;
+    }
+    runBtn.disabled = false;
+  }, 10);
+};
+
+const examples = {
+  hello: 'say "Hello, World!";',
+  fizzbuzz: `for 1..100 -> $n {
+    if $n %% 15    { say "FizzBuzz" }
+    elsif $n %% 3  { say "Fizz" }
+    elsif $n %% 5  { say "Buzz" }
+    else           { say $n }
+}`,
+  fibonacci: `my @fib = 0, 1, * + * ... *;
+say @fib[0..9];`,
+  mapgrep: `my @nums = 1..10;
+my @evens = @nums.grep(* %% 2);
+my @squares = @evens.map(* ** 2);
+say "Evens: @evens[]";
+say "Squares: @squares[]";`,
+  junctions: `my $x = 5;
+say "small" if $x < any(3, 6, 9);
+say "in range" if 1 <= $x <= 10;`,
+  classes: `class Point {
+    has $.x;
+    has $.y;
+    method distance { sqrt($.x ** 2 + $.y ** 2) }
+}
+my $p = Point.new(x => 3, y => 4);
+say "Distance: " ~ $p.distance;`,
+  regex: `my $str = "Hello World 2026";
+if $str ~~ /(<[A..Z]>\\w+) \\s (\\w+) \\s (\\d+)/ {
+    say "Match: $/";
+    say "Year: $/[2]";
+}`,
+  reduce: `say [+] 1..10;
+say [*] 1..5;
+say [~] <hello world>;`,
+};
+
+window.loadExample = function(name) {
+  codeEl.value = examples[name] || '';
+};
+
+codeEl.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.key === 'Enter') {
+    e.preventDefault();
+    window.runCode();
+  }
+});
+
+initWasm();
+</script>
+
+</body>
+</html>

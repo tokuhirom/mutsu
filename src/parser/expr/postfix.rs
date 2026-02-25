@@ -1076,9 +1076,9 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             }
         }
 
-        // Postfix imaginary number forms:
-        //   (expr)i   -> Complex(0, expr)
-        //   (expr)\i  -> Complex(0, expr) (escaped form used for Inf/NaN literals)
+        // Postfix i (imaginary number): (expr)i or (expr)\i → Complex(0, expr)
+        // The \i form uses unspace to separate the postfix from the preceding token
+        // (e.g. Inf\i avoids being parsed as the identifier "Infi").
         if rest.starts_with("\\i") && !is_ident_char(rest.as_bytes().get(2).copied()) {
             rest = &rest[2..];
             expr = Expr::MethodCall {
@@ -1090,8 +1090,6 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             };
             continue;
         }
-
-        // Postfix i (imaginary number): (expr)i → Complex(0, expr)
         if rest.starts_with('i') && !is_ident_char(rest.as_bytes().get(1).copied()) {
             rest = &rest[1..];
             expr = Expr::MethodCall {

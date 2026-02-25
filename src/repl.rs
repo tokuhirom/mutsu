@@ -1,4 +1,6 @@
 use crate::Interpreter;
+use crate::builtins::native_method_0arg;
+use crate::value::Value;
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
 
@@ -88,6 +90,14 @@ pub fn run_repl() {
                             print!("{}", new_output);
                         } else if !result.is_empty() {
                             print!("{}", result);
+                        } else if let Some(value) = interpreter.last_value.take()
+                            && !matches!(value, Value::Nil)
+                        {
+                            if let Some(Ok(gist)) = native_method_0arg(&value, "gist") {
+                                println!("{}", gist.to_string_value());
+                            } else {
+                                println!("{}", value.to_string_value());
+                            }
                         }
                     }
                     Err(err) => {

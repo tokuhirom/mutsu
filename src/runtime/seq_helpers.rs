@@ -673,18 +673,8 @@ impl Interpreter {
                 let (base_type, smiley) = super::types::strip_type_smiley(type_name);
 
                 // A Package on the LHS is a type object - check type hierarchy
-                if let Value::Package(left_name) = left {
-                    let type_ok = if Self::type_matches(base_type, left_name) {
-                        true
-                    } else if let Some(class_def) = self.classes.get(left_name.as_str()) {
-                        class_def
-                            .parents
-                            .clone()
-                            .iter()
-                            .any(|parent| Self::type_matches(base_type, parent))
-                    } else {
-                        false
-                    };
+                if let Value::Package(_) = left {
+                    let type_ok = self.type_matches_value(base_type, left);
                     if !type_ok {
                         return false;
                     }
