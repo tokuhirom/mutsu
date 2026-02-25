@@ -422,6 +422,13 @@ pub(super) fn percent_hash_literal(input: &str) -> PResult<'_, Expr> {
             rest = r;
             continue;
         }
+        // Newline-separated colonpairs without commas: treat as separate
+        // statements (like Raku), keeping only the last entry.
+        if r.starts_with(':') {
+            pairs.clear();
+            rest = r;
+            continue;
+        }
         let (r, _) = parse_char(r, ')')?;
         return Ok((r, Expr::Hash(pairs)));
     }
