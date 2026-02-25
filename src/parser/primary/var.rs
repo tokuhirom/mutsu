@@ -258,6 +258,14 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     } else {
         (input, "")
     };
+    // Contextualized scalar specials (e.g., @$/, @$_): parse `$...` then lift
+    // to an array variable targeting the same underlying name.
+    if twigil.is_empty()
+        && rest.starts_with('$')
+        && let Ok((r2, Expr::Var(name))) = scalar_var(rest)
+    {
+        return Ok((r2, Expr::ArrayVar(name)));
+    }
     // Bare @ (anonymous array variable)
     let next_is_ident =
         !rest.is_empty() && rest.chars().next().is_some_and(is_raku_identifier_start);
@@ -282,6 +290,14 @@ pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
     } else {
         (input, "")
     };
+    // Contextualized scalar specials (e.g., %$/, %$_): parse `$...` then lift
+    // to a hash variable targeting the same underlying name.
+    if twigil.is_empty()
+        && rest.starts_with('$')
+        && let Ok((r2, Expr::Var(name))) = scalar_var(rest)
+    {
+        return Ok((r2, Expr::HashVar(name)));
+    }
     // Bare % (anonymous hash variable)
     let next_is_ident =
         !rest.is_empty() && rest.chars().next().is_some_and(is_raku_identifier_start);

@@ -483,10 +483,69 @@ impl Interpreter {
                     }
                 }
             }
+            let mut role_names: Vec<String> = mixins
+                .iter()
+                .filter_map(|(key, value)| {
+                    key.strip_prefix("__mutsu_role__")
+                        .and_then(|name| value.truthy().then_some(name.to_string()))
+                })
+                .collect();
+            role_names.sort();
+            let mut role_has_method = false;
+            for role_name in role_names {
+                let Some(role) = self.roles.get(&role_name).cloned() else {
+                    continue;
+                };
+                let Some(overloads) = role.methods.get(method).cloned() else {
+                    continue;
+                };
+                role_has_method = true;
+                for def in overloads {
+                    if def.is_private || !self.method_args_match(&args, &def.param_defs) {
+                        continue;
+                    }
+                    let role_attrs: HashMap<String, Value> = mixins
+                        .iter()
+                        .filter_map(|(key, value)| {
+                            key.strip_prefix("__mutsu_attr__")
+                                .map(|attr| (attr.to_string(), value.clone()))
+                        })
+                        .collect();
+                    let (result, _updated) = self.run_instance_method_resolved(
+                        &role_name,
+                        &role_name,
+                        def,
+                        role_attrs,
+                        args,
+                        Some(target.clone()),
+                    )?;
+                    return Ok(result);
+                }
+            }
+            if role_has_method {
+                return Err(RuntimeError::new(format!(
+                    "No matching candidates for method: {}",
+                    method
+                )));
+            }
             if method == "can" && args.len() == 1 {
                 let method_name = args[0].to_string_value();
-                if mixins.contains_key(&method_name) {
+                if mixins.contains_key(&method_name)
+                    || mixins.contains_key(&format!("__mutsu_attr__{}", method_name))
+                {
                     return Ok(Value::Bool(true));
+                }
+                for role_name in mixins.keys().filter_map(|key| {
+                    key.strip_prefix("__mutsu_role__")
+                        .map(|name| name.to_string())
+                }) {
+                    if self
+                        .roles
+                        .get(&role_name)
+                        .is_some_and(|role| role.methods.contains_key(&method_name))
+                    {
+                        return Ok(Value::Bool(true));
+                    }
                 }
                 return self.call_method_with_values((**inner).clone(), method, args);
             }
@@ -501,7 +560,9 @@ impl Interpreter {
                         Some(Value::Enum { key, .. }) if key == probe_key
                     ),
                     Value::Package(name) | Value::Str(name) => {
-                        mixins.contains_key(name) || inner.does_check(name)
+                        mixins.contains_key(name)
+                            || mixins.contains_key(&format!("__mutsu_role__{}", name))
+                            || inner.does_check(name)
                     }
                     other => inner.does_check(&other.to_string_value()),
                 };
@@ -536,6 +597,52 @@ impl Interpreter {
             return result;
         }
 
+        // Force LazyList and re-dispatch as Seq for methods that need element access
+        if let Value::LazyList(ll) = &target
+            && matches!(method, "elems" | "list" | "Array" | "Numeric" | "Int")
+        {
+            let items = self.force_lazy_list_bridge(ll)?;
+            let seq = Value::Seq(std::sync::Arc::new(items));
+            return self.call_method_with_values(seq, method, args);
+        }
+
+        // Resolve Value::Routine to Value::Sub for method dispatch
+        if let Value::Routine {
+            ref name,
+            ref package,
+        } = target
+            && method == "assuming"
+        {
+            // Create a wrapper Sub that delegates to the multi-dispatch routine
+            let mut sub_data = crate::value::SubData {
+                package: package.clone(),
+                name: name.clone(),
+                params: Vec::new(),
+                param_defs: Vec::new(),
+                body: vec![],
+                env: self.env().clone(),
+                assumed_positional: Vec::new(),
+                assumed_named: std::collections::HashMap::new(),
+                id: crate::value::next_instance_id(),
+                empty_sig: false,
+            };
+            // Store the routine name so call_sub_value can dispatch
+            sub_data
+                .env
+                .insert("__mutsu_routine_name".to_string(), Value::Str(name.clone()));
+            // Apply assumed args
+            for arg in &args {
+                if let Value::Pair(key, boxed) = arg {
+                    if key == "__mutsu_test_callsite_line" {
+                        continue;
+                    }
+                    sub_data.assumed_named.insert(key.clone(), *boxed.clone());
+                } else {
+                    sub_data.assumed_positional.push(arg.clone());
+                }
+            }
+            return Ok(Value::Sub(std::sync::Arc::new(sub_data)));
+        }
         if let Value::Sub(data) = &target {
             if method == "assuming" {
                 let mut next = (**data).clone();
@@ -729,6 +836,13 @@ impl Interpreter {
             return self.call_method_with_values(Value::Sub(strong), method, args);
         }
 
+        if method == "join"
+            && let Value::LazyList(list) = &target
+        {
+            let items = self.force_lazy_list_bridge(list)?;
+            return self.call_method_with_values(Value::real_array(items), method, args);
+        }
+
         if let Some(meta_method) = method.strip_prefix('^')
             && meta_method != "name"
         {
@@ -801,7 +915,7 @@ impl Interpreter {
                 }
             }
             "note" if args.is_empty() => {
-                let content = format!("{}\n", gist_value(&target));
+                let content = format!("{}\n", self.render_gist_value(&target));
                 self.write_to_named_handle("$*ERR", &content, false)?;
                 return Ok(Value::Nil);
             }
@@ -1028,7 +1142,7 @@ impl Interpreter {
                     | Value::GenericRange { .. } => "Range",
                     Value::Array(_, true) => "Array",
                     Value::Array(_, false) => "List",
-                    Value::LazyList(_) => "Array",
+                    Value::LazyList(_) => "Seq",
                     Value::Hash(_) => "Hash",
                     Value::Rat(_, _) => "Rat",
                     Value::FatRat(_, _) => "FatRat",
@@ -1056,6 +1170,32 @@ impl Interpreter {
                     Value::Uni { form, .. } => form.as_str(),
                     Value::Mixin(inner, _) => {
                         return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
+                    }
+                    Value::Proxy { .. } => "Proxy",
+                    Value::ParametricRole {
+                        base_name,
+                        type_args,
+                    } => {
+                        let args_str: Vec<String> = type_args
+                            .iter()
+                            .map(|a| match a {
+                                Value::Package(n) => n.clone(),
+                                Value::ParametricRole { .. } => {
+                                    // Recursively get the WHAT name for nested parametric roles
+                                    if let Ok(Value::Package(n)) =
+                                        self.call_method_with_values(a.clone(), "WHAT", Vec::new())
+                                    {
+                                        // Strip surrounding parens from (Name)
+                                        n.trim_start_matches('(').trim_end_matches(')').to_string()
+                                    } else {
+                                        a.to_string_value()
+                                    }
+                                }
+                                _ => a.to_string_value(),
+                            })
+                            .collect();
+                        let name = format!("{}[{}]", base_name, args_str.join(","));
+                        return Ok(Value::Package(name));
                     }
                 };
                 return Ok(Value::Package(type_name.to_string()));
@@ -1148,40 +1288,88 @@ impl Interpreter {
                 }
             }
             "match" => {
-                if let Some(pattern) = args.first() {
-                    let text = target.to_string_value();
-                    return match pattern {
-                        Value::Regex(pat) | Value::Str(pat) => {
-                            if let Some(captures) = self.regex_match_with_captures(pat, &text) {
-                                let matched = captures.matched.clone();
-                                let from = captures.from as i64;
-                                let to = captures.to as i64;
-                                for (i, v) in captures.positional.iter().enumerate() {
-                                    self.env.insert(i.to_string(), Value::Str(v.clone()));
-                                }
-                                for (k, v) in &captures.named {
-                                    let value = if v.len() == 1 {
-                                        Value::Str(v[0].clone())
-                                    } else {
-                                        Value::array(v.iter().cloned().map(Value::Str).collect())
-                                    };
-                                    self.env.insert(format!("<{}>", k), value);
-                                }
-                                Ok(Value::make_match_object_with_captures(
-                                    matched,
-                                    from,
-                                    to,
-                                    &captures.positional,
-                                    &captures.named,
-                                ))
-                            } else {
-                                Ok(Value::Nil)
-                            }
-                        }
-                        _ => Ok(Value::Nil),
-                    };
+                if args.is_empty() {
+                    return Ok(Value::Nil);
                 }
-                return Ok(Value::Nil);
+                let text = target.to_string_value();
+                let mut overlap = false;
+                let mut pattern_arg: Option<&Value> = None;
+                for arg in &args {
+                    if let Value::Pair(key, value) = arg {
+                        if (key == "ov" || key == "overlap") && value.truthy() {
+                            overlap = true;
+                        }
+                        continue;
+                    }
+                    if pattern_arg.is_none() {
+                        pattern_arg = Some(arg);
+                    }
+                }
+                let Some(pattern) = pattern_arg else {
+                    return Ok(Value::Nil);
+                };
+                return match pattern {
+                    Value::Regex(pat) | Value::Str(pat) => {
+                        if overlap {
+                            let all = self.regex_match_all_with_captures(pat, &text);
+                            if all.is_empty() {
+                                return Ok(Value::Nil);
+                            }
+                            let mut best_by_start: std::collections::BTreeMap<
+                                usize,
+                                RegexCaptures,
+                            > = std::collections::BTreeMap::new();
+                            for capture in all {
+                                let key = capture.from;
+                                match best_by_start.get(&key) {
+                                    Some(existing) if capture.to <= existing.to => {}
+                                    _ => {
+                                        best_by_start.insert(key, capture);
+                                    }
+                                }
+                            }
+                            let matches = best_by_start
+                                .into_values()
+                                .map(|c| {
+                                    Value::make_match_object_with_captures(
+                                        c.matched,
+                                        c.from as i64,
+                                        c.to as i64,
+                                        &c.positional,
+                                        &c.named,
+                                    )
+                                })
+                                .collect::<Vec<_>>();
+                            return Ok(Value::array(matches));
+                        }
+                        if let Some(captures) = self.regex_match_with_captures(pat, &text) {
+                            let matched = captures.matched.clone();
+                            let from = captures.from as i64;
+                            let to = captures.to as i64;
+                            for (i, v) in captures.positional.iter().enumerate() {
+                                self.env.insert(i.to_string(), Value::Str(v.clone()));
+                            }
+                            for (k, v) in &captures.named {
+                                let value = if v.len() == 1 {
+                                    Value::Str(v[0].clone())
+                                } else {
+                                    Value::array(v.iter().cloned().map(Value::Str).collect())
+                                };
+                                self.env.insert(format!("<{}>", k), value);
+                            }
+                            Ok(Value::make_match_object_with_captures(
+                                matched,
+                                from,
+                                to,
+                                &captures.positional,
+                                &captures.named,
+                            ))
+                        } else {
+                            Ok(Value::Nil)
+                        }
+                    }
+                    _ => Ok(Value::Nil),
+                };
             }
             "subst" => {
                 return self.dispatch_subst(target, &args);
@@ -1416,7 +1604,7 @@ impl Interpreter {
                             | Value::GenericRange { .. } => {
                                 values.extend(Self::value_to_list(arg));
                             }
-                            Value::Slip(items) => {
+                            Value::Slip(items) | Value::Seq(items) => {
                                 values.extend(items.iter().cloned());
                             }
                             other => values.push(other.clone()),
@@ -1489,7 +1677,7 @@ impl Interpreter {
                 // Initialize with default attribute values
                 let mut attributes = HashMap::new();
                 if self.classes.contains_key(&class_name) {
-                    for (attr_name, _is_public, default) in
+                    for (attr_name, _is_public, default, _is_rw) in
                         self.collect_class_attributes(&class_name)
                     {
                         let val = if let Some(expr) = default {
@@ -2130,21 +2318,7 @@ impl Interpreter {
                 }
                 return Ok(Value::make_instance(class_name.clone(), attrs));
             }
-            if args.is_empty() {
-                let class_attrs = self.collect_class_attributes(class_name);
-                if class_attrs.is_empty() {
-                    // No class definition — treat all instance attributes as public
-                    if let Some(val) = attributes.get(method) {
-                        return Ok(val.clone());
-                    }
-                } else {
-                    for (attr_name, is_public, _) in &class_attrs {
-                        if *is_public && attr_name == method {
-                            return Ok(attributes.get(method).cloned().unwrap_or(Value::Nil));
-                        }
-                    }
-                }
-            }
+            // User-defined methods take priority over auto-generated accessors
             if self.has_user_method(class_name, method) {
                 let (result, updated) = self.run_instance_method(
                     class_name,
@@ -2153,8 +2327,31 @@ impl Interpreter {
                     args,
                     Some(target.clone()),
                 )?;
-                self.overwrite_instance_bindings_by_identity(class_name, *target_id, updated);
+                self.overwrite_instance_bindings_by_identity(
+                    class_name,
+                    *target_id,
+                    updated.clone(),
+                );
+                // Auto-FETCH if the method returned a Proxy
+                if let Value::Proxy { ref fetcher, .. } = result {
+                    return self.proxy_fetch(fetcher, None, class_name, &updated, *target_id);
+                }
                 return Ok(result);
+            }
+            // Fallback: auto-generated accessor for public attributes
+            if args.is_empty() {
+                let class_attrs = self.collect_class_attributes(class_name);
+                if class_attrs.is_empty() {
+                    if let Some(val) = attributes.get(method) {
+                        return Ok(val.clone());
+                    }
+                } else {
+                    for (attr_name, is_public, _, _) in &class_attrs {
+                        if *is_public && attr_name == method {
+                            return Ok(attributes.get(method).cloned().unwrap_or(Value::Nil));
+                        }
+                    }
+                }
             }
         }
 
@@ -2165,6 +2362,34 @@ impl Interpreter {
             let attrs = HashMap::new();
             let (result, _updated) = self.run_instance_method(name, attrs, method, args, None)?;
             return Ok(result);
+        }
+
+        // Value-type dispatch for user-defined methods (e.g. `augment class Array/Hash/List`).
+        // Non-instance values still need to find methods declared on their type object.
+        if !matches!(target, Value::Instance { .. } | Value::Package(_)) {
+            let class_name = crate::runtime::utils::value_type_name(&target);
+            let dispatch_class = if self.has_user_method(class_name, method) {
+                Some(class_name)
+            } else if matches!(target, Value::Array(_, false))
+                && self.has_user_method("Array", method)
+            {
+                // @-sigiled values are list-like internally, but augmenting Array methods
+                // should still apply to them.
+                Some("Array")
+            } else {
+                None
+            };
+            if let Some(dispatch_class) = dispatch_class {
+                let attrs = HashMap::new();
+                let (result, _updated) = self.run_instance_method(
+                    dispatch_class,
+                    attrs,
+                    method,
+                    args,
+                    Some(target.clone()),
+                )?;
+                return Ok(result);
+            }
         }
 
         // Fallback methods
@@ -3727,6 +3952,23 @@ impl Interpreter {
                 "ThreadPoolScheduler" | "CurrentThreadScheduler" | "Tap" | "Cancellation" => {
                     return Ok(Value::make_instance(class_name.clone(), HashMap::new()));
                 }
+                "Proxy" => {
+                    let mut fetcher = Value::Nil;
+                    let mut storer = Value::Nil;
+                    for arg in &args {
+                        if let Value::Pair(key, value) = arg {
+                            match key.as_str() {
+                                "FETCH" => fetcher = *value.clone(),
+                                "STORE" => storer = *value.clone(),
+                                _ => {}
+                            }
+                        }
+                    }
+                    return Ok(Value::Proxy {
+                        fetcher: Box::new(fetcher),
+                        storer: Box::new(storer),
+                    });
+                }
                 "CompUnit::DependencySpecification" => {
                     // Extract :short-name from named args
                     let mut short_name: Option<String> = None;
@@ -3957,6 +4199,35 @@ impl Interpreter {
                 }
                 _ => {}
             }
+            if let Some(role) = self.roles.get(class_name).cloned() {
+                let mut named_args: HashMap<String, Value> = HashMap::new();
+                let mut positional_args: Vec<Value> = Vec::new();
+                for arg in &args {
+                    if let Value::Pair(key, value) = arg {
+                        named_args.insert(key.clone(), *value.clone());
+                    } else {
+                        positional_args.push(arg.clone());
+                    }
+                }
+
+                let mut mixins = HashMap::new();
+                mixins.insert(format!("__mutsu_role__{}", class_name), Value::Bool(true));
+                for (idx, (attr_name, _is_public, default_expr, _is_rw)) in
+                    role.attributes.iter().enumerate()
+                {
+                    let value = if let Some(v) = named_args.get(attr_name) {
+                        v.clone()
+                    } else if let Some(v) = positional_args.get(idx) {
+                        v.clone()
+                    } else if let Some(expr) = default_expr {
+                        self.eval_block_value(&[Stmt::Expr(expr.clone())])?
+                    } else {
+                        Value::Nil
+                    };
+                    mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
+                }
+                return Ok(Value::Mixin(Box::new(Value::Nil), mixins));
+            }
             if self.classes.contains_key(class_name) {
                 // Check for user-defined .new method first
                 if self.has_user_method(class_name, "new") {
@@ -3966,7 +4237,9 @@ impl Interpreter {
                     return Ok(result);
                 }
                 let mut attrs = HashMap::new();
-                for (attr_name, _is_public, default) in self.collect_class_attributes(class_name) {
+                for (attr_name, _is_public, default, _is_rw) in
+                    self.collect_class_attributes(class_name)
+                {
                     let val = if let Some(expr) = default {
                         self.eval_block_value(&[Stmt::Expr(expr)])?
                     } else {

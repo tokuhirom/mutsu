@@ -527,11 +527,13 @@ impl Compiler {
                 main_stmts.push(stmt.clone());
             }
         }
+        let has_explicit_catch = catch_stmts.is_some();
         // Emit TryCatch placeholder.
         let try_idx = self.code.emit(OpCode::TryCatch {
             catch_start: 0,
             control_start: 0,
             body_end: 0,
+            explicit_catch: has_explicit_catch,
         });
         // Compile main body (last Stmt::Expr/Call leaves value on stack)
         let mut main_leaves_value = false;

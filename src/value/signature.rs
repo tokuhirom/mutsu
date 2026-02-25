@@ -1,5 +1,5 @@
 use super::Value;
-use crate::ast::ParamDef;
+use crate::ast::{Expr, ParamDef};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -20,6 +20,7 @@ pub(crate) struct SigParam {
     pub(crate) outer_sub_signature: Option<Vec<SigParam>>,
     pub(crate) traits: Vec<String>,
     pub(crate) code_signature: Option<Box<SigInfo>>,
+    pub(crate) where_constraint: Option<Box<Expr>>,
 }
 
 /// Complete signature info stored at runtime.
@@ -109,6 +110,7 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
             .code_signature
             .as_ref()
             .map(|(params, ret)| Box::new(param_defs_to_sig_info(params, ret.clone()))),
+        where_constraint: p.where_constraint.clone(),
     }
 }
 

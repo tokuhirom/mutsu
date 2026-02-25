@@ -17,6 +17,24 @@ impl Value {
             // Pairs: recursively use eqv for values
             (Value::Pair(ak, av), Value::Pair(bk, bv)) => ak == bk && av.eqv(bv),
             (Value::ValuePair(ak, av), Value::ValuePair(bk, bv)) => ak.eqv(bk) && av.eqv(bv),
+            // Captures: recursively use eqv for positional and named elements
+            (
+                Value::Capture {
+                    positional: ap,
+                    named: an,
+                },
+                Value::Capture {
+                    positional: bp,
+                    named: bn,
+                },
+            ) => {
+                ap.len() == bp.len()
+                    && ap.iter().zip(bp.iter()).all(|(x, y)| x.eqv(y))
+                    && an.len() == bn.len()
+                    && an
+                        .iter()
+                        .all(|(k, v)| bn.get(k).is_some_and(|bv| v.eqv(bv)))
+            }
             // Slips: recursively use eqv for elements
             (Value::Slip(a), Value::Slip(b)) => {
                 a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
@@ -84,7 +102,7 @@ impl Value {
             Value::Pair(_, _) | Value::ValuePair(_, _) => true,
             Value::Enum { .. } => true,
             Value::CompUnitDepSpec { .. } => true,
-            Value::Package(_) => false,
+            Value::Package(_) | Value::ParametricRole { .. } => false,
             Value::Routine { .. } => true,
             Value::Sub(_) | Value::WeakSub(_) => true,
             Value::Instance {
@@ -128,6 +146,7 @@ impl Value {
                     inner.truthy()
                 }
             }
+            Value::Proxy { .. } => true,
         }
     }
 
@@ -179,6 +198,8 @@ impl Value {
             Value::Capture { .. } => "Capture",
             Value::Uni { form, .. } => form.as_str(),
             Value::Mixin(inner, _) => return inner.isa_check(type_name),
+            Value::Proxy { .. } => "Proxy",
+            Value::ParametricRole { base_name, .. } => base_name.as_str(),
         };
         if my_type == type_name {
             return true;
