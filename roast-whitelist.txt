@@ -127,6 +127,7 @@ roast/S05-metasyntax/null.t
 roast/S05-metasyntax/proto-token-ltm.t
 roast/S05-metasyntax/single-quotes.t
 roast/S05-metasyntax/unicode-property-pair.t
+roast/S05-metasyntax/unknown.t
 roast/S05-modifier/Perl_10.t
 roast/S05-modifier/overlapping.t
 roast/S05-modifier/repetition-exhaustive.t
