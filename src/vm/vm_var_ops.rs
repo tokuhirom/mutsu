@@ -22,6 +22,16 @@ impl VM {
             .and_then(|s| s.strip_suffix('>'))
     }
 
+    /// Check if an array is a shaped (multidimensional) array.
+    /// A shaped array has nested Array elements as its first element.
+    fn is_shaped_array(value: &Value) -> bool {
+        if let Value::Array(items, ..) = value {
+            matches!(items.first(), Some(Value::Array(..)))
+        } else {
+            false
+        }
+    }
+
     fn array_depth(value: &Value) -> usize {
         match value {
             Value::Array(items, ..) => {
@@ -871,7 +881,34 @@ impl VM {
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name)
                     && matches!(container, Value::Array(..))
                 {
-                    Self::assign_array_multidim(container, keys.as_ref(), val.clone())?;
+                    let is_shaped = Self::is_shaped_array(container);
+                    if is_shaped {
+                        // Multidimensional indexing: @arr[0;0] = 'x'
+                        Self::assign_array_multidim(container, keys.as_ref(), val.clone())?;
+                    } else {
+                        // Flat slice assignment: @a[2,3,4,6] = <foo bar foo bar>
+                        // Auto-extend the array to accommodate all indices
+                        let max_idx = keys
+                            .iter()
+                            .filter_map(Self::index_to_usize)
+                            .max()
+                            .unwrap_or(0);
+                        if let Value::Array(items, ..) = container {
+                            let arr = Arc::make_mut(items);
+                            if max_idx >= arr.len() {
+                                arr.resize(max_idx + 1, Value::Package("Any".to_string()));
+                            }
+                        }
+                        // Assign each value to the corresponding index
+                        let vals = match &val {
+                            Value::Array(v, ..) => (**v).clone(),
+                            _ => vec![val.clone()],
+                        };
+                        for (i, key) in keys.iter().enumerate() {
+                            let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                            Self::assign_array_multidim(container, std::slice::from_ref(key), v)?;
+                        }
+                    }
                     if bind_mode {
                         self.mark_bound_index(&var_name, encoded_idx);
                     }
