@@ -37,8 +37,10 @@ pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
         if let Some(after_open) = rest.strip_prefix(":<<")
             && let Some(end_pos) = after_open.find(">>")
         {
-            let op_symbol = after_open[..end_pos].trim();
+            let raw_symbol = after_open[..end_pos].trim();
             let after_close = &after_open[end_pos + 2..];
+            // Resolve compile-time constants: $var or {name}
+            let op_symbol = resolve_operator_symbol(raw_symbol);
             let full_name = format!("{}:<{}>", base, op_symbol);
             return Ok((after_close, full_name));
         }
@@ -87,6 +89,49 @@ pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
         return Ok((after_close, full_name));
     }
     Ok((rest, base))
+}
+
+/// Validate that circumfix/postcircumfix operators have exactly 2 delimiter parts.
+fn validate_categorical_parts(name: &str) -> Result<(), PError> {
+    for prefix in &["circumfix:<", "postcircumfix:<"] {
+        if let Some(rest) = name.strip_prefix(prefix)
+            && let Some(delims) = rest.strip_suffix('>')
+        {
+            let parts: Vec<&str> = delims.split_whitespace().collect();
+            if parts.len() > 2 {
+                return Err(PError::fatal(
+                    "X::Syntax::AddCategorical::TooManyParts: Too many parts in categorical name"
+                        .to_string(),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Resolve compile-time constants in operator symbol names.
+/// Handles `$var` (scalar constant) and `{name}` (sigilless constant).
+fn resolve_operator_symbol(raw: &str) -> String {
+    let trimmed = raw.trim();
+    // $variable form: look up as compile-time constant
+    if let Some(bare_name) = trimmed.strip_prefix('$') {
+        // Constants are stored without the $ sigil
+        if let Some(value) = super::simple::lookup_compile_time_constant(bare_name) {
+            return value;
+        }
+        // Also try with the sigil
+        if let Some(value) = super::simple::lookup_compile_time_constant(trimmed) {
+            return value;
+        }
+    }
+    // {name} form: look up sigilless constant
+    if let Some(inner) = trimmed.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
+        let inner = inner.trim();
+        if let Some(value) = super::simple::lookup_compile_time_constant(inner) {
+            return value;
+        }
+    }
+    trimmed.to_string()
 }
 
 fn unescape_operator_single_quoted(s: &str) -> String {
@@ -266,6 +311,8 @@ pub(super) fn sub_decl_body(
         (rest, name, Some(expr))
     } else {
         let (rest, name) = parse_sub_name(input)?;
+        // Validate circumfix/postcircumfix operator part count
+        validate_categorical_parts(&name)?;
         // Register user-declared sub so it can be called without parens later
         super::simple::register_user_sub(&name);
         super::simple::register_user_callable_term_symbol(&name);
