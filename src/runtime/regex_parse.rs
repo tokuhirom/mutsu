@@ -1,6 +1,41 @@
 use super::*;
 use ::regex::Regex;
 
+fn regex_single_quote_closes(open: char, ch: char) -> bool {
+    match open {
+        '\'' => ch == '\'',
+        '\u{2018}' => ch == '\u{2019}',                     // ‘...’
+        '\u{201A}' => ch == '\u{2019}' || ch == '\u{2018}', // ‚...’ and ‚...‘
+        '\u{FF62}' => ch == '\u{FF63}',                     // ｢...｣
+        _ => false,
+    }
+}
+
+fn regex_single_quote_atom(literal: String, ignore_case: bool) -> RegexAtom {
+    let lit_chars: Vec<char> = literal.chars().collect();
+    if lit_chars.is_empty() {
+        // Empty string literal matches zero-width
+        RegexAtom::ZeroWidth
+    } else if lit_chars.len() == 1 {
+        RegexAtom::Literal(lit_chars[0])
+    } else {
+        let tokens = lit_chars
+            .into_iter()
+            .map(|ch| RegexToken {
+                atom: RegexAtom::Literal(ch),
+                quant: RegexQuant::One,
+                named_capture: None,
+            })
+            .collect();
+        RegexAtom::Group(RegexPattern {
+            tokens,
+            anchor_start: false,
+            anchor_end: false,
+            ignore_case,
+        })
+    }
+}
+
 /// Split a property name like "NumericValue(0 ^..^ 1)" into ("NumericValue", Some("0 ^..^ 1")).
 fn split_prop_args(s: &str) -> (&str, Option<&str>) {
     if let Some(open) = s.find('(')
@@ -12,6 +47,31 @@ fn split_prop_args(s: &str) -> (&str, Option<&str>) {
 }
 
 impl Interpreter {
+    fn split_simple_quantified_atom(atom: &str) -> Option<(String, String)> {
+        let quant = atom.chars().last()?;
+        if !matches!(quant, '?' | '+' | '*') {
+            return None;
+        }
+        let body = &atom[..atom.len() - quant.len_utf8()];
+        if body.is_empty() {
+            return None;
+        }
+        let base = body.chars().last()?;
+        // Do not split when the quantified part is likely a grouped/paired atom,
+        // a quoted atom, or an escaped atom like \w.
+        if matches!(
+            base,
+            ']' | ')' | '}' | '>' | '\'' | '"' | '\u{2019}' | '\u{201D}' | '\u{00BB}' | '\u{FF63}'
+        ) {
+            return None;
+        }
+        let prefix = &body[..body.len() - base.len_utf8()];
+        if prefix.ends_with('\\') {
+            return None;
+        }
+        Some((prefix.to_string(), format!("{base}{quant}")))
+    }
+
     fn expand_ltm_pattern(pattern: &str) -> String {
         let compact: String = pattern.chars().filter(|ch| !ch.is_whitespace()).collect();
         if compact.is_empty() {
@@ -37,16 +97,11 @@ impl Interpreter {
                 .to_string();
             let sep_mode = caps.get(2).map(|m| m.as_str());
             let sep = caps.get(3).map(|m| m.as_str());
-            if atom.len() >= 2 && matches!(atom.chars().last(), Some('?') | Some('+') | Some('*')) {
-                let mut chars: Vec<char> = atom.chars().collect();
-                let quant = chars.pop().unwrap();
-                let base = chars.pop().unwrap();
-                let prefix: String = chars.into_iter().collect();
-                let core = format!("{base}{quant}");
+            if let Some((prefix, quantified_tail)) = Self::split_simple_quantified_atom(&atom) {
                 return format!(
                     "{}{}",
                     prefix,
-                    Self::build_ltm_expansion(&core, "1..*", sep_mode, sep)
+                    Self::build_ltm_expansion(&quantified_tail, "1..*", sep_mode, sep)
                 );
             }
             return Self::build_ltm_expansion(&atom, "1..*", sep_mode, sep);
@@ -381,37 +436,16 @@ impl Interpreter {
                         other => RegexAtom::Literal(other),
                     }
                 }
-                '\'' => {
+                '\'' | '\u{2018}' | '\u{201A}' | '\u{FF62}' => {
                     // Quoted literal string in Raku regex: 'foo-bar' matches literally
                     let mut literal = String::new();
                     for ch in chars.by_ref() {
-                        if ch == '\'' {
+                        if regex_single_quote_closes(c, ch) {
                             break;
                         }
                         literal.push(ch);
                     }
-                    let lit_chars: Vec<char> = literal.chars().collect();
-                    if lit_chars.is_empty() {
-                        // Empty string literal matches zero-width
-                        RegexAtom::ZeroWidth
-                    } else if lit_chars.len() == 1 {
-                        RegexAtom::Literal(lit_chars[0])
-                    } else {
-                        let tokens = lit_chars
-                            .into_iter()
-                            .map(|ch| RegexToken {
-                                atom: RegexAtom::Literal(ch),
-                                quant: RegexQuant::One,
-                                named_capture: None,
-                            })
-                            .collect();
-                        RegexAtom::Group(RegexPattern {
-                            tokens,
-                            anchor_start: false,
-                            anchor_end: false,
-                            ignore_case,
-                        })
-                    }
+                    regex_single_quote_atom(literal, ignore_case)
                 }
                 '<' => {
                     if chars.peek() == Some(&'(') {
