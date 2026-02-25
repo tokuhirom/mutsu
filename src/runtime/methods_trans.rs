@@ -70,7 +70,7 @@ fn extract_regex_pattern(key: &str) -> Option<&str> {
 }
 
 impl Interpreter {
-    pub(super) fn dispatch_trans(
+    pub(crate) fn dispatch_trans(
         &self,
         target: Value,
         args: &[Value],
@@ -157,11 +157,11 @@ impl Interpreter {
         text: &str,
         rules: &[TransRule],
         squash: bool,
-        _delete: bool,
+        delete: bool,
         complement: bool,
     ) -> String {
         if complement {
-            return self.apply_trans_complement(text, rules, squash, _delete);
+            return self.apply_trans_complement(text, rules, squash, delete);
         }
 
         let chars: Vec<char> = text.chars().collect();
@@ -186,6 +186,8 @@ impl Interpreter {
                             best_len = 1;
                             best_replacement = if pos < to_chars.len() {
                                 to_chars[pos].to_string()
+                            } else if delete {
+                                String::new()
                             } else if !to_chars.is_empty() {
                                 to_chars.last().unwrap().to_string()
                             } else {
@@ -205,6 +207,8 @@ impl Interpreter {
                                 best_len = token_char_len;
                                 best_replacement = if ti < to_tokens.len() {
                                     to_tokens[ti].clone()
+                                } else if delete {
+                                    String::new()
                                 } else if !to_tokens.is_empty() {
                                     to_tokens.last().unwrap().clone()
                                 } else {

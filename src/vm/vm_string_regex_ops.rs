@@ -1,55 +1,5 @@
 use super::*;
 
-/// Expand a tr/// character spec, supporting `a..z` ranges.
-fn expand_tr_spec(spec: &str) -> Vec<char> {
-    let chars: Vec<char> = spec.chars().collect();
-    let mut result = Vec::new();
-    let mut i = 0;
-    while i < chars.len() {
-        if i + 2 < chars.len() && chars[i + 1] == '.' && i + 3 <= chars.len() {
-            // Check for `a..z` pattern (two dots)
-            if i + 3 < chars.len() && chars[i + 2] == '.' {
-                // `a..z` range
-                let start = chars[i] as u32;
-                let end = chars[i + 3] as u32;
-                if start <= end {
-                    for c in start..=end {
-                        if let Some(ch) = char::from_u32(c) {
-                            result.push(ch);
-                        }
-                    }
-                }
-                i += 4;
-                continue;
-            }
-        }
-        result.push(chars[i]);
-        i += 1;
-    }
-    result
-}
-
-/// Perform transliteration: replace each char in `from` with corresponding char in `to`.
-fn transliterate_str(text: &str, from_spec: &str, to_spec: &str) -> String {
-    let from_chars = expand_tr_spec(from_spec);
-    let to_chars = expand_tr_spec(to_spec);
-    text.chars()
-        .map(|c| {
-            if let Some(pos) = from_chars.iter().position(|&fc| fc == c) {
-                if pos < to_chars.len() {
-                    to_chars[pos]
-                } else if !to_chars.is_empty() {
-                    *to_chars.last().unwrap()
-                } else {
-                    c
-                }
-            } else {
-                c
-            }
-        })
-        .collect()
-}
-
 /// Apply samemark on a per-word basis: split both source and target by whitespace,
 /// apply samemark to each word pair, then reassemble with the replacement's whitespace.
 fn samemark_per_word(target: &str, source: &str) -> String {
@@ -184,7 +134,10 @@ impl VM {
         code: &CompiledCode,
         from_idx: u32,
         to_idx: u32,
-    ) {
+        delete: bool,
+        complement: bool,
+        squash: bool,
+    ) -> Result<(), RuntimeError> {
         let from = Self::const_str(code, from_idx).to_string();
         let to = Self::const_str(code, to_idx).to_string();
         let target = self
@@ -193,12 +146,26 @@ impl VM {
             .get("_")
             .cloned()
             .unwrap_or(Value::Nil);
-        let text = target.to_string_value();
-        let result = transliterate_str(&text, &from, &to);
-        self.interpreter
-            .env_mut()
-            .insert("_".to_string(), Value::Str(result.clone()));
-        self.stack.push(Value::Str(result));
+
+        let mut args = vec![Value::Pair(from, Box::new(Value::Str(to)))];
+        if delete {
+            args.push(Value::Pair("d".to_string(), Box::new(Value::Bool(true))));
+        }
+        if complement {
+            args.push(Value::Pair("c".to_string(), Box::new(Value::Bool(true))));
+        }
+        if squash {
+            args.push(Value::Pair("s".to_string(), Box::new(Value::Bool(true))));
+        }
+
+        let result = self.interpreter.dispatch_trans(target, &args)?;
+        if self.in_smartmatch_rhs {
+            self.interpreter
+                .env_mut()
+                .insert("_".to_string(), result.clone());
+        }
+        self.stack.push(result);
+        Ok(())
     }
 
     pub(super) fn exec_hyper_op(

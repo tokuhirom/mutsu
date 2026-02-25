@@ -99,6 +99,9 @@ pub(crate) enum Expr {
     Transliterate {
         from: String,
         to: String,
+        delete: bool,
+        complement: bool,
+        squash: bool,
     },
     MethodCall {
         target: Box<Expr>,

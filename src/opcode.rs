@@ -385,6 +385,9 @@ pub(crate) enum OpCode {
     Transliterate {
         from_idx: u32,
         to_idx: u32,
+        delete: bool,
+        complement: bool,
+        squash: bool,
     },
 
     // -- Take (gather/take) --

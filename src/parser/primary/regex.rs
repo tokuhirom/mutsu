@@ -154,6 +154,36 @@ fn parse_compact_match_adverbs<'a>(input: &'a str, adverbs: &mut MatchAdverbs) -
     rest
 }
 
+fn parse_trans_adverbs(input: &str) -> Option<(&str, bool, bool, bool)> {
+    let mut rest = input;
+    let mut delete = false;
+    let mut complement = false;
+    let mut squash = false;
+
+    loop {
+        let Some(after_colon) = rest.strip_prefix(':') else {
+            break;
+        };
+        let name_len = after_colon
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
+            .unwrap_or(after_colon.len());
+        if name_len == 0 {
+            return None;
+        }
+        let name = &after_colon[..name_len];
+        match name {
+            "d" | "delete" => delete = true,
+            "c" | "complement" => complement = true,
+            "s" | "squash" => squash = true,
+            _ => {}
+        }
+        rest = &after_colon[name_len..];
+    }
+
+    let after_slash = rest.strip_prefix('/')?;
+    Some((after_slash, delete, complement, squash))
+}
+
 fn apply_inline_match_adverbs(mut pattern: String, adverbs: &MatchAdverbs) -> String {
     if adverbs.ignore_case {
         pattern = format!(":i {pattern}");
@@ -621,11 +651,13 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         }
     }
 
-    // tr/from/to/ or TR/from/to/
+    // tr[:adverbs]/from/to/ or TR[:adverbs]/from/to/
     if let Some(r) = input
-        .strip_prefix("tr/")
-        .or_else(|| input.strip_prefix("TR/"))
+        .strip_prefix("tr")
+        .or_else(|| input.strip_prefix("TR"))
+        .and_then(parse_trans_adverbs)
     {
+        let (r, delete, complement, squash) = r;
         let mut end = 0;
         let bytes = r.as_bytes();
         while end < bytes.len() {
@@ -664,6 +696,9 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 Expr::Transliterate {
                     from: from.to_string(),
                     to: to.to_string(),
+                    delete,
+                    complement,
+                    squash,
                 },
             ));
         }
