@@ -371,12 +371,14 @@ pub(crate) enum OpCode {
     Subst {
         pattern_idx: u32,
         replacement_idx: u32,
+        samemark: bool,
     },
 
     // -- Non-destructive substitution (S///) --
     NonDestructiveSubst {
         pattern_idx: u32,
         replacement_idx: u32,
+        samemark: bool,
     },
 
     // -- Transliteration (tr///) --

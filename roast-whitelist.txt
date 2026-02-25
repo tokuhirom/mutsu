@@ -120,6 +120,7 @@ roast/S05-metasyntax/single-quotes.t
 roast/S05-metasyntax/unicode-property-pair.t
 roast/S05-modifier/Perl_10.t
 roast/S05-modifier/repetition-exhaustive.t
+roast/S05-modifier/samemark.t
 roast/S05-modifier/sigspace.t
 roast/S05-substitution/67222.t
 roast/S05-substitution/match.t

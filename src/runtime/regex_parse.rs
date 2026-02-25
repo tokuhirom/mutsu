@@ -32,6 +32,7 @@ fn regex_single_quote_atom(literal: String, ignore_case: bool) -> RegexAtom {
             anchor_start: false,
             anchor_end: false,
             ignore_case,
+            ignore_mark: false,
         })
     }
 }
@@ -220,15 +221,26 @@ impl Interpreter {
         let interpolated = self.interpolate_regex_scalars(pattern);
         let mut source = interpolated.trim_start();
         let mut ignore_case = false;
+        let mut ignore_mark = false;
         let mut sigspace = false;
         loop {
+            if let Some(rest) = source.strip_prefix(":ignorecase") {
+                ignore_case = true;
+                source = rest.trim_start();
+                continue;
+            }
+            if let Some(rest) = source.strip_prefix(":ignoremark") {
+                ignore_mark = true;
+                source = rest.trim_start();
+                continue;
+            }
             if let Some(rest) = source.strip_prefix(":i") {
                 ignore_case = true;
                 source = rest.trim_start();
                 continue;
             }
-            if let Some(rest) = source.strip_prefix(":ignorecase") {
-                ignore_case = true;
+            if let Some(rest) = source.strip_prefix(":sigspace") {
+                sigspace = true;
                 source = rest.trim_start();
                 continue;
             }
@@ -237,10 +249,17 @@ impl Interpreter {
                 source = rest.trim_start();
                 continue;
             }
-            if let Some(rest) = source.strip_prefix(":sigspace") {
-                sigspace = true;
-                source = rest.trim_start();
-                continue;
+            if let Some(rest) = source.strip_prefix(":m") {
+                // Make sure it's :m and not :mm or :my or other identifiers
+                if rest.is_empty()
+                    || rest.starts_with(' ')
+                    || rest.starts_with(':')
+                    || rest.starts_with('/')
+                {
+                    ignore_mark = true;
+                    source = rest.trim_start();
+                    continue;
+                }
             }
             break;
         }
@@ -673,6 +692,7 @@ impl Interpreter {
                                             anchor_start: false,
                                             anchor_end: false,
                                             ignore_case,
+                                            ignore_mark,
                                         })
                                     }
                                     _ => RegexAtom::Named(name),
@@ -725,6 +745,7 @@ impl Interpreter {
                             anchor_start: false,
                             anchor_end: false,
                             ignore_case,
+                            ignore_mark,
                         };
                         RegexAtom::CaptureGroup(group_pat)
                     } else {
@@ -824,6 +845,7 @@ impl Interpreter {
             anchor_start,
             anchor_end,
             ignore_case,
+            ignore_mark,
         })
     }
 
