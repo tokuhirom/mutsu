@@ -858,23 +858,49 @@ impl Interpreter {
             .collect();
         let positional_params: Vec<&ParamDef> =
             filtered_params.iter().filter(|p| !p.named).collect();
+        let positional_arg_count = args
+            .iter()
+            .filter(|arg| !matches!(arg, Value::Pair(..)))
+            .count();
         let mut required = 0usize;
-        let mut has_slurpy = false;
+        let mut has_positional_slurpy = false;
+        let mut has_hash_slurpy = false;
         for pd in &positional_params {
             if pd.slurpy {
-                has_slurpy = true;
+                if pd.name.starts_with('%') || pd.sigilless {
+                    has_hash_slurpy = true;
+                } else {
+                    has_positional_slurpy = true;
+                }
             } else {
                 required += 1;
             }
         }
-        if has_slurpy {
-            if args.len() < required {
+        if has_positional_slurpy {
+            if positional_arg_count < required {
                 return false;
             }
-        } else if args.len() != required {
+        } else if positional_arg_count != required {
             return false;
         }
-        self.args_match_param_types(args, &filtered_params)
+        if !has_hash_slurpy {
+            let named_params: std::collections::HashSet<&str> = filtered_params
+                .iter()
+                .filter(|p| p.named)
+                .map(|p| p.name.as_str())
+                .collect();
+            for arg in args {
+                if let Value::Pair(key, _) = arg
+                    && !named_params.contains(key.as_str())
+                {
+                    return false;
+                }
+            }
+        }
+        if !self.args_match_param_types(args, &filtered_params) {
+            return false;
+        }
+        true
     }
 
     /// Create an error for calling a sub with empty signature `()` with arguments.
