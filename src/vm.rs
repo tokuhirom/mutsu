@@ -312,11 +312,31 @@ impl VM {
                     return Err(self.strict_undeclared_error(&name));
                 }
                 let val = self.stack.pop().unwrap();
-                let val = if name.starts_with('%') {
+                let mut val = if name.starts_with('%') {
                     runtime::coerce_to_hash(val)
                 } else {
                     val
                 };
+                if let Some(constraint) = self.interpreter.var_type_constraint(&name)
+                    && !name.starts_with('%')
+                    && !name.starts_with('@')
+                {
+                    if !matches!(val, Value::Nil)
+                        && !self.interpreter.type_matches_value(&constraint, &val)
+                    {
+                        return Err(RuntimeError::new(format!(
+                            "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
+                            name,
+                            constraint,
+                            runtime::utils::value_type_name(&val)
+                        )));
+                    }
+                    if !matches!(val, Value::Nil) {
+                        val = self
+                            .interpreter
+                            .try_coerce_value_for_constraint(&constraint, val)?;
+                    }
+                }
                 let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
                 let alias_key = format!("__mutsu_sigilless_alias::{}", name);
                 if matches!(
@@ -336,6 +356,13 @@ impl VM {
                     self.interpreter.env_mut().insert(alias_name, val.clone());
                 }
                 self.set_env_with_main_alias(&name, val);
+                *ip += 1;
+            }
+            OpCode::SetVarType { name_idx, tc_idx } => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                let constraint = Self::const_str(code, *tc_idx).to_string();
+                self.interpreter
+                    .set_var_type_constraint(&name, Some(constraint));
                 *ip += 1;
             }
             OpCode::SetTopic => {

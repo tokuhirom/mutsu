@@ -40,6 +40,7 @@ roast/S02-types/hyperwhatever.t
 roast/S02-types/mu.t
 roast/S02-types/nan.t
 roast/S02-types/nested_pairs.t
+roast/S02-types/nominalizables.t
 roast/S02-types/parsing-bool.t
 roast/S02-types/range-iterator.t
 roast/S02-types/stash.t
