@@ -3405,6 +3405,17 @@ impl Interpreter {
                     };
                     return Ok(Value::Complex(re, im));
                 }
+                "Backtrace" => {
+                    let file = self
+                        .env
+                        .get("?FILE")
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default();
+                    let mut frame_attrs = HashMap::new();
+                    frame_attrs.insert("file".to_string(), Value::Str(file));
+                    let frame = Value::make_instance("Backtrace::Frame".to_string(), frame_attrs);
+                    return Ok(Value::array(vec![frame]));
+                }
                 "Lock" => {
                     let mut attrs = HashMap::new();
                     let lock_id = super::native_methods::next_lock_id() as i64;

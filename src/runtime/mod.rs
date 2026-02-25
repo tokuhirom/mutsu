@@ -604,12 +604,22 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: [
                     "close", "get", "getc", "lines", "words", "read", "write", "print", "say",
-                    "flush", "seek", "tell", "eof", "encoding", "opened", "slurp", "Supply",
+                    "put", "flush", "seek", "tell", "eof", "encoding", "opened", "slurp", "Supply",
                 ]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["IO::Handle".to_string()],
+            },
+        );
+        classes.insert(
+            "Backtrace".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Backtrace".to_string()],
             },
         );
         classes.insert(
