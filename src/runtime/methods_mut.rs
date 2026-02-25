@@ -430,7 +430,9 @@ impl Interpreter {
                     };
                     for arg in args {
                         match arg {
-                            Value::Array(vals, ..) => items.extend(vals.iter().cloned()),
+                            Value::Array(vals, is_array) if is_array => {
+                                items.extend(vals.iter().cloned())
+                            }
                             other => items.push(other),
                         }
                     }
@@ -583,7 +585,9 @@ impl Interpreter {
                     if method == "append" {
                         for arg in &args {
                             match arg {
-                                Value::Array(inner, ..) => items.extend(inner.iter().cloned()),
+                                Value::Array(inner, is_array) if *is_array => {
+                                    items.extend(inner.iter().cloned())
+                                }
                                 other => items.push(other.clone()),
                             }
                         }

@@ -980,7 +980,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::StrCoerce => {
-                self.exec_str_coerce_op();
+                self.exec_str_coerce_op()?;
                 *ip += 1;
             }
             OpCode::UptoRange => {

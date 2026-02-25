@@ -337,6 +337,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         && (c == b'@'
             || c == b'%'
             || c == b'$'
+            || c == b'.'
             || c == b'('
             || c == b'['
             || c.is_ascii_alphabetic()

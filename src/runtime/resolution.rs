@@ -887,4 +887,31 @@ impl Interpreter {
         }
         Ok(Value::array(list_items))
     }
+
+    /// Like `eval_grep_over_items` but returns only the first matching item (or Nil).
+    pub(super) fn eval_first_over_items(
+        &mut self,
+        func: Option<Value>,
+        list_items: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if let Some(matcher) = func {
+            if matches!(&matcher, Value::Sub(_)) {
+                // Use call_sub_value directly for proper closure variable propagation
+                for item in list_items {
+                    let result = self.call_sub_value(matcher.clone(), vec![item.clone()], true)?;
+                    if result.truthy() {
+                        return Ok(item);
+                    }
+                }
+                return Ok(Value::Nil);
+            }
+            for item in list_items {
+                if self.smart_match(&item, &matcher) {
+                    return Ok(item);
+                }
+            }
+            return Ok(Value::Nil);
+        }
+        Ok(list_items.into_iter().next().unwrap_or(Value::Nil))
+    }
 }

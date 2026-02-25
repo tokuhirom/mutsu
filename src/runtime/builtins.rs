@@ -155,6 +155,15 @@ impl Interpreter {
                 }
                 self.call_method_with_values(args[0].clone(), "HOW", vec![])
             }
+            "__MUTSU_UNREGISTER_CLASS__" => {
+                if let Some(name) = args.first() {
+                    let class_name = name.to_string_value();
+                    self.classes.remove(&class_name);
+                    self.env.remove(&class_name);
+                    self.suppress_name(&class_name);
+                }
+                Ok(Value::Nil)
+            }
             "__MUTSU_SET_META__" => {
                 if args.len() < 3 {
                     return Ok(Value::Nil);
@@ -238,6 +247,7 @@ impl Interpreter {
             // Higher-order functions
             "map" => self.builtin_map(&args),
             "grep" => self.builtin_grep(&args),
+            "first" => self.builtin_first(&args),
             "classify" | "categorize" => self.builtin_classify(name, &args),
             // String functions
             "index" => {
@@ -274,7 +284,7 @@ impl Interpreter {
             "tc" => self.builtin_tc(&args),
             "trim" => self.builtin_trim(&args),
             "chars" => self.builtin_chars(&args),
-            "sprintf" => self.builtin_sprintf(&args),
+            "sprintf" | "zprintf" => self.builtin_sprintf(&args),
             // File I/O
             "slurp" => self.builtin_slurp(&args),
             "spurt" => self.builtin_spurt(&args),
