@@ -142,7 +142,8 @@ impl Interpreter {
             // Bind implicit $_ for bare blocks called with arguments
             if data.params.is_empty()
                 && !args.is_empty()
-                && let Some(first_positional) = args.iter().find(|v| !matches!(v, Value::Pair(_, _)))
+                && let Some(first_positional) =
+                    args.iter().find(|v| !matches!(v, Value::Pair(_, _)))
             {
                 new_env.insert("_".to_string(), first_positional.clone());
             }

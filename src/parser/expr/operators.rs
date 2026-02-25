@@ -6,6 +6,7 @@ use super::super::parse_result::{PError, merge_expected_messages};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ComparisonOp {
     StrictEq,
+    #[allow(dead_code)]
     StrictNe,
     NumEq,
     NotDivisibleBy,
