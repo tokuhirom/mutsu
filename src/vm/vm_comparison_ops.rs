@@ -315,7 +315,11 @@ impl VM {
         self.interpreter
             .env_mut()
             .insert("_".to_string(), left.clone());
-        self.run_range(code, rhs_start, rhs_end, compiled_fns)?;
+        let saved_in_smartmatch_rhs = self.in_smartmatch_rhs;
+        self.in_smartmatch_rhs = true;
+        let rhs_run = self.run_range(code, rhs_start, rhs_end, compiled_fns);
+        self.in_smartmatch_rhs = saved_in_smartmatch_rhs;
+        rhs_run?;
         let right = self.stack.pop().unwrap_or(Value::Nil);
         if let Some(var_name) = lhs_var {
             let modified_topic = self
