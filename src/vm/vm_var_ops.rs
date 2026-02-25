@@ -1027,15 +1027,15 @@ impl VM {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
-        let val = self.stack.last().unwrap().clone();
+        let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let idx = idx as usize;
         let name = &code.locals[idx];
         let val = if name.starts_with('%') {
-            runtime::coerce_to_hash(val)
+            runtime::coerce_to_hash(raw_val)
         } else if name.starts_with('@') {
-            runtime::coerce_to_array(val)
+            runtime::coerce_to_array(raw_val)
         } else {
-            val
+            raw_val
         };
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
@@ -1067,6 +1067,7 @@ impl VM {
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
         }
+        self.stack.push(val);
         Ok(())
     }
 
