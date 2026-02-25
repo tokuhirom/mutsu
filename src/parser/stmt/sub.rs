@@ -554,6 +554,7 @@ pub(super) fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
             multi_invocant = false;
             let (r, _) = ws(r)?;
             if r.starts_with(')') {
+                mark_params_as_invocant(&mut params);
                 return Ok((r, params));
             }
             let (r, mut p) = parse_single_param(r)?;
@@ -686,6 +687,7 @@ pub(super) fn parse_param_list_with_return(
             multi_invocant = false;
             let (r, _) = ws(r)?;
             if r.starts_with(')') {
+                mark_params_as_invocant(&mut params);
                 return Ok((r, (params, return_type)));
             }
             let (r, mut p) = parse_single_param(r)?;
