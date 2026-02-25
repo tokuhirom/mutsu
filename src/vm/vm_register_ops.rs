@@ -397,6 +397,9 @@ impl VM {
         {
             self.interpreter
                 .register_role_decl(name, type_params, body)?;
+            self.interpreter
+                .env_mut()
+                .insert("_".to_string(), Value::Package(name.clone()));
             self.sync_locals_from_env(code);
             Ok(())
         } else {
