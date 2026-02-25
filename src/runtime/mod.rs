@@ -251,6 +251,7 @@ pub struct Interpreter {
     hidden_defer_parents: HashMap<String, HashSet<String>>,
     class_trusts: HashMap<String, HashSet<String>>,
     roles: HashMap<String, RoleDef>,
+    role_parents: HashMap<String, Vec<String>>,
     role_type_params: HashMap<String, Vec<String>>,
     subsets: HashMap<String, SubsetDef>,
     proto_subs: HashSet<String>,
@@ -926,6 +927,7 @@ impl Interpreter {
                 );
                 roles
             },
+            role_parents: HashMap::new(),
             role_type_params: HashMap::new(),
             subsets: HashMap::new(),
             proto_subs: HashSet::new(),
@@ -1300,6 +1302,7 @@ impl Interpreter {
             hidden_defer_parents: self.hidden_defer_parents.clone(),
             class_trusts: self.class_trusts.clone(),
             roles: self.roles.clone(),
+            role_parents: self.role_parents.clone(),
             role_type_params: self.role_type_params.clone(),
             subsets: self.subsets.clone(),
             proto_subs: self.proto_subs.clone(),
