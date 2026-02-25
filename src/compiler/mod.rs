@@ -47,6 +47,11 @@ impl Compiler {
     }
 
     pub(crate) fn qualify_variable_name(&self, name: &str) -> String {
+        if self.current_package.contains("::&") {
+            // Sub/method state scopes use package-like names (e.g. GLOBAL::&foo/1)
+            // that should not be used to qualify runtime variable access.
+            return name.to_string();
+        }
         if self.current_package == "GLOBAL" || name.contains("::") {
             return name.to_string();
         }
