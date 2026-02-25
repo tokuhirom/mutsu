@@ -329,7 +329,57 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
     }
 }
 
+pub(crate) fn is_chain_comparison_op(op: &str) -> bool {
+    matches!(
+        op,
+        "==" | "!="
+            | "<"
+            | ">"
+            | "<="
+            | ">="
+            | "==="
+            | "!=="
+            | "=:="
+            | "eqv"
+            | "eq"
+            | "ne"
+            | "lt"
+            | "gt"
+            | "le"
+            | "ge"
+            | "before"
+            | "after"
+            | "~~"
+            | "!~~"
+            | "cmp"
+            | "leg"
+            | "<=>"
+            | "%%"
+            | "!%%"
+    ) || matches!(
+        op.strip_prefix('!'),
+        Some("==")
+            | Some("===")
+            | Some("=:=")
+            | Some("eqv")
+            | Some("eq")
+            | Some("ne")
+            | Some("lt")
+            | Some("gt")
+            | Some("le")
+            | Some("ge")
+            | Some("before")
+            | Some("after")
+            | Some("cmp")
+            | Some("leg")
+            | Some("<=>")
+    )
+}
+
 pub(crate) fn reduction_identity(op: &str) -> Value {
+    if is_chain_comparison_op(op) {
+        return Value::Bool(true);
+    }
     match op {
         "+" | "-" | "+|" | "+^" => Value::Int(0),
         "*" | "**" => Value::Int(1),
@@ -341,11 +391,6 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
         "//" => Value::Package("Any".to_string()),
         "min" => Value::Num(f64::INFINITY),
         "max" => Value::Num(f64::NEG_INFINITY),
-        // Comparison/chaining operators: vacuous truth for empty lists
-        "==" | "!=" | "<" | ">" | "<=" | ">=" | "===" | "=:=" | "eqv" | "eq" | "ne" | "lt"
-        | "gt" | "le" | "ge" | "before" | "after" | "~~" | "cmp" | "leg" | "<=>" | "%%" => {
-            Value::Bool(true)
-        }
         // Junction operators
         "&" => Value::Junction {
             kind: crate::value::JunctionKind::All,

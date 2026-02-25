@@ -457,28 +457,7 @@ impl VM {
         if list.is_empty() {
             self.stack.push(runtime::reduction_identity(&base_op));
         } else {
-            let is_comparison = matches!(
-                base_op.as_str(),
-                "eq" | "ne"
-                    | "lt"
-                    | "gt"
-                    | "le"
-                    | "ge"
-                    | "after"
-                    | "before"
-                    | "=="
-                    | "!="
-                    | "<"
-                    | ">"
-                    | "<="
-                    | ">="
-                    | "==="
-                    | "=:="
-                    | "eqv"
-                    | "~~"
-                    | "cmp"
-                    | "leg"
-            );
+            let is_comparison = runtime::is_chain_comparison_op(&base_op);
             if is_comparison {
                 let mut result = true;
                 for i in 0..list.len() - 1 {
