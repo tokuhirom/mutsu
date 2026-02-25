@@ -165,7 +165,7 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("known reduction operator"));
     }
     let r = &input[end + 1..];
-    let call_style_operand = r.starts_with('(');
+    let call_style_operand = r.starts_with('(') && is_custom_reduction_op(&op);
     // Must be followed by whitespace and an expression (not just `]`)
     if r.is_empty() || r.starts_with(';') || r.starts_with('}') || r.starts_with(')') {
         return Err(PError::expected("expression after reduction operator"));
