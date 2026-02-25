@@ -385,7 +385,6 @@ impl Interpreter {
                 }
             }
             let mut merged = saved_env;
-            self.apply_rw_bindings_to_env(&rw_bindings, &mut merged);
             if merge_all {
                 for (k, v) in self.env.iter() {
                     merged.insert(k.clone(), v.clone());
@@ -398,6 +397,8 @@ impl Interpreter {
                 }
             }
             self.merge_sigilless_alias_writes(&mut merged, &self.env);
+            // Apply rw bindings after merge so they take precedence
+            self.apply_rw_bindings_to_env(&rw_bindings, &mut merged);
             self.env = merged;
             return match result {
                 Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),

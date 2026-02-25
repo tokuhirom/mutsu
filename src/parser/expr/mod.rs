@@ -334,6 +334,7 @@ fn wrap_whatevercode(expr: &Expr) -> Expr {
                 .map(|name| crate::ast::ParamDef {
                     name: name.clone(),
                     default: None,
+                    multi_invocant: true,
                     required: false,
                     named: false,
                     slurpy: false,
@@ -347,6 +348,7 @@ fn wrap_whatevercode(expr: &Expr) -> Expr {
                     optional_marker: false,
                     outer_sub_signature: None,
                     code_signature: None,
+                    is_invocant: false,
                 })
                 .collect(),
             body: vec![Stmt::Expr(body_expr)],

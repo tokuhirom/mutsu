@@ -737,7 +737,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     })?;
                     return Ok((r, params_body));
                 }
-                // anon method name (...) { ... }
+                // anon method name (...) { ... } or anon method name { ... }
                 if let Ok((r, _name)) =
                     take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
                 {
@@ -752,6 +752,10 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                                 remaining_len: err.remaining_len.or(Some(r.len())),
                             })?;
                         return Ok((r, params_body));
+                    }
+                    if r.starts_with('{') {
+                        let (r, body) = parse_block_body(r)?;
+                        return Ok((r, make_anon_sub(body)));
                     }
                 }
                 if after_method.starts_with('{') || after_method.trim_start().starts_with('{') {
@@ -962,6 +966,60 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     if rest.starts_with('(') {
         let (rest, _) = parse_char(rest, '(')?;
         let (rest, _) = ws(rest)?;
+        // Try invocant colon syntax: foo($obj:) or foo($obj: $a, $b)
+        // Parse first arg, then check for ':'
+        if let Ok((r_first, first_arg)) = expression(rest) {
+            let (r_ws, _) = ws(r_first)?;
+            if r_ws.starts_with(':') && !r_ws.starts_with("::") {
+                let after_colon = &r_ws[1..];
+                let (after_ws, _) = ws(after_colon)?;
+                if after_ws.starts_with(')') {
+                    // foo($obj:) → $obj.foo()
+                    let (rest, _) = parse_char(after_ws, ')')?;
+                    return Ok((
+                        rest,
+                        Expr::MethodCall {
+                            target: Box::new(first_arg),
+                            name: name.clone(),
+                            args: vec![],
+                            modifier: None,
+                            quoted: false,
+                        },
+                    ));
+                }
+                // foo($obj: $a, $b) → $obj.foo($a, $b)
+                if let Some(after_comma) = after_ws.strip_prefix(',') {
+                    let (after_ws2, _) = ws(after_comma)?;
+                    let (rest, method_args) = parse_call_arg_list(after_ws2)?;
+                    let (rest, _) = ws(rest)?;
+                    let (rest, _) = parse_char(rest, ')')?;
+                    return Ok((
+                        rest,
+                        Expr::MethodCall {
+                            target: Box::new(first_arg),
+                            name: name.clone(),
+                            args: method_args,
+                            modifier: None,
+                            quoted: false,
+                        },
+                    ));
+                }
+                // Invocant colon followed by more args (without comma separator)
+                let (rest, method_args) = parse_call_arg_list(after_ws)?;
+                let (rest, _) = ws(rest)?;
+                let (rest, _) = parse_char(rest, ')')?;
+                return Ok((
+                    rest,
+                    Expr::MethodCall {
+                        target: Box::new(first_arg),
+                        name: name.clone(),
+                        args: method_args,
+                        modifier: None,
+                        quoted: false,
+                    },
+                ));
+            }
+        }
         let (rest, args) = parse_call_arg_list(rest)?;
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;

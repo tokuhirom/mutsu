@@ -429,6 +429,51 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = r;
                 continue;
             }
+            // Check for .<key> angle-bracket hash access: %h.<foo>, $obj.<bar>
+            if r.starts_with('<')
+                && !r.starts_with("<=")
+                && !r.starts_with("<<")
+                && !r.starts_with("<=>")
+            {
+                let r2 = &r[1..];
+                if let Some(end) = r2.find('>') {
+                    let content = &r2[..end];
+                    let keys = split_angle_words(content);
+                    if !keys.is_empty()
+                        && keys.iter().all(|key| {
+                            !key.is_empty()
+                                && key.chars().all(|c| {
+                                    c.is_alphanumeric()
+                                        || c == '_'
+                                        || c == '-'
+                                        || c == '!'
+                                        || c == '.'
+                                        || c == ':'
+                                        || c == '?'
+                                        || c == '+'
+                                        || c == '/'
+                                })
+                        })
+                    {
+                        let r2 = &r2[end + 1..];
+                        let index_expr = if keys.len() == 1 {
+                            Expr::Literal(Value::Str(keys[0].to_string()))
+                        } else {
+                            Expr::ArrayLiteral(
+                                keys.into_iter()
+                                    .map(|k| Expr::Literal(Value::Str(k.to_string())))
+                                    .collect(),
+                            )
+                        };
+                        expr = Expr::Index {
+                            target: Box::new(expr),
+                            index: Box::new(index_expr),
+                        };
+                        rest = r2;
+                        continue;
+                    }
+                }
+            }
             // Check for call-on syntax: .(args)
             if r.starts_with('(') {
                 let (r, _) = parse_char(r, '(')?;

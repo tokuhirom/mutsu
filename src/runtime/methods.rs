@@ -1,6 +1,264 @@
 use super::*;
+use crate::ast::CallArg;
+use crate::value::signature::make_params_value_from_param_defs;
 
 impl Interpreter {
+    fn auto_signature_uses(stmts: &[Stmt]) -> (bool, bool) {
+        fn scan_stmt(stmt: &Stmt, positional: &mut bool, named: &mut bool) {
+            match stmt {
+                Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
+                    scan_expr(e, positional, named);
+                }
+                Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
+                    scan_expr(expr, positional, named);
+                }
+                Stmt::Call { args, .. } => {
+                    for arg in args {
+                        match arg {
+                            CallArg::Positional(e) | CallArg::Slip(e) => {
+                                scan_expr(e, positional, named)
+                            }
+                            CallArg::Named { value: Some(e), .. } => {
+                                scan_expr(e, positional, named)
+                            }
+                            CallArg::Named { value: None, .. } => {}
+                        }
+                    }
+                }
+                Stmt::Say(es) | Stmt::Print(es) | Stmt::Note(es) => {
+                    for e in es {
+                        scan_expr(e, positional, named);
+                    }
+                }
+                Stmt::If {
+                    cond,
+                    then_branch,
+                    else_branch,
+                } => {
+                    scan_expr(cond, positional, named);
+                    for s in then_branch {
+                        scan_stmt(s, positional, named);
+                    }
+                    for s in else_branch {
+                        scan_stmt(s, positional, named);
+                    }
+                }
+                Stmt::While { cond, body, .. } => {
+                    scan_expr(cond, positional, named);
+                    for s in body {
+                        scan_stmt(s, positional, named);
+                    }
+                }
+                Stmt::For { iterable, body, .. } => {
+                    scan_expr(iterable, positional, named);
+                    for s in body {
+                        scan_stmt(s, positional, named);
+                    }
+                }
+                Stmt::Loop { body, .. }
+                | Stmt::React { body }
+                | Stmt::Block(body)
+                | Stmt::SyntheticBlock(body)
+                | Stmt::Default(body)
+                | Stmt::Catch(body)
+                | Stmt::Control(body)
+                | Stmt::RoleDecl { body, .. }
+                | Stmt::Phaser { body, .. } => {
+                    for s in body {
+                        scan_stmt(s, positional, named);
+                    }
+                }
+                Stmt::Whenever { supply, body, .. } => {
+                    scan_expr(supply, positional, named);
+                    for s in body {
+                        scan_stmt(s, positional, named);
+                    }
+                }
+                Stmt::Given { topic, body } => {
+                    scan_expr(topic, positional, named);
+                    for s in body {
+                        scan_stmt(s, positional, named);
+                    }
+                }
+                Stmt::When { cond, body } => {
+                    scan_expr(cond, positional, named);
+                    for s in body {
+                        scan_stmt(s, positional, named);
+                    }
+                }
+                Stmt::Let { value, index, .. } => {
+                    if let Some(v) = value {
+                        scan_expr(v, positional, named);
+                    }
+                    if let Some(i) = index {
+                        scan_expr(i, positional, named);
+                    }
+                }
+                Stmt::TempMethodAssign {
+                    method_args, value, ..
+                } => {
+                    for a in method_args {
+                        scan_expr(a, positional, named);
+                    }
+                    scan_expr(value, positional, named);
+                }
+                Stmt::SubsetDecl {
+                    predicate: Some(p), ..
+                } => {
+                    scan_expr(p, positional, named);
+                }
+                _ => {}
+            }
+        }
+
+        fn scan_expr(expr: &Expr, positional: &mut bool, named: &mut bool) {
+            match expr {
+                Expr::ArrayVar(name) if name == "_" => *positional = true,
+                Expr::HashVar(name) if name == "_" => *named = true,
+                Expr::Binary { left, right, .. }
+                | Expr::HyperOp { left, right, .. }
+                | Expr::MetaOp { left, right, .. } => {
+                    scan_expr(left, positional, named);
+                    scan_expr(right, positional, named);
+                }
+                Expr::Unary { expr, .. }
+                | Expr::PostfixOp { expr, .. }
+                | Expr::AssignExpr { expr, .. }
+                | Expr::Exists(expr)
+                | Expr::Reduction { expr, .. } => scan_expr(expr, positional, named),
+                Expr::MethodCall { target, args, .. }
+                | Expr::DynamicMethodCall { target, args, .. }
+                | Expr::HyperMethodCall { target, args, .. } => {
+                    scan_expr(target, positional, named);
+                    for a in args {
+                        scan_expr(a, positional, named);
+                    }
+                }
+                Expr::Call { args, .. } => {
+                    for a in args {
+                        scan_expr(a, positional, named);
+                    }
+                }
+                Expr::CallOn { target, args } => {
+                    scan_expr(target, positional, named);
+                    for a in args {
+                        scan_expr(a, positional, named);
+                    }
+                }
+                Expr::Index { target, index } => {
+                    scan_expr(target, positional, named);
+                    scan_expr(index, positional, named);
+                }
+                Expr::Ternary {
+                    cond,
+                    then_expr,
+                    else_expr,
+                } => {
+                    scan_expr(cond, positional, named);
+                    scan_expr(then_expr, positional, named);
+                    scan_expr(else_expr, positional, named);
+                }
+                Expr::ArrayLiteral(es)
+                | Expr::BracketArray(es)
+                | Expr::StringInterpolation(es)
+                | Expr::CaptureLiteral(es) => {
+                    for e in es {
+                        scan_expr(e, positional, named);
+                    }
+                }
+                Expr::InfixFunc { left, right, .. } => {
+                    scan_expr(left, positional, named);
+                    for e in right {
+                        scan_expr(e, positional, named);
+                    }
+                }
+                Expr::Block(stmts)
+                | Expr::AnonSub(stmts)
+                | Expr::AnonSubParams { body: stmts, .. }
+                | Expr::Gather(stmts) => {
+                    for s in stmts {
+                        scan_stmt(s, positional, named);
+                    }
+                }
+                Expr::DoBlock { body, .. } => {
+                    for s in body {
+                        scan_stmt(s, positional, named);
+                    }
+                }
+                Expr::DoStmt(stmt) => scan_stmt(stmt, positional, named),
+                Expr::Lambda { body, .. } => {
+                    for s in body {
+                        scan_stmt(s, positional, named);
+                    }
+                }
+                Expr::Try { body, catch } => {
+                    for s in body {
+                        scan_stmt(s, positional, named);
+                    }
+                    if let Some(c) = catch {
+                        for s in c {
+                            scan_stmt(s, positional, named);
+                        }
+                    }
+                }
+                Expr::IndirectCodeLookup { package, .. } => scan_expr(package, positional, named),
+                Expr::Hash(pairs) => {
+                    for (_, value) in pairs {
+                        if let Some(v) = value {
+                            scan_expr(v, positional, named);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let mut positional = false;
+        let mut named = false;
+        for stmt in stmts {
+            scan_stmt(stmt, &mut positional, &mut named);
+        }
+        (positional, named)
+    }
+
+    fn assumed_signature_param_defs(
+        data: &crate::value::SubData,
+        assumed_positional: &[Value],
+        assumed_named: &std::collections::HashMap<String, Value>,
+    ) -> Option<Vec<ParamDef>> {
+        if data.param_defs.is_empty() {
+            return None;
+        }
+        let mut param_defs = data.param_defs.clone();
+        let mut consumed_positional = 0usize;
+        for pd in &param_defs {
+            if !pd.named && !pd.slurpy {
+                consumed_positional += 1;
+                if consumed_positional >= assumed_positional.len() {
+                    break;
+                }
+            }
+        }
+        let mut to_consume = assumed_positional.len();
+        param_defs.retain(|pd| {
+            if to_consume > 0 && !pd.named && !pd.slurpy {
+                to_consume -= 1;
+                false
+            } else {
+                true
+            }
+        });
+        for pd in &mut param_defs {
+            if pd.named
+                && let Some(v) = assumed_named.get(&pd.name)
+            {
+                pd.required = false;
+                pd.default = Some(Expr::Literal(v.clone()));
+            }
+        }
+        Some(param_defs)
+    }
+
     fn render_signature_value(expr: &Expr) -> String {
         match expr {
             Expr::Literal(v) => match v {
@@ -65,34 +323,9 @@ impl Interpreter {
         assumed_positional: &[Value],
         assumed_named: &std::collections::HashMap<String, Value>,
     ) -> String {
-        let mut param_defs = data.param_defs.clone();
-        if !param_defs.is_empty() {
-            let mut consumed_positional = 0usize;
-            for pd in &param_defs {
-                if !pd.named && !pd.slurpy {
-                    consumed_positional += 1;
-                    if consumed_positional >= assumed_positional.len() {
-                        break;
-                    }
-                }
-            }
-            let mut to_consume = assumed_positional.len();
-            param_defs.retain(|pd| {
-                if to_consume > 0 && !pd.named && !pd.slurpy {
-                    to_consume -= 1;
-                    false
-                } else {
-                    true
-                }
-            });
-            for pd in &mut param_defs {
-                if pd.named
-                    && let Some(v) = assumed_named.get(&pd.name)
-                {
-                    pd.required = false;
-                    pd.default = Some(Expr::Literal(v.clone()));
-                }
-            }
+        if let Some(param_defs) =
+            Self::assumed_signature_param_defs(data, assumed_positional, assumed_named)
+        {
             let rendered: Vec<String> = param_defs
                 .iter()
                 .map(Self::render_signature_param)
@@ -286,6 +519,84 @@ impl Interpreter {
                 attrs.insert("perl".to_string(), Value::Str(sig.clone()));
                 attrs.insert("Str".to_string(), Value::Str(sig.clone()));
                 attrs.insert("gist".to_string(), Value::Str(sig));
+                let param_defs = Self::assumed_signature_param_defs(
+                    data,
+                    &data.assumed_positional,
+                    &data.assumed_named,
+                )
+                .unwrap_or_else(|| {
+                    if !data.params.is_empty() {
+                        data.params
+                            .iter()
+                            .map(|name| ParamDef {
+                                name: name.clone(),
+                                default: None,
+                                multi_invocant: true,
+                                required: false,
+                                named: false,
+                                slurpy: false,
+                                double_slurpy: false,
+                                sigilless: false,
+                                type_constraint: None,
+                                literal_value: None,
+                                sub_signature: None,
+                                where_constraint: None,
+                                traits: Vec::new(),
+                                optional_marker: false,
+                                outer_sub_signature: None,
+                                code_signature: None,
+                            })
+                            .collect()
+                    } else {
+                        let (use_positional, use_named) = Self::auto_signature_uses(&data.body);
+                        let mut defs = Vec::new();
+                        if use_positional {
+                            defs.push(ParamDef {
+                                name: "@_".to_string(),
+                                default: None,
+                                multi_invocant: true,
+                                required: false,
+                                named: false,
+                                slurpy: true,
+                                double_slurpy: false,
+                                sigilless: false,
+                                type_constraint: None,
+                                literal_value: None,
+                                sub_signature: None,
+                                where_constraint: None,
+                                traits: Vec::new(),
+                                optional_marker: false,
+                                outer_sub_signature: None,
+                                code_signature: None,
+                            });
+                        }
+                        if use_named {
+                            defs.push(ParamDef {
+                                name: "%_".to_string(),
+                                default: None,
+                                multi_invocant: true,
+                                required: false,
+                                named: false,
+                                slurpy: true,
+                                double_slurpy: false,
+                                sigilless: false,
+                                type_constraint: None,
+                                literal_value: None,
+                                sub_signature: None,
+                                where_constraint: None,
+                                traits: Vec::new(),
+                                optional_marker: false,
+                                outer_sub_signature: None,
+                                code_signature: None,
+                            });
+                        }
+                        defs
+                    }
+                });
+                attrs.insert(
+                    "params".to_string(),
+                    make_params_value_from_param_defs(&param_defs),
+                );
                 return Ok(Value::make_instance("Signature".to_string(), attrs));
             }
             if method == "can" {
@@ -2334,6 +2645,7 @@ impl Interpreter {
                         .map(|name| ParamDef {
                             name: name.clone(),
                             default: None,
+                            multi_invocant: true,
                             required: false,
                             named: false,
                             slurpy: false,
@@ -2347,6 +2659,7 @@ impl Interpreter {
                             optional_marker: false,
                             outer_sub_signature: None,
                             code_signature: None,
+                            is_invocant: false,
                         })
                         .collect(),
                     body: sub_data.body.clone(),

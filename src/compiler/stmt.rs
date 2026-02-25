@@ -312,6 +312,31 @@ impl Compiler {
                 }
             }
             Stmt::Call { name, args } => {
+                // Check for invocant colon syntax: foo($obj:) → $obj.foo()
+                if let Some(CallArg::Invocant(_)) = args.first() {
+                    let invocant_expr = match &args[0] {
+                        CallArg::Invocant(e) => e.clone(),
+                        _ => unreachable!(),
+                    };
+                    let method_args: Vec<Expr> = args[1..]
+                        .iter()
+                        .filter_map(|arg| match arg {
+                            CallArg::Positional(e) => Some(e.clone()),
+                            _ => None,
+                        })
+                        .collect();
+                    let method_call = Expr::MethodCall {
+                        target: Box::new(invocant_expr),
+                        name: name.clone(),
+                        args: method_args,
+                        modifier: None,
+                        quoted: false,
+                    };
+                    self.compile_expr(&method_call);
+                    self.code.emit(OpCode::Pop);
+                    return;
+                }
+
                 let rewritten_args = Self::rewrite_stmt_call_args(name, args);
                 let positional_only = rewritten_args
                     .iter()
@@ -397,7 +422,7 @@ impl Compiler {
                                 self.code.emit(OpCode::MakePair);
                                 regular_count += 1;
                             }
-                            CallArg::Slip(_) => {} // handled below
+                            CallArg::Slip(_) | CallArg::Invocant(_) => {} // handled below
                         }
                     }
                     // Compile the slip expression (last one wins if multiple)
@@ -433,7 +458,7 @@ impl Compiler {
                             self.compile_expr(&Expr::Literal(Value::Bool(true)));
                             self.code.emit(OpCode::MakePair);
                         }
-                        CallArg::Slip(_) => unreachable!(),
+                        CallArg::Slip(_) | CallArg::Invocant(_) => unreachable!(),
                     }
                 }
                 let name_idx = self.code.add_constant(Value::Str(name.clone()));

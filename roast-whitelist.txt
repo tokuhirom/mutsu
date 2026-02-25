@@ -134,6 +134,7 @@ roast/S06-operator-overloading/semicolon.t
 roast/S06-other/main-eval.t
 roast/S06-other/main-semicolon.t
 roast/S06-signature/closure-over-parameters.t
+roast/S06-signature/multi-invocant.t
 roast/S06-signature/multidimensional.t
 roast/S06-signature/passing-hashes.t
 roast/S06-signature/positional-placeholders.t
@@ -173,6 +174,7 @@ roast/S12-methods/calling_syntax.t
 roast/S12-methods/chaining.t
 roast/S12-methods/how.t
 roast/S12-methods/lvalue.t
+roast/S12-methods/method-vs-sub.t
 roast/S12-methods/syntax.t
 roast/S12-methods/trusts.t
 roast/S12-methods/typed-attributes.t
