@@ -90,15 +90,13 @@ pub(crate) enum Expr {
     MatchRegex(Value),
     Subst {
         pattern: String,
-        replacement: Box<Expr>,
+        replacement: String,
         samemark: bool,
-        samecase: bool,
     },
     NonDestructiveSubst {
         pattern: String,
-        replacement: Box<Expr>,
+        replacement: String,
         samemark: bool,
-        samecase: bool,
     },
     Transliterate {
         from: String,

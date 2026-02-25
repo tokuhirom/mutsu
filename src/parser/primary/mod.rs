@@ -1,6 +1,6 @@
 mod container;
 mod ident;
-mod misc;
+pub(in crate::parser) mod misc;
 mod number;
 pub(crate) mod regex;
 pub(in crate::parser) mod string;

@@ -240,6 +240,11 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         .strip_prefix(':')
         .filter(|r| !r.starts_with(':'))
         .ok_or_else(|| PError::expected("colonpair"))?;
+    // :{ ... }: typed hash literal (Hash[Mu,Any]).
+    // For now we treat it like a regular hash literal.
+    if r.starts_with('{') {
+        return block_or_hash_expr(r);
+    }
     // :(...): signature literal.
     if let Some(mut r) = r.strip_prefix('(') {
         let (r2, _) = ws(r)?;
@@ -732,7 +737,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
 }
 
 /// Parse a block `{ stmts }` as AnonSub or `{}` / `{ key => val, ... }` as Hash.
-pub(super) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
+pub(in crate::parser) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
     if !input.starts_with('{') {
         return Err(PError::expected("block or hash"));
     }

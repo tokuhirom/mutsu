@@ -975,6 +975,35 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     Some(Ok(Value::Str(crate::value::format_complex(*r, *i))))
                 }
             }
+            Value::Hash(map) => {
+                if method == "raku" || method == "perl" {
+                    let mut sorted_keys: Vec<&String> = map.keys().collect();
+                    sorted_keys.sort();
+                    let parts: Vec<String> = sorted_keys
+                        .iter()
+                        .map(|k| {
+                            let v = &map[*k];
+                            if let Value::Bool(true) = v {
+                                format!(":{}", k)
+                            } else if let Value::Bool(false) = v {
+                                format!(":!{}", k)
+                            } else {
+                                format!(":{}({})", k, raku_value(v))
+                            }
+                        })
+                        .collect();
+                    Some(Ok(Value::Str(format!("{{{}}}", parts.join(", ")))))
+                } else {
+                    // gist
+                    let mut sorted_keys: Vec<&String> = map.keys().collect();
+                    sorted_keys.sort();
+                    let parts: Vec<String> = sorted_keys
+                        .iter()
+                        .map(|k| format!("{} => {}", k, map[*k].to_string_value()))
+                        .collect();
+                    Some(Ok(Value::Str(format!("{{{}}}", parts.join(", ")))))
+                }
+            }
             _ => Some(Ok(Value::Str(target.to_string_value()))),
         },
         "head" => match target {

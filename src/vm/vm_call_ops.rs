@@ -158,6 +158,19 @@ impl VM {
                     }
                 }
             }
+            Value::Hash(map) => {
+                for (k, v) in map.iter() {
+                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                }
+            }
+            Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. } => {
+                let items = crate::runtime::utils::value_to_list(&slip_val);
+                args.extend(items);
+            }
             other => {
                 args.push(other);
             }
@@ -713,6 +726,19 @@ impl VM {
                         other => args.push(other.clone()),
                     }
                 }
+            }
+            Value::Hash(map) => {
+                for (k, v) in map.iter() {
+                    args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                }
+            }
+            Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. } => {
+                let items = crate::runtime::utils::value_to_list(&slip_val);
+                args.extend(items);
             }
             other => {
                 args.push(other);

@@ -110,14 +110,14 @@ impl VM {
 
     pub(super) fn exec_make_slip_op(&mut self) {
         let val = self.stack.pop().unwrap();
-        let items = match val {
-            Value::Array(items, ..) => (*items).clone(),
-            Value::Slip(items) => (*items).clone(),
-            Value::Seq(items) => (*items).clone(),
+        let items = match &val {
+            Value::Array(items, ..) => (*items).to_vec(),
+            Value::Slip(items) => (*items).to_vec(),
+            Value::Seq(items) => (*items).to_vec(),
             Value::Capture { positional, named } => {
-                let mut items = positional;
+                let mut items = positional.clone();
                 for (k, v) in named {
-                    items.push(Value::Pair(k, Box::new(v)));
+                    items.push(Value::Pair(k.clone(), Box::new(v.clone())));
                 }
                 items
             }
@@ -125,7 +125,12 @@ impl VM {
                 .iter()
                 .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
                 .collect(),
-            other => vec![other],
+            Value::Range(..)
+            | Value::RangeExcl(..)
+            | Value::RangeExclStart(..)
+            | Value::RangeExclBoth(..)
+            | Value::GenericRange { .. } => crate::runtime::utils::value_to_list(&val),
+            _ => vec![val],
         };
         self.stack.push(Value::slip(items));
     }
