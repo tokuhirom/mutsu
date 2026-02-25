@@ -18,7 +18,6 @@ impl Interpreter {
                             CallArg::Positional(e) | CallArg::Slip(e) | CallArg::Invocant(e) => {
                                 scan_expr(e, positional, named)
                             }
-                            CallArg::Invocant(e) => scan_expr(e, positional, named),
                             CallArg::Named { value: Some(e), .. } => {
                                 scan_expr(e, positional, named)
                             }
