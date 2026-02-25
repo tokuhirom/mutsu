@@ -32,9 +32,8 @@ fn positional_antipairs(values: &[Value]) -> Vec<Value> {
     values
         .iter()
         .enumerate()
-        .map(|(idx, value)| match value {
-            Value::Str(s) => Value::Pair(s.clone(), Box::new(Value::Int(idx as i64))),
-            _ => Value::ValuePair(Box::new(value.clone()), Box::new(Value::Int(idx as i64))),
+        .map(|(idx, value)| {
+            Value::ValuePair(Box::new(value.clone()), Box::new(Value::Int(idx as i64)))
         })
         .collect()
 }
