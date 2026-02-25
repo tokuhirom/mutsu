@@ -24,6 +24,7 @@ pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
         "infix"
             | "prefix"
             | "postfix"
+            | "term"
             | "circumfix"
             | "postcircumfix"
             | "trait_mod"
@@ -267,6 +268,7 @@ pub(super) fn sub_decl_body(
         let (rest, name) = parse_sub_name(input)?;
         // Register user-declared sub so it can be called without parens later
         super::simple::register_user_sub(&name);
+        super::simple::register_user_callable_term_symbol(&name);
         (rest, name, None)
     };
     let (rest, _) = ws(rest)?;

@@ -526,9 +526,25 @@ impl VM {
         let name = Self::const_str(code, name_idx).to_string();
         let body_end = body_end as usize;
         let saved = self.interpreter.current_package().to_string();
+        let saved_env = self.interpreter.env().clone();
+        let saved_locals = self.locals.clone();
         self.interpreter.set_current_package(name);
         self.run_range(code, *ip + 1, body_end, compiled_fns)?;
         self.interpreter.set_current_package(saved);
+        let current_env = self.interpreter.env().clone();
+        let mut restored_env = saved_env.clone();
+        for (k, v) in current_env {
+            if saved_env.contains_key(&k) || k.contains("::") {
+                restored_env.insert(k, v);
+            }
+        }
+        self.locals = saved_locals;
+        for (idx, local_name) in code.locals.iter().enumerate() {
+            if let Some(val) = restored_env.get(local_name).cloned() {
+                self.locals[idx] = val;
+            }
+        }
+        *self.interpreter.env_mut() = restored_env;
         *ip = body_end;
         Ok(())
     }

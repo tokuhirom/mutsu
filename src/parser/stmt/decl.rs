@@ -30,6 +30,18 @@ fn typed_default_expr(type_name: &str) -> Expr {
     }
 }
 
+fn parse_sigilless_decl_name(input: &str) -> PResult<'_, String> {
+    super::parse_sub_name_pub(input)
+}
+
+fn register_term_symbol_from_decl_name(name: &str) {
+    if let Some(callable_name) = name.strip_prefix('&') {
+        super::simple::register_user_callable_term_symbol(callable_name);
+    } else {
+        super::simple::register_user_term_symbol(name);
+    }
+}
+
 /// Parse a `use` statement.
 pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("use", input).ok_or_else(|| PError::expected("use statement"))?;
@@ -238,7 +250,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 
     // Sigilless variable: my \name = expr / my \name := expr / my \name ::= expr
     if let Some(r) = rest.strip_prefix('\\') {
-        let (r, name) = ident(r)?;
+        let (r, name) = parse_sigilless_decl_name(r)?;
+        register_term_symbol_from_decl_name(&name);
         let (r, _) = ws(r)?;
         if let Some(r) = r.strip_prefix("::=").or_else(|| r.strip_prefix(":=")) {
             let (r, _) = ws(r)?;
@@ -329,7 +342,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 
     // Sigilless variable after type: my Int \name = expr / my Int \name := expr / ::=
     if let Some(r) = rest.strip_prefix('\\') {
-        let (r, name) = ident(r)?;
+        let (r, name) = parse_sigilless_decl_name(r)?;
+        register_term_symbol_from_decl_name(&name);
         let (r, _) = ws(r)?;
         if let Some(r) = r.strip_prefix("::=").or_else(|| r.strip_prefix(":=")) {
             let (r, _) = ws(r)?;
@@ -405,6 +419,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         let (r, n) = ident(rest)?;
         (r, n)
     };
+    register_term_symbol_from_decl_name(&name);
 
     let (rest, _) = ws(rest)?;
 
@@ -907,7 +922,11 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
     // Keep the sigil in the stored name so lookup semantics match normal
     // declarations (`my @x` stores `@x`, not bare `x`).
     let sigil = rest.as_bytes().first().copied().unwrap_or(0);
-    let (rest, name) = if matches!(sigil, b'$' | b'@' | b'%' | b'&') {
+    let (rest, name) = if let Some(r) = rest.strip_prefix('\\') {
+        let (r, n) = parse_sigilless_decl_name(r)?;
+        register_term_symbol_from_decl_name(&n);
+        (r, n)
+    } else if matches!(sigil, b'$' | b'@' | b'%' | b'&') {
         let prefix = match sigil {
             b'@' => "@",
             b'%' => "%",
@@ -915,9 +934,13 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
             _ => "",
         };
         let (r, n) = var_name(rest)?;
-        (r, format!("{prefix}{n}"))
+        let name = format!("{prefix}{n}");
+        register_term_symbol_from_decl_name(&name);
+        (r, name)
     } else {
-        ident(rest)?
+        let (r, n) = ident(rest)?;
+        register_term_symbol_from_decl_name(&n);
+        (r, n)
     };
     let (rest, _) = ws(rest)?;
     if rest.starts_with('=') || rest.starts_with("::=") || rest.starts_with(":=") {
