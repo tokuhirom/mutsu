@@ -237,6 +237,7 @@ roast/S15-normalization/nfkd-9.t
 roast/S15-normalization/nfkd-sanity.t
 roast/S15-string-types/NFK-types.t
 roast/S15-string-types/Str.t
+roast/S16-filehandles/io_in_while_loops.t
 roast/S16-filehandles/misc.t
 roast/S16-filehandles/mkdir_rmdir.t
 roast/S16-filehandles/mode.t

@@ -3755,6 +3755,7 @@ impl Interpreter {
             target: IoHandleTarget::Socket,
             mode: IoHandleMode::ReadWrite,
             path: None,
+            line_separators: self.default_line_separators(),
             encoding: "utf-8".to_string(),
             file: None,
             socket: Some(stream),

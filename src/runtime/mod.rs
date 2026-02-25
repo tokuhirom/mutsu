@@ -113,6 +113,7 @@ struct IoHandleState {
     target: IoHandleTarget,
     mode: IoHandleMode,
     path: Option<String>,
+    line_separators: Vec<Vec<u8>>,
     encoding: String,
     file: Option<fs::File>,
     socket: Option<std::net::TcpStream>,

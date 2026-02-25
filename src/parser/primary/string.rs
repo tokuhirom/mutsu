@@ -162,6 +162,7 @@ fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
     // Find the terminator line in the heredoc body
     let mut content_end = None;
     let mut terminator_end = None;
+    let mut terminator_indent = 0usize;
     let mut search_pos = 0;
     while search_pos <= heredoc_start.len() {
         // Raku allows indentation before heredoc terminators.
@@ -181,6 +182,7 @@ fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
             {
                 content_end = Some(search_pos);
                 terminator_end = Some(term_pos + delimiter.len());
+                terminator_indent = leading_ws;
                 break;
             }
         }
@@ -192,6 +194,33 @@ fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
     }
     if let Some(end) = content_end {
         let content = &heredoc_start[..end];
+        let content = if terminator_indent == 0 {
+            content.to_string()
+        } else {
+            // Strip terminator indentation from each heredoc content line.
+            let mut dedented = String::new();
+            for segment in content.split_inclusive('\n') {
+                let mut bytes_to_strip = terminator_indent;
+                let mut strip_pos = 0usize;
+                for ch in segment.chars() {
+                    if bytes_to_strip == 0 {
+                        break;
+                    }
+                    if matches!(ch, ' ' | '\t') {
+                        let len = ch.len_utf8();
+                        if len > bytes_to_strip {
+                            break;
+                        }
+                        bytes_to_strip -= len;
+                        strip_pos += len;
+                    } else {
+                        break;
+                    }
+                }
+                dedented.push_str(&segment[strip_pos..]);
+            }
+            dedented
+        };
         let after_terminator = &heredoc_start[terminator_end.expect("terminator end")..];
         // Skip optional newline after terminator
         let after_terminator = after_terminator
@@ -199,15 +228,12 @@ fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
             .unwrap_or(after_terminator);
         // Return rest_of_line + after_terminator as remaining input.
         if rest_of_line.trim().is_empty() || rest_of_line.trim() == ";" {
-            return Ok((
-                after_terminator,
-                Expr::Literal(Value::Str(content.to_string())),
-            ));
+            return Ok((after_terminator, Expr::Literal(Value::Str(content))));
         }
         // We cannot return a disjoint slice pair, so concatenate.
         let combined = format!("{}\n{}", rest_of_line, after_terminator);
         let leaked: &'static str = Box::leak(combined.into_boxed_str());
-        return Ok((leaked, Expr::Literal(Value::Str(content.to_string()))));
+        return Ok((leaked, Expr::Literal(Value::Str(content))));
     }
     Err(PError::expected("heredoc terminator"))
 }
