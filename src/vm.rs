@@ -458,7 +458,7 @@ impl VM {
 
             // -- Three-way comparison --
             OpCode::Spaceship => {
-                self.exec_spaceship_op();
+                self.exec_spaceship_op()?;
                 *ip += 1;
             }
             OpCode::Before | OpCode::After => {
