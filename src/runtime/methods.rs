@@ -5065,8 +5065,10 @@ impl Interpreter {
         // Separate named args (Pairs) from positional args
         let mut positional = Vec::new();
         let mut has_neg_v = false;
-        let mut has_p = false;
         let mut has_end = false;
+        let mut has_k = false;
+        let mut has_kv = false;
+        let mut has_p = false;
         for arg in args {
             match arg {
                 Value::Pair(key, value) if key == "v" => {
@@ -5078,6 +5080,12 @@ impl Interpreter {
                     if value.truthy() {
                         has_end = true;
                     }
+                }
+                Value::Pair(key, value) if key == "k" => {
+                    has_k = value.truthy();
+                }
+                Value::Pair(key, value) if key == "kv" => {
+                    has_kv = value.truthy();
                 }
                 Value::Pair(key, value) if key == "p" => {
                     has_p = value.truthy();
@@ -5102,13 +5110,9 @@ impl Interpreter {
         let func = positional.first().cloned();
         let items = crate::runtime::utils::value_to_list(&target);
         if let Some((idx, value)) = self.find_first_match_over_items(func, &items, has_end)? {
-            if has_p {
-                return Ok(Value::ValuePair(
-                    Box::new(Value::Int(idx as i64)),
-                    Box::new(value),
-                ));
-            }
-            return Ok(value);
+            return Ok(super::builtins_collection::format_first_result(
+                idx, value, has_k, has_kv, has_p,
+            ));
         }
         Ok(Value::Nil)
     }

@@ -1,6 +1,25 @@
 use super::*;
 use std::collections::HashMap as StdHashMap;
 
+/// Format the result of `first()` according to adverb flags (:k, :kv, :p).
+pub(super) fn format_first_result(
+    idx: usize,
+    value: Value,
+    has_k: bool,
+    has_kv: bool,
+    has_p: bool,
+) -> Value {
+    if has_k {
+        Value::Int(idx as i64)
+    } else if has_kv {
+        Value::array(vec![Value::Int(idx as i64), value])
+    } else if has_p {
+        Value::ValuePair(Box::new(Value::Int(idx as i64)), Box::new(value))
+    } else {
+        value
+    }
+}
+
 impl Interpreter {
     pub(super) fn builtin_elems(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.len() != 1 {
@@ -343,8 +362,10 @@ impl Interpreter {
         let mut positional = Vec::new();
         let mut has_v = false;
         let mut has_neg_v = false;
-        let mut has_p = false;
         let mut has_end = false;
+        let mut has_k = false;
+        let mut has_kv = false;
+        let mut has_p = false;
         for arg in args {
             match arg {
                 Value::Pair(key, value) if key == "v" => {
@@ -358,6 +379,12 @@ impl Interpreter {
                     if value.truthy() {
                         has_end = true;
                     }
+                }
+                Value::Pair(key, value) if key == "k" => {
+                    has_k = value.truthy();
+                }
+                Value::Pair(key, value) if key == "kv" => {
+                    has_kv = value.truthy();
                 }
                 Value::Pair(key, value) if key == "p" => {
                     has_p = value.truthy();
@@ -394,13 +421,7 @@ impl Interpreter {
             }
         }
         if let Some((idx, value)) = self.find_first_match_over_items(func, &list_items, has_end)? {
-            if has_p {
-                return Ok(Value::ValuePair(
-                    Box::new(Value::Int(idx as i64)),
-                    Box::new(value),
-                ));
-            }
-            return Ok(value);
+            return Ok(format_first_result(idx, value, has_k, has_kv, has_p));
         }
         Ok(Value::Nil)
     }
