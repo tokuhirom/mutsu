@@ -272,16 +272,16 @@ pub(super) fn sub_decl_body(
     let (rest, _) = ws(rest)?;
 
     // Parse params
-    let (rest, (params, param_defs)) = if rest.starts_with('(') {
+    let (rest, (params, param_defs, return_type)) = if rest.starts_with('(') {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
-        let (r, pd) = parse_param_list(r)?;
+        let (r, (pd, rt)) = parse_param_list_with_return(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
         let names: Vec<String> = pd.iter().map(|p| p.name.clone()).collect();
-        (r, (names, pd))
+        (r, (names, pd, rt))
     } else {
-        (rest, (Vec::new(), Vec::new()))
+        (rest, (Vec::new(), Vec::new(), None))
     };
 
     let (rest, _) = ws(rest)?;
@@ -331,6 +331,7 @@ pub(super) fn sub_decl_body(
                     name_expr,
                     params,
                     param_defs,
+                    return_type,
                     signature_alternates,
                     body: Vec::new(),
                     multi,
@@ -371,6 +372,7 @@ pub(super) fn sub_decl_body(
             name_expr,
             params,
             param_defs,
+            return_type,
             signature_alternates,
             body,
             multi,

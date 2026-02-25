@@ -1227,15 +1227,16 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 pub(super) fn parse_anon_sub_with_params(input: &str) -> PResult<'_, Expr> {
     let (r, _) = parse_char(input, '(')?;
     let (r, _) = ws(r)?;
-    let (r, param_defs) = super::super::stmt::parse_param_list_pub(r)?;
+    let (r, (param_defs, return_type)) = super::super::stmt::parse_param_list_with_return_pub(r)?;
     let params: Vec<String> = param_defs.iter().map(|p| p.name.clone()).collect();
-    parse_anon_sub_rest(r, params, param_defs)
+    parse_anon_sub_rest(r, params, param_defs, return_type)
 }
 
 fn parse_anon_sub_rest(
     input: &str,
     params: Vec<String>,
     param_defs: Vec<crate::ast::ParamDef>,
+    return_type: Option<String>,
 ) -> PResult<'_, Expr> {
     let (r, _) = ws(input)?;
     let (r, _) = parse_char(r, ')')?;
@@ -1249,6 +1250,7 @@ fn parse_anon_sub_rest(
             Expr::AnonSubParams {
                 params,
                 param_defs,
+                return_type,
                 body,
             },
         ))

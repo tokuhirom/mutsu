@@ -681,21 +681,8 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             }
         }
 
-        // CallOn: $var(args) — invoke a callable stored in a variable
-        if rest.starts_with('(')
-            && matches!(
-                &expr,
-                Expr::Var(_)
-                    | Expr::CodeVar(_)
-                    | Expr::IndirectCodeLookup { .. }
-                    | Expr::MethodCall { .. }
-                    | Expr::AnonSub(_)
-                    | Expr::AnonSubParams { .. }
-                    | Expr::Lambda { .. }
-                    | Expr::Index { .. }
-                    | Expr::CallOn { .. }
-            )
-        {
+        // CallOn: expr(args) — invoke any callable expression.
+        if rest.starts_with('(') {
             let (r, _) = parse_char(rest, '(')?;
             let (r, _) = ws(r)?;
             let (r, args) = parse_call_arg_list(r)?;

@@ -1,6 +1,81 @@
 use super::*;
 
 impl Interpreter {
+    fn inferred_operator_arity(name: &str) -> Option<usize> {
+        if name.starts_with("infix:<") && name.ends_with('>') {
+            return Some(2);
+        }
+        if (name.starts_with("prefix:<") || name.starts_with("postfix:<")) && name.ends_with('>') {
+            return Some(1);
+        }
+        None
+    }
+
+    fn callable_return_type_inner(callable: &Value) -> Option<String> {
+        match callable {
+            Value::Sub(data) => match data.env.get("__mutsu_return_type") {
+                Some(Value::Str(rt)) => Some(rt.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    pub(crate) fn callable_return_type(&self, callable: &Value) -> Option<String> {
+        Self::callable_return_type_inner(callable)
+    }
+
+    pub(crate) fn callable_signature(&self, callable: &Value) -> (Vec<String>, Vec<ParamDef>) {
+        match callable {
+            Value::Sub(data) => (data.params.clone(), data.param_defs.clone()),
+            Value::Routine { name, .. } => {
+                if let Some(def) = self.resolve_function(name) {
+                    return (def.params, def.param_defs);
+                }
+                if let Some(arity) = Self::inferred_operator_arity(name) {
+                    let params = (0..arity).map(|i| format!("arg{}", i)).collect();
+                    return (params, Vec::new());
+                }
+                (vec!["arg0".to_string()], Vec::new())
+            }
+            _ => (vec!["arg0".to_string()], Vec::new()),
+        }
+    }
+
+    pub(crate) fn compose_callables(&self, left: Value, right: Value) -> Value {
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static COMPOSE_ID: AtomicU64 = AtomicU64::new(1_000_000);
+        let id = COMPOSE_ID.fetch_add(1, Ordering::Relaxed);
+
+        let (mut params, param_defs) = self.callable_signature(&right);
+        if params.is_empty() {
+            if !param_defs.is_empty() {
+                params = param_defs.iter().map(|pd| pd.name.clone()).collect();
+            } else {
+                params = vec!["arg0".to_string()];
+            }
+        }
+
+        let left_return_type = self.callable_return_type(&left);
+        let mut env = std::collections::HashMap::new();
+        env.insert("__mutsu_compose_left".to_string(), left);
+        env.insert("__mutsu_compose_right".to_string(), right);
+        if let Some(rt) = left_return_type {
+            env.insert("__mutsu_return_type".to_string(), Value::Str(rt));
+        }
+
+        Value::make_sub_with_id(
+            String::new(),
+            "<composed>".to_string(),
+            params,
+            param_defs,
+            Vec::new(),
+            env,
+            id,
+        )
+    }
+
     pub(crate) fn env_mut(&mut self) -> &mut HashMap<String, Value> {
         &mut self.env
     }

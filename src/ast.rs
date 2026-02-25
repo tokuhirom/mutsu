@@ -125,6 +125,7 @@ pub(crate) enum Expr {
     AnonSubParams {
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
+        return_type: Option<String>,
         body: Vec<Stmt>,
     },
     CallOn {
@@ -260,6 +261,7 @@ pub(crate) enum Stmt {
         name_expr: Option<Expr>,
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
+        return_type: Option<String>,
         signature_alternates: Vec<(Vec<String>, Vec<ParamDef>)>,
         body: Vec<Stmt>,
         multi: bool,
@@ -846,6 +848,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                     is_invocant: false,
                 })
                 .collect(),
+            return_type: None,
             body: stmts,
         }
     }

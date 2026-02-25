@@ -518,7 +518,20 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     // Binding := or ::=
     if let Some(stripped) = rest.strip_prefix("::=").or_else(|| rest.strip_prefix(":=")) {
         let (rest, _) = ws(stripped)?;
-        let (rest, expr) = parse_assign_expr_or_comma(rest)?;
+        let (mut rest, mut expr) = parse_assign_expr_or_comma(rest)?;
+        let (tail, _) = ws(rest)?;
+        if let Expr::BareWord(name) = &expr
+            && !tail.is_empty()
+            && !tail.starts_with(';')
+            && !tail.starts_with('}')
+            && let Ok((r_after, arg_expr)) = parse_assign_expr_or_comma(tail)
+        {
+            expr = Expr::Call {
+                name: name.clone(),
+                args: vec![arg_expr],
+            };
+            rest = r_after;
+        }
         let stmt = Stmt::VarDecl {
             name,
             expr,

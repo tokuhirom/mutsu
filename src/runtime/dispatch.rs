@@ -739,10 +739,12 @@ impl Interpreter {
             Expr::AnonSubParams {
                 params,
                 param_defs,
+                return_type,
                 body,
             } => Expr::AnonSubParams {
                 params: params.clone(),
                 param_defs: param_defs.clone(),
+                return_type: return_type.clone(),
                 body: Self::rewrite_proto_dispatch_stmts(body),
             },
             other => other.clone(),
