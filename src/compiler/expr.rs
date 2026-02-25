@@ -36,16 +36,28 @@ impl Compiler {
                 } else if let Some(&slot) = self.local_map.get(name.as_str()) {
                     self.code.emit(OpCode::GetLocal(slot));
                 } else {
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let name_idx = self
+                        .code
+                        .add_constant(Value::Str(self.qualify_variable_name(name)));
                     self.code.emit(OpCode::GetGlobal(name_idx));
                 }
             }
             Expr::ArrayVar(name) => {
-                let name_idx = self.code.add_constant(Value::Str(format!("@{}", name)));
+                let var_name = if self.local_map.contains_key(name) {
+                    format!("@{}", name)
+                } else {
+                    self.qualify_variable_name(&format!("@{}", name))
+                };
+                let name_idx = self.code.add_constant(Value::Str(var_name));
                 self.code.emit(OpCode::GetArrayVar(name_idx));
             }
             Expr::HashVar(name) => {
-                let name_idx = self.code.add_constant(Value::Str(format!("%{}", name)));
+                let var_name = if self.local_map.contains_key(name) {
+                    format!("%{}", name)
+                } else {
+                    self.qualify_variable_name(&format!("%{}", name))
+                };
+                let name_idx = self.code.add_constant(Value::Str(var_name));
                 self.code.emit(OpCode::GetHashVar(name_idx));
             }
             Expr::BareWord(name) => {
