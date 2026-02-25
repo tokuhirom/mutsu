@@ -325,6 +325,9 @@ impl Interpreter {
         def: &FunctionDef,
         arg_values: &[Value],
     ) -> Result<Option<String>, RuntimeError> {
+        if def.empty_sig && !arg_values.is_empty() {
+            return Err(Self::reject_args_for_empty_sig(arg_values));
+        }
         let saved_env = self.env.clone();
         let rw_bindings =
             self.bind_function_args_values(&def.param_defs, &def.params, arg_values)?;
@@ -358,6 +361,17 @@ impl Interpreter {
             return true;
         }
         self.proto_subs.contains(&format!("GLOBAL::{}", name))
+    }
+
+    /// Check if any multi candidates exist for this function name (any arity).
+    pub(crate) fn has_multi_candidates(&self, name: &str) -> bool {
+        let prefixes = [
+            format!("{}::{}/", self.current_package, name),
+            format!("GLOBAL::{}/", name),
+        ];
+        self.functions
+            .keys()
+            .any(|k| prefixes.iter().any(|p| k.starts_with(p)))
     }
 
     pub(super) fn resolve_proto_function_with_alias(
@@ -397,6 +411,9 @@ impl Interpreter {
         def: &FunctionDef,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        if def.empty_sig && !args.is_empty() {
+            return Err(Self::reject_args_for_empty_sig(args));
+        }
         let saved_env = self.env.clone();
         let rw_bindings = self.bind_function_args_values(&def.param_defs, &def.params, args)?;
         self.routine_stack
@@ -428,11 +445,27 @@ impl Interpreter {
             .cloned()
             .ok_or_else(|| RuntimeError::new("{*} used outside proto".to_string()))?;
         let Some(def) = self.resolve_proto_candidate_with_types(&proto_name, &args) else {
-            return Err(RuntimeError::new(format!(
+            let mut err = RuntimeError::new(format!(
                 "No matching candidates for proto sub: {}",
                 proto_name
+            ));
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert(
+                "message".to_string(),
+                Value::Str(format!(
+                    "Cannot resolve caller {}; none of these signatures matches",
+                    proto_name
+                )),
+            );
+            err.exception = Some(Box::new(Value::make_instance(
+                "X::Multi::NoMatch".to_string(),
+                attrs,
             )));
+            return Err(err);
         };
+        if def.empty_sig && !args.is_empty() {
+            return Err(Self::reject_args_for_empty_sig(&args));
+        }
         let saved_env = self.env.clone();
         let rw_bindings = self.bind_function_args_values(&def.param_defs, &def.params, &args)?;
         self.routine_stack
@@ -730,10 +763,12 @@ impl Interpreter {
             Expr::AnonSubParams {
                 params,
                 param_defs,
+                return_type,
                 body,
             } => Expr::AnonSubParams {
                 params: params.clone(),
                 param_defs: param_defs.clone(),
+                return_type: return_type.clone(),
                 body: Self::rewrite_proto_dispatch_stmts(body),
             },
             other => other.clone(),

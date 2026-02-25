@@ -43,6 +43,32 @@ fn append_call_arg(expr: &mut Expr, arg: Expr) -> bool {
     }
 }
 
+fn parse_bracket_indices(input: &str) -> PResult<'_, Expr> {
+    let (r, first) = expression(input)?;
+    let mut indices = vec![first];
+    let mut r = r;
+    loop {
+        let (r2, _) = ws(r)?;
+        if r2.starts_with(',') || (r2.starts_with(';') && !r2.starts_with(";;")) {
+            let sep = if r2.starts_with(',') { ',' } else { ';' };
+            let (r3, _) = parse_char(r2, sep)?;
+            let (r3, _) = ws(r3)?;
+            let (r3, next) = expression(r3)?;
+            indices.push(next);
+            r = r3;
+            continue;
+        }
+        return Ok((
+            r2,
+            if indices.len() == 1 {
+                indices.remove(0)
+            } else {
+                Expr::ArrayLiteral(indices)
+            },
+        ));
+    }
+}
+
 /// Result of parsing a quoted method name.
 enum QuotedMethodName {
     /// Static method name (single-quoted or double-quoted without interpolation)
@@ -334,7 +360,7 @@ fn postfix_expr_tight(input: &str) -> PResult<'_, Expr> {
 /// Continue applying postfix operations (including whitespace-dotty) to an
 /// already-parsed expression.  Used after prefix operators like `^` to allow
 /// `^10 .method` to call `.method` on the range result.
-fn postfix_expr_continue(input: &str, expr: Expr) -> PResult<'_, Expr> {
+pub(in crate::parser) fn postfix_expr_continue(input: &str, expr: Expr) -> PResult<'_, Expr> {
     postfix_expr_loop(input, expr, true)
 }
 
@@ -655,21 +681,8 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             }
         }
 
-        // CallOn: $var(args) — invoke a callable stored in a variable
-        if rest.starts_with('(')
-            && matches!(
-                &expr,
-                Expr::Var(_)
-                    | Expr::CodeVar(_)
-                    | Expr::IndirectCodeLookup { .. }
-                    | Expr::MethodCall { .. }
-                    | Expr::AnonSub(_)
-                    | Expr::AnonSubParams { .. }
-                    | Expr::Lambda { .. }
-                    | Expr::Index { .. }
-                    | Expr::CallOn { .. }
-            )
-        {
+        // CallOn: expr(args) — invoke any callable expression.
+        if rest.starts_with('(') {
             let (r, _) = parse_char(rest, '(')?;
             let (r, _) = ws(r)?;
             let (r, args) = parse_call_arg_list(r)?;
@@ -692,7 +705,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = after;
                 continue;
             }
-            let (r, index) = expression(r)?;
+            let (r, index) = parse_bracket_indices(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ']')?;
             expr = Expr::Index {
@@ -827,7 +840,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         {
             let r = &rest[1..];
             let (r, _) = ws(r)?;
-            let (r, index) = expression(r)?;
+            let (r, index) = parse_bracket_indices(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, '}')?;
             // Allow whitespace before adverbs

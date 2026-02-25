@@ -258,12 +258,18 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
 
     // Parent classes: is Parent
+    let mut is_hidden = false;
+    let mut hidden_parents = Vec::new();
     let mut parents = Vec::new();
     let mut r = rest;
     while let Some(r2) = keyword("is", r) {
         let (r2, _) = ws1(r2)?;
         let (r2, parent) = qualified_ident(r2)?;
-        parents.push(parent);
+        if parent == "hidden" {
+            is_hidden = true;
+        } else {
+            parents.push(parent);
+        }
         let (r2, _) = ws(r2)?;
         r = r2;
     }
@@ -297,12 +303,24 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
             r = r2;
         }
     }
+    // hides Parent — like inheritance for method lookup, but the hidden parent
+    // is skipped by deferal (`nextsame`/`callsame`) candidate selection.
+    while let Some(r2) = keyword("hides", r) {
+        let (r2, _) = ws1(r2)?;
+        let (r2, parent) = qualified_ident(r2)?;
+        parents.push(parent.clone());
+        hidden_parents.push(parent);
+        let (r2, _) = ws(r2)?;
+        r = r2;
+    }
 
     let (rest, body) = block(r)?;
     let class_stmt = Stmt::ClassDecl {
         name: name.clone(),
         name_expr,
         parents,
+        is_hidden,
+        hidden_parents,
         body,
     };
     let mut stmts = Vec::new();
@@ -581,6 +599,8 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 name,
                 name_expr: None,
                 parents: Vec::new(),
+                is_hidden: false,
+                hidden_parents: Vec::new(),
                 body: Vec::new(),
             },
         ));

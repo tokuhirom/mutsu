@@ -3,7 +3,7 @@ use crate::ast::CallArg;
 use crate::value::signature::make_params_value_from_param_defs;
 
 impl Interpreter {
-    fn auto_signature_uses(stmts: &[Stmt]) -> (bool, bool) {
+    pub(crate) fn auto_signature_uses(stmts: &[Stmt]) -> (bool, bool) {
         fn scan_stmt(stmt: &Stmt, positional: &mut bool, named: &mut bool) {
             match stmt {
                 Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
@@ -15,10 +15,9 @@ impl Interpreter {
                 Stmt::Call { args, .. } => {
                     for arg in args {
                         match arg {
-                            CallArg::Positional(e) | CallArg::Slip(e) => {
+                            CallArg::Positional(e) | CallArg::Slip(e) | CallArg::Invocant(e) => {
                                 scan_expr(e, positional, named)
                             }
-                            CallArg::Invocant(e) => scan_expr(e, positional, named),
                             CallArg::Named { value: Some(e), .. } => {
                                 scan_expr(e, positional, named)
                             }
@@ -231,12 +230,27 @@ impl Interpreter {
             return None;
         }
         let mut param_defs = data.param_defs.clone();
-        let mut consumed_positional = 0usize;
-        for pd in &param_defs {
-            if !pd.named && !pd.slurpy {
-                consumed_positional += 1;
-                if consumed_positional >= assumed_positional.len() {
-                    break;
+        // Build type capture mappings from assumed positional args
+        let mut type_captures: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        {
+            let mut pos_idx = 0usize;
+            for pd in &param_defs {
+                if !pd.named && !pd.slurpy {
+                    if pos_idx < assumed_positional.len() {
+                        if let Some(tc) = &pd.type_constraint
+                            && let Some(capture_name) = tc.strip_prefix("::")
+                        {
+                            let resolved_type = crate::runtime::utils::value_type_name(
+                                &assumed_positional[pos_idx],
+                            )
+                            .to_string();
+                            type_captures.insert(capture_name.to_string(), resolved_type);
+                        }
+                        pos_idx += 1;
+                    } else {
+                        break;
+                    }
                 }
             }
         }
@@ -249,12 +263,28 @@ impl Interpreter {
                 true
             }
         });
-        for pd in &mut param_defs {
-            if pd.named
-                && let Some(v) = assumed_named.get(&pd.name)
-            {
-                pd.required = false;
-                pd.default = Some(Expr::Literal(v.clone()));
+        // Apply type capture resolution to remaining params
+        if !type_captures.is_empty() {
+            for pd in &mut param_defs {
+                if let Some(tc) = &pd.type_constraint
+                    && let Some(resolved) = type_captures.get(tc.as_str())
+                {
+                    pd.type_constraint = Some(resolved.clone());
+                }
+            }
+        }
+        // When .assuming() is used with named args, all named params lose their
+        // defaults and where constraints in the signature display.
+        // Assumed params additionally become non-required.
+        if !assumed_named.is_empty() {
+            for pd in &mut param_defs {
+                if pd.named {
+                    pd.default = None;
+                    pd.where_constraint = None;
+                    if assumed_named.contains_key(&pd.name) {
+                        pd.required = false;
+                    }
+                }
             }
         }
         Some(param_defs)
@@ -292,10 +322,11 @@ impl Interpreter {
         if pd.slurpy {
             out.push('*');
         }
-        if pd.named
-            && !pd.name.starts_with('$')
+        if !pd.name.starts_with('$')
             && !pd.name.starts_with('@')
             && !pd.name.starts_with('%')
+            && !pd.name.starts_with('_')
+            && !pd.slurpy
         {
             out.push('$');
         }
@@ -333,8 +364,23 @@ impl Interpreter {
                 .collect();
             return format!(":({})", rendered.join(", "));
         }
-        let rendered: Vec<String> = data.params.iter().map(|p| format!("${}", p)).collect();
-        format!(":({})", rendered.join(", "))
+        if !data.params.is_empty() {
+            let rendered: Vec<String> = data.params.iter().map(|p| format!("${}", p)).collect();
+            return format!(":({})", rendered.join(", "));
+        }
+        // Auto-detect @_ / %_ usage for subs without explicit signatures
+        let (use_positional, use_named) = Self::auto_signature_uses(&data.body);
+        if use_positional || use_named {
+            let mut parts = Vec::new();
+            if use_positional {
+                parts.push("*@_".to_string());
+            }
+            if use_named {
+                parts.push("*%_".to_string());
+            }
+            return format!(":({})", parts.join(", "));
+        }
+        ":()".to_string()
     }
 
     fn collect_named_param_keys(
@@ -355,6 +401,53 @@ impl Interpreter {
                 Self::collect_named_param_keys(sub, out);
             }
         }
+    }
+
+    fn shaped_dims_from_new_args(args: &[Value]) -> Option<Vec<usize>> {
+        let shape_val = args.iter().find_map(|arg| match arg {
+            Value::Pair(name, value) if name == "shape" => Some(value.as_ref().clone()),
+            _ => None,
+        })?;
+        let dims_vals = match shape_val {
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
+            Value::Int(i) => vec![Value::Int(i)],
+            _ => return None,
+        };
+        let mut dims = Vec::with_capacity(dims_vals.len());
+        for dim in dims_vals {
+            let n = match dim {
+                Value::Int(i) if i >= 0 => i as usize,
+                Value::Num(f) if f >= 0.0 => f as usize,
+                _ => return None,
+            };
+            dims.push(n);
+        }
+        if dims.is_empty() { None } else { Some(dims) }
+    }
+
+    fn make_shaped_array(dims: &[usize]) -> Value {
+        if dims.is_empty() {
+            return Value::Nil;
+        }
+        let len = dims[0];
+        if dims.len() == 1 {
+            return Value::array(vec![Value::Nil; len]);
+        }
+        let child = Self::make_shaped_array(&dims[1..]);
+        Value::array((0..len).map(|_| child.clone()).collect())
+    }
+
+    fn infer_array_shape(value: &Value) -> Option<Vec<usize>> {
+        let Value::Array(items, ..) = value else {
+            return None;
+        };
+        let mut shape = vec![items.len()];
+        let mut current = items.first().cloned();
+        while let Some(Value::Array(inner, ..)) = current {
+            shape.push(inner.len());
+            current = inner.first().cloned();
+        }
+        Some(shape)
     }
 
     pub(crate) fn call_method_with_values(
@@ -390,10 +483,69 @@ impl Interpreter {
                     }
                 }
             }
+            let mut role_names: Vec<String> = mixins
+                .iter()
+                .filter_map(|(key, value)| {
+                    key.strip_prefix("__mutsu_role__")
+                        .and_then(|name| value.truthy().then_some(name.to_string()))
+                })
+                .collect();
+            role_names.sort();
+            let mut role_has_method = false;
+            for role_name in role_names {
+                let Some(role) = self.roles.get(&role_name).cloned() else {
+                    continue;
+                };
+                let Some(overloads) = role.methods.get(method).cloned() else {
+                    continue;
+                };
+                role_has_method = true;
+                for def in overloads {
+                    if def.is_private || !self.method_args_match(&args, &def.param_defs) {
+                        continue;
+                    }
+                    let role_attrs: HashMap<String, Value> = mixins
+                        .iter()
+                        .filter_map(|(key, value)| {
+                            key.strip_prefix("__mutsu_attr__")
+                                .map(|attr| (attr.to_string(), value.clone()))
+                        })
+                        .collect();
+                    let (result, _updated) = self.run_instance_method_resolved(
+                        &role_name,
+                        &role_name,
+                        def,
+                        role_attrs,
+                        args,
+                        Some(target.clone()),
+                    )?;
+                    return Ok(result);
+                }
+            }
+            if role_has_method {
+                return Err(RuntimeError::new(format!(
+                    "No matching candidates for method: {}",
+                    method
+                )));
+            }
             if method == "can" && args.len() == 1 {
                 let method_name = args[0].to_string_value();
-                if mixins.contains_key(&method_name) {
+                if mixins.contains_key(&method_name)
+                    || mixins.contains_key(&format!("__mutsu_attr__{}", method_name))
+                {
                     return Ok(Value::Bool(true));
+                }
+                for role_name in mixins.keys().filter_map(|key| {
+                    key.strip_prefix("__mutsu_role__")
+                        .map(|name| name.to_string())
+                }) {
+                    if self
+                        .roles
+                        .get(&role_name)
+                        .is_some_and(|role| role.methods.contains_key(&method_name))
+                    {
+                        return Ok(Value::Bool(true));
+                    }
                 }
                 return self.call_method_with_values((**inner).clone(), method, args);
             }
@@ -408,7 +560,9 @@ impl Interpreter {
                         Some(Value::Enum { key, .. }) if key == probe_key
                     ),
                     Value::Package(name) | Value::Str(name) => {
-                        mixins.contains_key(name) || inner.does_check(name)
+                        mixins.contains_key(name)
+                            || mixins.contains_key(&format!("__mutsu_role__{}", name))
+                            || inner.does_check(name)
                     }
                     other => inner.does_check(&other.to_string_value()),
                 };
@@ -443,6 +597,43 @@ impl Interpreter {
             return result;
         }
 
+        // Resolve Value::Routine to Value::Sub for method dispatch
+        if let Value::Routine {
+            ref name,
+            ref package,
+        } = target
+            && method == "assuming"
+        {
+            // Create a wrapper Sub that delegates to the multi-dispatch routine
+            let mut sub_data = crate::value::SubData {
+                package: package.clone(),
+                name: name.clone(),
+                params: Vec::new(),
+                param_defs: Vec::new(),
+                body: vec![],
+                env: self.env().clone(),
+                assumed_positional: Vec::new(),
+                assumed_named: std::collections::HashMap::new(),
+                id: crate::value::next_instance_id(),
+                empty_sig: false,
+            };
+            // Store the routine name so call_sub_value can dispatch
+            sub_data
+                .env
+                .insert("__mutsu_routine_name".to_string(), Value::Str(name.clone()));
+            // Apply assumed args
+            for arg in &args {
+                if let Value::Pair(key, boxed) = arg {
+                    if key == "__mutsu_test_callsite_line" {
+                        continue;
+                    }
+                    sub_data.assumed_named.insert(key.clone(), *boxed.clone());
+                } else {
+                    sub_data.assumed_positional.push(arg.clone());
+                }
+            }
+            return Ok(Value::Sub(std::sync::Arc::new(sub_data)));
+        }
         if let Value::Sub(data) = &target {
             if method == "assuming" {
                 let mut next = (**data).clone();
@@ -459,6 +650,7 @@ impl Interpreter {
                             Value::make_instance("X::TypeCheck::Binding".to_string(), ex_attrs);
                         let mut failure_attrs = std::collections::HashMap::new();
                         failure_attrs.insert("exception".to_string(), exception);
+                        failure_attrs.insert("handled".to_string(), Value::Bool(false));
                         let failure = Value::make_instance("Failure".to_string(), failure_attrs);
                         let mut mixins = std::collections::HashMap::new();
                         mixins.insert("Failure".to_string(), failure);
@@ -603,6 +795,12 @@ impl Interpreter {
                 );
                 return Ok(Value::make_instance("Signature".to_string(), attrs));
             }
+            if method == "of" && args.is_empty() {
+                let type_name = self
+                    .callable_return_type(&target)
+                    .unwrap_or_else(|| "Mu".to_string());
+                return Ok(Value::Package(type_name));
+            }
             if method == "can" {
                 let method_name = args
                     .first()
@@ -610,7 +808,15 @@ impl Interpreter {
                     .unwrap_or_default();
                 let can = matches!(
                     method_name.as_str(),
-                    "assuming" | "signature" | "name" | "raku" | "perl" | "Str" | "gist" | "can"
+                    "assuming"
+                        | "signature"
+                        | "of"
+                        | "name"
+                        | "raku"
+                        | "perl"
+                        | "Str"
+                        | "gist"
+                        | "can"
                 );
                 return Ok(Value::Bool(can));
             }
@@ -649,7 +855,19 @@ impl Interpreter {
                     "exception".to_string(),
                     args.first().cloned().unwrap_or(Value::Nil),
                 );
+                attrs.insert("handled".to_string(), Value::Bool(false));
                 return Ok(Value::make_instance("Failure".to_string(), attrs));
+            }
+            "handled"
+                if args.is_empty()
+                    && matches!(&target, Value::Instance { class_name, .. } if class_name == "Failure") =>
+            {
+                if let Value::Instance { attributes, .. } = &target {
+                    return Ok(attributes
+                        .get("handled")
+                        .cloned()
+                        .unwrap_or(Value::Bool(false)));
+                }
             }
             "are" => {
                 return self.dispatch_are(target, &args);
@@ -668,8 +886,20 @@ impl Interpreter {
                 self.output.push('\n');
                 return Ok(Value::Nil);
             }
+            "shape" if args.is_empty() => {
+                if let Some(shape) = Self::infer_array_shape(&target) {
+                    return Ok(Value::array(
+                        shape.into_iter().map(|n| Value::Int(n as i64)).collect(),
+                    ));
+                }
+            }
+            "default" if args.is_empty() => {
+                if matches!(target, Value::Array(..)) {
+                    return Ok(Value::Package("Any".to_string()));
+                }
+            }
             "note" if args.is_empty() => {
-                let content = format!("{}\n", gist_value(&target));
+                let content = format!("{}\n", self.render_gist_value(&target));
                 self.write_to_named_handle("$*ERR", &content, false)?;
                 return Ok(Value::Nil);
             }
@@ -925,6 +1155,7 @@ impl Interpreter {
                     Value::Mixin(inner, _) => {
                         return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
                     }
+                    Value::Proxy { .. } => "Proxy",
                 };
                 return Ok(Value::Package(type_name.to_string()));
             }
@@ -1357,7 +1588,7 @@ impl Interpreter {
                 // Initialize with default attribute values
                 let mut attributes = HashMap::new();
                 if self.classes.contains_key(&class_name) {
-                    for (attr_name, _is_public, default) in
+                    for (attr_name, _is_public, default, _is_rw) in
                         self.collect_class_attributes(&class_name)
                     {
                         let val = if let Some(expr) = default {
@@ -1998,21 +2229,7 @@ impl Interpreter {
                 }
                 return Ok(Value::make_instance(class_name.clone(), attrs));
             }
-            if args.is_empty() {
-                let class_attrs = self.collect_class_attributes(class_name);
-                if class_attrs.is_empty() {
-                    // No class definition — treat all instance attributes as public
-                    if let Some(val) = attributes.get(method) {
-                        return Ok(val.clone());
-                    }
-                } else {
-                    for (attr_name, is_public, _) in &class_attrs {
-                        if *is_public && attr_name == method {
-                            return Ok(attributes.get(method).cloned().unwrap_or(Value::Nil));
-                        }
-                    }
-                }
-            }
+            // User-defined methods take priority over auto-generated accessors
             if self.has_user_method(class_name, method) {
                 let (result, updated) = self.run_instance_method(
                     class_name,
@@ -2021,8 +2238,31 @@ impl Interpreter {
                     args,
                     Some(target.clone()),
                 )?;
-                self.overwrite_instance_bindings_by_identity(class_name, *target_id, updated);
+                self.overwrite_instance_bindings_by_identity(
+                    class_name,
+                    *target_id,
+                    updated.clone(),
+                );
+                // Auto-FETCH if the method returned a Proxy
+                if let Value::Proxy { ref fetcher, .. } = result {
+                    return self.proxy_fetch(fetcher, None, class_name, &updated, *target_id);
+                }
                 return Ok(result);
+            }
+            // Fallback: auto-generated accessor for public attributes
+            if args.is_empty() {
+                let class_attrs = self.collect_class_attributes(class_name);
+                if class_attrs.is_empty() {
+                    if let Some(val) = attributes.get(method) {
+                        return Ok(val.clone());
+                    }
+                } else {
+                    for (attr_name, is_public, _, _) in &class_attrs {
+                        if *is_public && attr_name == method {
+                            return Ok(attributes.get(method).cloned().unwrap_or(Value::Nil));
+                        }
+                    }
+                }
             }
         }
 
@@ -3517,6 +3757,9 @@ impl Interpreter {
         if let Value::Package(class_name) = &target {
             match class_name.as_str() {
                 "Array" | "List" | "Positional" => {
+                    if let Some(dims) = Self::shaped_dims_from_new_args(&args) {
+                        return Ok(Self::make_shaped_array(&dims));
+                    }
                     let mut items = Vec::new();
                     for arg in &args {
                         match arg {
@@ -3591,6 +3834,23 @@ impl Interpreter {
                 }
                 "ThreadPoolScheduler" | "CurrentThreadScheduler" | "Tap" | "Cancellation" => {
                     return Ok(Value::make_instance(class_name.clone(), HashMap::new()));
+                }
+                "Proxy" => {
+                    let mut fetcher = Value::Nil;
+                    let mut storer = Value::Nil;
+                    for arg in &args {
+                        if let Value::Pair(key, value) = arg {
+                            match key.as_str() {
+                                "FETCH" => fetcher = *value.clone(),
+                                "STORE" => storer = *value.clone(),
+                                _ => {}
+                            }
+                        }
+                    }
+                    return Ok(Value::Proxy {
+                        fetcher: Box::new(fetcher),
+                        storer: Box::new(storer),
+                    });
                 }
                 "CompUnit::DependencySpecification" => {
                     // Extract :short-name from named args
@@ -3831,7 +4091,9 @@ impl Interpreter {
                     return Ok(result);
                 }
                 let mut attrs = HashMap::new();
-                for (attr_name, _is_public, default) in self.collect_class_attributes(class_name) {
+                for (attr_name, _is_public, default, _is_rw) in
+                    self.collect_class_attributes(class_name)
+                {
                     let val = if let Some(expr) = default {
                         self.eval_block_value(&[Stmt::Expr(expr)])?
                     } else {

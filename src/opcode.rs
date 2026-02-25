@@ -358,6 +358,7 @@ pub(crate) enum OpCode {
     // -- Exists check --
     ExistsEnvIndex(u32),
     ExistsExpr,
+    ExistsIndexExpr,
 
     // -- Reduction ([+] @arr) --
     Reduction(u32),
@@ -435,6 +436,9 @@ pub(crate) enum OpCode {
         catch_start: u32,
         control_start: u32,
         body_end: u32,
+        /// True when CATCH { } is explicitly present — unhandled exceptions
+        /// (no `when`/`default` match) must be re-thrown.
+        explicit_catch: bool,
     },
 
     // -- Error handling --
@@ -460,6 +464,7 @@ pub(crate) enum OpCode {
         target_var_idx: Option<u32>,
     },
     UseModule(u32),
+    NoModule(u32),
     /// `need Module;` — load module without importing exports.
     NeedModule(u32),
     UseLibPath,
@@ -693,4 +698,6 @@ pub(crate) struct CompiledFunction {
     pub(crate) params: Vec<String>,
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) fingerprint: u64,
+    /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
+    pub(crate) empty_sig: bool,
 }

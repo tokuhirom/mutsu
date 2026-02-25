@@ -128,6 +128,7 @@ impl Value {
                     inner.truthy()
                 }
             }
+            Value::Proxy { .. } => true,
         }
     }
 
@@ -179,6 +180,7 @@ impl Value {
             Value::Capture { .. } => "Capture",
             Value::Uni { form, .. } => form.as_str(),
             Value::Mixin(inner, _) => return inner.isa_check(type_name),
+            Value::Proxy { .. } => "Proxy",
         };
         if my_type == type_name {
             return true;

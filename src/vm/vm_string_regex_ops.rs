@@ -144,8 +144,45 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap_or(Value::Nil);
         let left = self.stack.pop().unwrap_or(Value::Nil);
-        let op = Self::const_str(code, op_idx);
-        let result = Interpreter::eval_hyper_op(op, &left, &right, dwim_left, dwim_right)?;
+        let op = Self::const_str(code, op_idx).to_string();
+        let left_list = Interpreter::value_to_list(&left);
+        let right_list = Interpreter::value_to_list(&right);
+        let left_len = left_list.len();
+        let right_len = right_list.len();
+        if left_len == 0 && right_len == 0 {
+            self.stack.push(Value::array(Vec::new()));
+            return Ok(());
+        }
+        let result_len = if !dwim_left && !dwim_right {
+            if left_len != right_len {
+                return Err(RuntimeError::new(format!(
+                    "Non-dwimmy hyper operator: left has {} elements, right has {}",
+                    left_len, right_len
+                )));
+            }
+            left_len
+        } else if dwim_left && dwim_right {
+            std::cmp::max(left_len, right_len)
+        } else if dwim_right {
+            left_len
+        } else {
+            right_len
+        };
+        let mut results = Vec::with_capacity(result_len);
+        for i in 0..result_len {
+            let l = if left_len == 0 {
+                &Value::Int(0)
+            } else {
+                &left_list[i % left_len]
+            };
+            let r = if right_len == 0 {
+                &Value::Int(0)
+            } else {
+                &right_list[i % right_len]
+            };
+            results.push(self.eval_reduction_operator_values(&op, l, r)?);
+        }
+        let result = Value::array(results);
         self.stack.push(result);
         Ok(())
     }
@@ -169,7 +206,7 @@ impl VM {
                 } else if op == "~~" {
                     Value::Bool(self.interpreter.smart_match_values(&right, &left))
                 } else {
-                    Interpreter::apply_reduction_op(&op, &right, &left)?
+                    self.eval_reduction_operator_values(&op, &right, &left)?
                 }
             }
             "X" => {
@@ -191,7 +228,7 @@ impl VM {
                 } else {
                     for l in &left_list {
                         for r in &right_list {
-                            results.push(Interpreter::apply_reduction_op(&op, l, r)?);
+                            results.push(self.eval_reduction_operator_values(&op, l, r)?);
                         }
                     }
                 }
@@ -216,7 +253,7 @@ impl VM {
                     }
                 } else {
                     for i in 0..len {
-                        results.push(Interpreter::apply_reduction_op(
+                        results.push(self.eval_reduction_operator_values(
                             &op,
                             &left_list[i],
                             &right_list[i],
@@ -289,17 +326,45 @@ impl VM {
             let right_val = right_vals.first().cloned().unwrap_or(Value::Nil);
             if let Some(result) = self.try_user_infix(&infix_name, &left_val, &right_val)? {
                 result
-            } else if let Ok(v) = self.interpreter.call_function(&name, call_args.clone()) {
-                v
             } else {
-                let env_name = format!("&{}", name);
-                if let Some(code_val) = self.interpreter.env().get(&env_name).cloned() {
-                    self.interpreter.eval_call_on_value(code_val, call_args)?
-                } else {
-                    return Err(RuntimeError::new(format!(
-                        "Unknown infix function: {}",
-                        name
-                    )));
+                match self.interpreter.call_function(&name, call_args.clone()) {
+                    Ok(v) => v,
+                    Err(err) => {
+                        // `for foo-bar() -> ...` currently produces an infix AST fallback
+                        // call. If `foo-bar` has explicit empty signature `:()`, retry a
+                        // zero-arg callable dispatch instead of reporting unknown infix.
+                        let is_empty_sig_rejection =
+                            err.message.starts_with(
+                                "Too many positionals passed; expected 0 arguments but got more",
+                            ) || err.message.starts_with("Unexpected named argument '");
+                        if is_empty_sig_rejection {
+                            if let Ok(v) = self.interpreter.call_function(&name, Vec::new()) {
+                                v
+                            } else {
+                                let env_name = format!("&{}", name);
+                                if let Some(code_val) =
+                                    self.interpreter.env().get(&env_name).cloned()
+                                {
+                                    self.interpreter.eval_call_on_value(code_val, Vec::new())?
+                                } else {
+                                    return Err(RuntimeError::new(format!(
+                                        "Unknown infix function: {}",
+                                        name
+                                    )));
+                                }
+                            }
+                        } else {
+                            let env_name = format!("&{}", name);
+                            if let Some(code_val) = self.interpreter.env().get(&env_name).cloned() {
+                                self.interpreter.eval_call_on_value(code_val, call_args)?
+                            } else {
+                                return Err(RuntimeError::new(format!(
+                                    "Unknown infix function: {}",
+                                    name
+                                )));
+                            }
+                        }
+                    }
                 }
             }
         };

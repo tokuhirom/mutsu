@@ -128,6 +128,10 @@ impl Interpreter {
             "fail" => self.builtin_fail(&args),
             "return-rw" => self.builtin_return_rw(&args),
             "__mutsu_assign_method_lvalue" => self.builtin_assign_method_lvalue(&args),
+            "__mutsu_bind_index_value" => Ok(Value::Pair(
+                "__mutsu_bind_index_value".to_string(),
+                Box::new(args.first().cloned().unwrap_or(Value::Nil)),
+            )),
             "__mutsu_stub_die" => self.builtin_stub_die(&args),
             "__mutsu_stub_warn" => self.builtin_stub_warn(&args),
             "exit" => self.builtin_exit(&args),
@@ -320,6 +324,7 @@ impl Interpreter {
             "chroot" => self.builtin_chroot(&args),
             "run" => self.builtin_run(&args),
             "shell" => self.builtin_shell(&args),
+            "QX" | "qx" => self.builtin_qx(&args),
             "kill" => self.builtin_kill(&args),
             "syscall" => self.builtin_syscall(&args),
             "sleep" => self.builtin_sleep(&args),
@@ -451,6 +456,9 @@ impl Interpreter {
             if pushed_dispatch {
                 self.multi_dispatch_stack.push((remaining, args.to_vec()));
             }
+            if def.empty_sig && !args.is_empty() {
+                return Err(Self::reject_args_for_empty_sig(args));
+            }
             let saved_env = self.env.clone();
             let rw_bindings = self.bind_function_args_values(&def.param_defs, &def.params, args)?;
             let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
@@ -472,10 +480,21 @@ impl Interpreter {
             };
         }
         if self.has_proto(name) {
-            return Err(RuntimeError::new(format!(
-                "No matching candidates for proto sub: {}",
-                name
+            let mut err =
+                RuntimeError::new(format!("No matching candidates for proto sub: {}", name));
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert(
+                "message".to_string(),
+                Value::Str(format!(
+                    "Cannot resolve caller {}; none of these signatures matches",
+                    name
+                )),
+            );
+            err.exception = Some(Box::new(Value::make_instance(
+                "X::Multi::NoMatch".to_string(),
+                attrs,
             )));
+            return Err(err);
         }
         let callable_from_code_sigil = self.env.get(&format!("&{}", name)).cloned();
         let callable_from_plain = self.env.get(name).cloned();
@@ -495,6 +514,25 @@ impl Interpreter {
         }
         if name.starts_with("X::") {
             return Ok(Value::Package(name.to_string()));
+        }
+
+        // Check if multi candidates exist for this name (no matching arity/types)
+        if self.has_multi_candidates(name) {
+            let mut err =
+                RuntimeError::new(format!("No matching candidates for proto sub: {}", name));
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert(
+                "message".to_string(),
+                Value::Str(format!(
+                    "Cannot resolve caller {}; none of these signatures matches",
+                    name
+                )),
+            );
+            err.exception = Some(Box::new(Value::make_instance(
+                "X::Multi::NoMatch".to_string(),
+                attrs,
+            )));
+            return Err(err);
         }
 
         Err(RuntimeError::new(format!(
@@ -788,6 +826,69 @@ impl Interpreter {
     }
 
     fn builtin_callsame(&mut self) -> Result<Value, RuntimeError> {
+        if !self.method_dispatch_stack.is_empty() {
+            let frame_idx = self.method_dispatch_stack.len() - 1;
+            let (receiver_class, invocant, orig_args, owner_class, method_def) = {
+                let frame = &mut self.method_dispatch_stack[frame_idx];
+                let Some((owner_class, method_def)) = frame.remaining.first().cloned() else {
+                    return Ok(Value::Nil);
+                };
+                frame.remaining.remove(0);
+                (
+                    frame.receiver_class.clone(),
+                    frame.invocant.clone(),
+                    frame.args.clone(),
+                    owner_class,
+                    method_def,
+                )
+            };
+            let (result, updated_invocant) = match &invocant {
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    id: target_id,
+                } => {
+                    let (result, updated) = self.run_instance_method_resolved(
+                        &receiver_class,
+                        &owner_class,
+                        method_def,
+                        (**attributes).clone(),
+                        orig_args,
+                        Some(invocant.clone()),
+                    )?;
+                    self.overwrite_instance_bindings_by_identity(
+                        class_name,
+                        *target_id,
+                        updated.clone(),
+                    );
+                    (
+                        result,
+                        Some(Value::Instance {
+                            class_name: class_name.clone(),
+                            attributes: std::sync::Arc::new(updated),
+                            id: *target_id,
+                        }),
+                    )
+                }
+                _ => {
+                    let (result, _) = self.run_instance_method_resolved(
+                        &receiver_class,
+                        &owner_class,
+                        method_def,
+                        HashMap::new(),
+                        orig_args,
+                        Some(invocant.clone()),
+                    )?;
+                    (result, None)
+                }
+            };
+            if let Some(new_invocant) = updated_invocant
+                && let Some(frame) = self.method_dispatch_stack.get_mut(frame_idx)
+            {
+                frame.invocant = new_invocant;
+            }
+            return Ok(result);
+        }
         let Some((candidates, orig_args)) = self.multi_dispatch_stack.last().cloned() else {
             return Ok(Value::Nil);
         };
@@ -968,6 +1069,10 @@ impl Interpreter {
                 | "pop"
                 | "shift"
                 | "unshift"
+                | "dir"
+                | "chdir"
+                | "QX"
+                | "qx"
                 | "indir"
                 | "run"
                 | "splice"
