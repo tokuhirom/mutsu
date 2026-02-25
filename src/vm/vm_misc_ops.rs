@@ -385,7 +385,7 @@ impl VM {
             "+<", "+>", "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=",
             ">=", "<=>", "===", "=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg",
             "cmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",", "after", "before",
-            "X", "Z", "x", "xx", "&", "|", "^",
+            "X", "Z", "x", "xx", "&", "|", "^", "o", "∘",
         ];
         let (negate, base_op) = if let Some(stripped) = op_no_scan.strip_prefix('!')
             && KNOWN_BASE_OPS.contains(&stripped)
@@ -393,6 +393,11 @@ impl VM {
             (true, stripped.to_string())
         } else {
             (false, op_no_scan)
+        };
+        let base_op = if base_op == "∘" {
+            "o".to_string()
+        } else {
+            base_op
         };
         let list_value = self.stack.pop().unwrap_or(Value::Nil);
         let mut list = if let Value::LazyList(ref ll) = list_value {
@@ -464,6 +469,14 @@ impl VM {
                 }
                 self.stack.push(Value::Bool(result));
             } else {
+                if base_op == "o" {
+                    let mut acc = list[0].clone();
+                    for item in &list[1..] {
+                        acc = self.interpreter.compose_callables(acc, item.clone());
+                    }
+                    self.stack.push(acc);
+                    return Ok(());
+                }
                 let acc = if base_op == "=>" {
                     let mut acc = list.last().cloned().unwrap_or(Value::Nil);
                     for item in list[..list.len() - 1].iter().rev() {
@@ -526,9 +539,25 @@ impl VM {
         let name = Self::const_str(code, name_idx).to_string();
         let body_end = body_end as usize;
         let saved = self.interpreter.current_package().to_string();
+        let saved_env = self.interpreter.env().clone();
+        let saved_locals = self.locals.clone();
         self.interpreter.set_current_package(name);
         self.run_range(code, *ip + 1, body_end, compiled_fns)?;
         self.interpreter.set_current_package(saved);
+        let current_env = self.interpreter.env().clone();
+        let mut restored_env = saved_env.clone();
+        for (k, v) in current_env {
+            if saved_env.contains_key(&k) || k.contains("::") {
+                restored_env.insert(k, v);
+            }
+        }
+        self.locals = saved_locals;
+        for (idx, local_name) in code.locals.iter().enumerate() {
+            if let Some(val) = restored_env.get(local_name).cloned() {
+                self.locals[idx] = val;
+            }
+        }
+        *self.interpreter.env_mut() = restored_env;
         *ip = body_end;
         Ok(())
     }

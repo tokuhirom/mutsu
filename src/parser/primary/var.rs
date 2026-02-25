@@ -397,8 +397,10 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
         (input, "")
     };
     let (rest, name) = parse_ident_with_hyphens(rest)?;
-    // Check for operator reference: &infix:<OP>, &prefix:<OP>, &postfix:<OP>
-    if twigil.is_empty() && matches!(name, "infix" | "prefix" | "postfix") && rest.starts_with(":<")
+    // Check for operator reference: &infix:<OP>, &prefix:<OP>, &postfix:<OP>, &term:<OP>
+    if twigil.is_empty()
+        && matches!(name, "infix" | "prefix" | "postfix" | "term")
+        && rest.starts_with(":<")
     {
         let r = &rest[2..]; // skip ':' and '<'
         if let Some(end_pos) = r.find('>') {

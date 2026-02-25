@@ -42,6 +42,20 @@ fn make_call_expr(name: String, input: &str, args: Vec<Expr>) -> Expr {
     }
 }
 
+pub(super) fn declared_term_symbol(input: &str) -> PResult<'_, Expr> {
+    if let Some((name, consumed_len, callable)) =
+        crate::parser::stmt::simple::match_user_declared_term_symbol(input)
+    {
+        let expr = if callable {
+            Expr::Call { name, args: vec![] }
+        } else {
+            Expr::BareWord(name)
+        };
+        return Ok((&input[consumed_len..], expr));
+    }
+    Err(PError::expected("declared term symbol"))
+}
+
 fn parse_raw_braced_regex_body(input: &str) -> PResult<'_, String> {
     let after_open = input
         .strip_prefix('{')
@@ -926,9 +940,9 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 r = &after_bracket[end + 1..];
                 continue;
             }
-            if let Ok((rest2, part)) = super::super::stmt::parse_raku_ident(after) {
+            if let Ok((rest2, part)) = super::super::stmt::parse_sub_name_pub(after) {
                 full_name.push_str("::");
-                full_name.push_str(part);
+                full_name.push_str(&part);
                 r = rest2;
             } else if after.starts_with('.')
                 || after.is_empty()
@@ -1227,15 +1241,16 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 pub(super) fn parse_anon_sub_with_params(input: &str) -> PResult<'_, Expr> {
     let (r, _) = parse_char(input, '(')?;
     let (r, _) = ws(r)?;
-    let (r, param_defs) = super::super::stmt::parse_param_list_pub(r)?;
+    let (r, (param_defs, return_type)) = super::super::stmt::parse_param_list_with_return_pub(r)?;
     let params: Vec<String> = param_defs.iter().map(|p| p.name.clone()).collect();
-    parse_anon_sub_rest(r, params, param_defs)
+    parse_anon_sub_rest(r, params, param_defs, return_type)
 }
 
 fn parse_anon_sub_rest(
     input: &str,
     params: Vec<String>,
     param_defs: Vec<crate::ast::ParamDef>,
+    return_type: Option<String>,
 ) -> PResult<'_, Expr> {
     let (r, _) = ws(input)?;
     let (r, _) = parse_char(r, ')')?;
@@ -1249,6 +1264,7 @@ fn parse_anon_sub_rest(
             Expr::AnonSubParams {
                 params,
                 param_defs,
+                return_type,
                 body,
             },
         ))
