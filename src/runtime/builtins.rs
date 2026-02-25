@@ -480,10 +480,21 @@ impl Interpreter {
             };
         }
         if self.has_proto(name) {
-            return Err(RuntimeError::new(format!(
-                "No matching candidates for proto sub: {}",
-                name
+            let mut err =
+                RuntimeError::new(format!("No matching candidates for proto sub: {}", name));
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert(
+                "message".to_string(),
+                Value::Str(format!(
+                    "Cannot resolve caller {}; none of these signatures matches",
+                    name
+                )),
+            );
+            err.exception = Some(Box::new(Value::make_instance(
+                "X::Multi::NoMatch".to_string(),
+                attrs,
             )));
+            return Err(err);
         }
         let callable_from_code_sigil = self.env.get(&format!("&{}", name)).cloned();
         let callable_from_plain = self.env.get(name).cloned();
@@ -503,6 +514,25 @@ impl Interpreter {
         }
         if name.starts_with("X::") {
             return Ok(Value::Package(name.to_string()));
+        }
+
+        // Check if multi candidates exist for this name (no matching arity/types)
+        if self.has_multi_candidates(name) {
+            let mut err =
+                RuntimeError::new(format!("No matching candidates for proto sub: {}", name));
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert(
+                "message".to_string(),
+                Value::Str(format!(
+                    "Cannot resolve caller {}; none of these signatures matches",
+                    name
+                )),
+            );
+            err.exception = Some(Box::new(Value::make_instance(
+                "X::Multi::NoMatch".to_string(),
+                attrs,
+            )));
+            return Err(err);
         }
 
         Err(RuntimeError::new(format!(

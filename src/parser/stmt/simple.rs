@@ -1018,8 +1018,17 @@ pub(super) fn subtest_stmt(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Parse a block statement: { ... }
+/// If the block is followed by `.method(...)`, treat it as a block expression
+/// with postfix operators (e.g. `{ $^a }.assuming(123)()`).
 pub(super) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, body) = block(input)?;
+    let (r_ws, _) = ws(rest)?;
+    if r_ws.starts_with('.') && !r_ws.starts_with("..") {
+        // Use AnonSub so the block compiles as a closure value, not inline code
+        let block_expr = Expr::AnonSub(body);
+        let (rest, expr) = super::super::expr::postfix_expr_continue(rest, block_expr)?;
+        return parse_statement_modifier(rest, Stmt::Expr(expr));
+    }
     parse_statement_modifier(rest, Stmt::Block(body))
 }
 
