@@ -20,9 +20,16 @@ static PARSE_MEMO_ENABLED: OnceLock<bool> = OnceLock::new();
 
 pub(super) fn parse_memo_enabled() -> bool {
     *PARSE_MEMO_ENABLED.get_or_init(|| {
-        std::env::var("MUTSU_PARSE_MEMO")
-            .map(|v| v != "0")
-            .unwrap_or(true)
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            std::env::var("MUTSU_PARSE_MEMO")
+                .map(|v| v != "0")
+                .unwrap_or(true)
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            true
+        }
     })
 }
 
