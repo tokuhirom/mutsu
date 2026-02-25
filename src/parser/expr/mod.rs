@@ -1043,6 +1043,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_slip_prefix_with_topic_method_call() {
+        let (rest, expr) = expression("|.value").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                expr
+            } if matches!(*expr, Expr::MethodCall { .. })
+        ));
+    }
+
+    #[test]
     fn parse_parenthesized_sequence_with_following_smartmatch() {
         let (rest, expr) = expression("(\"a\"...* ~~ / z /)").unwrap();
         assert_eq!(rest, "");

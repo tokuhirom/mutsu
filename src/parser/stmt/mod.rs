@@ -505,6 +505,7 @@ const STMT_PARSERS: &[StmtParser] = &[
     class::unit_module_stmt,
     decl::my_decl,
     decl::constant_decl,
+    class::anon_class_decl,
     class::class_decl,
     class::role_decl,
     class::grammar_decl,

@@ -696,6 +696,10 @@ impl Interpreter {
             }
             return ok;
         }
+        // Role constraints should accept composed role instances/mixins.
+        if self.roles.contains_key(constraint) && value.does_check(constraint) {
+            return true;
+        }
         // Check Instance class name against constraint (including parent classes)
         if let Value::Instance { class_name, .. } = value {
             if Self::type_matches(constraint, class_name) {
@@ -955,34 +959,78 @@ impl Interpreter {
             }
             // Legacy path: bind positional placeholders ($^a, $^b) by position,
             // and named placeholders ($:name) by matching Pair arg keys.
+            let positional_args: Vec<Value> = plain_args
+                .iter()
+                .filter(|a| !matches!(a, Value::Pair(..)))
+                .cloned()
+                .collect();
+            let named_args: Vec<(String, Value)> = plain_args
+                .iter()
+                .filter_map(|a| {
+                    if let Value::Pair(key, val) = a {
+                        Some((key.clone(), *val.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let mut consumed_named = std::collections::HashSet::new();
             let mut positional_idx = 0usize;
             for param in params.iter() {
                 if let Some(key) = param.strip_prefix(':') {
                     // Named placeholder: match by Pair key
-                    if let Some(Value::Pair(_, val)) = plain_args
-                        .iter()
-                        .find(|a| matches!(a, Value::Pair(k, _) if k == key))
-                    {
-                        self.bind_param_value(param, *val.clone());
+                    if let Some((_, val)) = named_args.iter().find(|(k, _)| k == key) {
+                        self.bind_param_value(param, val.clone());
+                        consumed_named.insert(key.to_string());
                     }
-                } else {
-                    // Positional placeholder: skip Pair args
-                    while positional_idx < plain_args.len()
-                        && matches!(&plain_args[positional_idx], Value::Pair(..))
-                    {
-                        positional_idx += 1;
-                    }
-                    if positional_idx < plain_args.len() {
-                        self.bind_param_value(param, plain_args[positional_idx].clone());
-                        positional_idx += 1;
-                    } else if param.starts_with('^') {
+                } else if positional_idx < positional_args.len() {
+                    let value = positional_args[positional_idx].clone();
+                    if param.starts_with("&^") && !self.type_matches_value("Callable", &value) {
                         return Err(RuntimeError::new(format!(
-                            "Missing required implicit placeholder parameter ${}",
-                            param
+                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected Callable, got {}",
+                            param,
+                            super::value_type_name(&value)
                         )));
                     }
+                    if param.starts_with("@^") && !self.type_matches_value("Positional", &value) {
+                        return Err(RuntimeError::new(format!(
+                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected Positional, got {}",
+                            param,
+                            super::value_type_name(&value)
+                        )));
+                    }
+                    if param.starts_with("%^") && !self.type_matches_value("Associative", &value) {
+                        return Err(RuntimeError::new(format!(
+                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected Associative, got {}",
+                            param,
+                            super::value_type_name(&value)
+                        )));
+                    }
+                    self.bind_param_value(param, value);
+                    positional_idx += 1;
+                } else if param.starts_with('^')
+                    || param.starts_with("@^")
+                    || param.starts_with("%^")
+                    || param.starts_with("&^")
+                {
+                    return Err(RuntimeError::new(format!(
+                        "Missing required implicit placeholder parameter ${}",
+                        param
+                    )));
                 }
             }
+            self.env.insert(
+                "@_".to_string(),
+                Value::array(positional_args[positional_idx..].to_vec()),
+            );
+            let mut leftover_named = std::collections::HashMap::new();
+            for (key, val) in named_args {
+                if !consumed_named.contains(&key) {
+                    leftover_named.insert(key, val);
+                }
+            }
+            self.env
+                .insert("%_".to_string(), Value::hash(leftover_named));
             return Ok(rw_bindings);
         }
         let mut positional_idx = 0usize;
