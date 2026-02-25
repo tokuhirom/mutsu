@@ -840,7 +840,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         {
             let r = &rest[1..];
             let (r, _) = ws(r)?;
-            let (r, index) = expression(r)?;
+            let (r, index) = parse_bracket_indices(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, '}')?;
             // Allow whitespace before adverbs
