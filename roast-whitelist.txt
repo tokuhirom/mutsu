@@ -47,6 +47,7 @@ roast/S02-types/unicode.t
 roast/S02-types/version-stress.t
 roast/S02-types/version.t
 roast/S03-binding/closure.t
+roast/S03-binding/ro.t
 roast/S03-buf/read-num.t
 roast/S03-operators/also.t
 roast/S03-operators/assign-is-not-binding.t
@@ -139,6 +140,7 @@ roast/S06-currying/slurpy.t
 roast/S06-multi/compile-time.t
 roast/S06-multi/lexical-multis.t
 roast/S06-multi/unpackability.t
+roast/S06-operator-overloading/circumfix.t
 roast/S06-operator-overloading/methods.t
 roast/S06-operator-overloading/prefix.t
 roast/S06-operator-overloading/semicolon.t

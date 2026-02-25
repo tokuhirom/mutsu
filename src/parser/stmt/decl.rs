@@ -30,6 +30,17 @@ fn typed_default_expr(type_name: &str) -> Expr {
     }
 }
 
+fn is_supported_variable_trait(trait_name: &str) -> bool {
+    if matches!(trait_name, "default" | "export") {
+        return true;
+    }
+    // Type-ish variable traits are accepted in roast (e.g. `is List`, `is Map`).
+    trait_name
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_uppercase())
+}
+
 fn parse_sigilless_decl_name(input: &str) -> PResult<'_, String> {
     super::parse_sub_name_pub(input)
 }
@@ -440,13 +451,20 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         rest
     };
 
-    // Skip `is default(...)` or other `is` traits on variables
+    // Parse variable traits. Only a small set is currently supported on
+    // lexical/package variable declarations; unknown traits are compile-time errors.
     let rest = {
         let mut r = rest;
         while let Some(after_is) = keyword("is", r) {
             let (r2, _) = ws1(after_is)?;
             // Parse trait name
-            let (r2, _trait_name) = ident(r2)?;
+            let (r2, trait_name) = ident(r2)?;
+            if !is_supported_variable_trait(&trait_name) {
+                return Err(PError::fatal(format!(
+                    "X::Comp::Trait::Unknown: Unknown variable trait 'is {}'",
+                    trait_name
+                )));
+            }
             let (r2, _) = ws(r2)?;
             // Parse optional trait argument: (expr)
             if let Some(r3) = r2.strip_prefix('(') {
@@ -993,6 +1011,10 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         };
         let (rest, _) = ws(rest)?;
         let (rest, expr) = parse_comma_or_expr(rest)?;
+        // Track compile-time string constants for operator name resolution
+        if let crate::ast::Expr::Literal(crate::value::Value::Str(ref s)) = expr {
+            super::simple::register_compile_time_constant(&name, s.clone());
+        }
         let (rest, _) = ws(rest)?;
         let (rest, _) = opt_char(rest, ';');
         return Ok((

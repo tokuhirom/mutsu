@@ -182,6 +182,11 @@ fn is_postfix_operator_boundary(rest: &str) -> bool {
 }
 
 fn parse_custom_postfix_operator(input: &str) -> Option<(String, usize)> {
+    // Don't consume characters that are closing delimiters of circumfix operators
+    if crate::parser::stmt::simple::is_circumfix_close_delimiter(input) {
+        return None;
+    }
+
     if input.starts_with('!') {
         return Some(("!".to_string(), '!'.len_utf8()));
     }
@@ -1000,6 +1005,25 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     target: Box::new(expr),
                     name,
                     args: Vec::new(),
+                };
+                rest = r;
+                continue;
+            }
+        }
+
+        // User-declared postcircumfix operators: expr⌊arg⌋ → postcircumfix:<⌊ ⌋>(expr, arg)
+        if let Some((name, open_len, close_delim)) =
+            crate::parser::stmt::simple::match_user_declared_postcircumfix_op(rest)
+        {
+            let r = &rest[open_len..];
+            let (r, _) = ws(r)?;
+            let (r, arg) = expression(r)?;
+            let (r, _) = ws(r)?;
+            if r.starts_with(close_delim.as_str()) {
+                let r = &r[close_delim.len()..];
+                expr = Expr::Call {
+                    name,
+                    args: vec![expr, arg],
                 };
                 rest = r;
                 continue;

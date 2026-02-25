@@ -41,6 +41,10 @@ pub(super) fn reset_user_subs() {
     simple::reset_user_subs();
 }
 
+pub(super) fn set_eval_operator_preseed(names: Vec<String>) {
+    simple::set_eval_operator_preseed(names);
+}
+
 pub(super) fn statement_memo_stats() -> (usize, usize, usize) {
     STMT_MEMO.stats()
 }

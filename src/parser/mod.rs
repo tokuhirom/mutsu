@@ -26,6 +26,16 @@ pub(super) fn parse_memo_enabled() -> bool {
     })
 }
 
+/// Invalidate all parse memo caches.  Called when a new user-declared operator
+/// changes parsing behavior (e.g. circumfix, postcircumfix, prefix operators).
+pub(crate) fn invalidate_all_memos() {
+    if parse_memo_enabled() {
+        expr::reset_expression_memo();
+        primary::reset_primary_memo();
+        stmt::reset_statement_memo();
+    }
+}
+
 fn line_col_at_offset(source: &str, offset: usize) -> (usize, usize) {
     let offset = offset.min(source.len());
     let prefix = &source[..offset];
@@ -181,6 +191,21 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
         );
     }
 
+    result
+}
+
+/// Like `parse_program`, but pre-registers operator sub names so the parser
+/// recognizes them during EVAL.
+#[allow(clippy::result_large_err)]
+pub(crate) fn parse_program_with_operators(
+    input: &str,
+    operator_names: &[String],
+) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
+    // Set pre-seed operators before calling parse_program.
+    // parse_program will call reset_user_subs, then we re-register after.
+    stmt::set_eval_operator_preseed(operator_names.to_vec());
+    let result = parse_program(input);
+    stmt::set_eval_operator_preseed(Vec::new());
     result
 }
 
