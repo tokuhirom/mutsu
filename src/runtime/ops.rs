@@ -382,6 +382,14 @@ impl Interpreter {
                 }
                 Ok(Value::array(results))
             }
+            "," => {
+                let mut items = match left {
+                    Value::Array(values, ..) => values.to_vec(),
+                    other => vec![other.clone()],
+                };
+                items.push(right.clone());
+                Ok(Value::array(items))
+            }
             _ => Err(RuntimeError::new(format!(
                 "Unsupported reduction operator: {}",
                 op
@@ -429,55 +437,6 @@ impl Interpreter {
             Value::Nil => vec![],
             other => vec![other.clone()],
         }
-    }
-
-    pub(crate) fn eval_hyper_op(
-        op: &str,
-        left: &Value,
-        right: &Value,
-        dwim_left: bool,
-        dwim_right: bool,
-    ) -> Result<Value, RuntimeError> {
-        let left_list = Self::value_to_list(left);
-        let right_list = Self::value_to_list(right);
-        let left_len = left_list.len();
-        let right_len = right_list.len();
-
-        if left_len == 0 && right_len == 0 {
-            return Ok(Value::array(Vec::new()));
-        }
-
-        let result_len = if !dwim_left && !dwim_right {
-            if left_len != right_len {
-                return Err(RuntimeError::new(format!(
-                    "Non-dwimmy hyper operator: left has {} elements, right has {}",
-                    left_len, right_len
-                )));
-            }
-            left_len
-        } else if dwim_left && dwim_right {
-            std::cmp::max(left_len, right_len)
-        } else if dwim_right {
-            left_len
-        } else {
-            right_len
-        };
-
-        let mut results = Vec::with_capacity(result_len);
-        for i in 0..result_len {
-            let l = if left_len == 0 {
-                &Value::Int(0)
-            } else {
-                &left_list[i % left_len]
-            };
-            let r = if right_len == 0 {
-                &Value::Int(0)
-            } else {
-                &right_list[i % right_len]
-            };
-            results.push(Self::apply_reduction_op(op, l, r)?);
-        }
-        Ok(Value::array(results))
     }
 
     pub(crate) fn compare(
