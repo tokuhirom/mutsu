@@ -1007,6 +1007,30 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             return parse_statement_modifier(rest, stmt);
         }
     }
+    if matches!(&expr, Expr::Index { target, .. } if matches!(target.as_ref(), Expr::ArrayVar(_)))
+        && rest.starts_with(":=")
+    {
+        let rest = &rest[2..];
+        let (rest, _) = ws(rest)?;
+        let (rest, value) = parse_comma_or_expr(rest).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected assigned expression after index bind",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(rest.len())),
+        })?;
+        if let Expr::Index { target, index } = expr {
+            let stmt = Stmt::Expr(Expr::IndexAssign {
+                target,
+                index,
+                value: Box::new(Expr::Call {
+                    name: "__mutsu_bind_index_value".to_string(),
+                    args: vec![value],
+                }),
+            });
+            return parse_statement_modifier(rest, stmt);
+        }
+    }
 
     // Generic assignment on non-variable lhs (e.g. `.key = 1`).
     // TODO: Introduce a dedicated assignment AST form for arbitrary lvalues.

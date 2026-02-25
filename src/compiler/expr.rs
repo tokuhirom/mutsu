@@ -755,9 +755,15 @@ impl Compiler {
                         let key_idx = self.code.add_constant(Value::Str(key.clone()));
                         self.code.emit(OpCode::ExistsEnvIndex(key_idx));
                     } else {
-                        self.compile_expr(inner);
-                        self.code.emit(OpCode::ExistsExpr);
+                        self.compile_expr(target);
+                        self.compile_expr(index);
+                        self.code.emit(OpCode::ExistsIndexExpr);
                     }
+                }
+                Expr::Index { target, index } => {
+                    self.compile_expr(target);
+                    self.compile_expr(index);
+                    self.code.emit(OpCode::ExistsIndexExpr);
                 }
                 _ => {
                     self.compile_expr(inner);

@@ -15,7 +15,7 @@ impl Interpreter {
                 Stmt::Call { args, .. } => {
                     for arg in args {
                         match arg {
-                            CallArg::Positional(e) | CallArg::Slip(e) => {
+                            CallArg::Positional(e) | CallArg::Slip(e) | CallArg::Invocant(e) => {
                                 scan_expr(e, positional, named)
                             }
                             CallArg::Named { value: Some(e), .. } => {
@@ -356,6 +356,53 @@ impl Interpreter {
         }
     }
 
+    fn shaped_dims_from_new_args(args: &[Value]) -> Option<Vec<usize>> {
+        let shape_val = args.iter().find_map(|arg| match arg {
+            Value::Pair(name, value) if name == "shape" => Some(value.as_ref().clone()),
+            _ => None,
+        })?;
+        let dims_vals = match shape_val {
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
+            Value::Int(i) => vec![Value::Int(i)],
+            _ => return None,
+        };
+        let mut dims = Vec::with_capacity(dims_vals.len());
+        for dim in dims_vals {
+            let n = match dim {
+                Value::Int(i) if i >= 0 => i as usize,
+                Value::Num(f) if f >= 0.0 => f as usize,
+                _ => return None,
+            };
+            dims.push(n);
+        }
+        if dims.is_empty() { None } else { Some(dims) }
+    }
+
+    fn make_shaped_array(dims: &[usize]) -> Value {
+        if dims.is_empty() {
+            return Value::Nil;
+        }
+        let len = dims[0];
+        if dims.len() == 1 {
+            return Value::array(vec![Value::Nil; len]);
+        }
+        let child = Self::make_shaped_array(&dims[1..]);
+        Value::array((0..len).map(|_| child.clone()).collect())
+    }
+
+    fn infer_array_shape(value: &Value) -> Option<Vec<usize>> {
+        let Value::Array(items, ..) = value else {
+            return None;
+        };
+        let mut shape = vec![items.len()];
+        let mut current = items.first().cloned();
+        while let Some(Value::Array(inner, ..)) = current {
+            shape.push(inner.len());
+            current = inner.first().cloned();
+        }
+        Some(shape)
+    }
+
     pub(crate) fn call_method_with_values(
         &mut self,
         target: Value,
@@ -545,6 +592,7 @@ impl Interpreter {
                                 optional_marker: false,
                                 outer_sub_signature: None,
                                 code_signature: None,
+                                is_invocant: false,
                             })
                             .collect()
                     } else {
@@ -568,6 +616,7 @@ impl Interpreter {
                                 optional_marker: false,
                                 outer_sub_signature: None,
                                 code_signature: None,
+                                is_invocant: false,
                             });
                         }
                         if use_named {
@@ -588,6 +637,7 @@ impl Interpreter {
                                 optional_marker: false,
                                 outer_sub_signature: None,
                                 code_signature: None,
+                                is_invocant: false,
                             });
                         }
                         defs
@@ -663,6 +713,18 @@ impl Interpreter {
                 self.output.push_str(&crate::runtime::gist_value(&target));
                 self.output.push('\n');
                 return Ok(Value::Nil);
+            }
+            "shape" if args.is_empty() => {
+                if let Some(shape) = Self::infer_array_shape(&target) {
+                    return Ok(Value::array(
+                        shape.into_iter().map(|n| Value::Int(n as i64)).collect(),
+                    ));
+                }
+            }
+            "default" if args.is_empty() => {
+                if matches!(target, Value::Array(..)) {
+                    return Ok(Value::Package("Any".to_string()));
+                }
             }
             "note" if args.is_empty() => {
                 let content = format!("{}\n", gist_value(&target));
@@ -3513,6 +3575,9 @@ impl Interpreter {
         if let Value::Package(class_name) = &target {
             match class_name.as_str() {
                 "Array" | "List" | "Positional" => {
+                    if let Some(dims) = Self::shaped_dims_from_new_args(&args) {
+                        return Ok(Self::make_shaped_array(&dims));
+                    }
                     let mut items = Vec::new();
                     for arg in &args {
                         match arg {
