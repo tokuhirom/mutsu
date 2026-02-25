@@ -330,6 +330,18 @@ impl VM {
             Value::Str(s) => s.clone(),
             _ => unreachable!("AssignExpr name must be a string constant"),
         };
+        if name.starts_with('&') && !name.contains("::") {
+            let bare = name.trim_start_matches('&');
+            let has_variable_slot = self.interpreter.env().contains_key(&name);
+            let is_routine_symbol = self.interpreter.has_function(bare)
+                || self.interpreter.has_multi_function(bare)
+                || self.interpreter.has_proto(bare)
+                || self.interpreter.resolve_token_defs(bare).is_some()
+                || self.interpreter.has_proto_token(bare);
+            if is_routine_symbol && !has_variable_slot {
+                return Err(RuntimeError::new("X::Assignment::RO"));
+            }
+        }
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let val = if name.starts_with('%') {
             runtime::coerce_to_hash(raw_val)

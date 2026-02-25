@@ -43,8 +43,9 @@ impl Compiler {
                 }
             }
             Expr::ArrayVar(name) => {
-                let var_name = if self.local_map.contains_key(name) {
-                    format!("@{}", name)
+                let sigiled = format!("@{}", name);
+                let var_name = if self.local_map.contains_key(sigiled.as_str()) {
+                    sigiled
                 } else {
                     self.qualify_variable_name(&format!("@{}", name))
                 };
@@ -52,8 +53,9 @@ impl Compiler {
                 self.code.emit(OpCode::GetArrayVar(name_idx));
             }
             Expr::HashVar(name) => {
-                let var_name = if self.local_map.contains_key(name) {
-                    format!("%{}", name)
+                let sigiled = format!("%{}", name);
+                let var_name = if self.local_map.contains_key(sigiled.as_str()) {
+                    sigiled
                 } else {
                     self.qualify_variable_name(&format!("%{}", name))
                 };

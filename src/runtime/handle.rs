@@ -76,12 +76,16 @@ impl Interpreter {
         }
         match state.target {
             IoHandleTarget::Stdout => {
-                self.output.push_str(&payload);
+                self.emit_output(&payload);
                 Ok(())
             }
             IoHandleTarget::Stderr => {
+                if self.subtest_depth == 0 && self.immediate_stdout {
+                    use std::io::Write;
+                    let _ = std::io::stderr().write_all(payload.as_bytes());
+                    let _ = std::io::stderr().flush();
+                }
                 self.stderr_output.push_str(&payload);
-                self.output.push_str(&payload);
                 Ok(())
             }
             IoHandleTarget::File => {
@@ -168,7 +172,11 @@ impl Interpreter {
             IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
                 Err(RuntimeError::new("Handle not readable"))
             }
-            IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => Ok(None),
+            IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => {
+                let seps = state.line_separators.clone();
+                let mut stdin = std::io::stdin().lock();
+                Self::read_record_with_separators(&mut stdin, &seps)
+            }
             IoHandleTarget::File => {
                 let file = state
                     .file

@@ -117,28 +117,29 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_keys(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let val = args.first().cloned();
-        Ok(match val {
-            Some(Value::Hash(items)) => {
-                Value::array(items.keys().map(|k| Value::Str(k.clone())).collect())
-            }
-            Some(Value::Pair(key, _)) => Value::array(vec![Value::Str(key)]),
-            Some(Value::ValuePair(key, _)) => Value::array(vec![*key]),
-            Some(Value::Nil) | None => Value::array(Vec::new()),
-            _ => Value::array(Vec::new()),
-        })
+        self.builtin_unary_collection_method(args, "keys")
     }
 
     pub(super) fn builtin_values(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let val = args.first().cloned();
-        Ok(match val {
-            Some(Value::Hash(items)) => Value::array(items.values().cloned().collect()),
-            Some(Value::Pair(_, value)) | Some(Value::ValuePair(_, value)) => {
-                Value::array(vec![*value])
-            }
-            Some(Value::Nil) | None => Value::array(Vec::new()),
-            _ => Value::array(Vec::new()),
-        })
+        self.builtin_unary_collection_method(args, "values")
+    }
+
+    pub(super) fn builtin_kv(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.builtin_unary_collection_method(args, "kv")
+    }
+
+    pub(super) fn builtin_pairs(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.builtin_unary_collection_method(args, "pairs")
+    }
+
+    fn builtin_unary_collection_method(
+        &self,
+        args: &[Value],
+        method: &str,
+    ) -> Result<Value, RuntimeError> {
+        let target = args.first().cloned().unwrap_or(Value::Nil);
+        crate::builtins::native_method_0arg(&target, method)
+            .unwrap_or_else(|| Ok(Value::array(Vec::new())))
     }
 
     pub(super) fn builtin_abs(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -342,6 +343,7 @@ impl Interpreter {
         let mut positional = Vec::new();
         let mut has_v = false;
         let mut has_neg_v = false;
+        let mut has_p = false;
         let mut has_end = false;
         for arg in args {
             match arg {
@@ -356,6 +358,9 @@ impl Interpreter {
                     if value.truthy() {
                         has_end = true;
                     }
+                }
+                Value::Pair(key, value) if key == "p" => {
+                    has_p = value.truthy();
                 }
                 _ => positional.push(arg.clone()),
             }
@@ -388,10 +393,16 @@ impl Interpreter {
                 other => list_items.push(other.clone()),
             }
         }
-        if has_end {
-            list_items.reverse();
+        if let Some((idx, value)) = self.find_first_match_over_items(func, &list_items, has_end)? {
+            if has_p {
+                return Ok(Value::ValuePair(
+                    Box::new(Value::Int(idx as i64)),
+                    Box::new(value),
+                ));
+            }
+            return Ok(value);
         }
-        self.eval_first_over_items(func, list_items)
+        Ok(Value::Nil)
     }
 
     pub(super) fn builtin_classify(

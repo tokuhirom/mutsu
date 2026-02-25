@@ -1,5 +1,5 @@
 use Test;
-plan 6;
+plan 7;
 
 # &foo reference to a sub
 sub greet($name) { "Hello, $name" }
@@ -22,6 +22,7 @@ is apply(&square, 4), 16, 'pass &sub as argument';
 # Store in scalar, call via scalar
 my $fn = &square;
 is $fn(3), 9, 'scalar holding code ref is callable';
+is &$fn(), 9, 'scalar code ref can be invoked via &$var()';
 
 # Reference to multi sub
 multi sub show(Int $x) { "int:$x" }

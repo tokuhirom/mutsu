@@ -248,6 +248,10 @@ impl Value {
                 matches!(
                     self,
                     Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                ) || matches!(
+                    self,
+                    Value::Package(name)
+                        if matches!(name.as_str(), "Sub" | "Routine" | "Method" | "Block" | "Code")
                 )
             }
             "Exception" => {
@@ -267,8 +271,45 @@ impl Value {
             "Seq" | "List" => {
                 matches!(self, Value::Array(..) | Value::LazyList(_) | Value::Slip(_))
             }
-            "Positional" => matches!(self, Value::Array(..) | Value::LazyList(_)),
-            "Map" | "Associative" => matches!(self, Value::Hash(_)),
+            "Positional" => {
+                matches!(
+                    self,
+                    Value::Array(..)
+                        | Value::LazyList(_)
+                        | Value::Range(_, _)
+                        | Value::RangeExcl(_, _)
+                        | Value::RangeExclStart(_, _)
+                        | Value::RangeExclBoth(_, _)
+                        | Value::GenericRange { .. }
+                        | Value::Capture { .. }
+                ) || matches!(
+                    self,
+                    Value::Package(name)
+                        if matches!(
+                            name.as_str(),
+                            "Array" | "List" | "Range" | "Buf" | "Blob" | "Capture"
+                        )
+                )
+            }
+            "Map" | "Associative" => {
+                matches!(
+                    self,
+                    Value::Hash(_)
+                        | Value::Pair(_, _)
+                        | Value::ValuePair(_, _)
+                        | Value::Set(_)
+                        | Value::Bag(_)
+                        | Value::Mix(_)
+                        | Value::Capture { .. }
+                ) || matches!(
+                    self,
+                    Value::Package(name)
+                        if matches!(
+                            name.as_str(),
+                            "Hash" | "Map" | "Pair" | "Set" | "Bag" | "Mix" | "QuantHash" | "Capture"
+                        )
+                )
+            }
             "Iterable" => matches!(self, Value::Array(..) | Value::LazyList(_) | Value::Hash(_)),
             "Pod::Block" => matches!(
                 self,
