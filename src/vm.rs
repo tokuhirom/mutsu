@@ -39,6 +39,8 @@ pub(crate) struct VM {
     stack: Vec<Value>,
     locals: Vec<Value>,
     in_smartmatch_rhs: bool,
+    /// Tracks the last value passed to SetTopic, used as the REPL display value.
+    last_topic_value: Option<Value>,
 }
 
 impl VM {
@@ -80,6 +82,7 @@ impl VM {
             stack: Vec::new(),
             locals: Vec::new(),
             in_smartmatch_rhs: false,
+            last_topic_value: None,
         }
     }
 
@@ -98,8 +101,6 @@ impl VM {
             }
         }
         self.load_state_locals(code);
-        // Save the previous topic so we can detect if it was set during this run
-        let prev_topic = self.interpreter.env().get("_").cloned();
         let mut ip = 0;
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
@@ -118,13 +119,7 @@ impl VM {
             }
         }
         self.sync_state_locals(code);
-        let cur_topic = self.interpreter.env().get("_").cloned();
-        let last_value = if cur_topic != prev_topic {
-            cur_topic
-        } else {
-            None
-        };
-        (self.interpreter, Ok(last_value))
+        (self.interpreter, Ok(self.last_topic_value))
     }
 
     /// Run compiled bytecode without consuming self.
@@ -367,6 +362,7 @@ impl VM {
             }
             OpCode::SetTopic => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
+                self.last_topic_value = Some(val.clone());
                 self.interpreter.env_mut().insert("_".to_string(), val);
                 *ip += 1;
             }

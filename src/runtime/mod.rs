@@ -155,7 +155,7 @@ struct RegexPattern {
 }
 
 #[derive(Clone, Default)]
-struct RegexCaptures {
+pub(crate) struct RegexCaptures {
     named: HashMap<String, Vec<String>>,
     positional: Vec<String>,
     matched: String,
@@ -244,6 +244,9 @@ pub struct Interpreter {
     exit_code: i64,
     /// When true, output is flushed to real stdout immediately (for Proc::Async children).
     immediate_stdout: bool,
+    /// Tracks whether any output was emitted (useful when immediate_stdout
+    /// skips the buffer).
+    output_emitted: bool,
     bailed_out: bool,
     functions: HashMap<String, FunctionDef>,
     proto_functions: HashMap<String, FunctionDef>,
@@ -931,6 +934,7 @@ impl Interpreter {
             halted: false,
             exit_code: 0,
             immediate_stdout: false,
+            output_emitted: false,
             bailed_out: false,
             functions: HashMap::new(),
             proto_functions: HashMap::new(),
@@ -1249,14 +1253,27 @@ impl Interpreter {
         &self.output
     }
 
+    /// Clear the output buffer and reset the output-emitted flag.
+    pub fn clear_output(&mut self) {
+        self.output.clear();
+        self.output_emitted = false;
+    }
+
+    /// Returns true if any output was emitted since the last `clear_output`.
+    pub fn has_output_emitted(&self) -> bool {
+        self.output_emitted
+    }
+
     /// Write to the output buffer and also flush to real stdout
     /// when not inside a subtest.
     pub(crate) fn emit_output(&mut self, text: &str) {
-        self.output.push_str(text);
+        self.output_emitted = true;
         if self.subtest_depth == 0 && self.immediate_stdout {
             use std::io::Write;
             let _ = std::io::stdout().write_all(text.as_bytes());
             let _ = std::io::stdout().flush();
+        } else {
+            self.output.push_str(text);
         }
     }
 
@@ -1378,6 +1395,7 @@ impl Interpreter {
             halted: false,
             exit_code: 0,
             immediate_stdout: false,
+            output_emitted: false,
             bailed_out: false,
             functions: self.functions.clone(),
             proto_functions: self.proto_functions.clone(),

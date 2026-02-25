@@ -109,6 +109,7 @@ roast/S04-statements/quietly.t
 roast/S04-statements/repeat.t
 roast/S04-statements/unless.t
 roast/S04-statements/until.t
+roast/S05-grammar/example.t
 roast/S05-grammar/namespace-6e.t
 roast/S05-grammar/protos.t
 roast/S05-grammar/ws.t
@@ -130,6 +131,7 @@ roast/S05-metasyntax/unicode-property-pair.t
 roast/S05-metasyntax/unknown.t
 roast/S05-modifier/Perl_10.t
 roast/S05-modifier/overlapping.t
+roast/S05-modifier/pos.t
 roast/S05-modifier/repetition-exhaustive.t
 roast/S05-modifier/samemark.t
 roast/S05-modifier/sigspace.t

@@ -21,6 +21,8 @@ struct MatchAdverbs {
     samemark: bool,
     sigspace: bool,
     perl5: bool,
+    pos: bool,
+    continue_: bool,
 }
 
 fn is_regex_quote_open(ch: char) -> bool {
@@ -84,7 +86,13 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             r = after;
         }
 
-        if name == "ex" || name == "exhaustive" || name == "ov" || name == "overlap" {
+        if name == "ex"
+            || name == "exhaustive"
+            || name == "ov"
+            || name == "overlap"
+            || name == "g"
+            || name == "global"
+        {
             adverbs.exhaustive = true;
         } else if name == "i" || name == "ignorecase" {
             adverbs.ignore_case = true;
@@ -95,6 +103,10 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             adverbs.ignore_mark = true; // :mm implies :m
         } else if name == "s" || name == "sigspace" {
             adverbs.sigspace = true;
+        } else if name == "p" || name == "pos" {
+            adverbs.pos = true;
+        } else if name == "c" || name == "continue" {
+            adverbs.continue_ = true;
         } else if name.eq_ignore_ascii_case("p5") {
             adverbs.perl5 = true;
         } else if name == "x" {
@@ -146,6 +158,14 @@ fn parse_compact_match_adverbs<'a>(input: &'a str, adverbs: &mut MatchAdverbs) -
                 }
                 'm' => {
                     adverbs.ignore_mark = true;
+                    true
+                }
+                'p' => {
+                    adverbs.pos = true;
+                    true
+                }
+                'c' => {
+                    adverbs.continue_ = true;
                     true
                 }
                 _ => false,
@@ -429,14 +449,21 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             if !adverbs.perl5 {
                 validate_regex_pattern_or_perror(pattern)?;
             }
-            if adverbs.exhaustive || adverbs.repeat.is_some() || adverbs.perl5 {
+            let has_adverbs = adverbs.exhaustive
+                || adverbs.repeat.is_some()
+                || adverbs.perl5
+                || adverbs.pos
+                || adverbs.continue_;
+            if has_adverbs {
+                let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                 return Ok((
                     rest,
                     Expr::Literal(Value::RegexWithAdverbs {
-                        pattern: pattern.to_string(),
+                        pattern,
                         exhaustive: adverbs.exhaustive,
                         repeat: adverbs.repeat,
                         perl5: adverbs.perl5,
+                        pos: adverbs.pos,
                     }),
                 ));
             }
@@ -739,18 +766,24 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     if !adverbs.perl5 {
                         validate_regex_pattern_or_perror(&pattern)?;
                     }
-                    if adverbs.exhaustive || adverbs.repeat.is_some() || adverbs.perl5 {
-                        return Ok((
-                            rest,
-                            Expr::Literal(Value::RegexWithAdverbs {
-                                pattern,
-                                exhaustive: adverbs.exhaustive,
-                                repeat: adverbs.repeat,
-                                perl5: adverbs.perl5,
-                            }),
-                        ));
-                    }
-                    return Ok((rest, Expr::Literal(Value::Regex(pattern))));
+                    let has_adverbs = adverbs.exhaustive
+                        || adverbs.repeat.is_some()
+                        || adverbs.perl5
+                        || adverbs.pos
+                        || adverbs.continue_;
+                    // m// always matches against $_ (unlike rx//)
+                    let regex_val = if has_adverbs {
+                        Value::RegexWithAdverbs {
+                            pattern,
+                            exhaustive: adverbs.exhaustive,
+                            repeat: adverbs.repeat,
+                            perl5: adverbs.perl5,
+                            pos: adverbs.pos,
+                        }
+                    } else {
+                        Value::Regex(pattern)
+                    };
+                    return Ok((rest, Expr::MatchRegex(regex_val)));
                 }
             }
         }
