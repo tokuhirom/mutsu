@@ -388,6 +388,7 @@ impl Interpreter {
                 index,
             };
             self.env.insert(format!("Order::{}", key), enum_val.clone());
+            self.env.insert(key.clone(), enum_val);
         }
     }
 
@@ -603,7 +604,9 @@ impl Interpreter {
         };
         mixins.insert(format!("__mutsu_role__{}", role_name), Value::Bool(true));
 
-        for (idx, (attr_name, _is_public, default_expr)) in role.attributes.iter().enumerate() {
+        for (idx, (attr_name, _is_public, default_expr, _is_rw)) in
+            role.attributes.iter().enumerate()
+        {
             let value = if let Some(arg) = role_args.get(idx) {
                 arg.clone()
             } else if let Some(default_expr) = default_expr {
@@ -724,12 +727,14 @@ impl Interpreter {
                 let is_capture_param = pd.name == "_capture";
                 let is_subsig_capture = pd.name == "__subsig__" && pd.sub_signature.is_some();
                 let arg_for_checks: Option<Value> = if pd.slurpy || is_capture_param {
-                    // For single-star slurpy (*@), flatten array arguments
+                    // For single-star slurpy (*@), flatten list arguments but preserve
+                    // itemized Arrays ($[...] / .item) as single positional values.
                     let mut items = Vec::new();
                     for arg in &args[i..] {
                         let arg = unwrap_varref_value(arg.clone());
                         if !pd.double_slurpy
-                            && let Value::Array(arr, ..) = &arg
+                            && let Value::Array(arr, is_array) = &arg
+                            && !*is_array
                         {
                             items.extend(arr.iter().cloned());
                             continue;
@@ -830,7 +835,7 @@ impl Interpreter {
                             .unwrap_or(false),
                         expr => self
                             .eval_block_value(&[Stmt::Expr(expr.clone())])
-                            .map(|v| v.truthy())
+                            .map(|v| self.smart_match(arg, &v))
                             .unwrap_or(false),
                     };
                     self.env = saved;
@@ -858,23 +863,59 @@ impl Interpreter {
             .collect();
         let positional_params: Vec<&ParamDef> =
             filtered_params.iter().filter(|p| !p.named).collect();
+        let positional_arg_count = args
+            .iter()
+            .filter(|arg| !matches!(arg, Value::Pair(..)))
+            .count();
         let mut required = 0usize;
-        let mut has_slurpy = false;
+        let mut has_positional_slurpy = false;
+        let mut has_hash_slurpy = false;
         for pd in &positional_params {
             if pd.slurpy {
-                has_slurpy = true;
+                if pd.name.starts_with('%') || pd.sigilless {
+                    has_hash_slurpy = true;
+                } else {
+                    has_positional_slurpy = true;
+                }
             } else {
                 required += 1;
             }
         }
-        if has_slurpy {
-            if args.len() < required {
+        if has_positional_slurpy {
+            if positional_arg_count < required {
                 return false;
             }
-        } else if args.len() != required {
+        } else if positional_arg_count != required {
             return false;
         }
-        self.args_match_param_types(args, &filtered_params)
+        if !has_hash_slurpy {
+            let named_params: std::collections::HashSet<&str> = filtered_params
+                .iter()
+                .filter(|p| p.named)
+                .map(|p| p.name.as_str())
+                .collect();
+            for arg in args {
+                if let Value::Pair(key, _) = arg
+                    && !named_params.contains(key.as_str())
+                {
+                    return false;
+                }
+            }
+        }
+        if !self.args_match_param_types(args, &filtered_params) {
+            return false;
+        }
+        true
+    }
+
+    /// Create an error for calling a sub with empty signature `()` with arguments.
+    pub(crate) fn reject_args_for_empty_sig(args: &[Value]) -> RuntimeError {
+        if let Some(Value::Pair(k, _)) = args.iter().find(|a| matches!(a, Value::Pair(..))) {
+            return RuntimeError::new(format!("Unexpected named argument '{}' passed", k));
+        }
+        RuntimeError::new(
+            "Too many positionals passed; expected 0 arguments but got more".to_string(),
+        )
     }
 
     pub(crate) fn bind_function_args_values(
@@ -890,15 +931,40 @@ impl Interpreter {
         let arg_sources = self.take_pending_call_arg_sources();
         let mut rw_bindings = Vec::new();
         if param_defs.is_empty() {
-            // Legacy path: just bind by position
-            for (i, param) in params.iter().enumerate() {
-                if let Some(value) = plain_args.get(i) {
-                    self.bind_param_value(param, value.clone());
-                } else if param.starts_with('^') {
-                    return Err(RuntimeError::new(format!(
-                        "Missing required implicit placeholder parameter ${}",
-                        param
-                    )));
+            if params.is_empty() {
+                // No param_defs and no placeholder params — nothing to bind.
+                // Argument rejection (for named subs with empty signature) is handled
+                // by callers that set `empty_sig` on FunctionDef / CompiledFunction.
+                return Ok(rw_bindings);
+            }
+            // Legacy path: bind positional placeholders ($^a, $^b) by position,
+            // and named placeholders ($:name) by matching Pair arg keys.
+            let mut positional_idx = 0usize;
+            for param in params.iter() {
+                if let Some(key) = param.strip_prefix(':') {
+                    // Named placeholder: match by Pair key
+                    if let Some(Value::Pair(_, val)) = plain_args
+                        .iter()
+                        .find(|a| matches!(a, Value::Pair(k, _) if k == key))
+                    {
+                        self.bind_param_value(param, *val.clone());
+                    }
+                } else {
+                    // Positional placeholder: skip Pair args
+                    while positional_idx < plain_args.len()
+                        && matches!(&plain_args[positional_idx], Value::Pair(..))
+                    {
+                        positional_idx += 1;
+                    }
+                    if positional_idx < plain_args.len() {
+                        self.bind_param_value(param, plain_args[positional_idx].clone());
+                        positional_idx += 1;
+                    } else if param.starts_with('^') {
+                        return Err(RuntimeError::new(format!(
+                            "Missing required implicit placeholder parameter ${}",
+                            param
+                        )));
+                    }
                 }
             }
             return Ok(rw_bindings);
@@ -953,10 +1019,19 @@ impl Interpreter {
                 } else {
                     let mut items = Vec::new();
                     while positional_idx < args.len() {
-                        // *@ (flattening slurpy): flatten array/list args
+                        // *@ (flattening slurpy): flatten list args but preserve
+                        // itemized Arrays ($[...] / .item) as single values.
+                        // Skip Pair values — they are named args for *%_ or will be rejected
                         match unwrap_varref_value(args[positional_idx].clone()) {
-                            Value::Array(arr, ..) => {
-                                items.extend(arr.iter().cloned());
+                            Value::Pair(..) => {
+                                // Named arg — leave for *%_ slurpy or post-loop check
+                            }
+                            Value::Array(arr, is_array) => {
+                                if is_array {
+                                    items.push(Value::Array(arr.clone(), true));
+                                } else {
+                                    items.extend(arr.iter().cloned());
+                                }
                             }
                             other => {
                                 items.push(other);
@@ -978,13 +1053,18 @@ impl Interpreter {
                         bind_sub_signature_from_value(self, sub_params, &slurpy_value)?;
                     }
                 }
-            } else if pd.named {
+            } else if pd.named || pd.name.starts_with(':') {
                 // Look for a matching named argument (Pair) in args
+                let match_key = if pd.name.starts_with(':') {
+                    &pd.name[1..]
+                } else {
+                    &pd.name
+                };
                 let mut found = false;
                 for arg in args {
                     let arg = unwrap_varref_value(arg.clone());
                     if let Value::Pair(key, val) = arg
-                        && key == pd.name
+                        && key == match_key
                     {
                         self.bind_param_value(&pd.name, *val.clone());
                         if let Some(sub_params) = &pd.sub_signature {
@@ -1184,6 +1264,49 @@ impl Interpreter {
                         bind_sub_signature_from_value(self, sub_params, &target)?;
                     }
                 }
+            }
+        }
+        // Check for unexpected named arguments when no hash/capture slurpy is present
+        // Skip this check when any param has a sub-signature (unpacking dispatch)
+        let has_hash_slurpy = param_defs
+            .iter()
+            .any(|pd| pd.slurpy && (pd.name.starts_with('%') || pd.sigilless));
+        let has_sub_sig = param_defs.iter().any(|pd| pd.sub_signature.is_some());
+        if !has_hash_slurpy && !has_sub_sig {
+            for arg in args.iter() {
+                let arg = unwrap_varref_value(arg.clone());
+                if let Value::Pair(key, _) = arg {
+                    // Check if this named arg was consumed by a named param or colon placeholder
+                    let consumed = param_defs
+                        .iter()
+                        .any(|pd| (pd.named && pd.name == key) || pd.name == format!(":{}", key));
+                    if !consumed {
+                        return Err(RuntimeError::new(format!(
+                            "Unexpected named argument '{}' passed",
+                            key
+                        )));
+                    }
+                }
+            }
+        }
+        // Check for extra positional arguments when no array/capture slurpy is present
+        let has_array_slurpy = param_defs
+            .iter()
+            .any(|pd| pd.slurpy && (!pd.name.starts_with('%') || pd.sigilless));
+        if !has_array_slurpy && !has_sub_sig {
+            let positional_param_count = param_defs
+                .iter()
+                .filter(|pd| !pd.named && !pd.slurpy)
+                .count();
+            let positional_arg_count = args
+                .iter()
+                .filter(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
+                .count();
+            if positional_arg_count > positional_param_count {
+                return Err(RuntimeError::new(format!(
+                    "Too many positionals passed; expected {} arguments but got {}",
+                    positional_param_count, positional_arg_count
+                )));
             }
         }
         Ok(rw_bindings)

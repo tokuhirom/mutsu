@@ -295,6 +295,12 @@ impl VM {
                     Value::Str(s) => s.clone(),
                     _ => unreachable!("SetGlobal name must be a string constant"),
                 };
+                if self.interpreter.strict_mode
+                    && !name.contains("::")
+                    && !self.interpreter.env().contains_key(&name)
+                {
+                    return Err(self.strict_undeclared_error(&name));
+                }
                 let val = self.stack.pop().unwrap();
                 let val = if name.starts_with('%') {
                     runtime::coerce_to_hash(val)
@@ -452,7 +458,7 @@ impl VM {
 
             // -- Three-way comparison --
             OpCode::Spaceship => {
-                self.exec_spaceship_op();
+                self.exec_spaceship_op()?;
                 *ip += 1;
             }
             OpCode::Before | OpCode::After => {
@@ -542,7 +548,7 @@ impl VM {
 
             // -- Mixin / Type check --
             OpCode::ButMixin => {
-                self.exec_but_mixin_op();
+                self.exec_but_mixin_op()?;
                 *ip += 1;
             }
             OpCode::Isa => {
@@ -800,7 +806,9 @@ impl VM {
                 *ip += 1;
             }
             OpCode::Note(n) => {
+                self.sync_env_from_locals(code);
                 self.exec_note_op(*n)?;
+                self.sync_locals_from_env(code);
                 *ip += 1;
             }
 
@@ -899,11 +907,11 @@ impl VM {
                 *ip += 1;
             }
             OpCode::DeleteIndexNamed(name_idx) => {
-                self.exec_delete_index_named_op(code, *name_idx);
+                self.exec_delete_index_named_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::DeleteIndexExpr => {
-                self.exec_delete_index_expr_op();
+                self.exec_delete_index_expr_op()?;
                 *ip += 1;
             }
 
@@ -956,7 +964,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::IndexAssignExprNamed(name_idx) => {
-                self.exec_index_assign_expr_named_op(code, *name_idx);
+                self.exec_index_assign_expr_named_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::IndexAssignExprNested(name_idx) => {
@@ -1070,12 +1078,14 @@ impl VM {
                 catch_start,
                 control_start,
                 body_end,
+                explicit_catch,
             } => {
                 self.exec_try_catch_op(
                     code,
                     *catch_start,
                     *control_start,
                     *body_end,
+                    *explicit_catch,
                     ip,
                     compiled_fns,
                 )?;
@@ -1113,6 +1123,10 @@ impl VM {
                 self.exec_exists_expr_op();
                 *ip += 1;
             }
+            OpCode::ExistsIndexExpr => {
+                self.exec_exists_index_expr_op();
+                *ip += 1;
+            }
 
             // -- Reduction --
             OpCode::Reduction(op_idx) => {
@@ -1134,15 +1148,22 @@ impl VM {
             OpCode::Subst {
                 pattern_idx,
                 replacement_idx,
+                samemark,
             } => {
-                self.exec_subst_op(code, *pattern_idx, *replacement_idx)?;
+                self.exec_subst_op(code, *pattern_idx, *replacement_idx, *samemark)?;
                 *ip += 1;
             }
             OpCode::NonDestructiveSubst {
                 pattern_idx,
                 replacement_idx,
+                samemark,
             } => {
-                self.exec_non_destructive_subst_op(code, *pattern_idx, *replacement_idx)?;
+                self.exec_non_destructive_subst_op(
+                    code,
+                    *pattern_idx,
+                    *replacement_idx,
+                    *samemark,
+                )?;
                 *ip += 1;
             }
             OpCode::Transliterate { from_idx, to_idx } => {
@@ -1285,6 +1306,10 @@ impl VM {
             }
             OpCode::UseModule(name_idx) => {
                 self.exec_use_module_op(code, *name_idx)?;
+                *ip += 1;
+            }
+            OpCode::NoModule(name_idx) => {
+                self.exec_no_module_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::NeedModule(name_idx) => {

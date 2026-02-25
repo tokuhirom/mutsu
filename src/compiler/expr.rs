@@ -36,16 +36,28 @@ impl Compiler {
                 } else if let Some(&slot) = self.local_map.get(name.as_str()) {
                     self.code.emit(OpCode::GetLocal(slot));
                 } else {
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let name_idx = self
+                        .code
+                        .add_constant(Value::Str(self.qualify_variable_name(name)));
                     self.code.emit(OpCode::GetGlobal(name_idx));
                 }
             }
             Expr::ArrayVar(name) => {
-                let name_idx = self.code.add_constant(Value::Str(format!("@{}", name)));
+                let var_name = if self.local_map.contains_key(name) {
+                    format!("@{}", name)
+                } else {
+                    self.qualify_variable_name(&format!("@{}", name))
+                };
+                let name_idx = self.code.add_constant(Value::Str(var_name));
                 self.code.emit(OpCode::GetArrayVar(name_idx));
             }
             Expr::HashVar(name) => {
-                let name_idx = self.code.add_constant(Value::Str(format!("%{}", name)));
+                let var_name = if self.local_map.contains_key(name) {
+                    format!("%{}", name)
+                } else {
+                    self.qualify_variable_name(&format!("%{}", name))
+                };
+                let name_idx = self.code.add_constant(Value::Str(var_name));
                 self.code.emit(OpCode::GetHashVar(name_idx));
             }
             Expr::BareWord(name) => {
@@ -755,9 +767,15 @@ impl Compiler {
                         let key_idx = self.code.add_constant(Value::Str(key.clone()));
                         self.code.emit(OpCode::ExistsEnvIndex(key_idx));
                     } else {
-                        self.compile_expr(inner);
-                        self.code.emit(OpCode::ExistsExpr);
+                        self.compile_expr(target);
+                        self.compile_expr(index);
+                        self.code.emit(OpCode::ExistsIndexExpr);
                     }
+                }
+                Expr::Index { target, index } => {
+                    self.compile_expr(target);
+                    self.compile_expr(index);
+                    self.code.emit(OpCode::ExistsIndexExpr);
                 }
                 _ => {
                     self.compile_expr(inner);
@@ -782,24 +800,28 @@ impl Compiler {
             Expr::Subst {
                 pattern,
                 replacement,
+                samemark,
             } => {
                 let pattern_idx = self.code.add_constant(Value::Str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::Str(replacement.clone()));
                 self.code.emit(OpCode::Subst {
                     pattern_idx,
                     replacement_idx,
+                    samemark: *samemark,
                 });
             }
             // S/// non-destructive substitution
             Expr::NonDestructiveSubst {
                 pattern,
                 replacement,
+                samemark,
             } => {
                 let pattern_idx = self.code.add_constant(Value::Str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::Str(replacement.clone()));
                 self.code.emit(OpCode::NonDestructiveSubst {
                     pattern_idx,
                     replacement_idx,
+                    samemark: *samemark,
                 });
             }
             // tr/// transliteration
@@ -984,6 +1006,12 @@ impl Compiler {
                         self.code.emit(OpCode::GetBareWord(name_idx));
                     }
                 }
+                Stmt::RoleDecl { name, .. } => {
+                    // Register the role and return the role type object.
+                    self.compile_stmt(stmt);
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::GetBareWord(name_idx));
+                }
                 Stmt::EnumDecl { name, .. } if name.is_empty() => {
                     // Anonymous enum: RegisterEnum pushes the Map result
                     self.compile_stmt(stmt);
@@ -1030,6 +1058,7 @@ impl Compiler {
             Expr::AnonSubParams {
                 params,
                 param_defs,
+                return_type,
                 body,
             } => {
                 // Validate for placeholder conflicts
@@ -1044,6 +1073,7 @@ impl Compiler {
                     name_expr: None,
                     params: params.clone(),
                     param_defs: param_defs.clone(),
+                    return_type: return_type.clone(),
                     signature_alternates: Vec::new(),
                     body: body.clone(),
                     multi: false,
@@ -1063,6 +1093,7 @@ impl Compiler {
                         vec![param.clone()]
                     },
                     param_defs: Vec::new(),
+                    return_type: None,
                     signature_alternates: Vec::new(),
                     body: body.clone(),
                     multi: false,

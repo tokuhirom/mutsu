@@ -30,6 +30,18 @@ fn typed_default_expr(type_name: &str) -> Expr {
     }
 }
 
+fn parse_sigilless_decl_name(input: &str) -> PResult<'_, String> {
+    super::parse_sub_name_pub(input)
+}
+
+fn register_term_symbol_from_decl_name(name: &str) {
+    if let Some(callable_name) = name.strip_prefix('&') {
+        super::simple::register_user_callable_term_symbol(callable_name);
+    } else {
+        super::simple::register_user_term_symbol(name);
+    }
+}
+
 /// Parse a `use` statement.
 pub(super) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("use", input).ok_or_else(|| PError::expected("use statement"))?;
@@ -119,6 +131,29 @@ pub(super) fn need_stmt(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, Stmt::Need { module }))
 }
 
+/// Parse a `no` statement.
+pub(super) fn no_stmt(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("no", input).ok_or_else(|| PError::expected("no statement"))?;
+    let (rest, _) = ws1(rest)?;
+    let (rest, module) = qualified_ident(rest)?;
+    let (rest, _) = ws(rest)?;
+
+    let (rest, arg) = if rest.starts_with(';') || rest.is_empty() || rest.starts_with('}') {
+        (rest, None)
+    } else if rest.starts_with('<') {
+        let (r, expr) = super::super::primary::primary(rest)?;
+        (r, Some(expr))
+    } else {
+        let (r, expr) = expression(rest)?;
+        (r, Some(expr))
+    };
+
+    let (rest, _) = ws(rest)?;
+    let (rest, _) = opt_char(rest, ';');
+    let _ = arg;
+    Ok((rest, Stmt::No { module }))
+}
+
 /// Parse `my`, `our`, or `state` variable declaration.
 pub(super) fn my_decl(input: &str) -> PResult<'_, Stmt> {
     my_decl_inner(input, true)
@@ -167,16 +202,20 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         return sub_decl_body(r, false, false, false);
     }
 
-    // my method name(...) { ... }
+    // my/our method name(...) { ... }
     if let Some(r) = keyword("method", rest) {
         let (r, _) = ws1(r)?;
-        return method_decl_body(r, false);
+        return method_decl_body(r, false, is_our);
     }
 
     // my class Name is Parent { ... }
     if let Some(r) = keyword("class", rest) {
         let (r, _) = ws1(r)?;
         return class_decl_body(r);
+    }
+    // my grammar Name { ... }
+    if keyword("grammar", rest).is_some() {
+        return super::class::grammar_decl(rest);
     }
     // my role Name[...] { ... }
     if keyword("role", rest).is_some() {
@@ -215,7 +254,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 
     // Sigilless variable: my \name = expr / my \name := expr / my \name ::= expr
     if let Some(r) = rest.strip_prefix('\\') {
-        let (r, name) = ident(r)?;
+        let (r, name) = parse_sigilless_decl_name(r)?;
+        register_term_symbol_from_decl_name(&name);
         let (r, _) = ws(r)?;
         if let Some(r) = r.strip_prefix("::=").or_else(|| r.strip_prefix(":=")) {
             let (r, _) = ws(r)?;
@@ -306,7 +346,8 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 
     // Sigilless variable after type: my Int \name = expr / my Int \name := expr / ::=
     if let Some(r) = rest.strip_prefix('\\') {
-        let (r, name) = ident(r)?;
+        let (r, name) = parse_sigilless_decl_name(r)?;
+        register_term_symbol_from_decl_name(&name);
         let (r, _) = ws(r)?;
         if let Some(r) = r.strip_prefix("::=").or_else(|| r.strip_prefix(":=")) {
             let (r, _) = ws(r)?;
@@ -382,6 +423,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         let (r, n) = ident(rest)?;
         (r, n)
     };
+    register_term_symbol_from_decl_name(&name);
 
     let (rest, _) = ws(rest)?;
 
@@ -436,10 +478,33 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 
     // Assignment
     if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {
-        #[cfg(test)]
-        eprintln!("my_decl: taking assignment branch");
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
+        // class-scope routine aliasing form:
+        //   our &name = method name(...) { ... }
+        // This should register as a real method declaration (with is_our),
+        // not as a plain code-variable assignment.
+        if is_our && is_code {
+            if let Some(r) = keyword("method", rest) {
+                let (r, _) = ws1(r)?;
+                let (r, stmt) = method_decl_body(r, false, true)?;
+                if apply_modifier {
+                    return parse_statement_modifier(r, stmt);
+                }
+                return Ok((r, stmt));
+            }
+            if let Some(r) = keyword("multi", rest) {
+                let (r, _) = ws1(r)?;
+                if let Some(r) = keyword("method", r) {
+                    let (r, _) = ws1(r)?;
+                    let (r, stmt) = method_decl_body(r, true, true)?;
+                    if apply_modifier {
+                        return parse_statement_modifier(r, stmt);
+                    }
+                    return Ok((r, stmt));
+                }
+            }
+        }
         let (rest, expr) = parse_assign_expr_or_comma(rest)?;
         let stmt = Stmt::VarDecl {
             name,
@@ -495,7 +560,20 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     // Binding := or ::=
     if let Some(stripped) = rest.strip_prefix("::=").or_else(|| rest.strip_prefix(":=")) {
         let (rest, _) = ws(stripped)?;
-        let (rest, expr) = parse_assign_expr_or_comma(rest)?;
+        let (mut rest, mut expr) = parse_assign_expr_or_comma(rest)?;
+        let (tail, _) = ws(rest)?;
+        if let Expr::BareWord(name) = &expr
+            && !tail.is_empty()
+            && !tail.starts_with(';')
+            && !tail.starts_with('}')
+            && let Ok((r_after, arg_expr)) = parse_assign_expr_or_comma(tail)
+        {
+            expr = Expr::Call {
+                name: name.clone(),
+                args: vec![arg_expr],
+            };
+            rest = r_after;
+        }
         let stmt = Stmt::VarDecl {
             name,
             expr,
@@ -884,7 +962,11 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
     // Keep the sigil in the stored name so lookup semantics match normal
     // declarations (`my @x` stores `@x`, not bare `x`).
     let sigil = rest.as_bytes().first().copied().unwrap_or(0);
-    let (rest, name) = if matches!(sigil, b'$' | b'@' | b'%' | b'&') {
+    let (rest, name) = if let Some(r) = rest.strip_prefix('\\') {
+        let (r, n) = parse_sigilless_decl_name(r)?;
+        register_term_symbol_from_decl_name(&n);
+        (r, n)
+    } else if matches!(sigil, b'$' | b'@' | b'%' | b'&') {
         let prefix = match sigil {
             b'@' => "@",
             b'%' => "%",
@@ -892,9 +974,13 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
             _ => "",
         };
         let (r, n) = var_name(rest)?;
-        (r, format!("{prefix}{n}"))
+        let name = format!("{prefix}{n}");
+        register_term_symbol_from_decl_name(&name);
+        (r, name)
     } else {
-        ident(rest)?
+        let (r, n) = ident(rest)?;
+        register_term_symbol_from_decl_name(&n);
+        (r, n)
     };
     let (rest, _) = ws(rest)?;
     if rest.starts_with('=') || rest.starts_with("::=") || rest.starts_with(":=") {

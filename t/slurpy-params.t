@@ -1,5 +1,5 @@
 use Test;
-plan 4;
+plan 6;
 
 sub collect(*@args) {
     return @args.elems;
@@ -22,3 +22,10 @@ sub sum-all(*@nums) {
     return $total;
 }
 is sum-all(1, 2, 3, 4), 10, 'slurpy args can be iterated';
+
+is collect($[1, 2, 3]), 1, 'slurpy keeps itemized array as one positional argument';
+
+sub first-elems(*@args) {
+    return @args[0].elems;
+}
+is first-elems($[1, 2, 3]), 3, 'itemized array stays Array inside slurpy parameter';

@@ -24,6 +24,7 @@ pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
         "infix"
             | "prefix"
             | "postfix"
+            | "term"
             | "circumfix"
             | "postcircumfix"
             | "trait_mod"
@@ -267,21 +268,22 @@ pub(super) fn sub_decl_body(
         let (rest, name) = parse_sub_name(input)?;
         // Register user-declared sub so it can be called without parens later
         super::simple::register_user_sub(&name);
+        super::simple::register_user_callable_term_symbol(&name);
         (rest, name, None)
     };
     let (rest, _) = ws(rest)?;
 
     // Parse params
-    let (rest, (params, param_defs)) = if rest.starts_with('(') {
+    let (rest, (params, param_defs, return_type)) = if rest.starts_with('(') {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
-        let (r, pd) = parse_param_list(r)?;
+        let (r, (pd, rt)) = parse_param_list_with_return(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
         let names: Vec<String> = pd.iter().map(|p| p.name.clone()).collect();
-        (r, (names, pd))
+        (r, (names, pd, rt))
     } else {
-        (rest, (Vec::new(), Vec::new()))
+        (rest, (Vec::new(), Vec::new(), None))
     };
 
     let (rest, _) = ws(rest)?;
@@ -331,6 +333,7 @@ pub(super) fn sub_decl_body(
                     name_expr,
                     params,
                     param_defs,
+                    return_type,
                     signature_alternates,
                     body: Vec::new(),
                     multi,
@@ -371,6 +374,7 @@ pub(super) fn sub_decl_body(
             name_expr,
             params,
             param_defs,
+            return_type,
             signature_alternates,
             body,
             multi,
@@ -446,14 +450,16 @@ pub(super) struct SubTraits {
     pub is_export: bool,
     pub is_test_assertion: bool,
     pub is_rw: bool,
+    pub return_type: Option<String>,
 }
 
-/// Parse sub/method traits like `is test-assertion`, `is export`, `returns Str`, etc.
+/// Parse sub/method traits like `is test-assertion`, `is export`, `returns Str`, `of Num`, etc.
 /// Returns `SubTraits` indicating which traits were found.
 pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
     let mut is_export = false;
     let mut is_test_assertion = false;
     let mut is_rw = false;
+    let mut return_type = None;
     loop {
         let (r, _) = ws(input)?;
         if r.starts_with('{') || r.is_empty() {
@@ -463,6 +469,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     is_export,
                     is_test_assertion,
                     is_rw,
+                    return_type,
                 },
             ));
         }
@@ -485,15 +492,25 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
         }
         if let Some(r) = keyword("returns", r) {
             let (r, _) = ws(r)?;
-            let (r, _type_name) =
+            let (r, type_name) =
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == ':')?;
+            return_type = Some(type_name.to_string());
+            input = r;
+            continue;
+        }
+        if let Some(r) = keyword("of", r) {
+            let (r, _) = ws(r)?;
+            let (r, type_name) =
+                take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == ':')?;
+            return_type = Some(type_name.to_string());
             input = r;
             continue;
         }
         if let Some(r) = r.strip_prefix("-->") {
             let (r, _) = ws(r)?;
-            let (r, _type_name) =
+            let (r, type_name) =
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == ':')?;
+            return_type = Some(type_name.to_string());
             input = r;
             continue;
         }
@@ -503,6 +520,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 is_export,
                 is_test_assertion,
                 is_rw,
+                return_type,
             },
         ));
     }
@@ -550,6 +568,7 @@ pub(super) fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
             multi_invocant = false;
             let (r, _) = ws(r)?;
             if r.starts_with(')') {
+                mark_params_as_invocant(&mut params);
                 return Ok((r, params));
             }
             let (r, mut p) = parse_single_param(r)?;
@@ -560,6 +579,10 @@ pub(super) fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
         }
         // Handle invocant marker ':'
         if let Some(r) = r.strip_prefix(':') {
+            // Mark all params parsed so far as invocant
+            for p in params.iter_mut() {
+                p.is_invocant = true;
+            }
             let (r, _) = ws(r)?;
             if r.starts_with(')') {
                 mark_params_as_invocant(&mut params);
@@ -678,6 +701,7 @@ pub(super) fn parse_param_list_with_return(
             multi_invocant = false;
             let (r, _) = ws(r)?;
             if r.starts_with(')') {
+                mark_params_as_invocant(&mut params);
                 return Ok((r, (params, return_type)));
             }
             let (r, mut p) = parse_single_param(r)?;
@@ -761,6 +785,7 @@ fn make_param(name: String) -> ParamDef {
         optional_marker: false,
         outer_sub_signature: None,
         code_signature: None,
+        is_invocant: false,
     }
 }
 
@@ -1567,10 +1592,10 @@ pub(super) fn method_decl(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         (r, false)
     };
-    method_decl_body(rest, multi)
+    method_decl_body(rest, multi, false)
 }
 
-pub(super) fn method_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
+pub(super) fn method_decl_body(input: &str, multi: bool, is_our: bool) -> PResult<'_, Stmt> {
     let (rest, is_private) = if let Some(rest) = input.strip_prefix('!') {
         (rest, true)
     } else {
@@ -1585,19 +1610,20 @@ pub(super) fn method_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
     };
     let (rest, _) = ws(rest)?;
 
-    let (rest, (params, param_defs)) = if rest.starts_with('(') {
+    let (rest, (params, param_defs, param_return_type)) = if rest.starts_with('(') {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
-        let (r, pd) = parse_param_list(r)?;
+        let (r, (pd, rt)) = parse_param_list_with_return(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
         let names: Vec<String> = pd.iter().map(|p| p.name.clone()).collect();
-        (r, (names, pd))
+        (r, (names, pd, rt))
     } else {
-        (rest, (Vec::new(), Vec::new()))
+        (rest, (Vec::new(), Vec::new(), None))
     };
 
     let (rest, traits) = parse_sub_traits(rest)?;
+    let return_type = traits.return_type.or(param_return_type);
     let (rest, body) = block(rest)?;
     Ok((
         rest,
@@ -1610,6 +1636,8 @@ pub(super) fn method_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
             multi,
             is_rw: traits.is_rw,
             is_private,
+            is_our,
+            return_type,
         },
     ))
 }

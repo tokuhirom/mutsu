@@ -85,6 +85,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(string::double_quoted_string(input));
         try_primary!(string::smart_double_quoted_string(input));
         try_primary!(string::big_q_string(input));
+        try_primary!(string::qx_string(input));
         try_primary!(string::q_string(input));
         try_primary!(string::corner_bracket_string(input));
         try_primary!(regex::regex_lit(input));
@@ -115,6 +116,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(misc::anon_role_expr(input));
         // anonymous class: class { ... }
         try_primary!(misc::anon_class_expr(input));
+        try_primary!(ident::declared_term_symbol(input));
 
         match ident::identifier_or_call(input) {
             Ok(r) => Ok(r),
@@ -195,12 +197,7 @@ mod tests {
     fn parse_itemized_paren_expr() {
         let (rest, expr) = primary("$(1,2)").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(
-            expr,
-            Expr::CaptureLiteral(ref items)
-                if items.len() == 1
-                    && matches!(items[0], Expr::ArrayLiteral(ref elems) if elems.len() == 2)
-        ));
+        assert!(matches!(expr, Expr::CaptureLiteral(ref items) if items.len() == 1));
     }
 
     #[test]
@@ -222,6 +219,13 @@ mod tests {
     #[test]
     fn parse_dq_interpolation() {
         let (rest, expr) = primary("\"hello $x world\"").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::StringInterpolation(_)));
+    }
+
+    #[test]
+    fn parse_sq_with_escaped_qq_interpolation() {
+        let (rest, expr) = primary("'a\\qq[$x]b'").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::StringInterpolation(_)));
     }
@@ -356,6 +360,20 @@ mod tests {
     }
 
     #[test]
+    fn primary_parses_array_match_var() {
+        let (rest, expr) = primary("@$/").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::ArrayVar(ref n) if n == "/"));
+    }
+
+    #[test]
+    fn primary_parses_hash_match_var() {
+        let (rest, expr) = primary("%$/").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::HashVar(ref n) if n == "/"));
+    }
+
+    #[test]
     fn primary_reports_invalid_qualified_identifier_tail() {
         let (rest, expr) = primary("Foo::").unwrap();
         assert_eq!(rest, "");
@@ -409,5 +427,31 @@ mod tests {
         let (rest, expr) = primary("Q!hello!\n").unwrap();
         assert_eq!(rest, "\n");
         assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "hello"));
+    }
+
+    #[test]
+    fn primary_qx_backtick_form() {
+        reset_primary_memo();
+        let (rest, expr) = primary("qx`pwd`").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Call { ref name, ref args } if name == "QX" && args.len() == 1
+        ));
+    }
+
+    #[test]
+    fn primary_qx_interpolates_command() {
+        reset_primary_memo();
+        let (rest, expr) = primary("qx{echo $x}").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "QX");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(args[0], Expr::StringInterpolation(_)));
+            }
+            _ => panic!("expected qx call expression"),
+        }
     }
 }

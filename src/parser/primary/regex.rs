@@ -11,6 +11,8 @@ struct MatchAdverbs {
     exhaustive: bool,
     repeat: Option<usize>,
     ignore_case: bool,
+    ignore_mark: bool,
+    samemark: bool,
     sigspace: bool,
     perl5: bool,
 }
@@ -76,10 +78,15 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             r = after;
         }
 
-        if name == "ex" || name == "exhaustive" {
+        if name == "ex" || name == "exhaustive" || name == "ov" || name == "overlap" {
             adverbs.exhaustive = true;
         } else if name == "i" || name == "ignorecase" {
             adverbs.ignore_case = true;
+        } else if name == "m" || name == "ignoremark" {
+            adverbs.ignore_mark = true;
+        } else if name == "mm" || name == "samemark" {
+            adverbs.samemark = true;
+            adverbs.ignore_mark = true; // :mm implies :m
         } else if name == "s" || name == "sigspace" {
             adverbs.sigspace = true;
         } else if name.eq_ignore_ascii_case("p5") {
@@ -131,6 +138,10 @@ fn parse_compact_match_adverbs<'a>(input: &'a str, adverbs: &mut MatchAdverbs) -
                     adverbs.exhaustive = true;
                     true
                 }
+                'm' => {
+                    adverbs.ignore_mark = true;
+                    true
+                }
                 _ => false,
             };
             if consumed {
@@ -146,6 +157,9 @@ fn parse_compact_match_adverbs<'a>(input: &'a str, adverbs: &mut MatchAdverbs) -
 fn apply_inline_match_adverbs(mut pattern: String, adverbs: &MatchAdverbs) -> String {
     if adverbs.ignore_case {
         pattern = format!(":i {pattern}");
+    }
+    if adverbs.ignore_mark {
+        pattern = format!(":m {pattern}");
     }
     if adverbs.sigspace {
         pattern = format!(":s {pattern}");
@@ -463,41 +477,56 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     }
 
     // s with arbitrary delimiter: s/pattern/replacement/, s^pattern^replacement^, etc.
+    // Also supports adverbs: s:mm/pattern/replacement/, s:i:g/pattern/replacement/
+    // Skip if 's' has been declared as a user sub — it should be parsed as a function call.
     if let Some(after_s) = input.strip_prefix('s')
-        && let Some(open_ch) = after_s.chars().next()
+        && !crate::parser::stmt::simple::is_user_declared_sub("s")
+        && let Some(first_ch) = after_s.chars().next()
     {
-        let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
-        // Don't treat s.identifier as substitution when the identifier is 2+ chars
-        // (likely a method call on bare 's'). Single-char like s.a.b. is still valid regex.
-        let looks_like_method = open_ch == '.'
-            && after_s.len() > 2
-            && after_s[1..].starts_with(|c: char| c.is_alphabetic() || c == '_')
-            && after_s[2..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-');
-        if is_delim && !looks_like_method {
-            let (close_ch, is_paired) = match open_ch {
-                '{' => ('}', true),
-                '[' => (']', true),
-                '(' => (')', true),
-                '<' => ('>', true),
-                other => (other, false),
-            };
-            let r = &after_s[open_ch.len_utf8()..];
-            if let Some((pattern, after_pat)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
-                // For paired delimiters, skip optional whitespace and opening delimiter
-                let r2 = if is_paired {
-                    let (r2, _) = ws(after_pat)?;
-                    r2.strip_prefix(open_ch).unwrap_or(r2)
-                } else {
-                    after_pat
+        // Parse optional adverbs between s and delimiter
+        let (spec, adverbs) = if first_ch == ':' {
+            parse_match_adverbs(after_s)?
+        } else {
+            (after_s, MatchAdverbs::default())
+        };
+        if let Some(open_ch) = spec.chars().next() {
+            let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
+            // Don't treat s.identifier as substitution when the identifier is 2+ chars
+            // (likely a method call on bare 's'). Single-char like s.a.b. is still valid regex.
+            let looks_like_method = open_ch == '.'
+                && spec.len() > 2
+                && spec[1..].starts_with(|c: char| c.is_alphabetic() || c == '_')
+                && spec[2..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-');
+            if is_delim && !looks_like_method {
+                let (close_ch, is_paired) = match open_ch {
+                    '{' => ('}', true),
+                    '[' => (']', true),
+                    '(' => (')', true),
+                    '<' => ('>', true),
+                    other => (other, false),
                 };
-                if let Some((replacement, rest)) = scan_to_delim(r2, open_ch, close_ch, is_paired) {
-                    return Ok((
-                        rest,
-                        Expr::Subst {
-                            pattern: pattern.to_string(),
-                            replacement: replacement.to_string(),
-                        },
-                    ));
+                let r = &spec[open_ch.len_utf8()..];
+                if let Some((pattern, after_pat)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
+                    // For paired delimiters, skip optional whitespace and opening delimiter
+                    let r2 = if is_paired {
+                        let (r2, _) = ws(after_pat)?;
+                        r2.strip_prefix(open_ch).unwrap_or(r2)
+                    } else {
+                        after_pat
+                    };
+                    if let Some((replacement, rest)) =
+                        scan_to_delim(r2, open_ch, close_ch, is_paired)
+                    {
+                        let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                        return Ok((
+                            rest,
+                            Expr::Subst {
+                                pattern,
+                                replacement: replacement.to_string(),
+                                samemark: adverbs.samemark,
+                            },
+                        ));
+                    }
                 }
             }
         }
@@ -532,16 +561,13 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     if let Some((replacement, rest)) =
                         scan_to_delim(r2, open_ch, close_ch, is_paired)
                     {
-                        let pattern = if adverbs.ignore_case {
-                            format!(":i {}", pattern)
-                        } else {
-                            pattern.to_string()
-                        };
+                        let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                         return Ok((
                             rest,
                             Expr::NonDestructiveSubst {
                                 pattern,
                                 replacement: replacement.to_string(),
+                                samemark: adverbs.samemark,
                             },
                         ));
                     }
@@ -589,6 +615,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 Expr::NonDestructiveSubst {
                     pattern: pattern.to_string(),
                     replacement: replacement.to_string(),
+                    samemark: false,
                 },
             ));
         }
@@ -645,7 +672,10 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // m/pattern/ or m{pattern} or m[pattern]
     // m with arbitrary delimiter: m/.../, m{...}, m[...], m^...^, m!...!, etc.
     // Also allow modifiers before delimiter: m:2x/.../, m:x(2)/.../, m:g:i/.../
-    if let Some(after_m) = input.strip_prefix('m') {
+    // Skip if 'm' has been declared as a user sub — it should be parsed as a function call.
+    if let Some(after_m) = input.strip_prefix('m')
+        && !crate::parser::stmt::simple::is_user_declared_sub("m")
+    {
         let (spec, mut adverbs) = parse_match_adverbs(after_m)?;
         let spec = parse_compact_match_adverbs(spec, &mut adverbs);
         if let Some(open_ch) = spec.chars().next() {

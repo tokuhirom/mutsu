@@ -40,6 +40,8 @@ pub struct SubData {
     pub(crate) assumed_positional: Vec<Value>,
     pub(crate) assumed_named: HashMap<String, Value>,
     pub id: u64,
+    /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
+    pub(crate) empty_sig: bool,
 }
 
 fn gcd(mut a: i64, mut b: i64) -> i64 {
@@ -162,6 +164,17 @@ pub enum Value {
     Uni {
         form: String,
         text: String,
+    },
+    /// A Proxy container with FETCH and STORE callbacks.
+    Proxy {
+        fetcher: Box<Value>,
+        storer: Box<Value>,
+    },
+    /// A parametric role type, e.g. `R1[C1]` or `R1[C1, C2]`.
+    /// `base_name` is the role name, `type_args` are the type arguments.
+    ParametricRole {
+        base_name: String,
+        type_args: Vec<Value>,
     },
 }
 
@@ -401,6 +414,19 @@ impl PartialEq for SharedChannel {
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
+        let match_equals_pair_array =
+            |attrs: &Arc<HashMap<String, Value>>, arr: &Arc<Vec<Value>>| {
+                if arr.len() != 2 {
+                    return false;
+                }
+                let Some(from) = attrs.get("from") else {
+                    return false;
+                };
+                let Some(matched) = attrs.get("str") else {
+                    return false;
+                };
+                arr[0] == *from && arr[1] == *matched
+            };
         match (self, other) {
             (Value::Int(a), Value::Int(b)) => a == b,
             (Value::BigInt(a), Value::BigInt(b)) => a == b,
@@ -522,6 +548,22 @@ impl PartialEq for Value {
                 },
             ) => a == b && aa == ba,
             (
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                },
+                Value::Array(items, ..),
+            ) if class_name == "Match" => match_equals_pair_array(attributes, items),
+            (
+                Value::Array(items, ..),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                },
+            ) if class_name == "Match" => match_equals_pair_array(attributes, items),
+            (
                 Value::Junction {
                     kind: ak,
                     values: av,
@@ -556,6 +598,16 @@ impl PartialEq for Value {
             (Value::Promise(a), Value::Promise(b)) => a == b,
             (Value::Channel(a), Value::Channel(b)) => a == b,
             (Value::Nil, Value::Nil) => true,
+            (
+                Value::Capture {
+                    positional: ap,
+                    named: an,
+                },
+                Value::Capture {
+                    positional: bp,
+                    named: bn,
+                },
+            ) => ap == bp && an == bn,
             _ => false,
         }
     }
@@ -611,6 +663,7 @@ impl Value {
             assumed_positional: Vec::new(),
             assumed_named: HashMap::new(),
             id: next_instance_id(),
+            empty_sig: false,
         }))
     }
 
@@ -634,6 +687,7 @@ impl Value {
             assumed_positional: Vec::new(),
             assumed_named: HashMap::new(),
             id,
+            empty_sig: false,
         }))
     }
 
@@ -685,16 +739,30 @@ impl Value {
         positional: &[String],
         named: &HashMap<String, Vec<String>>,
     ) -> Self {
+        fn make_capture_match(s: &str) -> Value {
+            let mut attrs = HashMap::new();
+            attrs.insert("str".to_string(), Value::Str(s.to_string()));
+            attrs.insert("from".to_string(), Value::Int(0));
+            attrs.insert("to".to_string(), Value::Int(s.chars().count() as i64));
+            attrs.insert("list".to_string(), Value::array(Vec::new()));
+            attrs.insert("named".to_string(), Value::hash(HashMap::new()));
+            Value::make_instance("Match".to_string(), attrs)
+        }
+
         let mut attrs = HashMap::new();
         attrs.insert("str".to_string(), Value::Str(matched));
         attrs.insert("from".to_string(), Value::Int(from));
         attrs.insert("to".to_string(), Value::Int(to));
-        let caps: Vec<Value> = positional.iter().map(|s| Value::Str(s.clone())).collect();
+        let caps: Vec<Value> = positional.iter().map(|s| make_capture_match(s)).collect();
         attrs.insert("list".to_string(), Value::array(caps));
         let mut named_caps: HashMap<String, Value> = HashMap::new();
         for (key, values) in named {
-            let vals: Vec<Value> = values.iter().cloned().map(Value::Str).collect();
-            named_caps.insert(key.clone(), Value::array(vals));
+            let vals: Vec<Value> = values.iter().map(|s| make_capture_match(s)).collect();
+            if vals.len() == 1 {
+                named_caps.insert(key.clone(), vals[0].clone());
+            } else {
+                named_caps.insert(key.clone(), Value::array(vals));
+            }
         }
         attrs.insert("named".to_string(), Value::hash(named_caps));
         Value::make_instance("Match".to_string(), attrs)

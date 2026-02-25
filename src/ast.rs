@@ -25,6 +25,8 @@ pub(crate) struct ParamDef {
     pub(crate) optional_marker: bool,
     pub(crate) outer_sub_signature: Option<Vec<ParamDef>>,
     pub(crate) code_signature: Option<(Vec<ParamDef>, Option<String>)>,
+    /// True when this parameter is the explicit invocant (e.g. `$self:` in a method signature).
+    pub(crate) is_invocant: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -35,6 +37,8 @@ pub(crate) struct FunctionDef {
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) body: Vec<Stmt>,
     pub(crate) is_test_assertion: bool,
+    /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
+    pub(crate) empty_sig: bool,
 }
 
 pub(crate) fn function_body_fingerprint(
@@ -85,10 +89,12 @@ pub(crate) enum Expr {
     Subst {
         pattern: String,
         replacement: String,
+        samemark: bool,
     },
     NonDestructiveSubst {
         pattern: String,
         replacement: String,
+        samemark: bool,
     },
     Transliterate {
         from: String,
@@ -121,6 +127,7 @@ pub(crate) enum Expr {
     AnonSubParams {
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
+        return_type: Option<String>,
         body: Vec<Stmt>,
     },
     CallOn {
@@ -233,6 +240,8 @@ pub(crate) enum CallArg {
     },
     /// Capture slip: `|c` — flatten a capture variable into the argument list
     Slip(Expr),
+    /// Invocant colon: `foo($obj:)` — call sub `foo` as a method on `$obj`
+    Invocant(Expr),
 }
 
 #[derive(Debug, Clone)]
@@ -254,6 +263,7 @@ pub(crate) enum Stmt {
         name_expr: Option<Expr>,
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
+        return_type: Option<String>,
         signature_alternates: Vec<(Vec<String>, Vec<ParamDef>)>,
         body: Vec<Stmt>,
         multi: bool,
@@ -302,6 +312,10 @@ pub(crate) enum Stmt {
     Use {
         module: String,
         arg: Option<Expr>,
+    },
+    /// `no Module ...;` — disable pragma/module effects for current lexical scope.
+    No {
+        module: String,
     },
     /// `need Module;` — load module without importing exports
     Need {
@@ -367,6 +381,8 @@ pub(crate) enum Stmt {
         name: String,
         name_expr: Option<Expr>,
         parents: Vec<String>,
+        is_hidden: bool,
+        hidden_parents: Vec<String>,
         body: Vec<Stmt>,
     },
     HasDecl {
@@ -386,6 +402,8 @@ pub(crate) enum Stmt {
         multi: bool,
         is_rw: bool,
         is_private: bool,
+        is_our: bool,
+        return_type: Option<String>,
     },
     RoleDecl {
         name: String,
@@ -466,7 +484,7 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
         Stmt::Call { args, .. } => {
             for arg in args {
                 match arg {
-                    CallArg::Positional(e) => collect_ph_expr(e, out),
+                    CallArg::Positional(e) | CallArg::Invocant(e) => collect_ph_expr(e, out),
                     CallArg::Named { value: Some(e), .. } => collect_ph_expr(e, out),
                     CallArg::Named { value: None, .. } => {}
                     CallArg::Slip(e) => collect_ph_expr(e, out),
@@ -580,7 +598,7 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
 
 fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
     match expr {
-        Expr::Var(name) if name.starts_with('^') => {
+        Expr::Var(name) if name.starts_with('^') || name.starts_with(':') => {
             if !out.contains(name) {
                 out.push(name.clone());
             }
@@ -761,7 +779,9 @@ fn check_bare_var_stmt(stmt: &Stmt, bare_name: &str, found: &mut bool) {
         Stmt::Call { args, .. } => {
             for arg in args {
                 match arg {
-                    CallArg::Positional(e) => check_bare_var_expr(e, bare_name, found),
+                    CallArg::Positional(e) | CallArg::Invocant(e) => {
+                        check_bare_var_expr(e, bare_name, found)
+                    }
                     CallArg::Named { value: Some(e), .. } => {
                         check_bare_var_expr(e, bare_name, found)
                     }
@@ -830,8 +850,10 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                     optional_marker: false,
                     outer_sub_signature: None,
                     code_signature: None,
+                    is_invocant: false,
                 })
                 .collect(),
+            return_type: None,
             body: stmts,
         }
     }

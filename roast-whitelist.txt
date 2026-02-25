@@ -29,6 +29,7 @@ roast/S02-names/SETTING-6e.t
 roast/S02-names/bare-sigil.t
 roast/S02-names/dynamic-scope.t
 roast/S02-names/indirect.t
+roast/S02-names/strict.t
 roast/S02-one-pass-parsing/less-than.t
 roast/S02-one-pass-parsing/misc.t
 roast/S02-packages/package-lookup.t
@@ -45,6 +46,7 @@ roast/S02-types/stash.t
 roast/S02-types/unicode.t
 roast/S02-types/version-stress.t
 roast/S02-types/version.t
+roast/S03-binding/closure.t
 roast/S03-buf/read-num.t
 roast/S03-operators/also.t
 roast/S03-operators/assign-is-not-binding.t
@@ -53,8 +55,10 @@ roast/S03-operators/boolean-bitwise.t
 roast/S03-operators/brainos.t
 roast/S03-operators/chained-declarators.t
 roast/S03-operators/comparison-simple.t
+roast/S03-operators/composition.t
 roast/S03-operators/custom.t
 roast/S03-operators/div.t
+roast/S03-operators/equality.t
 roast/S03-operators/gcd.t
 roast/S03-operators/infixed-function.t
 roast/S03-operators/lcm.t
@@ -66,6 +70,7 @@ roast/S03-operators/reduce-le1arg.t
 roast/S03-operators/scalar-assign.t
 roast/S03-operators/so.t
 roast/S03-operators/spaceship-and-containers.t
+roast/S03-operators/spaceship.t
 roast/S03-operators/subscript-vs-lt.t
 roast/S03-sequence/arity-2-or-more.t
 roast/S03-sequence/exhaustive.t
@@ -79,6 +84,7 @@ roast/S03-smartmatch/any-str.t
 roast/S03-smartmatch/any-sub.t
 roast/S03-smartmatch/array-hash.t
 roast/S03-smartmatch/array-map.t
+roast/S03-smartmatch/capture-signature.t
 roast/S03-smartmatch/range-range.t
 roast/S03-smartmatch/regex-hash.t
 roast/S03-smartmatch/scalar-hash.t
@@ -91,6 +97,7 @@ roast/S04-statement-modifiers/values_in_bool_context.t
 roast/S04-statement-modifiers/while.t
 roast/S04-statement-modifiers/without.t
 roast/S04-statement-parsing/hash.t
+roast/S04-statements/for-scope.t
 roast/S04-statements/last.t
 roast/S04-statements/map-and-sort-in-for.t
 roast/S04-statements/next.t
@@ -117,12 +124,15 @@ roast/S05-metasyntax/proto-token-ltm.t
 roast/S05-metasyntax/single-quotes.t
 roast/S05-metasyntax/unicode-property-pair.t
 roast/S05-modifier/Perl_10.t
+roast/S05-modifier/overlapping.t
 roast/S05-modifier/repetition-exhaustive.t
+roast/S05-modifier/samemark.t
 roast/S05-modifier/sigspace.t
 roast/S05-substitution/67222.t
 roast/S05-substitution/match.t
 roast/S05-transliteration/79778.t
 roast/S06-advanced/stub.t
+roast/S06-currying/assuming-and-mmd.t
 roast/S06-currying/misc.t
 roast/S06-currying/named.t
 roast/S06-multi/compile-time.t
@@ -131,9 +141,11 @@ roast/S06-multi/unpackability.t
 roast/S06-operator-overloading/methods.t
 roast/S06-operator-overloading/prefix.t
 roast/S06-operator-overloading/semicolon.t
+roast/S06-operator-overloading/term.t
 roast/S06-other/main-eval.t
 roast/S06-other/main-semicolon.t
 roast/S06-signature/closure-over-parameters.t
+roast/S06-signature/multi-invocant.t
 roast/S06-signature/multi-invocant.t
 roast/S06-signature/multidimensional.t
 roast/S06-signature/passing-hashes.t
@@ -141,12 +153,14 @@ roast/S06-signature/positional-placeholders.t
 roast/S06-signature/scalar-type.t
 roast/S06-signature/sigilless.t
 roast/S06-signature/unpack-object.t
+roast/S06-signature/unspecified.t
 roast/S06-traits/as.t
 roast/S06-traits/is-readonly.t
 roast/S06-traits/is-rw.t
 roast/S06-traits/native-is-copy.t
 roast/S07-hyperrace/stress.t
 roast/S07-slip/slip.t
+roast/S09-multidim/indexing.t
 roast/S10-packages/joined-namespaces.t
 roast/S10-packages/require-and-use.t
 roast/S10-packages/use-with-class.t
@@ -159,8 +173,10 @@ roast/S11-modules/module.t
 roast/S11-modules/need.t
 roast/S11-modules/rakulib.t
 roast/S11-modules/runtime.t
-roast/S11-modules/versioning.t
+roast/S12-attributes/mutators.t
 roast/S12-class/declaration-order.t
+roast/S12-class/extending-arrays.t
+roast/S12-class/interface-consistency.t
 roast/S12-class/literal.t
 roast/S12-class/parent_attributes.t
 roast/S12-class/self-inheritance.t
@@ -170,10 +186,12 @@ roast/S12-construction/autopairs.t
 roast/S12-enums/anonymous.t
 roast/S12-enums/pseudo-functional.t
 roast/S12-introspection/definite.t
+roast/S12-introspection/methods.t
 roast/S12-methods/calling_syntax.t
 roast/S12-methods/chaining.t
 roast/S12-methods/how.t
 roast/S12-methods/lvalue.t
+roast/S12-methods/method-vs-sub.t
 roast/S12-methods/syntax.t
 roast/S12-methods/trusts.t
 roast/S12-methods/typed-attributes.t
@@ -184,6 +202,7 @@ roast/S13-overloading/operators.t
 roast/S13-syntax/aliasing.t
 roast/S14-roles/bool.t
 roast/S14-roles/generic-subtyping.t
+roast/S14-roles/parameter-subtyping.t
 roast/S14-roles/stubs.t
 roast/S15-nfg/cgj.t
 roast/S15-nfg/emoji-test.t
@@ -252,6 +271,7 @@ roast/S16-filehandles/unlink.t
 roast/S16-io/cwd.t
 roast/S16-io/home.t
 roast/S16-io/newline.t
+roast/S16-io/note.t
 roast/S16-io/say-and-ref.t
 roast/S16-io/supply.t
 roast/S16-unfiled/getpeername.t
@@ -259,6 +279,7 @@ roast/S17-channel/stress.t
 roast/S17-channel/subscription-drain-in-react.t
 roast/S17-procasync/many-processes-no-close-stdin.t
 roast/S17-procasync/no-runaway-file-limit.t
+roast/S17-procasync/windows-arg-quoting.t
 roast/S17-promise/in.t
 roast/S17-promise/lock-async-stress2.t
 roast/S17-promise/stress.t
@@ -293,6 +314,7 @@ roast/S24-testing/2-force_todo.t
 roast/S24-testing/6-done_testing.t
 roast/S24-testing/7-bail_out.t
 roast/S24-testing/8-die_on_fail.t
+roast/S24-testing/9-is_deeply.t
 roast/S24-testing/line-numbers.t
 roast/S26-documentation/05-comment.t
 roast/S26-documentation/07c-tables.t
@@ -309,6 +331,7 @@ roast/S29-context/die.t
 roast/S29-context/evalfile.t
 roast/S29-context/exit-in-if.t
 roast/S29-context/exit.t
+roast/S29-conversions/hash.t
 roast/S32-array/bool.t
 roast/S32-array/elems.t
 roast/S32-basics/pairup.t
@@ -322,12 +345,14 @@ roast/S32-hash/invert.t
 roast/S32-hash/iterator.t
 roast/S32-hash/keys_values.t
 roast/S32-hash/push.t
+roast/S32-io/chdir-process.t
 roast/S32-io/dir.t
 roast/S32-io/null-char.t
 roast/S32-io/other-stress.t
 roast/S32-io/other.t
 roast/S32-list/batch.t
 roast/S32-list/cross.t
+roast/S32-list/flat.t
 roast/S32-num/abs.t
 roast/S32-num/exp.t
 roast/S32-num/expmod.t

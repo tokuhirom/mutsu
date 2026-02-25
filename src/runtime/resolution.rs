@@ -115,9 +115,54 @@ impl Interpreter {
                         return Some((cn.clone(), def));
                     }
                 }
+                // Method name is present on this class, but no candidate matched.
+                // Do not continue to parent classes; this preserves dispatch
+                // consistency for hidden/interface cases.
+                return None;
             }
         }
         None
+    }
+
+    pub(super) fn resolve_all_methods_with_owner(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        arg_values: &[Value],
+    ) -> Vec<(String, MethodDef)> {
+        let mro = self.class_mro(class_name);
+        let mut matches = Vec::new();
+        for cn in mro {
+            if let Some(overloads) = self
+                .classes
+                .get(&cn)
+                .and_then(|c| c.methods.get(method_name))
+                .cloned()
+            {
+                for def in overloads {
+                    if def.is_private {
+                        continue;
+                    }
+                    if self.method_args_match(arg_values, &def.param_defs) {
+                        matches.push((cn.clone(), def));
+                    }
+                }
+            }
+        }
+        matches
+    }
+
+    pub(super) fn should_skip_defer_method_candidate(
+        &self,
+        receiver_class: &str,
+        candidate_owner: &str,
+    ) -> bool {
+        if receiver_class != candidate_owner && self.hidden_classes.contains(candidate_owner) {
+            return true;
+        }
+        self.hidden_defer_parents
+            .get(receiver_class)
+            .is_some_and(|hidden| hidden.contains(candidate_owner))
     }
 
     pub(super) fn resolve_private_method_with_owner(
@@ -305,6 +350,27 @@ impl Interpreter {
                     call_args.push(Value::Pair(key, Box::new(value)));
                 }
             }
+            // Routine wrapper from .assuming() on a multi-dispatch sub
+            if let Some(Value::Str(routine_name)) = data.env.get("__mutsu_routine_name").cloned() {
+                return self.call_function(&routine_name, call_args);
+            }
+            if let (Some(left), Some(right)) = (
+                data.env.get("__mutsu_compose_left").cloned(),
+                data.env.get("__mutsu_compose_right").cloned(),
+            ) {
+                let right_result = self.call_sub_value(right, call_args, false)?;
+                let (left_params, left_param_defs) = self.callable_signature(&left);
+                let left_variadic = left_param_defs.iter().any(|pd| pd.slurpy && !pd.named);
+                let left_expects_single = match &left {
+                    Value::Sub(left_data) if left_params.is_empty() => {
+                        let (uses_positional, _) = Self::auto_signature_uses(&left_data.body);
+                        !uses_positional
+                    }
+                    _ => !left_variadic && left_params.len() == 1,
+                };
+                let left_args = Self::composed_result_to_args(right_result, left_expects_single);
+                return self.call_sub_value(left, left_args, false);
+            }
             let saved_env = self.env.clone();
             let mut new_env = saved_env.clone();
             for (k, v) in &data.env {
@@ -348,6 +414,7 @@ impl Interpreter {
                 assumed_positional: data.assumed_positional.clone(),
                 assumed_named: data.assumed_named.clone(),
                 id: crate::value::next_instance_id(),
+                empty_sig: data.empty_sig,
             });
             new_env.insert(
                 "&?BLOCK".to_string(),
@@ -385,7 +452,6 @@ impl Interpreter {
                 }
             }
             let mut merged = saved_env;
-            self.apply_rw_bindings_to_env(&rw_bindings, &mut merged);
             if merge_all {
                 for (k, v) in self.env.iter() {
                     merged.insert(k.clone(), v.clone());
@@ -398,6 +464,8 @@ impl Interpreter {
                 }
             }
             self.merge_sigilless_alias_writes(&mut merged, &self.env);
+            // Apply rw bindings after merge so they take precedence
+            self.apply_rw_bindings_to_env(&rw_bindings, &mut merged);
             self.env = merged;
             return match result {
                 Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
@@ -406,6 +474,28 @@ impl Interpreter {
             };
         }
         Err(RuntimeError::new("Callable expected"))
+    }
+
+    fn composed_result_to_args(value: Value, prefer_single: bool) -> Vec<Value> {
+        if prefer_single {
+            return match value {
+                Value::Seq(items) | Value::Slip(items) => vec![Value::array(items.to_vec())],
+                other => vec![other],
+            };
+        }
+        match value {
+            Value::Array(items, _) => items.to_vec(),
+            Value::Seq(items) => items.to_vec(),
+            Value::Slip(items) => items.to_vec(),
+            Value::Capture { positional, named } => {
+                let mut args = positional;
+                for (k, v) in named {
+                    args.push(Value::Pair(k, Box::new(v)));
+                }
+                args
+            }
+            other => vec![other],
+        }
     }
 
     pub(crate) fn eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
@@ -465,6 +555,29 @@ impl Interpreter {
             } else {
                 1
             };
+            if data.env.contains_key("__mutsu_compose_left")
+                && data.env.contains_key("__mutsu_compose_right")
+            {
+                let mut result = Vec::new();
+                let mut i = 0usize;
+                while i < list_items.len() {
+                    if arity > 1 && i + arity > list_items.len() {
+                        return Err(RuntimeError::new("Not enough elements for map block arity"));
+                    }
+                    let chunk: Vec<Value> = if arity == 1 {
+                        vec![list_items[i].clone()]
+                    } else {
+                        list_items[i..i + arity].to_vec()
+                    };
+                    let value = self.call_sub_value(Value::Sub(data.clone()), chunk, false)?;
+                    match value {
+                        Value::Slip(elems) => result.extend(elems.iter().cloned()),
+                        v => result.push(v),
+                    }
+                    i += arity;
+                }
+                return Ok(Value::array(result));
+            }
             let mut result = Vec::new();
 
             // Compile once, reuse VM for every iteration
@@ -598,6 +711,41 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         if let Some(Value::Sub(data)) = func {
             let mut result = Vec::new();
+            let arity = if !data.params.is_empty() {
+                let effective = data
+                    .params
+                    .len()
+                    .saturating_sub(data.assumed_positional.len());
+                if effective == 0 { 1 } else { effective }
+            } else {
+                1
+            };
+            if data.env.contains_key("__mutsu_compose_left")
+                && data.env.contains_key("__mutsu_compose_right")
+            {
+                let mut i = 0usize;
+                while i < list_items.len() {
+                    if arity > 1 && i + arity > list_items.len() {
+                        break;
+                    }
+                    let chunk: Vec<Value> = if arity == 1 {
+                        vec![list_items[i].clone()]
+                    } else {
+                        list_items[i..i + arity].to_vec()
+                    };
+                    let pred =
+                        self.call_sub_value(Value::Sub(data.clone()), chunk.clone(), false)?;
+                    if pred.truthy() {
+                        if arity == 1 {
+                            result.push(chunk[0].clone());
+                        } else {
+                            result.push(Value::array(chunk));
+                        }
+                    }
+                    i += arity;
+                }
+                return Ok(Value::array(result));
+            }
 
             // Compile once, reuse VM for every iteration
             let compiler = crate::compiler::Compiler::new();
@@ -605,14 +753,15 @@ impl Interpreter {
 
             let underscore = "_".to_string();
 
-            let mut touched_keys: Vec<String> = Vec::with_capacity(data.env.len() + 2);
+            let mut touched_keys: Vec<String> =
+                Vec::with_capacity(data.env.len() + data.params.len() + 1);
             for k in data.env.keys() {
                 touched_keys.push(k.clone());
             }
-            if let Some(p) = data.params.first()
-                && !touched_keys.contains(p)
-            {
-                touched_keys.push(p.clone());
+            for p in &data.params {
+                if !touched_keys.contains(p) {
+                    touched_keys.push(p.clone());
+                }
             }
             if !touched_keys.iter().any(|k| k == "_") {
                 touched_keys.push(underscore.clone());
@@ -631,13 +780,37 @@ impl Interpreter {
             let interp = std::mem::take(self);
             let mut vm = crate::vm::VM::new(interp);
 
-            for item in list_items {
+            let mut i = 0usize;
+            while i < list_items.len() {
+                if arity > 1 && i + arity > list_items.len() {
+                    break;
+                }
+                let chunk: Vec<Value> = if arity == 1 {
+                    vec![list_items[i].clone()]
+                } else {
+                    list_items[i..i + arity].to_vec()
+                };
                 {
                     let interp = vm.interpreter_mut();
-                    if let Some(p) = data.params.first() {
-                        interp.env_insert(p.clone(), item.clone());
+                    let assumed_count = data.assumed_positional.len();
+                    for (idx, val) in data.assumed_positional.iter().enumerate() {
+                        if let Some(p) = data.params.get(idx) {
+                            interp.env_insert(p.clone(), val.clone());
+                        }
                     }
-                    interp.env_insert(underscore.clone(), item.clone());
+                    if arity == 1 {
+                        if let Some(p) = data.params.get(assumed_count) {
+                            interp.env_insert(p.clone(), chunk[0].clone());
+                        }
+                        interp.env_insert(underscore.clone(), chunk[0].clone());
+                    } else {
+                        for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
+                            if idx < chunk.len() {
+                                interp.env_insert(p.clone(), chunk[idx].clone());
+                            }
+                        }
+                        interp.env_insert(underscore.clone(), chunk[0].clone());
+                    }
                 }
                 match vm.run_reuse(&code, &compiled_fns) {
                     Ok(()) => {
@@ -648,7 +821,11 @@ impl Interpreter {
                             .cloned()
                             .unwrap_or(Value::Nil);
                         if val.truthy() {
-                            result.push(item);
+                            if arity == 1 {
+                                result.push(chunk[0].clone());
+                            } else {
+                                result.push(Value::array(chunk));
+                            }
                         }
                     }
                     Err(e) => {
@@ -666,6 +843,7 @@ impl Interpreter {
                         return Err(e);
                     }
                 }
+                i += arity;
             }
 
             *self = vm.into_interpreter();
