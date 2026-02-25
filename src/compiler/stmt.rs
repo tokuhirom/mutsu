@@ -138,7 +138,6 @@ impl Compiler {
                 // applies to element values, not to the collection itself.
                 // TODO: enforce per-element type constraints at assignment time.
                 let is_hash = name.starts_with('%');
-                let is_array = name.starts_with('@');
                 if let Some(tc) = type_constraint
                     && !is_hash
                 {
@@ -169,7 +168,6 @@ impl Compiler {
                 });
                 if let Some(tc) = type_constraint
                     && !is_hash
-                    && !is_array
                 {
                     let tc_idx = self.code.add_constant(Value::Str(tc.clone()));
                     self.code.emit(OpCode::SetVarType { name_idx, tc_idx });

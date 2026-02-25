@@ -956,6 +956,18 @@ impl VM {
             _ => {
                 // Check if the target is an array variable — use numeric index assignment
                 let key = idx.to_string_value();
+                let array_elem_constraint = self.interpreter.var_type_constraint(&var_name);
+                if let Some(constraint) = array_elem_constraint
+                    && !matches!(val, Value::Nil)
+                    && !self.interpreter.type_matches_value(&constraint, &val)
+                {
+                    return Err(RuntimeError::new(format!(
+                        "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
+                        var_name,
+                        constraint,
+                        runtime::utils::value_type_name(&val)
+                    )));
+                }
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
                     match *container {
                         Value::Hash(ref mut hash) => {
