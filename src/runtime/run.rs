@@ -375,7 +375,10 @@ impl Interpreter {
         if leave_result.is_err() && body_result.is_ok() {
             leave_result?;
         }
-        body_result?;
+        let last_value = body_result?;
+        // Only store last_value if _ was actually set during this execution
+        // (not inherited from a previous REPL line)
+        self.last_value = last_value;
 
         // Auto-call MAIN sub if defined
         if self.resolve_function("MAIN").is_some() {
@@ -411,7 +414,7 @@ impl Interpreter {
                 Err(e) if e.return_value.is_some() => {}
                 Err(e) if e.message.is_empty() => {}
                 Err(e) => return Err(e),
-                Ok(()) => {}
+                Ok(_) => {}
             }
         }
         self.finish()?;
@@ -440,7 +443,7 @@ impl Interpreter {
         let vm = crate::vm::VM::new(interp);
         let (interp, result) = vm.run(&code, &compiled_fns);
         *self = interp;
-        result
+        result.map(|_| ())
     }
 
     pub(super) fn finish(&mut self) -> Result<(), RuntimeError> {
