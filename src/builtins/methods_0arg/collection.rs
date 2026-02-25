@@ -196,11 +196,14 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     values
                         .iter()
                         .enumerate()
-                        .map(|(idx, value)| {
-                            Value::Pair(
-                                value.to_string_value(),
+                        .map(|(idx, value)| match value {
+                            Value::Str(s) => {
+                                Value::Pair(s.clone(), Box::new(Value::Str(idx.to_string())))
+                            }
+                            _ => Value::ValuePair(
+                                Box::new(value.clone()),
                                 Box::new(Value::Str(idx.to_string())),
-                            )
+                            ),
                         })
                         .collect(),
                 )))
