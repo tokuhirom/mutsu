@@ -827,6 +827,13 @@ impl Interpreter {
             return self.call_method_with_values(Value::Sub(strong), method, args);
         }
 
+        if method == "join"
+            && let Value::LazyList(list) = &target
+        {
+            let items = self.force_lazy_list_bridge(list)?;
+            return self.call_method_with_values(Value::real_array(items), method, args);
+        }
+
         if let Some(meta_method) = method.strip_prefix('^')
             && meta_method != "name"
         {
@@ -2273,6 +2280,23 @@ impl Interpreter {
             let attrs = HashMap::new();
             let (result, _updated) = self.run_instance_method(name, attrs, method, args, None)?;
             return Ok(result);
+        }
+
+        // Value-type dispatch for user-defined methods (e.g. `augment class Array/Hash/List`).
+        // Non-instance values still need to find methods declared on their type object.
+        if !matches!(target, Value::Instance { .. } | Value::Package(_)) {
+            let class_name = crate::runtime::utils::value_type_name(&target);
+            if self.has_user_method(class_name, method) {
+                let attrs = HashMap::new();
+                let (result, _updated) = self.run_instance_method(
+                    class_name,
+                    attrs,
+                    method,
+                    args,
+                    Some(target.clone()),
+                )?;
+                return Ok(result);
+            }
         }
 
         // Fallback methods
