@@ -11,6 +11,7 @@ mod error;
 pub(crate) mod signature;
 mod types;
 
+pub(crate) use display::is_internal_anon_type_name;
 pub use display::{tclc_str, wordcase_str};
 pub use error::{RuntimeError, RuntimeErrorCode};
 // SubData is re-exported so callers can destructure Value::Sub(data)

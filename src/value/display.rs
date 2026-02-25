@@ -1,5 +1,9 @@
 use super::*;
 
+pub(crate) fn is_internal_anon_type_name(name: &str) -> bool {
+    name.starts_with("__ANON_") && name.ends_with("__")
+}
+
 /// Format a Num in scientific notation matching Raku's output (e.g. `1e+40`, `-1e-05`).
 fn format_num_scientific(f: f64) -> String {
     // Use Rust's {:e} format and ensure the exponent has an explicit sign
@@ -286,7 +290,13 @@ impl Value {
             Value::CompUnitDepSpec { short_name } => {
                 format!("CompUnit::DependencySpecification({})", short_name)
             }
-            Value::Package(s) => format!("({})", s),
+            Value::Package(s) => {
+                if is_internal_anon_type_name(s) {
+                    "()".to_string()
+                } else {
+                    format!("({})", s)
+                }
+            }
             Value::ParametricRole {
                 base_name,
                 type_args,
