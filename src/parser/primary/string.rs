@@ -522,6 +522,42 @@ pub(super) fn process_escape_sequence<'a>(
     Some((&rest[2..], false))
 }
 
+/// Try to parse a method call chain on an interpolated variable: "$var.method()" or "$var.method".
+/// Only recognizes simple identifier method names followed by `()` (no args).
+fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, &str) {
+    let mut expr = target;
+    let mut rest = input;
+    while let Some(after_dot) = rest.strip_prefix('.') {
+        // Must start with an alphabetic char or underscore (method name)
+        if after_dot.is_empty() {
+            break;
+        }
+        let first = after_dot.as_bytes()[0];
+        if !(first.is_ascii_alphabetic() || first == b'_') {
+            break;
+        }
+        let end = after_dot
+            .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+            .unwrap_or(after_dot.len());
+        let method_name = &after_dot[..end];
+        let after_name = &after_dot[end..];
+        // Must be followed by "()" to be recognized as a method call
+        if let Some(after_parens) = after_name.strip_prefix("()") {
+            expr = Expr::MethodCall {
+                target: Box::new(expr),
+                name: method_name.to_string(),
+                args: vec![],
+                modifier: None,
+                quoted: false,
+            };
+            rest = after_parens;
+        } else {
+            break;
+        }
+    }
+    (expr, rest)
+}
+
 /// Try to interpolate a `$var` or `@var` at the current position.
 /// Returns `Some(remaining_input)` if interpolation was performed, `None` otherwise.
 pub(super) fn try_interpolate_var<'a>(
@@ -579,6 +615,8 @@ pub(super) fn try_interpolate_var<'a>(
             let var_rest = &rest[1..];
             let (var_rest, var_name) = parse_var_name_from_str(var_rest);
             let (expr, var_rest) = parse_angle_index(var_rest, Expr::Var(var_name));
+            // Handle method call interpolation: "$var.method()" or "$var.method"
+            let (expr, var_rest) = try_parse_interp_method_call(var_rest, expr);
             parts.push(expr);
             return Some(var_rest);
         }

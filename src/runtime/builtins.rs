@@ -219,6 +219,10 @@ impl Interpreter {
             "__mutsu_stub_warn" => self.builtin_stub_warn(&args),
             "exit" => self.builtin_exit(&args),
             "__PROTO_DISPATCH__" => self.call_proto_dispatch(),
+            // Multi dispatch control flow
+            "callsame" => self.builtin_callsame(),
+            "nextsame" => self.builtin_callsame(),
+            "nextcallee" => self.builtin_nextcallee(),
             // Type coercion
             "Int" | "Num" | "Str" | "Bool" => self.builtin_coerce(name, &args),
             // Grammar helpers
@@ -519,6 +523,21 @@ impl Interpreter {
             return self.call_proto_function(&proto_name, &proto_def, args);
         }
         if let Some(def) = self.resolve_function_with_alias(name, args) {
+            // Collect remaining candidates for callsame/nextcallee
+            let all_candidates = self.resolve_all_matching_candidates(name, args);
+            let def_fp =
+                crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+            let remaining: Vec<FunctionDef> = all_candidates
+                .into_iter()
+                .filter(|c| {
+                    crate::ast::function_body_fingerprint(&c.params, &c.param_defs, &c.body)
+                        != def_fp
+                })
+                .collect();
+            let pushed_dispatch = !remaining.is_empty();
+            if pushed_dispatch {
+                self.multi_dispatch_stack.push((remaining, args.to_vec()));
+            }
             let saved_env = self.env.clone();
             let rw_bindings = self.bind_function_args_values(&def.param_defs, &def.params, args)?;
             let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
@@ -531,6 +550,9 @@ impl Interpreter {
             self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
             self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
             self.env = restored_env;
+            if pushed_dispatch {
+                self.multi_dispatch_stack.pop();
+            }
             return match result {
                 Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
                 other => other,
@@ -850,6 +872,42 @@ impl Interpreter {
         self.halted = true;
         self.exit_code = code;
         Ok(Value::Nil)
+    }
+
+    fn builtin_callsame(&mut self) -> Result<Value, RuntimeError> {
+        let Some((candidates, orig_args)) = self.multi_dispatch_stack.last().cloned() else {
+            return Ok(Value::Nil);
+        };
+        let Some(next_def) = candidates.first().cloned() else {
+            return Ok(Value::Nil);
+        };
+        // Update the stack: remove the candidate we're about to call
+        let remaining = candidates[1..].to_vec();
+        let stack_len = self.multi_dispatch_stack.len();
+        self.multi_dispatch_stack[stack_len - 1] = (remaining, orig_args.clone());
+        self.call_function_def(&next_def, &orig_args)
+    }
+
+    fn builtin_nextcallee(&mut self) -> Result<Value, RuntimeError> {
+        let Some((candidates, _orig_args)) = self.multi_dispatch_stack.last().cloned() else {
+            return Ok(Value::Nil);
+        };
+        let Some(next_def) = candidates.first().cloned() else {
+            return Ok(Value::Nil);
+        };
+        // Remove this candidate from the remaining list
+        let remaining = candidates[1..].to_vec();
+        let stack_len = self.multi_dispatch_stack.len();
+        self.multi_dispatch_stack[stack_len - 1] = (remaining, Vec::new());
+        // Return as a callable Sub value
+        Ok(Value::make_sub(
+            next_def.package.clone(),
+            next_def.name.clone(),
+            next_def.params.clone(),
+            next_def.param_defs.clone(),
+            next_def.body.clone(),
+            self.env.clone(),
+        ))
     }
 
     fn builtin_make(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

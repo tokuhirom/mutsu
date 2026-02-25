@@ -163,6 +163,10 @@ fn sub_signature_matches_value(
                 .ok();
         }
         let Some(candidate) = candidate else {
+            // Optional params are OK without a value
+            if pd.optional_marker || pd.default.is_some() {
+                continue;
+            }
             return false;
         };
         if let Some(constraint) = &pd.type_constraint
@@ -175,6 +179,11 @@ fn sub_signature_matches_value(
         {
             return false;
         }
+    }
+    // If there are unconsumed positional elements and no slurpy param, the match fails
+    let has_slurpy = sub_params.iter().any(|p| p.slurpy);
+    if !has_slurpy && positional_idx < positional.len() {
+        return false;
     }
     true
 }
@@ -715,9 +724,19 @@ impl Interpreter {
                 let is_capture_param = pd.name == "_capture";
                 let is_subsig_capture = pd.name == "__subsig__" && pd.sub_signature.is_some();
                 let arg_for_checks: Option<Value> = if pd.slurpy || is_capture_param {
-                    Some(Value::array(
-                        args[i..].iter().cloned().map(unwrap_varref_value).collect(),
-                    ))
+                    // For single-star slurpy (*@), flatten array arguments
+                    let mut items = Vec::new();
+                    for arg in &args[i..] {
+                        let arg = unwrap_varref_value(arg.clone());
+                        if !pd.double_slurpy
+                            && let Value::Array(arr, ..) = &arg
+                        {
+                            items.extend(arr.iter().cloned());
+                            continue;
+                        }
+                        items.push(arg);
+                    }
+                    Some(Value::array(items))
                 } else if is_subsig_capture {
                     Some(sub_signature_target_from_remaining_args(
                         &args[i..]
@@ -945,13 +964,18 @@ impl Interpreter {
                         }
                         positional_idx += 1;
                     }
+                    let slurpy_value = Value::array(items);
                     if !pd.name.is_empty() {
                         let key = if pd.name.starts_with('@') {
                             pd.name.clone()
                         } else {
                             format!("@{}", pd.name)
                         };
-                        self.bind_param_value(&key, Value::array(items));
+                        self.bind_param_value(&key, slurpy_value.clone());
+                    }
+                    // Unpack sub-signature from the slurpy array (e.g., *[$a, $b, $c])
+                    if let Some(sub_params) = &pd.sub_signature {
+                        bind_sub_signature_from_value(self, sub_params, &slurpy_value)?;
                     }
                 }
             } else if pd.named {

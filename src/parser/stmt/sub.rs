@@ -512,7 +512,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
 pub(super) fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
     let mut params = Vec::new();
     let mut rest = input;
-    if rest.starts_with(')') {
+    if rest.starts_with(')') || rest.starts_with(']') {
         return Ok((rest, params));
     }
     // Handle --> return type at the start (no params, just return type)
@@ -869,7 +869,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((r, p));
     }
 
-    // Slurpy: *@arr or *%hash or *$scalar
+    // Slurpy: *@arr or *%hash or *$scalar or *[...] (slurpy unpack)
     let mut slurpy_sigil = None;
     let mut double_slurpy = false;
     if rest.starts_with('*')
@@ -882,6 +882,20 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         slurpy = true;
         slurpy_sigil = Some(rest.as_bytes()[1] as char);
         rest = &rest[1..];
+    }
+
+    // Slurpy unpack: *[$a, $b, ...] — gather remaining args then unpack
+    if rest.starts_with("*[") {
+        let r = &rest[1..]; // skip '*', keep '['
+        let (r, _) = parse_char(r, '[')?;
+        let (r, _) = ws(r)?;
+        let (r, sub_params) = parse_param_list(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ']')?;
+        let mut p = make_param("@".to_string());
+        p.slurpy = true;
+        p.sub_signature = Some(sub_params);
+        return Ok((r, p));
     }
 
     // Handle ::?CLASS and ::?ROLE pseudo-types in signatures (must come before named check)
