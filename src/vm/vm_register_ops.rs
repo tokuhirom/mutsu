@@ -205,7 +205,6 @@ impl VM {
                     )?;
                 }
             }
-            self.sync_locals_from_env(code);
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterSub expects SubDecl"))
@@ -235,7 +234,6 @@ impl VM {
             } => {
                 self.interpreter
                     .register_token_decl(name, params, param_defs, body, *multi);
-                self.sync_locals_from_env(code);
                 Ok(())
             }
             _ => Err(RuntimeError::new(
@@ -264,7 +262,6 @@ impl VM {
                 self.interpreter
                     .register_proto_decl_as_global(name, params, param_defs, body)?;
             }
-            self.sync_locals_from_env(code);
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterProtoSub expects ProtoDecl"))
@@ -279,7 +276,6 @@ impl VM {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::ProtoToken { name } = stmt {
             self.interpreter.register_proto_token_decl(name);
-            self.sync_locals_from_env(code);
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterProtoToken expects ProtoToken"))
@@ -319,7 +315,10 @@ impl VM {
         Ok(())
     }
 
-    pub(super) fn exec_use_lib_path_op(&mut self, code: &CompiledCode) -> Result<(), RuntimeError> {
+    pub(super) fn exec_use_lib_path_op(
+        &mut self,
+        _code: &CompiledCode,
+    ) -> Result<(), RuntimeError> {
         let value = self.stack.pop().unwrap_or(Value::Nil);
         let path = value.to_string_value();
         if path.is_empty() {
@@ -328,7 +327,6 @@ impl VM {
             ));
         }
         self.interpreter.add_lib_path(path);
-        self.sync_locals_from_env(code);
         Ok(())
     }
 
