@@ -1,6 +1,16 @@
 use super::*;
 
 impl Interpreter {
+    fn dynamic_name_alias(name: &str) -> Option<String> {
+        if let Some(rest) = name.strip_prefix("$*") {
+            return Some(format!("*{}", rest));
+        }
+        if let Some(rest) = name.strip_prefix('*') {
+            return Some(format!("$*{}", rest));
+        }
+        None
+    }
+
     fn make_pod_block(contents: Vec<Value>) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("contents".to_string(), Value::array(contents));
@@ -526,7 +536,9 @@ impl Interpreter {
     }
 
     pub(super) fn get_dynamic_handle(&self, name: &str) -> Option<Value> {
-        self.env.get(name).cloned()
+        self.env.get(name).cloned().or_else(|| {
+            Self::dynamic_name_alias(name).and_then(|alias| self.env.get(&alias).cloned())
+        })
     }
 
     pub(super) fn default_input_handle(&self) -> Option<Value> {
@@ -541,7 +553,25 @@ impl Interpreter {
         newline: bool,
     ) -> Result<(), RuntimeError> {
         if let Some(handle) = self.get_dynamic_handle(name) {
-            return self.write_to_handle_value(&handle, text, newline);
+            if Self::handle_id_from_value(&handle).is_some() {
+                return self.write_to_handle_value(&handle, text, newline);
+            }
+            let payload = if newline {
+                format!("{}\n", text)
+            } else {
+                text.to_string()
+            };
+            if self
+                .call_method_with_values(handle, "print", vec![Value::Str(payload.clone())])
+                .is_ok()
+            {
+                return Ok(());
+            }
+            if name == "$*ERR" {
+                self.stderr_output.push_str(&payload);
+            }
+            self.output.push_str(&payload);
+            return Ok(());
         }
         let payload = if newline {
             format!("{}\n", text)
@@ -555,8 +585,14 @@ impl Interpreter {
         Ok(())
     }
 
+    pub(crate) fn render_gist_value(&mut self, value: &Value) -> String {
+        self.call_method_with_values(value.clone(), "gist", vec![])
+            .map(|result| result.to_string_value())
+            .unwrap_or_else(|_| crate::runtime::gist_value(value))
+    }
+
     pub(super) fn get_dynamic_string(&self, name: &str) -> Option<String> {
-        self.env.get(name).and_then(|value| match value {
+        self.get_dynamic_handle(name).and_then(|value| match value {
             Value::Str(s) => Some(s.clone()),
             Value::Instance { attributes, .. } => {
                 // Support IO::Path instances (e.g., $*CWD)

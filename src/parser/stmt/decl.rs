@@ -213,6 +213,10 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         return class_decl_body(r);
     }
+    // my grammar Name { ... }
+    if keyword("grammar", rest).is_some() {
+        return super::class::grammar_decl(rest);
+    }
     // my role Name[...] { ... }
     if keyword("role", rest).is_some() {
         return role_decl(rest);
@@ -474,10 +478,33 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 
     // Assignment
     if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {
-        #[cfg(test)]
-        eprintln!("my_decl: taking assignment branch");
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
+        // class-scope routine aliasing form:
+        //   our &name = method name(...) { ... }
+        // This should register as a real method declaration (with is_our),
+        // not as a plain code-variable assignment.
+        if is_our && is_code {
+            if let Some(r) = keyword("method", rest) {
+                let (r, _) = ws1(r)?;
+                let (r, stmt) = method_decl_body(r, false, true)?;
+                if apply_modifier {
+                    return parse_statement_modifier(r, stmt);
+                }
+                return Ok((r, stmt));
+            }
+            if let Some(r) = keyword("multi", rest) {
+                let (r, _) = ws1(r)?;
+                if let Some(r) = keyword("method", r) {
+                    let (r, _) = ws1(r)?;
+                    let (r, stmt) = method_decl_body(r, true, true)?;
+                    if apply_modifier {
+                        return parse_statement_modifier(r, stmt);
+                    }
+                    return Ok((r, stmt));
+                }
+            }
+        }
         let (rest, expr) = parse_assign_expr_or_comma(rest)?;
         let stmt = Stmt::VarDecl {
             name,

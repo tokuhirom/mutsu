@@ -663,6 +663,26 @@ pub(super) fn try_interpolate_var<'a>(
             parts.push(expr);
             return Some(var_rest);
         }
+        if next == '.' {
+            let after_dot = &rest[2..];
+            if !after_dot.is_empty() {
+                let first = after_dot.as_bytes()[0];
+                if first.is_ascii_alphabetic() || first == b'_' {
+                    if !current.is_empty() {
+                        parts.push(Expr::Literal(Value::Str(std::mem::take(current))));
+                    }
+                    let end = after_dot
+                        .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                        .unwrap_or(after_dot.len());
+                    let var_name = format!(".{}", &after_dot[..end]);
+                    let (expr, remainder) =
+                        parse_angle_index(&after_dot[end..], Expr::Var(var_name));
+                    let (expr, remainder) = try_parse_interp_method_call(remainder, expr);
+                    parts.push(expr);
+                    return Some(remainder);
+                }
+            }
+        }
     }
     if rest.starts_with('@') && rest.len() > 1 {
         let next = rest.as_bytes()[1] as char;
@@ -837,14 +857,19 @@ pub(super) fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
 
 /// Parse smart single-quoted string literal: ‘...’ (no interpolation)
 pub(super) fn smart_single_quoted_string(input: &str) -> PResult<'_, Expr> {
-    let (input, _) = parse_char(input, '‘')?;
+    let (input, close) = if let Ok((rest, _)) = parse_char(input, '‘') {
+        (rest, '’')
+    } else {
+        let (rest, _) = parse_char(input, '’')?;
+        (rest, '‘')
+    };
     let mut rest = input;
     let start = input;
     loop {
         if rest.is_empty() {
             return Err(PError::expected("closing ’"));
         }
-        if let Some(after_quote) = rest.strip_prefix('’') {
+        if let Some(after_quote) = rest.strip_prefix(close) {
             let content = &start[..start.len() - rest.len()];
             return Ok((after_quote, Expr::Literal(Value::Str(content.to_string()))));
         }

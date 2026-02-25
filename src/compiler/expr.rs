@@ -800,24 +800,28 @@ impl Compiler {
             Expr::Subst {
                 pattern,
                 replacement,
+                samemark,
             } => {
                 let pattern_idx = self.code.add_constant(Value::Str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::Str(replacement.clone()));
                 self.code.emit(OpCode::Subst {
                     pattern_idx,
                     replacement_idx,
+                    samemark: *samemark,
                 });
             }
             // S/// non-destructive substitution
             Expr::NonDestructiveSubst {
                 pattern,
                 replacement,
+                samemark,
             } => {
                 let pattern_idx = self.code.add_constant(Value::Str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::Str(replacement.clone()));
                 self.code.emit(OpCode::NonDestructiveSubst {
                     pattern_idx,
                     replacement_idx,
+                    samemark: *samemark,
                 });
             }
             // tr/// transliteration
@@ -1001,6 +1005,12 @@ impl Compiler {
                         let name_idx = self.code.add_constant(Value::Str(name.clone()));
                         self.code.emit(OpCode::GetBareWord(name_idx));
                     }
+                }
+                Stmt::RoleDecl { name, .. } => {
+                    // Register the role and return the role type object.
+                    self.compile_stmt(stmt);
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::GetBareWord(name_idx));
                 }
                 Stmt::EnumDecl { name, .. } if name.is_empty() => {
                     // Anonymous enum: RegisterEnum pushes the Map result

@@ -389,6 +389,7 @@ impl Interpreter {
                 index,
             };
             self.env.insert(format!("Order::{}", key), enum_val.clone());
+            self.env.insert(key.clone(), enum_val);
         }
     }
 
@@ -604,7 +605,9 @@ impl Interpreter {
         };
         mixins.insert(format!("__mutsu_role__{}", role_name), Value::Bool(true));
 
-        for (idx, (attr_name, _is_public, default_expr)) in role.attributes.iter().enumerate() {
+        for (idx, (attr_name, _is_public, default_expr, _is_rw)) in
+            role.attributes.iter().enumerate()
+        {
             let value = if let Some(arg) = role_args.get(idx) {
                 arg.clone()
             } else if let Some(default_expr) = default_expr {
@@ -739,12 +742,14 @@ impl Interpreter {
                         }
                         Some(Value::Capture { positional, named })
                     } else {
-                        // For single-star slurpy (*@), flatten array arguments
+                        // For single-star slurpy (*@), flatten list arguments but preserve
+                        // itemized Arrays ($[...] / .item) as single positional values.
                         let mut items = Vec::new();
                         for arg in &args[i..] {
                             let arg = unwrap_varref_value(arg.clone());
                             if !pd.double_slurpy
-                                && let Value::Array(arr, ..) = &arg
+                                && let Value::Array(arr, is_array) = &arg
+                                && !*is_array
                             {
                                 items.extend(arr.iter().cloned());
                                 continue;
@@ -846,7 +851,7 @@ impl Interpreter {
                             .unwrap_or(false),
                         expr => self
                             .eval_block_value(&[Stmt::Expr(expr.clone())])
-                            .map(|v| v.truthy())
+                            .map(|v| self.smart_match(arg, &v))
                             .unwrap_or(false),
                     };
                     self.env = saved;
@@ -874,23 +879,49 @@ impl Interpreter {
             .collect();
         let positional_params: Vec<&ParamDef> =
             filtered_params.iter().filter(|p| !p.named).collect();
+        let positional_arg_count = args
+            .iter()
+            .filter(|arg| !matches!(arg, Value::Pair(..)))
+            .count();
         let mut required = 0usize;
-        let mut has_slurpy = false;
+        let mut has_positional_slurpy = false;
+        let mut has_hash_slurpy = false;
         for pd in &positional_params {
             if pd.slurpy {
-                has_slurpy = true;
+                if pd.name.starts_with('%') || pd.sigilless {
+                    has_hash_slurpy = true;
+                } else {
+                    has_positional_slurpy = true;
+                }
             } else {
                 required += 1;
             }
         }
-        if has_slurpy {
-            if args.len() < required {
+        if has_positional_slurpy {
+            if positional_arg_count < required {
                 return false;
             }
-        } else if args.len() != required {
+        } else if positional_arg_count != required {
             return false;
         }
-        self.args_match_param_types(args, &filtered_params)
+        if !has_hash_slurpy {
+            let named_params: std::collections::HashSet<&str> = filtered_params
+                .iter()
+                .filter(|p| p.named)
+                .map(|p| p.name.as_str())
+                .collect();
+            for arg in args {
+                if let Value::Pair(key, _) = arg
+                    && !named_params.contains(key.as_str())
+                {
+                    return false;
+                }
+            }
+        }
+        if !self.args_match_param_types(args, &filtered_params) {
+            return false;
+        }
+        true
     }
 
     /// Create an error for calling a sub with empty signature `()` with arguments.
@@ -1007,14 +1038,19 @@ impl Interpreter {
                 } else {
                     let mut items = Vec::new();
                     while positional_idx < args.len() {
-                        // *@ (flattening slurpy): flatten array/list args
+                        // *@ (flattening slurpy): flatten list args but preserve
+                        // itemized Arrays ($[...] / .item) as single values.
                         // Skip Pair values — they are named args for *%_ or will be rejected
                         match unwrap_varref_value(args[positional_idx].clone()) {
                             Value::Pair(..) => {
                                 // Named arg — leave for *%_ slurpy or post-loop check
                             }
-                            Value::Array(arr, ..) => {
-                                items.extend(arr.iter().cloned());
+                            Value::Array(arr, is_array) => {
+                                if is_array {
+                                    items.push(Value::Array(arr.clone(), true));
+                                } else {
+                                    items.extend(arr.iter().cloned());
+                                }
                             }
                             other => {
                                 items.push(other);

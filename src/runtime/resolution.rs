@@ -115,9 +115,54 @@ impl Interpreter {
                         return Some((cn.clone(), def));
                     }
                 }
+                // Method name is present on this class, but no candidate matched.
+                // Do not continue to parent classes; this preserves dispatch
+                // consistency for hidden/interface cases.
+                return None;
             }
         }
         None
+    }
+
+    pub(super) fn resolve_all_methods_with_owner(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        arg_values: &[Value],
+    ) -> Vec<(String, MethodDef)> {
+        let mro = self.class_mro(class_name);
+        let mut matches = Vec::new();
+        for cn in mro {
+            if let Some(overloads) = self
+                .classes
+                .get(&cn)
+                .and_then(|c| c.methods.get(method_name))
+                .cloned()
+            {
+                for def in overloads {
+                    if def.is_private {
+                        continue;
+                    }
+                    if self.method_args_match(arg_values, &def.param_defs) {
+                        matches.push((cn.clone(), def));
+                    }
+                }
+            }
+        }
+        matches
+    }
+
+    pub(super) fn should_skip_defer_method_candidate(
+        &self,
+        receiver_class: &str,
+        candidate_owner: &str,
+    ) -> bool {
+        if receiver_class != candidate_owner && self.hidden_classes.contains(candidate_owner) {
+            return true;
+        }
+        self.hidden_defer_parents
+            .get(receiver_class)
+            .is_some_and(|hidden| hidden.contains(candidate_owner))
     }
 
     pub(super) fn resolve_private_method_with_owner(
@@ -321,6 +366,10 @@ impl Interpreter {
                 for (key, value) in named {
                     call_args.push(Value::Pair(key, Box::new(value)));
                 }
+            }
+            // Routine wrapper from .assuming() on a multi-dispatch sub
+            if let Some(Value::Str(routine_name)) = data.env.get("__mutsu_routine_name").cloned() {
+                return self.call_function(&routine_name, call_args);
             }
             if let (Some(left), Some(right)) = (
                 data.env.get("__mutsu_compose_left").cloned(),
