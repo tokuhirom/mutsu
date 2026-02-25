@@ -1187,46 +1187,10 @@ impl Interpreter {
                     register_supplier_tap(*supplier_id as u64, tap_cb.clone());
                 }
 
-                // If this Supply has a supply_id (belongs to Proc::Async or signal()),
-                // check if there's a live channel — if so, start a background reader thread
+                // If this Supply has a supply_id, register the tap globally
+                // so that .start (Proc::Async) can find and call it later
                 if let Some(Value::Int(sid)) = attributes.get("supply_id") {
                     register_supply_tap(*sid as u64, tap_cb.clone());
-
-                    // Try to take the channel for async supplies (signal, Proc::Async)
-                    if let Some(rx) = take_supply_channel(*sid as u64) {
-                        let mut thread_interp = self.clone_for_thread();
-                        let cb = tap_cb.clone();
-                        std::thread::spawn(move || {
-                            for event in rx.iter() {
-                                match event {
-                                    SupplyEvent::Emit(value) => {
-                                        match thread_interp.call_sub_value(
-                                            cb.clone(),
-                                            vec![value],
-                                            true,
-                                        ) {
-                                            Ok(_) => {
-                                                // Flush output from callback
-                                                let out = std::mem::take(&mut thread_interp.output);
-                                                if !out.is_empty() {
-                                                    print!("{}", out);
-                                                }
-                                                // If the callback called exit(), terminate
-                                                if thread_interp.is_halted() {
-                                                    std::process::exit(
-                                                        thread_interp.exit_code() as i32
-                                                    );
-                                                }
-                                            }
-                                            Err(_) => break,
-                                        }
-                                    }
-                                    SupplyEvent::Done => break,
-                                }
-                            }
-                        });
-                        return Ok(Value::make_instance("Tap".to_string(), HashMap::new()));
-                    }
                 }
 
                 // For on-demand supplies, execute the callback to produce values
