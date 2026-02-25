@@ -891,30 +891,35 @@ impl Interpreter {
         Ok(Value::array(list_items))
     }
 
-    /// Like `eval_grep_over_items` but returns only the first matching item (or Nil).
-    pub(super) fn eval_first_over_items(
+    pub(super) fn find_first_match_over_items(
         &mut self,
         func: Option<Value>,
-        list_items: Vec<Value>,
-    ) -> Result<Value, RuntimeError> {
-        if let Some(matcher) = func {
-            if matches!(&matcher, Value::Sub(_)) {
-                // Use call_sub_value directly for proper closure variable propagation
-                for item in list_items {
-                    let result = self.call_sub_value(matcher.clone(), vec![item.clone()], true)?;
-                    if result.truthy() {
-                        return Ok(item);
-                    }
-                }
-                return Ok(Value::Nil);
-            }
-            for item in list_items {
-                if self.smart_match(&item, &matcher) {
-                    return Ok(item);
-                }
-            }
-            return Ok(Value::Nil);
+        list_items: &[Value],
+        from_end: bool,
+    ) -> Result<Option<(usize, Value)>, RuntimeError> {
+        if list_items.is_empty() {
+            return Ok(None);
         }
-        Ok(list_items.into_iter().next().unwrap_or(Value::Nil))
+        let matcher = func;
+        let len = list_items.len();
+        for idx in 0..len {
+            let actual_idx = if from_end { len - 1 - idx } else { idx };
+            let item = list_items[actual_idx].clone();
+            let matched = if let Some(pattern) = &matcher {
+                if matches!(pattern, Value::Sub(_)) {
+                    // Use call_sub_value directly for proper closure variable propagation.
+                    self.call_sub_value(pattern.clone(), vec![item.clone()], true)?
+                        .truthy()
+                } else {
+                    self.smart_match(&item, pattern)
+                }
+            } else {
+                true
+            };
+            if matched {
+                return Ok(Some((actual_idx, item)));
+            }
+        }
+        Ok(None)
     }
 }

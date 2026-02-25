@@ -5064,6 +5064,7 @@ impl Interpreter {
         // Separate named args (Pairs) from positional args
         let mut positional = Vec::new();
         let mut has_neg_v = false;
+        let mut has_p = false;
         let mut has_end = false;
         for arg in args {
             match arg {
@@ -5076,6 +5077,9 @@ impl Interpreter {
                     if value.truthy() {
                         has_end = true;
                     }
+                }
+                Value::Pair(key, value) if key == "p" => {
+                    has_p = value.truthy();
                 }
                 _ => positional.push(arg.clone()),
             }
@@ -5095,11 +5099,17 @@ impl Interpreter {
             return Err(err);
         }
         let func = positional.first().cloned();
-        let mut items = crate::runtime::utils::value_to_list(&target);
-        if has_end {
-            items.reverse();
+        let items = crate::runtime::utils::value_to_list(&target);
+        if let Some((idx, value)) = self.find_first_match_over_items(func, &items, has_end)? {
+            if has_p {
+                return Ok(Value::ValuePair(
+                    Box::new(Value::Int(idx as i64)),
+                    Box::new(value),
+                ));
+            }
+            return Ok(value);
         }
-        self.eval_first_over_items(func, items)
+        Ok(Value::Nil)
     }
 
     /// `$n.polymod(@divisors)` — successive modular decomposition.
