@@ -16,9 +16,17 @@ impl Xoshiro256StarStar {
         let mut s = [0u64; 4];
         for (i, slot) in s.iter_mut().enumerate() {
             let mut h = DefaultHasher::new();
-            std::time::SystemTime::now().hash(&mut h);
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                std::time::SystemTime::now().hash(&mut h);
+                std::thread::current().id().hash(&mut h);
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                // Use a fixed seed offset per slot in WASM (no system time or threads)
+                (0xdeadbeef_u64.wrapping_add(i as u64 * 0x12345)).hash(&mut h);
+            }
             (i as u64).hash(&mut h);
-            std::thread::current().id().hash(&mut h);
             *slot = h.finish();
             if *slot == 0 {
                 *slot = 0xdeadbeef;

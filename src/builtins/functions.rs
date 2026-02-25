@@ -77,10 +77,7 @@ fn native_function_0arg(name: &str) -> Option<Result<Value, RuntimeError>> {
         "rand" => Some(Ok(Value::Num(builtin_rand()))),
         "now" => Some(Ok(Value::make_instant_now())),
         "time" => {
-            let secs = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0);
+            let secs = crate::value::current_time_secs_f64() as i64;
             Some(Ok(Value::Int(secs)))
         }
         "srand" => {
