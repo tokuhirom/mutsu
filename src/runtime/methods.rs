@@ -1271,7 +1271,12 @@ impl Interpreter {
                         return Ok(Value::Package(name));
                     }
                 };
-                return Ok(Value::Package(type_name.to_string()));
+                let visible_type_name = if crate::value::is_internal_anon_type_name(type_name) {
+                    ""
+                } else {
+                    type_name
+                };
+                return Ok(Value::Package(visible_type_name.to_string()));
             }
             "HOW" => {
                 if !args.is_empty() {
@@ -2488,6 +2493,9 @@ impl Interpreter {
             },
             "gist" if args.is_empty() => match target {
                 Value::Package(name) => {
+                    if crate::value::is_internal_anon_type_name(&name) {
+                        return Ok(Value::Str("()".to_string()));
+                    }
                     let short = name.split("::").last().unwrap_or(&name);
                     Ok(Value::Str(format!("({})", short)))
                 }
