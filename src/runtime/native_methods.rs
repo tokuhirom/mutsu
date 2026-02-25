@@ -1305,6 +1305,42 @@ impl Interpreter {
                 // check if there's a live channel — if so, start a background reader thread
                 if let Some(Value::Int(sid)) = attributes.get("supply_id") {
                     register_supply_tap(*sid as u64, tap_cb.clone());
+
+                    // Try to take the channel for async supplies (signal, Proc::Async)
+                    if let Some(rx) = take_supply_channel(*sid as u64) {
+                        let mut thread_interp = self.clone_for_thread();
+                        let cb = tap_cb.clone();
+                        std::thread::spawn(move || {
+                            for event in rx.iter() {
+                                match event {
+                                    SupplyEvent::Emit(value) => {
+                                        match thread_interp.call_sub_value(
+                                            cb.clone(),
+                                            vec![value],
+                                            true,
+                                        ) {
+                                            Ok(_) => {
+                                                // Flush output from callback
+                                                let out = std::mem::take(&mut thread_interp.output);
+                                                if !out.is_empty() {
+                                                    print!("{}", out);
+                                                }
+                                                // If the callback called exit(), terminate
+                                                if thread_interp.is_halted() {
+                                                    std::process::exit(
+                                                        thread_interp.exit_code() as i32
+                                                    );
+                                                }
+                                            }
+                                            Err(_) => break,
+                                        }
+                                    }
+                                    SupplyEvent::Done => break,
+                                }
+                            }
+                        });
+                        return Ok(Value::make_instance("Tap".to_string(), HashMap::new()));
+                    }
                 }
 
                 // For live/async supplies (e.g., signal), spawn a background thread
@@ -2153,6 +2189,43 @@ impl Interpreter {
                     promise.break_with(err, String::new(), String::new());
                     return Ok((Value::Promise(promise), attrs));
                 }
+                // Returns a Promise that resolves with the PID when the process
+                // has been started. If already started, resolves immediately.
+                let promise = SharedPromise::new();
+                if let Some(Value::Int(pid)) = attrs.get("pid") {
+                    promise.keep(Value::Int(*pid), String::new(), String::new());
+                }
+                // Store the ready promise so start can resolve it
+                attrs.insert("ready_promise".to_string(), Value::Promise(promise.clone()));
+                Ok((Value::Promise(promise), attrs))
+            }
+            "print" | "say" => {
+                // Write string to stdin of process
+                let data = args.first().cloned().unwrap_or(Value::Nil);
+                let mut s = data.to_string_value();
+                if method == "say" {
+                    s.push('\n');
+                }
+                if let Some(Value::Int(pid)) = attrs.get("pid") {
+                    let pid = *pid as u32;
+                    if let Ok(map) = proc_stdin_map().lock()
+                        && let Some(stdin_arc) = map.get(&pid).cloned()
+                    {
+                        drop(map);
+                        if let Ok(mut guard) = stdin_arc.lock()
+                            && let Some(ref mut stdin) = *guard
+                        {
+                            use std::io::Write;
+                            let _ = stdin.write_all(s.as_bytes());
+                            let _ = stdin.flush();
+                        }
+                    }
+                }
+                let p = SharedPromise::new();
+                p.keep(Value::Bool(true), String::new(), String::new());
+                Ok((Value::Promise(p), attrs))
+            }
+            "ready" => {
                 // Returns a Promise that resolves with the PID when the process
                 // has been started. If already started, resolves immediately.
                 let promise = SharedPromise::new();
