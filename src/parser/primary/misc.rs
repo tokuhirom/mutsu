@@ -791,6 +791,13 @@ fn is_hash_literal_start(input: &str) -> bool {
             return true;
         }
     }
+    // numeric key => val
+    if let Ok((r, _)) = super::number::integer(input) {
+        let (r, _) = ws_inner(r);
+        if r.starts_with("=>") {
+            return true;
+        }
+    }
     // Quoted key => val
     if (input.starts_with('"') || input.starts_with('\''))
         && let Ok((r, _)) = single_quoted_string(input).or_else(|_| double_quoted_string(input))
@@ -919,9 +926,13 @@ fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
             continue;
         }
 
-        // Parse key as identifier or string
+        // Parse key as identifier, integer, or string
         let (r, key) = if let Ok((r, name)) = super::super::stmt::ident_pub(r) {
             (r, name)
+        } else if let Ok((r, Expr::Literal(Value::Int(n)))) = super::number::integer(r) {
+            (r, n.to_string())
+        } else if let Ok((r, Expr::Literal(Value::BigInt(n)))) = super::number::integer(r) {
+            (r, n.to_string())
         } else if let Ok((r, Expr::Literal(Value::Str(s)))) =
             single_quoted_string(r).or_else(|_| double_quoted_string(r))
         {
