@@ -1002,6 +1002,20 @@ mod tests {
     }
 
     #[test]
+    fn parse_method_decl_with_operator_name() {
+        let (rest, stmts) =
+            program("class A { method postcircumfix:<{ }>($key) { %!attrs{$key} } }").unwrap();
+        assert_eq!(rest, "");
+        if let Stmt::ClassDecl { body, .. } = &stmts[0] {
+            assert!(
+                matches!(&body[0], Stmt::MethodDecl { name, .. } if name == "postcircumfix:<{ }>")
+            );
+        } else {
+            panic!("expected ClassDecl");
+        }
+    }
+
+    #[test]
     fn parse_sub_decl_with_typed_invocant_marker() {
         let (rest, stmts) = program("sub f(A:D: $key) { $key }").unwrap();
         assert_eq!(rest, "");
