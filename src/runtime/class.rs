@@ -134,7 +134,7 @@ impl Interpreter {
         attributes: HashMap<String, Value>,
         method_name: &str,
         args: Vec<Value>,
-        is_type_object: bool,
+        invocant: Option<Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
         let (owner_class, method_def) = self
             .resolve_method_with_owner(receiver_class_name, method_name, &args)
@@ -150,7 +150,7 @@ impl Interpreter {
             method_def,
             attributes,
             args,
-            is_type_object,
+            invocant,
         )
     }
 
@@ -161,10 +161,12 @@ impl Interpreter {
         method_def: MethodDef,
         mut attributes: HashMap<String, Value>,
         args: Vec<Value>,
-        is_type_object: bool,
+        invocant: Option<Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
-        // Keep instance calls as instances even when there are no attributes.
-        let base = if is_type_object {
+        // For type-object calls (no attributes), use Package so self.new works
+        let base = if let Some(invocant) = invocant {
+            invocant
+        } else if attributes.is_empty() {
             Value::Package(receiver_class_name.to_string())
         } else {
             Value::make_instance(receiver_class_name.to_string(), attributes.clone())
@@ -172,14 +174,32 @@ impl Interpreter {
         let saved_env = self.env.clone();
         self.method_class_stack.push(owner_class.to_string());
         self.env.insert("self".to_string(), base.clone());
+
+        let mut bind_params = Vec::new();
+        let mut bind_param_defs = Vec::new();
+        for (idx, param_name) in method_def.params.iter().enumerate() {
+            let is_invocant = method_def
+                .param_defs
+                .get(idx)
+                .map(|pd| pd.traits.iter().any(|t| t == "invocant"))
+                .unwrap_or(false);
+            if is_invocant {
+                self.env.insert(param_name.clone(), base.clone());
+                continue;
+            }
+            bind_params.push(param_name.clone());
+            if let Some(pd) = method_def.param_defs.get(idx) {
+                bind_param_defs.push(pd.clone());
+            }
+        }
+
         for (attr_name, attr_val) in &attributes {
             self.env.insert(format!("!{}", attr_name), attr_val.clone());
             self.env.insert(format!(".{}", attr_name), attr_val.clone());
         }
-        if is_type_object {
+        if let Value::Package(_) = base {
             // Type-object method calls (e.g. COERCE) need full signature binding.
-            match self.bind_function_args_values(&method_def.param_defs, &method_def.params, &args)
-            {
+            match self.bind_function_args_values(&bind_param_defs, &bind_params, &args) {
                 Ok(_) => {}
                 Err(e) => {
                     self.method_class_stack.pop();
@@ -189,10 +209,10 @@ impl Interpreter {
             }
         } else {
             // Instance methods keep the simple positional/default binding fast-path.
-            for (i, param) in method_def.params.iter().enumerate() {
+            for (i, param) in bind_params.iter().enumerate() {
                 if let Some(val) = args.get(i) {
                     self.env.insert(param.clone(), val.clone());
-                } else if let Some(pd) = method_def.param_defs.get(i)
+                } else if let Some(pd) = bind_param_defs.get(i)
                     && let Some(default_expr) = &pd.default
                 {
                     let val = match self.eval_block_value(&[Stmt::Expr(default_expr.clone())]) {
@@ -233,6 +253,23 @@ impl Interpreter {
         }
         self.method_class_stack.pop();
         self.env = merged_env;
-        result.map(|v| (v, attributes))
+        result.map(|v| {
+            let adjusted = match (&base, &v) {
+                (
+                    Value::Instance {
+                        class_name,
+                        id: base_id,
+                        ..
+                    },
+                    Value::Instance { id: ret_id, .. },
+                ) if base_id == ret_id => Value::Instance {
+                    class_name: class_name.clone(),
+                    attributes: std::sync::Arc::new(attributes.clone()),
+                    id: *base_id,
+                },
+                _ => v,
+            };
+            (adjusted, attributes)
+        })
     }
 }

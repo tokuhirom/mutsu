@@ -301,6 +301,24 @@ impl VM {
                 } else {
                     val
                 };
+                let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
+                let alias_key = format!("__mutsu_sigilless_alias::{}", name);
+                if matches!(
+                    self.interpreter.env().get(&readonly_key),
+                    Some(Value::Bool(true))
+                ) && !matches!(self.interpreter.env().get(&alias_key), Some(Value::Str(_)))
+                {
+                    return Err(RuntimeError::new("X::Assignment::RO"));
+                }
+                if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
+                    if let Value::Str(name) = v {
+                        Some(name.clone())
+                    } else {
+                        None
+                    }
+                }) {
+                    self.interpreter.env_mut().insert(alias_name, val.clone());
+                }
                 self.set_env_with_main_alias(&name, val);
                 *ip += 1;
             }
@@ -359,6 +377,10 @@ impl VM {
             }
             OpCode::BoolCoerce => {
                 self.exec_bool_coerce_op();
+                *ip += 1;
+            }
+            OpCode::WrapVarRef(name_idx) => {
+                self.exec_wrap_var_ref_op(code, *name_idx);
                 *ip += 1;
             }
 
@@ -450,6 +472,10 @@ impl VM {
             // -- Identity/value equality --
             OpCode::StrictEq => {
                 self.exec_strict_eq_op();
+                *ip += 1;
+            }
+            OpCode::StrictNe => {
+                self.exec_strict_ne_op();
                 *ip += 1;
             }
             OpCode::Eqv => {
@@ -700,13 +726,12 @@ impl VM {
                         Value::Instance { attributes, .. } => (**attributes).clone(),
                         _ => std::collections::HashMap::new(),
                     };
-                    let is_type_object = matches!(val, Value::Package(_));
                     match self.interpreter.run_instance_method(
                         &cn,
                         attrs,
                         "defined",
                         Vec::new(),
-                        is_type_object,
+                        Some(val.clone()),
                     ) {
                         Ok((result, _)) => result,
                         Err(_) => Value::Bool(runtime::types::value_is_defined(&val)),
@@ -975,7 +1000,7 @@ impl VM {
 
             // -- Assignment as expression --
             OpCode::AssignExpr(name_idx) => {
-                self.exec_assign_expr_op(code, *name_idx);
+                self.exec_assign_expr_op(code, *name_idx)?;
                 *ip += 1;
             }
 
@@ -1320,7 +1345,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::AssignExprLocal(idx) => {
-                self.exec_assign_expr_local_op(code, *idx);
+                self.exec_assign_expr_local_op(code, *idx)?;
                 *ip += 1;
             }
             OpCode::AssignReadOnly => {

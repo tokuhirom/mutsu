@@ -22,6 +22,33 @@ impl VM {
         )
     }
 
+    fn unwrap_var_ref_value(value: Value) -> Value {
+        if let Value::Capture { positional, named } = &value
+            && positional.is_empty()
+            && let Some(Value::Str(_)) = named.get("__mutsu_varref_name")
+            && let Some(inner) = named.get("__mutsu_varref_value")
+        {
+            return inner.clone();
+        }
+        value
+    }
+
+    fn normalize_call_args_for_target(&mut self, name: &str, raw_args: Vec<Value>) -> Vec<Value> {
+        let plain_args: Vec<Value> = raw_args
+            .iter()
+            .cloned()
+            .map(Self::unwrap_var_ref_value)
+            .collect();
+        if self.interpreter.has_function(name)
+            || self.interpreter.has_multi_function(name)
+            || self.interpreter.has_proto(name)
+        {
+            raw_args
+        } else {
+            plain_args
+        }
+    }
+
     pub(super) fn exec_call_func_op(
         &mut self,
         code: &CompiledCode,
@@ -63,6 +90,7 @@ impl VM {
         } else {
             arg_sources
         };
+        let args = self.normalize_call_args_for_target(&name, args);
         if !self.interpreter.has_proto(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
@@ -134,6 +162,7 @@ impl VM {
                 args.push(other);
             }
         }
+        let args = self.normalize_call_args_for_target(&name, args);
         if !self.interpreter.has_proto(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
@@ -603,6 +632,7 @@ impl VM {
         } else {
             arg_sources
         };
+        let args = self.normalize_call_args_for_target(&name, args);
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
             self.interpreter
                 .set_pending_call_arg_sources(arg_sources.clone());

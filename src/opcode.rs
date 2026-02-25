@@ -36,6 +36,7 @@ pub(crate) enum OpCode {
     // -- Logic / coercion --
     Not,
     BoolCoerce,
+    WrapVarRef(u32),
 
     // -- String --
     Concat,
@@ -69,6 +70,7 @@ pub(crate) enum OpCode {
 
     // -- Identity/value equality --
     StrictEq,
+    StrictNe,
     Eqv,
     /// Smart match with compiled RHS expression at [ip+1..rhs_end).
     SmartMatchExpr {

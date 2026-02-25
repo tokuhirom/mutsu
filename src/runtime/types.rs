@@ -79,6 +79,33 @@ fn positional_values_from_unpack_target(value: &Value) -> Vec<Value> {
     }
 }
 
+fn varref_from_value(value: &Value) -> Option<(String, Value)> {
+    if let Value::Capture { positional, named } = value
+        && positional.is_empty()
+        && let Some(Value::Str(name)) = named.get("__mutsu_varref_name")
+        && let Some(inner) = named.get("__mutsu_varref_value")
+    {
+        return Some((name.clone(), inner.clone()));
+    }
+    None
+}
+
+fn unwrap_varref_value(value: Value) -> Value {
+    if let Some((_, inner)) = varref_from_value(&value) {
+        inner
+    } else {
+        value
+    }
+}
+
+fn sigilless_alias_key(name: &str) -> String {
+    format!("__mutsu_sigilless_alias::{}", name)
+}
+
+fn sigilless_readonly_key(name: &str) -> String {
+    format!("__mutsu_sigilless_readonly::{}", name)
+}
+
 fn named_values_from_unpack_target(value: &Value) -> std::collections::HashMap<String, Value> {
     match value {
         Value::Capture { named, .. } => named.clone(),
@@ -688,11 +715,19 @@ impl Interpreter {
                 let is_capture_param = pd.name == "_capture";
                 let is_subsig_capture = pd.name == "__subsig__" && pd.sub_signature.is_some();
                 let arg_for_checks: Option<Value> = if pd.slurpy || is_capture_param {
-                    Some(Value::array(args[i..].to_vec()))
+                    Some(Value::array(
+                        args[i..].iter().cloned().map(unwrap_varref_value).collect(),
+                    ))
                 } else if is_subsig_capture {
-                    Some(sub_signature_target_from_remaining_args(&args[i..]))
+                    Some(sub_signature_target_from_remaining_args(
+                        &args[i..]
+                            .iter()
+                            .cloned()
+                            .map(unwrap_varref_value)
+                            .collect::<Vec<_>>(),
+                    ))
                 } else {
-                    args.get(i).cloned()
+                    args.get(i).cloned().map(unwrap_varref_value)
                 };
                 if let Some(literal) = &pd.literal_value {
                     if let Some(arg) = arg_for_checks.as_ref() {
@@ -797,7 +832,13 @@ impl Interpreter {
     }
 
     pub(super) fn method_args_match(&mut self, args: &[Value], param_defs: &[ParamDef]) -> bool {
-        let positional_params: Vec<&ParamDef> = param_defs.iter().filter(|p| !p.named).collect();
+        let filtered_params: Vec<ParamDef> = param_defs
+            .iter()
+            .filter(|p| !p.traits.iter().any(|t| t == "invocant"))
+            .cloned()
+            .collect();
+        let positional_params: Vec<&ParamDef> =
+            filtered_params.iter().filter(|p| !p.named).collect();
         let mut required = 0usize;
         let mut has_slurpy = false;
         for pd in &positional_params {
@@ -814,7 +855,7 @@ impl Interpreter {
         } else if args.len() != required {
             return false;
         }
-        self.args_match_param_types(args, param_defs)
+        self.args_match_param_types(args, &filtered_params)
     }
 
     pub(crate) fn bind_function_args_values(
@@ -823,15 +864,16 @@ impl Interpreter {
         params: &[String],
         args: &[Value],
     ) -> Result<Vec<(String, String)>, RuntimeError> {
+        let plain_args: Vec<Value> = args.iter().cloned().map(unwrap_varref_value).collect();
         // Always set @_ for legacy Perl-style argument access
         self.env
-            .insert("@_".to_string(), Value::array(args.to_vec()));
+            .insert("@_".to_string(), Value::array(plain_args.clone()));
         let arg_sources = self.take_pending_call_arg_sources();
         let mut rw_bindings = Vec::new();
         if param_defs.is_empty() {
             // Legacy path: just bind by position
             for (i, param) in params.iter().enumerate() {
-                if let Some(value) = args.get(i) {
+                if let Some(value) = plain_args.get(i) {
                     self.bind_param_value(param, value.clone());
                 } else if param.starts_with('^') {
                     return Err(RuntimeError::new(format!(
@@ -847,21 +889,26 @@ impl Interpreter {
             if pd.slurpy {
                 let is_hash_slurpy = pd.name.starts_with('%');
                 if pd.sigilless {
-                    // |c — capture parameter: collect ALL remaining args
-                    // (positional + named Pairs) into an array, stored as
-                    // sigilless variable (no sigil prefix)
-                    let mut items = Vec::new();
+                    // |c — capture parameter: preserve positional and named parts.
+                    let mut positional = Vec::new();
+                    let mut named = std::collections::HashMap::new();
                     while positional_idx < args.len() {
-                        items.push(args[positional_idx].clone());
+                        let arg = unwrap_varref_value(args[positional_idx].clone());
+                        if let Value::Pair(key, val) = arg {
+                            named.insert(key, *val);
+                        } else {
+                            positional.push(arg);
+                        }
                         positional_idx += 1;
                     }
                     if !pd.name.is_empty() {
-                        self.bind_param_value(&pd.name, Value::array(items));
+                        self.bind_param_value(&pd.name, Value::Capture { positional, named });
                     }
                 } else if is_hash_slurpy {
                     // *%hash — collect Pair arguments into a hash
                     let mut hash_items = std::collections::HashMap::new();
                     for arg in args.iter() {
+                        let arg = unwrap_varref_value(arg.clone());
                         if let Value::Pair(k, v) = arg {
                             hash_items.insert(k.clone(), *v.clone());
                         }
@@ -873,7 +920,7 @@ impl Interpreter {
                     // **@ (non-flattening slurpy): keep each argument as-is
                     let mut items = Vec::new();
                     while positional_idx < args.len() {
-                        items.push(args[positional_idx].clone());
+                        items.push(unwrap_varref_value(args[positional_idx].clone()));
                         positional_idx += 1;
                     }
                     if !pd.name.is_empty() {
@@ -888,12 +935,12 @@ impl Interpreter {
                     let mut items = Vec::new();
                     while positional_idx < args.len() {
                         // *@ (flattening slurpy): flatten array/list args
-                        match &args[positional_idx] {
+                        match unwrap_varref_value(args[positional_idx].clone()) {
                             Value::Array(arr, ..) => {
                                 items.extend(arr.iter().cloned());
                             }
                             other => {
-                                items.push(other.clone());
+                                items.push(other);
                             }
                         }
                         positional_idx += 1;
@@ -911,12 +958,13 @@ impl Interpreter {
                 // Look for a matching named argument (Pair) in args
                 let mut found = false;
                 for arg in args {
+                    let arg = unwrap_varref_value(arg.clone());
                     if let Value::Pair(key, val) = arg
-                        && key == &pd.name
+                        && key == pd.name
                     {
                         self.bind_param_value(&pd.name, *val.clone());
                         if let Some(sub_params) = &pd.sub_signature {
-                            bind_sub_signature_from_value(self, sub_params, val)?;
+                            bind_sub_signature_from_value(self, sub_params, &val)?;
                         }
                         found = true;
                         break;
@@ -955,7 +1003,20 @@ impl Interpreter {
                             })?;
                         rw_bindings.push((pd.name.clone(), source_name));
                     }
-                    let mut value = args[positional_idx].clone();
+                    let raw_arg = args[positional_idx].clone();
+                    let mut value = unwrap_varref_value(raw_arg.clone());
+                    if pd.sigilless {
+                        let alias_key = sigilless_alias_key(&pd.name);
+                        let readonly_key = sigilless_readonly_key(&pd.name);
+                        if let Some((source_name, inner)) = varref_from_value(&raw_arg) {
+                            value = inner;
+                            self.env.insert(alias_key, Value::Str(source_name));
+                            self.env.insert(readonly_key, Value::Bool(false));
+                        } else {
+                            self.env.remove(&alias_key);
+                            self.env.insert(readonly_key, Value::Bool(true));
+                        }
+                    }
                     if pd.name != "__type_only__"
                         && let Some(constraint) = &pd.type_constraint
                     {

@@ -539,8 +539,12 @@ pub(super) fn parse_param_list(input: &str) -> PResult<'_, Vec<ParamDef>> {
         if let Some(r) = r.strip_prefix(':') {
             let (r, _) = ws(r)?;
             if r.starts_with(')') {
+                mark_params_as_invocant(&mut params);
                 return Ok((r, params));
             }
+            mark_params_as_invocant(&mut params);
+            let (r, p) = parse_single_param(r)?;
+            params.push(p);
             rest = r;
             continue;
         }
@@ -637,8 +641,12 @@ pub(super) fn parse_param_list_with_return(
         if let Some(r) = r.strip_prefix(':') {
             let (r, _) = ws(r)?;
             if r.starts_with(')') {
+                mark_params_as_invocant(&mut params);
                 return Ok((r, (params, return_type)));
             }
+            mark_params_as_invocant(&mut params);
+            let (r, p) = parse_single_param(r)?;
+            params.push(p);
             rest = r;
             continue;
         }
@@ -673,6 +681,14 @@ pub(super) fn parse_param_list_with_return(
         let (r, p) = parse_single_param(r)?;
         params.push(p);
         rest = r;
+    }
+}
+
+fn mark_params_as_invocant(params: &mut [ParamDef]) {
+    for param in params {
+        if !param.traits.iter().any(|t| t == "invocant") {
+            param.traits.push("invocant".to_string());
+        }
     }
 }
 
@@ -1499,7 +1515,7 @@ pub(super) fn method_decl_body(input: &str, multi: bool) -> PResult<'_, Stmt> {
         let (rest, (name, expr)) = parse_indirect_decl_name(rest)?;
         (rest, name, Some(expr))
     } else {
-        let (rest, name) = ident(rest)?;
+        let (rest, name) = parse_sub_name(rest)?;
         (rest, name, None)
     };
     let (rest, _) = ws(rest)?;
