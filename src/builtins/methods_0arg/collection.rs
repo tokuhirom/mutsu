@@ -26,6 +26,39 @@ fn positional_kv(values: &[Value]) -> Vec<Value> {
     kv
 }
 
+fn push_permutations(
+    items: &[Value],
+    used: &mut [bool],
+    current: &mut Vec<Value>,
+    out: &mut Vec<Value>,
+) {
+    if current.len() == items.len() {
+        out.push(Value::array(current.clone()));
+        return;
+    }
+    for idx in 0..items.len() {
+        if used[idx] {
+            continue;
+        }
+        used[idx] = true;
+        current.push(items[idx].clone());
+        push_permutations(items, used, current, out);
+        current.pop();
+        used[idx] = false;
+    }
+}
+
+fn all_permutations(items: &[Value]) -> Vec<Value> {
+    if items.is_empty() {
+        return vec![Value::array(Vec::new())];
+    }
+    let mut out = Vec::new();
+    let mut used = vec![false; items.len()];
+    let mut current = Vec::with_capacity(items.len());
+    push_permutations(items, &mut used, &mut current, &mut out);
+    out
+}
+
 /// Collection-related 0-arg methods: keys, values, kv, pairs, total, minmax, squish
 pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     match method {
@@ -304,6 +337,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             _ => None,
         },
+        "permutations" => {
+            let items = match target {
+                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
+                _ => runtime::value_to_list(target),
+            };
+            Some(Ok(Value::Seq(all_permutations(&items).into())))
+        }
         _ => None,
     }
 }
