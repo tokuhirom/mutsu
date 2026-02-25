@@ -253,11 +253,12 @@ fn parse_qualified_ident_with_hyphens_or_empty(input: &str) -> (&str, String) {
 pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '@')?;
     // Handle twigils
-    let (rest, twigil) = if input.starts_with('*') || input.starts_with('!') {
-        (&input[1..], &input[..1])
-    } else {
-        (input, "")
-    };
+    let (rest, twigil) =
+        if input.starts_with('*') || input.starts_with('!') || input.starts_with('^') {
+            (&input[1..], &input[..1])
+        } else {
+            (input, "")
+        };
     // Contextualized scalar specials (e.g., @$/, @$_): parse `$...` then lift
     // to an array variable targeting the same underlying name.
     if twigil.is_empty()
@@ -285,11 +286,12 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
 pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '%')?;
     // Handle twigils
-    let (rest, twigil) = if input.starts_with('*') || input.starts_with('!') {
-        (&input[1..], &input[..1])
-    } else {
-        (input, "")
-    };
+    let (rest, twigil) =
+        if input.starts_with('*') || input.starts_with('!') || input.starts_with('^') {
+            (&input[1..], &input[..1])
+        } else {
+            (input, "")
+        };
     // Contextualized scalar specials (e.g., %$/, %$_): parse `$...` then lift
     // to a hash variable targeting the same underlying name.
     if twigil.is_empty()
