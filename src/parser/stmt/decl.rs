@@ -966,6 +966,10 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         };
         let (rest, _) = ws(rest)?;
         let (rest, expr) = parse_comma_or_expr(rest)?;
+        // Track compile-time string constants for operator name resolution
+        if let crate::ast::Expr::Literal(crate::value::Value::Str(ref s)) = expr {
+            super::simple::register_compile_time_constant(&name, s.clone());
+        }
         let (rest, _) = ws(rest)?;
         let (rest, _) = opt_char(rest, ';');
         return Ok((

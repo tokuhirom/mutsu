@@ -42,6 +42,61 @@ fn make_call_expr(name: String, input: &str, args: Vec<Expr>) -> Expr {
     }
 }
 
+/// Parse a user-declared circumfix operator: `open args close` → Call circumfix:<open close>(args)
+pub(super) fn declared_circumfix_op(input: &str) -> PResult<'_, Expr> {
+    if let Some((name, open_len, close_delim)) =
+        crate::parser::stmt::simple::match_user_declared_circumfix_op(input)
+    {
+        let rest = &input[open_len..];
+        let (rest, _) = super::super::helpers::ws(rest)?;
+        // Check for empty circumfix: `open close` with nothing inside
+        if let Some(after) = rest.strip_prefix(close_delim.as_str()) {
+            return Ok((after, Expr::Call { name, args: vec![] }));
+        }
+        // Parse first argument
+        let (r, arg) = super::super::expr::expression(rest)?;
+        let args = vec![arg];
+        let (r, _) = super::super::helpers::ws(r)?;
+        // Check if more args follow (comma-separated)
+        if let Some(after_comma) = r.strip_prefix(',') {
+            let (r, _) = super::super::helpers::ws(after_comma)?;
+            return parse_circumfix_rest(r, &close_delim, name, args);
+        }
+        // Check for closing delimiter
+        if let Some(after) = r.strip_prefix(close_delim.as_str()) {
+            return Ok((after, Expr::Call { name, args }));
+        }
+        return Err(PError::expected("closing circumfix delimiter"));
+    }
+    Err(PError::expected("declared circumfix operator"))
+}
+
+fn parse_circumfix_rest<'a>(
+    mut rest: &'a str,
+    close_delim: &str,
+    name: String,
+    mut args: Vec<Expr>,
+) -> PResult<'a, Expr> {
+    loop {
+        if let Some(after) = rest.strip_prefix(close_delim) {
+            return Ok((after, Expr::Call { name, args }));
+        }
+        let (r, arg) = super::super::expr::expression(rest)?;
+        args.push(arg);
+        let (r, _) = super::super::helpers::ws(r)?;
+        if let Some(after_comma) = r.strip_prefix(',') {
+            let (r, _) = super::super::helpers::ws(after_comma)?;
+            rest = r;
+            continue;
+        }
+        let (r, _) = super::super::helpers::ws(r)?;
+        if let Some(after) = r.strip_prefix(close_delim) {
+            return Ok((after, Expr::Call { name, args }));
+        }
+        return Err(PError::expected("closing circumfix delimiter or ','"));
+    }
+}
+
 pub(super) fn declared_term_symbol(input: &str) -> PResult<'_, Expr> {
     if let Some((name, consumed_len, callable)) =
         crate::parser::stmt::simple::match_user_declared_term_symbol(input)
