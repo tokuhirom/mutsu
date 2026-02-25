@@ -22,6 +22,18 @@ use crate::value::{
 };
 use num_traits::Signed;
 
+/// Get the current process ID (returns 0 on WASM where process IDs don't exist).
+fn current_process_id() -> i64 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::process::id() as i64
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        0
+    }
+}
+
 mod accessors;
 mod builtins;
 mod builtins_coerce;
@@ -274,6 +286,8 @@ pub struct Interpreter {
     state_vars: HashMap<String, Value>,
     /// Variable dynamic-scope metadata used by `.VAR.dynamic`.
     var_dynamic_flags: HashMap<String, bool>,
+    /// Variable type constraints used to enforce typed re-assignment across closures.
+    var_type_constraints: HashMap<String, String>,
     let_saves: Vec<(String, Value)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
     /// Shared variables between threads. When `start` spawns a thread,
@@ -291,6 +305,8 @@ pub struct Interpreter {
     method_dispatch_stack: Vec<MethodDispatchFrame>,
     /// Names suppressed by `anon class`. These bare words should error as undeclared.
     suppressed_names: HashSet<String>,
+    /// Last expression value from VM execution, used by REPL for auto-display.
+    pub(crate) last_value: Option<Value>,
 }
 
 /// An entry in the encoding registry.
@@ -334,7 +350,7 @@ impl Default for Interpreter {
 impl Interpreter {
     pub fn new() -> Self {
         let mut env = HashMap::new();
-        env.insert("*PID".to_string(), Value::Int(std::process::id() as i64));
+        env.insert("*PID".to_string(), Value::Int(current_process_id()));
         env.insert("@*ARGS".to_string(), Value::array(Vec::new()));
         env.insert("*INIT-INSTANT".to_string(), Value::make_instant_now());
         env.insert(
@@ -948,6 +964,7 @@ impl Interpreter {
             strict_mode: false,
             state_vars: HashMap::new(),
             var_dynamic_flags: HashMap::new(),
+            var_type_constraints: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
             shared_vars: Arc::new(Mutex::new(HashMap::new())),
@@ -956,6 +973,7 @@ impl Interpreter {
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),
             suppressed_names: HashSet::new(),
+            last_value: None,
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -1255,6 +1273,38 @@ impl Interpreter {
         self.var_dynamic_flags.insert(key, dynamic);
     }
 
+    pub(crate) fn set_var_type_constraint(&mut self, name: &str, constraint: Option<String>) {
+        let key = name.to_string();
+        let meta_key = format!("__mutsu_type::{}", key);
+        if let Some(constraint) = constraint {
+            self.var_type_constraints.insert(key, constraint.clone());
+            self.env.insert(meta_key, Value::Str(constraint));
+        } else {
+            self.var_type_constraints.remove(&key);
+            self.env.remove(&meta_key);
+        }
+    }
+
+    pub(crate) fn var_type_constraint(&self, name: &str) -> Option<String> {
+        let key = name;
+        let meta_key = format!("__mutsu_type::{}", key);
+        if let Some(Value::Str(tc)) = self.env.get(&meta_key) {
+            return Some(tc.clone());
+        }
+        if let Some(tc) = self.var_type_constraints.get(key) {
+            return Some(tc.clone());
+        }
+        None
+    }
+
+    pub(crate) fn snapshot_var_type_constraints(&self) -> HashMap<String, String> {
+        self.var_type_constraints.clone()
+    }
+
+    pub(crate) fn restore_var_type_constraints(&mut self, snapshot: HashMap<String, String>) {
+        self.var_type_constraints = snapshot;
+    }
+
     pub(crate) fn is_var_dynamic(&self, name: &str) -> bool {
         self.var_dynamic_flags
             .get(Self::normalize_var_meta_name(name))
@@ -1332,6 +1382,7 @@ impl Interpreter {
             strict_mode: self.strict_mode,
             state_vars: HashMap::new(),
             var_dynamic_flags: self.var_dynamic_flags.clone(),
+            var_type_constraints: self.var_type_constraints.clone(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
             shared_vars: Arc::clone(&self.shared_vars),
@@ -1340,6 +1391,7 @@ impl Interpreter {
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),
             suppressed_names: self.suppressed_names.clone(),
+            last_value: None,
         }
     }
 
@@ -1450,6 +1502,23 @@ mod tests {
             .run("my $x = 0; while $x < 3 { say $x; $x = $x + 1; }")
             .unwrap();
         assert_eq!(output, "0\n1\n2\n");
+    }
+
+    #[test]
+    fn last_value_from_expression() {
+        use crate::value::Value;
+        let mut interp = Interpreter::new();
+        interp.run("3 + 4").unwrap();
+        assert_eq!(interp.last_value, Some(Value::Int(7)));
+    }
+
+    #[test]
+    fn last_value_none_for_say() {
+        let mut interp = Interpreter::new();
+        interp.run("say 42").unwrap();
+        // say is a statement (Stmt::Say), not an expression, so no last_value
+        // The REPL uses output detection instead for say/print
+        assert!(interp.last_value.is_none());
     }
 
     #[test]

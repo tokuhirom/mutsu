@@ -40,6 +40,7 @@ roast/S02-types/hyperwhatever.t
 roast/S02-types/mu.t
 roast/S02-types/nan.t
 roast/S02-types/nested_pairs.t
+roast/S02-types/nominalizables.t
 roast/S02-types/parsing-bool.t
 roast/S02-types/range-iterator.t
 roast/S02-types/stash.t
@@ -268,6 +269,7 @@ roast/S15-normalization/nfkd-7.t
 roast/S15-normalization/nfkd-8.t
 roast/S15-normalization/nfkd-9.t
 roast/S15-normalization/nfkd-sanity.t
+roast/S15-string-types/NF-types.t
 roast/S15-string-types/NFK-types.t
 roast/S15-string-types/Str.t
 roast/S16-filehandles/io_in_while_loops.t
@@ -335,6 +337,7 @@ roast/S28-named-variables/init-instant.t
 roast/S28-named-variables/slangs.t
 roast/S29-any/are.t
 roast/S29-any/cmp.t
+roast/S29-any/minpairs-maxpairs.t
 roast/S29-context/die.t
 roast/S29-context/evalfile.t
 roast/S29-context/exit-in-if.t
@@ -360,6 +363,7 @@ roast/S32-io/other-stress.t
 roast/S32-io/other.t
 roast/S32-list/batch.t
 roast/S32-list/cross.t
+roast/S32-list/first-end-v.t
 roast/S32-list/first-v.t
 roast/S32-list/flat.t
 roast/S32-num/abs.t
@@ -368,6 +372,7 @@ roast/S32-num/expmod.t
 roast/S32-num/log.t
 roast/S32-num/pi.t
 roast/S32-num/polar.t
+roast/S32-num/sqrt.t
 roast/S32-num/unpolar.t
 roast/S32-scalar/defined.t
 roast/S32-str/append.t

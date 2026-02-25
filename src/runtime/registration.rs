@@ -1010,6 +1010,9 @@ impl Interpreter {
             "Proc::Async",
             "Supply",
             "Supplier",
+            "Setty",
+            "Baggy",
+            "Mixy",
         ];
         for parent in parents {
             // Strip type arguments for validation (e.g., "R[Str:D(Numeric)]" -> "R")
@@ -1469,5 +1472,7 @@ impl Interpreter {
                 predicate: predicate.cloned(),
             },
         );
+        self.env
+            .insert(name.to_string(), Value::Package(name.to_string()));
     }
 }

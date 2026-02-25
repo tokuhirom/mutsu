@@ -878,6 +878,36 @@ fn parse_required_suffix(input: &str) -> (&str, bool, bool) {
     }
 }
 
+pub(super) fn parse_type_constraint_expr(input: &str) -> Option<(&str, String)> {
+    let (mut rest, mut type_name) = qualified_ident(input).ok()?;
+    while rest.starts_with('[') {
+        let (r2, suffix) = parse_generic_suffix(rest).ok()?;
+        type_name.push_str(&suffix);
+        rest = r2;
+    }
+    if rest.starts_with(":D") || rest.starts_with(":U") || rest.starts_with(":_") {
+        type_name.push_str(&rest[..2]);
+        rest = &rest[2..];
+    }
+
+    let (r2, _) = ws(rest).ok()?;
+    if let Some(after_open) = r2.strip_prefix('(') {
+        let (after_ws, _) = ws(after_open).ok()?;
+        if let Some(r3) = after_ws.strip_prefix(')') {
+            let (r3, _) = ws(r3).ok()?;
+            return Some((r3, format!("{}()", type_name)));
+        }
+        if let Some((inner_r, source_type)) = parse_type_constraint_expr(after_ws) {
+            let (inner_r, _) = ws(inner_r).ok()?;
+            if let Some(r3) = inner_r.strip_prefix(')') {
+                let (r3, _) = ws(r3).ok()?;
+                return Some((r3, format!("{}({})", type_name, source_type)));
+            }
+        }
+    }
+    Some((rest, type_name))
+}
+
 fn parse_where_constraint_expr(input: &str) -> PResult<'_, Expr> {
     let (r, _) = ws(input)?;
     if r.starts_with('{') {
@@ -1122,22 +1152,8 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         && rest.contains('(');
     if type_constraint.is_none()
         && !skip_type_for_named_alias
-        && let Ok((r, tc)) = qualified_ident(rest)
+        && let Some((r, tc)) = parse_type_constraint_expr(rest)
     {
-        let mut tc_full = tc;
-        let mut r = r;
-        while r.starts_with('[') {
-            let (r2, suffix) = parse_generic_suffix(r)?;
-            tc_full.push_str(&suffix);
-            r = r2;
-        }
-        // Preserve type smileys :D, :U, :_ as part of the type constraint
-        let (r, tc) = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
-            let smiley = &r[..2];
-            (&r[2..], format!("{}{}", tc_full, smiley))
-        } else {
-            (r, tc_full)
-        };
         let (r2, _) = ws(r)?;
 
         // Check for coercion type: Int() or Int(Rat)
@@ -1155,7 +1171,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                     named = true;
                     rest = &rest[1..];
                 }
-            } else if let Ok((inner_r, source_type)) = qualified_ident(after_ws) {
+            } else if let Some((inner_r, source_type)) = parse_type_constraint_expr(after_ws) {
                 let (inner_r, _) = ws(inner_r)?;
                 if let Some(r3) = inner_r.strip_prefix(')') {
                     let (r3, _) = ws(r3)?;

@@ -22,6 +22,16 @@ impl VM {
             .and_then(|s| s.strip_suffix('>'))
     }
 
+    /// Check if an array is a shaped (multidimensional) array.
+    /// A shaped array has nested Array elements as its first element.
+    fn is_shaped_array(value: &Value) -> bool {
+        if let Value::Array(items, ..) = value {
+            matches!(items.first(), Some(Value::Array(..)))
+        } else {
+            false
+        }
+    }
+
     fn array_depth(value: &Value) -> usize {
         match value {
             Value::Array(items, ..) => {
@@ -887,7 +897,34 @@ impl VM {
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name)
                     && matches!(container, Value::Array(..))
                 {
-                    Self::assign_array_multidim(container, keys.as_ref(), val.clone())?;
+                    let is_shaped = Self::is_shaped_array(container);
+                    if is_shaped {
+                        // Multidimensional indexing: @arr[0;0] = 'x'
+                        Self::assign_array_multidim(container, keys.as_ref(), val.clone())?;
+                    } else {
+                        // Flat slice assignment: @a[2,3,4,6] = <foo bar foo bar>
+                        // Auto-extend the array to accommodate all indices
+                        let max_idx = keys
+                            .iter()
+                            .filter_map(Self::index_to_usize)
+                            .max()
+                            .unwrap_or(0);
+                        if let Value::Array(items, ..) = container {
+                            let arr = Arc::make_mut(items);
+                            if max_idx >= arr.len() {
+                                arr.resize(max_idx + 1, Value::Package("Any".to_string()));
+                            }
+                        }
+                        // Assign each value to the corresponding index
+                        let vals = match &val {
+                            Value::Array(v, ..) => (**v).clone(),
+                            _ => vec![val.clone()],
+                        };
+                        for (i, key) in keys.iter().enumerate() {
+                            let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                            Self::assign_array_multidim(container, std::slice::from_ref(key), v)?;
+                        }
+                    }
                     if bind_mode {
                         self.mark_bound_index(&var_name, encoded_idx);
                     }
@@ -1023,13 +1060,37 @@ impl VM {
         } else {
             val
         };
-        let val = if name.starts_with('%') {
+        let mut val = if name.starts_with('%') {
             runtime::coerce_to_hash(val)
         } else if name.starts_with('@') {
             runtime::coerce_to_array(val)
         } else {
             val
         };
+        if let Some(constraint) = self.interpreter.var_type_constraint(name)
+            && !name.starts_with('%')
+            && !name.starts_with('@')
+        {
+            if matches!(val, Value::Nil) && self.interpreter.is_definite_constraint(&constraint) {
+                return Err(RuntimeError::new(
+                    "X::Syntax::Variable::MissingInitializer: Definite typed variable requires initializer",
+                ));
+            }
+            if !matches!(val, Value::Nil) && !self.interpreter.type_matches_value(&constraint, &val)
+            {
+                return Err(RuntimeError::new(format!(
+                    "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
+                    name,
+                    constraint,
+                    runtime::utils::value_type_name(&val)
+                )));
+            }
+            if !matches!(val, Value::Nil) {
+                val = self
+                    .interpreter
+                    .try_coerce_value_for_constraint(&constraint, val)?;
+            }
+        }
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
         if matches!(
@@ -1092,13 +1153,32 @@ impl VM {
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let idx = idx as usize;
         let name = &code.locals[idx];
-        let val = if name.starts_with('%') {
+        let mut val = if name.starts_with('%') {
             runtime::coerce_to_hash(raw_val)
         } else if name.starts_with('@') {
             runtime::coerce_to_array(raw_val)
         } else {
             raw_val
         };
+        if let Some(constraint) = self.interpreter.var_type_constraint(name)
+            && !name.starts_with('%')
+            && !name.starts_with('@')
+        {
+            if !matches!(val, Value::Nil) && !self.interpreter.type_matches_value(&constraint, &val)
+            {
+                return Err(RuntimeError::new(format!(
+                    "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
+                    name,
+                    constraint,
+                    runtime::utils::value_type_name(&val)
+                )));
+            }
+            if !matches!(val, Value::Nil) {
+                val = self
+                    .interpreter
+                    .try_coerce_value_for_constraint(&constraint, val)?;
+            }
+        }
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
         if matches!(
