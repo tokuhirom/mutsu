@@ -385,7 +385,7 @@ impl VM {
             "+<", "+>", "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=",
             ">=", "<=>", "===", "=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg",
             "cmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",", "after", "before",
-            "X", "Z", "x", "xx", "&", "|", "^",
+            "X", "Z", "x", "xx", "&", "|", "^", "o", "∘",
         ];
         let (negate, base_op) = if let Some(stripped) = op_no_scan.strip_prefix('!')
             && KNOWN_BASE_OPS.contains(&stripped)
@@ -393,6 +393,11 @@ impl VM {
             (true, stripped.to_string())
         } else {
             (false, op_no_scan)
+        };
+        let base_op = if base_op == "∘" {
+            "o".to_string()
+        } else {
+            base_op
         };
         let list_value = self.stack.pop().unwrap_or(Value::Nil);
         let mut list = if let Value::LazyList(ref ll) = list_value {
@@ -464,6 +469,14 @@ impl VM {
                 }
                 self.stack.push(Value::Bool(result));
             } else {
+                if base_op == "o" {
+                    let mut acc = list[0].clone();
+                    for item in &list[1..] {
+                        acc = self.interpreter.compose_callables(acc, item.clone());
+                    }
+                    self.stack.push(acc);
+                    return Ok(());
+                }
                 let acc = if base_op == "=>" {
                     let mut acc = list.last().cloned().unwrap_or(Value::Nil);
                     for item in list[..list.len() - 1].iter().rev() {

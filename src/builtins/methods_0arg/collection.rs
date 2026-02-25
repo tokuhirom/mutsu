@@ -29,6 +29,10 @@ fn positional_kv(values: &[Value]) -> Vec<Value> {
 /// Collection-related 0-arg methods: keys, values, kv, pairs, total, minmax, squish
 pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     match method {
+        "hash" => {
+            let items = crate::runtime::utils::value_to_list(target);
+            Some(crate::runtime::utils::build_hash_from_items(items))
+        }
         "keys" => match target {
             Value::Hash(map) => {
                 let keys: Vec<Value> = map.keys().map(|k| Value::Str(k.clone())).collect();

@@ -54,6 +54,7 @@ roast/S03-operators/boolean-bitwise.t
 roast/S03-operators/brainos.t
 roast/S03-operators/chained-declarators.t
 roast/S03-operators/comparison-simple.t
+roast/S03-operators/composition.t
 roast/S03-operators/custom.t
 roast/S03-operators/div.t
 roast/S03-operators/gcd.t
@@ -315,6 +316,7 @@ roast/S29-context/die.t
 roast/S29-context/evalfile.t
 roast/S29-context/exit-in-if.t
 roast/S29-context/exit.t
+roast/S29-conversions/hash.t
 roast/S32-array/bool.t
 roast/S32-array/elems.t
 roast/S32-basics/pairup.t
@@ -328,12 +330,14 @@ roast/S32-hash/invert.t
 roast/S32-hash/iterator.t
 roast/S32-hash/keys_values.t
 roast/S32-hash/push.t
+roast/S32-io/chdir-process.t
 roast/S32-io/dir.t
 roast/S32-io/null-char.t
 roast/S32-io/other-stress.t
 roast/S32-io/other.t
 roast/S32-list/batch.t
 roast/S32-list/cross.t
+roast/S32-list/flat.t
 roast/S32-num/abs.t
 roast/S32-num/exp.t
 roast/S32-num/expmod.t

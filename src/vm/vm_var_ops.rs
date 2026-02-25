@@ -224,6 +224,15 @@ impl VM {
                 value: 1,
                 index: 2,
             }
+        } else if (name.starts_with("infix:<")
+            || name.starts_with("prefix:<")
+            || name.starts_with("postfix:<"))
+            && name.ends_with('>')
+        {
+            Value::Routine {
+                package: "GLOBAL".to_string(),
+                name: name.to_string(),
+            }
         } else if let Some(v) = self.interpreter.env().get(name) {
             if matches!(v, Value::Enum { .. } | Value::Nil) {
                 v.clone()
@@ -239,7 +248,9 @@ impl VM {
             || Self::is_type_with_smiley(name, &self.interpreter)
         {
             Value::Package(name.to_string())
-        } else if self.interpreter.has_function(name) {
+        } else if self.interpreter.has_function(name)
+            || Interpreter::is_implicit_zero_arg_builtin(name)
+        {
             if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
                 let pkg = self.interpreter.current_package().to_string();
                 let result =
