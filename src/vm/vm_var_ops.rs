@@ -826,6 +826,7 @@ impl VM {
                 }
             }
             _ => {
+                // Check if the target is an array variable — use numeric index assignment
                 let key = idx.to_string_value();
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
                     match *container {

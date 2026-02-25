@@ -37,6 +37,8 @@ pub(crate) struct FunctionDef {
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) body: Vec<Stmt>,
     pub(crate) is_test_assertion: bool,
+    /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
+    pub(crate) empty_sig: bool,
 }
 
 pub(crate) fn function_body_fingerprint(
@@ -589,7 +591,7 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
 
 fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
     match expr {
-        Expr::Var(name) if name.starts_with('^') => {
+        Expr::Var(name) if name.starts_with('^') || name.starts_with(':') => {
             if !out.contains(name) {
                 out.push(name.clone());
             }

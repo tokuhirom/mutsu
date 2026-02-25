@@ -6,7 +6,7 @@ use crate::ast::{Expr, Stmt};
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
-use super::keyword;
+use super::{keyword, parse_comma_or_expr};
 
 fn rewrite_placeholder_block_modifier_stmt(stmt: Stmt, cond: &Expr) -> Stmt {
     if let Stmt::Block(body) = &stmt
@@ -210,7 +210,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
     }
     if let Some(r) = keyword("given", rest) {
         let (r, _) = ws1(r)?;
-        let (r, topic) = expression(r).map_err(|err| PError {
+        let (r, topic) = parse_comma_or_expr(r).map_err(|err| PError {
             messages: merge_expected_messages(
                 "expected topic expression after 'given'",
                 &err.messages,
@@ -230,7 +230,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
 
     if let Some(r) = keyword("with", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = parse_comma_or_expr(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
         // `stmt with expr` is like `given expr { if .defined { stmt } }`.
@@ -272,7 +272,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
     }
     if let Some(r) = keyword("without", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r)?;
+        let (r, cond) = parse_comma_or_expr(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
         // `stmt without expr` is like `given expr { unless .defined { stmt } }`.

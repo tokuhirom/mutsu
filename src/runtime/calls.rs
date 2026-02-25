@@ -11,6 +11,9 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let (args, callsite_line) = self.sanitize_call_args(args);
         self.test_pending_callsite_line = callsite_line;
+        if def.empty_sig && !args.is_empty() {
+            return Err(Self::reject_args_for_empty_sig(&args));
+        }
         let saved_env = self.env.clone();
         let rw_bindings = self.bind_function_args_values(&def.param_defs, &def.params, &args)?;
         let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
@@ -53,6 +56,9 @@ impl Interpreter {
             _ => {
                 let def_opt = self.resolve_function_with_alias(name, &args);
                 if let Some(def) = def_opt {
+                    if def.empty_sig && !args.is_empty() {
+                        return Err(Self::reject_args_for_empty_sig(&args));
+                    }
                     let saved_env = self.env.clone();
                     let rw_bindings =
                         self.bind_function_args_values(&def.param_defs, &def.params, &args)?;

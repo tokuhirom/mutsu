@@ -794,6 +794,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     }
                 }
             }
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Signature" => {
+                let attr_key = if method == "gist" { "gist" } else { "raku" };
+                Some(Ok(attributes
+                    .get(attr_key)
+                    .cloned()
+                    .unwrap_or_else(|| Value::Str(format!("{}()", class_name)))))
+            }
             Value::Package(_) | Value::Instance { .. } | Value::Enum { .. } => None,
             Value::Version {
                 parts, plus, minus, ..
