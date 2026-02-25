@@ -310,9 +310,29 @@ impl VM {
         self.stack.push(composed);
     }
 
-    pub(super) fn exec_but_mixin_op(&mut self) {
+    pub(super) fn exec_but_mixin_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let role_composed = match &right {
+            Value::Pair(name, boxed)
+                if self.interpreter.has_role(name)
+                    && matches!(boxed.as_ref(), Value::Array(..)) =>
+            {
+                Some(
+                    self.interpreter
+                        .eval_does_values(left.clone(), right.clone()),
+                )
+            }
+            Value::Package(name) | Value::Str(name) if self.interpreter.has_role(name) => Some(
+                self.interpreter
+                    .eval_does_values(left.clone(), right.clone()),
+            ),
+            _ => None,
+        };
+        if let Some(composed) = role_composed {
+            self.stack.push(composed?);
+            return Ok(());
+        }
         // Determine the mixin type from the right-hand value
         let mixin_type = match &right {
             Value::Bool(_) => "Bool".to_string(),
@@ -335,6 +355,7 @@ impl VM {
             }
         };
         self.stack.push(result);
+        Ok(())
     }
 
     pub(super) fn exec_isa_op(&mut self) {

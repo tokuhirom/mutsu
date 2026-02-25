@@ -483,10 +483,69 @@ impl Interpreter {
                     }
                 }
             }
+            let mut role_names: Vec<String> = mixins
+                .iter()
+                .filter_map(|(key, value)| {
+                    key.strip_prefix("__mutsu_role__")
+                        .and_then(|name| value.truthy().then_some(name.to_string()))
+                })
+                .collect();
+            role_names.sort();
+            let mut role_has_method = false;
+            for role_name in role_names {
+                let Some(role) = self.roles.get(&role_name).cloned() else {
+                    continue;
+                };
+                let Some(overloads) = role.methods.get(method).cloned() else {
+                    continue;
+                };
+                role_has_method = true;
+                for def in overloads {
+                    if def.is_private || !self.method_args_match(&args, &def.param_defs) {
+                        continue;
+                    }
+                    let role_attrs: HashMap<String, Value> = mixins
+                        .iter()
+                        .filter_map(|(key, value)| {
+                            key.strip_prefix("__mutsu_attr__")
+                                .map(|attr| (attr.to_string(), value.clone()))
+                        })
+                        .collect();
+                    let (result, _updated) = self.run_instance_method_resolved(
+                        &role_name,
+                        &role_name,
+                        def,
+                        role_attrs,
+                        args,
+                        Some(target.clone()),
+                    )?;
+                    return Ok(result);
+                }
+            }
+            if role_has_method {
+                return Err(RuntimeError::new(format!(
+                    "No matching candidates for method: {}",
+                    method
+                )));
+            }
             if method == "can" && args.len() == 1 {
                 let method_name = args[0].to_string_value();
-                if mixins.contains_key(&method_name) {
+                if mixins.contains_key(&method_name)
+                    || mixins.contains_key(&format!("__mutsu_attr__{}", method_name))
+                {
                     return Ok(Value::Bool(true));
+                }
+                for role_name in mixins.keys().filter_map(|key| {
+                    key.strip_prefix("__mutsu_role__")
+                        .map(|name| name.to_string())
+                }) {
+                    if self
+                        .roles
+                        .get(&role_name)
+                        .is_some_and(|role| role.methods.contains_key(&method_name))
+                    {
+                        return Ok(Value::Bool(true));
+                    }
                 }
                 return self.call_method_with_values((**inner).clone(), method, args);
             }
@@ -501,7 +560,9 @@ impl Interpreter {
                         Some(Value::Enum { key, .. }) if key == probe_key
                     ),
                     Value::Package(name) | Value::Str(name) => {
-                        mixins.contains_key(name) || inner.does_check(name)
+                        mixins.contains_key(name)
+                            || mixins.contains_key(&format!("__mutsu_role__{}", name))
+                            || inner.does_check(name)
                     }
                     other => inner.does_check(&other.to_string_value()),
                 };
@@ -774,7 +835,7 @@ impl Interpreter {
                 }
             }
             "note" if args.is_empty() => {
-                let content = format!("{}\n", gist_value(&target));
+                let content = format!("{}\n", self.render_gist_value(&target));
                 self.write_to_named_handle("$*ERR", &content, false)?;
                 return Ok(Value::Nil);
             }
