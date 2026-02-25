@@ -334,12 +334,14 @@ impl Interpreter {
             return self.call_function(name, args);
         }
         if let Value::Sub(data) = func {
-            let mut call_args = args.clone();
+            let (sanitized_args, callsite_line) = self.sanitize_call_args(&args);
+            self.test_pending_callsite_line = callsite_line;
+            let mut call_args = sanitized_args.clone();
             if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
                 let mut positional = Vec::new();
                 let mut named = data.assumed_named.clone();
                 let mut incoming_positional = Vec::new();
-                for arg in &args {
+                for arg in &sanitized_args {
                     if let Value::Pair(key, boxed) = arg {
                         named.insert(key.clone(), *boxed.clone());
                     } else {
@@ -406,7 +408,7 @@ impl Interpreter {
                 self.bind_function_args_values(&data.param_defs, &data.params, &call_args)?;
             new_env = self.env.clone();
             if data.params.is_empty() {
-                for arg in &args {
+                for arg in &sanitized_args {
                     if let Value::Pair(name, value) = arg {
                         new_env.insert(format!(":{}", name), *value.clone());
                     }
@@ -414,9 +416,10 @@ impl Interpreter {
             }
             // Bind implicit $_ for bare blocks called with arguments
             if data.params.is_empty()
-                && !args.is_empty()
-                && let Some(first_positional) =
-                    args.iter().find(|v| !matches!(v, Value::Pair(_, _)))
+                && !sanitized_args.is_empty()
+                && let Some(first_positional) = sanitized_args
+                    .iter()
+                    .find(|v| !matches!(v, Value::Pair(_, _)))
             {
                 new_env.insert("_".to_string(), first_positional.clone());
             }
