@@ -125,6 +125,7 @@ roast/S06-currying/misc.t
 roast/S06-currying/named.t
 roast/S06-multi/compile-time.t
 roast/S06-multi/lexical-multis.t
+roast/S06-multi/unpackability.t
 roast/S06-operator-overloading/prefix.t
 roast/S06-operator-overloading/semicolon.t
 roast/S06-other/main-eval.t

@@ -75,6 +75,10 @@ impl VM {
                 self.sync_locals_from_env(code);
                 result
             }
+        } else if name == "callsame" || name == "nextsame" || name == "nextcallee" {
+            let result = self.interpreter.call_function(name, Vec::new())?;
+            self.sync_locals_from_env(code);
+            result
         } else if name == "NaN" {
             Value::Num(f64::NAN)
         } else if name == "Inf" {

@@ -268,6 +268,9 @@ pub struct Interpreter {
     /// When set, pseudo-method names (DEFINITE, WHAT, etc.) bypass native fast path.
     /// Used for quoted method calls like `."DEFINITE"()`.
     pub(crate) skip_pseudo_method_native: Option<String>,
+    /// Stack of remaining multi dispatch candidates for callsame/nextsame/nextcallee.
+    /// Each entry is (remaining_candidates, original_args).
+    multi_dispatch_stack: Vec<(Vec<FunctionDef>, Vec<Value>)>,
 }
 
 /// An entry in the encoding registry.
@@ -913,6 +916,7 @@ impl Interpreter {
             shared_vars: Arc::new(Mutex::new(HashMap::new())),
             encoding_registry: Self::builtin_encodings(),
             skip_pseudo_method_native: None,
+            multi_dispatch_stack: Vec::new(),
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -1266,6 +1270,7 @@ impl Interpreter {
             shared_vars: Arc::clone(&self.shared_vars),
             encoding_registry: self.encoding_registry.clone(),
             skip_pseudo_method_native: None,
+            multi_dispatch_stack: Vec::new(),
         }
     }
 
