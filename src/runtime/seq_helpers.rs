@@ -1,8 +1,204 @@
 use super::*;
-use crate::value::signature::{extract_sig_info, signature_smartmatch};
+use crate::value::signature::{SigInfo, SigParam, extract_sig_info, signature_smartmatch};
 use ::regex::Regex;
 
 impl Interpreter {
+    fn signature_capture_like(value: &Value) -> Option<(Vec<Value>, HashMap<String, Value>)> {
+        match value {
+            Value::Capture { positional, named } => Some((positional.clone(), named.clone())),
+            Value::Hash(map) => Some((Vec::new(), (**map).clone())),
+            Value::Set(items) => Some((
+                Vec::new(),
+                items
+                    .iter()
+                    .map(|k| (k.clone(), Value::Bool(true)))
+                    .collect(),
+            )),
+            Value::Bag(items) => Some((
+                Vec::new(),
+                items
+                    .iter()
+                    .map(|(k, v)| (k.clone(), Value::Int(*v)))
+                    .collect(),
+            )),
+            Value::Mix(items) => Some((
+                Vec::new(),
+                items
+                    .iter()
+                    .map(|(k, v)| (k.clone(), Value::Num(*v)))
+                    .collect(),
+            )),
+            Value::Rat(n, d) | Value::FatRat(n, d) => {
+                let mut named = HashMap::new();
+                named.insert("numerator".to_string(), Value::Int(*n));
+                named.insert("denominator".to_string(), Value::Int(*d));
+                Some((Vec::new(), named))
+            }
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                let mut positional = Vec::new();
+                let mut named = HashMap::new();
+                for item in items.iter() {
+                    if let Value::Pair(k, v) = item {
+                        named.insert(k.clone(), *v.clone());
+                    } else {
+                        positional.push(item.clone());
+                    }
+                }
+                Some((positional, named))
+            }
+            Value::Pair(k, v) => {
+                let mut named = HashMap::new();
+                named.insert(k.clone(), *v.clone());
+                Some((Vec::new(), named))
+            }
+            Value::Instance { attributes, .. } => Some((Vec::new(), (**attributes).clone())),
+            _ => None,
+        }
+    }
+
+    fn signature_where_ok(&mut self, candidate: &Value, where_expr: &Expr) -> bool {
+        let saved = self.env.clone();
+        self.env.insert("_".to_string(), candidate.clone());
+        let ok = match where_expr {
+            Expr::AnonSub(body) => self
+                .eval_block_value(body)
+                .map(|v| v.truthy())
+                .unwrap_or(false),
+            expr => self
+                .eval_block_value(&[Stmt::Expr(expr.clone())])
+                .map(|v| self.smart_match(candidate, &v))
+                .unwrap_or(false),
+        };
+        self.env = saved;
+        ok
+    }
+
+    fn sig_param_optional(p: &SigParam) -> bool {
+        p.has_default || p.optional_marker
+    }
+
+    fn sig_param_matches_value(&mut self, candidate: &Value, param: &SigParam) -> bool {
+        if let Some(constraint) = &param.type_constraint
+            && !self.type_matches_value(constraint, candidate)
+        {
+            return false;
+        }
+        if let Some(where_expr) = &param.where_constraint
+            && !self.signature_where_ok(candidate, where_expr)
+        {
+            return false;
+        }
+        if let Some(sub_params) = &param.sub_signature {
+            let sub = SigInfo {
+                params: sub_params.clone(),
+                return_type: None,
+            };
+            if !self.signature_accepts_value(candidate, &sub) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn signature_accepts_value(&mut self, left: &Value, signature: &SigInfo) -> bool {
+        let Some((positional, named)) = Self::signature_capture_like(left) else {
+            return false;
+        };
+
+        let mut pos_idx = 0usize;
+        let mut consumed_named: HashSet<String> = HashSet::new();
+        let has_capture = signature.params.iter().any(|p| p.is_capture);
+        let has_slurpy_positional = signature
+            .params
+            .iter()
+            .any(|p| p.slurpy && !(p.named || p.sigil == '%'));
+        let has_slurpy_named = signature
+            .params
+            .iter()
+            .any(|p| p.slurpy && (p.named || p.sigil == '%'));
+
+        if has_capture {
+            return true;
+        }
+
+        for param in &signature.params {
+            if param.is_capture {
+                return true;
+            }
+
+            let is_named_space = param.named || (param.slurpy && param.sigil == '%');
+            if is_named_space {
+                if param.slurpy {
+                    if let Some(constraint) = &param.type_constraint {
+                        for (key, value) in &named {
+                            if consumed_named.contains(key) {
+                                continue;
+                            }
+                            if !self.type_matches_value(constraint, value) {
+                                return false;
+                            }
+                        }
+                    }
+                    consumed_named.extend(named.keys().cloned());
+                    continue;
+                }
+
+                let mut candidate = named.get(&param.name).cloned();
+                if candidate.is_none() {
+                    candidate = self
+                        .call_method_with_values(left.clone(), &param.name, Vec::new())
+                        .ok();
+                }
+                let Some(candidate) = candidate else {
+                    if Self::sig_param_optional(param) {
+                        continue;
+                    }
+                    return false;
+                };
+                consumed_named.insert(param.name.clone());
+                if !self.sig_param_matches_value(&candidate, param) {
+                    return false;
+                }
+                continue;
+            }
+
+            if param.slurpy {
+                if let Some(constraint) = &param.type_constraint {
+                    for value in &positional[pos_idx..] {
+                        if !self.type_matches_value(constraint, value) {
+                            return false;
+                        }
+                    }
+                }
+                pos_idx = positional.len();
+                continue;
+            }
+
+            let Some(candidate) = positional.get(pos_idx).cloned() else {
+                if Self::sig_param_optional(param) {
+                    continue;
+                }
+                return false;
+            };
+            pos_idx += 1;
+            if !self.sig_param_matches_value(&candidate, param) {
+                return false;
+            }
+        }
+
+        if !has_slurpy_positional && pos_idx < positional.len() {
+            return false;
+        }
+        if !has_slurpy_named
+            && named
+                .keys()
+                .any(|key| !consumed_named.contains(key.as_str()))
+        {
+            return false;
+        }
+        true
+    }
+
     fn p5_pattern_to_rust_regex(pattern: &str) -> String {
         let chars: Vec<char> = pattern.chars().collect();
         let mut i = 0usize;
@@ -381,6 +577,39 @@ impl Interpreter {
                 let key = left.to_string_value();
                 map.contains_key(&key)
             }
+            // Parametric role smartmatch: R1[C2] ~~ R1[C1] (subtyping)
+            (
+                Value::ParametricRole {
+                    base_name: lhs_base,
+                    type_args: lhs_args,
+                },
+                Value::ParametricRole {
+                    base_name: rhs_base,
+                    type_args: rhs_args,
+                },
+            ) => {
+                if lhs_args.len() != rhs_args.len() {
+                    return false;
+                }
+                if lhs_base != rhs_base && !self.role_is_subtype(lhs_base, rhs_base) {
+                    return false;
+                }
+                // Each LHS type arg must be a subtype of (or equal to) the corresponding RHS type arg
+                for (l_arg, r_arg) in lhs_args.iter().zip(rhs_args.iter()) {
+                    if !self.parametric_arg_subtypes(l_arg, r_arg) {
+                        return false;
+                    }
+                }
+                true
+            }
+            // Parametric role ~~ base role: R1[C1] ~~ R1
+            (
+                Value::ParametricRole {
+                    base_name: lhs_base,
+                    ..
+                },
+                Value::Package(rhs_name),
+            ) => lhs_base == rhs_name,
             // When RHS is a type/Package, check type membership
             (_, Value::Package(type_name)) => {
                 // Handle type smileys (:U, :D, :_)
@@ -536,6 +765,14 @@ impl Interpreter {
                     id_a == id_b
                 }
             }
+            // Value ~~ Signature: signature ACCEPTS value
+            (_, Value::Instance { class_name: cn, .. }) if cn == "Signature" => {
+                if let Some(info) = extract_sig_info(right) {
+                    self.signature_accepts_value(left, &info)
+                } else {
+                    false
+                }
+            }
             // Instance identity: two instances match iff they have the same id
             (Value::Instance { id: id_a, .. }, Value::Instance { id: id_b, .. }) => id_a == id_b,
             // When RHS is a Bool, result is that Bool
@@ -594,6 +831,77 @@ impl Interpreter {
             (l, r) if r.is_range() => Self::value_in_range(l, r),
             // Default: compare equality
             _ => left.to_string_value() == right.to_string_value(),
+        }
+    }
+
+    fn role_is_subtype(&self, lhs_role: &str, rhs_role: &str) -> bool {
+        if lhs_role == rhs_role {
+            return true;
+        }
+        let mut stack = vec![lhs_role.to_string()];
+        let mut seen = HashSet::new();
+        while let Some(role) = stack.pop() {
+            if !seen.insert(role.clone()) {
+                continue;
+            }
+            if let Some(parents) = self.role_parents.get(&role) {
+                for parent in parents {
+                    if parent == rhs_role {
+                        return true;
+                    }
+                    stack.push(parent.clone());
+                }
+            }
+        }
+        false
+    }
+
+    /// Check if `lhs` type arg is a subtype of `rhs` type arg for parametric role subtyping.
+    /// E.g., Package("C2") subtypes Package("C1") if C2 isa C1.
+    fn parametric_arg_subtypes(&self, lhs: &Value, rhs: &Value) -> bool {
+        match (lhs, rhs) {
+            // Both are packages (type objects): check class hierarchy
+            (Value::Package(l_name), Value::Package(r_name)) => {
+                if l_name == r_name {
+                    return true;
+                }
+                // Built-in type hierarchy relationships (e.g. Int <: Cool <: Any)
+                if Self::type_matches(r_name, l_name) {
+                    return true;
+                }
+                // Check if l_name is a subclass of r_name
+                if let Some(class_def) = self.classes.get(l_name.as_str()) {
+                    if class_def.parents.iter().any(|p| p == r_name) {
+                        return true;
+                    }
+                    // Transitive: check if any parent subtypes r_name
+                    for parent in &class_def.parents {
+                        if self.parametric_arg_subtypes(&Value::Package(parent.clone()), rhs) {
+                            return true;
+                        }
+                    }
+                }
+                false
+            }
+            // Both are parametric roles: recursively check
+            (
+                Value::ParametricRole {
+                    base_name: lb,
+                    type_args: la,
+                },
+                Value::ParametricRole {
+                    base_name: rb,
+                    type_args: ra,
+                },
+            ) => {
+                if lb != rb || la.len() != ra.len() {
+                    return false;
+                }
+                la.iter()
+                    .zip(ra.iter())
+                    .all(|(l, r)| self.parametric_arg_subtypes(l, r))
+            }
+            _ => false,
         }
     }
 

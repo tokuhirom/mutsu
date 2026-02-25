@@ -2,6 +2,26 @@ use super::*;
 use std::sync::Arc;
 
 impl VM {
+    fn term_symbol_from_name(name: &str) -> Option<&str> {
+        let bytes = name.as_bytes();
+        if bytes.is_empty() {
+            return None;
+        }
+        let starts_like_term = if bytes[0] == b't' {
+            name.starts_with("term:<")
+        } else if bytes[0] == b'&' {
+            name.starts_with("&term:<")
+        } else {
+            false
+        };
+        if !starts_like_term {
+            return None;
+        }
+        name.strip_prefix("term:<")
+            .or_else(|| name.strip_prefix("&term:<"))
+            .and_then(|s| s.strip_suffix('>'))
+    }
+
     fn array_depth(value: &Value) -> usize {
         match value {
             Value::Array(items, ..) => {
@@ -204,10 +224,22 @@ impl VM {
                 value: 1,
                 index: 2,
             }
+        } else if (name.starts_with("infix:<")
+            || name.starts_with("prefix:<")
+            || name.starts_with("postfix:<"))
+            && name.ends_with('>')
+        {
+            Value::Routine {
+                package: "GLOBAL".to_string(),
+                name: name.to_string(),
+            }
         } else if let Some(v) = self.interpreter.env().get(name) {
             if matches!(v, Value::Enum { .. } | Value::Nil) {
                 v.clone()
-            } else if self.interpreter.has_class(name) || Self::is_builtin_type(name) {
+            } else if self.interpreter.has_class(name)
+                || self.interpreter.is_role(name)
+                || Self::is_builtin_type(name)
+            {
                 Value::Package(name.to_string())
             } else if !name.starts_with('$') && !name.starts_with('@') && !name.starts_with('%') {
                 v.clone()
@@ -215,11 +247,14 @@ impl VM {
                 Value::Str(name.to_string())
             }
         } else if self.interpreter.has_class(name)
+            || self.interpreter.is_role(name)
             || Self::is_builtin_type(name)
             || Self::is_type_with_smiley(name, &self.interpreter)
         {
             Value::Package(name.to_string())
-        } else if self.interpreter.has_function(name) {
+        } else if self.interpreter.has_function(name)
+            || Interpreter::is_implicit_zero_arg_builtin(name)
+        {
             if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
                 let pkg = self.interpreter.current_package().to_string();
                 let result =
@@ -570,6 +605,17 @@ impl VM {
                     positional.get(i as usize).cloned().unwrap_or(Value::Nil)
                 }
             }
+            // Role parameterization: e.g. R1[C1] → ParametricRole
+            (Value::Package(name), idx) if self.interpreter.is_role(&name) => {
+                let type_args = match idx {
+                    Value::Array(items, ..) => items.as_ref().clone(),
+                    other => vec![other],
+                };
+                Value::ParametricRole {
+                    base_name: name,
+                    type_args,
+                }
+            }
             // Type parameterization: e.g. Buf[uint8] → returns the type unchanged
             (pkg @ Value::Package(_), _) => pkg,
             _ => Value::Nil,
@@ -810,20 +856,30 @@ impl VM {
                     self.stack.push(val);
                     return Ok(());
                 }
-                let vals = match &val {
+                let mut vals = match &val {
                     Value::Array(v, ..) => (**v).clone(),
                     _ => vec![val.clone()],
                 };
+                if vals.is_empty() {
+                    vals.push(Value::Nil);
+                }
+                if !matches!(self.interpreter.env().get(&var_name), Some(Value::Hash(_))) {
+                    self.interpreter.env_mut().insert(
+                        var_name.clone(),
+                        Value::hash(std::collections::HashMap::new()),
+                    );
+                }
                 if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(&var_name) {
                     let h = Arc::make_mut(hash);
                     for (i, key) in keys.iter().enumerate() {
                         let k = key.to_string_value();
-                        let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                        let v = vals[i % vals.len()].clone();
                         h.insert(k, v);
                     }
                 }
             }
             _ => {
+                // Check if the target is an array variable — use numeric index assignment
                 let key = idx.to_string_value();
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
                     match *container {
@@ -947,6 +1003,17 @@ impl VM {
         }
         self.locals[idx] = val.clone();
         self.set_env_with_main_alias(name, val.clone());
+        if let Some(symbol) = Self::term_symbol_from_name(name) {
+            self.interpreter
+                .env_mut()
+                .insert(symbol.to_string(), val.clone());
+            let pkg = self.interpreter.current_package().to_string();
+            if pkg != "GLOBAL" {
+                self.interpreter
+                    .env_mut()
+                    .insert(format!("{pkg}::term:<{symbol}>"), val.clone());
+            }
+        }
         if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
             if let Value::Str(name) = v {
                 Some(name.clone())
@@ -1023,6 +1090,13 @@ impl VM {
             self.interpreter
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
+        }
+        // For @ and % variables, the assignment expression should return the
+        // container, not the RHS value.
+        if (name.starts_with('@') || name.starts_with('%'))
+            && let Some(top) = self.stack.last_mut()
+        {
+            *top = val;
         }
         Ok(())
     }

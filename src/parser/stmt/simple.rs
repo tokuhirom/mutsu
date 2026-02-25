@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use regex::Regex;
@@ -14,11 +14,18 @@ use crate::ast::{AssignOp, Expr, PhaserKind, Stmt};
 use crate::value::Value;
 
 /// A single lexical scope frame tracking both user-declared subs and module imports.
+#[derive(Clone)]
+enum TermBinding {
+    Value(String),
+    Callable(String),
+}
+
 #[derive(Clone, Default)]
 struct LexicalScope {
     user_subs: HashSet<String>,
     test_assertion_subs: HashSet<String>,
     imported_functions: HashSet<String>,
+    term_symbols: HashMap<String, TermBinding>,
 }
 
 thread_local! {
@@ -38,6 +45,18 @@ thread_local! {
 }
 
 static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+fn parse_hyper_assign_op(input: &str) -> Option<&str> {
+    const HYPER_ASSIGN_OPS: &[&str] = &[
+        ">>=>>", "<<=<<", ">>=<<", "<<=>>", "»=»", "«=«", "»=«", "«=»",
+    ];
+    for op in HYPER_ASSIGN_OPS {
+        if let Some(rest) = input.strip_prefix(op) {
+            return Some(rest);
+        }
+    }
+    None
+}
 
 /// Set the library search paths for the parser (called before parsing).
 pub fn set_parser_lib_paths(paths: Vec<String>) {
@@ -275,6 +294,92 @@ pub(in crate::parser) fn match_user_declared_prefix_op(input: &str) -> Option<(S
                     .is_none_or(|(_, best_len)| consumed > *best_len)
                 {
                     best = Some((name.clone(), consumed));
+                }
+            }
+        }
+        best
+    })
+}
+
+/// Register a user-declared term symbol.
+/// The canonical name must be in `term:<...>` form.
+pub(in crate::parser) fn register_user_term_symbol(name: &str) {
+    let Some(symbol) = name
+        .strip_prefix("term:<")
+        .and_then(|s| s.strip_suffix('>'))
+    else {
+        return;
+    };
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let current = scopes
+            .last_mut()
+            .expect("scope stack should never be empty");
+        current
+            .term_symbols
+            .insert(symbol.to_string(), TermBinding::Value(name.to_string()));
+    });
+}
+
+pub(in crate::parser) fn register_user_callable_term_symbol(name: &str) {
+    let Some(symbol) = name
+        .strip_prefix("term:<")
+        .and_then(|s| s.strip_suffix('>'))
+    else {
+        return;
+    };
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let current = scopes
+            .last_mut()
+            .expect("scope stack should never be empty");
+        current
+            .term_symbols
+            .insert(symbol.to_string(), TermBinding::Callable(name.to_string()));
+    });
+}
+
+/// Resolve an in-scope term symbol from the current input.
+/// Returns `(canonical_name, consumed_len)` when the input begins with a declared symbol.
+pub(in crate::parser) fn match_user_declared_term_symbol(
+    input: &str,
+) -> Option<(String, usize, bool)> {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        let mut best: Option<(String, usize, bool)> = None;
+
+        for scope in scopes.iter().rev() {
+            for (symbol, binding) in &scope.term_symbols {
+                if !input.starts_with(symbol) {
+                    continue;
+                }
+                let consumed = symbol.len();
+                // For word-like symbols, require identifier boundary.
+                if symbol
+                    .as_bytes()
+                    .last()
+                    .copied()
+                    .is_some_and(|b| crate::parser::helpers::is_ident_char(Some(b)))
+                    && input
+                        .as_bytes()
+                        .get(consumed)
+                        .copied()
+                        .is_some_and(|b| crate::parser::helpers::is_ident_char(Some(b)))
+                {
+                    continue;
+                }
+                if best
+                    .as_ref()
+                    .is_none_or(|(_, best_len, _)| consumed > *best_len)
+                {
+                    match binding {
+                        TermBinding::Value(canonical) => {
+                            best = Some((canonical.clone(), consumed, false));
+                        }
+                        TermBinding::Callable(canonical) => {
+                            best = Some((canonical.clone(), consumed, true));
+                        }
+                    }
                 }
             }
         }
@@ -925,8 +1030,17 @@ pub(super) fn subtest_stmt(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Parse a block statement: { ... }
+/// If the block is followed by `.method(...)`, treat it as a block expression
+/// with postfix operators (e.g. `{ $^a }.assuming(123)()`).
 pub(super) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, body) = block(input)?;
+    let (r_ws, _) = ws(rest)?;
+    if r_ws.starts_with('.') && !r_ws.starts_with("..") {
+        // Use AnonSub so the block compiles as a closure value, not inline code
+        let block_expr = Expr::AnonSub(body);
+        let (rest, expr) = super::super::expr::postfix_expr_continue(rest, block_expr)?;
+        return parse_statement_modifier(rest, Stmt::Expr(expr));
+    }
     parse_statement_modifier(rest, Stmt::Block(body))
 }
 
@@ -1006,6 +1120,24 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             });
             return parse_statement_modifier(rest, stmt);
         }
+    }
+    if let Expr::Index { target, index } = expr.clone()
+        && let Some(rest) = parse_hyper_assign_op(rest)
+    {
+        let (rest, _) = ws(rest)?;
+        let (rest, value) = parse_comma_or_expr(rest).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected assigned expression after hyper assignment",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(rest.len())),
+        })?;
+        let stmt = Stmt::Expr(Expr::IndexAssign {
+            target,
+            index,
+            value: Box::new(value),
+        });
+        return parse_statement_modifier(rest, stmt);
     }
     if matches!(&expr, Expr::Index { target, .. } if matches!(target.as_ref(), Expr::ArrayVar(_)))
         && rest.starts_with(":=")

@@ -85,6 +85,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(string::double_quoted_string(input));
         try_primary!(string::smart_double_quoted_string(input));
         try_primary!(string::big_q_string(input));
+        try_primary!(string::qx_string(input));
         try_primary!(string::q_string(input));
         try_primary!(string::corner_bracket_string(input));
         try_primary!(regex::regex_lit(input));
@@ -115,6 +116,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(misc::anon_role_expr(input));
         // anonymous class: class { ... }
         try_primary!(misc::anon_class_expr(input));
+        try_primary!(ident::declared_term_symbol(input));
 
         match ident::identifier_or_call(input) {
             Ok(r) => Ok(r),
@@ -217,6 +219,13 @@ mod tests {
     #[test]
     fn parse_dq_interpolation() {
         let (rest, expr) = primary("\"hello $x world\"").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::StringInterpolation(_)));
+    }
+
+    #[test]
+    fn parse_sq_with_escaped_qq_interpolation() {
+        let (rest, expr) = primary("'a\\qq[$x]b'").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::StringInterpolation(_)));
     }
@@ -404,5 +413,31 @@ mod tests {
         let (rest, expr) = primary("Q!hello!\n").unwrap();
         assert_eq!(rest, "\n");
         assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "hello"));
+    }
+
+    #[test]
+    fn primary_qx_backtick_form() {
+        reset_primary_memo();
+        let (rest, expr) = primary("qx`pwd`").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Call { ref name, ref args } if name == "QX" && args.len() == 1
+        ));
+    }
+
+    #[test]
+    fn primary_qx_interpolates_command() {
+        reset_primary_memo();
+        let (rest, expr) = primary("qx{echo $x}").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "QX");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(args[0], Expr::StringInterpolation(_)));
+            }
+            _ => panic!("expected qx call expression"),
+        }
     }
 }

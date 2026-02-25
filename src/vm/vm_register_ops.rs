@@ -53,17 +53,22 @@ impl VM {
         if let Stmt::SubDecl {
             params,
             param_defs,
+            return_type,
             body,
             ..
         } = stmt
         {
+            let mut env = self.interpreter.env().clone();
+            if let Some(rt) = return_type {
+                env.insert("__mutsu_return_type".to_string(), Value::Str(rt.clone()));
+            }
             let val = Value::make_sub(
                 self.interpreter.current_package().to_string(),
                 String::new(),
                 params.clone(),
                 param_defs.clone(),
                 body.clone(),
-                self.interpreter.env().clone(),
+                env,
             );
             self.stack.push(val);
             Ok(())
@@ -81,17 +86,22 @@ impl VM {
         if let Stmt::SubDecl {
             params,
             param_defs,
+            return_type,
             body,
             ..
         } = stmt
         {
+            let mut env = self.interpreter.env().clone();
+            if let Some(rt) = return_type {
+                env.insert("__mutsu_return_type".to_string(), Value::Str(rt.clone()));
+            }
             let val = Value::make_sub(
                 self.interpreter.current_package().to_string(),
                 String::new(),
                 params.clone(),
                 param_defs.clone(),
                 body.clone(),
-                self.interpreter.env().clone(),
+                env,
             );
             self.stack.push(val);
             Ok(())
@@ -133,6 +143,7 @@ impl VM {
             name_expr,
             params,
             param_defs,
+            return_type,
             signature_alternates,
             body,
             multi,
@@ -152,6 +163,7 @@ impl VM {
                 &resolved_name,
                 params,
                 param_defs,
+                return_type.as_ref(),
                 body,
                 *multi,
                 *is_test_assertion,
@@ -162,6 +174,7 @@ impl VM {
                     &resolved_name,
                     params,
                     param_defs,
+                    return_type.as_ref(),
                     body,
                     *multi,
                     *is_test_assertion,
@@ -173,6 +186,7 @@ impl VM {
                     &resolved_name,
                     alt_params,
                     alt_param_defs,
+                    return_type.as_ref(),
                     body,
                     *multi,
                     *is_test_assertion,
@@ -183,6 +197,7 @@ impl VM {
                         &resolved_name,
                         alt_params,
                         alt_param_defs,
+                        return_type.as_ref(),
                         body,
                         *multi,
                         *is_test_assertion,
@@ -346,6 +361,8 @@ impl VM {
             name,
             name_expr,
             parents,
+            is_hidden,
+            hidden_parents,
             body,
         } = stmt
         {
@@ -356,8 +373,13 @@ impl VM {
             } else {
                 name.clone()
             };
-            self.interpreter
-                .register_class_decl(&resolved_name, parents, body)?;
+            self.interpreter.register_class_decl(
+                &resolved_name,
+                parents,
+                *is_hidden,
+                hidden_parents,
+                body,
+            )?;
             self.interpreter
                 .env_mut()
                 .insert("_".to_string(), Value::Package(resolved_name));
@@ -382,6 +404,9 @@ impl VM {
         {
             self.interpreter
                 .register_role_decl(name, type_params, body)?;
+            self.interpreter
+                .env_mut()
+                .insert("_".to_string(), Value::Package(name.clone()));
             self.sync_locals_from_env(code);
             Ok(())
         } else {

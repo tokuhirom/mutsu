@@ -1002,6 +1002,12 @@ impl Compiler {
                         self.code.emit(OpCode::GetBareWord(name_idx));
                     }
                 }
+                Stmt::RoleDecl { name, .. } => {
+                    // Register the role and return the role type object.
+                    self.compile_stmt(stmt);
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::GetBareWord(name_idx));
+                }
                 Stmt::EnumDecl { name, .. } if name.is_empty() => {
                     // Anonymous enum: RegisterEnum pushes the Map result
                     self.compile_stmt(stmt);
@@ -1048,6 +1054,7 @@ impl Compiler {
             Expr::AnonSubParams {
                 params,
                 param_defs,
+                return_type,
                 body,
             } => {
                 // Validate for placeholder conflicts
@@ -1062,6 +1069,7 @@ impl Compiler {
                     name_expr: None,
                     params: params.clone(),
                     param_defs: param_defs.clone(),
+                    return_type: return_type.clone(),
                     signature_alternates: Vec::new(),
                     body: body.clone(),
                     multi: false,
@@ -1081,6 +1089,7 @@ impl Compiler {
                         vec![param.clone()]
                     },
                     param_defs: Vec::new(),
+                    return_type: None,
                     signature_alternates: Vec::new(),
                     body: body.clone(),
                     multi: false,

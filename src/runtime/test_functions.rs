@@ -401,11 +401,51 @@ impl Interpreter {
         let left = Self::positional_value(args, 0);
         let right = Self::positional_value(args, 1);
         let ok = match (left, right) {
-            (Some(left), Some(right)) => left == right,
+            (Some(left), Some(right)) => {
+                // If either side is a Junction, thread eqv through the junction
+                // and check the boolean of the result (Raku semantics).
+                if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. })
+                {
+                    Self::eqv_with_junctions(left, right).truthy()
+                } else {
+                    // Convert Seq to List for comparison (per Raku spec:
+                    // Seq:D arguments to is-deeply get converted to Lists).
+                    Self::seq_to_list(left) == Self::seq_to_list(right)
+                }
+            }
             _ => false,
         };
         self.test_ok(ok, &desc, todo)?;
         Ok(Value::Bool(ok))
+    }
+
+    /// Convert Seq to List (Array) for is-deeply comparison, per Raku spec.
+    fn seq_to_list(v: &Value) -> Value {
+        if let Value::Seq(items) = v {
+            Value::Array(items.clone(), false)
+        } else {
+            v.clone()
+        }
+    }
+
+    /// Perform `eqv` comparison that threads through Junctions,
+    /// returning a Value (possibly a Junction of Bools).
+    fn eqv_with_junctions(left: &Value, right: &Value) -> Value {
+        if let Value::Junction { kind, values } = left {
+            let results: Vec<Value> = values
+                .iter()
+                .map(|v| Self::eqv_with_junctions(v, right))
+                .collect();
+            return Value::junction(kind.clone(), results);
+        }
+        if let Value::Junction { kind, values } = right {
+            let results: Vec<Value> = values
+                .iter()
+                .map(|v| Self::eqv_with_junctions(left, v))
+                .collect();
+            return Value::junction(kind.clone(), results);
+        }
+        Value::Bool(left.eqv(right))
     }
 
     fn test_fn_is_approx(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -538,7 +578,8 @@ impl Interpreter {
         let desc = positionals
             .get(2)
             .map(|v| v.to_string_value())
-            .unwrap_or_default();
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| format!("The object is-a '{}'", type_name));
         (value, type_name, desc)
     }
 
@@ -940,7 +981,14 @@ impl Interpreter {
             Some(Value::Package(name)) => name.clone(),
             _ => Self::positional_string(args, 1),
         };
-        let desc = Self::positional_string(args, 2);
+        let desc = {
+            let explicit = Self::positional_string(args, 2);
+            if explicit.is_empty() {
+                format!("The object does '{}'", role_name)
+            } else {
+                explicit
+            }
+        };
         let todo = Self::named_bool(args, "todo");
         // NOTE: does_check currently delegates to isa_check (issue #91)
         let ok = value.does_check(&role_name);
@@ -953,7 +1001,14 @@ impl Interpreter {
             .cloned()
             .unwrap_or(Value::Nil);
         let method_name = Self::positional_string(args, 1);
-        let desc = Self::positional_string(args, 2);
+        let desc = {
+            let explicit = Self::positional_string(args, 2);
+            if explicit.is_empty() {
+                format!("The object can '{}'", method_name)
+            } else {
+                explicit
+            }
+        };
         let todo = Self::named_bool(args, "todo");
         let ok = self.value_can_method(&value, &method_name);
         self.test_ok(ok, &desc, todo)?;

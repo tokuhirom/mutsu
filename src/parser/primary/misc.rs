@@ -13,19 +13,19 @@ use super::var::parse_ident_with_hyphens;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-fn skip_pointy_return_type(mut r: &str) -> PResult<'_, ()> {
+fn skip_pointy_return_type(mut r: &str) -> PResult<'_, Option<String>> {
     let (r2, _) = ws(r)?;
     r = r2;
     if let Some(after_arrow) = r.strip_prefix("-->") {
         let (after_arrow, _) = ws(after_arrow)?;
         // Keep this permissive for now: simple type-like names only.
-        let (after_arrow, _type_name) = take_while1(after_arrow, |c: char| {
+        let (after_arrow, type_name) = take_while1(after_arrow, |c: char| {
             c.is_alphanumeric() || c == '_' || c == ':'
         })?;
         let (after_arrow, _) = ws(after_arrow)?;
-        Ok((after_arrow, ()))
+        Ok((after_arrow, Some(type_name.to_string())))
     } else {
-        Ok((r, ()))
+        Ok((r, None))
     }
 }
 
@@ -35,6 +35,7 @@ const REDUCTION_OPS: &[&str] = &[
     "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=", ">=", "<=>", "===",
     "=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg", "cmp", "~~", "min", "max",
     "gcd", "lcm", "and", "or", "not", ",", "after", "before", "X", "Z", "x", "xx", "&", "|", "^",
+    "o", "∘",
 ];
 
 /// Find the matching `]` for a `[` at position 0, respecting nesting.
@@ -102,11 +103,42 @@ fn is_valid_reduction_op(op: &str) -> bool {
     // Also support scan form (\op) and negated operators (!after),
     // while keeping operators that genuinely start with '!' (e.g. '!=').
     let s = s.strip_prefix('\\').unwrap_or(s);
+    let s = if s == "∘" { "o" } else { s };
     if REDUCTION_OPS.contains(&s) {
         return true;
     }
-    if let Some(stripped) = s.strip_prefix('!') {
-        return REDUCTION_OPS.contains(&stripped);
+    if let Some(stripped) = s.strip_prefix('!')
+        && REDUCTION_OPS.contains(&stripped)
+    {
+        return true;
+    }
+    is_custom_reduction_op(s)
+}
+
+fn is_custom_reduction_op(op: &str) -> bool {
+    if let Some(name) = op.strip_prefix('&') {
+        return is_callable_reduction_name(name);
+    }
+    if let Ok((rest, _)) = parse_ident_with_hyphens(op) {
+        return rest.is_empty();
+    }
+    false
+}
+
+fn is_callable_reduction_name(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    if (name.starts_with("infix:<")
+        || name.starts_with("prefix:<")
+        || name.starts_with("postfix:<")
+        || name.starts_with("term:<"))
+        && name.ends_with('>')
+    {
+        return true;
+    }
+    if let Ok((rest, _)) = parse_ident_with_hyphens(name) {
+        return rest.is_empty();
     }
     false
 }
@@ -124,12 +156,16 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("operator in reduction"));
     }
     // Flatten nested bracket notation: [[+]] → "+", [R[+]] → "R+"
-    let op = flatten_bracket_op(inner);
+    let op = match flatten_bracket_op(inner).as_str() {
+        "∘" => "o".to_string(),
+        other => other.to_string(),
+    };
     // Only accept known operators (after flattening) to avoid confusion with array literals.
     if !is_valid_reduction_op(&op) {
         return Err(PError::expected("known reduction operator"));
     }
     let r = &input[end + 1..];
+    let call_style_operand = r.starts_with('(') && is_custom_reduction_op(&op);
     // Must be followed by whitespace and an expression (not just `]`)
     if r.is_empty() || r.starts_with(';') || r.starts_with('}') || r.starts_with(')') {
         return Err(PError::expected("expression after reduction operator"));
@@ -139,31 +175,33 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
     let (r, first) = parse_reduction_operand(r)?;
     let mut items = vec![first];
     let mut rest = r;
-    loop {
-        let (r, _) = ws_inner(rest);
-        if !r.starts_with(',') {
-            break;
-        }
-        let r = &r[1..];
-        let (r, _) = ws_inner(r);
-        // Stop at end-of-input, semicolon, closing brackets, or statement modifiers
-        if r.is_empty()
-            || r.starts_with(';')
-            || r.starts_with('}')
-            || r.starts_with(')')
-            || r.starts_with(']')
-        {
-            rest = r;
-            break;
-        }
-        if let Ok((r, next)) = parse_reduction_operand(r) {
-            items.push(next);
-            rest = r;
-        } else {
-            return Err(PError::expected_at(
-                "expression after ',' in reduction list",
-                r,
-            ));
+    if !call_style_operand {
+        loop {
+            let (r, _) = ws_inner(rest);
+            if !r.starts_with(',') {
+                break;
+            }
+            let r = &r[1..];
+            let (r, _) = ws_inner(r);
+            // Stop at end-of-input, semicolon, closing brackets, or statement modifiers
+            if r.is_empty()
+                || r.starts_with(';')
+                || r.starts_with('}')
+                || r.starts_with(')')
+                || r.starts_with(']')
+            {
+                rest = r;
+                break;
+            }
+            if let Ok((r, next)) = parse_reduction_operand(r) {
+                items.push(next);
+                rest = r;
+            } else {
+                return Err(PError::expected_at(
+                    "expression after ',' in reduction list",
+                    r,
+                ));
+            }
         }
     }
     let expr = if items.len() == 1 {
@@ -579,12 +617,17 @@ fn parse_signature_fragment(input: &str) -> PResult<'_, String> {
     Ok(("", frag.to_string()))
 }
 
-/// Parse `\(...)` Capture literal.
+/// Parse capture literals: `\(...)` and `\expr`.
 pub(super) fn capture_literal(input: &str) -> PResult<'_, Expr> {
-    if !input.starts_with("\\(") {
+    if !input.starts_with('\\') {
         return Err(PError::expected("capture literal"));
     }
-    let r = &input[1..]; // skip backslash, keep (
+    let r = &input[1..]; // skip backslash
+    if !r.starts_with('(') {
+        let (r, item) = super::super::expr::expression(r)?;
+        return Ok((r, Expr::CaptureLiteral(vec![item])));
+    }
+    // Parenthesized capture literal: \(a, b, :c)
     let (r, _) = parse_char(r, '(')?;
     let (r, _) = ws(r)?;
     let (r, items) = super::parse_call_arg_list(r)?;
@@ -612,7 +655,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
         let (r, sub_params) = super::super::stmt::parse_param_list_pub(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
-        let (r, _) = skip_pointy_return_type(r)?;
+        let (r, return_type) = skip_pointy_return_type(r)?;
         let (r, body) = parse_block_body(r)?;
         let params: Vec<String> = sub_params.iter().map(|p| p.name.clone()).collect();
         return Ok((
@@ -620,6 +663,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
             Expr::AnonSubParams {
                 params,
                 param_defs: sub_params,
+                return_type,
                 body,
             },
         ));
@@ -643,7 +687,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
             }
             r = r2;
         }
-        let (r, _) = skip_pointy_return_type(r)?;
+        let (r, return_type) = skip_pointy_return_type(r)?;
         let (r, body) = parse_block_body(r)?;
         let params: Vec<String> = param_defs.iter().map(|p| p.name.clone()).collect();
         Ok((
@@ -651,12 +695,13 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
             Expr::AnonSubParams {
                 params,
                 param_defs,
+                return_type,
                 body,
             },
         ))
     } else {
         // Single param: -> $n { body }
-        let (r, _) = skip_pointy_return_type(r)?;
+        let (r, return_type) = skip_pointy_return_type(r)?;
         let (r, body) = parse_block_body(r)?;
         let simple_single = first.traits.is_empty();
         if simple_single {
@@ -673,6 +718,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
                 Expr::AnonSubParams {
                     params: vec![first.name.clone()],
                     param_defs: vec![first],
+                    return_type,
                     body,
                 },
             ))
@@ -820,6 +866,8 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             name,
             name_expr: None,
             parents: Vec::new(),
+            is_hidden: false,
+            hidden_parents: Vec::new(),
             body,
         })),
     ))
