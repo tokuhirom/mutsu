@@ -52,6 +52,7 @@ fn substitute_type_params_in_method(
         body: method.body.clone(),
         is_rw: method.is_rw,
         is_private: method.is_private,
+        return_type: method.return_type.clone(),
     }
 }
 
@@ -1166,6 +1167,7 @@ impl Interpreter {
                                 })],
                                 is_rw: false,
                                 is_private: false,
+                                return_type: None,
                             });
                     }
                 }
@@ -1179,6 +1181,7 @@ impl Interpreter {
                     is_rw,
                     is_private,
                     is_our,
+                    return_type,
                 } => {
                     self.validate_private_access_in_stmts(name, method_body)?;
                     let resolved_method_name = if let Some(expr) = name_expr {
@@ -1199,6 +1202,7 @@ impl Interpreter {
                         body: method_body.clone(),
                         is_rw: *is_rw,
                         is_private: *is_private,
+                        return_type: return_type.clone(),
                     };
                     if *multi {
                         class_def
@@ -1373,6 +1377,7 @@ impl Interpreter {
                                 })],
                                 is_rw: false,
                                 is_private: false,
+                                return_type: None,
                             });
                     }
                 }
@@ -1407,6 +1412,7 @@ impl Interpreter {
                     is_rw,
                     is_private,
                     is_our: _,
+                    return_type,
                 } => {
                     let resolved_method_name = if let Some(expr) = name_expr {
                         self.eval_block_value(&[Stmt::Expr(expr.clone())])?
@@ -1420,6 +1426,7 @@ impl Interpreter {
                         body: method_body.clone(),
                         is_rw: *is_rw,
                         is_private: *is_private,
+                        return_type: return_type.clone(),
                     };
                     if *multi {
                         role_def

@@ -325,8 +325,25 @@ impl VM {
                 }
             }
             (target @ Value::Array(..), Value::Array(indices, ..)) => {
-                let strict_oob = indices.len() > 1;
-                Self::index_array_multidim(&target, indices.as_ref(), strict_oob)?
+                let depth = Self::array_depth(&target);
+                if depth <= 1 && indices.len() > 1 {
+                    // Positional slice: @a[0,1,2] returns (@a[0], @a[1], @a[2])
+                    let Value::Array(items, ..) = &target else {
+                        unreachable!()
+                    };
+                    let mut out = Vec::with_capacity(indices.len());
+                    for idx in indices.iter() {
+                        if let Some(i) = Self::index_to_usize(idx) {
+                            out.push(items.get(i).cloned().unwrap_or(Value::Nil));
+                        } else {
+                            out.push(Value::Nil);
+                        }
+                    }
+                    Value::array(out)
+                } else {
+                    let strict_oob = indices.len() > 1;
+                    Self::index_array_multidim(&target, indices.as_ref(), strict_oob)?
+                }
             }
             (Value::Array(items, ..), Value::Range(a, b)) => {
                 let start = a.max(0) as usize;
