@@ -864,15 +864,16 @@ impl Interpreter {
         params: &[String],
         args: &[Value],
     ) -> Result<Vec<(String, String)>, RuntimeError> {
+        let plain_args: Vec<Value> = args.iter().cloned().map(unwrap_varref_value).collect();
         // Always set @_ for legacy Perl-style argument access
         self.env
-            .insert("@_".to_string(), Value::array(args.to_vec()));
+            .insert("@_".to_string(), Value::array(plain_args.clone()));
         let arg_sources = self.take_pending_call_arg_sources();
         let mut rw_bindings = Vec::new();
         if param_defs.is_empty() {
             // Legacy path: just bind by position
             for (i, param) in params.iter().enumerate() {
-                if let Some(value) = args.get(i) {
+                if let Some(value) = plain_args.get(i) {
                     self.bind_param_value(param, value.clone());
                 } else if param.starts_with('^') {
                     return Err(RuntimeError::new(format!(
@@ -919,7 +920,7 @@ impl Interpreter {
                     // **@ (non-flattening slurpy): keep each argument as-is
                     let mut items = Vec::new();
                     while positional_idx < args.len() {
-                        items.push(args[positional_idx].clone());
+                        items.push(unwrap_varref_value(args[positional_idx].clone()));
                         positional_idx += 1;
                     }
                     if !pd.name.is_empty() {
