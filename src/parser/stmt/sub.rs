@@ -904,20 +904,42 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             return Ok((r, p));
         }
         let (r, _) = ws(r)?;
-        // Optional capture variable name with sigil
+        // Optional capture variable name with sigil, optionally followed by
+        // a capture sub-signature: |$c ($a, $b?)
         if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') {
             let (r, name) = var_name(r)?;
             let mut p = make_param(name);
             p.slurpy = true;
+            let (r, _) = ws(r)?;
+            if r.starts_with('(') {
+                let (r, _) = parse_char(r, '(')?;
+                let (r, _) = ws(r)?;
+                let (r, sub_params) = parse_param_list(r)?;
+                let (r, _) = ws(r)?;
+                let (r, _) = parse_char(r, ')')?;
+                p.sub_signature = Some(sub_params);
+                return Ok((r, p));
+            }
             return Ok((r, p));
         }
-        // Sigilless capture variable name: |c, |args
+        // Sigilless capture variable name: |c, |args, optionally followed by
+        // a capture sub-signature: |c ($a, $b?)
         if let Ok((r_ident, name)) = ident(r)
             && !matches!(name.as_str(), "where" | "is")
         {
             let mut p = make_param(name);
             p.slurpy = true;
             p.sigilless = true;
+            let (r_ident, _) = ws(r_ident)?;
+            if r_ident.starts_with('(') {
+                let (r_ident, _) = parse_char(r_ident, '(')?;
+                let (r_ident, _) = ws(r_ident)?;
+                let (r_ident, sub_params) = parse_param_list(r_ident)?;
+                let (r_ident, _) = ws(r_ident)?;
+                let (r_ident, _) = parse_char(r_ident, ')')?;
+                p.sub_signature = Some(sub_params);
+                return Ok((r_ident, p));
+            }
             return Ok((r_ident, p));
         }
         // Bare |, possibly followed by traits/where
@@ -1326,6 +1348,25 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                         rest = r;
                     }
                     p.traits = param_traits;
+                    let (rest, where_constraint) = if let Some(r) = keyword("where", rest) {
+                        let (r, _) = ws1(r)?;
+                        let (r, constraint) = parse_where_constraint_expr(r)?;
+                        (r, Some(Box::new(constraint)))
+                    } else {
+                        (rest, None)
+                    };
+                    p.where_constraint = where_constraint;
+                    let (rest_ws, _) = ws(rest)?;
+                    let (rest, default) = if rest_ws.starts_with('=') && !rest_ws.starts_with("==")
+                    {
+                        let rest = &rest_ws[1..];
+                        let (rest, _) = ws(rest)?;
+                        let (rest, expr) = expression(rest)?;
+                        (rest, Some(expr))
+                    } else {
+                        (rest_ws, None)
+                    };
+                    p.default = default;
                     return Ok((rest, p));
                 }
                 // Handle optional (?) / required (!) suffix after alias
@@ -1354,6 +1395,16 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                     (rest, None)
                 };
                 p.where_constraint = where_constraint;
+                let (rest_ws, _) = ws(rest)?;
+                let (rest, default) = if rest_ws.starts_with('=') && !rest_ws.starts_with("==") {
+                    let rest = &rest_ws[1..];
+                    let (rest, _) = ws(rest)?;
+                    let (rest, expr) = expression(rest)?;
+                    (rest, Some(expr))
+                } else {
+                    (rest_ws, None)
+                };
+                p.default = default;
                 return Ok((rest, p));
             }
             // Multiple params or complex: treat as sub-signature
@@ -1389,6 +1440,16 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 (rest, None)
             };
             p.where_constraint = where_constraint;
+            let (rest_ws, _) = ws(rest)?;
+            let (rest, default) = if rest_ws.starts_with('=') && !rest_ws.starts_with("==") {
+                let rest = &rest_ws[1..];
+                let (rest, _) = ws(rest)?;
+                let (rest, expr) = expression(rest)?;
+                (rest, Some(expr))
+            } else {
+                (rest_ws, None)
+            };
+            p.default = default;
             return Ok((rest, p));
         }
     }

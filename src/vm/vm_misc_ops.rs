@@ -295,7 +295,14 @@ impl VM {
             Value::Str(s) => s.clone(),
             _ => unreachable!("AssignExpr name must be a string constant"),
         };
-        let val = self.stack.last().unwrap().clone();
+        let raw_val = self.stack.pop().unwrap_or(Value::Nil);
+        let val = if name.starts_with('%') {
+            runtime::coerce_to_hash(raw_val)
+        } else if name.starts_with('@') {
+            runtime::coerce_to_array(raw_val)
+        } else {
+            raw_val
+        };
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
         if matches!(
@@ -326,14 +333,7 @@ impl VM {
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
         }
-        // For @ and % variables, the assignment expression should return the
-        // container, not the RHS value.
-        if (name.starts_with('@') || name.starts_with('%'))
-            && let Some(container) = self.interpreter.env().get(&name).cloned()
-            && let Some(top) = self.stack.last_mut()
-        {
-            *top = container;
-        }
+        self.stack.push(val);
         Ok(())
     }
 

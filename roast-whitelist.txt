@@ -135,6 +135,7 @@ roast/S06-advanced/stub.t
 roast/S06-currying/assuming-and-mmd.t
 roast/S06-currying/misc.t
 roast/S06-currying/named.t
+roast/S06-currying/slurpy.t
 roast/S06-multi/compile-time.t
 roast/S06-multi/lexical-multis.t
 roast/S06-multi/unpackability.t

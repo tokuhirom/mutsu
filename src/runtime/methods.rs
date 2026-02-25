@@ -403,6 +403,20 @@ impl Interpreter {
         }
     }
 
+    fn has_named_slurpy_param(param_defs: &[ParamDef]) -> bool {
+        for pd in param_defs {
+            if pd.slurpy && pd.name.starts_with('%') {
+                return true;
+            }
+            if let Some(sub) = &pd.sub_signature
+                && Self::has_named_slurpy_param(sub)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
     fn shaped_dims_from_new_args(args: &[Value]) -> Option<Vec<usize>> {
         let shape_val = args.iter().find_map(|arg| match arg {
             Value::Pair(name, value) if name == "shape" => Some(value.as_ref().clone()),
@@ -690,8 +704,9 @@ impl Interpreter {
                 let mut known_named: std::collections::HashSet<String> =
                     std::collections::HashSet::new();
                 Self::collect_named_param_keys(&next.param_defs, &mut known_named);
+                let allows_extra_named = Self::has_named_slurpy_param(&next.param_defs);
                 for name in incoming_named.keys() {
-                    if !known_named.contains(name) {
+                    if !allows_extra_named && !known_named.contains(name) {
                         return Ok(make_failure(
                             &next,
                             Value::Str("Unexpected".to_string()),

@@ -246,7 +246,8 @@ fn bind_sub_signature_from_value(
                 )));
             }
         }
-        if !sub_pd.name.is_empty() {
+        let bind_alias_name = !(sub_pd.named && sub_pd.sub_signature.is_some());
+        if !sub_pd.name.is_empty() && bind_alias_name {
             interpreter
                 .env
                 .insert(sub_pd.name.clone(), candidate.clone());
@@ -724,24 +725,39 @@ impl Interpreter {
                 param_defs.iter().filter(|p| !p.named).collect();
             let mut i = 0usize;
             for pd in positional_params {
-                let is_capture_param = pd.name == "_capture";
+                let is_capture_param = pd.name == "_capture" || (pd.slurpy && pd.sigilless);
                 let is_subsig_capture = pd.name == "__subsig__" && pd.sub_signature.is_some();
                 let arg_for_checks: Option<Value> = if pd.slurpy || is_capture_param {
-                    // For single-star slurpy (*@), flatten list arguments but preserve
-                    // itemized Arrays ($[...] / .item) as single positional values.
-                    let mut items = Vec::new();
-                    for arg in &args[i..] {
-                        let arg = unwrap_varref_value(arg.clone());
-                        if !pd.double_slurpy
-                            && let Value::Array(arr, is_array) = &arg
-                            && !*is_array
-                        {
-                            items.extend(arr.iter().cloned());
-                            continue;
+                    if is_capture_param {
+                        // |c capture params preserve both positional and named parts.
+                        let mut positional = Vec::new();
+                        let mut named = std::collections::HashMap::new();
+                        for arg in &args[i..] {
+                            let arg = unwrap_varref_value(arg.clone());
+                            if let Value::Pair(key, val) = arg {
+                                named.insert(key, *val);
+                            } else {
+                                positional.push(arg);
+                            }
                         }
-                        items.push(arg);
+                        Some(Value::Capture { positional, named })
+                    } else {
+                        // For single-star slurpy (*@), flatten list arguments but preserve
+                        // itemized Arrays ($[...] / .item) as single positional values.
+                        let mut items = Vec::new();
+                        for arg in &args[i..] {
+                            let arg = unwrap_varref_value(arg.clone());
+                            if !pd.double_slurpy
+                                && let Value::Array(arr, is_array) = &arg
+                                && !*is_array
+                            {
+                                items.extend(arr.iter().cloned());
+                                continue;
+                            }
+                            items.push(arg);
+                        }
+                        Some(Value::array(items))
                     }
-                    Some(Value::array(items))
                 } else if is_subsig_capture {
                     Some(sub_signature_target_from_remaining_args(
                         &args[i..]
@@ -843,7 +859,7 @@ impl Interpreter {
                         return false;
                     }
                 }
-                if is_capture_param || is_subsig_capture {
+                if is_subsig_capture {
                     i = args.len();
                 } else if !pd.slurpy {
                     i += 1;
@@ -977,17 +993,20 @@ impl Interpreter {
                     // |c — capture parameter: preserve positional and named parts.
                     let mut positional = Vec::new();
                     let mut named = std::collections::HashMap::new();
-                    while positional_idx < args.len() {
-                        let arg = unwrap_varref_value(args[positional_idx].clone());
+                    for arg in args[positional_idx..].iter().cloned() {
+                        let arg = unwrap_varref_value(arg);
                         if let Value::Pair(key, val) = arg {
                             named.insert(key, *val);
                         } else {
                             positional.push(arg);
                         }
-                        positional_idx += 1;
                     }
+                    let capture_value = Value::Capture { positional, named };
                     if !pd.name.is_empty() {
-                        self.bind_param_value(&pd.name, Value::Capture { positional, named });
+                        self.bind_param_value(&pd.name, capture_value.clone());
+                    }
+                    if let Some(sub_params) = &pd.sub_signature {
+                        bind_sub_signature_from_value(self, sub_params, &capture_value)?;
                     }
                 } else if is_hash_slurpy {
                     // *%hash — collect Pair arguments into a hash

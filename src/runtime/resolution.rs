@@ -336,15 +336,32 @@ impl Interpreter {
         if let Value::Sub(data) = func {
             let mut call_args = args.clone();
             if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
-                let mut positional = data.assumed_positional.clone();
+                let mut positional = Vec::new();
                 let mut named = data.assumed_named.clone();
+                let mut incoming_positional = Vec::new();
                 for arg in &args {
                     if let Value::Pair(key, boxed) = arg {
                         named.insert(key.clone(), *boxed.clone());
                     } else {
-                        positional.push(arg.clone());
+                        incoming_positional.push(arg.clone());
                     }
                 }
+                // Fill bare `*` primers from incoming positional args in order.
+                // Remaining positional args are appended after all fixed primers.
+                let mut incoming_idx = 0usize;
+                for assumed in &data.assumed_positional {
+                    let is_placeholder = matches!(assumed, Value::Num(f) if f.is_infinite())
+                        || matches!(assumed, Value::Rat(_, 0));
+                    if is_placeholder {
+                        if incoming_idx < incoming_positional.len() {
+                            positional.push(incoming_positional[incoming_idx].clone());
+                            incoming_idx += 1;
+                        }
+                    } else {
+                        positional.push(assumed.clone());
+                    }
+                }
+                positional.extend(incoming_positional.into_iter().skip(incoming_idx));
                 call_args = positional;
                 for (key, value) in named {
                     call_args.push(Value::Pair(key, Box::new(value)));
