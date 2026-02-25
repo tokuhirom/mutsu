@@ -117,6 +117,8 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(misc::anon_role_expr(input));
         // anonymous class: class { ... }
         try_primary!(misc::anon_class_expr(input));
+        // anonymous grammar: grammar { ... }
+        try_primary!(misc::anon_grammar_expr(input));
         try_primary!(ident::declared_circumfix_op(input));
         try_primary!(ident::declared_term_symbol(input));
 

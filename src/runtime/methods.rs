@@ -2940,10 +2940,27 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let mut source: Option<String> = None;
         let mut start_rule = "TOP".to_string();
+        let mut rule_args: Vec<Value> = Vec::new();
         for arg in args {
             if let Value::Pair(key, value) = arg {
                 if key == "rule" || key == "token" {
                     start_rule = value.to_string_value();
+                } else if key == "args" {
+                    // :args(\(42)) passes a Capture; :args(42,) passes an Array
+                    match value.as_ref() {
+                        Value::Capture {
+                            positional,
+                            named: _,
+                        } => {
+                            rule_args = positional.clone();
+                        }
+                        Value::Array(arr, _) => {
+                            rule_args = arr.as_ref().clone();
+                        }
+                        other => {
+                            rule_args = vec![other.clone()];
+                        }
+                    }
                 }
                 continue;
             }
@@ -2974,7 +2991,7 @@ impl Interpreter {
         }
         self.env.insert("_".to_string(), Value::Str(text.clone()));
         let result = (|| -> Result<Value, RuntimeError> {
-            let pattern = match self.eval_token_call_values(&start_rule, &[]) {
+            let pattern = match self.eval_token_call_values(&start_rule, &rule_args) {
                 Ok(Some(pattern)) => pattern,
                 Ok(None) => {
                     self.env.insert("/".to_string(), Value::Nil);
@@ -2990,6 +3007,15 @@ impl Interpreter {
                 }
                 Err(err) => return Err(err),
             };
+
+            // Bind rule args to the env so code assertions { ... } can access them
+            if !rule_args.is_empty()
+                && let Some(def) = self
+                    .resolve_token_defs(&start_rule)
+                    .and_then(|defs| defs.into_iter().next())
+            {
+                let _ = self.bind_function_args_values(&def.param_defs, &def.params, &rule_args);
+            }
 
             let Some(captures) = self.regex_match_with_captures(&pattern, &text) else {
                 self.env.insert("/".to_string(), Value::Nil);

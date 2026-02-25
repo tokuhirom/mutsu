@@ -301,7 +301,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         }
         return Ok((r, stmt));
     }
-    // my regex Name { ... }
+    // my regex/token/rule Name { ... }
     // Reuse token/regex/rule declaration parsing so `<Name>` works in regexes.
     if keyword("regex", rest).is_some()
         || keyword("token", rest).is_some()

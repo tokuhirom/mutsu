@@ -170,6 +170,7 @@ fn inject_implicit_rule_ws(pattern: &str) -> String {
     let mut in_single = false;
     let mut in_double = false;
     let mut escaped = false;
+    let mut brace_depth = 0usize;
     while i < chars.len() {
         let c = chars[i];
         if escaped {
@@ -192,6 +193,27 @@ fn inject_implicit_rule_ws(pattern: &str) -> String {
         }
         if c == '"' && !in_single {
             in_double = !in_double;
+            out.push(c);
+            i += 1;
+            continue;
+        }
+        // Track brace depth to skip ws injection inside code blocks { ... }
+        if !in_single && !in_double {
+            if c == '{' {
+                brace_depth += 1;
+                out.push(c);
+                i += 1;
+                continue;
+            }
+            if c == '}' && brace_depth > 0 {
+                brace_depth -= 1;
+                out.push(c);
+                i += 1;
+                continue;
+            }
+        }
+        // Inside a code block — pass through without ws injection
+        if brace_depth > 0 {
             out.push(c);
             i += 1;
             continue;
