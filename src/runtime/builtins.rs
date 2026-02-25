@@ -107,11 +107,11 @@ impl Interpreter {
             if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
                 let mut positional = data.assumed_positional.clone();
                 let mut named = data.assumed_named.clone();
-                for arg in args {
+                for arg in &args {
                     if let Value::Pair(key, boxed) = arg {
-                        named.insert(key, *boxed);
+                        named.insert(key.clone(), *boxed.clone());
                     } else {
-                        positional.push(arg);
+                        positional.push(arg.clone());
                     }
                 }
                 call_args = positional;
@@ -132,9 +132,20 @@ impl Interpreter {
             let rw_bindings =
                 self.bind_function_args_values(&data.param_defs, &data.params, &call_args)?;
             new_env = self.env.clone();
+            if data.params.is_empty() {
+                for arg in &args {
+                    if let Value::Pair(name, value) = arg {
+                        new_env.insert(format!(":{}", name), *value.clone());
+                    }
+                }
+            }
             // Bind implicit $_ for bare blocks called with arguments
-            if data.params.is_empty() && !call_args.is_empty() {
-                new_env.insert("_".to_string(), call_args[0].clone());
+            if data.params.is_empty()
+                && !args.is_empty()
+                && let Some(first_positional) =
+                    args.iter().find(|v| !matches!(v, Value::Pair(_, _)))
+            {
+                new_env.insert("_".to_string(), first_positional.clone());
             }
             // &?BLOCK: weak self-reference to break reference cycles
             let block_arc = std::sync::Arc::new(crate::value::SubData {
@@ -174,6 +185,7 @@ impl Interpreter {
                     merged.insert(k.clone(), v.clone());
                 }
             }
+            self.merge_sigilless_alias_writes(&mut merged, &self.env);
             self.env = merged;
             return match result {
                 Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
@@ -207,6 +219,10 @@ impl Interpreter {
             "__mutsu_stub_warn" => self.builtin_stub_warn(&args),
             "exit" => self.builtin_exit(&args),
             "__PROTO_DISPATCH__" => self.call_proto_dispatch(),
+            // Multi dispatch control flow
+            "callsame" => self.builtin_callsame(),
+            "nextsame" => self.builtin_callsame(),
+            "nextcallee" => self.builtin_nextcallee(),
             // Type coercion
             "Int" | "Num" | "Str" | "Bool" => self.builtin_coerce(name, &args),
             // Grammar helpers
@@ -507,6 +523,21 @@ impl Interpreter {
             return self.call_proto_function(&proto_name, &proto_def, args);
         }
         if let Some(def) = self.resolve_function_with_alias(name, args) {
+            // Collect remaining candidates for callsame/nextcallee
+            let all_candidates = self.resolve_all_matching_candidates(name, args);
+            let def_fp =
+                crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+            let remaining: Vec<FunctionDef> = all_candidates
+                .into_iter()
+                .filter(|c| {
+                    crate::ast::function_body_fingerprint(&c.params, &c.param_defs, &c.body)
+                        != def_fp
+                })
+                .collect();
+            let pushed_dispatch = !remaining.is_empty();
+            if pushed_dispatch {
+                self.multi_dispatch_stack.push((remaining, args.to_vec()));
+            }
             let saved_env = self.env.clone();
             let rw_bindings = self.bind_function_args_values(&def.param_defs, &def.params, args)?;
             let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
@@ -517,7 +548,11 @@ impl Interpreter {
             self.pop_test_assertion_context(pushed_assertion);
             let mut restored_env = saved_env;
             self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
+            self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
             self.env = restored_env;
+            if pushed_dispatch {
+                self.multi_dispatch_stack.pop();
+            }
             return match result {
                 Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
                 other => other,
@@ -839,6 +874,42 @@ impl Interpreter {
         Ok(Value::Nil)
     }
 
+    fn builtin_callsame(&mut self) -> Result<Value, RuntimeError> {
+        let Some((candidates, orig_args)) = self.multi_dispatch_stack.last().cloned() else {
+            return Ok(Value::Nil);
+        };
+        let Some(next_def) = candidates.first().cloned() else {
+            return Ok(Value::Nil);
+        };
+        // Update the stack: remove the candidate we're about to call
+        let remaining = candidates[1..].to_vec();
+        let stack_len = self.multi_dispatch_stack.len();
+        self.multi_dispatch_stack[stack_len - 1] = (remaining, orig_args.clone());
+        self.call_function_def(&next_def, &orig_args)
+    }
+
+    fn builtin_nextcallee(&mut self) -> Result<Value, RuntimeError> {
+        let Some((candidates, _orig_args)) = self.multi_dispatch_stack.last().cloned() else {
+            return Ok(Value::Nil);
+        };
+        let Some(next_def) = candidates.first().cloned() else {
+            return Ok(Value::Nil);
+        };
+        // Remove this candidate from the remaining list
+        let remaining = candidates[1..].to_vec();
+        let stack_len = self.multi_dispatch_stack.len();
+        self.multi_dispatch_stack[stack_len - 1] = (remaining, Vec::new());
+        // Return as a callable Sub value
+        Ok(Value::make_sub(
+            next_def.package.clone(),
+            next_def.name.clone(),
+            next_def.params.clone(),
+            next_def.param_defs.clone(),
+            next_def.body.clone(),
+            self.env.clone(),
+        ))
+    }
+
     fn builtin_make(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let value = args.first().cloned().unwrap_or(Value::Nil);
         self.env.insert("made".to_string(), value.clone());
@@ -875,7 +946,15 @@ impl Interpreter {
             .ok_or_else(|| RuntimeError::new("EVALFILE requires a filename"))?;
         let code = fs::read_to_string(&path)
             .map_err(|err| RuntimeError::new(format!("Failed to read {}: {}", path, err)))?;
-        self.eval_eval_string(&code)
+        let saved_file = self.env.get("?FILE").cloned();
+        self.env.insert("?FILE".to_string(), Value::Str(path));
+        let result = self.eval_eval_string(&code);
+        if let Some(prev) = saved_file {
+            self.env.insert("?FILE".to_string(), prev);
+        } else {
+            self.env.remove("?FILE");
+        }
+        result
     }
 
     fn builtin_eval(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

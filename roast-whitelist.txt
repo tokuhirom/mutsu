@@ -114,6 +114,7 @@ roast/S05-metasyntax/assertions.t
 roast/S05-metasyntax/delimiters.t
 roast/S05-metasyntax/null.t
 roast/S05-metasyntax/proto-token-ltm.t
+roast/S05-metasyntax/single-quotes.t
 roast/S05-metasyntax/unicode-property-pair.t
 roast/S05-modifier/Perl_10.t
 roast/S05-modifier/repetition-exhaustive.t
@@ -125,6 +126,8 @@ roast/S06-currying/misc.t
 roast/S06-currying/named.t
 roast/S06-multi/compile-time.t
 roast/S06-multi/lexical-multis.t
+roast/S06-multi/unpackability.t
+roast/S06-operator-overloading/methods.t
 roast/S06-operator-overloading/prefix.t
 roast/S06-operator-overloading/semicolon.t
 roast/S06-other/main-eval.t
@@ -134,6 +137,7 @@ roast/S06-signature/multidimensional.t
 roast/S06-signature/passing-hashes.t
 roast/S06-signature/positional-placeholders.t
 roast/S06-signature/scalar-type.t
+roast/S06-signature/sigilless.t
 roast/S06-signature/unpack-object.t
 roast/S06-traits/as.t
 roast/S06-traits/is-readonly.t
@@ -165,6 +169,7 @@ roast/S12-enums/anonymous.t
 roast/S12-enums/pseudo-functional.t
 roast/S12-introspection/definite.t
 roast/S12-methods/calling_syntax.t
+roast/S12-methods/chaining.t
 roast/S12-methods/how.t
 roast/S12-methods/lvalue.t
 roast/S12-methods/syntax.t
@@ -177,6 +182,7 @@ roast/S13-overloading/operators.t
 roast/S13-syntax/aliasing.t
 roast/S14-roles/bool.t
 roast/S14-roles/generic-subtyping.t
+roast/S14-roles/stubs.t
 roast/S15-nfg/cgj.t
 roast/S15-nfg/emoji-test.t
 roast/S15-nfg/grapheme-break.t
@@ -234,7 +240,9 @@ roast/S15-normalization/nfkd-7.t
 roast/S15-normalization/nfkd-8.t
 roast/S15-normalization/nfkd-9.t
 roast/S15-normalization/nfkd-sanity.t
+roast/S15-string-types/NFK-types.t
 roast/S15-string-types/Str.t
+roast/S16-filehandles/io_in_while_loops.t
 roast/S16-filehandles/misc.t
 roast/S16-filehandles/mkdir_rmdir.t
 roast/S16-filehandles/mode.t
@@ -296,6 +304,7 @@ roast/S28-named-variables/slangs.t
 roast/S29-any/are.t
 roast/S29-any/cmp.t
 roast/S29-context/die.t
+roast/S29-context/evalfile.t
 roast/S29-context/exit-in-if.t
 roast/S29-context/exit.t
 roast/S32-array/bool.t
@@ -308,6 +317,7 @@ roast/S32-encoding/registry.t
 roast/S32-hash/antipairs.t
 roast/S32-hash/delete.t
 roast/S32-hash/invert.t
+roast/S32-hash/iterator.t
 roast/S32-hash/keys_values.t
 roast/S32-hash/push.t
 roast/S32-io/dir.t
@@ -318,6 +328,7 @@ roast/S32-list/batch.t
 roast/S32-list/cross.t
 roast/S32-num/abs.t
 roast/S32-num/exp.t
+roast/S32-num/expmod.t
 roast/S32-num/log.t
 roast/S32-num/pi.t
 roast/S32-num/polar.t

@@ -1,6 +1,34 @@
 use super::*;
 
 impl Interpreter {
+    pub(super) fn default_line_separators(&self) -> Vec<Vec<u8>> {
+        match self.newline_mode {
+            NewlineMode::Lf => vec![b"\r\n".to_vec(), b"\n".to_vec()],
+            NewlineMode::Cr => vec![b"\r".to_vec()],
+            NewlineMode::Crlf => vec![b"\r\n".to_vec()],
+        }
+    }
+
+    fn normalize_line_separators(mut separators: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
+        separators.retain(|sep| !sep.is_empty());
+        if separators.is_empty() {
+            return vec![b"\r\n".to_vec(), b"\n".to_vec()];
+        }
+        separators.sort_by_key(|sep| std::cmp::Reverse(sep.len()));
+        separators.dedup();
+        separators
+    }
+
+    fn parse_nl_in_value(value: &Value) -> Vec<Vec<u8>> {
+        match value {
+            Value::Array(items, _) => items
+                .iter()
+                .map(|item| item.to_string_value().into_bytes())
+                .collect(),
+            _ => vec![value.to_string_value().into_bytes()],
+        }
+    }
+
     pub(super) fn handle_id_from_value(value: &Value) -> Option<usize> {
         if let Value::Instance {
             class_name,
@@ -98,10 +126,40 @@ impl Interpreter {
         Ok(true)
     }
 
+    fn read_record_with_separators<R: Read>(
+        reader: &mut R,
+        separators: &[Vec<u8>],
+    ) -> Result<Option<String>, RuntimeError> {
+        let mut buffer = Vec::new();
+        let mut byte = [0u8];
+        let mut read_any = false;
+        loop {
+            let n = reader
+                .read(&mut byte)
+                .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+            if n == 0 {
+                break;
+            }
+            read_any = true;
+            buffer.push(byte[0]);
+            if let Some(matched_len) = separators
+                .iter()
+                .find_map(|sep| buffer.ends_with(sep).then_some(sep.len()))
+            {
+                buffer.truncate(buffer.len().saturating_sub(matched_len));
+                break;
+            }
+        }
+        if !read_any {
+            return Ok(None);
+        }
+        Ok(Some(String::from_utf8_lossy(&buffer).to_string()))
+    }
+
     pub(super) fn read_line_from_handle_value(
         &mut self,
         handle_value: &Value,
-    ) -> Result<String, RuntimeError> {
+    ) -> Result<Option<String>, RuntimeError> {
         let state = self.handle_state_mut(handle_value)?;
         if state.closed {
             return Err(RuntimeError::new("X::IO::Closed: IO::Handle is closed"));
@@ -110,54 +168,20 @@ impl Interpreter {
             IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
                 Err(RuntimeError::new("Handle not readable"))
             }
-            IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => Ok(String::new()),
+            IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => Ok(None),
             IoHandleTarget::File => {
                 let file = state
                     .file
                     .as_mut()
                     .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
-                let mut buffer = Vec::new();
-                let mut byte = [0u8];
-                loop {
-                    let n = file
-                        .read(&mut byte)
-                        .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
-                    if n == 0 {
-                        break;
-                    }
-                    buffer.push(byte[0]);
-                    if byte[0] == b'\n' {
-                        break;
-                    }
-                }
-                if buffer.is_empty() {
-                    return Ok(String::new());
-                }
-                Ok(String::from_utf8_lossy(&buffer).to_string())
+                Self::read_record_with_separators(file, &state.line_separators)
             }
             IoHandleTarget::Socket => {
                 let sock = state
                     .socket
                     .as_mut()
                     .ok_or_else(|| RuntimeError::new("Socket not connected"))?;
-                let mut buffer = Vec::new();
-                let mut byte = [0u8];
-                loop {
-                    let n = sock
-                        .read(&mut byte)
-                        .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
-                    if n == 0 {
-                        break;
-                    }
-                    buffer.push(byte[0]);
-                    if byte[0] == b'\n' {
-                        break;
-                    }
-                }
-                if buffer.is_empty() {
-                    return Ok(String::new());
-                }
-                Ok(String::from_utf8_lossy(&buffer).to_string())
+                Self::read_record_with_separators(sock, &state.line_separators)
             }
         }
     }
@@ -296,11 +320,15 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn parse_io_flags_values(args: &[Value]) -> (bool, bool, bool, bool) {
+    pub(super) fn parse_io_flags_values(
+        &self,
+        args: &[Value],
+    ) -> (bool, bool, bool, bool, Vec<Vec<u8>>) {
         let mut read = false;
         let mut write = false;
         let mut append = false;
         let mut bin = false;
+        let mut nl_in: Option<Vec<Vec<u8>>> = None;
         for arg in args {
             if let Value::Pair(name, value) = arg {
                 let truthy = value.truthy();
@@ -309,6 +337,7 @@ impl Interpreter {
                     "w" => write = truthy,
                     "a" => append = truthy,
                     "bin" => bin = truthy,
+                    "nl-in" => nl_in = Some(Self::parse_nl_in_value(value)),
                     _ => {}
                 }
             }
@@ -316,7 +345,15 @@ impl Interpreter {
         if !read && !write && !append {
             read = true;
         }
-        (read, write, append, bin)
+        (
+            read,
+            write,
+            append,
+            bin,
+            Self::normalize_line_separators(
+                nl_in.unwrap_or_else(|| self.default_line_separators()),
+            ),
+        )
     }
 
     pub(super) fn open_file_handle(
@@ -326,6 +363,7 @@ impl Interpreter {
         write: bool,
         append: bool,
         bin: bool,
+        line_separators: Vec<Vec<u8>>,
     ) -> Result<Value, RuntimeError> {
         let mut options = fs::OpenOptions::new();
         options.read(read);
@@ -353,6 +391,7 @@ impl Interpreter {
             target: IoHandleTarget::File,
             mode,
             path: Some(Self::stringify_path(path)),
+            line_separators: Self::normalize_line_separators(line_separators),
             encoding: "utf-8".to_string(),
             file: Some(file),
             socket: None,

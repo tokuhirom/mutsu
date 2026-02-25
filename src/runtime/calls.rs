@@ -22,6 +22,7 @@ impl Interpreter {
         let implicit_return = self.env.get("_").cloned();
         let mut restored_env = saved_env;
         self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
+        self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
         self.env = restored_env;
         match result {
             Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
@@ -63,6 +64,7 @@ impl Interpreter {
                     self.pop_test_assertion_context(pushed_assertion);
                     let mut restored_env = saved_env;
                     self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
+                    self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
                     self.env = restored_env;
                     match result {
                         Err(e) if e.return_value.is_some() => {}

@@ -73,6 +73,7 @@ struct ClassDef {
 struct RoleDef {
     attributes: Vec<(String, bool, Option<Expr>)>,
     methods: HashMap<String, Vec<MethodDef>>,
+    is_stub_role: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -113,6 +114,7 @@ struct IoHandleState {
     target: IoHandleTarget,
     mode: IoHandleMode,
     path: Option<String>,
+    line_separators: Vec<Vec<u8>>,
     encoding: String,
     file: Option<fs::File>,
     socket: Option<std::net::TcpStream>,
@@ -268,6 +270,9 @@ pub struct Interpreter {
     /// When set, pseudo-method names (DEFINITE, WHAT, etc.) bypass native fast path.
     /// Used for quoted method calls like `."DEFINITE"()`.
     pub(crate) skip_pseudo_method_native: Option<String>,
+    /// Stack of remaining multi dispatch candidates for callsame/nextsame/nextcallee.
+    /// Each entry is (remaining_candidates, original_args).
+    multi_dispatch_stack: Vec<(Vec<FunctionDef>, Vec<Value>)>,
 }
 
 /// An entry in the encoding registry.
@@ -604,12 +609,22 @@ impl Interpreter {
                 methods: HashMap::new(),
                 native_methods: [
                     "close", "get", "getc", "lines", "words", "read", "write", "print", "say",
-                    "flush", "seek", "tell", "eof", "encoding", "opened", "slurp", "Supply",
+                    "put", "flush", "seek", "tell", "eof", "encoding", "opened", "slurp", "Supply",
                 ]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
                 mro: vec!["IO::Handle".to_string()],
+            },
+        );
+        classes.insert(
+            "Backtrace".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Backtrace".to_string()],
             },
         );
         classes.insert(
@@ -890,6 +905,7 @@ impl Interpreter {
                     RoleDef {
                         attributes: Vec::new(),
                         methods: HashMap::new(),
+                        is_stub_role: false,
                     },
                 );
                 roles
@@ -913,6 +929,7 @@ impl Interpreter {
             shared_vars: Arc::new(Mutex::new(HashMap::new())),
             encoding_registry: Self::builtin_encodings(),
             skip_pseudo_method_native: None,
+            multi_dispatch_stack: Vec::new(),
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -1266,6 +1283,7 @@ impl Interpreter {
             shared_vars: Arc::clone(&self.shared_vars),
             encoding_registry: self.encoding_registry.clone(),
             skip_pseudo_method_native: None,
+            multi_dispatch_stack: Vec::new(),
         }
     }
 
@@ -1297,6 +1315,24 @@ impl Interpreter {
         let sv = self.shared_vars.lock().unwrap();
         for (key, val) in sv.iter() {
             self.env.insert(key.clone(), val.clone());
+        }
+    }
+
+    pub(crate) fn merge_sigilless_alias_writes(
+        &self,
+        saved_env: &mut HashMap<String, Value>,
+        current_env: &HashMap<String, Value>,
+    ) {
+        for (key, alias) in current_env {
+            if !key.starts_with("__mutsu_sigilless_alias::") {
+                continue;
+            }
+            let Value::Str(alias_name) = alias else {
+                continue;
+            };
+            if let Some(value) = current_env.get(alias_name).cloned() {
+                saved_env.insert(alias_name.clone(), value);
+            }
         }
     }
 }

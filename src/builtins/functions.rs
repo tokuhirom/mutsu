@@ -592,6 +592,7 @@ fn native_function_3arg(
     arg3: &Value,
 ) -> Option<Result<Value, RuntimeError>> {
     match name {
+        "expmod" => Some(crate::builtins::expmod(arg1, arg2, arg3)),
         "substr" => {
             let s = arg1.to_string_value();
             let start = match arg2 {
