@@ -2,6 +2,16 @@
 
 use crate::runtime;
 use crate::value::{RuntimeError, Value, make_rat};
+use num_bigint::BigInt as NumBigInt;
+use num_traits::Zero;
+
+fn as_bigint(value: &Value) -> Option<NumBigInt> {
+    match value {
+        Value::Int(i) => Some(NumBigInt::from(*i)),
+        Value::BigInt(i) => Some(i.clone()),
+        _ => None,
+    }
+}
 
 // ── Arithmetic operators ─────────────────────────────────────────────
 pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError> {
@@ -166,7 +176,52 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
             }
             return Ok(Value::Num(lf / rf));
         }
+        if (matches!(l, Value::BigInt(_)) || matches!(r, Value::BigInt(_)))
+            && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
+        {
+            if b.is_zero() {
+                return Err(RuntimeError::numeric_divide_by_zero());
+            }
+            if (&a % &b).is_zero() {
+                return Ok(Value::from_bigint(a / b));
+            }
+        }
         Ok(match (&l, &r) {
+            (Value::BigInt(a), Value::Int(b)) => {
+                if *b == 0 {
+                    return Err(RuntimeError::numeric_divide_by_zero());
+                }
+                let bb = NumBigInt::from(*b);
+                if (a % &bb).is_zero() {
+                    Value::from_bigint(a / bb)
+                } else {
+                    Value::Num((a.to_string().parse::<f64>().unwrap_or(0.0)) / (*b as f64))
+                }
+            }
+            (Value::Int(a), Value::BigInt(b)) => {
+                if b.is_zero() {
+                    return Err(RuntimeError::numeric_divide_by_zero());
+                }
+                let aa = NumBigInt::from(*a);
+                if (&aa % b).is_zero() {
+                    Value::from_bigint(aa / b)
+                } else {
+                    Value::Num((*a as f64) / b.to_string().parse::<f64>().unwrap_or(1.0))
+                }
+            }
+            (Value::BigInt(a), Value::BigInt(b)) => {
+                if b.is_zero() {
+                    return Err(RuntimeError::numeric_divide_by_zero());
+                }
+                if (a % b).is_zero() {
+                    Value::from_bigint(a / b)
+                } else {
+                    Value::Num(
+                        a.to_string().parse::<f64>().unwrap_or(0.0)
+                            / b.to_string().parse::<f64>().unwrap_or(1.0),
+                    )
+                }
+            }
             (Value::Rat(_, _), _) | (_, Value::Rat(_, _)) | (Value::Int(_), Value::Int(_)) => {
                 let (an, ad) = runtime::to_rat_parts(&l).unwrap_or((0, 1));
                 let (bn, bd) = runtime::to_rat_parts(&r).unwrap_or((0, 1));

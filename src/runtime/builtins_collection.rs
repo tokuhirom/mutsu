@@ -342,6 +342,7 @@ impl Interpreter {
         let mut positional = Vec::new();
         let mut has_v = false;
         let mut has_neg_v = false;
+        let mut has_p = false;
         let mut has_end = false;
         for arg in args {
             match arg {
@@ -356,6 +357,9 @@ impl Interpreter {
                     if value.truthy() {
                         has_end = true;
                     }
+                }
+                Value::Pair(key, value) if key == "p" => {
+                    has_p = value.truthy();
                 }
                 _ => positional.push(arg.clone()),
             }
@@ -388,10 +392,16 @@ impl Interpreter {
                 other => list_items.push(other.clone()),
             }
         }
-        if has_end {
-            list_items.reverse();
+        if let Some((idx, value)) = self.find_first_match_over_items(func, &list_items, has_end)? {
+            if has_p {
+                return Ok(Value::ValuePair(
+                    Box::new(Value::Int(idx as i64)),
+                    Box::new(value),
+                ));
+            }
+            return Ok(value);
         }
-        self.eval_first_over_items(func, list_items)
+        Ok(Value::Nil)
     }
 
     pub(super) fn builtin_classify(

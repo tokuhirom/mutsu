@@ -1397,6 +1397,9 @@ impl VM {
             OpCode::SubtestScope { body_end } => {
                 self.exec_subtest_scope_op(code, *body_end, ip, compiled_fns)?;
             }
+            OpCode::ReactScope { body_end } => {
+                self.exec_react_scope_op(code, *body_end, ip, compiled_fns)?;
+            }
             OpCode::WheneverScope {
                 body_idx,
                 param_idx,

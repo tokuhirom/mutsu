@@ -1,5 +1,18 @@
 use super::*;
 
+const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
+
+#[inline]
+fn is_internal_named_arg(arg: &Value) -> bool {
+    match arg {
+        Value::Pair(key, _) => key == TEST_CALLSITE_LINE_KEY,
+        Value::ValuePair(key, _) => {
+            matches!(key.as_ref(), Value::Str(s) if s == TEST_CALLSITE_LINE_KEY)
+        }
+        _ => false,
+    }
+}
+
 /// Parse a coercion type like "Int()" or "Int(Rat)".
 /// Returns Some((target_type, optional_source_type)) if it's a coercion type.
 fn parse_coercion_type(constraint: &str) -> Option<(&str, Option<&str>)> {
@@ -391,6 +404,51 @@ impl Interpreter {
             self.env.insert(format!("Order::{}", key), enum_val.clone());
             self.env.insert(key.clone(), enum_val);
         }
+    }
+
+    pub(super) fn init_signal_enum(&mut self) {
+        // Use libc constants on Unix, standard POSIX numbers on other platforms
+        let variants = vec![
+            ("SIGHUP".to_string(), Self::sig_num(1)),
+            ("SIGINT".to_string(), Self::sig_num(2)),
+            ("SIGQUIT".to_string(), Self::sig_num(3)),
+            ("SIGILL".to_string(), Self::sig_num(4)),
+            ("SIGABRT".to_string(), Self::sig_num(6)),
+            ("SIGFPE".to_string(), Self::sig_num(8)),
+            ("SIGKILL".to_string(), Self::sig_num(9)),
+            ("SIGSEGV".to_string(), Self::sig_num(11)),
+            ("SIGPIPE".to_string(), Self::sig_num(13)),
+            ("SIGALRM".to_string(), Self::sig_num(14)),
+            ("SIGTERM".to_string(), Self::sig_num(15)),
+            ("SIGUSR1".to_string(), Self::sig_num(10)),
+            ("SIGUSR2".to_string(), Self::sig_num(12)),
+            ("SIGCHLD".to_string(), Self::sig_num(17)),
+            ("SIGCONT".to_string(), Self::sig_num(18)),
+            ("SIGSTOP".to_string(), Self::sig_num(19)),
+            ("SIGTSTP".to_string(), Self::sig_num(20)),
+            ("SIGTTIN".to_string(), Self::sig_num(21)),
+            ("SIGTTOU".to_string(), Self::sig_num(22)),
+        ];
+        self.enum_types
+            .insert("Signal".to_string(), variants.clone());
+        self.env
+            .insert("Signal".to_string(), Value::Str("Signal".to_string()));
+        for (index, (key, val)) in variants.iter().enumerate() {
+            let enum_val = Value::Enum {
+                enum_type: "Signal".to_string(),
+                key: key.clone(),
+                value: *val,
+                index,
+            };
+            self.env
+                .insert(format!("Signal::{}", key), enum_val.clone());
+            self.env.insert(key.clone(), enum_val);
+        }
+    }
+
+    /// Get signal number — use the POSIX default value on all platforms.
+    fn sig_num(default: i64) -> i64 {
+        default
     }
 
     pub(super) fn version_from_value(arg: Value) -> Value {
@@ -965,7 +1023,15 @@ impl Interpreter {
                 .collect();
             for arg in args {
                 if let Value::Pair(key, _) = arg
+                    && key != TEST_CALLSITE_LINE_KEY
                     && !named_params.contains(key.as_str())
+                {
+                    return false;
+                }
+                if let Value::ValuePair(key, _) = arg
+                    && let Value::Str(name) = key.as_ref()
+                    && name != TEST_CALLSITE_LINE_KEY
+                    && !named_params.contains(name.as_str())
                 {
                     return false;
                 }
@@ -979,7 +1045,18 @@ impl Interpreter {
 
     /// Create an error for calling a sub with empty signature `()` with arguments.
     pub(crate) fn reject_args_for_empty_sig(args: &[Value]) -> RuntimeError {
-        if let Some(Value::Pair(k, _)) = args.iter().find(|a| matches!(a, Value::Pair(..))) {
+        if let Some(k) = args.iter().find_map(|a| match a {
+            Value::Pair(key, _) if key != TEST_CALLSITE_LINE_KEY => Some(key.clone()),
+            Value::ValuePair(key, _) => {
+                if let Value::Str(name) = key.as_ref()
+                    && name != TEST_CALLSITE_LINE_KEY
+                {
+                    return Some(name.clone());
+                }
+                None
+            }
+            _ => None,
+        }) {
             return RuntimeError::new(format!("Unexpected named argument '{}' passed", k));
         }
         RuntimeError::new(
@@ -993,10 +1070,20 @@ impl Interpreter {
         params: &[String],
         args: &[Value],
     ) -> Result<Vec<(String, String)>, RuntimeError> {
-        let plain_args: Vec<Value> = args.iter().cloned().map(unwrap_varref_value).collect();
+        let filtered_args: Vec<Value> = args
+            .iter()
+            .filter(|arg| !is_internal_named_arg(&unwrap_varref_value((*arg).clone())))
+            .cloned()
+            .collect();
+        let plain_args: Vec<Value> = filtered_args
+            .iter()
+            .cloned()
+            .map(unwrap_varref_value)
+            .collect();
         // Always set @_ for legacy Perl-style argument access
         self.env
             .insert("@_".to_string(), Value::array(plain_args.clone()));
+        let args = filtered_args.as_slice();
         let arg_sources = self.take_pending_call_arg_sources();
         let mut rw_bindings = Vec::new();
         if param_defs.is_empty() {
@@ -1010,7 +1097,7 @@ impl Interpreter {
             // and named placeholders ($:name) by matching Pair arg keys.
             let positional_args: Vec<Value> = plain_args
                 .iter()
-                .filter(|a| !matches!(a, Value::Pair(..)))
+                .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
                 .cloned()
                 .collect();
             let named_args: Vec<(String, Value)> = plain_args
@@ -1018,6 +1105,12 @@ impl Interpreter {
                 .filter_map(|a| {
                     if let Value::Pair(key, val) = a {
                         Some((key.clone(), *val.clone()))
+                    } else if let Value::ValuePair(key, val) = a {
+                        if let Value::Str(name) = key.as_ref() {
+                            Some((name.clone(), *val.clone()))
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
@@ -1385,7 +1478,7 @@ impl Interpreter {
             .any(|pd| pd.slurpy && (pd.name.starts_with('%') || pd.sigilless));
         let has_sub_sig = param_defs.iter().any(|pd| pd.sub_signature.is_some());
         if !has_hash_slurpy && !has_sub_sig {
-            for arg in args.iter() {
+            for arg in plain_args.iter() {
                 let arg = unwrap_varref_value(arg.clone());
                 if let Value::Pair(key, _) = arg {
                     // Check if this named arg was consumed by a named param or colon placeholder
@@ -1396,6 +1489,18 @@ impl Interpreter {
                         return Err(RuntimeError::new(format!(
                             "Unexpected named argument '{}' passed",
                             key
+                        )));
+                    }
+                } else if let Value::ValuePair(key, _) = arg
+                    && let Value::Str(name) = key.as_ref()
+                {
+                    let consumed = param_defs.iter().any(|pd| {
+                        (pd.named && pd.name == *name) || pd.name == format!(":{}", name)
+                    });
+                    if !consumed {
+                        return Err(RuntimeError::new(format!(
+                            "Unexpected named argument '{}' passed",
+                            name
                         )));
                     }
                 }
@@ -1410,9 +1515,14 @@ impl Interpreter {
                 .iter()
                 .filter(|pd| !pd.named && !pd.slurpy)
                 .count();
-            let positional_arg_count = args
+            let positional_arg_count = plain_args
                 .iter()
-                .filter(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
+                .filter(|a| {
+                    !matches!(
+                        unwrap_varref_value((*a).clone()),
+                        Value::Pair(..) | Value::ValuePair(..)
+                    )
+                })
                 .count();
             if positional_arg_count > positional_param_count {
                 return Err(RuntimeError::new(format!(
