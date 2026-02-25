@@ -148,6 +148,7 @@ roast/S06-operator-overloading/term.t
 roast/S06-other/main-eval.t
 roast/S06-other/main-semicolon.t
 roast/S06-signature/closure-over-parameters.t
+roast/S06-signature/mixed-placeholders.t
 roast/S06-signature/multi-invocant.t
 roast/S06-signature/multidimensional.t
 roast/S06-signature/passing-hashes.t
