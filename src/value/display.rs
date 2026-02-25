@@ -445,6 +445,7 @@ impl Value {
                 }
                 format!("\\({})", parts.join(", "))
             }
+            Value::Uni { text, .. } => text.clone(),
             Value::Mixin(inner, mixins) => {
                 if let Some(str_val) = mixins.get("Str") {
                     str_val.to_string_value()
@@ -452,6 +453,7 @@ impl Value {
                     inner.to_string_value()
                 }
             }
+            Value::Proxy { .. } => "Proxy".to_string(),
         }
     }
 

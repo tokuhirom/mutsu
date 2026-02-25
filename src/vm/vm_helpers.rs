@@ -1,6 +1,16 @@
 use super::*;
 
 impl VM {
+    fn twigil_dynamic_alias(name: &str) -> Option<String> {
+        if let Some(rest) = name.strip_prefix("$*") {
+            return Some(format!("*{}", rest));
+        }
+        if let Some(rest) = name.strip_prefix('*') {
+            return Some(format!("$*{}", rest));
+        }
+        None
+    }
+
     fn main_unqualified_name(name: &str) -> Option<String> {
         for sigil in ["$", "@", "%", "&"] {
             let prefix = format!("{sigil}Main::");
@@ -37,6 +47,9 @@ impl VM {
         if let Some(val) = self.interpreter.env().get(name) {
             return Some(val.clone());
         }
+        if let Some(alias) = Self::twigil_dynamic_alias(name) {
+            return self.interpreter.env().get(&alias).cloned();
+        }
         if let Some(alias) = Self::main_unqualified_name(name) {
             return self.interpreter.env().get(&alias).cloned();
         }
@@ -50,6 +63,9 @@ impl VM {
         self.interpreter
             .env_mut()
             .insert(name.to_string(), value.clone());
+        if let Some(alias) = Self::twigil_dynamic_alias(name) {
+            self.interpreter.env_mut().insert(alias, value.clone());
+        }
         if let Some(inner) = name
             .strip_prefix("&infix:<")
             .or_else(|| name.strip_prefix("&prefix:<"))
@@ -76,6 +92,42 @@ impl VM {
             Value::Str(s) => s.as_str(),
             _ => unreachable!("expected string constant"),
         }
+    }
+
+    pub(super) fn strict_undeclared_error(&self, name: &str) -> RuntimeError {
+        let suggestion = if name.is_empty() {
+            String::new()
+        } else {
+            let mut chars = name.chars();
+            let first = chars.next().unwrap().to_uppercase().collect::<String>();
+            format!("{}{}", first, chars.as_str())
+        };
+        let var_name = if name.starts_with('$')
+            || name.starts_with('@')
+            || name.starts_with('%')
+            || name.starts_with('&')
+        {
+            name.to_string()
+        } else {
+            format!("${name}")
+        };
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("variable".to_string(), Value::Str(var_name.clone()));
+        attrs.insert("suggestions".to_string(), Value::Str(suggestion.clone()));
+        attrs.insert(
+            "message".to_string(),
+            Value::Str(format!(
+                "Variable '{}' is not declared. Did you mean '{}'?",
+                var_name, suggestion
+            )),
+        );
+        let ex = Value::make_instance("X::Undeclared".to_string(), attrs);
+        let mut err = RuntimeError::new(format!(
+            "X::Undeclared: Variable '{}' is not declared. Did you mean '{}'?",
+            var_name, suggestion
+        ));
+        err.exception = Some(Box::new(ex));
+        err
     }
 
     pub(super) fn is_builtin_type(name: &str) -> bool {
@@ -110,6 +162,10 @@ impl VM {
                 | "Exception"
                 | "Order"
                 | "Uni"
+                | "NFC"
+                | "NFD"
+                | "NFKC"
+                | "NFKD"
                 | "Version"
                 | "Nil"
                 | "Regex"
@@ -161,6 +217,7 @@ impl VM {
                 | "CX::Warn"
                 | "X::AdHoc"
                 | "CompUnit::DependencySpecification"
+                | "Proxy"
         )
     }
 
@@ -241,6 +298,12 @@ impl VM {
             if let Some(val) = self.interpreter.env().get(name) {
                 self.locals[i] = val.clone();
             }
+        }
+    }
+
+    pub(super) fn sync_env_from_locals(&mut self, code: &CompiledCode) {
+        for (i, name) in code.locals.iter().enumerate() {
+            self.set_env_with_main_alias(name, self.locals[i].clone());
         }
     }
 
@@ -363,6 +426,15 @@ impl VM {
         if !fn_name.is_empty() {
             self.interpreter
                 .push_routine(fn_package.to_string(), fn_name.to_string());
+        }
+
+        if cf.empty_sig && !args.is_empty() {
+            if !fn_name.is_empty() {
+                self.interpreter.pop_routine();
+            }
+            self.stack.truncate(saved_stack_depth);
+            self.locals = saved_locals;
+            return Err(Interpreter::reject_args_for_empty_sig(&args));
         }
 
         let rw_bindings =

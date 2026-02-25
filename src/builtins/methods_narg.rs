@@ -2,6 +2,57 @@
 
 use crate::runtime;
 use crate::value::{RuntimeError, Value};
+use std::sync::Arc;
+
+fn flatten_with_depth(
+    value: &Value,
+    depth: Option<usize>,
+    out: &mut Vec<Value>,
+    flatten_arrays: bool,
+) {
+    if let Some(0) = depth {
+        out.push(value.clone());
+        return;
+    }
+    match value {
+        Value::Array(items, is_array) if !*is_array || flatten_arrays => {
+            let next_depth = depth.map(|d| d.saturating_sub(1));
+            for item in items.iter() {
+                flatten_with_depth(item, next_depth, out, flatten_arrays);
+            }
+        }
+        Value::Range(..)
+        | Value::RangeExcl(..)
+        | Value::RangeExclStart(..)
+        | Value::RangeExclBoth(..)
+        | Value::GenericRange { .. } => out.extend(crate::runtime::utils::value_to_list(value)),
+        other => out.push(other.clone()),
+    }
+}
+
+fn parse_flat_depth(arg: &Value) -> Option<usize> {
+    match arg {
+        Value::Int(n) => Some((*n).max(0) as usize),
+        _ => None,
+    }
+}
+
+fn is_hammer_pair(arg: &Value) -> bool {
+    matches!(arg, Value::Pair(key, val) if key == "hammer" && val.truthy())
+}
+
+fn flatten_target(target: &Value, depth: Option<usize>, flatten_arrays: bool) -> Value {
+    let mut flat = Vec::new();
+    match target {
+        Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+            for item in items.iter() {
+                flatten_with_depth(item, depth, &mut flat, flatten_arrays);
+            }
+        }
+        other => flatten_with_depth(other, depth, &mut flat, flatten_arrays),
+    }
+    Value::Seq(Arc::new(flat))
+}
 
 // ── 1-arg method dispatch ────────────────────────────────────────────
 /// Try to dispatch a 1-argument method call on a Value.
@@ -182,6 +233,15 @@ pub(crate) fn native_method_1arg(
             }
             _ => None,
         },
+        "flat" => {
+            if is_hammer_pair(arg) {
+                return Some(Ok(flatten_target(target, None, true)));
+            }
+            if let Some(depth) = parse_flat_depth(arg) {
+                return Some(Ok(flatten_target(target, Some(depth), false)));
+            }
+            None
+        }
         "head" => match target {
             Value::Array(items, ..) => {
                 let n = match arg {
@@ -617,7 +677,25 @@ pub(crate) fn native_method_2arg(
     arg1: &Value,
     arg2: &Value,
 ) -> Option<Result<Value, RuntimeError>> {
+    if method == "flat" {
+        let (depth, hammer) = if let Some(depth) = parse_flat_depth(arg1) {
+            (Some(depth), is_hammer_pair(arg2))
+        } else if let Some(depth) = parse_flat_depth(arg2) {
+            (Some(depth), is_hammer_pair(arg1))
+        } else {
+            (None, false)
+        };
+        if let Some(depth) = depth {
+            if hammer {
+                return Some(Ok(flatten_target(target, Some(depth), true)));
+            }
+            return Some(Ok(flatten_target(target, Some(depth), false)));
+        }
+        return None;
+    }
+
     match method {
+        "expmod" => Some(crate::builtins::expmod(target, arg1, arg2)),
         "substr" => {
             let s = target.to_string_value();
             let start = match arg1 {

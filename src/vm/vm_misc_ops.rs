@@ -174,10 +174,19 @@ impl VM {
         self.stack.push(result);
     }
 
-    pub(super) fn exec_num_coerce_op(&mut self) {
+    pub(super) fn exec_num_coerce_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
+        if matches!(
+            &val,
+            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+        ) {
+            return Err(RuntimeError::new(
+                "Cannot resolve caller Numeric(Sub:D: ); none of these signatures matches:\n    (Mu:U \\v: *%_)",
+            ));
+        }
         let result = crate::runtime::utils::coerce_to_numeric(val);
         self.stack.push(result);
+        Ok(())
     }
 
     pub(super) fn exec_str_coerce_op(&mut self) {
@@ -270,14 +279,37 @@ impl VM {
         self.stack.push(val);
     }
 
-    pub(super) fn exec_assign_expr_op(&mut self, code: &CompiledCode, name_idx: u32) {
+    pub(super) fn exec_assign_expr_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
         let name = match &code.constants[name_idx as usize] {
             Value::Str(s) => s.clone(),
             _ => unreachable!("AssignExpr name must be a string constant"),
         };
         let val = self.stack.last().unwrap().clone();
+        let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
+        let alias_key = format!("__mutsu_sigilless_alias::{}", name);
+        if matches!(
+            self.interpreter.env().get(&readonly_key),
+            Some(Value::Bool(true))
+        ) && !matches!(self.interpreter.env().get(&alias_key), Some(Value::Str(_)))
+        {
+            return Err(RuntimeError::new("X::Assignment::RO"));
+        }
         self.update_local_if_exists(code, &name, &val);
         self.set_env_with_main_alias(&name, val.clone());
+        if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
+            if let Value::Str(name) = v {
+                Some(name.clone())
+            } else {
+                None
+            }
+        }) {
+            self.update_local_if_exists(code, &alias_name, &val);
+            self.interpreter.env_mut().insert(alias_name, val.clone());
+        }
         if let Some(attr) = name.strip_prefix('.') {
             self.interpreter
                 .env_mut()
@@ -287,6 +319,19 @@ impl VM {
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
         }
+        Ok(())
+    }
+
+    pub(super) fn exec_wrap_var_ref_op(&mut self, code: &CompiledCode, name_idx: u32) {
+        let value = self.stack.pop().unwrap_or(Value::Nil);
+        let name = Self::const_str(code, name_idx).to_string();
+        let mut named = std::collections::HashMap::new();
+        named.insert("__mutsu_varref_name".to_string(), Value::Str(name));
+        named.insert("__mutsu_varref_value".to_string(), value);
+        self.stack.push(Value::Capture {
+            positional: Vec::new(),
+            named,
+        });
     }
 
     pub(super) fn exec_get_env_index_op(&mut self, code: &CompiledCode, key_idx: u32) {
@@ -338,9 +383,9 @@ impl VM {
         const KNOWN_BASE_OPS: &[&str] = &[
             "+", "-", "*", "/", "%", "~", "||", "&&", "//", "%%", "**", "^^", "+&", "+|", "+^",
             "+<", "+>", "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=",
-            ">=", "<=>", "===", "=:=", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg", "cmp",
-            "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",", "after", "before", "X", "Z",
-            "x", "xx", "&", "|", "^",
+            ">=", "<=>", "===", "=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge", "leg",
+            "cmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", ",", "after", "before",
+            "X", "Z", "x", "xx", "&", "|", "^", "o", "∘",
         ];
         let (negate, base_op) = if let Some(stripped) = op_no_scan.strip_prefix('!')
             && KNOWN_BASE_OPS.contains(&stripped)
@@ -349,12 +394,28 @@ impl VM {
         } else {
             (false, op_no_scan)
         };
+        let base_op = if base_op == "∘" {
+            "o".to_string()
+        } else {
+            base_op
+        };
         let list_value = self.stack.pop().unwrap_or(Value::Nil);
-        let list = if let Value::LazyList(ref ll) = list_value {
+        let mut list = if let Value::LazyList(ref ll) = list_value {
             self.interpreter.force_lazy_list_bridge(ll)?
         } else {
             runtime::value_to_list(&list_value)
         };
+        if list.iter().any(|v| matches!(v, Value::Slip(_))) {
+            let mut flattened = Vec::new();
+            for item in list {
+                if let Value::Slip(items) = item {
+                    flattened.extend(items.iter().cloned());
+                } else {
+                    flattened.push(item);
+                }
+            }
+            list = flattened;
+        }
         if scan {
             if list.is_empty() {
                 self.stack.push(Value::Seq(std::sync::Arc::new(Vec::new())));
@@ -408,11 +469,29 @@ impl VM {
                 }
                 self.stack.push(Value::Bool(result));
             } else {
-                let mut acc = list[0].clone();
-                for item in &list[1..] {
-                    let v = Interpreter::apply_reduction_op(&base_op, &acc, item)?;
-                    acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                if base_op == "o" {
+                    let mut acc = list[0].clone();
+                    for item in &list[1..] {
+                        acc = self.interpreter.compose_callables(acc, item.clone());
+                    }
+                    self.stack.push(acc);
+                    return Ok(());
                 }
+                let acc = if base_op == "=>" {
+                    let mut acc = list.last().cloned().unwrap_or(Value::Nil);
+                    for item in list[..list.len() - 1].iter().rev() {
+                        let v = Interpreter::apply_reduction_op(&base_op, item, &acc)?;
+                        acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                    }
+                    acc
+                } else {
+                    let mut acc = list[0].clone();
+                    for item in &list[1..] {
+                        let v = Interpreter::apply_reduction_op(&base_op, &acc, item)?;
+                        acc = if negate { Value::Bool(!v.truthy()) } else { v };
+                    }
+                    acc
+                };
                 self.stack.push(acc);
             }
         }
@@ -460,9 +539,25 @@ impl VM {
         let name = Self::const_str(code, name_idx).to_string();
         let body_end = body_end as usize;
         let saved = self.interpreter.current_package().to_string();
+        let saved_env = self.interpreter.env().clone();
+        let saved_locals = self.locals.clone();
         self.interpreter.set_current_package(name);
         self.run_range(code, *ip + 1, body_end, compiled_fns)?;
         self.interpreter.set_current_package(saved);
+        let current_env = self.interpreter.env().clone();
+        let mut restored_env = saved_env.clone();
+        for (k, v) in current_env {
+            if saved_env.contains_key(&k) || k.contains("::") {
+                restored_env.insert(k, v);
+            }
+        }
+        self.locals = saved_locals;
+        for (idx, local_name) in code.locals.iter().enumerate() {
+            if let Some(val) = restored_env.get(local_name).cloned() {
+                self.locals[idx] = val;
+            }
+        }
+        *self.interpreter.env_mut() = restored_env;
         *ip = body_end;
         Ok(())
     }

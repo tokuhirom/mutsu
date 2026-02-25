@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use regex::Regex;
@@ -14,11 +14,18 @@ use crate::ast::{AssignOp, Expr, PhaserKind, Stmt};
 use crate::value::Value;
 
 /// A single lexical scope frame tracking both user-declared subs and module imports.
+#[derive(Clone)]
+enum TermBinding {
+    Value(String),
+    Callable(String),
+}
+
 #[derive(Clone, Default)]
 struct LexicalScope {
     user_subs: HashSet<String>,
     test_assertion_subs: HashSet<String>,
     imported_functions: HashSet<String>,
+    term_symbols: HashMap<String, TermBinding>,
 }
 
 thread_local! {
@@ -275,6 +282,92 @@ pub(in crate::parser) fn match_user_declared_prefix_op(input: &str) -> Option<(S
                     .is_none_or(|(_, best_len)| consumed > *best_len)
                 {
                     best = Some((name.clone(), consumed));
+                }
+            }
+        }
+        best
+    })
+}
+
+/// Register a user-declared term symbol.
+/// The canonical name must be in `term:<...>` form.
+pub(in crate::parser) fn register_user_term_symbol(name: &str) {
+    let Some(symbol) = name
+        .strip_prefix("term:<")
+        .and_then(|s| s.strip_suffix('>'))
+    else {
+        return;
+    };
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let current = scopes
+            .last_mut()
+            .expect("scope stack should never be empty");
+        current
+            .term_symbols
+            .insert(symbol.to_string(), TermBinding::Value(name.to_string()));
+    });
+}
+
+pub(in crate::parser) fn register_user_callable_term_symbol(name: &str) {
+    let Some(symbol) = name
+        .strip_prefix("term:<")
+        .and_then(|s| s.strip_suffix('>'))
+    else {
+        return;
+    };
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let current = scopes
+            .last_mut()
+            .expect("scope stack should never be empty");
+        current
+            .term_symbols
+            .insert(symbol.to_string(), TermBinding::Callable(name.to_string()));
+    });
+}
+
+/// Resolve an in-scope term symbol from the current input.
+/// Returns `(canonical_name, consumed_len)` when the input begins with a declared symbol.
+pub(in crate::parser) fn match_user_declared_term_symbol(
+    input: &str,
+) -> Option<(String, usize, bool)> {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        let mut best: Option<(String, usize, bool)> = None;
+
+        for scope in scopes.iter().rev() {
+            for (symbol, binding) in &scope.term_symbols {
+                if !input.starts_with(symbol) {
+                    continue;
+                }
+                let consumed = symbol.len();
+                // For word-like symbols, require identifier boundary.
+                if symbol
+                    .as_bytes()
+                    .last()
+                    .copied()
+                    .is_some_and(|b| crate::parser::helpers::is_ident_char(Some(b)))
+                    && input
+                        .as_bytes()
+                        .get(consumed)
+                        .copied()
+                        .is_some_and(|b| crate::parser::helpers::is_ident_char(Some(b)))
+                {
+                    continue;
+                }
+                if best
+                    .as_ref()
+                    .is_none_or(|(_, best_len, _)| consumed > *best_len)
+                {
+                    match binding {
+                        TermBinding::Value(canonical) => {
+                            best = Some((canonical.clone(), consumed, false));
+                        }
+                        TermBinding::Callable(canonical) => {
+                            best = Some((canonical.clone(), consumed, true));
+                        }
+                    }
                 }
             }
         }
@@ -618,6 +711,9 @@ pub(super) fn say_stmt(input: &str) -> PResult<'_, Stmt> {
     check_bare_io_func("say", rest)?;
     let (rest, _) = ws1(rest)?;
     check_io_func_followed_by_loop("say", rest)?;
+    if let Ok((rest, stmt)) = parse_io_colon_invocant_stmt(rest, "say") {
+        return parse_statement_modifier(rest, stmt);
+    }
     let (rest, args) = parse_expr_list(rest)?;
     let stmt = Stmt::Say(args);
     parse_statement_modifier(rest, stmt)
@@ -629,6 +725,9 @@ pub(super) fn print_stmt(input: &str) -> PResult<'_, Stmt> {
     check_bare_io_func("print", rest)?;
     let (rest, _) = ws1(rest)?;
     check_io_func_followed_by_loop("print", rest)?;
+    if let Ok((rest, stmt)) = parse_io_colon_invocant_stmt(rest, "print") {
+        return parse_statement_modifier(rest, stmt);
+    }
     let (rest, args) = parse_expr_list(rest)?;
     let stmt = Stmt::Print(args);
     parse_statement_modifier(rest, stmt)
@@ -640,6 +739,9 @@ pub(super) fn put_stmt(input: &str) -> PResult<'_, Stmt> {
     check_bare_io_func("put", rest)?;
     let (rest, _) = ws1(rest)?;
     check_io_func_followed_by_loop("put", rest)?;
+    if let Ok((rest, stmt)) = parse_io_colon_invocant_stmt(rest, "put") {
+        return parse_statement_modifier(rest, stmt);
+    }
     let (rest, args) = parse_expr_list(rest)?;
     let stmt = Stmt::Say(args);
     parse_statement_modifier(rest, stmt)
@@ -682,6 +784,54 @@ pub(super) fn parse_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
         items.push(next);
         rest = r;
     }
+}
+
+fn parse_io_colon_invocant_stmt<'a>(input: &'a str, method_name: &str) -> PResult<'a, Stmt> {
+    let (rest_after_target, target) = expression(input)?;
+    let (rest_after_target, _) = ws(rest_after_target)?;
+    if !rest_after_target.starts_with(':') || rest_after_target.starts_with("::") {
+        return Err(PError::expected("io colon invocant call"));
+    }
+    let mut rest = &rest_after_target[1..];
+    let (r, _) = ws(rest)?;
+    rest = r;
+    let (mut rest_after_args, first_arg) = expression(rest).map_err(|err| PError {
+        messages: merge_expected_messages(
+            "expected expression after ':' in io invocant call",
+            &err.messages,
+        ),
+        remaining_len: err.remaining_len.or(Some(rest.len())),
+    })?;
+    let mut args = vec![first_arg];
+    loop {
+        let (r, _) = ws(rest_after_args)?;
+        if !r.starts_with(',') {
+            break;
+        }
+        let r = &r[1..];
+        let (r, _) = ws(r)?;
+        if r.starts_with(';')
+            || r.is_empty()
+            || r.starts_with('}')
+            || r.starts_with(')')
+            || is_stmt_modifier_keyword(r)
+        {
+            break;
+        }
+        let (r, next) = expression(r)?;
+        args.push(next);
+        rest_after_args = r;
+    }
+    Ok((
+        rest_after_args,
+        Stmt::Expr(Expr::MethodCall {
+            target: Box::new(target),
+            name: method_name.to_string(),
+            args,
+            modifier: None,
+            quoted: false,
+        }),
+    ))
 }
 
 /// Parse `return` statement.
@@ -755,6 +905,7 @@ pub(super) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
         || rest.starts_with('}')
         || is_stmt_modifier_keyword(rest);
     if no_arg {
+        let (rest, _) = opt_char(rest, ';');
         // `die`/`fail` with no argument should reuse current `$!` when present.
         // A later runtime fallback handles Nil -> default text.
         let stmt = if is_fail {
@@ -945,6 +1096,30 @@ pub(super) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 target,
                 index,
                 value: Box::new(value),
+            });
+            return parse_statement_modifier(rest, stmt);
+        }
+    }
+    if matches!(&expr, Expr::Index { target, .. } if matches!(target.as_ref(), Expr::ArrayVar(_)))
+        && rest.starts_with(":=")
+    {
+        let rest = &rest[2..];
+        let (rest, _) = ws(rest)?;
+        let (rest, value) = parse_comma_or_expr(rest).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected assigned expression after index bind",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(rest.len())),
+        })?;
+        if let Expr::Index { target, index } = expr {
+            let stmt = Stmt::Expr(Expr::IndexAssign {
+                target,
+                index,
+                value: Box::new(Expr::Call {
+                    name: "__mutsu_bind_index_value".to_string(),
+                    args: vec![value],
+                }),
             });
             return parse_statement_modifier(rest, stmt);
         }

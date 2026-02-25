@@ -73,8 +73,15 @@ fn unicode_bracket_close(open: char) -> Option<char> {
     }
 }
 
-/// Read a bracketed string with nesting support (e.g., `{...{...}...}`)
-pub(super) fn read_bracketed(input: &str, open: char, close: char) -> PResult<'_, &str> {
+/// Read a bracketed string with nesting support (e.g., `{...{...}...}`).
+/// When `allow_escape` is true, `\x` consumes both chars so escaped delimiters
+/// do not affect nesting.
+pub(super) fn read_bracketed(
+    input: &str,
+    open: char,
+    close: char,
+    allow_escape: bool,
+) -> PResult<'_, &str> {
     if !input.starts_with(open) {
         return Err(PError::expected(&format!("'{}'", open)));
     }
@@ -86,7 +93,7 @@ pub(super) fn read_bracketed(input: &str, open: char, close: char) -> PResult<'_
             return Err(PError::expected(&format!("closing '{}'", close)));
         }
         let ch = rest.chars().next().unwrap();
-        if ch == '\\' && rest.len() > 1 {
+        if allow_escape && ch == '\\' && rest.len() > 1 {
             rest = &rest[2..]; // skip escape
             continue;
         }
@@ -129,7 +136,7 @@ pub(super) fn big_q_string(input: &str) -> PResult<'_, Expr> {
     }
     // Check for bracket-style delimiter
     if let Some(close_char) = unicode_bracket_close(delim_char) {
-        let (after, content) = read_bracketed(rest, delim_char, close_char)?;
+        let (after, content) = read_bracketed(rest, delim_char, close_char, false)?;
         if is_scalar_interp {
             return Ok((after, interpolate_string_content(content)));
         }
@@ -161,16 +168,28 @@ fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
     };
     // Find the terminator line in the heredoc body
     let mut content_end = None;
+    let mut terminator_end = None;
+    let mut terminator_indent = 0usize;
     let mut search_pos = 0;
     while search_pos <= heredoc_start.len() {
-        if heredoc_start[search_pos..].starts_with(delimiter) {
-            let after_delim = &heredoc_start[search_pos + delimiter.len()..];
+        // Raku allows indentation before heredoc terminators.
+        let line = &heredoc_start[search_pos..];
+        let leading_ws = line
+            .chars()
+            .take_while(|c| matches!(c, ' ' | '\t'))
+            .map(char::len_utf8)
+            .sum::<usize>();
+        let term_pos = search_pos + leading_ws;
+        if heredoc_start[term_pos..].starts_with(delimiter) {
+            let after_delim = &heredoc_start[term_pos + delimiter.len()..];
             if after_delim.is_empty()
                 || after_delim.starts_with('\n')
                 || after_delim.starts_with('\r')
                 || after_delim.starts_with(';')
             {
                 content_end = Some(search_pos);
+                terminator_end = Some(term_pos + delimiter.len());
+                terminator_indent = leading_ws;
                 break;
             }
         }
@@ -182,22 +201,46 @@ fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
     }
     if let Some(end) = content_end {
         let content = &heredoc_start[..end];
-        let after_terminator = &heredoc_start[end + delimiter.len()..];
+        let content = if terminator_indent == 0 {
+            content.to_string()
+        } else {
+            // Strip terminator indentation from each heredoc content line.
+            let mut dedented = String::new();
+            for segment in content.split_inclusive('\n') {
+                let mut bytes_to_strip = terminator_indent;
+                let mut strip_pos = 0usize;
+                for ch in segment.chars() {
+                    if bytes_to_strip == 0 {
+                        break;
+                    }
+                    if matches!(ch, ' ' | '\t') {
+                        let len = ch.len_utf8();
+                        if len > bytes_to_strip {
+                            break;
+                        }
+                        bytes_to_strip -= len;
+                        strip_pos += len;
+                    } else {
+                        break;
+                    }
+                }
+                dedented.push_str(&segment[strip_pos..]);
+            }
+            dedented
+        };
+        let after_terminator = &heredoc_start[terminator_end.expect("terminator end")..];
         // Skip optional newline after terminator
         let after_terminator = after_terminator
             .strip_prefix('\n')
             .unwrap_or(after_terminator);
         // Return rest_of_line + after_terminator as remaining input.
         if rest_of_line.trim().is_empty() || rest_of_line.trim() == ";" {
-            return Ok((
-                after_terminator,
-                Expr::Literal(Value::Str(content.to_string())),
-            ));
+            return Ok((after_terminator, Expr::Literal(Value::Str(content))));
         }
         // We cannot return a disjoint slice pair, so concatenate.
         let combined = format!("{}\n{}", rest_of_line, after_terminator);
         let leaked: &'static str = Box::leak(combined.into_boxed_str());
-        return Ok((leaked, Expr::Literal(Value::Str(content.to_string()))));
+        return Ok((leaked, Expr::Literal(Value::Str(content))));
     }
     Err(PError::expected("heredoc terminator"))
 }
@@ -212,7 +255,7 @@ fn parse_to_heredoc_delimiter(input: &str) -> PResult<'_, &'_ str> {
     }
 
     if let Some(close) = unicode_bracket_close(open) {
-        let (rest, delimiter) = read_bracketed(input, open, close)?;
+        let (rest, delimiter) = read_bracketed(input, open, close, false)?;
         return Ok((rest, delimiter));
     }
 
@@ -232,6 +275,67 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("q string"));
     }
     let after_q = &input[1..];
+
+    // q:nfc, q:nfd, q:nfkc, q:nfkd — Unicode normalization adverbs
+    for nf_form in &[":nfkc", ":nfkd", ":nfc", ":nfd"] {
+        if let Some(rest_after_nf) = after_q.strip_prefix(nf_form) {
+            let form_upper = nf_form[1..].to_uppercase(); // "NFKC", "NFKD", etc.
+            // Parse the quoted content (can be single or double quoted)
+            let (rest, content) = match rest_after_nf.chars().next() {
+                Some('"') => {
+                    // q:nfkc"..." — double-quoted content (no interpolation for q:)
+                    let inner = &rest_after_nf[1..];
+                    let end = inner
+                        .find('"')
+                        .ok_or_else(|| PError::expected("closing \""))?;
+                    (&inner[end + 1..], &inner[..end])
+                }
+                Some('\'') => {
+                    // q:nfkc'...' — single-quoted content
+                    let inner = &rest_after_nf[1..];
+                    let end = inner
+                        .find('\'')
+                        .ok_or_else(|| PError::expected("closing '"))?;
+                    (&inner[end + 1..], &inner[..end])
+                }
+                Some(c) if !c.is_alphanumeric() && !c.is_whitespace() => {
+                    if let Some(close_char) = unicode_bracket_close(c) {
+                        let inner = &rest_after_nf[c.len_utf8()..];
+                        let end = inner
+                            .find(close_char)
+                            .ok_or_else(|| PError::expected("closing bracket"))?;
+                        (&inner[end + close_char.len_utf8()..], &inner[..end])
+                    } else {
+                        // Symmetric delimiter
+                        let inner = &rest_after_nf[c.len_utf8()..];
+                        let end = inner
+                            .find(c)
+                            .ok_or_else(|| PError::expected("closing delimiter"))?;
+                        (&inner[end + c.len_utf8()..], &inner[..end])
+                    }
+                }
+                _ => {
+                    return Err(PError::expected(
+                        "quote delimiter after normalization adverb",
+                    ));
+                }
+            };
+            use unicode_normalization::UnicodeNormalization;
+            let normalized: String = match form_upper.as_str() {
+                "NFC" => content.nfc().collect(),
+                "NFD" => content.nfd().collect(),
+                "NFKC" => content.nfkc().collect(),
+                _ => content.nfkd().collect(),
+            };
+            return Ok((
+                rest,
+                Expr::Literal(Value::Uni {
+                    form: form_upper,
+                    text: normalized,
+                }),
+            ));
+        }
+    }
 
     // q:to/DELIM/, q:to<DELIM>, qq:to/.../, qq:to<...> heredoc
     if after_q.starts_with(":to") || after_q.starts_with("q:to") {
@@ -312,12 +416,48 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
         }
         _ => return Err(PError::expected("q string delimiter")),
     };
-    let (rest, content) = read_bracketed(after_prefix, open, close)?;
+    let (rest, content) = read_bracketed(after_prefix, open, close, true)?;
     if is_qq {
         return Ok((rest, interpolate_string_content(content)));
     }
     let s = content.replace("\\'", "'").replace("\\\\", "\\");
     Ok((rest, Expr::Literal(Value::Str(s))))
+}
+
+/// Parse qx{...}, qx[...], qx(...), qx<...>, qx/.../, qx`...` forms.
+/// qx executes the command and returns captured stdout as a string.
+pub(super) fn qx_string(input: &str) -> PResult<'_, Expr> {
+    let after_qx = input
+        .strip_prefix("qx")
+        .ok_or_else(|| PError::expected("qx string"))?;
+    let delim = after_qx
+        .chars()
+        .next()
+        .ok_or_else(|| PError::expected("qx string delimiter"))?;
+    if delim.is_alphanumeric() || delim.is_whitespace() {
+        return Err(PError::expected("qx string delimiter"));
+    }
+
+    let (rest, command_expr) = if let Some(close_char) = unicode_bracket_close(delim) {
+        let (rest, content) = read_bracketed(after_qx, delim, close_char, true)?;
+        (rest, interpolate_string_content(content))
+    } else {
+        let body = &after_qx[delim.len_utf8()..];
+        let end = body
+            .find(delim)
+            .ok_or_else(|| PError::expected(&format!("closing '{delim}'")))?;
+        let content = &body[..end];
+        let rest = &body[end + delim.len_utf8()..];
+        (rest, interpolate_string_content(content))
+    };
+
+    Ok((
+        rest,
+        Expr::Call {
+            name: "QX".to_string(),
+            args: vec![command_expr],
+        },
+    ))
 }
 
 /// Process an escape sequence starting at `rest` (which begins with `\`).
@@ -425,6 +565,42 @@ pub(super) fn process_escape_sequence<'a>(
     Some((&rest[2..], false))
 }
 
+/// Try to parse a method call chain on an interpolated variable: "$var.method()" or "$var.method".
+/// Only recognizes simple identifier method names followed by `()` (no args).
+fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, &str) {
+    let mut expr = target;
+    let mut rest = input;
+    while let Some(after_dot) = rest.strip_prefix('.') {
+        // Must start with an alphabetic char or underscore (method name)
+        if after_dot.is_empty() {
+            break;
+        }
+        let first = after_dot.as_bytes()[0];
+        if !(first.is_ascii_alphabetic() || first == b'_') {
+            break;
+        }
+        let end = after_dot
+            .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+            .unwrap_or(after_dot.len());
+        let method_name = &after_dot[..end];
+        let after_name = &after_dot[end..];
+        // Must be followed by "()" to be recognized as a method call
+        if let Some(after_parens) = after_name.strip_prefix("()") {
+            expr = Expr::MethodCall {
+                target: Box::new(expr),
+                name: method_name.to_string(),
+                args: vec![],
+                modifier: None,
+                quoted: false,
+            };
+            rest = after_parens;
+        } else {
+            break;
+        }
+    }
+    (expr, rest)
+}
+
 /// Try to interpolate a `$var` or `@var` at the current position.
 /// Returns `Some(remaining_input)` if interpolation was performed, `None` otherwise.
 pub(super) fn try_interpolate_var<'a>(
@@ -482,8 +658,30 @@ pub(super) fn try_interpolate_var<'a>(
             let var_rest = &rest[1..];
             let (var_rest, var_name) = parse_var_name_from_str(var_rest);
             let (expr, var_rest) = parse_angle_index(var_rest, Expr::Var(var_name));
+            // Handle method call interpolation: "$var.method()" or "$var.method"
+            let (expr, var_rest) = try_parse_interp_method_call(var_rest, expr);
             parts.push(expr);
             return Some(var_rest);
+        }
+        if next == '.' {
+            let after_dot = &rest[2..];
+            if !after_dot.is_empty() {
+                let first = after_dot.as_bytes()[0];
+                if first.is_ascii_alphabetic() || first == b'_' {
+                    if !current.is_empty() {
+                        parts.push(Expr::Literal(Value::Str(std::mem::take(current))));
+                    }
+                    let end = after_dot
+                        .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                        .unwrap_or(after_dot.len());
+                    let var_name = format!(".{}", &after_dot[..end]);
+                    let (expr, remainder) =
+                        parse_angle_index(&after_dot[end..], Expr::Var(var_name));
+                    let (expr, remainder) = try_parse_interp_method_call(remainder, expr);
+                    parts.push(expr);
+                    return Some(remainder);
+                }
+            }
         }
     }
     if rest.starts_with('@') && rest.len() > 1 {
@@ -578,6 +776,61 @@ pub(in crate::parser) fn interpolate_string_content(content: &str) -> Expr {
     finalize_interpolation(parts, current)
 }
 
+fn parse_single_quote_qq(content: &str) -> Expr {
+    let mut parts: Vec<Expr> = Vec::new();
+    let mut current = String::new();
+    let mut rest = content;
+
+    while !rest.is_empty() {
+        if let Some(after_qq) = rest.strip_prefix("\\qq")
+            && let Some(open) = after_qq.chars().next()
+            && !open.is_alphanumeric()
+            && !open.is_whitespace()
+        {
+            let parsed = if let Some(close) = unicode_bracket_close(open) {
+                read_bracketed(after_qq, open, close, true)
+                    .map(|(after, inner)| (after, interpolate_string_content(inner)))
+            } else {
+                let body = &after_qq[open.len_utf8()..];
+                body.find(open)
+                    .map(|end| {
+                        let inner = &body[..end];
+                        let after = &body[end + open.len_utf8()..];
+                        (after, interpolate_string_content(inner))
+                    })
+                    .ok_or_else(|| PError::expected("closing qq delimiter"))
+            };
+            if let Ok((after, interpolated)) = parsed {
+                if !current.is_empty() {
+                    parts.push(Expr::Literal(Value::Str(std::mem::take(&mut current))));
+                }
+                parts.push(interpolated);
+                rest = after;
+                continue;
+            }
+        }
+
+        if let Some(after_backslash) = rest.strip_prefix('\\')
+            && let Some(next) = after_backslash.chars().next()
+        {
+            if next == '\'' || next == '\\' {
+                current.push(next);
+            } else {
+                current.push('\\');
+                current.push(next);
+            }
+            rest = &after_backslash[next.len_utf8()..];
+            continue;
+        }
+
+        let ch = rest.chars().next().unwrap();
+        current.push(ch);
+        rest = &rest[ch.len_utf8()..];
+    }
+
+    finalize_interpolation(parts, current)
+}
+
 pub(super) fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '\'')?;
     let start = input;
@@ -588,8 +841,7 @@ pub(super) fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
         }
         if let Some(after_quote) = rest.strip_prefix('\'') {
             let content = &start[..start.len() - rest.len()];
-            let s = content.replace("\\'", "'").replace("\\\\", "\\");
-            return Ok((after_quote, Expr::Literal(Value::Str(s))));
+            return Ok((after_quote, parse_single_quote_qq(content)));
         }
         if rest.starts_with('\\') && rest.len() > 1 {
             // Skip backslash + next character (which may be multi-byte)
@@ -605,14 +857,19 @@ pub(super) fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
 
 /// Parse smart single-quoted string literal: ‘...’ (no interpolation)
 pub(super) fn smart_single_quoted_string(input: &str) -> PResult<'_, Expr> {
-    let (input, _) = parse_char(input, '‘')?;
+    let (input, close) = if let Ok((rest, _)) = parse_char(input, '‘') {
+        (rest, '’')
+    } else {
+        let (rest, _) = parse_char(input, '’')?;
+        (rest, '‘')
+    };
     let mut rest = input;
     let start = input;
     loop {
         if rest.is_empty() {
             return Err(PError::expected("closing ’"));
         }
-        if let Some(after_quote) = rest.strip_prefix('’') {
+        if let Some(after_quote) = rest.strip_prefix(close) {
             let content = &start[..start.len() - rest.len()];
             return Ok((after_quote, Expr::Literal(Value::Str(content.to_string()))));
         }
@@ -757,8 +1014,11 @@ pub(super) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
                 }
             }
             if end > 0 {
-                let block_src = &rest[1..end];
-                if let Ok((_rest, expr)) = expression(block_src) {
+                let block_src = rest[1..end].trim();
+                if !block_src.is_empty()
+                    && let Ok((expr_rest, expr)) = expression(block_src)
+                    && expr_rest.trim().is_empty()
+                {
                     parts.push(expr);
                 }
                 rest = &rest[end + 1..];
@@ -828,8 +1088,11 @@ pub(super) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
                 }
             }
             if end > 0 {
-                let block_src = &rest[1..end];
-                if let Ok((_rest, expr)) = expression(block_src) {
+                let block_src = rest[1..end].trim();
+                if !block_src.is_empty()
+                    && let Ok((expr_rest, expr)) = expression(block_src)
+                    && expr_rest.trim().is_empty()
+                {
                     parts.push(expr);
                 }
                 rest = &rest[end + 1..];

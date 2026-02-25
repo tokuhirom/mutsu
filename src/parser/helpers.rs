@@ -248,6 +248,26 @@ pub(super) fn ws1(input: &str) -> PResult<'_, ()> {
     Ok((rest, ()))
 }
 
+/// Consume unspace: backslash followed by whitespace collapses to nothing.
+/// Returns the remaining input after any unspace, or the original input if no unspace.
+pub(super) fn consume_unspace(input: &str) -> &str {
+    if let Some(after_bs) = input.strip_prefix('\\')
+        && let Some(c) = after_bs.chars().next()
+        && c.is_whitespace()
+    {
+        let mut scan = &after_bs[c.len_utf8()..];
+        while let Some(c2) = scan.chars().next() {
+            if c2.is_whitespace() {
+                scan = &scan[c2.len_utf8()..];
+            } else {
+                break;
+            }
+        }
+        return scan;
+    }
+    input
+}
+
 /// Returns true for non-breaking space characters that should not split words in `<...>`.
 pub(super) fn is_non_breaking_space(c: char) -> bool {
     matches!(c, '\u{00A0}' | '\u{2007}' | '\u{202F}' | '\u{FEFF}')

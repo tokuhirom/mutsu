@@ -4,14 +4,35 @@ use crate::ast::Expr;
 use crate::value::Value;
 
 use super::super::expr::expression;
-use super::super::helpers::{skip_balanced_parens, ws};
+use super::super::helpers::{consume_unspace, skip_balanced_parens, ws};
 
 #[derive(Default)]
 struct MatchAdverbs {
     exhaustive: bool,
     repeat: Option<usize>,
     ignore_case: bool,
+    sigspace: bool,
     perl5: bool,
+}
+
+fn is_regex_quote_open(ch: char) -> bool {
+    matches!(
+        ch,
+        '\'' | '"' | '\u{2018}' | '\u{201A}' | '\u{201C}' | '\u{201E}' | '\u{FF62}'
+    )
+}
+
+fn is_regex_quote_terminator(open: char, ch: char) -> bool {
+    match open {
+        '\'' => ch == '\'',
+        '"' => ch == '"',
+        '\u{2018}' => ch == '\u{2019}',                     // ‘...’
+        '\u{201A}' => ch == '\u{2019}' || ch == '\u{2018}', // ‚...’ and ‚...‘
+        '\u{201C}' => ch == '\u{201D}',                     // “...”
+        '\u{201E}' => ch == '\u{201D}',                     // „...”
+        '\u{FF62}' => ch == '\u{FF63}',                     // ｢...｣
+        _ => false,
+    }
 }
 
 fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
@@ -59,6 +80,8 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             adverbs.exhaustive = true;
         } else if name == "i" || name == "ignorecase" {
             adverbs.ignore_case = true;
+        } else if name == "s" || name == "sigspace" {
+            adverbs.sigspace = true;
         } else if name.eq_ignore_ascii_case("p5") {
             adverbs.perl5 = true;
         } else if name == "x" {
@@ -84,6 +107,50 @@ fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
         spec = r;
     }
     Ok((spec, adverbs))
+}
+
+fn parse_compact_match_adverbs<'a>(input: &'a str, adverbs: &mut MatchAdverbs) -> &'a str {
+    let mut rest = input;
+    loop {
+        if let Some(r) = rest.strip_prefix("p5") {
+            adverbs.perl5 = true;
+            rest = r;
+            continue;
+        }
+        if let Some(ch) = rest.chars().next() {
+            let consumed = match ch {
+                's' => {
+                    adverbs.sigspace = true;
+                    true
+                }
+                'i' => {
+                    adverbs.ignore_case = true;
+                    true
+                }
+                'g' => {
+                    adverbs.exhaustive = true;
+                    true
+                }
+                _ => false,
+            };
+            if consumed {
+                rest = &rest[ch.len_utf8()..];
+                continue;
+            }
+        }
+        break;
+    }
+    rest
+}
+
+fn apply_inline_match_adverbs(mut pattern: String, adverbs: &MatchAdverbs) -> String {
+    if adverbs.ignore_case {
+        pattern = format!(":i {pattern}");
+    }
+    if adverbs.sigspace {
+        pattern = format!(":s {pattern}");
+    }
+    pattern
 }
 
 /// Parse comma-separated call arguments inside parens.
@@ -258,17 +325,16 @@ pub(in crate::parser) fn scan_to_delim(
                     }
                 }
             }
-        } else if c == '\'' || c == '"' {
+        } else if is_regex_quote_open(c) {
             // Skip quoted string content in regex (e.g., '/' or '\\').
             // This prevents delimiters inside string atoms like m/ "/" ** 2 /
             // from prematurely ending the regex literal.
-            let quote = c;
             loop {
                 match chars.next() {
                     Some((_, '\\')) => {
                         chars.next(); // skip escaped char
                     }
-                    Some((_, ch)) if ch == quote => break,
+                    Some((_, ch)) if is_regex_quote_terminator(c, ch) => break,
                     Some(_) => {}
                     None => return None,
                 }
@@ -580,7 +646,8 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // m with arbitrary delimiter: m/.../, m{...}, m[...], m^...^, m!...!, etc.
     // Also allow modifiers before delimiter: m:2x/.../, m:x(2)/.../, m:g:i/.../
     if let Some(after_m) = input.strip_prefix('m') {
-        let (spec, adverbs) = parse_match_adverbs(after_m)?;
+        let (spec, mut adverbs) = parse_match_adverbs(after_m)?;
+        let spec = parse_compact_match_adverbs(spec, &mut adverbs);
         if let Some(open_ch) = spec.chars().next() {
             let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
             if is_delim {
@@ -593,11 +660,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 };
                 let r = &spec[open_ch.len_utf8()..];
                 if let Some((pattern, rest)) = scan_to_delim(r, open_ch, close_ch, is_paired) {
-                    let pattern = if adverbs.ignore_case {
-                        format!(":i {}", pattern)
-                    } else {
-                        pattern.to_string()
-                    };
+                    let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                     if adverbs.exhaustive || adverbs.repeat.is_some() || adverbs.perl5 {
                         return Ok((
                             rest,
@@ -710,6 +773,19 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
     };
     let (rest, name) = take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
     let name = name.to_string();
+    // Detect illegal space between method name and parens: .method (args) is Confused
+    // Raku requires no space between method name and opening paren.
+    if (rest.starts_with(' ') || rest.starts_with('\t')) && !rest.starts_with('\\') {
+        let after_ws = rest.trim_start_matches([' ', '\t']);
+        if after_ws.starts_with('(') {
+            return Err(PError::expected_at(
+                "Confused. no space allowed between method name and the left parenthesis",
+                rest,
+            ));
+        }
+    }
+    // Handle unspace between method name and parens: .method\ (args)
+    let rest = consume_unspace(rest);
     if rest.starts_with('(') {
         let (rest, _) = parse_char(rest, '(')?;
         let (rest, _) = ws(rest)?;

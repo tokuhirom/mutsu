@@ -34,9 +34,12 @@ impl Interpreter {
 
     fn preprocess_roast_directives(input: &str) -> String {
         let mut output = String::new();
-        let mut pending_todo: Option<String> = None;
+        let mut pending_todo: Option<(String, usize)> = None; // (reason, remaining_count)
         let mut skip_lines_remaining: usize = 0;
         let mut skip_reason: String = String::new();
+        // Count-based skip where the skipped line is a block opener `{`.
+        // In that case, consume the whole block while emitting a single skip line.
+        let mut skip_count_block_depth: usize = 0;
         // Block-level skip: skip the next { ... } block
         let mut skip_block_pending: Option<String> = None;
         let mut skip_block_depth: usize = 0;
@@ -45,12 +48,46 @@ impl Interpreter {
         for line in input.lines() {
             let trimmed = line.trim_start();
 
+            // Continue skipping the remainder of a count-skipped block.
+            if skip_count_block_depth > 0 {
+                for ch in trimmed.chars() {
+                    if ch == '{' {
+                        skip_count_block_depth += 1;
+                    } else if ch == '}' {
+                        skip_count_block_depth -= 1;
+                        if skip_count_block_depth == 0 {
+                            break;
+                        }
+                    }
+                }
+                output.push('\n');
+                continue;
+            }
+
             // Count-based skip: skip the next N non-comment, non-empty lines
             if skip_lines_remaining > 0 {
                 if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                    // If the next non-empty line is a block opening `{`,
+                    // convert to block-level skip so the entire block is skipped.
+                    if trimmed.starts_with('{') {
+                        skip_lines_remaining -= 1;
+                        skip_block_depth = 1;
+                        skip_block_reason = skip_reason.clone();
+                        output.push('\n');
+                        continue;
+                    }
                     skip_lines_remaining -= 1;
                     // Emit a skip() call for each skipped test line
                     output.push_str(&format!("skip '{}', 1;\n", skip_reason));
+                    if trimmed.starts_with('{') {
+                        for ch in trimmed.chars() {
+                            if ch == '{' {
+                                skip_count_block_depth += 1;
+                            } else if ch == '}' && skip_count_block_depth > 0 {
+                                skip_count_block_depth -= 1;
+                            }
+                        }
+                    }
                     continue;
                 }
                 output.push('\n');
@@ -182,36 +219,56 @@ impl Interpreter {
                 continue;
             }
 
-            // #?rakudo todo 'reason' — mark the next test as todo.
+            // #?rakudo todo 'reason' or #?rakudo N todo 'reason' — mark tests as todo.
             // Although mutsu is not rakudo, we honor todo directives because
             // they indicate known spec issues that also affect mutsu.
             if trimmed.starts_with("#?rakudo")
                 && !trimmed.contains(".jvm")
                 && trimmed.contains("todo")
             {
-                // Extract the reason string if present
                 let after = trimmed.trim_start_matches("#?rakudo").trim_start();
-                let reason = if let Some(start) = after.find('\'') {
-                    if let Some(end) = after[start + 1..].find('\'') {
-                        &after[start + 1..start + 1 + end]
+                // Check for count: #?rakudo N todo "reason"
+                let (count, after_count) = if let Some(first_char) = after.chars().next()
+                    && first_char.is_ascii_digit()
+                {
+                    let num_str: String =
+                        after.chars().take_while(|c| c.is_ascii_digit()).collect();
+                    let n: usize = num_str.parse().unwrap_or(1);
+                    (n, after[num_str.len()..].trim_start())
+                } else {
+                    (1, after)
+                };
+                // Extract the reason string (single or double quoted)
+                let reason = if let Some(start) = after_count.find('\'') {
+                    if let Some(end) = after_count[start + 1..].find('\'') {
+                        &after_count[start + 1..start + 1 + end]
+                    } else {
+                        "todo"
+                    }
+                } else if let Some(start) = after_count.find('"') {
+                    if let Some(end) = after_count[start + 1..].find('"') {
+                        &after_count[start + 1..start + 1 + end]
                     } else {
                         "todo"
                     }
                 } else {
                     "todo"
                 };
-                pending_todo = Some(reason.to_string());
+                pending_todo = Some((reason.to_string(), count));
                 output.push('\n');
                 continue;
             }
 
             // Emit pending todo before next non-comment, non-empty line
-            if let Some(ref reason) = pending_todo
+            if let Some((ref reason, ref mut remaining)) = pending_todo
                 && !trimmed.is_empty()
                 && !trimmed.starts_with('#')
             {
                 output.push_str(&format!("todo '{}';\n", reason));
-                pending_todo = None;
+                *remaining -= 1;
+                if *remaining == 0 {
+                    pending_todo = None;
+                }
             }
 
             // #?rakudo N skip 'reason' — count-based skip directive.
@@ -303,7 +360,8 @@ impl Interpreter {
         }
         let (enter_ph, leave_ph, body_main) = self.split_block_phasers(&stmts);
         self.run_block_raw(&enter_ph)?;
-        let compiler = crate::compiler::Compiler::new();
+        let mut compiler = crate::compiler::Compiler::new();
+        compiler.set_current_package(self.current_package.clone());
         let (code, compiled_fns) = compiler.compile(&body_main);
         let interp = std::mem::take(self);
         let vm = crate::vm::VM::new(interp);
@@ -371,7 +429,8 @@ impl Interpreter {
         if stmts.is_empty() {
             return Ok(());
         }
-        let compiler = crate::compiler::Compiler::new();
+        let mut compiler = crate::compiler::Compiler::new();
+        compiler.set_current_package(self.current_package.clone());
         let (code, compiled_fns) = compiler.compile(stmts);
         let interp = std::mem::take(self);
         let vm = crate::vm::VM::new(interp);
@@ -451,5 +510,19 @@ impl Interpreter {
         let stmts = Self::merge_unit_class(stmts);
         self.run_block(&stmts)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Interpreter;
+
+    #[test]
+    fn preprocess_count_skip_consumes_entire_block() {
+        let src = "#?rakudo 1 skip 'reason'\n{\n    is EVAL('$bar'), Any, 'x'\n}\nsay 42;\n";
+        let out = Interpreter::preprocess_roast_directives(src);
+        assert!(out.contains("skip 'reason', 1;"));
+        assert!(!out.contains("is EVAL('$bar')"));
+        assert!(out.contains("say 42;"));
     }
 }

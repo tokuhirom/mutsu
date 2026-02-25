@@ -1,6 +1,16 @@
 use super::*;
 
 impl Interpreter {
+    fn dynamic_name_alias(name: &str) -> Option<String> {
+        if let Some(rest) = name.strip_prefix("$*") {
+            return Some(format!("*{}", rest));
+        }
+        if let Some(rest) = name.strip_prefix('*') {
+            return Some(format!("$*{}", rest));
+        }
+        None
+    }
+
     fn make_pod_block(contents: Vec<Value>) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("contents".to_string(), Value::array(contents));
@@ -16,6 +26,52 @@ impl Interpreter {
         );
         attrs.insert("config".to_string(), Value::hash(HashMap::new()));
         Value::make_instance("Pod::Block::Comment".to_string(), attrs)
+    }
+
+    fn make_pod_table(rows: Vec<Vec<String>>) -> Value {
+        let mut attrs = HashMap::new();
+        let contents = rows
+            .into_iter()
+            .map(|row| Value::array(row.into_iter().map(Value::Str).collect::<Vec<_>>()))
+            .collect::<Vec<_>>();
+        attrs.insert("contents".to_string(), Value::array(contents));
+        attrs.insert("headers".to_string(), Value::array(Vec::new()));
+        attrs.insert("caption".to_string(), Value::Str(String::new()));
+        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+        Value::make_instance("Pod::Block::Table".to_string(), attrs)
+    }
+
+    fn is_pod_table_separator(line: &str) -> bool {
+        let trimmed = line.trim();
+        !trimmed.is_empty()
+            && trimmed.contains('-')
+            && trimmed
+                .chars()
+                .all(|c| matches!(c, '-' | '+' | '|' | ':' | ' ' | '\t'))
+    }
+
+    fn collect_table_rows(lines: &[&str], mut idx: usize) -> (Vec<Vec<String>>, usize) {
+        let mut rows = Vec::new();
+        while idx < lines.len() {
+            let trimmed = lines[idx].trim_start();
+            if trimmed.is_empty() || trimmed.starts_with('=') {
+                break;
+            }
+            if Self::is_pod_table_separator(trimmed) {
+                idx += 1;
+                continue;
+            }
+            if !trimmed.contains('|') {
+                break;
+            }
+            let row = trimmed
+                .split('|')
+                .map(|cell| cell.trim().to_string())
+                .collect::<Vec<_>>();
+            rows.push(row);
+            idx += 1;
+        }
+        (rows, idx)
     }
 
     fn collect_paragraph(lines: &[&str], mut idx: usize) -> (String, usize) {
@@ -46,6 +102,15 @@ impl Interpreter {
             if first == Some("=comment") {
                 let (text, next_idx) = Self::collect_paragraph(&lines, idx + 1);
                 entries.push(Self::make_pod_comment(text));
+                idx = next_idx;
+                continue;
+            }
+
+            if first == Some("=table") {
+                let (rows, next_idx) = Self::collect_table_rows(&lines, idx + 1);
+                if !rows.is_empty() {
+                    entries.push(Self::make_pod_table(rows));
+                }
                 idx = next_idx;
                 continue;
             }
@@ -102,6 +167,14 @@ impl Interpreter {
                     if inner_first == Some("=comment") {
                         let (text, next_idx) = Self::collect_paragraph(&lines, idx + 1);
                         contents.push(Self::make_pod_comment(text));
+                        idx = next_idx;
+                        continue;
+                    }
+                    if inner_first == Some("=table") {
+                        let (rows, next_idx) = Self::collect_table_rows(&lines, idx + 1);
+                        if !rows.is_empty() {
+                            contents.push(Self::make_pod_table(rows));
+                        }
                         idx = next_idx;
                         continue;
                     }
@@ -228,6 +301,7 @@ impl Interpreter {
             target,
             mode,
             path: path.clone(),
+            line_separators: self.default_line_separators(),
             encoding: "utf-8".to_string(),
             file: None,
             socket: None,
@@ -462,7 +536,9 @@ impl Interpreter {
     }
 
     pub(super) fn get_dynamic_handle(&self, name: &str) -> Option<Value> {
-        self.env.get(name).cloned()
+        self.env.get(name).cloned().or_else(|| {
+            Self::dynamic_name_alias(name).and_then(|alias| self.env.get(&alias).cloned())
+        })
     }
 
     pub(super) fn default_input_handle(&self) -> Option<Value> {
@@ -477,7 +553,25 @@ impl Interpreter {
         newline: bool,
     ) -> Result<(), RuntimeError> {
         if let Some(handle) = self.get_dynamic_handle(name) {
-            return self.write_to_handle_value(&handle, text, newline);
+            if Self::handle_id_from_value(&handle).is_some() {
+                return self.write_to_handle_value(&handle, text, newline);
+            }
+            let payload = if newline {
+                format!("{}\n", text)
+            } else {
+                text.to_string()
+            };
+            if self
+                .call_method_with_values(handle, "print", vec![Value::Str(payload.clone())])
+                .is_ok()
+            {
+                return Ok(());
+            }
+            if name == "$*ERR" {
+                self.stderr_output.push_str(&payload);
+            }
+            self.output.push_str(&payload);
+            return Ok(());
         }
         let payload = if newline {
             format!("{}\n", text)
@@ -491,8 +585,14 @@ impl Interpreter {
         Ok(())
     }
 
+    pub(crate) fn render_gist_value(&mut self, value: &Value) -> String {
+        self.call_method_with_values(value.clone(), "gist", vec![])
+            .map(|result| result.to_string_value())
+            .unwrap_or_else(|_| crate::runtime::gist_value(value))
+    }
+
     pub(super) fn get_dynamic_string(&self, name: &str) -> Option<String> {
-        self.env.get(name).and_then(|value| match value {
+        self.get_dynamic_handle(name).and_then(|value| match value {
             Value::Str(s) => Some(s.clone()),
             Value::Instance { attributes, .. } => {
                 // Support IO::Path instances (e.g., $*CWD)

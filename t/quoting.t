@@ -1,5 +1,5 @@
 use Test;
-plan 8;
+plan 9;
 
 # q// literal string (no interpolation)
 my $q1 = q/hello world/;
@@ -34,3 +34,7 @@ is $qq3, 'hello Raku', 'qq{} interpolates variables';
 # qq[] with brackets
 my $qq4 = qq[hello $lang];
 is $qq4, 'hello Raku', 'qq[] interpolates variables';
+
+# Q[] is raw and should allow trailing backslash before the closing bracket
+my $q5 = Q[a escape\];
+is $q5, "a escape\\", 'Q[] trailing backslash before closing bracket';

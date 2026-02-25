@@ -3,6 +3,7 @@
 use crate::runtime;
 use crate::value::{RuntimeError, Value, make_rat};
 use num_traits::Signed;
+use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -27,6 +28,39 @@ pub(crate) fn native_method_0arg(
             return Some(Ok(bool_val.clone()));
         }
         return native_method_0arg(inner, method);
+    }
+    // Uni types: override .chars, .codes, .comb to work on codepoints
+    if let Value::Uni { text, .. } = target {
+        match method {
+            "chars" | "codes" => {
+                return Some(Ok(Value::Int(text.chars().count() as i64)));
+            }
+            "comb" => {
+                let parts: Vec<Value> = text.chars().map(|c| Value::Str(c.to_string())).collect();
+                return Some(Ok(Value::array(parts)));
+            }
+            "Str" => return Some(Ok(Value::Str(text.clone()))),
+            "list" => {
+                let codepoints: Vec<Value> = text.chars().map(|c| Value::Int(c as i64)).collect();
+                return Some(Ok(Value::array(codepoints)));
+            }
+            "elems" => {
+                return Some(Ok(Value::Int(text.chars().count() as i64)));
+            }
+            "NFC" | "NFD" | "NFKC" | "NFKD" => {
+                let normalized: String = match method {
+                    "NFC" => text.nfc().collect(),
+                    "NFD" => text.nfd().collect(),
+                    "NFKC" => text.nfkc().collect(),
+                    _ => text.nfkd().collect(),
+                };
+                return Some(Ok(Value::Uni {
+                    form: method.to_string(),
+                    text: normalized,
+                }));
+            }
+            _ => {}
+        }
     }
     // CompUnit::DependencySpecification methods
     if let Value::CompUnitDepSpec { short_name } = target {
@@ -107,6 +141,46 @@ fn dispatch_capture(
         "Bool" => Some(Ok(Value::Bool(!positional.is_empty() || !named.is_empty()))),
         "WHAT" => Some(Ok(Value::Package("Capture".to_string()))),
         _ => None,
+    }
+}
+
+fn is_infinite_range(value: &Value) -> bool {
+    match value {
+        Value::Range(_, end)
+        | Value::RangeExcl(_, end)
+        | Value::RangeExclStart(_, end)
+        | Value::RangeExclBoth(_, end) => *end == i64::MAX,
+        Value::GenericRange { end, .. } => match end.as_ref() {
+            Value::HyperWhatever => true,
+            Value::Num(n) => n.is_infinite() && n.is_sign_positive(),
+            Value::Rat(n, d) => *d == 0 && *n > 0,
+            Value::FatRat(n, d) => *d == 0 && *n > 0,
+            other => {
+                let n = other.to_f64();
+                n.is_infinite() && n.is_sign_positive()
+            }
+        },
+        _ => false,
+    }
+}
+
+fn is_value_lazy(value: &Value) -> bool {
+    matches!(value, Value::LazyList(_)) || is_infinite_range(value)
+}
+
+fn flatten_deep_value(value: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
+    match value {
+        Value::Array(items, is_array) if !*is_array || flatten_arrays => {
+            for item in items.iter() {
+                flatten_deep_value(item, out, flatten_arrays);
+            }
+        }
+        Value::Range(..)
+        | Value::RangeExcl(..)
+        | Value::RangeExclStart(..)
+        | Value::RangeExclBoth(..)
+        | Value::GenericRange { .. } => out.extend(crate::runtime::utils::value_to_list(value)),
+        other => out.push(other.clone()),
     }
 }
 
@@ -507,14 +581,16 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Value::Array(items, ..) => {
                 let mut result = Vec::new();
                 for item in items.iter() {
-                    match item {
-                        Value::Array(inner, ..) => result.extend(inner.iter().cloned()),
-                        other => result.push(other.clone()),
-                    }
+                    flatten_deep_value(item, &mut result, false);
                 }
-                Some(Ok(Value::array(result)))
+                Some(Ok(Value::Seq(Arc::new(result))))
             }
-            _ => Some(Ok(Value::array(vec![target.clone()]))),
+            other if is_infinite_range(other) => Some(Ok(other.clone())),
+            _ => {
+                let mut result = Vec::new();
+                flatten_deep_value(target, &mut result, false);
+                Some(Ok(Value::Seq(Arc::new(result))))
+            }
         },
         "sort" => match target {
             Value::Array(items, ..) => {
@@ -642,7 +718,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
         "so" => Some(Ok(Value::Bool(target.truthy()))),
         "not" => Some(Ok(Value::Bool(!target.truthy()))),
-        "is-lazy" => Some(Ok(Value::Bool(false))),
+        "is-lazy" => Some(Ok(Value::Bool(is_value_lazy(target)))),
         "chomp" => Some(Ok(Value::Str(
             target.to_string_value().trim_end_matches('\n').to_string(),
         ))),
@@ -717,6 +793,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         Some(Ok(Value::Str(format!("<{}/{}>", n, d))))
                     }
                 }
+            }
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Signature" => {
+                let attr_key = if method == "gist" { "gist" } else { "raku" };
+                Some(Ok(attributes
+                    .get(attr_key)
+                    .cloned()
+                    .unwrap_or_else(|| Value::Str(format!("{}()", class_name)))))
             }
             Value::Package(_) | Value::Instance { .. } | Value::Enum { .. } => None,
             Value::Version {
@@ -1023,8 +1110,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 "NFKC" => s.nfkc().collect(),
                 _ => s.nfkd().collect(),
             };
-            let codepoints: Vec<Value> = normalized.chars().map(|c| Value::Int(c as i64)).collect();
-            Some(Ok(Value::array(codepoints)))
+            Some(Ok(Value::Uni {
+                form: method.to_string(),
+                text: normalized,
+            }))
         }
         _ => None,
     }

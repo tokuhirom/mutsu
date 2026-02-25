@@ -158,7 +158,7 @@ fn var_name(input: &str) -> PResult<'_, String> {
         }
         // Handle callable operator references: &infix:<...>, &prefix:<...>, ...
         if input.starts_with('&') {
-            for op_kind in ["infix", "prefix", "postfix", "circumfix"] {
+            for op_kind in ["infix", "prefix", "postfix", "term", "circumfix"] {
                 if let Some(after_kind) = r.strip_prefix(op_kind)
                     && let Some(after_colon) = after_kind.strip_prefix(':')
                 {
@@ -243,6 +243,10 @@ pub(super) fn parse_param_list_with_return_pub(
     input: &str,
 ) -> PResult<'_, (Vec<crate::ast::ParamDef>, Option<String>)> {
     sub::parse_param_list_with_return(input)
+}
+
+pub(super) fn parse_sub_name_pub(input: &str) -> PResult<'_, String> {
+    sub::parse_sub_name(input)
 }
 
 /// Public accessor for constant declaration parser (used by primary.rs in expression context).
@@ -489,6 +493,7 @@ type StmtParser = fn(&str) -> PResult<'_, Stmt>;
 /// Order is critical — do not reorder without careful consideration.
 const STMT_PARSERS: &[StmtParser] = &[
     decl::use_stmt,
+    decl::no_stmt,
     decl::need_stmt,
     class::unit_module_stmt,
     decl::my_decl,
@@ -611,6 +616,14 @@ mod tests {
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
         assert!(matches!(&stmts[0], Stmt::Use { module, .. } if module == "Test"));
+    }
+
+    #[test]
+    fn parse_no_strict() {
+        let (rest, stmts) = program("no strict;").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::No { module } if module == "strict"));
     }
 
     #[test]
@@ -986,11 +999,99 @@ mod tests {
     }
 
     #[test]
+    fn parse_method_decl_with_typed_invocant_marker() {
+        let (rest, stmts) = program("class A { method AT-KEY(A:D: $key) { 1 } }").unwrap();
+        assert_eq!(rest, "");
+        if let Stmt::ClassDecl { body, .. } = &stmts[0] {
+            if let Stmt::MethodDecl { param_defs, .. } = &body[0] {
+                assert_eq!(param_defs.len(), 1);
+                assert_eq!(param_defs[0].name, "key");
+            } else {
+                panic!("expected MethodDecl");
+            }
+        } else {
+            panic!("expected ClassDecl");
+        }
+    }
+
+    #[test]
+    fn parse_method_decl_with_operator_name() {
+        let (rest, stmts) =
+            program("class A { method postcircumfix:<{ }>($key) { %!attrs{$key} } }").unwrap();
+        assert_eq!(rest, "");
+        if let Stmt::ClassDecl { body, .. } = &stmts[0] {
+            assert!(
+                matches!(&body[0], Stmt::MethodDecl { name, .. } if name == "postcircumfix:<{ }>")
+            );
+        } else {
+            panic!("expected ClassDecl");
+        }
+    }
+
+    #[test]
+    fn parse_sub_decl_with_typed_invocant_marker() {
+        let (rest, stmts) = program("sub f(A:D: $key) { $key }").unwrap();
+        assert_eq!(rest, "");
+        if let Stmt::SubDecl { param_defs, .. } = &stmts[0] {
+            assert_eq!(param_defs.len(), 1);
+            assert_eq!(param_defs[0].name, "key");
+        } else {
+            panic!("expected SubDecl");
+        }
+    }
+
+    #[test]
+    fn parse_method_decl_with_explicit_invocant_param() {
+        let (rest, stmts) = program("class Foo { method bar ($self: $num) { $num } }").unwrap();
+        assert_eq!(rest, "");
+        if let Stmt::ClassDecl { body, .. } = &stmts[0] {
+            if let Stmt::MethodDecl { param_defs, .. } = &body[0] {
+                assert_eq!(param_defs.len(), 2);
+                assert_eq!(param_defs[0].name, "self");
+                assert!(param_defs[0].traits.iter().any(|t| t == "invocant"));
+                assert_eq!(param_defs[1].name, "num");
+                assert!(!param_defs[1].traits.iter().any(|t| t == "invocant"));
+            } else {
+                panic!("expected MethodDecl");
+            }
+        } else {
+            panic!("expected ClassDecl");
+        }
+    }
+
+    #[test]
+    fn parse_method_decl_with_explicit_invocant_and_return_type() {
+        let (rest, stmts) =
+            program("class Foo { method bar ($self: $num --> Foo) returns Foo { $self } }")
+                .unwrap();
+        assert_eq!(rest, "");
+        if let Stmt::ClassDecl { body, .. } = &stmts[0] {
+            if let Stmt::MethodDecl { param_defs, .. } = &body[0] {
+                assert_eq!(param_defs.len(), 2);
+                assert!(param_defs[0].traits.iter().any(|t| t == "invocant"));
+                assert_eq!(param_defs[1].name, "num");
+            } else {
+                panic!("expected MethodDecl");
+            }
+        } else {
+            panic!("expected ClassDecl");
+        }
+    }
+
+    #[test]
     fn parse_role_decl_with_generics_and_does_clause() {
         let (rest, stmts) = program("role R2[Cool ::T] does R1[T] is ok { }").unwrap();
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
         assert!(matches!(&stmts[0], Stmt::RoleDecl { name, .. } if name == "R2"));
+    }
+
+    #[test]
+    fn parse_grammar_decl_with_does_clause() {
+        let (rest, stmts) = program("grammar G does R { rule TOP { ^ <x> } }").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::Package { name, .. } if name == "G"));
     }
 
     #[test]

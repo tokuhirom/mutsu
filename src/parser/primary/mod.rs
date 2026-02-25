@@ -85,6 +85,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(string::double_quoted_string(input));
         try_primary!(string::smart_double_quoted_string(input));
         try_primary!(string::big_q_string(input));
+        try_primary!(string::qx_string(input));
         try_primary!(string::q_string(input));
         try_primary!(string::corner_bracket_string(input));
         try_primary!(regex::regex_lit(input));
@@ -92,6 +93,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(ident::keyword_literal(input));
         try_primary!(regex::topic_method_call(input));
         try_primary!(container::itemized_paren_expr(input));
+        try_primary!(container::itemized_bracket_expr(input));
         try_primary!(var::scalar_var(input));
         try_primary!(var::array_var(input));
         try_primary!(container::percent_hash_literal(input));
@@ -114,6 +116,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(misc::anon_role_expr(input));
         // anonymous class: class { ... }
         try_primary!(misc::anon_class_expr(input));
+        try_primary!(ident::declared_term_symbol(input));
 
         match ident::identifier_or_call(input) {
             Ok(r) => Ok(r),
@@ -203,8 +206,31 @@ mod tests {
     }
 
     #[test]
+    fn parse_itemized_bracket_expr() {
+        let (rest, expr) = primary("$[1,2]").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::MethodCall {
+                target, name, args, ..
+            } => {
+                assert_eq!(name, "item");
+                assert!(args.is_empty());
+                assert!(matches!(*target, Expr::BracketArray(ref elems) if elems.len() == 2));
+            }
+            _ => panic!("expected itemized bracket method call"),
+        }
+    }
+
+    #[test]
     fn parse_dq_interpolation() {
         let (rest, expr) = primary("\"hello $x world\"").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::StringInterpolation(_)));
+    }
+
+    #[test]
+    fn parse_sq_with_escaped_qq_interpolation() {
+        let (rest, expr) = primary("'a\\qq[$x]b'").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::StringInterpolation(_)));
     }
@@ -220,6 +246,14 @@ mod tests {
     #[test]
     fn parse_big_q_to_angle_heredoc() {
         let src = "Q:to<--END-->;\nhello\n--END--\n";
+        let (rest, expr) = primary(src).unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "hello\n"));
+    }
+
+    #[test]
+    fn parse_big_q_to_heredoc_with_indented_terminator() {
+        let src = "Q:to/END/\nhello\n    END\n";
         let (rest, expr) = primary(src).unwrap();
         assert_eq!(rest, "");
         assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "hello\n"));
@@ -275,6 +309,13 @@ mod tests {
                 ..
             }) if s == "a"
         ));
+    }
+
+    #[test]
+    fn parse_match_regex_with_compact_adverbs() {
+        let (rest, expr) = primary("ms/ab cd/").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::Literal(Value::Regex(ref s)) if s == ":s ab cd"));
     }
 
     #[test]
@@ -377,5 +418,31 @@ mod tests {
         let (rest, expr) = primary("Q!hello!\n").unwrap();
         assert_eq!(rest, "\n");
         assert!(matches!(expr, Expr::Literal(Value::Str(ref s)) if s == "hello"));
+    }
+
+    #[test]
+    fn primary_qx_backtick_form() {
+        reset_primary_memo();
+        let (rest, expr) = primary("qx`pwd`").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Call { ref name, ref args } if name == "QX" && args.len() == 1
+        ));
+    }
+
+    #[test]
+    fn primary_qx_interpolates_command() {
+        reset_primary_memo();
+        let (rest, expr) = primary("qx{echo $x}").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "QX");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(args[0], Expr::StringInterpolation(_)));
+            }
+            _ => panic!("expected qx call expression"),
+        }
     }
 }

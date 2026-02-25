@@ -59,6 +59,7 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
+        expr = wrap_composition_operands(expr);
         // Wrap WhateverCode expressions in a lambda, but not bare * (Whatever).
         // Smartmatch handles RHS WhateverCode in precedence parsing, and LHS should
         // remain a normal expression (e.g. `(*) ~~ HyperWhatever:D`).
@@ -95,6 +96,7 @@ pub(super) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    expr = wrap_composition_operands(expr);
     // Keep bare `*` as Whatever (Inf). Only wrap true WhateverCode expressions.
     if should_wrap_whatevercode(&expr) {
         expr = wrap_whatevercode(&expr);
@@ -129,13 +131,145 @@ fn should_wrap_whatevercode(expr: &Expr) -> bool {
     if !contains_whatever(expr) || is_whatever(expr) {
         return false;
     }
-    !matches!(
-        expr,
+    match expr {
         Expr::Binary {
             op: TokenKind::SmartMatch | TokenKind::BangTilde,
             ..
+        } => false,
+        Expr::Binary {
+            op: TokenKind::Ident(name),
+            ..
+        } if name == "o" => false,
+        _ => true,
+    }
+}
+
+fn wrap_composition_operands(expr: Expr) -> Expr {
+    match expr {
+        Expr::Binary { left, op, right } => {
+            let left = wrap_composition_operands(*left);
+            let right = wrap_composition_operands(*right);
+            if matches!(&op, TokenKind::Ident(name) if name == "o") {
+                let mut bare_count = 0usize;
+                if is_whatever(&left) {
+                    bare_count += 1;
+                }
+                if is_whatever(&right) {
+                    bare_count += 1;
+                }
+                if bare_count > 0 {
+                    let mut params = Vec::new();
+                    let mut param_defs = Vec::new();
+                    let left_expr = if is_whatever(&left) {
+                        let name = format!("__wc_{}", params.len());
+                        params.push(name.clone());
+                        param_defs.push(make_wc_param(name.clone()));
+                        Expr::Var(name)
+                    } else if should_wrap_whatevercode(&left) {
+                        wrap_whatevercode(&left)
+                    } else {
+                        left
+                    };
+                    let right_expr = if is_whatever(&right) {
+                        let name = format!("__wc_{}", params.len());
+                        params.push(name.clone());
+                        param_defs.push(make_wc_param(name.clone()));
+                        Expr::Var(name)
+                    } else if should_wrap_whatevercode(&right) {
+                        wrap_whatevercode(&right)
+                    } else {
+                        right
+                    };
+                    let body_expr = Expr::Binary {
+                        left: Box::new(left_expr),
+                        op,
+                        right: Box::new(right_expr),
+                    };
+                    if params.len() == 1 {
+                        return Expr::Lambda {
+                            param: params[0].clone(),
+                            body: vec![Stmt::Expr(body_expr)],
+                        };
+                    }
+                    return Expr::AnonSubParams {
+                        params,
+                        param_defs,
+                        return_type: None,
+                        body: vec![Stmt::Expr(body_expr)],
+                    };
+                }
+                let left_wrapped = if should_wrap_whatevercode(&left) {
+                    wrap_whatevercode(&left)
+                } else {
+                    left
+                };
+                let right_wrapped = if should_wrap_whatevercode(&right) {
+                    wrap_whatevercode(&right)
+                } else {
+                    right
+                };
+                Expr::Binary {
+                    left: Box::new(left_wrapped),
+                    op,
+                    right: Box::new(right_wrapped),
+                }
+            } else {
+                Expr::Binary {
+                    left: Box::new(left),
+                    op,
+                    right: Box::new(right),
+                }
+            }
         }
-    )
+        Expr::Unary { op, expr } => Expr::Unary {
+            op,
+            expr: Box::new(wrap_composition_operands(*expr)),
+        },
+        Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier,
+            quoted,
+        } => Expr::MethodCall {
+            target: Box::new(wrap_composition_operands(*target)),
+            name,
+            args: args.into_iter().map(wrap_composition_operands).collect(),
+            modifier,
+            quoted,
+        },
+        Expr::CallOn { target, args } => Expr::CallOn {
+            target: Box::new(wrap_composition_operands(*target)),
+            args: args.into_iter().map(wrap_composition_operands).collect(),
+        },
+        Expr::Index { target, index } => Expr::Index {
+            target: Box::new(wrap_composition_operands(*target)),
+            index: Box::new(wrap_composition_operands(*index)),
+        },
+        other => other,
+    }
+}
+
+fn make_wc_param(name: String) -> crate::ast::ParamDef {
+    crate::ast::ParamDef {
+        name,
+        default: None,
+        multi_invocant: true,
+        required: false,
+        named: false,
+        slurpy: false,
+        double_slurpy: false,
+        sigilless: false,
+        type_constraint: None,
+        literal_value: None,
+        sub_signature: None,
+        where_constraint: None,
+        traits: Vec::new(),
+        optional_marker: false,
+        outer_sub_signature: None,
+        code_signature: None,
+        is_invocant: false,
+    }
 }
 
 pub(super) fn or_expr_pub(input: &str) -> PResult<'_, Expr> {
@@ -173,6 +307,9 @@ fn contains_whatever(expr: &Expr) -> bool {
             false
         }
         Expr::MethodCall { target, .. } => contains_whatever(target),
+        Expr::CallOn { target, args } => {
+            contains_whatever(target) || args.iter().any(contains_whatever)
+        }
         // Only check target, not index: @a[*-1] should NOT make the whole expr a WhateverCode.
         // The [*-1] subscript handles its own WhateverCode wrapping.
         Expr::Index { target, .. } => contains_whatever(target),
@@ -197,6 +334,9 @@ fn count_whatever(expr: &Expr) -> usize {
         Expr::Binary { left, right, .. } => count_whatever(left) + count_whatever(right),
         Expr::Unary { expr, .. } => count_whatever(expr),
         Expr::MethodCall { target, .. } => count_whatever(target),
+        Expr::CallOn { target, args } => {
+            count_whatever(target) + args.iter().map(count_whatever).sum::<usize>()
+        }
         // Only check target, not index (subscript handles its own WhateverCode)
         Expr::Index { target, .. } => count_whatever(target),
         _ => 0,
@@ -265,6 +405,13 @@ fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
             modifier: *modifier,
             quoted: *quoted,
         },
+        Expr::CallOn { target, args } => Expr::CallOn {
+            target: Box::new(replace_whatever_numbered(target, counter)),
+            args: args
+                .iter()
+                .map(|a| replace_whatever_numbered(a, counter))
+                .collect(),
+        },
         Expr::Index { target, index } => Expr::Index {
             target: Box::new(replace_whatever_numbered(target, counter)),
             index: index.clone(),
@@ -302,6 +449,13 @@ fn rename_var(expr: &Expr, old_name: &str, new_name: &str) -> Expr {
             modifier: *modifier,
             quoted: *quoted,
         },
+        Expr::CallOn { target, args } => Expr::CallOn {
+            target: Box::new(rename_var(target, old_name, new_name)),
+            args: args
+                .iter()
+                .map(|a| rename_var(a, old_name, new_name))
+                .collect(),
+        },
         Expr::Index { target, index } => Expr::Index {
             target: Box::new(rename_var(target, old_name, new_name)),
             index: Box::new(rename_var(index, old_name, new_name)),
@@ -334,6 +488,7 @@ fn wrap_whatevercode(expr: &Expr) -> Expr {
                 .map(|name| crate::ast::ParamDef {
                     name: name.clone(),
                     default: None,
+                    multi_invocant: true,
                     required: false,
                     named: false,
                     slurpy: false,
@@ -347,8 +502,10 @@ fn wrap_whatevercode(expr: &Expr) -> Expr {
                     optional_marker: false,
                     outer_sub_signature: None,
                     code_signature: None,
+                    is_invocant: false,
                 })
                 .collect(),
+            return_type: None,
             body: vec![Stmt::Expr(body_expr)],
         }
     }
@@ -387,6 +544,10 @@ fn replace_whatever_single(expr: &Expr) -> Expr {
             args: args.clone(),
             modifier: *modifier,
             quoted: *quoted,
+        },
+        Expr::CallOn { target, args } => Expr::CallOn {
+            target: Box::new(replace_whatever_single(target)),
+            args: args.iter().map(replace_whatever_single).collect(),
         },
         Expr::Index { target, index } => Expr::Index {
             target: Box::new(replace_whatever_single(target)),
@@ -653,6 +814,25 @@ mod tests {
     }
 
     #[test]
+    fn parse_strict_not_equal_operator() {
+        let (rest, expr) = expression("1 !=== 2").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr,
+            } => match *expr {
+                Expr::Binary {
+                    op: TokenKind::EqEqEq,
+                    ..
+                } => {}
+                _ => panic!("Expected !=== to lower to !(===)"),
+            },
+            _ => panic!("Expected Binary expression"),
+        }
+    }
+
+    #[test]
     fn chained_comparison_requires_rhs_expression() {
         let err = expression("1 < 2 <").unwrap_err();
         assert!(err.message().contains("chained comparison operator"));
@@ -861,6 +1041,34 @@ mod tests {
                 assert!(matches!(args[0], Expr::Var(ref n) if n == "base"));
             }
             _ => panic!("expected postfix operator call"),
+        }
+    }
+
+    #[test]
+    fn parse_unicode_custom_postfix_operator_call() {
+        let (rest, expr) = expression("3§").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "postfix:<§>");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(args[0], Expr::Literal(Value::Int(3))));
+            }
+            _ => panic!("expected unicode postfix operator call"),
+        }
+    }
+
+    #[test]
+    fn parse_dot_custom_postfix_operator_call() {
+        let (rest, expr) = expression("5.!").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args } => {
+                assert_eq!(name, "postfix:<!>");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(args[0], Expr::Literal(Value::Int(5))));
+            }
+            _ => panic!("expected dot-postfix operator call"),
         }
     }
 }

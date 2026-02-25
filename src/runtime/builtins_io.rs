@@ -109,9 +109,9 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("open requires a path argument"))?;
         check_null_in_path(&path)?;
-        let (read, write, append, bin) = Self::parse_io_flags_values(&args[1..]);
+        let (read, write, append, bin, line_separators) = self.parse_io_flags_values(&args[1..]);
         let path_buf = self.resolve_path(&path);
-        self.open_file_handle(&path_buf, read, write, append, bin)
+        self.open_file_handle(&path_buf, read, write, append, bin, line_separators)
     }
 
     pub(super) fn builtin_close(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -302,22 +302,71 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_chdir(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let path = args
+        let arg = args
             .first()
-            .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("chdir requires a path"))?;
-        check_null_in_path(&path)?;
-        let path_buf = self.resolve_path(&path);
-        if !path_buf.is_dir() {
-            return Err(RuntimeError::new(format!(
-                "chdir path is not a directory: {}",
-                path
-            )));
+        let effective_arg = if let Value::Capture { positional, named } = arg {
+            if named.is_empty() && positional.len() == 1 {
+                positional[0].clone()
+            } else {
+                arg.clone()
+            }
+        } else {
+            arg.clone()
+        };
+        let mut requested = effective_arg.to_string_value();
+        let mut requested_cwd_opt: Option<String> = None;
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &effective_arg
+            && class_name == "IO::Path"
+        {
+            requested = attributes
+                .get("path")
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            requested_cwd_opt = attributes.get("cwd").map(|v| v.to_string_value());
         }
-        let cwd_val = self.make_io_path_instance(&Self::stringify_path(&path_buf));
+        check_null_in_path(&requested)?;
+        let path_buf = if Path::new(&requested).is_absolute() {
+            self.resolve_path(&requested)
+        } else if let Some(cwd) = &requested_cwd_opt {
+            self.apply_chroot(PathBuf::from(cwd).join(Path::new(&requested)))
+        } else {
+            self.resolve_path(&requested)
+        };
+        let absolute_target = if path_buf.is_absolute() {
+            path_buf
+        } else {
+            self.resolve_path(&Self::stringify_path(&path_buf))
+        };
+        if !absolute_target.is_dir() {
+            let mut err = RuntimeError::new(format!(
+                "Failed to chdir to '{}': no such directory",
+                requested
+            ));
+            err.exception = Some(Box::new(Value::make_instance(
+                "X::IO::Chdir".to_string(),
+                HashMap::new(),
+            )));
+            return Err(err);
+        }
+        let canonical = fs::canonicalize(&absolute_target).unwrap_or(absolute_target);
+        if let Err(chdir_err) = std::env::set_current_dir(&canonical) {
+            let mut err =
+                RuntimeError::new(format!("Failed to chdir to '{}': {}", requested, chdir_err));
+            err.exception = Some(Box::new(Value::make_instance(
+                "X::IO::Chdir".to_string(),
+                HashMap::new(),
+            )));
+            return Err(err);
+        }
+        let cwd_val = self.make_io_path_instance(&Self::stringify_path(&canonical));
         self.env.insert("$*CWD".to_string(), cwd_val.clone());
-        self.env.insert("*CWD".to_string(), cwd_val);
-        Ok(Value::Bool(true))
+        self.env.insert("*CWD".to_string(), cwd_val.clone());
+        Ok(cwd_val)
     }
 
     pub(super) fn builtin_indir(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -449,6 +498,10 @@ impl Interpreter {
         let mut content = String::new();
         if args.is_empty() && name == "note" {
             content.push_str("Noted");
+        } else if name == "note" {
+            for arg in args {
+                content.push_str(&self.render_gist_value(arg));
+            }
         } else {
             for arg in args {
                 content.push_str(&arg.to_string_value());
@@ -470,7 +523,9 @@ impl Interpreter {
             .unwrap_or_default();
         self.write_to_named_handle("$*OUT", &msg, false)?;
         if let Some(handle) = self.default_input_handle() {
-            let line = self.read_line_from_handle_value(&handle)?;
+            let line = self
+                .read_line_from_handle_value(&handle)?
+                .unwrap_or_default();
             return Ok(Value::Str(line));
         }
         Ok(Value::Str(String::new()))
@@ -482,10 +537,12 @@ impl Interpreter {
             .cloned()
             .or_else(|| self.default_input_handle());
         if let Some(handle) = handle {
-            let line = self.read_line_from_handle_value(&handle)?;
-            return Ok(Value::Str(line));
+            return Ok(self
+                .read_line_from_handle_value(&handle)?
+                .map(Value::Str)
+                .unwrap_or(Value::Nil));
         }
-        Ok(Value::Str(String::new()))
+        Ok(Value::Nil)
     }
 
     pub(super) fn builtin_lines(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -533,11 +590,7 @@ impl Interpreter {
             .or_else(|| self.default_input_handle());
         if let Some(handle) = handle {
             let mut lines = Vec::new();
-            loop {
-                let line = self.read_line_from_handle_value(&handle)?;
-                if line.is_empty() {
-                    break;
-                }
+            while let Some(line) = self.read_line_from_handle_value(&handle)? {
                 lines.push(Value::Str(line));
             }
             return Ok(Value::array(lines));
@@ -555,11 +608,7 @@ impl Interpreter {
         };
         if let Some(handle) = handle {
             let mut words = Vec::new();
-            loop {
-                let line = self.read_line_from_handle_value(&handle)?;
-                if line.is_empty() {
-                    break;
-                }
+            while let Some(line) = self.read_line_from_handle_value(&handle)? {
                 for token in line.split_whitespace() {
                     words.push(Value::Str(token.to_string()));
                 }

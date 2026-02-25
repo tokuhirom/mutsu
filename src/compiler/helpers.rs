@@ -107,6 +107,7 @@ impl Compiler {
                     value: value.clone(),
                 },
                 CallArg::Slip(expr) => CallArg::Slip(expr.clone()),
+                CallArg::Invocant(expr) => CallArg::Invocant(expr.clone()),
             })
             .collect()
     }
@@ -159,6 +160,25 @@ impl Compiler {
             self.code.emit(OpCode::MakePair);
         } else {
             self.compile_expr(arg);
+        }
+    }
+
+    /// Compile a function-call positional argument.
+    /// Variable-like args are wrapped with source-name metadata so sigilless
+    /// parameters (`\x`) can bind as writable aliases.
+    pub(super) fn compile_call_arg(&mut self, arg: &Expr) {
+        self.compile_expr(arg);
+        let source_name = match arg {
+            Expr::Var(n) => Some(n.clone()),
+            Expr::ArrayVar(n) => Some(format!("@{}", n)),
+            Expr::HashVar(n) => Some(format!("%{}", n)),
+            Expr::CodeVar(n) => Some(format!("&{}", n)),
+            Expr::BareWord(n) => Some(n.clone()),
+            _ => None,
+        };
+        if let Some(name) = source_name {
+            let name_idx = self.code.add_constant(Value::Str(name));
+            self.code.emit(OpCode::WrapVarRef(name_idx));
         }
     }
 
@@ -354,6 +374,14 @@ impl Compiler {
                             // Don't emit Pop — leave value on stack as implicit return
                             continue;
                         }
+                        Stmt::If {
+                            cond,
+                            then_branch,
+                            else_branch,
+                        } => {
+                            sub_compiler.compile_if_value(cond, then_branch, else_branch);
+                            continue;
+                        }
                         Stmt::Block(stmts) | Stmt::SyntheticBlock(stmts) => {
                             // Bare blocks in final statement position auto-execute and
                             // produce their final value.
@@ -394,8 +422,70 @@ impl Compiler {
             params: params.to_vec(),
             param_defs: param_defs.to_vec(),
             fingerprint: crate::ast::function_body_fingerprint(params, param_defs, body),
+            // Named subs with no params and no param_defs that don't use @_/%_ have
+            // explicit empty signature :() and should reject any arguments.
+            empty_sig: params.is_empty()
+                && param_defs.is_empty()
+                && !Self::body_uses_legacy_args(body),
         };
         self.compiled_functions.insert(key, cf);
+    }
+
+    /// Check if the body uses @_ or %_ legacy argument variables.
+    fn body_uses_legacy_args(body: &[Stmt]) -> bool {
+        let body_str = format!("{:?}", body);
+        body_str.contains("\"@_\"") || body_str.contains("\"%_\"")
+    }
+
+    fn emit_nil_value(&mut self) {
+        let nil_idx = self.code.add_constant(Value::Nil);
+        self.code.emit(OpCode::LoadConst(nil_idx));
+    }
+
+    fn compile_stmts_value(&mut self, stmts: &[Stmt]) {
+        let saved = self.push_dynamic_scope_lexical();
+        if stmts.is_empty() {
+            self.emit_nil_value();
+            self.pop_dynamic_scope_lexical(saved);
+            return;
+        }
+        for (i, stmt) in stmts.iter().enumerate() {
+            let is_last = i == stmts.len() - 1;
+            if is_last {
+                match stmt {
+                    Stmt::Expr(expr) => self.compile_expr(expr),
+                    Stmt::If {
+                        cond,
+                        then_branch,
+                        else_branch,
+                    } => self.compile_if_value(cond, then_branch, else_branch),
+                    Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
+                        self.compile_block_inline(inner)
+                    }
+                    _ => {
+                        self.compile_stmt(stmt);
+                        self.emit_nil_value();
+                    }
+                }
+            } else {
+                self.compile_stmt(stmt);
+            }
+        }
+        self.pop_dynamic_scope_lexical(saved);
+    }
+
+    fn compile_if_value(&mut self, cond: &Expr, then_branch: &[Stmt], else_branch: &[Stmt]) {
+        self.compile_expr(cond);
+        let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
+        self.compile_stmts_value(then_branch);
+        let jump_end = self.code.emit(OpCode::Jump(0));
+        self.code.patch_jump(jump_else);
+        if else_branch.is_empty() {
+            self.emit_nil_value();
+        } else {
+            self.compile_stmts_value(else_branch);
+        }
+        self.code.patch_jump(jump_end);
     }
 
     /// Check if a list of statements contains a CATCH or CONTROL block.
@@ -482,7 +572,7 @@ impl Compiler {
                         for arg in &rewritten_args {
                             match arg {
                                 CallArg::Positional(expr) => {
-                                    self.compile_expr(expr);
+                                    self.compile_call_arg(expr);
                                     regular_count += 1;
                                 }
                                 CallArg::Named {
@@ -503,7 +593,7 @@ impl Compiler {
                                     self.code.emit(OpCode::MakePair);
                                     regular_count += 1;
                                 }
-                                CallArg::Slip(_) => {}
+                                CallArg::Slip(_) | CallArg::Invocant(_) => {}
                             }
                         }
                         for arg in &rewritten_args {
@@ -523,7 +613,7 @@ impl Compiler {
 
                     for arg in &rewritten_args {
                         match arg {
-                            CallArg::Positional(expr) => self.compile_expr(expr),
+                            CallArg::Positional(expr) => self.compile_call_arg(expr),
                             CallArg::Named {
                                 name,
                                 value: Some(expr),
@@ -537,7 +627,7 @@ impl Compiler {
                                 self.compile_expr(&Expr::Literal(Value::Bool(true)));
                                 self.code.emit(OpCode::MakePair);
                             }
-                            CallArg::Slip(_) => unreachable!(),
+                            CallArg::Slip(_) | CallArg::Invocant(_) => unreachable!(),
                         }
                     }
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
@@ -766,9 +856,11 @@ impl Compiler {
         false
     }
 
-    /// Check if a block directly contains a `use` statement (non-recursive).
+    /// Check if a block directly contains a `use`/`no` statement (non-recursive).
     pub(super) fn has_use_stmt(stmts: &[Stmt]) -> bool {
-        stmts.iter().any(|s| matches!(s, Stmt::Use { .. }))
+        stmts
+            .iter()
+            .any(|s| matches!(s, Stmt::Use { .. } | Stmt::No { .. }))
     }
 
     pub(super) fn expr_has_let_deep(expr: &Expr) -> bool {

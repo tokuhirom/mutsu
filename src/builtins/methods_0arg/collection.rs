@@ -29,6 +29,10 @@ fn positional_kv(values: &[Value]) -> Vec<Value> {
 /// Collection-related 0-arg methods: keys, values, kv, pairs, total, minmax, squish
 pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     match method {
+        "hash" => {
+            let items = crate::runtime::utils::value_to_list(target);
+            Some(crate::runtime::utils::build_hash_from_items(items))
+        }
         "keys" => match target {
             Value::Hash(map) => {
                 let keys: Vec<Value> = map.keys().map(|k| Value::Str(k.clone())).collect();
@@ -126,13 +130,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Hash(items) => Some(Ok(Value::array(
                 items
                     .iter()
-                    .map(|(k, v)| {
-                        let mut attrs = std::collections::HashMap::new();
-                        attrs.insert("key".to_string(), Value::Str(k.clone()));
-                        attrs.insert("value".to_string(), v.clone());
-                        attrs.insert("__mutsu_hash_ref".to_string(), Value::Hash(items.clone()));
-                        Value::make_instance("Pair".to_string(), attrs)
-                    })
+                    .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
                     .collect(),
             ))),
             Value::Set(s) => Some(Ok(Value::array(
@@ -202,11 +200,14 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     values
                         .iter()
                         .enumerate()
-                        .map(|(idx, value)| {
-                            Value::Pair(
-                                value.to_string_value(),
+                        .map(|(idx, value)| match value {
+                            Value::Str(s) => {
+                                Value::Pair(s.clone(), Box::new(Value::Str(idx.to_string())))
+                            }
+                            _ => Value::ValuePair(
+                                Box::new(value.clone()),
                                 Box::new(Value::Str(idx.to_string())),
-                            )
+                            ),
                         })
                         .collect(),
                 )))
@@ -216,21 +217,26 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "invert" => match target {
             Value::Hash(items) => {
                 let mut result = Vec::new();
+                let make_inverted_pair = |val: &Value, key: &str| -> Value {
+                    match val {
+                        Value::Str(s) => {
+                            Value::Pair(s.clone(), Box::new(Value::Str(key.to_string())))
+                        }
+                        _ => Value::ValuePair(
+                            Box::new(val.clone()),
+                            Box::new(Value::Str(key.to_string())),
+                        ),
+                    }
+                };
                 for (k, v) in items.iter() {
                     match v {
                         Value::Array(arr, ..) => {
                             for item in arr.iter() {
-                                result.push(Value::Pair(
-                                    item.to_string_value(),
-                                    Box::new(Value::Str(k.clone())),
-                                ));
+                                result.push(make_inverted_pair(item, k));
                             }
                         }
                         _ => {
-                            result.push(Value::Pair(
-                                v.to_string_value(),
-                                Box::new(Value::Str(k.clone())),
-                            ));
+                            result.push(make_inverted_pair(v, k));
                         }
                     }
                 }

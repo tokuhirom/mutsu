@@ -17,6 +17,39 @@ pub(super) fn value_to_f64(v: &Value) -> f64 {
 }
 
 impl VM {
+    fn parse_numeric_string_for_spaceship(s: &str) -> Result<f64, RuntimeError> {
+        s.trim().parse::<f64>().map_err(|_| {
+            RuntimeError::new(format!(
+                "X::Str::Numeric: Cannot convert string '{}' to a number",
+                s
+            ))
+        })
+    }
+
+    fn numeric_spaceship_ordering(
+        left: &Value,
+        right: &Value,
+    ) -> Result<std::cmp::Ordering, RuntimeError> {
+        match (left, right) {
+            (Value::Str(a), Value::Str(b)) => {
+                let a = Self::parse_numeric_string_for_spaceship(a)?;
+                let b = Self::parse_numeric_string_for_spaceship(b)?;
+                Ok(a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal))
+            }
+            (Value::Str(a), _) => {
+                let a = Self::parse_numeric_string_for_spaceship(a)?;
+                let b = runtime::to_float_value(right).unwrap_or(0.0);
+                Ok(a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal))
+            }
+            (_, Value::Str(b)) => {
+                let a = runtime::to_float_value(left).unwrap_or(0.0);
+                let b = Self::parse_numeric_string_for_spaceship(b)?;
+                Ok(a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal))
+            }
+            _ => Ok(Self::spaceship_ordering(left, right)),
+        }
+    }
+
     pub(super) fn exec_num_eq_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -192,7 +225,7 @@ impl VM {
                 if let (Some((an, ad)), Some((bn, bd))) =
                     (runtime::to_rat_parts(left), runtime::to_rat_parts(right))
                 {
-                    (an.wrapping_mul(bd)).cmp(&(bn.wrapping_mul(ad)))
+                    runtime::compare_rat_parts((an, ad), (bn, bd))
                 } else {
                     left.to_string_value().cmp(&right.to_string_value())
                 }
@@ -211,11 +244,12 @@ impl VM {
         }
     }
 
-    pub(super) fn exec_spaceship_op(&mut self) {
+    pub(super) fn exec_spaceship_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let ord = Self::spaceship_ordering(&left, &right);
+        let ord = Self::numeric_spaceship_ordering(&left, &right)?;
         self.stack.push(runtime::make_order(ord));
+        Ok(())
     }
 
     pub(super) fn exec_before_after_op(&mut self, is_before: bool) {
@@ -248,6 +282,12 @@ impl VM {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         self.stack.push(Value::Bool(left == right));
+    }
+
+    pub(super) fn exec_strict_ne_op(&mut self) {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        self.stack.push(Value::Bool(left != right));
     }
 
     pub(super) fn exec_eqv_op(&mut self) -> Result<(), RuntimeError> {

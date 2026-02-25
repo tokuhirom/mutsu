@@ -1,4 +1,6 @@
-use super::super::helpers::{is_ident_char, is_non_breaking_space, split_angle_words, ws};
+use super::super::helpers::{
+    consume_unspace, is_ident_char, is_non_breaking_space, split_angle_words, ws,
+};
 use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 use super::super::primary::{colonpair_expr, parse_block_body, parse_call_arg_list, primary};
 
@@ -38,6 +40,32 @@ fn append_call_arg(expr: &mut Expr, arg: Expr) -> bool {
             true
         }
         _ => false,
+    }
+}
+
+fn parse_bracket_indices(input: &str) -> PResult<'_, Expr> {
+    let (r, first) = expression(input)?;
+    let mut indices = vec![first];
+    let mut r = r;
+    loop {
+        let (r2, _) = ws(r)?;
+        if r2.starts_with(',') || (r2.starts_with(';') && !r2.starts_with(";;")) {
+            let sep = if r2.starts_with(',') { ',' } else { ';' };
+            let (r3, _) = parse_char(r2, sep)?;
+            let (r3, _) = ws(r3)?;
+            let (r3, next) = expression(r3)?;
+            indices.push(next);
+            r = r3;
+            continue;
+        }
+        return Ok((
+            r2,
+            if indices.len() == 1 {
+                indices.remove(0)
+            } else {
+                Expr::ArrayLiteral(indices)
+            },
+        ));
     }
 }
 
@@ -118,6 +146,60 @@ fn parse_private_method_name(input: &str) -> Option<(&str, String)> {
         break;
     }
     Some((rest, name))
+}
+
+fn is_postfix_operator_char(c: char) -> bool {
+    if c.is_whitespace() || c.is_alphanumeric() || c == '_' {
+        return false;
+    }
+    !matches!(
+        c,
+        '.' | ','
+            | ';'
+            | ':'
+            | '('
+            | ')'
+            | '['
+            | ']'
+            | '{'
+            | '}'
+            | '"'
+            | '\''
+            | '\\'
+            | '$'
+            | '@'
+            | '%'
+            | '&'
+            | '#'
+    )
+}
+
+fn is_postfix_operator_boundary(rest: &str) -> bool {
+    rest.is_empty()
+        || rest.starts_with(|c: char| {
+            c.is_whitespace() || matches!(c, ')' | '}' | ']' | ',' | ';' | ':')
+        })
+}
+
+fn parse_custom_postfix_operator(input: &str) -> Option<(String, usize)> {
+    if input.starts_with('!') {
+        return Some(("!".to_string(), '!'.len_utf8()));
+    }
+
+    let mut chars = input.chars();
+    let first = chars.next()?;
+    if first.is_ascii() || !is_postfix_operator_char(first) {
+        return None;
+    }
+
+    let mut len = first.len_utf8();
+    for c in chars {
+        if c.is_ascii() || !is_postfix_operator_char(c) {
+            break;
+        }
+        len += c.len_utf8();
+    }
+    Some((input[..len].to_string(), len))
 }
 
 pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
@@ -325,7 +407,8 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         }
 
         // Unspace: backslash + whitespace collapses to nothing, allowing
-        // `foo\ .method` to parse as `foo.method`.
+        // `foo\ .method` to parse as `foo.method` and
+        // `foo\ (args)` to parse as `foo(args)`.
         if rest.starts_with('\\') {
             let after_bs = &rest[1..];
             if let Some(c) = after_bs.chars().next()
@@ -340,10 +423,18 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         break;
                     }
                 }
-                if scan.starts_with('.') && !scan.starts_with("..") {
+                if (scan.starts_with('.') && !scan.starts_with(".."))
+                    || scan.starts_with('(')
+                    || scan.starts_with('[')
+                {
                     rest = scan;
                 }
             }
+        }
+        if rest.starts_with("->") {
+            return Err(PError::fatal(
+                "X::Obsolete: Perl -> is dead. Please use '.' instead.".to_string(),
+            ));
         }
         // Method call: .method or .method(args) or .method: args
         // Also handles modifiers: .?method, .!method
@@ -363,6 +454,51 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 };
                 rest = r;
                 continue;
+            }
+            // Check for .<key> angle-bracket hash access: %h.<foo>, $obj.<bar>
+            if r.starts_with('<')
+                && !r.starts_with("<=")
+                && !r.starts_with("<<")
+                && !r.starts_with("<=>")
+            {
+                let r2 = &r[1..];
+                if let Some(end) = r2.find('>') {
+                    let content = &r2[..end];
+                    let keys = split_angle_words(content);
+                    if !keys.is_empty()
+                        && keys.iter().all(|key| {
+                            !key.is_empty()
+                                && key.chars().all(|c| {
+                                    c.is_alphanumeric()
+                                        || c == '_'
+                                        || c == '-'
+                                        || c == '!'
+                                        || c == '.'
+                                        || c == ':'
+                                        || c == '?'
+                                        || c == '+'
+                                        || c == '/'
+                                })
+                        })
+                    {
+                        let r2 = &r2[end + 1..];
+                        let index_expr = if keys.len() == 1 {
+                            Expr::Literal(Value::Str(keys[0].to_string()))
+                        } else {
+                            Expr::ArrayLiteral(
+                                keys.into_iter()
+                                    .map(|k| Expr::Literal(Value::Str(k.to_string())))
+                                    .collect(),
+                            )
+                        };
+                        expr = Expr::Index {
+                            target: Box::new(expr),
+                            index: Box::new(index_expr),
+                        };
+                        rest = r2;
+                        continue;
+                    }
+                }
             }
             // Check for call-on syntax: .(args)
             if r.starts_with('(') {
@@ -395,6 +531,18 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')
             {
                 let name = name.to_string();
+                // Detect illegal space between method name and parens
+                if (r.starts_with(' ') || r.starts_with('\t')) && !r.starts_with('\\') {
+                    let after_ws = r.trim_start_matches([' ', '\t']);
+                    if after_ws.starts_with('(') {
+                        return Err(PError::expected_at(
+                            "Confused. no space allowed between method name and the left parenthesis",
+                            r,
+                        ));
+                    }
+                }
+                // Handle unspace between method name and parens: .method\ (args)
+                let r = consume_unspace(r);
                 // Check for args in parens
                 if r.starts_with('(') {
                     let (r, _) = parse_char(r, '(')?;
@@ -487,6 +635,17 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = r;
                 continue;
             }
+            if let Some((op, len)) = parse_custom_postfix_operator(r) {
+                let after = &r[len..];
+                if is_postfix_operator_boundary(after) {
+                    expr = Expr::Call {
+                        name: format!("postfix:<{op}>"),
+                        args: vec![expr],
+                    };
+                    rest = after;
+                    continue;
+                }
+            }
             return Err(PError::expected_at("method name", r));
         }
 
@@ -522,21 +681,8 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             }
         }
 
-        // CallOn: $var(args) — invoke a callable stored in a variable
-        if rest.starts_with('(')
-            && matches!(
-                &expr,
-                Expr::Var(_)
-                    | Expr::CodeVar(_)
-                    | Expr::IndirectCodeLookup { .. }
-                    | Expr::MethodCall { .. }
-                    | Expr::AnonSub(_)
-                    | Expr::AnonSubParams { .. }
-                    | Expr::Lambda { .. }
-                    | Expr::Index { .. }
-                    | Expr::CallOn { .. }
-            )
-        {
+        // CallOn: expr(args) — invoke any callable expression.
+        if rest.starts_with('(') {
             let (r, _) = parse_char(rest, '(')?;
             let (r, _) = ws(r)?;
             let (r, args) = parse_call_arg_list(r)?;
@@ -559,7 +705,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = after;
                 continue;
             }
-            let (r, index) = expression(r)?;
+            let (r, index) = parse_bracket_indices(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ']')?;
             expr = Expr::Index {
@@ -694,7 +840,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         {
             let r = &rest[1..];
             let (r, _) = ws(r)?;
-            let (r, index) = expression(r)?;
+            let (r, index) = parse_bracket_indices(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, '}')?;
             // Allow whitespace before adverbs
@@ -852,17 +998,12 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             continue;
         }
 
-        // Custom postfix operator call: $x! -> postfix:<!>($x)
-        if rest.starts_with('!') && !rest.starts_with("!=") {
-            let after = &rest[1..];
-            // Keep `!` as postfix only at expression boundary.
-            if after.is_empty()
-                || after.starts_with(|c: char| {
-                    c.is_whitespace() || c == ')' || c == '}' || c == ']' || c == ',' || c == ';'
-                })
-            {
+        // Custom postfix operator call: $x§ -> postfix:<§>($x)
+        if let Some((op, len)) = parse_custom_postfix_operator(rest) {
+            let after = &rest[len..];
+            if is_postfix_operator_boundary(after) {
                 expr = Expr::Call {
-                    name: "postfix:<!>".to_string(),
+                    name: format!("postfix:<{op}>"),
                     args: vec![expr],
                 };
                 rest = after;

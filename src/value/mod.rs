@@ -40,6 +40,8 @@ pub struct SubData {
     pub(crate) assumed_positional: Vec<Value>,
     pub(crate) assumed_named: HashMap<String, Value>,
     pub id: u64,
+    /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
+    pub(crate) empty_sig: bool,
 }
 
 fn gcd(mut a: i64, mut b: i64) -> i64 {
@@ -155,6 +157,18 @@ pub enum Value {
     Capture {
         positional: Vec<Value>,
         named: HashMap<String, Value>,
+    },
+    /// Unicode normalization form types (NFC, NFD, NFKC, NFKD).
+    /// `form` is one of "NFC", "NFD", "NFKC", "NFKD".
+    /// `text` is the normalized string.
+    Uni {
+        form: String,
+        text: String,
+    },
+    /// A Proxy container with FETCH and STORE callbacks.
+    Proxy {
+        fetcher: Box<Value>,
+        storer: Box<Value>,
     },
 }
 
@@ -604,6 +618,7 @@ impl Value {
             assumed_positional: Vec::new(),
             assumed_named: HashMap::new(),
             id: next_instance_id(),
+            empty_sig: false,
         }))
     }
 
@@ -627,6 +642,7 @@ impl Value {
             assumed_positional: Vec::new(),
             assumed_named: HashMap::new(),
             id,
+            empty_sig: false,
         }))
     }
 

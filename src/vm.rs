@@ -95,6 +95,7 @@ impl VM {
                 self.locals[i] = val.clone();
             }
         }
+        self.load_state_locals(code);
         let mut ip = 0;
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
@@ -105,12 +106,14 @@ impl VM {
                     ip += 1;
                     continue;
                 }
+                self.sync_state_locals(code);
                 return (self.interpreter, Err(e));
             }
             if self.interpreter.is_halted() {
                 break;
             }
         }
+        self.sync_state_locals(code);
         (self.interpreter, Ok(()))
     }
 
@@ -131,6 +134,7 @@ impl VM {
                 self.locals[i] = Value::Nil;
             }
         }
+        self.load_state_locals(code);
         let mut ip = 0;
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
@@ -141,13 +145,36 @@ impl VM {
                     ip += 1;
                     continue;
                 }
+                self.sync_state_locals(code);
                 return Err(e);
             }
             if self.interpreter.is_halted() {
                 break;
             }
         }
+        self.sync_state_locals(code);
         Ok(())
+    }
+
+    fn load_state_locals(&mut self, code: &CompiledCode) {
+        for (slot, key) in &code.state_locals {
+            if let Some(val) = self.interpreter.get_state_var(key) {
+                self.locals[*slot] = val.clone();
+            }
+        }
+    }
+
+    fn sync_state_locals(&mut self, code: &CompiledCode) {
+        for (slot, key) in &code.state_locals {
+            let local_name = &code.locals[*slot];
+            let val = self
+                .interpreter
+                .env()
+                .get(local_name)
+                .cloned()
+                .unwrap_or_else(|| self.locals[*slot].clone());
+            self.interpreter.set_state_var(key.clone(), val);
+        }
     }
 
     /// Get a reference to the interpreter (for reading env values).
@@ -268,12 +295,36 @@ impl VM {
                     Value::Str(s) => s.clone(),
                     _ => unreachable!("SetGlobal name must be a string constant"),
                 };
+                if self.interpreter.strict_mode
+                    && !name.contains("::")
+                    && !self.interpreter.env().contains_key(&name)
+                {
+                    return Err(self.strict_undeclared_error(&name));
+                }
                 let val = self.stack.pop().unwrap();
                 let val = if name.starts_with('%') {
                     runtime::coerce_to_hash(val)
                 } else {
                     val
                 };
+                let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
+                let alias_key = format!("__mutsu_sigilless_alias::{}", name);
+                if matches!(
+                    self.interpreter.env().get(&readonly_key),
+                    Some(Value::Bool(true))
+                ) && !matches!(self.interpreter.env().get(&alias_key), Some(Value::Str(_)))
+                {
+                    return Err(RuntimeError::new("X::Assignment::RO"));
+                }
+                if let Some(alias_name) = self.interpreter.env().get(&alias_key).and_then(|v| {
+                    if let Value::Str(name) = v {
+                        Some(name.clone())
+                    } else {
+                        None
+                    }
+                }) {
+                    self.interpreter.env_mut().insert(alias_name, val.clone());
+                }
                 self.set_env_with_main_alias(&name, val);
                 *ip += 1;
             }
@@ -332,6 +383,10 @@ impl VM {
             }
             OpCode::BoolCoerce => {
                 self.exec_bool_coerce_op();
+                *ip += 1;
+            }
+            OpCode::WrapVarRef(name_idx) => {
+                self.exec_wrap_var_ref_op(code, *name_idx);
                 *ip += 1;
             }
 
@@ -403,7 +458,7 @@ impl VM {
 
             // -- Three-way comparison --
             OpCode::Spaceship => {
-                self.exec_spaceship_op();
+                self.exec_spaceship_op()?;
                 *ip += 1;
             }
             OpCode::Before | OpCode::After => {
@@ -423,6 +478,10 @@ impl VM {
             // -- Identity/value equality --
             OpCode::StrictEq => {
                 self.exec_strict_eq_op();
+                *ip += 1;
+            }
+            OpCode::StrictNe => {
+                self.exec_strict_ne_op();
                 *ip += 1;
             }
             OpCode::Eqv => {
@@ -489,7 +548,7 @@ impl VM {
 
             // -- Mixin / Type check --
             OpCode::ButMixin => {
-                self.exec_but_mixin_op();
+                self.exec_but_mixin_op()?;
                 *ip += 1;
             }
             OpCode::Isa => {
@@ -673,10 +732,13 @@ impl VM {
                         Value::Instance { attributes, .. } => (**attributes).clone(),
                         _ => std::collections::HashMap::new(),
                     };
-                    match self
-                        .interpreter
-                        .run_instance_method(&cn, attrs, "defined", Vec::new())
-                    {
+                    match self.interpreter.run_instance_method(
+                        &cn,
+                        attrs,
+                        "defined",
+                        Vec::new(),
+                        Some(val.clone()),
+                    ) {
                         Ok((result, _)) => result,
                         Err(_) => Value::Bool(runtime::types::value_is_defined(&val)),
                     }
@@ -744,7 +806,9 @@ impl VM {
                 *ip += 1;
             }
             OpCode::Note(n) => {
+                self.sync_env_from_locals(code);
                 self.exec_note_op(*n)?;
+                self.sync_locals_from_env(code);
                 *ip += 1;
             }
 
@@ -843,11 +907,11 @@ impl VM {
                 *ip += 1;
             }
             OpCode::DeleteIndexNamed(name_idx) => {
-                self.exec_delete_index_named_op(code, *name_idx);
+                self.exec_delete_index_named_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::DeleteIndexExpr => {
-                self.exec_delete_index_expr_op();
+                self.exec_delete_index_expr_op()?;
                 *ip += 1;
             }
 
@@ -900,7 +964,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::IndexAssignExprNamed(name_idx) => {
-                self.exec_index_assign_expr_named_op(code, *name_idx);
+                self.exec_index_assign_expr_named_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::IndexAssignExprNested(name_idx) => {
@@ -910,7 +974,7 @@ impl VM {
 
             // -- Unary coercion --
             OpCode::NumCoerce => {
-                self.exec_num_coerce_op();
+                self.exec_num_coerce_op()?;
                 *ip += 1;
             }
             OpCode::StrCoerce => {
@@ -944,7 +1008,7 @@ impl VM {
 
             // -- Assignment as expression --
             OpCode::AssignExpr(name_idx) => {
-                self.exec_assign_expr_op(code, *name_idx);
+                self.exec_assign_expr_op(code, *name_idx)?;
                 *ip += 1;
             }
 
@@ -1055,6 +1119,10 @@ impl VM {
             }
             OpCode::ExistsExpr => {
                 self.exec_exists_expr_op();
+                *ip += 1;
+            }
+            OpCode::ExistsIndexExpr => {
+                self.exec_exists_index_expr_op();
                 *ip += 1;
             }
 
@@ -1231,6 +1299,10 @@ impl VM {
                 self.exec_use_module_op(code, *name_idx)?;
                 *ip += 1;
             }
+            OpCode::NoModule(name_idx) => {
+                self.exec_no_module_op(code, *name_idx)?;
+                *ip += 1;
+            }
             OpCode::NeedModule(name_idx) => {
                 self.exec_need_module_op(code, *name_idx)?;
                 *ip += 1;
@@ -1289,7 +1361,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::AssignExprLocal(idx) => {
-                self.exec_assign_expr_local_op(code, *idx);
+                self.exec_assign_expr_local_op(code, *idx)?;
                 *ip += 1;
             }
             OpCode::AssignReadOnly => {
