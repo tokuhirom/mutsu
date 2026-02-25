@@ -89,6 +89,7 @@ struct MethodDef {
     body: Vec<Stmt>,
     is_rw: bool,
     is_private: bool,
+    return_type: Option<String>,
 }
 
 #[derive(Debug, Clone)]

@@ -848,7 +848,15 @@ impl Interpreter {
             && class_name == "Perl6::Metamodel::ClassHOW"
             && matches!(
                 method,
-                "can" | "isa" | "lookup" | "find_method" | "add_method" | "name" | "ver" | "auth"
+                "can"
+                    | "isa"
+                    | "lookup"
+                    | "find_method"
+                    | "add_method"
+                    | "name"
+                    | "ver"
+                    | "auth"
+                    | "methods"
             )
         {
             return self.dispatch_classhow_method(method, args);
@@ -2383,6 +2391,21 @@ impl Interpreter {
             }
         }
 
+        // .can for Package values
+        if method == "can"
+            && !args.is_empty()
+            && let Value::Package(ref class_name) = target
+        {
+            let method_name = args[0].to_string_value();
+            if (self.class_has_method(class_name, &method_name)
+                || self.has_user_method(class_name, &method_name))
+                && let Some(val) = self.classhow_find_method(&target, &method_name)
+            {
+                return Ok(Value::array(vec![val]));
+            }
+            return Ok(Value::array(Vec::new()));
+        }
+
         // Fallback methods
         match method {
             "DUMP" if args.is_empty() => match target {
@@ -3017,6 +3040,7 @@ impl Interpreter {
                     body: sub_data.body.clone(),
                     is_rw: false,
                     is_private: false,
+                    return_type: None,
                 };
                 if let Some(class_def) = self.classes.get_mut(&class_name) {
                     class_def.methods.insert(method_name, vec![def]);
@@ -3027,11 +3051,412 @@ impl Interpreter {
                     class_name
                 )))
             }
+            "methods" if !args.is_empty() => self.dispatch_classhow_methods(&args),
             _ => Err(RuntimeError::new(format!(
                 "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
                 method
             ))),
         }
+    }
+
+    fn dispatch_classhow_methods(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let invocant = &args[0];
+        let class_name = match invocant {
+            Value::Package(name) => name.clone(),
+            Value::Instance { class_name, .. } => class_name.clone(),
+            other => value_type_name(other).to_string(),
+        };
+
+        // Parse named arguments
+        let mut local = false;
+        let mut all = false;
+        let mut private = false;
+        let mut tree = false;
+        for arg in &args[1..] {
+            if let Value::Pair(key, value) = arg {
+                match key.as_str() {
+                    "local" => local = value.truthy(),
+                    "all" => all = value.truthy(),
+                    "private" => private = value.truthy(),
+                    "tree" => tree = value.truthy(),
+                    _ => {}
+                }
+            }
+        }
+
+        if tree {
+            return self.classhow_methods_tree(&class_name, private);
+        }
+
+        let mut result = Vec::new();
+
+        if local {
+            // Only methods defined directly on this class
+            self.collect_class_methods(&class_name, private, &mut result);
+        } else {
+            // Walk MRO (already includes the class itself)
+            let mro = self.class_mro(&class_name);
+
+            for cn in &mro {
+                if !all && (cn == "Any" || cn == "Mu") {
+                    continue;
+                }
+                self.collect_class_methods(cn, private, &mut result);
+            }
+
+            // For built-in types that don't have class defs, add known methods
+            if result.is_empty() || !self.classes.contains_key(&class_name) {
+                self.collect_builtin_type_methods(&class_name, &mut result);
+                if all {
+                    self.collect_builtin_type_methods("Any", &mut result);
+                    self.collect_builtin_type_methods("Mu", &mut result);
+                }
+            }
+        }
+
+        Ok(Value::array(result))
+    }
+
+    fn collect_builtin_type_methods(&self, type_name: &str, result: &mut Vec<Value>) {
+        let methods: &[&str] = match type_name {
+            "Str" => &[
+                "chars",
+                "codes",
+                "comb",
+                "chomp",
+                "chop",
+                "contains",
+                "ends-with",
+                "fc",
+                "flip",
+                "index",
+                "indices",
+                "lc",
+                "lines",
+                "match",
+                "ords",
+                "pred",
+                "rindex",
+                "split",
+                "starts-with",
+                "substr",
+                "succ",
+                "tc",
+                "trim",
+                "trim-leading",
+                "trim-trailing",
+                "uc",
+                "words",
+                "wordcase",
+                "NFC",
+                "NFD",
+                "NFKC",
+                "NFKD",
+                "encode",
+                "IO",
+                "Numeric",
+                "Int",
+                "Num",
+                "Rat",
+                "Bool",
+                "Str",
+                "gist",
+                "raku",
+                "elems",
+                "fmt",
+            ],
+            "Int" | "Num" | "Rat" | "Complex" => &[
+                "abs", "ceiling", "floor", "round", "sign", "sqrt", "log", "log10", "exp",
+                "is-prime", "chr", "base", "polymod", "pred", "succ", "Numeric", "Int", "Num",
+                "Rat", "Bool", "Str", "gist", "raku",
+            ],
+            "List" | "Array" => &[
+                "elems",
+                "end",
+                "keys",
+                "values",
+                "kv",
+                "pairs",
+                "antipairs",
+                "join",
+                "map",
+                "grep",
+                "first",
+                "sort",
+                "reverse",
+                "rotate",
+                "unique",
+                "repeated",
+                "squish",
+                "flat",
+                "eager",
+                "lazy",
+                "head",
+                "tail",
+                "skip",
+                "push",
+                "pop",
+                "shift",
+                "unshift",
+                "splice",
+                "append",
+                "prepend",
+                "classify",
+                "categorize",
+                "min",
+                "max",
+                "minmax",
+                "sum",
+                "pick",
+                "roll",
+                "permutations",
+                "combinations",
+                "rotor",
+                "batch",
+                "produce",
+                "reduce",
+                "Bool",
+                "Str",
+                "gist",
+                "raku",
+                "Numeric",
+                "Int",
+                "Array",
+                "List",
+            ],
+            "Hash" => &[
+                "elems",
+                "keys",
+                "values",
+                "kv",
+                "pairs",
+                "antipairs",
+                "push",
+                "append",
+                "classify-list",
+                "categorize-list",
+                "Bool",
+                "Str",
+                "gist",
+                "raku",
+                "Numeric",
+                "Int",
+            ],
+            "Bool" => &[
+                "pred", "succ", "pick", "roll", "Numeric", "Int", "Num", "Rat", "Bool", "Str",
+                "gist", "raku",
+            ],
+            "Range" => &[
+                "min", "max", "bounds", "elems", "list", "flat", "reverse", "pick", "roll", "sum",
+                "rand", "minmax", "infinite", "is-int", "Bool", "Str", "gist", "raku", "Numeric",
+                "Int",
+            ],
+            "Sub" | "Method" | "Block" | "Routine" | "Code" => &[
+                "name",
+                "signature",
+                "arity",
+                "count",
+                "of",
+                "returns",
+                "Bool",
+                "Str",
+                "gist",
+                "raku",
+            ],
+            "Signature" => &[
+                "params", "arity", "count", "returns", "Bool", "Str", "gist", "raku",
+            ],
+            "Any" => &[
+                "say",
+                "put",
+                "print",
+                "note",
+                "so",
+                "not",
+                "defined",
+                "WHAT",
+                "WHERE",
+                "HOW",
+                "WHY",
+                "iterator",
+                "flat",
+                "eager",
+                "lazy",
+                "map",
+                "grep",
+                "first",
+                "sort",
+                "reverse",
+                "unique",
+                "repeated",
+                "squish",
+                "head",
+                "tail",
+                "skip",
+                "min",
+                "max",
+                "minmax",
+                "elems",
+                "end",
+                "keys",
+                "values",
+                "kv",
+                "pairs",
+                "antipairs",
+                "classify",
+                "categorize",
+                "join",
+                "pick",
+                "roll",
+                "sum",
+                "reduce",
+                "produce",
+                "rotor",
+                "batch",
+                "Bool",
+                "Str",
+                "gist",
+                "raku",
+                "Numeric",
+                "Int",
+            ],
+            "Mu" => &[
+                "defined", "WHAT", "WHERE", "HOW", "WHY", "WHICH", "Bool", "Str", "gist", "raku",
+                "clone", "new",
+            ],
+            _ => &[],
+        };
+        for name in methods {
+            if !result.iter().any(|v| {
+                if let Value::Instance { attributes, .. } = v {
+                    attributes
+                        .get("name")
+                        .map(|n| n.to_string_value())
+                        .as_deref()
+                        == Some(name)
+                } else {
+                    false
+                }
+            }) {
+                result.push(self.make_native_method_object(name));
+            }
+        }
+    }
+
+    fn collect_class_methods(
+        &self,
+        class_name: &str,
+        include_private: bool,
+        result: &mut Vec<Value>,
+    ) {
+        if let Some(class_def) = self.classes.get(class_name) {
+            // First add accessor methods for public attributes (in order)
+            for (attr_name, is_public, ..) in &class_def.attributes {
+                if *is_public && !class_def.methods.contains_key(attr_name) {
+                    result.push(self.make_native_method_object(attr_name));
+                }
+            }
+            // Then add explicit methods
+            for (method_name, overloads) in &class_def.methods {
+                if overloads.is_empty() {
+                    continue;
+                }
+                // Skip private methods unless :private
+                let first = &overloads[0];
+                if first.is_private && !include_private {
+                    continue;
+                }
+                let is_multi = overloads.len() > 1;
+                let return_type = first.return_type.clone();
+                let method_obj = self.make_method_object(method_name, first, is_multi, return_type);
+                result.push(method_obj);
+            }
+            // Also include native (built-in) methods
+            for native_name in &class_def.native_methods {
+                let method_obj = self.make_native_method_object(native_name);
+                result.push(method_obj);
+            }
+        }
+    }
+
+    fn make_native_method_object(&self, name: &str) -> Value {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("name".to_string(), Value::Str(name.to_string()));
+        attrs.insert("is_dispatcher".to_string(), Value::Bool(false));
+        let sig_attrs = {
+            let mut sa = std::collections::HashMap::new();
+            sa.insert("params".to_string(), Value::array(Vec::new()));
+            sa
+        };
+        attrs.insert(
+            "signature".to_string(),
+            Value::make_instance("Signature".to_string(), sig_attrs),
+        );
+        attrs.insert("returns".to_string(), Value::Package("Mu".to_string()));
+        attrs.insert("of".to_string(), Value::Package("Mu".to_string()));
+        Value::make_instance("Method".to_string(), attrs)
+    }
+
+    fn make_method_object(
+        &self,
+        name: &str,
+        method_def: &MethodDef,
+        is_dispatcher: bool,
+        return_type: Option<String>,
+    ) -> Value {
+        let mut attrs = std::collections::HashMap::new();
+
+        // Store the display name (with ! prefix for private methods)
+        let display_name = if method_def.is_private {
+            format!("!{}", name)
+        } else {
+            name.to_string()
+        };
+        attrs.insert("name".to_string(), Value::Str(display_name));
+        attrs.insert("is_dispatcher".to_string(), Value::Bool(is_dispatcher));
+
+        // Build a Signature object for this method
+        let param_defs = &method_def.param_defs;
+        let sig_attrs = {
+            let mut sa = std::collections::HashMap::new();
+            sa.insert(
+                "params".to_string(),
+                make_params_value_from_param_defs(param_defs),
+            );
+            sa
+        };
+        attrs.insert(
+            "signature".to_string(),
+            Value::make_instance("Signature".to_string(), sig_attrs),
+        );
+
+        // Return type
+        let rt = return_type.unwrap_or_else(|| "Mu".to_string());
+        attrs.insert("returns".to_string(), Value::Package(rt.clone()));
+        attrs.insert("of".to_string(), Value::Package(rt));
+
+        Value::make_instance("Method".to_string(), attrs)
+    }
+
+    fn classhow_methods_tree(
+        &self,
+        class_name: &str,
+        include_private: bool,
+    ) -> Result<Value, RuntimeError> {
+        let mut result = Vec::new();
+
+        // First: own methods
+        self.collect_class_methods(class_name, include_private, &mut result);
+
+        // Then: each parent's tree as a nested array
+        if let Some(class_def) = self.classes.get(class_name) {
+            for parent in &class_def.parents {
+                let subtree = self.classhow_methods_tree(parent, include_private)?;
+                result.push(subtree);
+            }
+        }
+
+        Ok(Value::array(result))
     }
 
     fn dispatch_subst(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
