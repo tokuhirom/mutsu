@@ -4939,11 +4939,17 @@ impl Interpreter {
         // Separate named args (Pairs) from positional args
         let mut positional = Vec::new();
         let mut has_neg_v = false;
+        let mut has_end = false;
         for arg in args {
             match arg {
                 Value::Pair(key, value) if key == "v" => {
                     if !value.truthy() {
                         has_neg_v = true;
+                    }
+                }
+                Value::Pair(key, value) if key == "end" => {
+                    if value.truthy() {
+                        has_end = true;
                     }
                 }
                 _ => positional.push(arg.clone()),
@@ -4964,7 +4970,10 @@ impl Interpreter {
             return Err(err);
         }
         let func = positional.first().cloned();
-        let items = crate::runtime::utils::value_to_list(&target);
+        let mut items = crate::runtime::utils::value_to_list(&target);
+        if has_end {
+            items.reverse();
+        }
         self.eval_first_over_items(func, items)
     }
 
