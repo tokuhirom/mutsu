@@ -84,9 +84,11 @@ fn process_line(
     let display = match interpreter.run(accumulated) {
         Ok(_) => {
             let output = interpreter.output().to_string();
+            let had_output = interpreter.has_output_emitted();
             let display = if !output.is_empty() {
                 Some(output)
-            } else if let Some(value) = interpreter.last_value.take()
+            } else if !had_output
+                && let Some(value) = interpreter.last_value.take()
                 && !matches!(value, Value::Nil)
             {
                 let text = if let Some(Ok(gist)) = native_method_0arg(&value, "gist") {
@@ -230,6 +232,46 @@ mod tests {
     fn test_multiline_block() {
         let out = repl_session(&["if True {", "  say 'yes'", "}"]);
         assert_eq!(out, vec!["yes\n"]);
+    }
+
+    /// Helper: same as repl_session but with immediate_stdout enabled
+    /// (matches actual REPL behavior). Display strings only include
+    /// last_value output; say/print goes directly to stdout.
+    fn repl_session_immediate(lines: &[&str]) -> Vec<String> {
+        let mut interpreter = Interpreter::new();
+        interpreter.set_program_path("<repl-test>");
+        interpreter.set_immediate_stdout(true);
+        let mut accumulated = String::new();
+        let mut outputs = Vec::new();
+
+        for line in lines {
+            let (_result, display) = process_line(&mut interpreter, &mut accumulated, line);
+            if let Some(text) = display {
+                outputs.push(text);
+            }
+        }
+        outputs
+    }
+
+    #[test]
+    fn test_for_loop_then_expression() {
+        // After a for loop with say, a bare expression should still show
+        let out = repl_session_immediate(&["for 1..3 { .say }", "3"]);
+        assert_eq!(out, vec!["3\n"]);
+    }
+
+    #[test]
+    fn test_for_loop_no_extra_return_value() {
+        // for loop with say should not display return value (matches Rakudo)
+        let out = repl_session(&["for 1..3 { .say }"]);
+        assert_eq!(out, vec!["1\n2\n3\n"]);
+    }
+
+    #[test]
+    fn test_say_then_expression_immediate() {
+        // say output + subsequent expression, both with immediate_stdout
+        let out = repl_session_immediate(&["say 'hi'", "1+2"]);
+        assert_eq!(out, vec!["3\n"]);
     }
 
     #[test]
