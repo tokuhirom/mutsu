@@ -604,7 +604,9 @@ impl Interpreter {
         };
         mixins.insert(format!("__mutsu_role__{}", role_name), Value::Bool(true));
 
-        for (idx, (attr_name, _is_public, default_expr)) in role.attributes.iter().enumerate() {
+        for (idx, (attr_name, _is_public, default_expr, _is_rw)) in
+            role.attributes.iter().enumerate()
+        {
             let value = if let Some(arg) = role_args.get(idx) {
                 arg.clone()
             } else if let Some(default_expr) = default_expr {
