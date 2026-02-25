@@ -162,6 +162,7 @@ fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
     // Find the terminator line in the heredoc body
     let mut content_end = None;
     let mut terminator_end = None;
+    let mut terminator_indent = 0usize;
     let mut search_pos = 0;
     while search_pos <= heredoc_start.len() {
         // Raku allows indentation before heredoc terminators.
@@ -181,6 +182,7 @@ fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
             {
                 content_end = Some(search_pos);
                 terminator_end = Some(term_pos + delimiter.len());
+                terminator_indent = leading_ws;
                 break;
             }
         }
@@ -192,6 +194,33 @@ fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
     }
     if let Some(end) = content_end {
         let content = &heredoc_start[..end];
+        let content = if terminator_indent == 0 {
+            content.to_string()
+        } else {
+            // Strip terminator indentation from each heredoc content line.
+            let mut dedented = String::new();
+            for segment in content.split_inclusive('\n') {
+                let mut bytes_to_strip = terminator_indent;
+                let mut strip_pos = 0usize;
+                for ch in segment.chars() {
+                    if bytes_to_strip == 0 {
+                        break;
+                    }
+                    if matches!(ch, ' ' | '\t') {
+                        let len = ch.len_utf8();
+                        if len > bytes_to_strip {
+                            break;
+                        }
+                        bytes_to_strip -= len;
+                        strip_pos += len;
+                    } else {
+                        break;
+                    }
+                }
+                dedented.push_str(&segment[strip_pos..]);
+            }
+            dedented
+        };
         let after_terminator = &heredoc_start[terminator_end.expect("terminator end")..];
         // Skip optional newline after terminator
         let after_terminator = after_terminator
@@ -199,15 +228,12 @@ fn parse_to_heredoc(input: &str) -> PResult<'_, Expr> {
             .unwrap_or(after_terminator);
         // Return rest_of_line + after_terminator as remaining input.
         if rest_of_line.trim().is_empty() || rest_of_line.trim() == ";" {
-            return Ok((
-                after_terminator,
-                Expr::Literal(Value::Str(content.to_string())),
-            ));
+            return Ok((after_terminator, Expr::Literal(Value::Str(content))));
         }
         // We cannot return a disjoint slice pair, so concatenate.
         let combined = format!("{}\n{}", rest_of_line, after_terminator);
         let leaked: &'static str = Box::leak(combined.into_boxed_str());
-        return Ok((leaked, Expr::Literal(Value::Str(content.to_string()))));
+        return Ok((leaked, Expr::Literal(Value::Str(content))));
     }
     Err(PError::expected("heredoc terminator"))
 }
@@ -242,6 +268,67 @@ pub(super) fn q_string(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("q string"));
     }
     let after_q = &input[1..];
+
+    // q:nfc, q:nfd, q:nfkc, q:nfkd — Unicode normalization adverbs
+    for nf_form in &[":nfkc", ":nfkd", ":nfc", ":nfd"] {
+        if let Some(rest_after_nf) = after_q.strip_prefix(nf_form) {
+            let form_upper = nf_form[1..].to_uppercase(); // "NFKC", "NFKD", etc.
+            // Parse the quoted content (can be single or double quoted)
+            let (rest, content) = match rest_after_nf.chars().next() {
+                Some('"') => {
+                    // q:nfkc"..." — double-quoted content (no interpolation for q:)
+                    let inner = &rest_after_nf[1..];
+                    let end = inner
+                        .find('"')
+                        .ok_or_else(|| PError::expected("closing \""))?;
+                    (&inner[end + 1..], &inner[..end])
+                }
+                Some('\'') => {
+                    // q:nfkc'...' — single-quoted content
+                    let inner = &rest_after_nf[1..];
+                    let end = inner
+                        .find('\'')
+                        .ok_or_else(|| PError::expected("closing '"))?;
+                    (&inner[end + 1..], &inner[..end])
+                }
+                Some(c) if !c.is_alphanumeric() && !c.is_whitespace() => {
+                    if let Some(close_char) = unicode_bracket_close(c) {
+                        let inner = &rest_after_nf[c.len_utf8()..];
+                        let end = inner
+                            .find(close_char)
+                            .ok_or_else(|| PError::expected("closing bracket"))?;
+                        (&inner[end + close_char.len_utf8()..], &inner[..end])
+                    } else {
+                        // Symmetric delimiter
+                        let inner = &rest_after_nf[c.len_utf8()..];
+                        let end = inner
+                            .find(c)
+                            .ok_or_else(|| PError::expected("closing delimiter"))?;
+                        (&inner[end + c.len_utf8()..], &inner[..end])
+                    }
+                }
+                _ => {
+                    return Err(PError::expected(
+                        "quote delimiter after normalization adverb",
+                    ));
+                }
+            };
+            use unicode_normalization::UnicodeNormalization;
+            let normalized: String = match form_upper.as_str() {
+                "NFC" => content.nfc().collect(),
+                "NFD" => content.nfd().collect(),
+                "NFKC" => content.nfkc().collect(),
+                _ => content.nfkd().collect(),
+            };
+            return Ok((
+                rest,
+                Expr::Literal(Value::Uni {
+                    form: form_upper,
+                    text: normalized,
+                }),
+            ));
+        }
+    }
 
     // q:to/DELIM/, q:to<DELIM>, qq:to/.../, qq:to<...> heredoc
     if after_q.starts_with(":to") || after_q.starts_with("q:to") {

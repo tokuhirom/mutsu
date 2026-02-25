@@ -334,6 +334,7 @@ impl Interpreter {
         self.routine_stack.pop();
         let mut restored_env = saved_env;
         self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
+        self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
         self.env = restored_env;
         let value = match result {
             Ok(v) => v,

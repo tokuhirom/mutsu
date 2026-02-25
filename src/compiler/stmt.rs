@@ -348,7 +348,7 @@ impl Compiler {
                     let arg_sources_idx = self.add_arg_sources_constant(&positional_exprs);
                     for arg in &rewritten_args {
                         if let CallArg::Positional(expr) = arg {
-                            self.compile_expr(expr);
+                            self.compile_call_arg(expr);
                         }
                     }
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
@@ -370,7 +370,7 @@ impl Compiler {
                     for arg in &rewritten_args {
                         match arg {
                             CallArg::Positional(expr) => {
-                                self.compile_expr(expr);
+                                self.compile_call_arg(expr);
                                 regular_count += 1;
                             }
                             CallArg::Named {
@@ -413,7 +413,7 @@ impl Compiler {
                 // named args as Pair(name => value), then dispatch without stmt_pool.
                 for arg in &rewritten_args {
                     match arg {
-                        CallArg::Positional(expr) => self.compile_expr(expr),
+                        CallArg::Positional(expr) => self.compile_call_arg(expr),
                         CallArg::Named {
                             name,
                             value: Some(expr),

@@ -56,6 +56,7 @@ pub(crate) enum TokenKind {
     CaretDotDot,
     CaretDotDotCaret,
     EqEqEq,
+    BangEqEqEq,
     Arrow,
     SmartMatch,
     BangEq,

@@ -41,6 +41,31 @@ impl Interpreter {
         }
     }
 
+    pub(super) fn overwrite_instance_bindings_by_identity(
+        &mut self,
+        class_name: &str,
+        id: u64,
+        updated: std::collections::HashMap<String, Value>,
+    ) {
+        for bound in self.env.values_mut() {
+            let should_replace = match bound {
+                Value::Instance {
+                    class_name: existing_class,
+                    id: existing_id,
+                    ..
+                } => existing_class == class_name && *existing_id == id,
+                _ => false,
+            };
+            if should_replace {
+                *bound = Value::Instance {
+                    class_name: class_name.to_string(),
+                    attributes: std::sync::Arc::new(updated.clone()),
+                    id,
+                };
+            }
+        }
+    }
+
     fn rw_method_attribute_target(body: &[Stmt]) -> Option<String> {
         let first = body.first()?;
         let extract_attr = |expr: &Expr| -> Option<String> {
@@ -114,7 +139,7 @@ impl Interpreter {
         let Value::Instance {
             class_name,
             attributes,
-            ..
+            id: target_id,
         } = target
         else {
             return Err(RuntimeError::new(format!(
@@ -144,9 +169,14 @@ impl Interpreter {
         let mut updated = (*attributes).clone();
         updated.insert(attr_name, value.clone());
         if let Some(var_name) = target_var {
+            self.overwrite_instance_bindings_by_identity(&class_name, target_id, updated.clone());
             self.env.insert(
                 var_name.to_string(),
-                Value::make_instance(class_name, updated),
+                Value::Instance {
+                    class_name,
+                    attributes: std::sync::Arc::new(updated),
+                    id: target_id,
+                },
             );
         }
         Ok(value)
@@ -160,6 +190,17 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         if method == "VAR" && args.is_empty() {
+            let readonly_key = format!("__mutsu_sigilless_readonly::{}", target_var);
+            let alias_key = format!("__mutsu_sigilless_alias::{}", target_var);
+            let has_sigilless_meta =
+                self.env.contains_key(&readonly_key) || self.env.contains_key(&alias_key);
+            if has_sigilless_meta {
+                let readonly = matches!(self.env.get(&readonly_key), Some(Value::Bool(true)));
+                let itemized_array = matches!(target, Value::Array(_, true));
+                if readonly && !itemized_array {
+                    return Ok(target);
+                }
+            }
             let class_name = if target_var.starts_with('@') {
                 "Array"
             } else if target_var.starts_with('%') {
@@ -428,7 +469,7 @@ impl Interpreter {
         if let Value::Instance {
             class_name,
             attributes,
-            ..
+            id: target_id,
         } = target.clone()
         {
             if class_name == "Iterator" {
@@ -530,9 +571,18 @@ impl Interpreter {
                 };
 
                 updated.insert("index".to_string(), Value::Int(index as i64));
+                self.overwrite_instance_bindings_by_identity(
+                    &class_name,
+                    target_id,
+                    updated.clone(),
+                );
                 self.env.insert(
                     target_var.to_string(),
-                    Value::make_instance(class_name, updated),
+                    Value::Instance {
+                        class_name: class_name.clone(),
+                        attributes: std::sync::Arc::new(updated),
+                        id: target_id,
+                    },
                 );
                 return Ok(ret);
             }
@@ -550,9 +600,18 @@ impl Interpreter {
                     let mut updated = (*attributes).clone();
                     let assigned = args[0].clone();
                     updated.insert(method.to_string(), assigned.clone());
+                    self.overwrite_instance_bindings_by_identity(
+                        &class_name,
+                        target_id,
+                        updated.clone(),
+                    );
                     self.env.insert(
                         target_var.to_string(),
-                        Value::make_instance(class_name, updated),
+                        Value::Instance {
+                            class_name: class_name.clone(),
+                            attributes: std::sync::Arc::new(updated),
+                            id: target_id,
+                        },
                     );
                     return Ok(assigned);
                 }
@@ -567,9 +626,18 @@ impl Interpreter {
                     args.clone(),
                 ) {
                     Ok((result, updated)) => {
+                        self.overwrite_instance_bindings_by_identity(
+                            &class_name,
+                            target_id,
+                            updated.clone(),
+                        );
                         self.env.insert(
                             target_var.to_string(),
-                            Value::make_instance(class_name, updated),
+                            Value::Instance {
+                                class_name: class_name.clone(),
+                                attributes: std::sync::Arc::new(updated),
+                                id: target_id,
+                            },
                         );
                         return Ok(result);
                     }
@@ -584,11 +652,25 @@ impl Interpreter {
                 }
             }
             if self.has_user_method(&class_name, method) {
-                let (result, updated) =
-                    self.run_instance_method(&class_name, (*attributes).clone(), method, args)?;
+                let (result, updated) = self.run_instance_method(
+                    &class_name,
+                    (*attributes).clone(),
+                    method,
+                    args,
+                    Some(target.clone()),
+                )?;
+                self.overwrite_instance_bindings_by_identity(
+                    &class_name,
+                    target_id,
+                    updated.clone(),
+                );
                 self.env.insert(
                     target_var.to_string(),
-                    Value::make_instance(class_name, updated),
+                    Value::Instance {
+                        class_name: class_name.clone(),
+                        attributes: std::sync::Arc::new(updated),
+                        id: target_id,
+                    },
                 );
                 return Ok(result);
             }

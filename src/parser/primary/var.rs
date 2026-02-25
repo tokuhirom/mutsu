@@ -105,6 +105,11 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         let full_name = format!("={}", name);
         return Ok((rest, Expr::Var(full_name)));
     }
+    // Named parameter variable inside blocks: $:name
+    if let Some(after_colon) = input.strip_prefix(':') {
+        let (rest, name) = parse_ident_with_hyphens(after_colon)?;
+        return Ok((rest, Expr::Var(format!(":{}", name))));
+    }
     // Handle bare $ (anonymous state variable)
     // If next char is not a valid identifier start, twigil, or special char, it's an anonymous var
     let next_is_ident_or_twigil = !input.is_empty() && {

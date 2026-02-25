@@ -107,11 +107,11 @@ impl Interpreter {
             if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
                 let mut positional = data.assumed_positional.clone();
                 let mut named = data.assumed_named.clone();
-                for arg in args {
+                for arg in &args {
                     if let Value::Pair(key, boxed) = arg {
-                        named.insert(key, *boxed);
+                        named.insert(key.clone(), *boxed.clone());
                     } else {
-                        positional.push(arg);
+                        positional.push(arg.clone());
                     }
                 }
                 call_args = positional;
@@ -132,9 +132,20 @@ impl Interpreter {
             let rw_bindings =
                 self.bind_function_args_values(&data.param_defs, &data.params, &call_args)?;
             new_env = self.env.clone();
+            if data.params.is_empty() {
+                for arg in &args {
+                    if let Value::Pair(name, value) = arg {
+                        new_env.insert(format!(":{}", name), *value.clone());
+                    }
+                }
+            }
             // Bind implicit $_ for bare blocks called with arguments
-            if data.params.is_empty() && !call_args.is_empty() {
-                new_env.insert("_".to_string(), call_args[0].clone());
+            if data.params.is_empty()
+                && !args.is_empty()
+                && let Some(first_positional) =
+                    args.iter().find(|v| !matches!(v, Value::Pair(_, _)))
+            {
+                new_env.insert("_".to_string(), first_positional.clone());
             }
             // &?BLOCK: weak self-reference to break reference cycles
             let block_arc = std::sync::Arc::new(crate::value::SubData {
@@ -174,6 +185,7 @@ impl Interpreter {
                     merged.insert(k.clone(), v.clone());
                 }
             }
+            self.merge_sigilless_alias_writes(&mut merged, &self.env);
             self.env = merged;
             return match result {
                 Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
@@ -536,6 +548,7 @@ impl Interpreter {
             self.pop_test_assertion_context(pushed_assertion);
             let mut restored_env = saved_env;
             self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
+            self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
             self.env = restored_env;
             if pushed_dispatch {
                 self.multi_dispatch_stack.pop();
