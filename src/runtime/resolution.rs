@@ -350,6 +350,10 @@ impl Interpreter {
                     call_args.push(Value::Pair(key, Box::new(value)));
                 }
             }
+            // Routine wrapper from .assuming() on a multi-dispatch sub
+            if let Some(Value::Str(routine_name)) = data.env.get("__mutsu_routine_name").cloned() {
+                return self.call_function(&routine_name, call_args);
+            }
             if let (Some(left), Some(right)) = (
                 data.env.get("__mutsu_compose_left").cloned(),
                 data.env.get("__mutsu_compose_right").cloned(),

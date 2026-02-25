@@ -388,6 +388,7 @@ impl Interpreter {
                 index,
             };
             self.env.insert(format!("Order::{}", key), enum_val.clone());
+            self.env.insert(key.clone(), enum_val);
         }
     }
 
@@ -603,7 +604,9 @@ impl Interpreter {
         };
         mixins.insert(format!("__mutsu_role__{}", role_name), Value::Bool(true));
 
-        for (idx, (attr_name, _is_public, default_expr)) in role.attributes.iter().enumerate() {
+        for (idx, (attr_name, _is_public, default_expr, _is_rw)) in
+            role.attributes.iter().enumerate()
+        {
             let value = if let Some(arg) = role_args.get(idx) {
                 arg.clone()
             } else if let Some(default_expr) = default_expr {
@@ -724,12 +727,14 @@ impl Interpreter {
                 let is_capture_param = pd.name == "_capture";
                 let is_subsig_capture = pd.name == "__subsig__" && pd.sub_signature.is_some();
                 let arg_for_checks: Option<Value> = if pd.slurpy || is_capture_param {
-                    // For single-star slurpy (*@), flatten array arguments
+                    // For single-star slurpy (*@), flatten list arguments but preserve
+                    // itemized Arrays ($[...] / .item) as single positional values.
                     let mut items = Vec::new();
                     for arg in &args[i..] {
                         let arg = unwrap_varref_value(arg.clone());
                         if !pd.double_slurpy
-                            && let Value::Array(arr, ..) = &arg
+                            && let Value::Array(arr, is_array) = &arg
+                            && !*is_array
                         {
                             items.extend(arr.iter().cloned());
                             continue;
@@ -1014,14 +1019,19 @@ impl Interpreter {
                 } else {
                     let mut items = Vec::new();
                     while positional_idx < args.len() {
-                        // *@ (flattening slurpy): flatten array/list args
+                        // *@ (flattening slurpy): flatten list args but preserve
+                        // itemized Arrays ($[...] / .item) as single values.
                         // Skip Pair values — they are named args for *%_ or will be rejected
                         match unwrap_varref_value(args[positional_idx].clone()) {
                             Value::Pair(..) => {
                                 // Named arg — leave for *%_ slurpy or post-loop check
                             }
-                            Value::Array(arr, ..) => {
-                                items.extend(arr.iter().cloned());
+                            Value::Array(arr, is_array) => {
+                                if is_array {
+                                    items.push(Value::Array(arr.clone(), true));
+                                } else {
+                                    items.extend(arr.iter().cloned());
+                                }
                             }
                             other => {
                                 items.push(other);

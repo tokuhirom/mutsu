@@ -483,10 +483,69 @@ impl Interpreter {
                     }
                 }
             }
+            let mut role_names: Vec<String> = mixins
+                .iter()
+                .filter_map(|(key, value)| {
+                    key.strip_prefix("__mutsu_role__")
+                        .and_then(|name| value.truthy().then_some(name.to_string()))
+                })
+                .collect();
+            role_names.sort();
+            let mut role_has_method = false;
+            for role_name in role_names {
+                let Some(role) = self.roles.get(&role_name).cloned() else {
+                    continue;
+                };
+                let Some(overloads) = role.methods.get(method).cloned() else {
+                    continue;
+                };
+                role_has_method = true;
+                for def in overloads {
+                    if def.is_private || !self.method_args_match(&args, &def.param_defs) {
+                        continue;
+                    }
+                    let role_attrs: HashMap<String, Value> = mixins
+                        .iter()
+                        .filter_map(|(key, value)| {
+                            key.strip_prefix("__mutsu_attr__")
+                                .map(|attr| (attr.to_string(), value.clone()))
+                        })
+                        .collect();
+                    let (result, _updated) = self.run_instance_method_resolved(
+                        &role_name,
+                        &role_name,
+                        def,
+                        role_attrs,
+                        args,
+                        Some(target.clone()),
+                    )?;
+                    return Ok(result);
+                }
+            }
+            if role_has_method {
+                return Err(RuntimeError::new(format!(
+                    "No matching candidates for method: {}",
+                    method
+                )));
+            }
             if method == "can" && args.len() == 1 {
                 let method_name = args[0].to_string_value();
-                if mixins.contains_key(&method_name) {
+                if mixins.contains_key(&method_name)
+                    || mixins.contains_key(&format!("__mutsu_attr__{}", method_name))
+                {
                     return Ok(Value::Bool(true));
+                }
+                for role_name in mixins.keys().filter_map(|key| {
+                    key.strip_prefix("__mutsu_role__")
+                        .map(|name| name.to_string())
+                }) {
+                    if self
+                        .roles
+                        .get(&role_name)
+                        .is_some_and(|role| role.methods.contains_key(&method_name))
+                    {
+                        return Ok(Value::Bool(true));
+                    }
                 }
                 return self.call_method_with_values((**inner).clone(), method, args);
             }
@@ -501,7 +560,9 @@ impl Interpreter {
                         Some(Value::Enum { key, .. }) if key == probe_key
                     ),
                     Value::Package(name) | Value::Str(name) => {
-                        mixins.contains_key(name) || inner.does_check(name)
+                        mixins.contains_key(name)
+                            || mixins.contains_key(&format!("__mutsu_role__{}", name))
+                            || inner.does_check(name)
                     }
                     other => inner.does_check(&other.to_string_value()),
                 };
@@ -536,6 +597,43 @@ impl Interpreter {
             return result;
         }
 
+        // Resolve Value::Routine to Value::Sub for method dispatch
+        if let Value::Routine {
+            ref name,
+            ref package,
+        } = target
+            && method == "assuming"
+        {
+            // Create a wrapper Sub that delegates to the multi-dispatch routine
+            let mut sub_data = crate::value::SubData {
+                package: package.clone(),
+                name: name.clone(),
+                params: Vec::new(),
+                param_defs: Vec::new(),
+                body: vec![],
+                env: self.env().clone(),
+                assumed_positional: Vec::new(),
+                assumed_named: std::collections::HashMap::new(),
+                id: crate::value::next_instance_id(),
+                empty_sig: false,
+            };
+            // Store the routine name so call_sub_value can dispatch
+            sub_data
+                .env
+                .insert("__mutsu_routine_name".to_string(), Value::Str(name.clone()));
+            // Apply assumed args
+            for arg in &args {
+                if let Value::Pair(key, boxed) = arg {
+                    if key == "__mutsu_test_callsite_line" {
+                        continue;
+                    }
+                    sub_data.assumed_named.insert(key.clone(), *boxed.clone());
+                } else {
+                    sub_data.assumed_positional.push(arg.clone());
+                }
+            }
+            return Ok(Value::Sub(std::sync::Arc::new(sub_data)));
+        }
         if let Value::Sub(data) = &target {
             if method == "assuming" {
                 let mut next = (**data).clone();
@@ -801,7 +899,7 @@ impl Interpreter {
                 }
             }
             "note" if args.is_empty() => {
-                let content = format!("{}\n", gist_value(&target));
+                let content = format!("{}\n", self.render_gist_value(&target));
                 self.write_to_named_handle("$*ERR", &content, false)?;
                 return Ok(Value::Nil);
             }
@@ -1057,6 +1155,7 @@ impl Interpreter {
                     Value::Mixin(inner, _) => {
                         return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
                     }
+                    Value::Proxy { .. } => "Proxy",
                 };
                 return Ok(Value::Package(type_name.to_string()));
             }
@@ -1489,7 +1588,7 @@ impl Interpreter {
                 // Initialize with default attribute values
                 let mut attributes = HashMap::new();
                 if self.classes.contains_key(&class_name) {
-                    for (attr_name, _is_public, default) in
+                    for (attr_name, _is_public, default, _is_rw) in
                         self.collect_class_attributes(&class_name)
                     {
                         let val = if let Some(expr) = default {
@@ -2130,21 +2229,7 @@ impl Interpreter {
                 }
                 return Ok(Value::make_instance(class_name.clone(), attrs));
             }
-            if args.is_empty() {
-                let class_attrs = self.collect_class_attributes(class_name);
-                if class_attrs.is_empty() {
-                    // No class definition — treat all instance attributes as public
-                    if let Some(val) = attributes.get(method) {
-                        return Ok(val.clone());
-                    }
-                } else {
-                    for (attr_name, is_public, _) in &class_attrs {
-                        if *is_public && attr_name == method {
-                            return Ok(attributes.get(method).cloned().unwrap_or(Value::Nil));
-                        }
-                    }
-                }
-            }
+            // User-defined methods take priority over auto-generated accessors
             if self.has_user_method(class_name, method) {
                 let (result, updated) = self.run_instance_method(
                     class_name,
@@ -2153,8 +2238,31 @@ impl Interpreter {
                     args,
                     Some(target.clone()),
                 )?;
-                self.overwrite_instance_bindings_by_identity(class_name, *target_id, updated);
+                self.overwrite_instance_bindings_by_identity(
+                    class_name,
+                    *target_id,
+                    updated.clone(),
+                );
+                // Auto-FETCH if the method returned a Proxy
+                if let Value::Proxy { ref fetcher, .. } = result {
+                    return self.proxy_fetch(fetcher, None, class_name, &updated, *target_id);
+                }
                 return Ok(result);
+            }
+            // Fallback: auto-generated accessor for public attributes
+            if args.is_empty() {
+                let class_attrs = self.collect_class_attributes(class_name);
+                if class_attrs.is_empty() {
+                    if let Some(val) = attributes.get(method) {
+                        return Ok(val.clone());
+                    }
+                } else {
+                    for (attr_name, is_public, _, _) in &class_attrs {
+                        if *is_public && attr_name == method {
+                            return Ok(attributes.get(method).cloned().unwrap_or(Value::Nil));
+                        }
+                    }
+                }
             }
         }
 
@@ -3727,6 +3835,23 @@ impl Interpreter {
                 "ThreadPoolScheduler" | "CurrentThreadScheduler" | "Tap" | "Cancellation" => {
                     return Ok(Value::make_instance(class_name.clone(), HashMap::new()));
                 }
+                "Proxy" => {
+                    let mut fetcher = Value::Nil;
+                    let mut storer = Value::Nil;
+                    for arg in &args {
+                        if let Value::Pair(key, value) = arg {
+                            match key.as_str() {
+                                "FETCH" => fetcher = *value.clone(),
+                                "STORE" => storer = *value.clone(),
+                                _ => {}
+                            }
+                        }
+                    }
+                    return Ok(Value::Proxy {
+                        fetcher: Box::new(fetcher),
+                        storer: Box::new(storer),
+                    });
+                }
                 "CompUnit::DependencySpecification" => {
                     // Extract :short-name from named args
                     let mut short_name: Option<String> = None;
@@ -3966,7 +4091,9 @@ impl Interpreter {
                     return Ok(result);
                 }
                 let mut attrs = HashMap::new();
-                for (attr_name, _is_public, default) in self.collect_class_attributes(class_name) {
+                for (attr_name, _is_public, default, _is_rw) in
+                    self.collect_class_attributes(class_name)
+                {
                     let val = if let Some(expr) = default {
                         self.eval_block_value(&[Stmt::Expr(expr)])?
                     } else {

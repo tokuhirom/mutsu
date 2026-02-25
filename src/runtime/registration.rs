@@ -169,7 +169,7 @@ impl Interpreter {
         }
         self.collect_class_attributes(class_name)
             .iter()
-            .any(|(attr_name, is_public, _)| *is_public && attr_name == method_name)
+            .any(|(attr_name, is_public, _, _)| *is_public && attr_name == method_name)
     }
 
     fn resolve_class_stub_requirements(
@@ -1081,7 +1081,7 @@ impl Interpreter {
                         Vec::new()
                     };
                 for attr in &role.attributes {
-                    if !class_def.attributes.iter().any(|(n, _, _)| n == &attr.0) {
+                    if !class_def.attributes.iter().any(|(n, _, _, _)| n == &attr.0) {
                         class_def.attributes.push(attr.clone());
                     }
                 }
@@ -1136,11 +1136,14 @@ impl Interpreter {
                     is_public,
                     default,
                     handles,
-                    is_rw: _,
+                    is_rw,
                 } => {
-                    class_def
-                        .attributes
-                        .push((attr_name.clone(), *is_public, default.clone()));
+                    class_def.attributes.push((
+                        attr_name.clone(),
+                        *is_public,
+                        default.clone(),
+                        *is_rw,
+                    ));
                     let attr_var_name = if *is_public {
                         format!(".{}", attr_name)
                     } else {
@@ -1267,7 +1270,7 @@ impl Interpreter {
                         return Err(RuntimeError::new("X::Role::Parametric::NoSuchCandidate"));
                     }
                     for attr in &role.attributes {
-                        if !class_def.attributes.iter().any(|(n, _, _)| n == &attr.0) {
+                        if !class_def.attributes.iter().any(|(n, _, _, _)| n == &attr.0) {
                             class_def.attributes.push(attr.clone());
                         }
                     }
@@ -1340,11 +1343,14 @@ impl Interpreter {
                     is_public,
                     default,
                     handles,
-                    is_rw: _,
+                    is_rw,
                 } => {
-                    role_def
-                        .attributes
-                        .push((attr_name.clone(), *is_public, default.clone()));
+                    role_def.attributes.push((
+                        attr_name.clone(),
+                        *is_public,
+                        default.clone(),
+                        *is_rw,
+                    ));
                     let attr_var_name = if *is_public {
                         format!(".{}", attr_name)
                     } else {

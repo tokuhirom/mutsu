@@ -63,15 +63,15 @@ use self::unicode::{check_unicode_property, check_unicode_property_with_args};
 #[derive(Clone)]
 struct ClassDef {
     parents: Vec<String>,
-    attributes: Vec<(String, bool, Option<Expr>)>, // (name, is_public, default)
-    methods: HashMap<String, Vec<MethodDef>>,      // name -> overloads
+    attributes: Vec<(String, bool, Option<Expr>, bool)>, // (name, is_public, default, is_rw)
+    methods: HashMap<String, Vec<MethodDef>>,            // name -> overloads
     native_methods: HashSet<String>,
     mro: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
 struct RoleDef {
-    attributes: Vec<(String, bool, Option<Expr>)>,
+    attributes: Vec<(String, bool, Option<Expr>, bool)>,
     methods: HashMap<String, Vec<MethodDef>>,
     is_stub_role: bool,
 }

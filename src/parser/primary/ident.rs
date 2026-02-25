@@ -799,6 +799,24 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // sub not followed by { or ( in expression context — not valid
             return Err(PError::expected_at("anonymous sub body '{' or '('", r));
         }
+        "method" => {
+            // Anonymous method in expression context: method () { ... } or method { ... }
+            let (r, _) = ws(rest)?;
+            if r.starts_with('(') {
+                let (r, params_body) = parse_anon_sub_with_params(r).map_err(|err| PError {
+                    messages: merge_expected_messages(
+                        "expected anonymous method parameter list/body",
+                        &err.messages,
+                    ),
+                    remaining_len: err.remaining_len.or(Some(r.len())),
+                })?;
+                return Ok((r, params_body));
+            }
+            if r.starts_with('{') {
+                let (r, body) = parse_block_body(r)?;
+                return Ok((r, make_anon_sub(body)));
+            }
+        }
         "token" | "regex" | "rule" => {
             // token/rule term literal: token { ... } / rule { ... }
             let (r, _) = ws(rest)?;
