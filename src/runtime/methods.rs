@@ -4857,11 +4857,11 @@ impl Interpreter {
                     let frame = Value::make_instance("Backtrace::Frame".to_string(), frame_attrs);
                     return Ok(Value::array(vec![frame]));
                 }
-                "Lock" => {
+                "Lock" | "Lock::Async" => {
                     let mut attrs = HashMap::new();
                     let lock_id = super::native_methods::next_lock_id() as i64;
                     attrs.insert("lock-id".to_string(), Value::Int(lock_id));
-                    return Ok(Value::make_instance("Lock".to_string(), attrs));
+                    return Ok(Value::make_instance(class_name.clone(), attrs));
                 }
                 "Slip" => {
                     return Ok(Value::slip(args.clone()));

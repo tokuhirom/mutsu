@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 9;
 
 my $lock = Lock.new;
 is $lock.WHAT, "(Lock)", "Lock.new returns a Lock";
@@ -20,6 +20,9 @@ is $ret, 123, "protect executes block and returns its result";
 
 my $cond = $lock.condition;
 ok $cond.defined, "condition returns a condition variable";
+
+my $async-lock = Lock::Async.new;
+is $async-lock.WHAT, "(Lock::Async)", "Lock::Async.new returns a Lock::Async";
 
 $lock.protect({
     my $ready = True;

@@ -566,6 +566,16 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "Lock::Async".to_string(),
+            ClassDef {
+                parents: vec!["Lock".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Lock::Async".to_string()],
+            },
+        );
+        classes.insert(
             "Lock::ConditionVariable".to_string(),
             ClassDef {
                 parents: Vec::new(),
