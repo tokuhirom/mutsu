@@ -3,7 +3,7 @@ use crate::ast::CallArg;
 use crate::value::signature::make_params_value_from_param_defs;
 
 impl Interpreter {
-    fn auto_signature_uses(stmts: &[Stmt]) -> (bool, bool) {
+    pub(crate) fn auto_signature_uses(stmts: &[Stmt]) -> (bool, bool) {
         fn scan_stmt(stmt: &Stmt, positional: &mut bool, named: &mut bool) {
             match stmt {
                 Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e) => {
@@ -230,12 +230,27 @@ impl Interpreter {
             return None;
         }
         let mut param_defs = data.param_defs.clone();
-        let mut consumed_positional = 0usize;
-        for pd in &param_defs {
-            if !pd.named && !pd.slurpy {
-                consumed_positional += 1;
-                if consumed_positional >= assumed_positional.len() {
-                    break;
+        // Build type capture mappings from assumed positional args
+        let mut type_captures: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        {
+            let mut pos_idx = 0usize;
+            for pd in &param_defs {
+                if !pd.named && !pd.slurpy {
+                    if pos_idx < assumed_positional.len() {
+                        if let Some(tc) = &pd.type_constraint
+                            && let Some(capture_name) = tc.strip_prefix("::")
+                        {
+                            let resolved_type = crate::runtime::utils::value_type_name(
+                                &assumed_positional[pos_idx],
+                            )
+                            .to_string();
+                            type_captures.insert(capture_name.to_string(), resolved_type);
+                        }
+                        pos_idx += 1;
+                    } else {
+                        break;
+                    }
                 }
             }
         }
@@ -248,12 +263,28 @@ impl Interpreter {
                 true
             }
         });
-        for pd in &mut param_defs {
-            if pd.named
-                && let Some(v) = assumed_named.get(&pd.name)
-            {
-                pd.required = false;
-                pd.default = Some(Expr::Literal(v.clone()));
+        // Apply type capture resolution to remaining params
+        if !type_captures.is_empty() {
+            for pd in &mut param_defs {
+                if let Some(tc) = &pd.type_constraint
+                    && let Some(resolved) = type_captures.get(tc.as_str())
+                {
+                    pd.type_constraint = Some(resolved.clone());
+                }
+            }
+        }
+        // When .assuming() is used with named args, all named params lose their
+        // defaults and where constraints in the signature display.
+        // Assumed params additionally become non-required.
+        if !assumed_named.is_empty() {
+            for pd in &mut param_defs {
+                if pd.named {
+                    pd.default = None;
+                    pd.where_constraint = None;
+                    if assumed_named.contains_key(&pd.name) {
+                        pd.required = false;
+                    }
+                }
             }
         }
         Some(param_defs)
@@ -291,10 +322,11 @@ impl Interpreter {
         if pd.slurpy {
             out.push('*');
         }
-        if pd.named
-            && !pd.name.starts_with('$')
+        if !pd.name.starts_with('$')
             && !pd.name.starts_with('@')
             && !pd.name.starts_with('%')
+            && !pd.name.starts_with('_')
+            && !pd.slurpy
         {
             out.push('$');
         }
@@ -332,8 +364,23 @@ impl Interpreter {
                 .collect();
             return format!(":({})", rendered.join(", "));
         }
-        let rendered: Vec<String> = data.params.iter().map(|p| format!("${}", p)).collect();
-        format!(":({})", rendered.join(", "))
+        if !data.params.is_empty() {
+            let rendered: Vec<String> = data.params.iter().map(|p| format!("${}", p)).collect();
+            return format!(":({})", rendered.join(", "));
+        }
+        // Auto-detect @_ / %_ usage for subs without explicit signatures
+        let (use_positional, use_named) = Self::auto_signature_uses(&data.body);
+        if use_positional || use_named {
+            let mut parts = Vec::new();
+            if use_positional {
+                parts.push("*@_".to_string());
+            }
+            if use_named {
+                parts.push("*%_".to_string());
+            }
+            return format!(":({})", parts.join(", "));
+        }
+        ":()".to_string()
     }
 
     fn collect_named_param_keys(

@@ -456,6 +456,9 @@ impl Interpreter {
             if pushed_dispatch {
                 self.multi_dispatch_stack.push((remaining, args.to_vec()));
             }
+            if def.empty_sig && !args.is_empty() {
+                return Err(Self::reject_args_for_empty_sig(args));
+            }
             let saved_env = self.env.clone();
             let rw_bindings = self.bind_function_args_values(&def.param_defs, &def.params, args)?;
             let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);

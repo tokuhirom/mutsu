@@ -325,6 +325,9 @@ impl Interpreter {
         def: &FunctionDef,
         arg_values: &[Value],
     ) -> Result<Option<String>, RuntimeError> {
+        if def.empty_sig && !arg_values.is_empty() {
+            return Err(Self::reject_args_for_empty_sig(arg_values));
+        }
         let saved_env = self.env.clone();
         let rw_bindings =
             self.bind_function_args_values(&def.param_defs, &def.params, arg_values)?;
@@ -397,6 +400,9 @@ impl Interpreter {
         def: &FunctionDef,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        if def.empty_sig && !args.is_empty() {
+            return Err(Self::reject_args_for_empty_sig(args));
+        }
         let saved_env = self.env.clone();
         let rw_bindings = self.bind_function_args_values(&def.param_defs, &def.params, args)?;
         self.routine_stack
@@ -433,6 +439,9 @@ impl Interpreter {
                 proto_name
             )));
         };
+        if def.empty_sig && !args.is_empty() {
+            return Err(Self::reject_args_for_empty_sig(&args));
+        }
         let saved_env = self.env.clone();
         let rw_bindings = self.bind_function_args_values(&def.param_defs, &def.params, &args)?;
         self.routine_stack
