@@ -458,7 +458,7 @@ impl VM {
 
             // -- Three-way comparison --
             OpCode::Spaceship => {
-                self.exec_spaceship_op();
+                self.exec_spaceship_op()?;
                 *ip += 1;
             }
             OpCode::Before | OpCode::After => {
@@ -548,7 +548,7 @@ impl VM {
 
             // -- Mixin / Type check --
             OpCode::ButMixin => {
-                self.exec_but_mixin_op();
+                self.exec_but_mixin_op()?;
                 *ip += 1;
             }
             OpCode::Isa => {
@@ -806,7 +806,9 @@ impl VM {
                 *ip += 1;
             }
             OpCode::Note(n) => {
+                self.sync_env_from_locals(code);
                 self.exec_note_op(*n)?;
+                self.sync_locals_from_env(code);
                 *ip += 1;
             }
 
