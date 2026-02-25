@@ -598,6 +598,16 @@ impl PartialEq for Value {
             (Value::Promise(a), Value::Promise(b)) => a == b,
             (Value::Channel(a), Value::Channel(b)) => a == b,
             (Value::Nil, Value::Nil) => true,
+            (
+                Value::Capture {
+                    positional: ap,
+                    named: an,
+                },
+                Value::Capture {
+                    positional: bp,
+                    named: bn,
+                },
+            ) => ap == bp && an == bn,
             _ => false,
         }
     }

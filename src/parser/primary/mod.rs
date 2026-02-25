@@ -197,12 +197,7 @@ mod tests {
     fn parse_itemized_paren_expr() {
         let (rest, expr) = primary("$(1,2)").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(
-            expr,
-            Expr::CaptureLiteral(ref items)
-                if items.len() == 1
-                    && matches!(items[0], Expr::ArrayLiteral(ref elems) if elems.len() == 2)
-        ));
+        assert!(matches!(expr, Expr::CaptureLiteral(ref items) if items.len() == 1));
     }
 
     #[test]

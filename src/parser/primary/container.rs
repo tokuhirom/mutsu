@@ -205,6 +205,11 @@ fn lift_meta_ops_in_paren_list(items: Vec<Expr>) -> Vec<Expr> {
 }
 
 /// Parse itemized parenthesized expression: `$(...)`.
+///
+/// In Raku, `$(expr)` creates an item container — the value is evaluated and
+/// wrapped in a scalar so that operations like `.flat` treat it as a single
+/// opaque element.  We lower this to a method call `.item` on the inner
+/// expression, which mirrors what Rakudo does internally.
 pub(super) fn itemized_paren_expr(input: &str) -> PResult<'_, Expr> {
     let Some(rest) = input.strip_prefix('$') else {
         return Err(PError::expected("itemized parenthesized expression"));
