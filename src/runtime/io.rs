@@ -287,6 +287,9 @@ impl Interpreter {
         let raku = Self::make_perl_instance();
         self.env.insert("*RAKU".to_string(), raku.clone());
         self.env.insert("?RAKU".to_string(), raku);
+        let vm = Self::make_vm_instance();
+        self.env.insert("$*VM".to_string(), vm.clone());
+        self.env.insert("*VM".to_string(), vm);
     }
 
     pub(super) fn create_handle(
@@ -533,6 +536,33 @@ impl Interpreter {
             ]),
         );
         Value::make_instance("Perl".to_string(), attrs)
+    }
+
+    pub(super) fn make_vm_instance() -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("name".to_string(), Value::Str("mutsu".to_string()));
+        attrs.insert(
+            "auth".to_string(),
+            Value::Str("github.com/tokuhirom".to_string()),
+        );
+        attrs.insert(
+            "version".to_string(),
+            Value::Version {
+                parts: vec![
+                    crate::value::VersionPart::Num(0),
+                    crate::value::VersionPart::Num(1),
+                    crate::value::VersionPart::Num(0),
+                ],
+                plus: false,
+                minus: false,
+            },
+        );
+        attrs.insert("precomp-ext".to_string(), Value::Str("mutsu".to_string()));
+        attrs.insert(
+            "precomp-target".to_string(),
+            Value::Str("mutsu".to_string()),
+        );
+        Value::make_instance("VM".to_string(), attrs)
     }
 
     pub(super) fn get_dynamic_handle(&self, name: &str) -> Option<Value> {

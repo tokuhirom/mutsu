@@ -238,6 +238,20 @@ impl VM {
                 "X::Undeclared::Symbols: Undeclared name:\n    {} used at line 1",
                 name,
             )));
+        } else if let Some((pkg, sym)) = name.rsplit_once("::")
+            && let Some(stripped_sym) = sym.strip_prefix('&')
+        {
+            let qualified_name = format!("{pkg}::{stripped_sym}");
+            if self.interpreter.has_function(&qualified_name)
+                || self.interpreter.has_multi_function(&qualified_name)
+            {
+                Value::Routine {
+                    package: pkg.to_string(),
+                    name: qualified_name,
+                }
+            } else {
+                Value::Str(name.to_string())
+            }
         } else if let Some(v) = self.interpreter.env().get(name) {
             if matches!(v, Value::Enum { .. } | Value::Nil) {
                 v.clone()
@@ -297,6 +311,8 @@ impl VM {
             Value::Slip(std::sync::Arc::new(vec![]))
         } else if name.starts_with("Metamodel::") {
             // Meta-object protocol type objects
+            Value::Package(name.to_string())
+        } else if name.contains("::") {
             Value::Package(name.to_string())
         } else if name.chars().count() == 1 {
             // Single unicode character — check for vulgar fractions etc.

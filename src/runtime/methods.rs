@@ -1695,6 +1695,37 @@ impl Interpreter {
                     return Ok(Value::make_instance("Supply".to_string(), attrs));
                 }
             }
+            "repository-for-name" => {
+                if let Value::Package(ref class_name) = target
+                    && class_name == "CompUnit::RepositoryRegistry"
+                {
+                    let name = args.first().map(Value::to_string_value).unwrap_or_default();
+                    if let Some(prefix) = name.strip_prefix("file#") {
+                        let new_args = vec![Value::Pair(
+                            "prefix".to_string(),
+                            Box::new(Value::Str(prefix.to_string())),
+                        )];
+                        return self.call_method_with_values(
+                            Value::Package("CompUnit::Repository::FileSystem".to_string()),
+                            "new",
+                            new_args,
+                        );
+                    }
+                    return Ok(Value::Nil);
+                }
+            }
+            "signal" => {
+                if let Value::Package(ref class_name) = target
+                    && class_name == "Supply"
+                {
+                    let mut attrs = HashMap::new();
+                    attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    attrs.insert("live".to_string(), Value::Bool(true));
+                    attrs.insert("signals".to_string(), Value::array(args.clone()));
+                    return Ok(Value::make_instance("Supply".to_string(), attrs));
+                }
+            }
             "on-demand" => {
                 if let Value::Package(ref class_name) = target
                     && class_name == "Supply"
@@ -2334,6 +2365,53 @@ impl Interpreter {
                             result.push_str(&file);
                         }
                         return Ok(Value::Str(result));
+                    }
+                    _ => {}
+                }
+            }
+            if class_name == "CompUnit::Repository::FileSystem" {
+                match method {
+                    "install" => {
+                        return Err(RuntimeError::new("Cannot install on CUR::FileSystem"));
+                    }
+                    "need" => {
+                        let short_name = match args.first() {
+                            Some(Value::CompUnitDepSpec { short_name }) => short_name.clone(),
+                            _ => return Ok(Value::Nil),
+                        };
+                        let prefix = attributes
+                            .get("prefix")
+                            .map(Value::to_string_value)
+                            .unwrap_or_default();
+                        let canonical_prefix = std::fs::canonicalize(&prefix)
+                            .unwrap_or_else(|_| std::path::PathBuf::from(&prefix))
+                            .to_string_lossy()
+                            .to_string();
+                        let cache_key =
+                            format!("__mutsu_compunit::{}::{}", canonical_prefix, short_name);
+                        if let Some(existing) = self.env.get(&cache_key).cloned() {
+                            return Ok(existing);
+                        }
+                        let relative = short_name.replace("::", "/");
+                        let mut found = None;
+                        for ext in [".rakumod", ".pm6", ".raku", ".pm"] {
+                            let candidate = std::path::Path::new(&canonical_prefix)
+                                .join(format!("{relative}{ext}"));
+                            if candidate.exists() {
+                                found = Some(candidate);
+                                break;
+                            }
+                        }
+                        if found.is_none() {
+                            return Ok(Value::Nil);
+                        }
+                        let mut attrs = HashMap::new();
+                        attrs.insert("from".to_string(), Value::Str("Raku".to_string()));
+                        attrs.insert("short-name".to_string(), Value::Str(short_name));
+                        attrs.insert("precompiled".to_string(), Value::Bool(false));
+                        let compunit = Value::make_instance("CompUnit".to_string(), attrs);
+                        self.env.insert(cache_key, compunit.clone());
+                        return Ok(compunit);
                     }
                     _ => {}
                 }
@@ -4542,6 +4620,34 @@ impl Interpreter {
                         )
                     })?;
                     return Ok(Value::CompUnitDepSpec { short_name });
+                }
+                "CompUnit::Repository::FileSystem" => {
+                    let mut prefix = ".".to_string();
+                    for arg in &args {
+                        if let Value::Pair(key, value) = arg
+                            && key == "prefix"
+                        {
+                            prefix = value.to_string_value();
+                        }
+                    }
+                    let prefix_path = if prefix.is_empty() { "." } else { &prefix };
+                    let canonical_prefix = std::fs::canonicalize(prefix_path)
+                        .unwrap_or_else(|_| std::path::PathBuf::from(prefix_path))
+                        .to_string_lossy()
+                        .to_string();
+                    let cache_key = format!("__mutsu_repo_fs::{}", canonical_prefix);
+                    if let Some(existing) = self.env.get(&cache_key).cloned() {
+                        return Ok(existing);
+                    }
+                    let mut attrs = HashMap::new();
+                    attrs.insert(
+                        "prefix".to_string(),
+                        self.make_io_path_instance(&canonical_prefix),
+                    );
+                    attrs.insert("short-id".to_string(), Value::Str("file".to_string()));
+                    let repo = Value::make_instance(class_name.clone(), attrs);
+                    self.env.insert(cache_key, repo.clone());
+                    return Ok(repo);
                 }
                 "Proc::Async" => {
                     let mut positional = Vec::new();
