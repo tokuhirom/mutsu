@@ -89,7 +89,7 @@ impl VM {
         mut self,
         code: &CompiledCode,
         compiled_fns: &HashMap<String, CompiledFunction>,
-    ) -> (Interpreter, Result<(), RuntimeError>) {
+    ) -> (Interpreter, Result<Option<Value>, RuntimeError>) {
         // Initialize local variable slots
         self.locals = vec![Value::Nil; code.locals.len()];
         for (i, name) in code.locals.iter().enumerate() {
@@ -98,6 +98,8 @@ impl VM {
             }
         }
         self.load_state_locals(code);
+        // Save the previous topic so we can detect if it was set during this run
+        let prev_topic = self.interpreter.env().get("_").cloned();
         let mut ip = 0;
         while ip < code.ops.len() {
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
@@ -116,7 +118,13 @@ impl VM {
             }
         }
         self.sync_state_locals(code);
-        (self.interpreter, Ok(()))
+        let cur_topic = self.interpreter.env().get("_").cloned();
+        let last_value = if cur_topic != prev_topic {
+            cur_topic
+        } else {
+            None
+        };
+        (self.interpreter, Ok(last_value))
     }
 
     /// Run compiled bytecode without consuming self.
