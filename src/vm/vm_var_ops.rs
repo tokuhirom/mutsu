@@ -236,7 +236,10 @@ impl VM {
         } else if let Some(v) = self.interpreter.env().get(name) {
             if matches!(v, Value::Enum { .. } | Value::Nil) {
                 v.clone()
-            } else if self.interpreter.has_class(name) || Self::is_builtin_type(name) {
+            } else if self.interpreter.has_class(name)
+                || self.interpreter.is_role(name)
+                || Self::is_builtin_type(name)
+            {
                 Value::Package(name.to_string())
             } else if !name.starts_with('$') && !name.starts_with('@') && !name.starts_with('%') {
                 v.clone()
@@ -244,6 +247,7 @@ impl VM {
                 Value::Str(name.to_string())
             }
         } else if self.interpreter.has_class(name)
+            || self.interpreter.is_role(name)
             || Self::is_builtin_type(name)
             || Self::is_type_with_smiley(name, &self.interpreter)
         {
@@ -601,6 +605,17 @@ impl VM {
                     positional.get(i as usize).cloned().unwrap_or(Value::Nil)
                 }
             }
+            // Role parameterization: e.g. R1[C1] → ParametricRole
+            (Value::Package(name), idx) if self.interpreter.is_role(&name) => {
+                let type_args = match idx {
+                    Value::Array(items, ..) => items.as_ref().clone(),
+                    other => vec![other],
+                };
+                Value::ParametricRole {
+                    base_name: name,
+                    type_args,
+                }
+            }
             // Type parameterization: e.g. Buf[uint8] → returns the type unchanged
             (pkg @ Value::Package(_), _) => pkg,
             _ => Value::Nil,
@@ -841,15 +856,24 @@ impl VM {
                     self.stack.push(val);
                     return Ok(());
                 }
-                let vals = match &val {
+                let mut vals = match &val {
                     Value::Array(v, ..) => (**v).clone(),
                     _ => vec![val.clone()],
                 };
+                if vals.is_empty() {
+                    vals.push(Value::Nil);
+                }
+                if !matches!(self.interpreter.env().get(&var_name), Some(Value::Hash(_))) {
+                    self.interpreter.env_mut().insert(
+                        var_name.clone(),
+                        Value::hash(std::collections::HashMap::new()),
+                    );
+                }
                 if let Some(Value::Hash(hash)) = self.interpreter.env_mut().get_mut(&var_name) {
                     let h = Arc::make_mut(hash);
                     for (i, key) in keys.iter().enumerate() {
                         let k = key.to_string_value();
-                        let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                        let v = vals[i % vals.len()].clone();
                         h.insert(k, v);
                     }
                 }
@@ -1066,6 +1090,13 @@ impl VM {
             self.interpreter
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
+        }
+        // For @ and % variables, the assignment expression should return the
+        // container, not the RHS value.
+        if (name.starts_with('@') || name.starts_with('%'))
+            && let Some(top) = self.stack.last_mut()
+        {
+            *top = val;
         }
         Ok(())
     }

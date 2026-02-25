@@ -48,6 +48,29 @@ fn split_prop_args(s: &str) -> (&str, Option<&str>) {
 }
 
 impl Interpreter {
+    fn has_unquoted_ltm_separator(pattern: &str) -> bool {
+        let mut in_single = false;
+        let mut escaped = false;
+        for ch in pattern.chars() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == '\'' {
+                in_single = !in_single;
+                continue;
+            }
+            if !in_single && ch == '%' {
+                return true;
+            }
+        }
+        false
+    }
+
     fn split_simple_quantified_atom(atom: &str) -> Option<(String, String)> {
         let quant = atom.chars().last()?;
         if !matches!(quant, '?' | '+' | '*') {
@@ -89,6 +112,9 @@ impl Interpreter {
             let sep_mode = caps.get(3).map(|m| m.as_str());
             let sep = caps.get(4).map(|m| m.as_str());
             return Self::build_ltm_expansion(atom, count_spec, sep_mode, sep);
+        }
+        if !Self::has_unquoted_ltm_separator(pattern) {
+            return pattern.to_string();
         }
         if let Some(caps) = bare_sep.captures(&compact) {
             let atom = caps

@@ -479,7 +479,7 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
         if let Some((meta, op, len)) = parse_meta_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
-            let needs_comma_list = ((meta == "Z" || meta == "X") && op.is_empty())
+            let needs_comma_list = (meta == "Z" || meta == "X")
                 || op == "..."
                 || op == "...^"
                 || op == "…"
@@ -537,22 +537,111 @@ fn parse_custom_infix_word(input: &str) -> Option<(String, usize)> {
         return None;
     }
     let mut end = first.len_utf8();
-    let mut saw_hyphen = false;
     for ch in input[end..].chars() {
         if ch.is_alphanumeric() || ch == '_' || ch == '-' {
-            if ch == '-' {
-                saw_hyphen = true;
-            }
             end += ch.len_utf8();
         } else {
             break;
         }
     }
-    if !saw_hyphen {
+    let name = &input[..end];
+    if is_reserved_infix_word(name) {
         return None;
     }
-    let name = &input[..end];
     Some((name.to_string(), end))
+}
+
+fn is_reserved_infix_word(name: &str) -> bool {
+    if name
+        .chars()
+        .next()
+        .map(|c| c.is_ascii_uppercase())
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    if name.chars().all(|c| c.is_ascii_uppercase()) {
+        return true;
+    }
+    matches!(
+        name,
+        "if" | "unless"
+            | "for"
+            | "while"
+            | "until"
+            | "given"
+            | "when"
+            | "with"
+            | "without"
+            | "my"
+            | "our"
+            | "state"
+            | "has"
+            | "sub"
+            | "method"
+            | "class"
+            | "role"
+            | "grammar"
+            | "module"
+            | "package"
+            | "token"
+            | "rule"
+            | "regex"
+            | "multi"
+            | "proto"
+            | "constant"
+            | "enum"
+            | "subset"
+            | "unit"
+            | "use"
+            | "need"
+            | "return"
+            | "last"
+            | "next"
+            | "redo"
+            | "die"
+            | "fail"
+            | "take"
+            | "do"
+            | "try"
+            | "quietly"
+            | "react"
+            | "whenever"
+            | "loop"
+            | "repeat"
+            | "let"
+            | "temp"
+            | "where"
+            | "is"
+            | "does"
+            | "as"
+            | "of"
+            | "and"
+            | "or"
+            | "not"
+            | "xor"
+            | "andthen"
+            | "orelse"
+            | "notandthen"
+            | "min"
+            | "max"
+            | "cmp"
+            | "leg"
+            | "eq"
+            | "ne"
+            | "lt"
+            | "gt"
+            | "le"
+            | "ge"
+            | "eqv"
+            | "after"
+            | "before"
+            | "gcd"
+            | "lcm"
+            | "x"
+            | "xx"
+            | "o"
+    )
 }
 
 /// Parse a comma-separated list of range_expr, returning (rest, items).
@@ -617,7 +706,8 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             ));
         }
     }
-    if let Some(r) = r.strip_prefix("!===") {
+    if let Some((op, len)) = parse_negated_meta_comparison_op(r) {
+        let r = &r[len..];
         let (r, _) = ws(r)?;
         let (r, right) = if mode == ExprMode::Full {
             junctive_expr_mode(r, mode).map_err(|err| PError {
@@ -636,34 +726,7 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 op: TokenKind::Bang,
                 expr: Box::new(Expr::Binary {
                     left: Box::new(left),
-                    op: TokenKind::EqEqEq,
-                    right: Box::new(right),
-                }),
-            },
-        ));
-    }
-    if let Some(r) = r.strip_prefix("!eqv")
-        && !is_ident_char(r.as_bytes().first().copied())
-    {
-        let (r, _) = ws(r)?;
-        let (r, right) = if mode == ExprMode::Full {
-            junctive_expr_mode(r, mode).map_err(|err| PError {
-                messages: merge_expected_messages(
-                    "expected expression after comparison operator",
-                    &err.messages,
-                ),
-                remaining_len: err.remaining_len.or(Some(r.len())),
-            })?
-        } else {
-            junctive_expr_mode(r, mode)?
-        };
-        return Ok((
-            r,
-            Expr::Unary {
-                op: TokenKind::Bang,
-                expr: Box::new(Expr::Binary {
-                    left: Box::new(left),
-                    op: TokenKind::Ident("eqv".to_string()),
+                    op: op.token_kind(),
                     right: Box::new(right),
                 }),
             },
@@ -844,6 +907,22 @@ fn parse_comparison_op(r: &str) -> Option<(ComparisonOp, usize)> {
     } else {
         None
     }
+}
+
+fn parse_negated_meta_comparison_op(r: &str) -> Option<(ComparisonOp, usize)> {
+    let inner = r.strip_prefix('!')?;
+    let (op, len) = parse_comparison_op(inner)?;
+    // Operators that already have their own !-prefixed spelling are not meta-negated forms.
+    if matches!(
+        op,
+        ComparisonOp::NumNe
+            | ComparisonOp::NotDivisibleBy
+            | ComparisonOp::SmartMatch
+            | ComparisonOp::SmartNotMatch
+    ) {
+        return None;
+    }
+    Some((op, len + 1))
 }
 
 /// Range: ..  ..^  ^..  ^..^
@@ -1083,11 +1162,31 @@ fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
             return Some((meta.to_string(), op.to_string(), 1 + op.len()));
         }
     }
+    // Custom word operators: Xwtf, Zfoo-bar, Rcustom-op
+    if let Some((name, len)) = parse_meta_word_op(r) {
+        return Some((meta.to_string(), name, 1 + len));
+    }
     // Bare Z (zip with comma) or bare X (cross product) — followed by non-ident, non-operator char
     if (meta == "Z" || meta == "X") && !is_ident_char(r.as_bytes().first().copied()) {
         return Some((meta.to_string(), String::new(), 1));
     }
     None
+}
+
+fn parse_meta_word_op(input: &str) -> Option<(String, usize)> {
+    let first = input.chars().next()?;
+    if !first.is_alphabetic() && first != '_' {
+        return None;
+    }
+    let mut end = first.len_utf8();
+    for ch in input[end..].chars() {
+        if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+            end += ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+    Some((input[..end].to_string(), end))
 }
 
 fn strip_sequence_op(input: &str) -> Option<(&str, TokenKind, &str)> {
