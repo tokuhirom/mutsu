@@ -81,6 +81,7 @@ roast/S03-smartmatch/any-str.t
 roast/S03-smartmatch/any-sub.t
 roast/S03-smartmatch/array-hash.t
 roast/S03-smartmatch/array-map.t
+roast/S03-smartmatch/capture-signature.t
 roast/S03-smartmatch/range-range.t
 roast/S03-smartmatch/regex-hash.t
 roast/S03-smartmatch/scalar-hash.t
