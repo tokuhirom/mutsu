@@ -14,6 +14,26 @@ struct MatchAdverbs {
     perl5: bool,
 }
 
+fn is_regex_quote_open(ch: char) -> bool {
+    matches!(
+        ch,
+        '\'' | '"' | '\u{2018}' | '\u{201A}' | '\u{201C}' | '\u{201E}' | '\u{FF62}'
+    )
+}
+
+fn is_regex_quote_terminator(open: char, ch: char) -> bool {
+    match open {
+        '\'' => ch == '\'',
+        '"' => ch == '"',
+        '\u{2018}' => ch == '\u{2019}',                     // ‘...’
+        '\u{201A}' => ch == '\u{2019}' || ch == '\u{2018}', // ‚...’ and ‚...‘
+        '\u{201C}' => ch == '\u{201D}',                     // “...”
+        '\u{201E}' => ch == '\u{201D}',                     // „...”
+        '\u{FF62}' => ch == '\u{FF63}',                     // ｢...｣
+        _ => false,
+    }
+}
+
 fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
     let mut spec = input;
     let mut adverbs = MatchAdverbs::default();
@@ -258,17 +278,16 @@ pub(in crate::parser) fn scan_to_delim(
                     }
                 }
             }
-        } else if c == '\'' || c == '"' {
+        } else if is_regex_quote_open(c) {
             // Skip quoted string content in regex (e.g., '/' or '\\').
             // This prevents delimiters inside string atoms like m/ "/" ** 2 /
             // from prematurely ending the regex literal.
-            let quote = c;
             loop {
                 match chars.next() {
                     Some((_, '\\')) => {
                         chars.next(); // skip escaped char
                     }
-                    Some((_, ch)) if ch == quote => break,
+                    Some((_, ch)) if is_regex_quote_terminator(c, ch) => break,
                     Some(_) => {}
                     None => return None,
                 }
