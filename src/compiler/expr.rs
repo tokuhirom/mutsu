@@ -36,16 +36,28 @@ impl Compiler {
                 } else if let Some(&slot) = self.local_map.get(name.as_str()) {
                     self.code.emit(OpCode::GetLocal(slot));
                 } else {
-                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    let name_idx = self
+                        .code
+                        .add_constant(Value::Str(self.qualify_variable_name(name)));
                     self.code.emit(OpCode::GetGlobal(name_idx));
                 }
             }
             Expr::ArrayVar(name) => {
-                let name_idx = self.code.add_constant(Value::Str(format!("@{}", name)));
+                let var_name = if self.local_map.contains_key(name) {
+                    format!("@{}", name)
+                } else {
+                    self.qualify_variable_name(&format!("@{}", name))
+                };
+                let name_idx = self.code.add_constant(Value::Str(var_name));
                 self.code.emit(OpCode::GetArrayVar(name_idx));
             }
             Expr::HashVar(name) => {
-                let name_idx = self.code.add_constant(Value::Str(format!("%{}", name)));
+                let var_name = if self.local_map.contains_key(name) {
+                    format!("%{}", name)
+                } else {
+                    self.qualify_variable_name(&format!("%{}", name))
+                };
+                let name_idx = self.code.add_constant(Value::Str(var_name));
                 self.code.emit(OpCode::GetHashVar(name_idx));
             }
             Expr::BareWord(name) => {
@@ -755,9 +767,15 @@ impl Compiler {
                         let key_idx = self.code.add_constant(Value::Str(key.clone()));
                         self.code.emit(OpCode::ExistsEnvIndex(key_idx));
                     } else {
-                        self.compile_expr(inner);
-                        self.code.emit(OpCode::ExistsExpr);
+                        self.compile_expr(target);
+                        self.compile_expr(index);
+                        self.code.emit(OpCode::ExistsIndexExpr);
                     }
+                }
+                Expr::Index { target, index } => {
+                    self.compile_expr(target);
+                    self.compile_expr(index);
+                    self.code.emit(OpCode::ExistsIndexExpr);
                 }
                 _ => {
                     self.compile_expr(inner);

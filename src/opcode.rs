@@ -358,6 +358,7 @@ pub(crate) enum OpCode {
     // -- Exists check --
     ExistsEnvIndex(u32),
     ExistsExpr,
+    ExistsIndexExpr,
 
     // -- Reduction ([+] @arr) --
     Reduction(u32),
@@ -460,6 +461,7 @@ pub(crate) enum OpCode {
         target_var_idx: Option<u32>,
     },
     UseModule(u32),
+    NoModule(u32),
     /// `need Module;` — load module without importing exports.
     NeedModule(u32),
     UseLibPath,

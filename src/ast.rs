@@ -307,6 +307,10 @@ pub(crate) enum Stmt {
         module: String,
         arg: Option<Expr>,
     },
+    /// `no Module ...;` — disable pragma/module effects for current lexical scope.
+    No {
+        module: String,
+    },
     /// `need Module;` — load module without importing exports
     Need {
         module: String,

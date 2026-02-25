@@ -43,6 +43,32 @@ fn append_call_arg(expr: &mut Expr, arg: Expr) -> bool {
     }
 }
 
+fn parse_bracket_indices(input: &str) -> PResult<'_, Expr> {
+    let (r, first) = expression(input)?;
+    let mut indices = vec![first];
+    let mut r = r;
+    loop {
+        let (r2, _) = ws(r)?;
+        if r2.starts_with(',') || (r2.starts_with(';') && !r2.starts_with(";;")) {
+            let sep = if r2.starts_with(',') { ',' } else { ';' };
+            let (r3, _) = parse_char(r2, sep)?;
+            let (r3, _) = ws(r3)?;
+            let (r3, next) = expression(r3)?;
+            indices.push(next);
+            r = r3;
+            continue;
+        }
+        return Ok((
+            r2,
+            if indices.len() == 1 {
+                indices.remove(0)
+            } else {
+                Expr::ArrayLiteral(indices)
+            },
+        ));
+    }
+}
+
 /// Result of parsing a quoted method name.
 enum QuotedMethodName {
     /// Static method name (single-quoted or double-quoted without interpolation)
@@ -692,7 +718,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = after;
                 continue;
             }
-            let (r, index) = expression(r)?;
+            let (r, index) = parse_bracket_indices(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ']')?;
             expr = Expr::Index {

@@ -17,6 +17,13 @@ impl Interpreter {
             result = parse_dispatch::parse_source(&rewritten)
                 .and_then(|(stmts, _)| self.eval_block_value(&stmts));
         }
+        // Accept parenthesized statement lists like `(6;)` in EVAL.
+        if result.is_err()
+            && let Some(inner) = unwrap_parenthesized_statements(trimmed)
+        {
+            result = parse_dispatch::parse_source(inner)
+                .and_then(|(stmts, _)| self.eval_block_value(&stmts));
+        }
         if let Some(saved) = previous_pod {
             self.env.insert("=pod".to_string(), saved);
         } else {
@@ -141,4 +148,28 @@ fn rewrite_prefixed_angle_list(code: &str) -> Option<String> {
         return None;
     }
     Some(format!("{}({})", prefix, inner))
+}
+
+fn unwrap_parenthesized_statements(code: &str) -> Option<&str> {
+    if !code.starts_with('(') || !code.ends_with(')') {
+        return None;
+    }
+    let mut depth = 0usize;
+    for (i, ch) in code.char_indices() {
+        if ch == '(' {
+            depth += 1;
+        } else if ch == ')' {
+            if depth == 0 {
+                return None;
+            }
+            depth -= 1;
+            if depth == 0 && i + ch.len_utf8() != code.len() {
+                return None;
+            }
+        }
+    }
+    if depth != 0 {
+        return None;
+    }
+    Some(&code[1..code.len() - 1])
 }

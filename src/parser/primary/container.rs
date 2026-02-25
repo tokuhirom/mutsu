@@ -105,7 +105,14 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
     }
     // Comma-separated list with sequence operator detection
     // Use expression_no_sequence so that `...` is not consumed as part of an item
-    let (input, _) = parse_char(input, ',')?;
+    let sep = if input.starts_with(',') {
+        ','
+    } else if input.starts_with(';') && !input.starts_with(";;") {
+        ';'
+    } else {
+        return Err(PError::expected("',' or ';' in parenthesized list"));
+    };
+    let (input, _) = parse_char(input, sep)?;
     let (input, _) = ws(input)?;
     let mut items = vec![first];
     if let Some(result) = try_inline_modifier(input, finalize_paren_list(items.clone())) {
@@ -133,7 +140,14 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         if let Some(seq) = try_parse_sequence_in_paren(input, &items) {
             return seq;
         }
-        let (input, _) = parse_char(input, ',')?;
+        let sep = if input.starts_with(',') {
+            ','
+        } else if input.starts_with(';') && !input.starts_with(";;") {
+            ';'
+        } else {
+            return Err(PError::expected("',' or ';' in parenthesized list"));
+        };
+        let (input, _) = parse_char(input, sep)?;
         let (input, _) = ws(input)?;
         if let Some(result) = try_inline_modifier(input, finalize_paren_list(items.clone())) {
             let (rest, modified_expr) = result?;

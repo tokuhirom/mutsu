@@ -489,6 +489,7 @@ type StmtParser = fn(&str) -> PResult<'_, Stmt>;
 /// Order is critical — do not reorder without careful consideration.
 const STMT_PARSERS: &[StmtParser] = &[
     decl::use_stmt,
+    decl::no_stmt,
     decl::need_stmt,
     class::unit_module_stmt,
     decl::my_decl,
@@ -611,6 +612,14 @@ mod tests {
         assert_eq!(rest, "");
         assert_eq!(stmts.len(), 1);
         assert!(matches!(&stmts[0], Stmt::Use { module, .. } if module == "Test"));
+    }
+
+    #[test]
+    fn parse_no_strict() {
+        let (rest, stmts) = program("no strict;").unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(stmts.len(), 1);
+        assert!(matches!(&stmts[0], Stmt::No { module } if module == "strict"));
     }
 
     #[test]
