@@ -919,9 +919,15 @@ impl Compiler {
                         let jump_have_value = self.code.emit(OpCode::JumpIfNotNil(0));
                         self.code.emit(OpCode::Pop);
                         self.compile_expr(expr);
-                        self.code.emit(OpCode::Dup);
                         let name_idx = self.code.add_constant(Value::Str(name.clone()));
                         self.code.emit(OpCode::SetGlobal(name_idx));
+                        // Read back the coerced value (SetGlobal coerces list→hash for %)
+                        let name_idx2 = self.code.add_constant(Value::Str(name.clone()));
+                        if name.starts_with('@') {
+                            self.code.emit(OpCode::GetArrayVar(name_idx2));
+                        } else {
+                            self.code.emit(OpCode::GetHashVar(name_idx2));
+                        }
                         self.code.emit(OpCode::Dup);
                         self.code.emit(OpCode::SetLocal(marker_slot));
                         let jump_end = self.code.emit(OpCode::Jump(0));

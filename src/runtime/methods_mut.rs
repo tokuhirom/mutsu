@@ -567,6 +567,29 @@ impl Interpreter {
                             Value::Str("IterationEnd".to_string())
                         }
                     }
+                    "can" => {
+                        let method_name = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let supported = matches!(
+                            method_name.as_str(),
+                            "pull-one"
+                                | "push-exactly"
+                                | "push-at-least"
+                                | "push-all"
+                                | "push-until-lazy"
+                                | "sink-all"
+                                | "skip-one"
+                                | "skip-at-least"
+                                | "skip-at-least-pull-one"
+                        );
+                        if supported {
+                            return Ok(Value::array(vec![Value::Str(method_name)]));
+                        } else {
+                            return Ok(Value::array(Vec::new()));
+                        }
+                    }
                     _ => self.call_method_with_values(target, method, args)?,
                 };
 
