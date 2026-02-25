@@ -269,6 +269,7 @@ pub(super) fn parse_for_params(
             let unpack_def = ParamDef {
                 name: unpack_name.clone(),
                 default: None,
+                multi_invocant: true,
                 required: false,
                 named: false,
                 slurpy: false,
@@ -336,6 +337,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             ParamDef {
                 name,
                 default: None,
+                multi_invocant: true,
                 required: false,
                 named: false,
                 slurpy: false,
@@ -409,6 +411,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         ParamDef {
             name,
             default: None,
+            multi_invocant: true,
             required: false,
             named: false,
             slurpy: false,
@@ -471,6 +474,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             ParamDef {
                 name,
                 default: None,
+                multi_invocant: true,
                 required: false,
                 named: false,
                 slurpy: false,
@@ -557,6 +561,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         ParamDef {
             name,
             default,
+            multi_invocant: true,
             required: false,
             named: false,
             slurpy: false,
