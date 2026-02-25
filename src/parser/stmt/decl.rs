@@ -254,9 +254,12 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         }
         return Ok((r, stmt));
     }
-    // my regex Name { ... }
+    // my regex/token/rule Name { ... }
     // Reuse token/regex/rule declaration parsing so `<Name>` works in regexes.
-    if keyword("regex", rest).is_some() {
+    if keyword("regex", rest).is_some()
+        || keyword("token", rest).is_some()
+        || keyword("rule", rest).is_some()
+    {
         let (rest, stmt) = super::class::token_decl(rest)?;
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);

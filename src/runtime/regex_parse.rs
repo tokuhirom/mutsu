@@ -842,6 +842,29 @@ impl Interpreter {
                         }
                     }
                 }
+                '{' => {
+                    // Code block in regex: { ... }
+                    let mut code = String::new();
+                    let mut depth = 1usize;
+                    for ch in chars.by_ref() {
+                        if ch == '{' {
+                            depth += 1;
+                            code.push(ch);
+                        } else if ch == '}' {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
+                            }
+                            code.push(ch);
+                        } else {
+                            code.push(ch);
+                        }
+                    }
+                    RegexAtom::CodeAssertion {
+                        code,
+                        negated: false,
+                    }
+                }
                 other => RegexAtom::Literal(other),
             };
             let mut quant = RegexQuant::One;

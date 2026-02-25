@@ -421,7 +421,7 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         let (r, _) = ws(after_paren)?;
         let (r, first) = expression(r)?;
         let (r, _) = ws(r)?;
-        // Check for separated list: :name(a, b, ...) or :name(a; b; ...)
+        // Check for separated list: :name(a, b, ...) or :name(a; b; ...) or :name(a,)
         if r.starts_with(',') || (r.starts_with(';') && !r.starts_with(";;")) {
             let mut items = vec![first];
             let mut r = r;
@@ -429,6 +429,11 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 let sep = if r.starts_with(',') { ',' } else { ';' };
                 let (r2, _) = parse_char(r, sep)?;
                 let (r2, _) = ws(r2)?;
+                // Trailing comma: :name(a,)
+                if r2.starts_with(')') {
+                    r = r2;
+                    break;
+                }
                 let (r2, next) = expression(r2)?;
                 let (r2, _) = ws(r2)?;
                 items.push(next);
@@ -917,6 +922,19 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             body,
         })),
     ))
+}
+
+/// Parse an anonymous grammar expression: `grammar { ... }`
+pub(super) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
+    let rest = keyword("grammar", input).ok_or_else(|| PError::expected("anonymous grammar"))?;
+    let (rest, _) = ws(rest)?;
+    if !rest.starts_with('{') {
+        return Err(PError::expected("'{' for anonymous grammar"));
+    }
+    let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let name = format!("__ANON_GRAMMAR_{id}__");
+    let (rest, body) = parse_block_body(rest)?;
+    Ok((rest, Expr::DoStmt(Box::new(Stmt::Package { name, body }))))
 }
 
 /// Parse an anonymous role expression: `role { ... }`

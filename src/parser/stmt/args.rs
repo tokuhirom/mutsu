@@ -210,7 +210,7 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
             ) {
                 // Not a named arg, fall through to positional
             } else {
-                // :name(expr)
+                // :name(expr) or :name(expr,) or :name(expr1, expr2, ...)
                 if r.starts_with('(') {
                     let (r, _) = parse_char(r, '(')?;
                     let (r, _) = ws(r)?;
@@ -222,6 +222,37 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                         remaining_len: err.remaining_len.or(Some(r.len())),
                     })?;
                     let (r, _) = ws(r)?;
+                    // Check for comma — makes a list: :name(a, b) or :name(a,)
+                    if r.starts_with(',') {
+                        let mut items = vec![val];
+                        let mut r = r;
+                        while r.starts_with(',') {
+                            let (r2, _) = parse_char(r, ',')?;
+                            let (r2, _) = ws(r2)?;
+                            if r2.starts_with(')') {
+                                r = r2;
+                                break;
+                            }
+                            let (r2, next) = expression(r2).map_err(|err| PError {
+                                messages: merge_expected_messages(
+                                    "expected list item in named argument",
+                                    &err.messages,
+                                ),
+                                remaining_len: err.remaining_len.or(Some(r2.len())),
+                            })?;
+                            let (r2, _) = ws(r2)?;
+                            items.push(next);
+                            r = r2;
+                        }
+                        let (r, _) = parse_char(r, ')')?;
+                        return Ok((
+                            r,
+                            CallArg::Named {
+                                name,
+                                value: Some(Expr::ArrayLiteral(items)),
+                            },
+                        ));
+                    }
                     let (r, _) = parse_char(r, ')')?;
                     return Ok((
                         r,
