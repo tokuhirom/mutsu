@@ -147,6 +147,7 @@ struct RegexToken {
     atom: RegexAtom,
     quant: RegexQuant,
     named_capture: Option<String>,
+    ratchet: bool,
 }
 
 #[derive(Clone)]

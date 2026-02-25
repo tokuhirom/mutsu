@@ -365,6 +365,20 @@ mod tests {
     }
 
     #[test]
+    fn primary_parses_array_match_var() {
+        let (rest, expr) = primary("@$/").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::ArrayVar(ref n) if n == "/"));
+    }
+
+    #[test]
+    fn primary_parses_hash_match_var() {
+        let (rest, expr) = primary("%$/").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(expr, Expr::HashVar(ref n) if n == "/"));
+    }
+
+    #[test]
     fn primary_reports_invalid_qualified_identifier_tail() {
         let (rest, expr) = primary("Foo::").unwrap();
         assert_eq!(rest, "");

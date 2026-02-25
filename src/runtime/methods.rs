@@ -1148,40 +1148,88 @@ impl Interpreter {
                 }
             }
             "match" => {
-                if let Some(pattern) = args.first() {
-                    let text = target.to_string_value();
-                    return match pattern {
-                        Value::Regex(pat) | Value::Str(pat) => {
-                            if let Some(captures) = self.regex_match_with_captures(pat, &text) {
-                                let matched = captures.matched.clone();
-                                let from = captures.from as i64;
-                                let to = captures.to as i64;
-                                for (i, v) in captures.positional.iter().enumerate() {
-                                    self.env.insert(i.to_string(), Value::Str(v.clone()));
-                                }
-                                for (k, v) in &captures.named {
-                                    let value = if v.len() == 1 {
-                                        Value::Str(v[0].clone())
-                                    } else {
-                                        Value::array(v.iter().cloned().map(Value::Str).collect())
-                                    };
-                                    self.env.insert(format!("<{}>", k), value);
-                                }
-                                Ok(Value::make_match_object_with_captures(
-                                    matched,
-                                    from,
-                                    to,
-                                    &captures.positional,
-                                    &captures.named,
-                                ))
-                            } else {
-                                Ok(Value::Nil)
-                            }
-                        }
-                        _ => Ok(Value::Nil),
-                    };
+                if args.is_empty() {
+                    return Ok(Value::Nil);
                 }
-                return Ok(Value::Nil);
+                let text = target.to_string_value();
+                let mut overlap = false;
+                let mut pattern_arg: Option<&Value> = None;
+                for arg in &args {
+                    if let Value::Pair(key, value) = arg {
+                        if (key == "ov" || key == "overlap") && value.truthy() {
+                            overlap = true;
+                        }
+                        continue;
+                    }
+                    if pattern_arg.is_none() {
+                        pattern_arg = Some(arg);
+                    }
+                }
+                let Some(pattern) = pattern_arg else {
+                    return Ok(Value::Nil);
+                };
+                return match pattern {
+                    Value::Regex(pat) | Value::Str(pat) => {
+                        if overlap {
+                            let all = self.regex_match_all_with_captures(pat, &text);
+                            if all.is_empty() {
+                                return Ok(Value::Nil);
+                            }
+                            let mut best_by_start: std::collections::BTreeMap<
+                                usize,
+                                RegexCaptures,
+                            > = std::collections::BTreeMap::new();
+                            for capture in all {
+                                let key = capture.from;
+                                match best_by_start.get(&key) {
+                                    Some(existing) if capture.to <= existing.to => {}
+                                    _ => {
+                                        best_by_start.insert(key, capture);
+                                    }
+                                }
+                            }
+                            let matches = best_by_start
+                                .into_values()
+                                .map(|c| {
+                                    Value::make_match_object_with_captures(
+                                        c.matched,
+                                        c.from as i64,
+                                        c.to as i64,
+                                        &c.positional,
+                                        &c.named,
+                                    )
+                                })
+                                .collect::<Vec<_>>();
+                            return Ok(Value::array(matches));
+                        }
+                        if let Some(captures) = self.regex_match_with_captures(pat, &text) {
+                            let matched = captures.matched.clone();
+                            let from = captures.from as i64;
+                            let to = captures.to as i64;
+                            for (i, v) in captures.positional.iter().enumerate() {
+                                self.env.insert(i.to_string(), Value::Str(v.clone()));
+                            }
+                            for (k, v) in &captures.named {
+                                let value = if v.len() == 1 {
+                                    Value::Str(v[0].clone())
+                                } else {
+                                    Value::array(v.iter().cloned().map(Value::Str).collect())
+                                };
+                                self.env.insert(format!("<{}>", k), value);
+                            }
+                            Ok(Value::make_match_object_with_captures(
+                                matched,
+                                from,
+                                to,
+                                &captures.positional,
+                                &captures.named,
+                            ))
+                        } else {
+                            Ok(Value::Nil)
+                        }
+                    }
+                    _ => Ok(Value::Nil),
+                };
             }
             "subst" => {
                 return self.dispatch_subst(target, &args);
