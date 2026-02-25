@@ -835,7 +835,7 @@ impl Interpreter {
                             .unwrap_or(false),
                         expr => self
                             .eval_block_value(&[Stmt::Expr(expr.clone())])
-                            .map(|v| v.truthy())
+                            .map(|v| self.smart_match(arg, &v))
                             .unwrap_or(false),
                     };
                     self.env = saved;
