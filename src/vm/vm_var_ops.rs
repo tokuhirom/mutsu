@@ -1030,14 +1030,16 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
         let val = self.locals[idx].clone();
-        let name = code.locals.get(idx).cloned().unwrap_or_default();
-        let env_has_name = self.interpreter.env().contains_key(&name);
-        let is_internal = name.starts_with("__");
-        let is_special = matches!(name.as_str(), "_" | "/" | "!" | "¢");
-        if !env_has_name && !is_internal && !is_special && matches!(val, Value::Nil) {
-            return Err(RuntimeError::new(format!(
-                "X::Undeclared::Symbols: Variable '{name}' is not declared"
-            )));
+        // Fast path: non-Nil values are always valid — skip env lookup
+        if matches!(val, Value::Nil) {
+            let name = code.locals.get(idx).cloned().unwrap_or_default();
+            let is_internal = name.starts_with("__");
+            let is_special = matches!(name.as_str(), "_" | "/" | "!" | "¢");
+            if !is_internal && !is_special && !self.interpreter.env().contains_key(&name) {
+                return Err(RuntimeError::new(format!(
+                    "X::Undeclared::Symbols: Variable '{name}' is not declared"
+                )));
+            }
         }
         self.stack.push(val);
         Ok(())
