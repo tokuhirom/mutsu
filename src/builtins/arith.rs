@@ -207,7 +207,21 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
                 (Value::Int(_), Value::Int(0)) => {
                     return Err(RuntimeError::new("Modulo by zero"));
                 }
+                (Value::BigInt(_), Value::Int(0)) => {
+                    return Err(RuntimeError::new("Modulo by zero"));
+                }
+                (Value::Int(_), Value::BigInt(b)) if b == num_bigint::BigInt::from(0) => {
+                    return Err(RuntimeError::new("Modulo by zero"));
+                }
+                (Value::BigInt(_), Value::BigInt(b)) if b == num_bigint::BigInt::from(0) => {
+                    return Err(RuntimeError::new("Modulo by zero"));
+                }
                 (Value::Int(a), Value::Int(b)) => Value::Int(a % b),
+                (Value::BigInt(a), Value::Int(b)) => Value::from_bigint(a % b),
+                (Value::Int(a), Value::BigInt(b)) => {
+                    Value::from_bigint(num_bigint::BigInt::from(a) % b)
+                }
+                (Value::BigInt(a), Value::BigInt(b)) => Value::from_bigint(a % b),
                 (Value::Num(a), Value::Num(b)) => Value::Num(a % b),
                 (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 % b),
                 (Value::Num(a), Value::Int(b)) => Value::Num(a % b as f64),
@@ -219,7 +233,21 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
             (Value::Int(_), Value::Int(0)) => {
                 return Err(RuntimeError::new("Modulo by zero"));
             }
+            (Value::BigInt(_), Value::Int(0)) => {
+                return Err(RuntimeError::new("Modulo by zero"));
+            }
+            (Value::Int(_), Value::BigInt(b)) if b == num_bigint::BigInt::from(0) => {
+                return Err(RuntimeError::new("Modulo by zero"));
+            }
+            (Value::BigInt(_), Value::BigInt(b)) if b == num_bigint::BigInt::from(0) => {
+                return Err(RuntimeError::new("Modulo by zero"));
+            }
             (Value::Int(a), Value::Int(b)) => Value::Int(a % b),
+            (Value::BigInt(a), Value::Int(b)) => Value::from_bigint(a % b),
+            (Value::Int(a), Value::BigInt(b)) => {
+                Value::from_bigint(num_bigint::BigInt::from(a) % b)
+            }
+            (Value::BigInt(a), Value::BigInt(b)) => Value::from_bigint(a % b),
             (Value::Num(a), Value::Num(b)) => Value::Num(a % b),
             (Value::Int(a), Value::Num(b)) => Value::Num(a as f64 % b),
             (Value::Num(a), Value::Int(b)) => Value::Num(a % b as f64),
@@ -276,7 +304,30 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                 }
             }
             (Value::Num(a), Value::Int(b)) => Value::Num(a.powi(b as i32)),
-            (Value::Int(a), Value::Num(b)) => Value::Num((a as f64).powf(b)),
+            (Value::Int(a), Value::Num(b)) => {
+                if b.is_finite() && b.fract() == 0.0 && b >= i32::MIN as f64 && b <= i32::MAX as f64
+                {
+                    let exp_i = b as i32;
+                    if exp_i >= 0 {
+                        let exp_u = exp_i as u32;
+                        if let Some(result) = a.checked_pow(exp_u) {
+                            Value::Int(result)
+                        } else {
+                            use num_bigint::BigInt;
+                            Value::BigInt(BigInt::from(a).pow(exp_u))
+                        }
+                    } else {
+                        let pos = (-exp_i) as u32;
+                        if let Some(base) = a.checked_pow(pos) {
+                            make_rat(1, base)
+                        } else {
+                            Value::Num(1.0 / (a as f64).powi(pos as i32))
+                        }
+                    }
+                } else {
+                    Value::Num((a as f64).powf(b))
+                }
+            }
             (Value::Num(a), Value::Num(b)) => Value::Num(a.powf(b)),
             _ => Value::Int(0),
         }
