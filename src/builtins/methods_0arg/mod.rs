@@ -10,7 +10,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use super::rng::builtin_rand;
 use super::unicode::titlecase_string;
 
-mod coercion;
+pub(crate) mod coercion;
 mod collection;
 
 // ── 0-arg method dispatch ────────────────────────────────────────────

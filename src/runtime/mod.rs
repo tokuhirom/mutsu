@@ -923,6 +923,16 @@ impl Interpreter {
                 ],
             },
         );
+        classes.insert(
+            "X::Numeric::Real".to_string(),
+            ClassDef {
+                parents: vec!["Exception".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["X::Numeric::Real".to_string(), "Exception".to_string()],
+            },
+        );
         let mut interpreter = Self {
             env,
             output: String::new(),
