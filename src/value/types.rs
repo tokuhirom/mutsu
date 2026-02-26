@@ -179,8 +179,14 @@ impl Value {
             Value::Instance { class_name, .. } => class_name.as_str(),
             Value::Package(name) => name.as_str(),
             Value::Enum { enum_type, .. } => enum_type.as_str(),
-            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => "Sub",
-            Value::Regex(_) | Value::RegexWithAdverbs { .. } => "Regex",
+            Value::Sub(_)
+            | Value::WeakSub(_)
+            | Value::Routine {
+                is_regex: false, ..
+            } => "Sub",
+            Value::Regex(_)
+            | Value::RegexWithAdverbs { .. }
+            | Value::Routine { is_regex: true, .. } => "Regex",
             Value::Junction { .. } => "Junction",
             Value::Version { .. } => "Version",
             Value::Slip(_) => "Slip",

@@ -366,6 +366,20 @@ impl Interpreter {
         out
     }
 
+    /// Extract the regex pattern string from a named token/regex definition.
+    /// Returns `Some(pattern)` if the token body contains a single regex literal.
+    fn extract_token_regex_pattern(&self, name: &str) -> Option<String> {
+        let defs = self.resolve_token_defs(name)?;
+        let def = defs.first()?;
+        // Look for a body consisting of a single Expr(Literal(Regex(pat)))
+        if def.body.len() == 1
+            && let Stmt::Expr(Expr::Literal(Value::Regex(pat))) = &def.body[0]
+        {
+            return Some(pat.clone());
+        }
+        None
+    }
+
     pub(super) fn smart_match(&mut self, left: &Value, right: &Value) -> bool {
         match (left, right) {
             (Value::Version { .. }, Value::Version { parts, plus, minus }) => {
@@ -381,6 +395,54 @@ impl Interpreter {
                     return result.truthy();
                 }
                 match self.call_sub_value(func, vec![], false) {
+                    Ok(result) => result.truthy(),
+                    Err(_) => false,
+                }
+            }
+            // Named regex/token used as smartmatch RHS — perform regex match
+            (
+                _,
+                Value::Routine {
+                    is_regex: true,
+                    name,
+                    package,
+                },
+            ) => {
+                // Look up the token def and extract the regex pattern from its body
+                let qualified = format!("{}::{}", package, name);
+                if let Some(pat) = self
+                    .extract_token_regex_pattern(&qualified)
+                    .or_else(|| self.extract_token_regex_pattern(name))
+                {
+                    let text = left.to_string_value();
+                    if let Some(captures) = self.regex_match_with_captures(&pat, &text) {
+                        let match_obj = Value::make_match_object_with_captures(
+                            captures.matched.clone(),
+                            captures.from as i64,
+                            captures.to as i64,
+                            &captures.positional,
+                            &captures.named,
+                        );
+                        self.env.insert("/".to_string(), match_obj);
+                        for (i, v) in captures.positional.iter().enumerate() {
+                            self.env.insert(i.to_string(), Value::Str(v.clone()));
+                        }
+                        for (k, v) in &captures.named {
+                            let value = if v.len() == 1 {
+                                Value::Str(v[0].clone())
+                            } else {
+                                Value::array(v.iter().cloned().map(Value::Str).collect())
+                            };
+                            self.env.insert(format!("<{}>", k), value);
+                        }
+                        return true;
+                    }
+                    self.env.insert("/".to_string(), Value::Nil);
+                    return false;
+                }
+                // Fallback: call as sub
+                let func = right.clone();
+                match self.call_sub_value(func, vec![left.clone()], false) {
                     Ok(result) => result.truthy(),
                     Err(_) => false,
                 }
