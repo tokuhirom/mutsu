@@ -1215,8 +1215,8 @@ impl VM {
                 self.exec_exists_expr_op();
                 *ip += 1;
             }
-            OpCode::ExistsIndexExpr => {
-                self.exec_exists_index_expr_op();
+            OpCode::ExistsIndexAdv(flags) => {
+                self.exec_exists_index_adv_op(*flags)?;
                 *ip += 1;
             }
 

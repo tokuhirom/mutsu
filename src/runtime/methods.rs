@@ -124,8 +124,14 @@ impl Interpreter {
                 Expr::Unary { expr, .. }
                 | Expr::PostfixOp { expr, .. }
                 | Expr::AssignExpr { expr, .. }
-                | Expr::Exists(expr)
+                | Expr::ZenSlice(expr)
                 | Expr::Reduction { expr, .. } => scan_expr(expr, positional, named),
+                Expr::Exists { target, arg, .. } => {
+                    scan_expr(target, positional, named);
+                    if let Some(a) = arg {
+                        scan_expr(a, positional, named);
+                    }
+                }
                 Expr::MethodCall { target, args, .. }
                 | Expr::DynamicMethodCall { target, args, .. }
                 | Expr::HyperMethodCall { target, args, .. } => {

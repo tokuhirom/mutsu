@@ -376,7 +376,12 @@ pub(crate) enum OpCode {
     // -- Exists check --
     ExistsEnvIndex(u32),
     ExistsExpr,
-    ExistsIndexExpr,
+    /// Rich :exists adverb with flags.
+    /// Stack: [target, index] or [target, index, arg] or [target] (zen).
+    /// Flags: bit0=negated, bit1=has_arg, bit2=is_zen,
+    ///        bits 4-7=adverb (0=None,1=Kv,2=NotKv,3=P,4=NotP,5=NotV,
+    ///                         6=InvalidK,7=InvalidNotK,8=InvalidV)
+    ExistsIndexAdv(u32),
 
     // -- Reduction ([+] @arr) --
     Reduction(u32),
