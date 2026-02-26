@@ -150,8 +150,8 @@ impl VM {
         let left = self.stack.pop().unwrap();
         self.stack.push(Value::Str(format!(
             "{}{}",
-            left.to_string_value(),
-            right.to_string_value()
+            crate::runtime::utils::coerce_to_str(&left),
+            crate::runtime::utils::coerce_to_str(&right)
         )));
     }
 

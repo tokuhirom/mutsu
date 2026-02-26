@@ -308,7 +308,14 @@ impl Interpreter {
             // I/O functions
             "warn" => self.builtin_warn(&args),
             "print" | "say" | "put" | "note" => self.builtin_print(name, &args),
-            "sink" => Ok(Value::Nil), // sink evaluates args (already done) and returns Nil
+            "sink" => {
+                // sink evaluates args and returns Nil.
+                // If the argument is a block/sub, call it first.
+                if let Some(func @ Value::Sub(_)) = args.first() {
+                    self.call_sub_value(func.clone(), Vec::new(), false)?;
+                }
+                Ok(Value::Nil)
+            }
             "quietly" => {
                 let Some(first) = args.first().cloned() else {
                     return Ok(Value::Nil);

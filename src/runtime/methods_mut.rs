@@ -398,6 +398,16 @@ impl Interpreter {
             );
             return Ok(Value::make_instance(class_name.to_string(), attributes));
         }
+        // .of returns the element type constraint of a container
+        if method == "of"
+            && args.is_empty()
+            && (target_var.starts_with('@') || target_var.starts_with('%'))
+        {
+            let type_name = self
+                .var_type_constraint(target_var)
+                .unwrap_or_else(|| "Mu".to_string());
+            return Ok(Value::Package(type_name));
+        }
         if target_var.starts_with('@') {
             // Check for shaped (multidimensional) arrays - these don't support
             // mutating operations like push/pop/shift/unshift/splice/append/prepend
@@ -458,8 +468,9 @@ impl Interpreter {
                     };
                     let mut pref = args;
                     pref.extend(items);
+                    let result = Value::array(pref.clone());
                     self.env.insert(key, Value::array(pref));
-                    return Ok(Value::Nil);
+                    return Ok(result);
                 }
                 "pop" => {
                     let mut items = match self.env.get(&key) {
