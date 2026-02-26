@@ -416,7 +416,7 @@ impl Value {
                 let args: Vec<String> = type_args.iter().map(|a| a.to_string_value()).collect();
                 format!("({}[{}])", base_name, args.join(","))
             }
-            Value::Routine { package, name } => format!("{}::{}", package, name),
+            Value::Routine { package, name, .. } => format!("{}::{}", package, name),
             Value::Sub(data) => data.name.clone(),
             Value::WeakSub(weak) => match weak.upgrade() {
                 Some(data) => data.name.clone(),
