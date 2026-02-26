@@ -133,21 +133,19 @@ impl Interpreter {
                     out.push(arg.clone());
                 }
                 Value::ValuePair(key, value) => {
-                    if let Value::Str(name) = key.as_ref() {
-                        if name == TEST_CALLSITE_LINE_KEY {
-                            callsite_line = match value.as_ref() {
-                                Value::Int(i) => Some(*i),
-                                Value::BigInt(i) => i.to_string().parse::<i64>().ok(),
-                                Value::Num(n) => Some(*n as i64),
-                                Value::Str(s) => s.parse::<i64>().ok(),
-                                _ => None,
-                            };
-                            continue;
-                        }
-                        // Normalize named call args represented as ValuePair(Str, value).
-                        out.push(Value::Pair(name.clone(), value.clone()));
+                    if let Value::Str(name) = key.as_ref()
+                        && name == TEST_CALLSITE_LINE_KEY
+                    {
+                        callsite_line = match value.as_ref() {
+                            Value::Int(i) => Some(*i),
+                            Value::BigInt(i) => i.to_string().parse::<i64>().ok(),
+                            Value::Num(n) => Some(*n as i64),
+                            Value::Str(s) => s.parse::<i64>().ok(),
+                            _ => None,
+                        };
                         continue;
                     }
+                    // ValuePair is kept as-is (positional pair, e.g. from (:a(3)))
                     out.push(arg.clone());
                 }
                 _ => out.push(arg.clone()),

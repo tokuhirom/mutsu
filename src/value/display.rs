@@ -300,11 +300,14 @@ impl Value {
                 .collect::<Vec<_>>()
                 .join(" "),
             Value::LazyList(_) => "LazyList".to_string(),
-            Value::Hash(items) => items
-                .iter()
-                .map(|(k, v)| format!("{}\t{}", k, v.to_string_value()))
-                .collect::<Vec<_>>()
-                .join("\n"),
+            Value::Hash(items) => {
+                let mut pairs: Vec<_> = items
+                    .iter()
+                    .map(|(k, v)| format!("{}\t{}", k, v.to_string_value()))
+                    .collect();
+                pairs.sort();
+                pairs.join("\n")
+            }
             Value::Rat(n, d) => {
                 if *d == 0 {
                     if *n == 0 {

@@ -358,21 +358,72 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         }
     }
     // :123name (numeric leading-value pair) => :name(123)
-    let digit_end = r.find(|c: char| !c.is_ascii_digit()).unwrap_or(r.len());
-    if digit_end > 0 && digit_end < r.len() {
-        let digits = &r[..digit_end];
-        let after_digits = &r[digit_end..];
-        if let Ok((rest, name)) = parse_ident_with_hyphens(after_digits)
-            && let Ok(n) = digits.parse::<i64>()
-        {
-            return Ok((
-                rest,
-                Expr::Binary {
-                    left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
-                    op: crate::token_kind::TokenKind::FatArrow,
-                    right: Box::new(Expr::Literal(Value::Int(n))),
-                },
-            ));
+    // Handles ASCII digits and Unicode Nd (decimal digit) characters
+    {
+        let mut digit_end = 0;
+        let mut numeric_value: Option<i64> = Some(0);
+        let mut use_bigint = false;
+        for c in r.chars() {
+            let dv = if c.is_ascii_digit() {
+                Some(c as u32 - '0' as u32)
+            } else {
+                crate::builtins::unicode::unicode_decimal_digit_value(c)
+            };
+            if let Some(d) = dv {
+                if let Some(ref mut v) = numeric_value {
+                    match v.checked_mul(10).and_then(|v2| v2.checked_add(d as i64)) {
+                        Some(new_v) => *v = new_v,
+                        None => use_bigint = true,
+                    }
+                }
+                digit_end += c.len_utf8();
+            } else {
+                break;
+            }
+        }
+        if digit_end > 0 && digit_end < r.len() {
+            let digits_str = &r[..digit_end];
+            let after_digits = &r[digit_end..];
+            if let Ok((rest, name)) = parse_ident_with_hyphens(after_digits) {
+                let val = if use_bigint {
+                    // Parse as BigInt for numbers that overflow i64
+                    // Collect decimal digit values and build the number string
+                    let digit_string: String = digits_str
+                        .chars()
+                        .filter_map(|c| {
+                            let dv = if c.is_ascii_digit() {
+                                Some(c as u32 - '0' as u32)
+                            } else {
+                                crate::builtins::unicode::unicode_decimal_digit_value(c)
+                            };
+                            dv.map(|d| char::from_digit(d, 10).unwrap())
+                        })
+                        .collect();
+                    if let Ok(n) = digit_string.parse::<num_bigint::BigInt>() {
+                        Value::BigInt(n)
+                    } else {
+                        Value::Int(0)
+                    }
+                } else if numeric_value.is_some() {
+                    Value::Int(numeric_value.unwrap())
+                } else {
+                    Value::Int(0)
+                };
+                // Numeric adverb can't have an extra value: :69th($_) is an error
+                if rest.starts_with('(') {
+                    return Err(PError::expected(
+                        "no extra argument for numeric colonpair (pair already has a numeric value)",
+                    ));
+                }
+                return Ok((
+                    rest,
+                    Expr::Binary {
+                        left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
+                        op: crate::token_kind::TokenKind::FatArrow,
+                        right: Box::new(Expr::Literal(val)),
+                    },
+                ));
+            }
         }
     }
     // :!name (negated boolean pair)
@@ -387,24 +438,62 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    // :$var / :@var / :%var (autopair from variable)
-    if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') {
+    // :$var / :@var / :%var / :&var (autopair from variable, with twigil support)
+    if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') || r.starts_with('&') {
         let sigil = &r[..1];
         let after_sigil = &r[1..];
-        let (mut rest, var_name) = parse_ident_with_hyphens(after_sigil)?;
-        if rest.starts_with('?') || rest.starts_with('!') {
+        // Handle $<name> / @<name> / %<name> capture variable twigils
+        if (sigil == "$" || sigil == "@" || sigil == "%")
+            && after_sigil.starts_with('<')
+            && let Some(end) = after_sigil[1..].find('>')
+        {
+            let name = &after_sigil[1..1 + end];
+            let rest = &after_sigil[1 + end + 1..];
+            let var_expr = Expr::CaptureVar(name.to_string());
+            return Ok((
+                rest,
+                Expr::Binary {
+                    left: Box::new(Expr::Literal(Value::Str(name.to_string()))),
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    right: Box::new(var_expr),
+                },
+            ));
+        }
+        // Check for twigils: *, ?, ^, =, ~, :
+        let (after_twigil, twigil) = if after_sigil.starts_with('*')
+            || after_sigil.starts_with('?')
+            || after_sigil.starts_with('^')
+            || after_sigil.starts_with('=')
+            || after_sigil.starts_with('~')
+        {
+            (&after_sigil[1..], &after_sigil[..1])
+        } else if after_sigil.starts_with(':') && !after_sigil.starts_with("::") {
+            (&after_sigil[1..], ":")
+        } else {
+            (after_sigil, "")
+        };
+        let (mut rest, var_name) = parse_ident_with_hyphens(after_twigil)?;
+        // Strip trailing ? or ! for adverb pair forms (:name? :name!)
+        if twigil.is_empty() && (rest.starts_with('?') || rest.starts_with('!')) {
             rest = &rest[1..];
         }
+        let key = var_name.to_string();
+        let full_var_name = if twigil.is_empty() {
+            var_name.to_string()
+        } else {
+            format!("{}{}", twigil, var_name)
+        };
         let var_expr = match sigil {
-            "$" => Expr::Var(var_name.to_string()),
-            "@" => Expr::ArrayVar(var_name.to_string()),
-            "%" => Expr::HashVar(var_name.to_string()),
+            "$" => Expr::Var(full_var_name),
+            "@" => Expr::ArrayVar(full_var_name),
+            "%" => Expr::HashVar(full_var_name),
+            "&" => Expr::CodeVar(full_var_name),
             _ => unreachable!(),
         };
         return Ok((
             rest,
             Expr::Binary {
-                left: Box::new(Expr::Literal(Value::Str(var_name.to_string()))),
+                left: Box::new(Expr::Literal(Value::Str(key))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(var_expr),
             },
@@ -1047,14 +1136,34 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
         }
     }
 
-    // :$var / :@var / :%var
-    if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') {
+    // :$var / :@var / :%var / :&var (with twigil support)
+    if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') || r.starts_with('&') {
         let sigil = &r[..1];
-        let (r, name) = super::super::stmt::ident_pub(&r[1..])?;
+        let after_sigil = &r[1..];
+        // Check for twigils: *, ?, ^, =, ~, :
+        let (after_twigil, twigil) = if after_sigil.starts_with('*')
+            || after_sigil.starts_with('?')
+            || after_sigil.starts_with('^')
+            || after_sigil.starts_with('=')
+            || after_sigil.starts_with('~')
+        {
+            (&after_sigil[1..], &after_sigil[..1])
+        } else if after_sigil.starts_with(':') && !after_sigil.starts_with("::") {
+            (&after_sigil[1..], ":")
+        } else {
+            (after_sigil, "")
+        };
+        let (r, name) = super::super::stmt::ident_pub(after_twigil)?;
+        let full_var_name = if twigil.is_empty() {
+            name.clone()
+        } else {
+            format!("{}{}", twigil, name)
+        };
         let expr = match sigil {
-            "$" => Expr::Var(name.clone()),
-            "@" => Expr::ArrayVar(name.clone()),
-            "%" => Expr::HashVar(name.clone()),
+            "$" => Expr::Var(full_var_name),
+            "@" => Expr::ArrayVar(full_var_name),
+            "%" => Expr::HashVar(full_var_name),
+            "&" => Expr::CodeVar(full_var_name),
             _ => unreachable!(),
         };
         return Ok((r, (name, Some(expr))));
