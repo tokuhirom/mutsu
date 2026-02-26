@@ -1,5 +1,5 @@
 use Test;
-plan 10;
+plan 12;
 
 my $a = 0;
 $a = 1 if True;
@@ -46,3 +46,14 @@ is $e, 4, "postfix until";
 }
 
 is (1, 2, unless 0), "1 2", "unless terminates expression list after comma";
+
+is-deeply (42 if 0), Empty, "false postfix if expression returns Empty";
+
+{
+    my $called = False;
+    my module M {
+        our sub foo() { $called = True; }
+    }
+    M::foo if True;
+    ok $called, "qualified list-op call in postfix if executes";
+}

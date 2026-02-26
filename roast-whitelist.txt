@@ -117,6 +117,7 @@ roast/S03-smartmatch/signature-signature.t
 roast/S04-exception-handlers/top-level.t
 roast/S04-exceptions/control_across_runloop.t
 roast/S04-statement-modifiers/given.t
+roast/S04-statement-modifiers/if.t
 roast/S04-statement-modifiers/unless.t
 roast/S04-statement-modifiers/until.t
 roast/S04-statement-modifiers/values_in_bool_context.t

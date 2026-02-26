@@ -367,10 +367,32 @@ impl VM {
                 || Self::is_builtin_type(name)
             {
                 Value::Package(name.to_string())
+            } else if !name.starts_with('$')
+                && !name.starts_with('@')
+                && !name.starts_with('%')
+                && matches!(v, Value::Routine { .. } | Value::Sub(_) | Value::WeakSub(_))
+            {
+                let result = self.interpreter.call_function(name, Vec::new())?;
+                self.sync_locals_from_env(code);
+                result
             } else if !name.starts_with('$') && !name.starts_with('@') && !name.starts_with('%') {
                 v.clone()
             } else {
                 Value::Str(name.to_string())
+            }
+        } else if name.contains("::")
+            && let Some(def) = self.interpreter.resolve_function_with_types(name, &[])
+        {
+            if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
+                let pkg = def.package.clone();
+                let result =
+                    self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?;
+                self.sync_locals_from_env(code);
+                result
+            } else {
+                let result = self.interpreter.call_function_def(&def, &[])?;
+                self.sync_locals_from_env(code);
+                result
             }
         } else if self.interpreter.has_class(name)
             || self.interpreter.is_role(name)
