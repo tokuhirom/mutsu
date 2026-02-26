@@ -320,6 +320,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
 /// Complex with non-zero imaginary throws X::Numeric::Real.
 /// Str, Num, Rat, FatRat coerce to Int first.
 pub(crate) fn value_is_prime(target: &Value) -> Result<Value, RuntimeError> {
+    // Unwrap allomorphic types (Mixin) to the inner numeric value
+    if let Value::Mixin(inner, _) = target {
+        return value_is_prime(inner);
+    }
     match target {
         Value::Int(n) => {
             if *n < 0 {

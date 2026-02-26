@@ -571,6 +571,7 @@ impl Value {
             Value::Promise(p) => format!("Promise({})", p.status()),
             Value::Channel(_) => "Channel".to_string(),
             Value::Nil => String::new(),
+            Value::Whatever => "*".to_string(),
             Value::HyperWhatever => "**".to_string(),
             Value::Capture { positional, named } => {
                 let mut parts = Vec::new();

@@ -4,7 +4,7 @@ impl Compiler {
     pub(super) fn compile_expr(&mut self, expr: &Expr) {
         match expr {
             Expr::Whatever => {
-                let idx = self.code.add_constant(Value::Num(f64::INFINITY));
+                let idx = self.code.add_constant(Value::Whatever);
                 self.code.emit(OpCode::LoadConst(idx));
             }
             Expr::HyperWhatever => {

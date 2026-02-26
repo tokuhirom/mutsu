@@ -1276,6 +1276,7 @@ impl Interpreter {
                     Value::Seq(_) => "Seq",
                     Value::Promise(_) => "Promise",
                     Value::Channel(_) => "Channel",
+                    Value::Whatever => "Whatever",
                     Value::HyperWhatever => "HyperWhatever",
                     Value::Capture { .. } => "Capture",
                     Value::Uni { form, .. } => form.as_str(),
@@ -5823,6 +5824,12 @@ impl Interpreter {
                     }
                     rotor_specs.push(RotorSpec {
                         count: RotorCount::Fixed(count as usize),
+                        gap: 0,
+                    });
+                }
+                Value::Whatever => {
+                    rotor_specs.push(RotorSpec {
+                        count: RotorCount::Inf,
                         gap: 0,
                     });
                 }

@@ -354,7 +354,8 @@ impl Interpreter {
                 // Remaining positional args are appended after all fixed primers.
                 let mut incoming_idx = 0usize;
                 for assumed in &data.assumed_positional {
-                    let is_placeholder = matches!(assumed, Value::Num(f) if f.is_infinite())
+                    let is_placeholder = matches!(assumed, Value::Whatever)
+                        || matches!(assumed, Value::Num(f) if f.is_infinite())
                         || matches!(assumed, Value::Rat(_, 0));
                     if is_placeholder {
                         if incoming_idx < incoming_positional.len() {

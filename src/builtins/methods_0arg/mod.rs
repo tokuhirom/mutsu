@@ -886,6 +886,24 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         "so" => Some(Ok(Value::Bool(target.truthy()))),
         "not" => Some(Ok(Value::Bool(!target.truthy()))),
         "is-lazy" => Some(Ok(Value::Bool(is_value_lazy(target)))),
+        "lazy" => {
+            if is_value_lazy(target) {
+                return Some(Ok(target.clone()));
+            }
+            let items = match target {
+                Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                    items.as_ref().clone()
+                }
+                _ => return Some(Ok(target.clone())),
+            };
+            Some(Ok(Value::LazyList(std::sync::Arc::new(
+                crate::value::LazyList {
+                    body: vec![],
+                    env: std::collections::HashMap::new(),
+                    cache: std::sync::Mutex::new(Some(items)),
+                },
+            ))))
+        }
         "chomp" => Some(Ok(Value::Str(
             target.to_string_value().trim_end_matches('\n').to_string(),
         ))),

@@ -274,6 +274,36 @@ impl VM {
         f(self, left, right)
     }
 
+    /// Smartmatch with junction threading but WITHOUT forcing lazy values.
+    pub(super) fn eval_smartmatch_with_junctions(
+        &mut self,
+        left: Value,
+        right: Value,
+        negate: bool,
+    ) -> Result<Value, RuntimeError> {
+        if let Value::Junction { kind, values } = left {
+            let results: Result<Vec<Value>, RuntimeError> = values
+                .iter()
+                .cloned()
+                .map(|v| self.eval_smartmatch_with_junctions(v, right.clone(), negate))
+                .collect();
+            return Ok(Value::junction(kind, results?));
+        }
+        if let Value::Junction { kind, values } = right {
+            let results: Result<Vec<Value>, RuntimeError> = values
+                .iter()
+                .cloned()
+                .map(|v| self.eval_smartmatch_with_junctions(left.clone(), v, negate))
+                .collect();
+            return Ok(Value::junction(kind, results?));
+        }
+        if negate {
+            self.not_smart_match_op(left, right)
+        } else {
+            self.smart_match_op(left, right)
+        }
+    }
+
     pub(super) fn smart_match_op(
         &mut self,
         left: Value,

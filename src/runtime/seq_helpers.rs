@@ -52,6 +52,7 @@ impl Interpreter {
                 Some((Vec::new(), named))
             }
             Value::Instance { attributes, .. } => Some((Vec::new(), (**attributes).clone())),
+            Value::Mixin(inner, _) => Self::signature_capture_like(inner),
             _ => None,
         }
     }
@@ -381,6 +382,8 @@ impl Interpreter {
 
     pub(super) fn smart_match(&mut self, left: &Value, right: &Value) -> bool {
         match (left, right) {
+            // Whatever on RHS always matches (ACCEPTS returns True for any value)
+            (_, Value::Whatever) => true,
             (Value::Version { .. }, Value::Version { parts, plus, minus }) => {
                 Self::version_smart_match(left, parts, *plus, *minus)
             }
@@ -699,6 +702,20 @@ impl Interpreter {
             (_, Value::Hash(map)) => {
                 let key = left.to_string_value();
                 map.contains_key(&key)
+            }
+            // List/Array ~~ List/Array: element-wise smartmatch with ** support
+            (_, r) if Self::is_list_like(r) => {
+                // Non-iterable LHS: return False (don't treat scalars as a list)
+                if !Self::is_iterable(left) {
+                    return false;
+                }
+                // Lazy LHS or lazy RHS: return False (unless same object, handled by PartialEq)
+                if Self::is_lazy(left) || Self::is_lazy(right) {
+                    return Self::same_object(left, right);
+                }
+                let lhs = Self::extract_list_items(left);
+                let rhs = Self::extract_list_items(right);
+                self.list_smartmatch(&lhs, &rhs)
             }
             // Parametric role smartmatch: R1[C2] ~~ R1[C1] (subtyping)
             (
@@ -1410,5 +1427,114 @@ impl Interpreter {
             }
             _ => Value::Num(Self::seq_value_to_f64(val).unwrap_or(0.0) * ratio),
         }
+    }
+
+    /// Check if a value is list-like (Array, Seq, Slip).
+    fn is_list_like(v: &Value) -> bool {
+        matches!(
+            v,
+            Value::Array(..) | Value::Seq(_) | Value::Slip(_) | Value::LazyList(_)
+        )
+    }
+
+    /// Check if a value is iterable (can be treated as a list in smartmatch).
+    fn is_iterable(v: &Value) -> bool {
+        matches!(
+            v,
+            Value::Array(..) | Value::Seq(_) | Value::Slip(_) | Value::LazyList(_)
+        ) || v.is_range()
+    }
+
+    /// Check if a value is lazy.
+    fn is_lazy(v: &Value) -> bool {
+        matches!(v, Value::LazyList(_))
+    }
+
+    /// Check if two values are the same object (pointer equality).
+    fn same_object(a: &Value, b: &Value) -> bool {
+        match (a, b) {
+            (Value::Array(a, _), Value::Array(b, _)) => Arc::ptr_eq(a, b),
+            (Value::Seq(a), Value::Seq(b)) => Arc::ptr_eq(a, b),
+            (Value::Slip(a), Value::Slip(b)) => Arc::ptr_eq(a, b),
+            (Value::LazyList(a), Value::LazyList(b)) => Arc::ptr_eq(a, b),
+            _ => false,
+        }
+    }
+
+    /// Extract list items from a value, expanding ranges.
+    fn extract_list_items(v: &Value) -> Vec<Value> {
+        match v {
+            Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+                items.as_ref().clone()
+            }
+            r if r.is_range() => Self::value_to_list(r),
+            _ => vec![v.clone()],
+        }
+    }
+
+    /// Perform list smartmatch with ** (HyperWhatever) support.
+    /// Each RHS element is smartmatched against the corresponding LHS element.
+    /// ** matches 0 or more elements. Consecutive **s are collapsed.
+    fn list_smartmatch(&mut self, lhs: &[Value], rhs: &[Value]) -> bool {
+        // Collapse consecutive HyperWhatevers in rhs
+        let rhs_collapsed: Vec<&Value> = {
+            let mut result = Vec::new();
+            let mut prev_was_hw = false;
+            for v in rhs {
+                if matches!(v, Value::HyperWhatever) {
+                    if !prev_was_hw {
+                        result.push(v);
+                    }
+                    prev_was_hw = true;
+                } else {
+                    prev_was_hw = false;
+                    result.push(v);
+                }
+            }
+            result
+        };
+        self.list_smartmatch_recursive(lhs, 0, &rhs_collapsed, 0)
+    }
+
+    fn list_smartmatch_recursive(
+        &mut self,
+        lhs: &[Value],
+        li: usize,
+        rhs: &[&Value],
+        ri: usize,
+    ) -> bool {
+        // Both exhausted — match
+        if li == lhs.len() && ri == rhs.len() {
+            return true;
+        }
+        // RHS exhausted but LHS has more — no match
+        if ri == rhs.len() {
+            return false;
+        }
+        // RHS has ** — try matching 0..n elements from LHS
+        if matches!(rhs[ri], Value::HyperWhatever) {
+            // Try consuming 0, 1, 2, ... elements from LHS
+            for skip in 0..=(lhs.len() - li) {
+                if self.list_smartmatch_recursive(lhs, li + skip, rhs, ri + 1) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        // LHS exhausted but RHS has more non-** elements — no match
+        if li == lhs.len() {
+            return false;
+        }
+        // Match current element using smartmatch
+        if self.element_smartmatch(&lhs[li], rhs[ri]) {
+            self.list_smartmatch_recursive(lhs, li + 1, rhs, ri + 1)
+        } else {
+            false
+        }
+    }
+
+    /// Smartmatch a single element: delegate to full smartmatch.
+    fn element_smartmatch(&mut self, lhs_elem: &Value, rhs_elem: &Value) -> bool {
+        self.smart_match(lhs_elem, rhs_elem)
     }
 }

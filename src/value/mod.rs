@@ -194,6 +194,7 @@ pub enum Value {
     Promise(SharedPromise),
     Channel(SharedChannel),
     Nil,
+    Whatever,
     HyperWhatever,
     /// A value with mixin overrides from the `but` operator.
     /// Inner value is the original; the HashMap maps type names (e.g. "Bool") to override values.
@@ -679,6 +680,14 @@ impl PartialEq for Value {
                     named: bn,
                 },
             ) => ap == bp && an == bn,
+            // Mixin (allomorphic types): compare inner values and mixin maps
+            (Value::Mixin(a_inner, a_mix), Value::Mixin(b_inner, b_mix)) => {
+                a_inner == b_inner && a_mix == b_mix
+            }
+            // Mixin vs non-Mixin: delegate to the inner value
+            (Value::Mixin(inner, _), other) | (other, Value::Mixin(inner, _)) => {
+                inner.as_ref() == other
+            }
             _ => false,
         }
     }
@@ -967,6 +976,7 @@ impl Value {
                 | Value::Rat(_, _)
                 | Value::FatRat(_, _)
                 | Value::BigRat(_, _)
+                | Value::Whatever
         )
     }
 
@@ -1016,6 +1026,7 @@ impl Value {
                     0.0
                 }
             }
+            Value::Whatever => f64::INFINITY,
             Value::Str(s) => s.trim().parse::<f64>().unwrap_or(0.0),
             Value::Instance {
                 class_name,

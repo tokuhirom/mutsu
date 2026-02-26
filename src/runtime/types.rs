@@ -872,6 +872,15 @@ impl Interpreter {
                 }
             }
         }
+        // Mixin allomorphic types: check both inner type and mixin type keys
+        if let Value::Mixin(inner, mixins) = value {
+            if self.type_matches_value(constraint, inner) {
+                return true;
+            }
+            if mixins.contains_key(constraint) {
+                return true;
+            }
+        }
         let value_type = super::value_type_name(value);
         Self::type_matches(constraint, value_type)
     }
@@ -1731,7 +1740,7 @@ impl Interpreter {
                 _ => {
                     let dim_val = self.eval_block_value(&[Stmt::Expr(expr.clone())])?;
                     match &dim_val {
-                        Value::HyperWhatever => {
+                        Value::Whatever | Value::HyperWhatever => {
                             expected_dims.push(None);
                         }
                         Value::Int(n) => {

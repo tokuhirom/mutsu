@@ -241,6 +241,7 @@ pub(crate) fn native_method_1arg(
                     use num_traits::ToPrimitive;
                     Some(bi.to_usize().unwrap_or(usize::MAX))
                 }
+                Value::Whatever => None,
                 Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
                 Value::Num(f) if *f >= 0.0 => Some(*f as usize),
                 Value::Rat(n, d) if *d == 0 && *n > 0 => None,
@@ -513,8 +514,18 @@ pub(crate) fn native_method_1arg(
         "pick" => {
             let mut items = runtime::value_to_list(target);
             Some(Ok(match arg {
-                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
+                Value::Whatever => {
                     // .pick(*) — Fisher-Yates shuffle
+                    let len = items.len();
+                    for i in (1..len).rev() {
+                        let j = (crate::builtins::rng::builtin_rand() * (i + 1) as f64) as usize
+                            % (i + 1);
+                        items.swap(i, j);
+                    }
+                    Value::array(items)
+                }
+                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
+                    // .pick(Inf) — same as .pick(*)
                     let len = items.len();
                     for i in (1..len).rev() {
                         let j = (crate::builtins::rng::builtin_rand() * (i + 1) as f64) as usize

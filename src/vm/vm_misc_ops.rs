@@ -88,6 +88,7 @@ impl VM {
             (Value::Int(a), Value::Num(b)) if b.is_infinite() && b.is_sign_positive() => {
                 Value::Range(*a, i64::MAX)
             }
+            (Value::Int(a), Value::Whatever) => Value::Range(*a, i64::MAX),
             (Value::Num(a), Value::Int(b)) if a.is_infinite() && a.is_sign_negative() => {
                 Value::Range(i64::MIN, *b)
             }

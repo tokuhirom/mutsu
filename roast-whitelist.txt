@@ -103,6 +103,7 @@ roast/S03-smartmatch/any-method.t
 roast/S03-smartmatch/any-str.t
 roast/S03-smartmatch/any-sub.t
 roast/S03-smartmatch/any-type.t
+roast/S03-smartmatch/array-array.t
 roast/S03-smartmatch/array-hash.t
 roast/S03-smartmatch/array-map.t
 roast/S03-smartmatch/capture-signature.t
