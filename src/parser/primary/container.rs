@@ -600,6 +600,10 @@ fn angle_word_expr(word: &str) -> Expr {
     if let Some((n, d)) = parse_angle_rat_word(word) {
         return Expr::Literal(crate::value::make_rat(n, d));
     }
+    // Try complex number (e.g. 3+0i, -2+5i, 0+31337i) before plain numbers
+    if let Some(complex) = parse_angle_complex(word) {
+        return Expr::Literal(complex);
+    }
     if let Ok((rest, expr)) = super::number::integer(word)
         && rest.is_empty()
     {
@@ -614,6 +618,10 @@ fn angle_word_expr(word: &str) -> Expr {
         && rest.is_empty()
     {
         return expr;
+    }
+    // Try Num literals (e.g. 2e0, 3.5e2)
+    if let Some(val) = parse_angle_num(word) {
+        return Expr::Literal(val);
     }
     Expr::Literal(Value::Str(word.to_string()))
 }
@@ -644,4 +652,57 @@ fn parse_signed_i64_with_underscores(s: &str) -> Option<i64> {
         return None;
     }
     clean.parse::<i64>().ok().map(|n| sign * n)
+}
+
+/// Parse a complex number literal from an angle bracket word.
+/// Handles forms like: 3+0i, -2+5i, 0+31337i, 3-3i, 5i, -3i, 3.5+2.1i, 2e0+0i
+fn parse_angle_complex(word: &str) -> Option<Value> {
+    let word = word.trim();
+    // Must end with 'i'
+    if !word.ends_with('i') {
+        return None;
+    }
+    let without_i = &word[..word.len() - 1];
+
+    // Pure imaginary: just "Ni" (e.g. "5i", "-3i")
+    if let Ok(imag) = without_i.parse::<f64>() {
+        return Some(Value::Complex(0.0, imag));
+    }
+
+    // Find the last '+' or '-' that splits real from imaginary.
+    // Skip the first character to allow a leading sign on the real part.
+    // Also skip 'e'/'E' followed by sign (scientific notation like 2e-3).
+    let bytes = without_i.as_bytes();
+    let mut split_pos = None;
+    let mut i = 1;
+    while i < bytes.len() {
+        if (bytes[i] == b'+' || bytes[i] == b'-')
+            && i > 0
+            && bytes[i - 1] != b'e'
+            && bytes[i - 1] != b'E'
+        {
+            split_pos = Some(i);
+        }
+        i += 1;
+    }
+
+    let split_pos = split_pos?;
+    let real_str = &without_i[..split_pos];
+    let imag_str = &without_i[split_pos..];
+
+    let real: f64 = real_str.parse().ok()?;
+    let imag: f64 = imag_str.parse().ok()?;
+    Some(Value::Complex(real, imag))
+}
+
+/// Parse a Num (floating-point with exponent) from an angle bracket word.
+/// Handles forms like: 2e0, 5e0, -8e0, 3.5e2
+fn parse_angle_num(word: &str) -> Option<Value> {
+    let word = word.trim();
+    // Must contain 'e' or 'E' to be a Num (otherwise it would have been caught by decimal)
+    if !word.contains('e') && !word.contains('E') {
+        return None;
+    }
+    let val: f64 = word.parse().ok()?;
+    Some(Value::Num(val))
 }

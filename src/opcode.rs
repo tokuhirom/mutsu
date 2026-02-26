@@ -157,6 +157,10 @@ pub(crate) enum OpCode {
     /// Call .defined on top of stack, replace with Bool result
     CallDefined,
 
+    // -- Logical --
+    /// Logical XOR: pops two values, returns truthy one if exactly one is truthy, else Nil/falsy
+    XorXor,
+
     // -- Stack manipulation --
     Dup,
     Pop,
@@ -270,6 +274,12 @@ pub(crate) enum OpCode {
     Index,
     DeleteIndexNamed(u32),
     DeleteIndexExpr,
+    /// Hash hyperslice: recursively iterate hash with given adverb mode.
+    /// Stack: [target] → [result list]
+    HyperSlice(u8),
+    /// Hash hyperindex: drill into nested hash by key path.
+    /// Stack: [target, keys] → [value]
+    HyperIndex,
 
     // -- String interpolation --
     StringConcat(u32),

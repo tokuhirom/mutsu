@@ -227,6 +227,26 @@ pub(crate) enum Expr {
         name: String,
     },
     PseudoStash(String),
+    /// Hash hyperslice: %hash{**}:adverb
+    HyperSlice {
+        target: Box<Expr>,
+        adverb: HyperSliceAdverb,
+    },
+    /// Hash hyperindex: %hash{||@keys}
+    HyperIndex {
+        target: Box<Expr>,
+        keys: Box<Expr>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HyperSliceAdverb {
+    Kv,
+    K,
+    V,
+    Tree,
+    DeepK,
+    DeepKv,
 }
 
 #[derive(Debug, Clone)]
