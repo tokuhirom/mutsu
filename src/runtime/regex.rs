@@ -1298,10 +1298,36 @@ impl Interpreter {
     ) -> Option<(usize, RegexCaptures)> {
         // Handle zero-width and group atoms before the length check
         match atom {
-            RegexAtom::Group(_)
-            | RegexAtom::Alternation(_)
-            | RegexAtom::ZeroWidth
-            | RegexAtom::UnicodePropAssert { .. } => {
+            RegexAtom::Group(pattern) => {
+                // Use capture-aware matching for groups to propagate inner named captures
+                return self
+                    .regex_match_end_from_caps_in_pkg(pattern, chars, pos, pkg)
+                    .map(|(next, mut inner_caps)| {
+                        let mut new_caps = current_caps.clone();
+                        for (k, v) in inner_caps.named.drain() {
+                            new_caps.named.entry(k).or_default().extend(v);
+                        }
+                        new_caps.positional.extend(inner_caps.positional);
+                        (next, new_caps)
+                    });
+            }
+            RegexAtom::Alternation(alternatives) => {
+                // Use capture-aware matching for alternations too
+                for alt in alternatives {
+                    if let Some((next, mut inner_caps)) =
+                        self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
+                    {
+                        let mut new_caps = current_caps.clone();
+                        for (k, v) in inner_caps.named.drain() {
+                            new_caps.named.entry(k).or_default().extend(v);
+                        }
+                        new_caps.positional.extend(inner_caps.positional);
+                        return Some((next, new_caps));
+                    }
+                }
+                return None;
+            }
+            RegexAtom::ZeroWidth | RegexAtom::UnicodePropAssert { .. } => {
                 return self
                     .regex_match_atom_in_pkg(atom, chars, pos, pkg, ignore_case)
                     .map(|next| (next, current_caps.clone()));

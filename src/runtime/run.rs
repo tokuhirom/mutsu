@@ -68,6 +68,7 @@ impl Interpreter {
             "pass ",
             "pass(",
             "flunk ",
+            "is-deeply",
             "is-primed-sig",
             "is-primed-call",
             "priming-fails-bind-ok",

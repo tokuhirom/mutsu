@@ -798,13 +798,50 @@ impl Value {
         positional: &[String],
         named: &HashMap<String, Vec<String>>,
     ) -> Self {
-        fn make_capture_match(s: &str) -> Value {
+        Self::make_match_object_full(matched, from, to, positional, named, None)
+    }
+
+    /// Create a Match object with positional captures and original string.
+    pub(crate) fn make_match_object_full(
+        matched: String,
+        from: i64,
+        to: i64,
+        positional: &[String],
+        named: &HashMap<String, Vec<String>>,
+        orig: Option<&str>,
+    ) -> Self {
+        fn make_capture_match(s: &str, orig: Option<&str>, search_from: usize) -> Value {
             let mut attrs = HashMap::new();
             attrs.insert("str".to_string(), Value::Str(s.to_string()));
-            attrs.insert("from".to_string(), Value::Int(0));
-            attrs.insert("to".to_string(), Value::Int(s.chars().count() as i64));
+            // Try to find the captured text's position within the original string
+            let (cap_from, cap_to) = if let Some(o) = orig {
+                // Search for the captured substring starting from search_from
+                let haystack: Vec<char> = o.chars().collect();
+                let needle: Vec<char> = s.chars().collect();
+                let mut found_from = 0i64;
+                let mut found = false;
+                for start in search_from..=haystack.len().saturating_sub(needle.len()) {
+                    if haystack[start..start + needle.len()] == needle[..] {
+                        found_from = start as i64;
+                        found = true;
+                        break;
+                    }
+                }
+                if found {
+                    (found_from, found_from + needle.len() as i64)
+                } else {
+                    (0i64, s.chars().count() as i64)
+                }
+            } else {
+                (0i64, s.chars().count() as i64)
+            };
+            attrs.insert("from".to_string(), Value::Int(cap_from));
+            attrs.insert("to".to_string(), Value::Int(cap_to));
             attrs.insert("list".to_string(), Value::array(Vec::new()));
             attrs.insert("named".to_string(), Value::hash(HashMap::new()));
+            if let Some(o) = orig {
+                attrs.insert("orig".to_string(), Value::Str(o.to_string()));
+            }
             Value::make_instance("Match".to_string(), attrs)
         }
 
@@ -812,11 +849,21 @@ impl Value {
         attrs.insert("str".to_string(), Value::Str(matched));
         attrs.insert("from".to_string(), Value::Int(from));
         attrs.insert("to".to_string(), Value::Int(to));
-        let caps: Vec<Value> = positional.iter().map(|s| make_capture_match(s)).collect();
+        if let Some(o) = orig {
+            attrs.insert("orig".to_string(), Value::Str(o.to_string()));
+        }
+        let search_start = from as usize;
+        let caps: Vec<Value> = positional
+            .iter()
+            .map(|s| make_capture_match(s, orig, search_start))
+            .collect();
         attrs.insert("list".to_string(), Value::array(caps));
         let mut named_caps: HashMap<String, Value> = HashMap::new();
         for (key, values) in named {
-            let vals: Vec<Value> = values.iter().map(|s| make_capture_match(s)).collect();
+            let vals: Vec<Value> = values
+                .iter()
+                .map(|s| make_capture_match(s, orig, search_start))
+                .collect();
             if vals.len() == 1 {
                 named_caps.insert(key.clone(), vals[0].clone());
             } else {

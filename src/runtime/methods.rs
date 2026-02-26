@@ -1451,12 +1451,13 @@ impl Interpreter {
                                 };
                                 self.env.insert(format!("<{}>", k), value);
                             }
-                            let match_obj = Value::make_match_object_with_captures(
+                            let match_obj = Value::make_match_object_full(
                                 matched,
                                 from,
                                 to,
                                 &captures.positional,
                                 &captures.named,
+                                Some(&text),
                             );
                             self.env.insert("/".to_string(), match_obj.clone());
                             Ok(match_obj)
@@ -3065,12 +3066,13 @@ impl Interpreter {
                 };
                 self.env.insert(format!("<{}>", k), value);
             }
-            let match_obj = Value::make_match_object_with_captures(
+            let match_obj = Value::make_match_object_full(
                 captures.matched,
                 captures.from as i64,
                 captures.to as i64,
                 &captures.positional,
                 &captures.named,
+                Some(&text),
             );
             self.env.insert("/".to_string(), match_obj.clone());
             Ok(match_obj)
@@ -5004,6 +5006,50 @@ impl Interpreter {
                 }
                 "Slip" => {
                     return Ok(Value::slip(args.clone()));
+                }
+                "Match" => {
+                    // Match.new(:orig("..."), :from(N), :pos(N), :list(...), :hash(...))
+                    let mut orig = String::new();
+                    let mut from: i64 = 0;
+                    let mut to: i64 = 0;
+                    let mut list = Value::array(Vec::new());
+                    let mut hash = Value::hash(HashMap::new());
+                    for arg in &args {
+                        if let Value::Pair(key, value) = arg {
+                            match key.as_str() {
+                                "orig" => orig = value.to_string_value(),
+                                "from" => from = to_int(value),
+                                "pos" | "to" => to = to_int(value),
+                                "list" => list = *value.clone(),
+                                "hash" => hash = *value.clone(),
+                                _ => {}
+                            }
+                        }
+                    }
+                    // Compute matched string from orig[from..pos]
+                    let matched: String = orig
+                        .chars()
+                        .skip(from as usize)
+                        .take((to - from) as usize)
+                        .collect();
+                    let mut attrs = HashMap::new();
+                    attrs.insert("str".to_string(), Value::Str(matched));
+                    attrs.insert("from".to_string(), Value::Int(from));
+                    attrs.insert("to".to_string(), Value::Int(to));
+                    attrs.insert("orig".to_string(), Value::Str(orig));
+                    // Convert list to positional captures
+                    if let Value::Array(items, ..) = &list {
+                        attrs.insert("list".to_string(), Value::array(items.to_vec()));
+                    } else {
+                        attrs.insert("list".to_string(), Value::array(Vec::new()));
+                    }
+                    // Convert hash (Map) to named captures
+                    if let Value::Hash(map, ..) = &hash {
+                        attrs.insert("named".to_string(), Value::hash(map.as_ref().clone()));
+                    } else {
+                        attrs.insert("named".to_string(), Value::hash(HashMap::new()));
+                    }
+                    return Ok(Value::make_instance("Match".to_string(), attrs));
                 }
                 // Types that cannot be instantiated with .new
                 "HyperWhatever" | "Whatever" | "Junction" => {
