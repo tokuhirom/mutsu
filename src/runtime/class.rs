@@ -201,6 +201,7 @@ impl Interpreter {
             Value::make_instance(receiver_class_name.to_string(), attributes.clone())
         };
         let saved_env = self.env.clone();
+        let saved_readonly = self.save_readonly_vars();
         self.method_class_stack.push(owner_class.to_string());
         self.env.insert("self".to_string(), base.clone());
 
@@ -234,6 +235,7 @@ impl Interpreter {
             Err(e) => {
                 self.method_class_stack.pop();
                 self.env = saved_env;
+                self.restore_readonly_vars(saved_readonly);
                 return Err(e);
             }
         }
@@ -263,6 +265,7 @@ impl Interpreter {
         }
         self.method_class_stack.pop();
         self.env = merged_env;
+        self.restore_readonly_vars(saved_readonly);
         result.map(|v| {
             let adjusted = match (&base, &v) {
                 (

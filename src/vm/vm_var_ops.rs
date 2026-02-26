@@ -837,8 +837,13 @@ impl VM {
         self.stack.push(Value::Str(result));
     }
 
-    pub(super) fn exec_post_increment_op(&mut self, code: &CompiledCode, name_idx: u32) {
+    pub(super) fn exec_post_increment_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
+        self.interpreter.check_readonly_for_increment(name)?;
         let val = self
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
@@ -861,10 +866,16 @@ impl VM {
             self.update_local_if_exists(code, &sv, &new_val);
         }
         self.stack.push(val);
+        Ok(())
     }
 
-    pub(super) fn exec_post_decrement_op(&mut self, code: &CompiledCode, name_idx: u32) {
+    pub(super) fn exec_post_decrement_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
+        self.interpreter.check_readonly_for_increment(name)?;
         let val = self
             .get_env_with_main_alias(name)
             .or_else(|| self.anon_state_value(name))
@@ -879,6 +890,7 @@ impl VM {
         self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
         self.stack.push(val);
+        Ok(())
     }
 
     pub(super) fn exec_post_increment_index_op(&mut self, code: &CompiledCode, name_idx: u32) {
@@ -1267,6 +1279,7 @@ impl VM {
         let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let idx = idx as usize;
         let name = &code.locals[idx];
+        self.interpreter.check_readonly_for_modify(name)?;
         let mut val = if name.starts_with('%') {
             runtime::coerce_to_hash(raw_val)
         } else if name.starts_with('@') {

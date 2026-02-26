@@ -92,6 +92,18 @@ pub(crate) fn native_method_1arg(
                     type_name,
                 ))));
             }
+            // Junction auto-threading for arguments
+            if let Value::Junction { kind, values } = arg {
+                let s = target.to_string_value();
+                let results: Vec<Value> = values
+                    .iter()
+                    .map(|v| Value::Bool(s.contains(&v.to_string_value())))
+                    .collect();
+                return Some(Ok(Value::Junction {
+                    kind: kind.clone(),
+                    values: std::sync::Arc::new(results),
+                }));
+            }
             let s = target.to_string_value();
             let needle = arg.to_string_value();
             Some(Ok(Value::Bool(s.contains(&needle))))

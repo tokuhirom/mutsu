@@ -323,6 +323,8 @@ pub(crate) enum OpCode {
     AssignExprLocal(u32),
     IndexAssignExprNested(u32),
     AssignReadOnly,
+    /// Check if a variable is readonly; throw if so (for assignment to readonly params).
+    CheckReadOnly(u32),
 
     // -- Loops (compound opcodes) --
     /// While loop. Condition opcodes follow at [ip+1..cond_end).

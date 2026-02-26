@@ -495,6 +495,7 @@ impl VM {
         fn_name: &str,
     ) -> Result<Value, RuntimeError> {
         let saved_env = self.interpreter.env().clone();
+        let saved_readonly = self.interpreter.save_readonly_vars();
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack_depth = self.stack.len();
 
@@ -525,6 +526,7 @@ impl VM {
                     self.stack.truncate(saved_stack_depth);
                     self.locals = saved_locals;
                     *self.interpreter.env_mut() = saved_env;
+                    self.interpreter.restore_readonly_vars(saved_readonly);
                     return Err(e);
                 }
             };
@@ -620,6 +622,7 @@ impl VM {
         }
         self.locals = saved_locals;
         *self.interpreter.env_mut() = restored_env;
+        self.interpreter.restore_readonly_vars(saved_readonly);
 
         match result {
             Ok(()) => Ok(ret_val),

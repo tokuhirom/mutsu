@@ -6,6 +6,7 @@ use crate::ast::{AssignOp, Expr, ParamDef, Stmt, collect_placeholders};
 use crate::token_kind::TokenKind;
 
 use super::decl::parse_array_shape_suffix;
+use super::sub;
 use super::{block, ident, keyword, parse_comma_or_expr, statement, var_name};
 
 pub(super) fn if_stmt(input: &str) -> PResult<'_, Stmt> {
@@ -439,6 +440,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         };
         let (after_is, _) = ws1(after_is)?;
         let (after_is, trait_name) = ident(after_is)?;
+        sub::validate_param_trait_pub(&trait_name, &traits, after_is)?;
         traits.push(trait_name);
         rest = after_is;
     }
@@ -591,6 +593,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         };
         let (after_is, _) = ws1(after_is)?;
         let (after_is, trait_name) = ident(after_is)?;
+        sub::validate_param_trait_pub(&trait_name, &traits, after_is)?;
         traits.push(trait_name);
         rest = after_is;
     }

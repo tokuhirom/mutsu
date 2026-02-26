@@ -308,6 +308,54 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
 }
 
 impl Interpreter {
+    /// Save the current readonly_vars set (call before function body execution).
+    pub(crate) fn save_readonly_vars(&self) -> HashSet<String> {
+        self.readonly_vars.clone()
+    }
+
+    /// Restore the readonly_vars set (call after function body execution).
+    pub(crate) fn restore_readonly_vars(&mut self, saved: HashSet<String>) {
+        self.readonly_vars = saved;
+    }
+
+    /// Check if a variable is readonly and return an error if so.
+    /// Returns Ok(()) if writable, Err with X::Multi::NoMatch for increment/decrement,
+    /// or Err with a generic message for assignment.
+    pub(crate) fn check_readonly_for_modify(&self, name: &str) -> Result<(), RuntimeError> {
+        if self.readonly_vars.contains(name) {
+            let msg = format!("Cannot assign to a readonly variable ({}) or a value", name);
+            let mut err = RuntimeError::new(msg.clone());
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), Value::Str(msg));
+            err.exception = Some(Box::new(Value::make_instance(
+                "X::Assignment::RO".to_string(),
+                attrs,
+            )));
+            return Err(err);
+        }
+        Ok(())
+    }
+
+    /// Check if a variable is readonly for increment/decrement operations.
+    /// Returns Err with X::Multi::NoMatch (like Raku's postfix:<++> dispatch failure).
+    pub(crate) fn check_readonly_for_increment(&self, name: &str) -> Result<(), RuntimeError> {
+        if self.readonly_vars.contains(name) {
+            let msg = format!(
+                "Cannot resolve caller postfix:<++>({}); the parameter requires mutable arguments",
+                name
+            );
+            let mut err = RuntimeError::new(msg.clone());
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), Value::Str(msg));
+            err.exception = Some(Box::new(Value::make_instance(
+                "X::Multi::NoMatch".to_string(),
+                attrs,
+            )));
+            return Err(err);
+        }
+        Ok(())
+    }
+
     pub(crate) fn apply_rw_bindings_to_env(
         &self,
         rw_bindings: &[(String, String)],
@@ -883,6 +931,16 @@ impl Interpreter {
                 } else {
                     args.get(i).cloned().map(unwrap_varref_value)
                 };
+                // For multi-dispatch: `is rw` params require a writable variable argument
+                if pd.traits.iter().any(|t| t == "rw") {
+                    let raw_arg = args.get(i);
+                    let is_varref = raw_arg
+                        .map(|a| varref_from_value(a).is_some())
+                        .unwrap_or(false);
+                    if !is_varref {
+                        return false;
+                    }
+                }
                 if let Some(literal) = &pd.literal_value {
                     if let Some(arg) = arg_for_checks.as_ref() {
                         if arg != literal {
@@ -1082,6 +1140,7 @@ impl Interpreter {
         let args = filtered_args.as_slice();
         let arg_sources = self.take_pending_call_arg_sources();
         let mut rw_bindings = Vec::new();
+        let mut raw_nonlvalue_params: Vec<String> = Vec::new();
         if param_defs.is_empty() {
             if params.is_empty() {
                 // No param_defs and no placeholder params — nothing to bind.
@@ -1315,19 +1374,25 @@ impl Interpreter {
                         continue;
                     }
                     let is_rw = pd.traits.iter().any(|t| t == "rw");
-                    if is_rw {
+                    let is_raw = pd.traits.iter().any(|t| t == "raw");
+                    if is_rw || is_raw {
                         let source_name = arg_sources
                             .as_ref()
                             .and_then(|names| names.get(positional_idx))
                             .and_then(|name| name.as_ref())
-                            .cloned()
-                            .ok_or_else(|| {
-                                RuntimeError::new(format!(
-                                    "X::Parameter::RW: '{}' expects a writable variable argument",
-                                    pd.name
-                                ))
-                            })?;
-                        rw_bindings.push((pd.name.clone(), source_name));
+                            .cloned();
+                        if let Some(source_name) = source_name {
+                            rw_bindings.push((pd.name.clone(), source_name));
+                        } else if is_rw {
+                            return Err(RuntimeError::new(format!(
+                                "X::Parameter::RW: '{}' expects a writable variable argument",
+                                pd.name
+                            )));
+                        } else {
+                            // is raw with non-lvalue: param stays readonly
+                            // (not added to rw_bindings, will be marked readonly below)
+                            raw_nonlvalue_params.push(pd.name.clone());
+                        }
                     }
                     let raw_arg = args[positional_idx].clone();
                     let source_type_constraint = varref_from_value(&raw_arg)
@@ -1547,6 +1612,24 @@ impl Interpreter {
                     "Too many positionals passed; expected {} arguments but got {}",
                     positional_param_count, positional_arg_count
                 )));
+            }
+        }
+        // Mark parameters as readonly unless they have `is rw`, `is copy`, or `is raw` traits.
+        // Sigilless params (\x) are always writable (they are raw aliases).
+        // For `is raw` with non-lvalue args, also mark readonly.
+        for pd in param_defs {
+            if pd.name.is_empty() || pd.name == "__type_only__" || pd.name == "__subsig__" {
+                continue;
+            }
+            if pd.sigilless {
+                continue; // Sigilless params are raw aliases, always writable
+            }
+            let has_mutable_trait = pd
+                .traits
+                .iter()
+                .any(|t| t == "rw" || t == "copy" || t == "raw");
+            if !has_mutable_trait || raw_nonlvalue_params.contains(&pd.name) {
+                self.readonly_vars.insert(pd.name.clone());
             }
         }
         Ok(rw_bindings)

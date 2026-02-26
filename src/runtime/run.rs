@@ -295,6 +295,10 @@ impl Interpreter {
         crate::parser::set_parser_program_path(self.program_path.clone());
         let parse_result = crate::parse_dispatch::parse_source(&preprocessed);
         crate::parser::clear_parser_lib_paths();
+        // Emit any parse warnings (e.g. duplicate traits)
+        for warning in crate::parser::take_parse_warnings() {
+            self.write_warn_to_stderr(&warning);
+        }
         let (stmts, finish_content) = parse_result?;
         if let Some(content) = finish_content {
             self.env.insert("=finish".to_string(), Value::Str(content));
@@ -446,6 +450,9 @@ impl Interpreter {
         crate::parser::set_parser_program_path(self.program_path.clone());
         let result = parse_dispatch::parse_source(&preprocessed);
         crate::parser::clear_parser_lib_paths();
+        for warning in crate::parser::take_parse_warnings() {
+            self.write_warn_to_stderr(&warning);
+        }
         let stmts = result.map(|(stmts, _)| stmts).map_err(|mut err| {
             err.message = format!("Failed to parse module '{}': {}", module, err.message);
             err

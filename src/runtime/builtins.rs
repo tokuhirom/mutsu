@@ -480,6 +480,7 @@ impl Interpreter {
                 return Err(Self::reject_args_for_empty_sig(args));
             }
             let saved_env = self.env.clone();
+            let saved_readonly = self.save_readonly_vars();
             let rw_bindings = self.bind_function_args_values(&def.param_defs, &def.params, args)?;
             let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
             self.routine_stack
@@ -491,6 +492,7 @@ impl Interpreter {
             self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
             self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
             self.env = restored_env;
+            self.restore_readonly_vars(saved_readonly);
             if pushed_dispatch {
                 self.multi_dispatch_stack.pop();
             }

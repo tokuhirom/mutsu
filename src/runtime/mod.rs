@@ -322,6 +322,8 @@ pub struct Interpreter {
     pub(crate) last_value: Option<Value>,
     /// Pending env updates from regex code blocks, to be synced to VM locals.
     pub(crate) pending_local_updates: Vec<(String, Value)>,
+    /// Set of variable names that are readonly (default parameter binding).
+    readonly_vars: HashSet<String>,
 }
 
 /// An entry in the encoding registry.
@@ -1033,6 +1035,7 @@ impl Interpreter {
             suppressed_names: HashSet::new(),
             last_value: None,
             pending_local_updates: Vec::new(),
+            readonly_vars: HashSet::new(),
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -1484,6 +1487,7 @@ impl Interpreter {
             suppressed_names: self.suppressed_names.clone(),
             last_value: None,
             pending_local_updates: Vec::new(),
+            readonly_vars: HashSet::new(),
         };
         cloned.init_io_environment();
         cloned
