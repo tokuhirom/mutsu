@@ -550,33 +550,6 @@ impl Interpreter {
                     }
                     results.push(result);
                 }
-                Value::Seq(elems) => {
-                    for elem in elems.iter() {
-                        match elem {
-                            Value::Promise(shared) => {
-                                let (result, output, stderr) = shared.wait();
-                                self.emit_output(&output);
-                                self.stderr_output.push_str(&stderr);
-                                if shared.status() == "Broken" {
-                                    self.sync_shared_vars_to_env();
-                                    let msg = result.to_string_value();
-                                    return Err(RuntimeError::new(msg));
-                                }
-                                results.push(result);
-                            }
-                            Value::Instance {
-                                class_name,
-                                attributes,
-                                ..
-                            } if class_name == "Promise" => {
-                                let result =
-                                    attributes.get("result").cloned().unwrap_or(Value::Nil);
-                                results.push(result);
-                            }
-                            _ => results.push(elem.clone()),
-                        }
-                    }
-                }
                 // Backward compat: Instance-based Promise
                 Value::Instance {
                     class_name,

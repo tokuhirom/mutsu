@@ -1,6 +1,7 @@
 use super::super::expr::expression;
 use super::super::helpers::{split_angle_words, ws};
 use super::super::parse_result::{PError, PResult, merge_expected_messages, parse_char};
+use super::super::primary::misc::reduction_call_style_expr;
 use super::super::primary::parse_block_body;
 
 use crate::ast::{CallArg, Expr};
@@ -417,9 +418,14 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
             return Ok((rest, CallArg::Positional(assign_expr)));
         }
     }
-    let (rest, expr) = expression(input).map_err(|err| PError {
-        messages: merge_expected_messages("expected positional argument expression", &err.messages),
-        remaining_len: err.remaining_len.or(Some(input.len())),
-    })?;
+    let (rest, expr) = reduction_call_style_expr(input)
+        .or_else(|_| expression(input))
+        .map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected positional argument expression",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(input.len())),
+        })?;
     Ok((rest, CallArg::Positional(expr)))
 }

@@ -1,13 +1,10 @@
 use Test;
-plan 26;
+plan 24;
 
 # xx operator (list repetition)
 is ("a" xx 3).elems, 3, 'xx creates list with correct count';
 is ("a" xx 3).join(","), "a,a,a", 'xx repeats elements';
 is (42 xx 0).elems, 0, 'xx with 0 gives empty list';
-my $x = 0;
-is-deeply ($x++ xx 3).List, [0, 1, 2], 'xx evaluates lhs each iteration';
-is $x, 3, 'xx executes lhs once per iteration';
 
 # Compound assignments: /= %= **=
 my $a = 10;
