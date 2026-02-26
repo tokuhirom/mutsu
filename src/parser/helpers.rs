@@ -51,6 +51,13 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
 
     // Read the directive keyword
     let (rest, keyword) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '-')?;
+    if let Some(ch) = rest.chars().next() {
+        if !ch.is_whitespace() {
+            return Err(PError::expected("pod directive"));
+        }
+    } else {
+        return Err(PError::expected("pod directive"));
+    }
 
     // In Raku, any =word at the start of a line is a Pod directive.
     // We handle "begin" specially (paired with =end), all others skip to end of paragraph.

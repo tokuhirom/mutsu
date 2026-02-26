@@ -4689,6 +4689,9 @@ impl Interpreter {
                             Value::Pair(k, v) => {
                                 map.insert(k, *v);
                             }
+                            Value::ValuePair(k, v) => {
+                                map.insert(k.to_string_value(), *v);
+                            }
                             other => {
                                 let key = other.to_string_value();
                                 let value = iter.next().unwrap_or(Value::Nil);
