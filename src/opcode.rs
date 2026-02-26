@@ -157,6 +157,10 @@ pub(crate) enum OpCode {
     /// Call .defined on top of stack, replace with Bool result
     CallDefined,
 
+    // -- Logical --
+    /// Logical XOR: pops two values, returns truthy one if exactly one is truthy, else Nil/falsy
+    XorXor,
+
     // -- Stack manipulation --
     Dup,
     Pop,

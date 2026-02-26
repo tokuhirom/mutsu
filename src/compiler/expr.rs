@@ -200,6 +200,13 @@ impl Compiler {
                         self.code.patch_jump(jump_end);
                         return;
                     }
+                    TokenKind::XorXor => {
+                        // a ^^ b: return truthy value if exactly one is truthy, else Nil/last falsy
+                        self.compile_expr(left);
+                        self.compile_expr(right);
+                        self.code.emit(OpCode::XorXor);
+                        return;
+                    }
                     TokenKind::SlashSlash | TokenKind::OrElse => {
                         // a // b: result is a if not nil, else b
                         self.compile_expr(left);

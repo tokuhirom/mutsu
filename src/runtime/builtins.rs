@@ -698,6 +698,7 @@ impl Interpreter {
             "~~" => TokenKind::SmartMatch,
             "&&" => TokenKind::AndAnd,
             "||" => TokenKind::OrOr,
+            "^^" => TokenKind::XorXor,
             "//" => TokenKind::SlashSlash,
             _ => TokenKind::Ident(op.to_string()),
         }
