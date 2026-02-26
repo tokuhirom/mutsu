@@ -67,6 +67,7 @@ impl Compiler {
                 | "unshift"
                 | "append"
                 | "prepend"
+                | "splice"
                 | "undefine"
                 | "VAR"
                 | "indir"
