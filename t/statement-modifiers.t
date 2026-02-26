@@ -1,5 +1,5 @@
 use Test;
-plan 8;
+plan 10;
 
 my $a = 0;
 $a = 1 if True;
@@ -31,6 +31,18 @@ is $e, 4, "postfix until";
     my $a = "oops";
     { $a = $^x } unless 0;
     is $a, 0, "postfix unless on placeholder block";
+}
+
+{
+    my $a;
+    { $a = $^x } given 69;
+    is $a, 69, "postfix given passes topic to placeholder block";
+}
+
+{
+    my $a = "oops";
+    { $a = $_ } given 42;
+    is $a, 42, "postfix given sets topic for block body";
 }
 
 is (1, 2, unless 0), "1 2", "unless terminates expression list after comma";
