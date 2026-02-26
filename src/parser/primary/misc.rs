@@ -5,8 +5,9 @@ use crate::value::Value;
 use crate::value::signature::{make_signature_value, param_defs_to_sig_info};
 
 use super::super::expr::expression;
-use super::super::helpers::{split_angle_words, ws};
+use super::super::helpers::{skip_balanced_parens, split_angle_words, ws};
 use super::super::stmt::keyword;
+use super::parse_call_arg_list;
 use super::string::{double_quoted_string, single_quoted_string};
 use super::var::parse_ident_with_hyphens;
 
@@ -232,6 +233,59 @@ fn parse_reduction_operand(input: &str) -> PResult<'_, Expr> {
         ));
     }
     expression(r)
+}
+
+pub(in crate::parser) fn reduction_call_style_expr(input: &str) -> PResult<'_, Expr> {
+    if !input.starts_with('[') {
+        return Err(PError::expected("reduction operator"));
+    }
+    let end =
+        find_matching_bracket(input).ok_or_else(|| PError::expected("']' closing reduction"))?;
+    let inner = &input[1..end];
+    if inner.is_empty() {
+        return Err(PError::expected("operator in reduction"));
+    }
+    let op = match flatten_bracket_op(inner).as_str() {
+        "∘" => "o".to_string(),
+        other => other.to_string(),
+    };
+    if !is_valid_reduction_op(&op) {
+        return Err(PError::expected("known reduction operator"));
+    }
+    let r = &input[end + 1..];
+    let (r, _) = ws(r)?;
+    if !r.starts_with('(') {
+        return Err(PError::expected("call-style reduction operand"));
+    }
+    let rest_after_operand = skip_balanced_parens(r);
+    if rest_after_operand == r {
+        return Err(PError::expected("')' closing reduction argument"));
+    }
+    let close_pos = r.len() - rest_after_operand.len();
+    if close_pos <= 1 {
+        return Err(PError::expected("expression in call-style reduction"));
+    }
+    let inner = &r[1..close_pos - 1];
+    let (inner_rest, args) = parse_call_arg_list(inner)?;
+    let (inner_rest, _) = ws(inner_rest)?;
+    if !inner_rest.is_empty() {
+        return Err(PError::expected("')' in call-style reduction"));
+    }
+    if args.is_empty() {
+        return Err(PError::expected("expression in call-style reduction"));
+    }
+    let inner_expr = if args.len() == 1 {
+        args.into_iter().next().unwrap()
+    } else {
+        Expr::ArrayLiteral(args)
+    };
+    Ok((
+        rest_after_operand,
+        Expr::Reduction {
+            op,
+            expr: Box::new(inner_expr),
+        },
+    ))
 }
 
 /// Parse colonpair expressions: :$var, :@var, :%var, :name(expr), :name, :!name

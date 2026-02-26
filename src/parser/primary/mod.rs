@@ -400,6 +400,42 @@ mod tests {
     }
 
     #[test]
+    fn primary_reduction_call_style_with_parenthesized_argument() {
+        let (rest, expr) = primary("is([+](^20 .grep: *.is-prime), 77)").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args, .. } => {
+                assert_eq!(name, "is");
+                match &args[0] {
+                    Expr::Reduction { expr, .. } => {
+                        assert!(matches!(&**expr, Expr::MethodCall { .. }));
+                    }
+                    _ => panic!("expected reduction expression as first argument"),
+                }
+            }
+            _ => panic!("expected call expression"),
+        }
+    }
+
+    #[test]
+    fn primary_reduction_call_style_with_parenthesized_list_argument() {
+        let (rest, expr) = primary("is([===]($foo, $_foo2, $_foo1), 77)").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Call { name, args, .. } => {
+                assert_eq!(name, "is");
+                match &args[0] {
+                    Expr::Reduction { expr, .. } => {
+                        assert!(matches!(&**expr, Expr::ArrayLiteral(_)));
+                    }
+                    _ => panic!("expected reduction expression as first argument"),
+                }
+            }
+            _ => panic!("expected call expression"),
+        }
+    }
+
+    #[test]
     fn primary_accepts_cross_reduction_operator() {
         let (rest, expr) = primary("[X] Mu.new X Mu xx 2").unwrap();
         assert_eq!(rest, "");

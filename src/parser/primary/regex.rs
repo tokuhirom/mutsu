@@ -231,7 +231,8 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
     if input.starts_with(')') {
         return Ok((input, Vec::new()));
     }
-    let (input, first) = expression(input)?;
+    let (input, first) = crate::parser::primary::misc::reduction_call_style_expr(input)
+        .or_else(|_| expression(input))?;
     let mut current_group = vec![first];
     let mut groups: Vec<Vec<Expr>> = Vec::new();
     let mut has_semicolon = false;
@@ -248,7 +249,8 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
                 // Trailing semicolon before close paren
                 return Ok((r, semicolon_groups_to_args(groups, current_group)));
             }
-            let (r, arg) = expression(r)?;
+            let (r, arg) = crate::parser::primary::misc::reduction_call_style_expr(r)
+                .or_else(|_| expression(r))?;
             current_group.push(arg);
             rest = r;
             continue;
@@ -278,7 +280,8 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
             }
             return Ok((r, current_group));
         }
-        let (r, arg) = expression(r)?;
+        let (r, arg) = crate::parser::primary::misc::reduction_call_style_expr(r)
+            .or_else(|_| expression(r))?;
         current_group.push(arg);
         rest = r;
     }
