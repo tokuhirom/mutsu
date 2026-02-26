@@ -299,6 +299,18 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             Value::hash(map)
         }
         Value::Nil => Value::hash(HashMap::new()),
+        Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "Match" => {
+            // %($/) returns the named captures hash
+            if let Some(named) = attributes.get("named") {
+                named.clone()
+            } else {
+                Value::hash(HashMap::new())
+            }
+        }
         _ => {
             let mut map = HashMap::new();
             map.insert(value.to_string_value(), Value::Nil);

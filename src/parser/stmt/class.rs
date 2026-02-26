@@ -554,6 +554,8 @@ pub(super) fn trusts_decl(input: &str) -> PResult<'_, Stmt> {
 /// Parse a `token`, `regex`, or `rule` declaration.
 pub(super) fn token_decl(input: &str) -> PResult<'_, Stmt> {
     let is_rule = keyword("rule", input).is_some();
+    let is_regex = keyword("regex", input).is_some();
+    let is_ratchet = !is_regex; // token and rule are ratcheting
     let rest = keyword("token", input)
         .or_else(|| keyword("rule", input))
         .or_else(|| keyword("regex", input))
@@ -586,6 +588,9 @@ pub(super) fn token_decl(input: &str) -> PResult<'_, Stmt> {
             }
             pattern.push_str("<.ws>?");
         }
+    }
+    if is_ratchet {
+        pattern = format!(":ratchet {pattern}");
     }
     let body = vec![Stmt::Expr(Expr::Literal(Value::Regex(pattern)))];
 

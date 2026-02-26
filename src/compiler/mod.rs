@@ -19,6 +19,8 @@ pub(crate) struct Compiler {
     tmp_counter: usize,
     dynamic_scope_all: bool,
     dynamic_scope_names: Option<std::collections::HashSet<String>>,
+    /// Track dynamic variable accesses (names starting with '*') for postdeclaration check
+    accessed_dynamic_vars: std::collections::HashSet<String>,
 }
 
 impl Compiler {
@@ -31,6 +33,7 @@ impl Compiler {
             tmp_counter: 0,
             dynamic_scope_all: false,
             dynamic_scope_names: None,
+            accessed_dynamic_vars: std::collections::HashSet::new(),
         }
     }
 

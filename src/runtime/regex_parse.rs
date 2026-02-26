@@ -347,6 +347,7 @@ impl Interpreter {
         let mut ignore_case = false;
         let mut ignore_mark = false;
         let mut sigspace = false;
+        let mut ratchet = false;
         loop {
             if let Some(rest) = source.strip_prefix(":ignorecase") {
                 ignore_case = true;
@@ -355,6 +356,11 @@ impl Interpreter {
             }
             if let Some(rest) = source.strip_prefix(":ignoremark") {
                 ignore_mark = true;
+                source = rest.trim_start();
+                continue;
+            }
+            if let Some(rest) = source.strip_prefix(":ratchet") {
+                ratchet = true;
                 source = rest.trim_start();
                 continue;
             }
@@ -372,6 +378,18 @@ impl Interpreter {
                 sigspace = true;
                 source = rest.trim_start();
                 continue;
+            }
+            if let Some(rest) = source.strip_prefix(":r") {
+                // Make sure it's :r and not :ratchet (already handled) or other identifiers
+                if rest.is_empty()
+                    || rest.starts_with(' ')
+                    || rest.starts_with(':')
+                    || rest.starts_with('/')
+                {
+                    ratchet = true;
+                    source = rest.trim_start();
+                    continue;
+                }
             }
             if let Some(rest) = source.strip_prefix(":m") {
                 // Make sure it's :m and not :mm or :my or other identifiers
@@ -443,6 +461,7 @@ impl Interpreter {
         let mut anchor_start = false;
         let mut anchor_end = false;
         let mut pending_named_capture: Option<String> = None;
+        let mut pending_builtin_named_capture: Option<String> = None;
         while let Some(c) = chars.next() {
             // In Raku, unescaped whitespace in regex is insignificant
             if c.is_whitespace() {
@@ -459,7 +478,7 @@ impl Interpreter {
                                 }),
                                 quant: RegexQuant::ZeroOrMore,
                                 named_capture: pending_named_capture.take(),
-                                ratchet: false,
+                                ratchet,
                             });
                         }
                     } else {
@@ -473,7 +492,7 @@ impl Interpreter {
                             }),
                             quant: RegexQuant::OneOrMore,
                             named_capture: pending_named_capture.take(),
-                            ratchet: false,
+                            ratchet,
                         });
                     }
                 }
@@ -767,7 +786,11 @@ impl Interpreter {
                             if chars.peek() == Some(&'>') {
                                 chars.next();
                             }
-                            RegexAtom::CodeAssertion { code, negated }
+                            RegexAtom::CodeAssertion {
+                                code,
+                                negated,
+                                is_assertion: true,
+                            }
                         } else {
                             // Read content between < and >, handling nested <...>
                             let mut name = String::new();
@@ -849,6 +872,8 @@ impl Interpreter {
                                 match trimmed {
                                     "alpha" | "upper" | "lower" | "digit" | "xdigit" | "space"
                                     | "alnum" | "blank" | "cntrl" | "punct" => {
+                                        // Set builtin named capture so $<alpha>, $<digit>, etc. work
+                                        pending_builtin_named_capture = Some(trimmed.to_string());
                                         RegexAtom::CharClass(CharClass {
                                             items: vec![ClassItem::NamedBuiltin(
                                                 trimmed.to_string(),
@@ -1024,6 +1049,7 @@ impl Interpreter {
                     RegexAtom::CodeAssertion {
                         code,
                         negated: false,
+                        is_assertion: false,
                     }
                 }
                 other => RegexAtom::Literal(other),
@@ -1047,19 +1073,19 @@ impl Interpreter {
                 };
             }
             // Handle ':' ratchet modifier (prevents backtracking)
-            // For now, just consume it — our engine doesn't backtrack into
-            // quantified atoms in the same way, so this is a no-op
-            let ratchet = if chars.peek() == Some(&':') {
+            let token_ratchet = if chars.peek() == Some(&':') {
                 chars.next();
                 true
             } else {
-                false
+                ratchet // inherit from pattern-level :ratchet flag
             };
             tokens.push(RegexToken {
                 atom,
                 quant,
-                named_capture: pending_named_capture.take(),
-                ratchet,
+                named_capture: pending_named_capture
+                    .take()
+                    .or(pending_builtin_named_capture.take()),
+                ratchet: token_ratchet,
             });
         }
         Some(RegexPattern {
@@ -1077,6 +1103,23 @@ impl Interpreter {
         let mut i = 0usize;
         while i < chars.len() {
             let ch = chars[i];
+            // Skip code blocks { ... } — don't interpolate variables inside them
+            if ch == '{' {
+                let mut depth = 1usize;
+                out.push(ch);
+                i += 1;
+                while i < chars.len() && depth > 0 {
+                    let c = chars[i];
+                    if c == '{' {
+                        depth += 1;
+                    } else if c == '}' {
+                        depth -= 1;
+                    }
+                    out.push(c);
+                    i += 1;
+                }
+                continue;
+            }
             if ch == '\\' {
                 out.push(ch);
                 i += 1;

@@ -31,6 +31,15 @@ impl Compiler {
                 self.compile_match_regex(v);
             }
             Expr::Var(name) => {
+                // X::Dynamic::Package: dynamic variables cannot have package-like names
+                if Self::is_dynamic_package_var(name) {
+                    self.emit_dynamic_package_error(name);
+                    return;
+                }
+                // Track dynamic variable access for postdeclaration check
+                if name.starts_with('*') && !self.local_map.contains_key(name.as_str()) {
+                    self.accessed_dynamic_vars.insert(name.clone());
+                }
                 // Slang variables ($~MAIN, $~Quote, $~Regex, $~P5Regex)
                 if let Some(slang_name) = name.strip_prefix('~') {
                     let idx = self.code.add_constant(Value::Str(slang_name.to_string()));
@@ -850,8 +859,18 @@ impl Compiler {
             }
             // Capture variable ($0, $1, etc.)
             Expr::CaptureVar(name) => {
-                let name_idx = self.code.add_constant(Value::Str(format!("<{}>", name)));
-                self.code.emit(OpCode::GetCaptureVar(name_idx));
+                let keys: Vec<&str> = name.split_whitespace().collect();
+                if keys.len() > 1 {
+                    // Multi-key subscript: $<w1 w2 w3> → list of individual captures
+                    for key in &keys {
+                        let name_idx = self.code.add_constant(Value::Str(format!("<{}>", key)));
+                        self.code.emit(OpCode::GetCaptureVar(name_idx));
+                    }
+                    self.code.emit(OpCode::MakeArray(keys.len() as u32));
+                } else {
+                    let name_idx = self.code.add_constant(Value::Str(format!("<{}>", name)));
+                    self.code.emit(OpCode::GetCaptureVar(name_idx));
+                }
             }
             // Code variable (&foo)
             Expr::CodeVar(name) => {
@@ -1173,6 +1192,21 @@ impl Compiler {
                 self.code.emit(OpCode::ContainerizePair);
             }
             Expr::CallOn { target, args } => {
+                // %($x) — hash contextualizer: coerce single arg to Hash
+                if let Expr::HashVar(name) = target.as_ref()
+                    && name == "__ANON_HASH__"
+                    && args.len() == 1
+                {
+                    self.compile_expr(&args[0]);
+                    let method_idx = self.code.add_constant(Value::Str("Hash".to_string()));
+                    self.code.emit(OpCode::CallMethod {
+                        name_idx: method_idx,
+                        arity: 0,
+                        modifier_idx: None,
+                        quoted: false,
+                    });
+                    return;
+                }
                 if let Expr::CodeVar(name) = target.as_ref() {
                     let arg_sources_idx = self.add_arg_sources_constant(args);
                     for arg in args {

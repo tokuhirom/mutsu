@@ -125,6 +125,9 @@ impl VM {
             }
         }
         self.sync_state_locals(code);
+        // Sync local variables back to the interpreter's env so that
+        // callers (e.g. eval_block_value) can observe side effects.
+        self.sync_env_from_locals(code);
         (self.interpreter, Ok(self.last_topic_value))
     }
 

@@ -37,6 +37,7 @@ roast/S02-magicals/args.t
 roast/S02-magicals/block.t
 roast/S02-magicals/file_line.t
 roast/S02-magicals/pid.t
+roast/S02-names-vars/contextual.t
 roast/S02-names/SETTING-6e.t
 roast/S02-names/bare-sigil.t
 roast/S02-names/dynamic-scope.t
@@ -66,6 +67,7 @@ roast/S02-types/version.t
 roast/S03-binding/closure.t
 roast/S03-binding/ro.t
 roast/S03-buf/read-num.t
+roast/S03-metaops/not.t
 roast/S03-operators/also.t
 roast/S03-operators/assign-is-not-binding.t
 roast/S03-operators/basic-types.t
@@ -126,6 +128,7 @@ roast/S04-statements/repeat.t
 roast/S04-statements/unless.t
 roast/S04-statements/until.t
 roast/S04-statements/when.t
+roast/S05-capture/subrule.t
 roast/S05-grammar/example.t
 roast/S05-grammar/namespace-6e.t
 roast/S05-grammar/namespace.t
@@ -140,6 +143,7 @@ roast/S05-mass/properties-derived.t
 roast/S05-mass/properties-script.t
 roast/S05-match/basics.t
 roast/S05-match/raku.t
+roast/S05-metachars/closure.t
 roast/S05-metachars/newline.t
 roast/S05-metasyntax/assertions.t
 roast/S05-metasyntax/delimiters.t
@@ -209,6 +213,7 @@ roast/S12-attributes/mutators.t
 roast/S12-class/anonymous.t
 roast/S12-class/declaration-order.t
 roast/S12-class/extending-arrays.t
+roast/S12-class/inheritance-class-methods.t
 roast/S12-class/interface-consistency.t
 roast/S12-class/literal.t
 roast/S12-class/parent_attributes.t
@@ -428,6 +433,7 @@ roast/S32-str/append.t
 roast/S32-str/bool.t
 roast/S32-str/chop.t
 roast/S32-str/contains.t
+roast/S32-str/ends-with.t
 roast/S32-str/fc.t
 roast/S32-str/index.t
 roast/S32-str/lc.t
