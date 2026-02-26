@@ -5,8 +5,9 @@ use crate::value::Value;
 use crate::value::signature::{make_signature_value, param_defs_to_sig_info};
 
 use super::super::expr::expression;
-use super::super::helpers::{split_angle_words, ws};
+use super::super::helpers::{skip_balanced_parens, split_angle_words, ws};
 use super::super::stmt::keyword;
+use super::parse_call_arg_list;
 use super::string::{double_quoted_string, single_quoted_string};
 use super::var::parse_ident_with_hyphens;
 
@@ -172,7 +173,7 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
     }
     let (r, _) = ws(r)?;
     // Parse comma-separated list as the operand
-    let (r, first) = parse_reduction_operand(r)?;
+    let (r, first) = parse_reduction_operand(r, call_style_operand)?;
     let mut items = vec![first];
     let mut rest = r;
     if !call_style_operand {
@@ -193,7 +194,7 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
                 rest = r;
                 break;
             }
-            if let Ok((r, next)) = parse_reduction_operand(r) {
+            if let Ok((r, next)) = parse_reduction_operand(r, false) {
                 items.push(next);
                 rest = r;
             } else {
@@ -218,7 +219,7 @@ pub(super) fn reduction_op(input: &str) -> PResult<'_, Expr> {
     ))
 }
 
-fn parse_reduction_operand(input: &str) -> PResult<'_, Expr> {
+fn parse_reduction_operand(input: &str, call_style_operand: bool) -> PResult<'_, Expr> {
     let (r, _) = ws(input)?;
     if let Some(r) = r.strip_prefix('|') {
         let (r, _) = ws(r)?;
@@ -230,6 +231,31 @@ fn parse_reduction_operand(input: &str) -> PResult<'_, Expr> {
                 args: vec![expr],
             },
         ));
+    }
+    if call_style_operand && r.starts_with('(') {
+        let rest_after_operand = skip_balanced_parens(r);
+        if rest_after_operand == r {
+            return Err(PError::expected("')' closing reduction argument"));
+        }
+        let close_pos = r.len() - rest_after_operand.len();
+        if close_pos <= 1 {
+            return Err(PError::expected("expression in call-style reduction"));
+        }
+        let inner = &r[1..close_pos - 1];
+        let (inner_rest, args) = parse_call_arg_list(inner)?;
+        let (inner_rest, _) = ws(inner_rest)?;
+        if !inner_rest.is_empty() {
+            return Err(PError::expected("')' in call-style reduction"));
+        }
+        if args.is_empty() {
+            return Err(PError::expected("expression in call-style reduction"));
+        }
+        let inner_expr = if args.len() == 1 {
+            args.into_iter().next().unwrap()
+        } else {
+            Expr::ArrayLiteral(args)
+        };
+        return Ok((rest_after_operand, inner_expr));
     }
     expression(r)
 }
