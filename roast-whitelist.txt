@@ -193,6 +193,7 @@ roast/S06-signature/unspecified.t
 roast/S06-traits/as.t
 roast/S06-traits/is-readonly.t
 roast/S06-traits/is-rw.t
+roast/S06-traits/misc.t
 roast/S06-traits/native-is-copy.t
 roast/S07-hyperrace/stress.t
 roast/S07-slip/slip.t

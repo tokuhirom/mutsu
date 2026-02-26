@@ -56,6 +56,9 @@ impl Interpreter {
                 Ok(value)
             },
         );
+        for warning in crate::parser::take_parse_warnings() {
+            self.write_warn_to_stderr(&warning);
+        }
         // Fallback: parser still rejects forms like `~< foo bar >`.
         // Rewrite to an equivalent parenthesized form and try again.
         if result.is_err()

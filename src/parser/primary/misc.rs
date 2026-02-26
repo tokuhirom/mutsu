@@ -790,11 +790,17 @@ pub(super) fn capture_literal(input: &str) -> PResult<'_, Expr> {
 }
 
 /// Parse `-> $param { body }` or `-> $a, $b { body }` arrow lambda.
+/// Also handles `<-> $a, $b { body }` (rw pointy block) where all params get `is rw`.
 pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
-    if !input.starts_with("->") {
+    let is_rw_block = input.starts_with("<->");
+    if !is_rw_block && !input.starts_with("->") {
         return Err(PError::expected("arrow lambda"));
     }
-    let r = &input[2..];
+    let r = if is_rw_block {
+        &input[3..]
+    } else {
+        &input[2..]
+    };
     let (r, _) = ws(r)?;
     // Zero-param pointed block: -> { body }
     if r.starts_with('{') {
@@ -805,11 +811,14 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
     if r.starts_with('(') {
         let (r, _) = parse_char(r, '(')?;
         let (r, _) = ws(r)?;
-        let (r, sub_params) = super::super::stmt::parse_param_list_pub(r)?;
+        let (r, mut sub_params) = super::super::stmt::parse_param_list_pub(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
         let (r, return_type) = skip_pointy_return_type(r)?;
         let (r, body) = parse_block_body(r)?;
+        if is_rw_block {
+            inject_rw_trait(&mut sub_params);
+        }
         let params: Vec<String> = sub_params.iter().map(|p| p.name.clone()).collect();
         return Ok((
             r,
@@ -842,6 +851,9 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
         }
         let (r, return_type) = skip_pointy_return_type(r)?;
         let (r, body) = parse_block_body(r)?;
+        if is_rw_block {
+            inject_rw_trait(&mut param_defs);
+        }
         let params: Vec<String> = param_defs.iter().map(|p| p.name.clone()).collect();
         Ok((
             r,
@@ -854,6 +866,10 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
         ))
     } else {
         // Single param: -> $n { body }
+        let mut first = first;
+        if is_rw_block {
+            inject_rw_trait(std::slice::from_mut(&mut first));
+        }
         let (r, return_type) = skip_pointy_return_type(r)?;
         let (r, body) = parse_block_body(r)?;
         let simple_single = first.traits.is_empty() && first.shape_constraints.is_none();
@@ -883,6 +899,16 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
                     body,
                 },
             ))
+        }
+    }
+}
+
+/// For `<->` blocks, add `is rw` trait to params that don't already have
+/// an explicit `is readonly` trait.
+fn inject_rw_trait(params: &mut [crate::ast::ParamDef]) {
+    for p in params.iter_mut() {
+        if !p.traits.iter().any(|t| t == "readonly") && !p.traits.iter().any(|t| t == "rw") {
+            p.traits.push("rw".to_string());
         }
     }
 }
