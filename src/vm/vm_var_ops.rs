@@ -683,6 +683,21 @@ impl VM {
             }
             // Type parameterization: e.g. Buf[uint8] → returns the type unchanged
             (pkg @ Value::Package(_), _) => pkg,
+            // Pair subscript: $pair<key> returns value if key matches, Nil otherwise
+            (Value::Pair(key, value), Value::Str(idx)) => {
+                if key == idx {
+                    *value
+                } else {
+                    Value::Nil
+                }
+            }
+            (Value::ValuePair(key, value), Value::Str(idx)) => {
+                if key.to_string_value() == idx {
+                    *value
+                } else {
+                    Value::Nil
+                }
+            }
             _ => Value::Nil,
         };
         self.stack.push(result);

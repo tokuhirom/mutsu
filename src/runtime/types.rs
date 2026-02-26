@@ -1050,14 +1050,7 @@ impl Interpreter {
     pub(crate) fn reject_args_for_empty_sig(args: &[Value]) -> RuntimeError {
         if let Some(k) = args.iter().find_map(|a| match a {
             Value::Pair(key, _) if key != TEST_CALLSITE_LINE_KEY => Some(key.clone()),
-            Value::ValuePair(key, _) => {
-                if let Value::Str(name) = key.as_ref()
-                    && name != TEST_CALLSITE_LINE_KEY
-                {
-                    return Some(name.clone());
-                }
-                None
-            }
+            // ValuePair is a positional pair (parenthesized), not a named arg
             _ => None,
         }) {
             return RuntimeError::new(format!("Unexpected named argument '{}' passed", k));
@@ -1507,19 +1500,9 @@ impl Interpreter {
                             key
                         )));
                     }
-                } else if let Value::ValuePair(key, _) = arg
-                    && let Value::Str(name) = key.as_ref()
-                {
-                    let consumed = param_defs.iter().any(|pd| {
-                        (pd.named && pd.name == *name) || pd.name == format!(":{}", name)
-                    });
-                    if !consumed {
-                        return Err(RuntimeError::new(format!(
-                            "Unexpected named argument '{}' passed",
-                            name
-                        )));
-                    }
                 }
+                // Note: ValuePair is a positional pair (e.g. from parenthesized (:a(3))),
+                // so it's NOT treated as a named argument.
             }
         }
         // Check for extra positional arguments when no array/capture slurpy is present

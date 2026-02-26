@@ -110,6 +110,8 @@ pub(crate) enum OpCode {
 
     // -- Pair --
     MakePair,
+    /// Convert Pair(k,v) → ValuePair(Str(k),v) so it's treated as positional arg
+    ContainerizePair,
 
     // -- Bitwise --
     BitAnd,

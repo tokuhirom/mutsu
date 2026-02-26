@@ -252,6 +252,15 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
             rest = r;
             continue;
         }
+        // Adjacent colonpairs without commas: foo(:a :b :c) or foo(:a:b:c)
+        if r.starts_with(':')
+            && !r.starts_with("::")
+            && let Ok((r2, arg)) = crate::parser::primary::misc::colonpair_expr(r)
+        {
+            current_group.push(arg);
+            rest = r2;
+            continue;
+        }
         if !r.starts_with(',') {
             if has_semicolon {
                 groups.push(std::mem::take(&mut current_group));

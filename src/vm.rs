@@ -602,6 +602,15 @@ impl VM {
                 self.exec_make_pair_op();
                 *ip += 1;
             }
+            OpCode::ContainerizePair => {
+                let val = self.stack.pop().unwrap();
+                let containerized = match val {
+                    Value::Pair(k, v) => Value::ValuePair(Box::new(Value::Str(k)), v),
+                    other => other,
+                };
+                self.stack.push(containerized);
+                *ip += 1;
+            }
 
             // -- Bitwise --
             OpCode::BitAnd => {

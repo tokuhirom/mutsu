@@ -83,6 +83,15 @@ pub(super) fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
                 }
                 return Ok((r2, args));
             }
+            // Adjacent colonpairs without commas: foo(:a :b :c) or foo(:a:b:c)
+            if r2.starts_with(':')
+                && !r2.starts_with("::")
+                && let Ok((r3, arg)) = parse_single_call_arg(r2)
+            {
+                args.push(arg);
+                r = r3;
+                continue;
+            }
             if !r2.starts_with(',') {
                 // Try closing paren
                 return Err(PError::expected("',' or ')'"));
@@ -181,15 +190,34 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                 },
             ));
         }
-        // :$var / :@var / :%var (autopair from variable)
-        if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') {
+        // :$var / :@var / :%var / :&var (autopair from variable, with twigil support)
+        if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') || r.starts_with('&') {
             let sigil = &r[..1];
             let after_sigil = &r[1..];
-            if let Ok((rest, var_name)) = ident(after_sigil) {
+            // Check for twigils: *, ?, ^, =, ~, :
+            let (after_twigil, twigil) = if after_sigil.starts_with('*')
+                || after_sigil.starts_with('?')
+                || after_sigil.starts_with('^')
+                || after_sigil.starts_with('=')
+                || after_sigil.starts_with('~')
+            {
+                (&after_sigil[1..], &after_sigil[..1])
+            } else if after_sigil.starts_with(':') && !after_sigil.starts_with("::") {
+                (&after_sigil[1..], ":")
+            } else {
+                (after_sigil, "")
+            };
+            if let Ok((rest, var_name)) = ident(after_twigil) {
+                let full_var_name = if twigil.is_empty() {
+                    var_name.clone()
+                } else {
+                    format!("{}{}", twigil, var_name)
+                };
                 let var_expr = match sigil {
-                    "$" => Expr::Var(var_name.clone()),
-                    "@" => Expr::ArrayVar(var_name.clone()),
-                    "%" => Expr::HashVar(var_name.clone()),
+                    "$" => Expr::Var(full_var_name),
+                    "@" => Expr::ArrayVar(full_var_name),
+                    "%" => Expr::HashVar(full_var_name),
+                    "&" => Expr::CodeVar(full_var_name),
                     _ => unreachable!(),
                 };
                 return Ok((

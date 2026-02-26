@@ -559,6 +559,12 @@ impl PartialEq for Value {
             (Value::Package(a), Value::Package(b)) => a == b,
             (Value::Pair(ak, av), Value::Pair(bk, bv)) => ak == bk && av == bv,
             (Value::ValuePair(ak, av), Value::ValuePair(bk, bv)) => ak == bk && av == bv,
+            (Value::Pair(ak, av), Value::ValuePair(bk, bv)) => {
+                matches!(bk.as_ref(), Value::Str(s) if s == ak) && av == bv
+            }
+            (Value::ValuePair(ak, av), Value::Pair(bk, bv)) => {
+                matches!(ak.as_ref(), Value::Str(s) if s == bk) && av == bv
+            }
             (
                 Value::Enum {
                     enum_type: at,
