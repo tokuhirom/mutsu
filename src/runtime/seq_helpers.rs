@@ -278,18 +278,17 @@ impl Interpreter {
         }
         attrs.insert("named".to_string(), Value::hash(named));
         let match_obj = Value::make_instance("Match".to_string(), attrs);
-        self.env.insert("/".to_string(), match_obj);
+        self.env.insert("/".to_string(), match_obj.clone());
         for (i, v) in captures.positional.iter().enumerate() {
             self.env.insert(i.to_string(), make_capture_match(v));
         }
-        for (k, v) in &captures.named {
-            let vals: Vec<Value> = v.iter().map(|s| make_capture_match(s)).collect();
-            let value = if vals.len() == 1 {
-                vals[0].clone()
-            } else {
-                Value::array(vals)
-            };
-            self.env.insert(format!("<{}>", k), value);
+        // Set named capture env vars from the match object's named hash
+        if let Value::Instance { ref attributes, .. } = match_obj
+            && let Some(Value::Hash(named_hash)) = attributes.get("named")
+        {
+            for (k, v) in named_hash.iter() {
+                self.env.insert(format!("<{}>", k), v.clone());
+            }
         }
     }
 
@@ -486,26 +485,30 @@ impl Interpreter {
             ) => {
                 let text = left.to_string_value();
                 if let Some(captures) = self.regex_match_with_captures(pat, &text) {
+                    for (i, v) in captures.positional.iter().enumerate() {
+                        self.env.insert(i.to_string(), Value::Str(v.clone()));
+                    }
+                    // Execute code blocks from regex for side effects
+                    self.execute_regex_code_blocks(&captures.code_blocks);
                     let match_obj = Value::make_match_object_full(
                         captures.matched.clone(),
                         captures.from as i64,
                         captures.to as i64,
                         &captures.positional,
                         &captures.named,
+                        &captures.named_subcaps,
                         Some(&text),
                     );
+                    // Set named capture env vars from the match object's named hash
+                    // so subcapture-aware Match objects are used (not plain strings)
+                    if let Value::Instance { ref attributes, .. } = match_obj
+                        && let Some(Value::Hash(named_hash)) = attributes.get("named")
+                    {
+                        for (k, v) in named_hash.iter() {
+                            self.env.insert(format!("<{}>", k), v.clone());
+                        }
+                    }
                     self.env.insert("/".to_string(), match_obj);
-                    for (i, v) in captures.positional.iter().enumerate() {
-                        self.env.insert(i.to_string(), Value::Str(v.clone()));
-                    }
-                    for (k, v) in &captures.named {
-                        let value = if v.len() == 1 {
-                            Value::Str(v[0].clone())
-                        } else {
-                            Value::array(v.iter().cloned().map(Value::Str).collect())
-                        };
-                        self.env.insert(format!("<{}>", k), value);
-                    }
                     return true;
                 }
                 self.env.insert("/".to_string(), Value::Nil);

@@ -792,8 +792,11 @@ impl Interpreter {
                         candidates
                             .sort_by_key(|(next, c)| (*next, c.positional.len(), c.named.len()));
                         if let Some(best) = candidates.pop() {
+                            // Atom matched — commit to the match (no backtracking)
                             candidates = vec![best];
                         } else {
+                            // Atom didn't match — commit to "zero" (no match)
+                            stack.push((idx + 1, pos, caps.clone()));
                             candidates.clear();
                         }
                     } else {
@@ -943,23 +946,35 @@ impl Interpreter {
                         {
                             let end = pos + inner_end;
                             let mut new_caps = current_caps.clone();
-                            for (k, v) in inner_caps.named {
-                                new_caps.named.entry(k).or_default().extend(v);
-                            }
-                            for v in inner_caps.positional {
-                                new_caps.positional.push(v);
-                            }
                             let capture_name = spec
                                 .capture_name
                                 .as_deref()
                                 .or_else(|| (!spec.silent).then_some(spec.lookup_name.as_str()));
                             if let Some(capture_name) = capture_name {
                                 let captured: String = chars[pos..end].iter().collect();
+                                // Store inner captures as subcaptures (nested)
+                                let mut subcap = inner_caps;
+                                subcap.matched = captured.clone();
+                                subcap.from = pos;
+                                subcap.to = end;
+                                new_caps
+                                    .named_subcaps
+                                    .entry(capture_name.to_string())
+                                    .or_default()
+                                    .push(subcap);
                                 new_caps
                                     .named
                                     .entry(capture_name.to_string())
                                     .or_default()
                                     .push(captured);
+                            } else {
+                                // No capture name — merge inner captures flat
+                                for (k, v) in inner_caps.named {
+                                    new_caps.named.entry(k).or_default().extend(v);
+                                }
+                                for v in inner_caps.positional {
+                                    new_caps.positional.push(v);
+                                }
                             }
                             out.push((end, new_caps));
                         }
@@ -1356,15 +1371,27 @@ impl Interpreter {
                 }
                 return None;
             }
-            RegexAtom::CodeAssertion { code, negated } => {
-                // Evaluate the code with current captures available
-                let result = self.eval_regex_code_assertion(code, current_caps);
-                let pass = if *negated { !result } else { result };
-                return if pass {
-                    Some((pos, current_caps.clone()))
-                } else {
-                    None
-                };
+            RegexAtom::CodeAssertion {
+                code,
+                negated,
+                is_assertion,
+            } => {
+                if *is_assertion {
+                    // <?{ expr }> or <!{ expr }> — assertion based on truthiness
+                    let result = self.eval_regex_code_assertion(code, current_caps);
+                    let pass = if *negated { !result } else { result };
+                    return if pass {
+                        Some((pos, current_caps.clone()))
+                    } else {
+                        None
+                    };
+                }
+                // Plain { code } block — always succeeds, record for side effects
+                let mut new_caps = current_caps.clone();
+                new_caps
+                    .code_blocks
+                    .push((code.clone(), current_caps.named.clone()));
+                return Some((pos, new_caps));
             }
             RegexAtom::CaptureStartMarker => {
                 let mut new_caps = current_caps.clone();
@@ -1415,23 +1442,35 @@ impl Interpreter {
                 if let Some((inner_end, inner_caps)) = best {
                     let end = pos + inner_end;
                     let mut new_caps = current_caps.clone();
-                    for (k, v) in inner_caps.named {
-                        new_caps.named.entry(k).or_default().extend(v);
-                    }
-                    for v in inner_caps.positional {
-                        new_caps.positional.push(v);
-                    }
                     let capture_name = spec
                         .capture_name
                         .as_deref()
                         .or_else(|| (!spec.silent).then_some(spec.lookup_name.as_str()));
                     if let Some(capture_name) = capture_name {
                         let captured: String = chars[pos..end].iter().collect();
+                        // Store inner captures as subcaptures (nested)
+                        let mut subcap = inner_caps;
+                        subcap.matched = captured.clone();
+                        subcap.from = pos;
+                        subcap.to = end;
+                        new_caps
+                            .named_subcaps
+                            .entry(capture_name.to_string())
+                            .or_default()
+                            .push(subcap);
                         new_caps
                             .named
                             .entry(capture_name.to_string())
                             .or_default()
                             .push(captured);
+                    } else {
+                        // No capture name — merge inner captures flat
+                        for (k, v) in inner_caps.named {
+                            new_caps.named.entry(k).or_default().extend(v);
+                        }
+                        for v in inner_caps.positional {
+                            new_caps.positional.push(v);
+                        }
                     }
                     return Some((end, new_caps));
                 }
@@ -1530,6 +1569,42 @@ impl Interpreter {
         match interp.eval_block_value(&stmts) {
             Ok(val) => val.truthy(),
             Err(_) => false,
+        }
+    }
+
+    /// Execute code blocks collected during regex matching for side effects.
+    pub(super) fn execute_regex_code_blocks(
+        &mut self,
+        code_blocks: &[(String, HashMap<String, Vec<String>>)],
+    ) {
+        for (code, named_at_point) in code_blocks {
+            let Ok((stmts, _)) = crate::parse_dispatch::parse_source(code) else {
+                continue;
+            };
+            // Set up named captures as $<name> variables
+            for (k, v) in named_at_point {
+                let value = if v.len() == 1 {
+                    Value::Str(v[0].clone())
+                } else {
+                    Value::array(v.iter().cloned().map(Value::Str).collect())
+                };
+                self.env.insert(format!("<{}>", k), value);
+            }
+            // Snapshot env keys and values before execution
+            let snapshot: HashMap<String, String> = self
+                .env
+                .iter()
+                .map(|(k, v)| (k.clone(), format!("{:?}", v)))
+                .collect();
+            let _ = self.eval_block_value(&stmts);
+            // Record changed env variables as pending local updates for the outer VM
+            for (k, v) in &self.env {
+                let old_repr = snapshot.get(k).map(|s| s.as_str()).unwrap_or("");
+                let new_repr = format!("{:?}", v);
+                if old_repr != new_repr {
+                    self.pending_local_updates.push((k.clone(), v.clone()));
+                }
+            }
         }
     }
 

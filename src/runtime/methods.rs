@@ -1445,22 +1445,25 @@ impl Interpreter {
                             for (i, v) in captures.positional.iter().enumerate() {
                                 self.env.insert(i.to_string(), Value::Str(v.clone()));
                             }
-                            for (k, v) in &captures.named {
-                                let value = if v.len() == 1 {
-                                    Value::Str(v[0].clone())
-                                } else {
-                                    Value::array(v.iter().cloned().map(Value::Str).collect())
-                                };
-                                self.env.insert(format!("<{}>", k), value);
-                            }
+                            // Execute code blocks from regex for side effects
+                            self.execute_regex_code_blocks(&captures.code_blocks);
                             let match_obj = Value::make_match_object_full(
                                 matched,
                                 from,
                                 to,
                                 &captures.positional,
                                 &captures.named,
+                                &captures.named_subcaps,
                                 Some(&text),
                             );
+                            // Set named capture env vars from match object
+                            if let Value::Instance { ref attributes, .. } = match_obj
+                                && let Some(Value::Hash(named_hash)) = attributes.get("named")
+                            {
+                                for (k, v) in named_hash.iter() {
+                                    self.env.insert(format!("<{}>", k), v.clone());
+                                }
+                            }
                             self.env.insert("/".to_string(), match_obj.clone());
                             Ok(match_obj)
                         } else {
@@ -3077,22 +3080,23 @@ impl Interpreter {
             for (i, v) in captures.positional.iter().enumerate() {
                 self.env.insert(i.to_string(), Value::Str(v.clone()));
             }
-            for (k, v) in &captures.named {
-                let value = if v.len() == 1 {
-                    Value::Str(v[0].clone())
-                } else {
-                    Value::array(v.iter().cloned().map(Value::Str).collect())
-                };
-                self.env.insert(format!("<{}>", k), value);
-            }
             let match_obj = Value::make_match_object_full(
                 captures.matched,
                 captures.from as i64,
                 captures.to as i64,
                 &captures.positional,
                 &captures.named,
+                &captures.named_subcaps,
                 Some(&text),
             );
+            // Set named capture env vars from match object
+            if let Value::Instance { attributes, .. } = &match_obj
+                && let Some(Value::Hash(named_hash)) = attributes.get("named")
+            {
+                for (k, v) in named_hash.iter() {
+                    self.env.insert(format!("<{}>", k), v.clone());
+                }
+            }
             self.env.insert("/".to_string(), match_obj.clone());
             Ok(match_obj)
         })();
@@ -4295,6 +4299,18 @@ impl Interpreter {
                     map.insert(k.clone(), Value::Num(*v));
                 }
                 Ok(Value::hash(map))
+            }
+            Value::Instance {
+                ref class_name,
+                ref attributes,
+                ..
+            } if class_name == "Match" => {
+                // %($/) returns the named captures hash
+                if let Some(named) = attributes.get("named") {
+                    Ok(named.clone())
+                } else {
+                    Ok(Value::hash(HashMap::new()))
+                }
             }
             other => {
                 let mut map = HashMap::new();
