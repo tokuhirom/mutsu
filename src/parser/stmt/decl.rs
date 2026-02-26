@@ -47,7 +47,7 @@ fn parse_sigilless_decl_name(input: &str) -> PResult<'_, String> {
     super::parse_sub_name_pub(input)
 }
 
-fn parse_array_shape_suffix(input: &str) -> PResult<'_, Vec<Expr>> {
+pub(super) fn parse_array_shape_suffix(input: &str) -> PResult<'_, Vec<Expr>> {
     let (rest, _) = parse_char(input, '[')?;
     let (rest, _) = ws(rest)?;
     let mut dims = Vec::new();
@@ -88,6 +88,37 @@ fn shaped_array_new_expr(dims: Vec<Expr>) -> Expr {
             op: TokenKind::FatArrow,
             right: Box::new(shape_value),
         }],
+        modifier: None,
+        quoted: false,
+    }
+}
+
+/// Generate `Array.new(:shape(N), :data(expr))` for shaped array declarations
+/// with an assignment expression (e.g. `my @b[3] = <a b c>`).
+fn shaped_array_new_with_data_expr(dims: Vec<Expr>, data: Expr) -> Expr {
+    let shape_value = if dims.len() == 1 {
+        dims.into_iter()
+            .next()
+            .unwrap_or(Expr::Literal(Value::Int(0)))
+    } else {
+        Expr::ArrayLiteral(dims)
+    };
+
+    Expr::MethodCall {
+        target: Box::new(Expr::BareWord("Array".to_string())),
+        name: "new".to_string(),
+        args: vec![
+            Expr::Binary {
+                left: Box::new(Expr::Literal(Value::Str("shape".to_string()))),
+                op: TokenKind::FatArrow,
+                right: Box::new(shape_value),
+            },
+            Expr::Binary {
+                left: Box::new(Expr::Literal(Value::Str("data".to_string()))),
+                op: TokenKind::FatArrow,
+                right: Box::new(data),
+            },
+        ],
         modifier: None,
         quoted: false,
     }
@@ -561,6 +592,13 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             }
         }
         let (rest, expr) = parse_assign_expr_or_comma(rest)?;
+        // For shaped array declarations with assignment (e.g. my @b[3] = <a b c>),
+        // create a shaped array and populate it with the assigned data.
+        let expr = if let Some(dims) = shape_dims {
+            shaped_array_new_with_data_expr(dims, expr)
+        } else {
+            expr
+        };
         let stmt = Stmt::VarDecl {
             name,
             expr,
