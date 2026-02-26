@@ -304,6 +304,25 @@ impl Interpreter {
             self.env.insert("=finish".to_string(), Value::Str(content));
         }
         let (enter_ph, leave_ph, body_main) = self.split_block_phasers(&stmts);
+        // Register END phasers eagerly (before VM execution) so they run
+        // even if the main body dies or throws an exception.
+        // Also filter them out of the body so they don't get registered again
+        // by the PhaserEnd opcode during VM execution.
+        let body_main: Vec<Stmt> = body_main
+            .into_iter()
+            .filter(|stmt| {
+                if let Stmt::Phaser {
+                    kind: crate::ast::PhaserKind::End,
+                    body,
+                } = stmt
+                {
+                    self.push_end_phaser(body.clone());
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect();
         self.run_block_raw(&enter_ph)?;
         let mut compiler = crate::compiler::Compiler::new();
         compiler.set_current_package(self.current_package.clone());
@@ -316,7 +335,14 @@ impl Interpreter {
         if leave_result.is_err() && body_result.is_ok() {
             leave_result?;
         }
-        let last_value = body_result?;
+
+        // If the main body failed (e.g. die), run END phasers before propagating
+        if let Err(e) = body_result {
+            self.finish()?;
+            return Err(e);
+        }
+
+        let last_value = body_result.unwrap();
         // Only store last_value if _ was actually set during this execution
         // (not inherited from a previous REPL line)
         self.last_value = last_value;
@@ -389,6 +415,8 @@ impl Interpreter {
 
     pub(super) fn finish(&mut self) -> Result<(), RuntimeError> {
         if !self.end_phasers.is_empty() {
+            // Clear halted flag so END phasers can execute even after exit()
+            self.halted = false;
             let phasers = self.end_phasers.clone();
             for (body, captured_env) in phasers.iter().rev() {
                 let saved_env = self.env.clone();
@@ -485,5 +513,78 @@ mod tests {
         assert!(out.contains("skip 'reason', 1;"));
         assert!(!out.contains("is EVAL('$bar'), Any, 'x'"));
         assert!(out.contains("say 42;"));
+    }
+
+    // END phasers must run even after die() or exit().
+    // Spec: raku-doc/doc/Language/phasers.rakudoc (END runs "at runtime, ALAP, only ever runs once")
+    // Roast: roast/integration/error-reporting.t line 99 ("END phasers are run after die()")
+    // Roast: roast/S04-phasers/end.t line 53 ("exit does not prevent running of END blocks")
+
+    #[test]
+    fn end_phaser_runs_after_die() {
+        let mut interp = Interpreter::new();
+        interp.set_immediate_stdout(false);
+        let result = interp.run("END { say 'end-ran' }; die 'boom';");
+        assert!(result.is_err(), "die should propagate as error");
+        assert_eq!(interp.output, "end-ran\n");
+    }
+
+    #[test]
+    fn end_phaser_runs_after_exit() {
+        let mut interp = Interpreter::new();
+        interp.set_immediate_stdout(false);
+        let result = interp.run("END { say 'end-ran' }; exit;");
+        assert!(result.is_ok());
+        assert_eq!(interp.output, "end-ran\n");
+    }
+
+    #[test]
+    fn end_phaser_runs_after_exit_with_code() {
+        let mut interp = Interpreter::new();
+        interp.set_immediate_stdout(false);
+        let result = interp.run("END { say 'end-ran' }; exit(5);");
+        assert!(result.is_ok());
+        assert_eq!(interp.exit_code(), 5);
+        assert_eq!(interp.output, "end-ran\n");
+    }
+
+    #[test]
+    fn end_phaser_runs_in_reverse_order() {
+        let mut interp = Interpreter::new();
+        interp.set_immediate_stdout(false);
+        let result = interp.run("END { print 'A' }; END { print 'B' }; END { print 'C' };");
+        assert!(result.is_ok());
+        assert_eq!(interp.output, "CBA");
+    }
+
+    #[test]
+    fn end_phaser_reverse_order_with_die() {
+        let mut interp = Interpreter::new();
+        interp.set_immediate_stdout(false);
+        let result = interp.run("END { print 'A' }; END { print 'B' }; die 'x';");
+        assert!(result.is_err());
+        assert_eq!(interp.output, "BA");
+    }
+
+    #[test]
+    fn end_phaser_runs_on_normal_completion() {
+        let mut interp = Interpreter::new();
+        interp.set_immediate_stdout(false);
+        let result = interp.run("say 'hello'; END { say 'end' };");
+        assert!(result.is_ok());
+        assert_eq!(interp.output, "hello\nend\n");
+    }
+
+    #[test]
+    fn die_preserves_exit_code_with_end_phaser() {
+        let mut interp = Interpreter::new();
+        interp.set_immediate_stdout(false);
+        let result = interp.run("END { say 'end' }; die 'boom';");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.message.contains("boom"),
+            "error message should contain 'boom'"
+        );
     }
 }
