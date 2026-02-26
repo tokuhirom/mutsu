@@ -363,7 +363,17 @@ impl VM {
                 let name = Self::const_str(code, *name_idx).to_string();
                 let constraint = Self::const_str(code, *tc_idx).to_string();
                 self.interpreter
-                    .set_var_type_constraint(&name, Some(constraint));
+                    .set_var_type_constraint(&name, Some(constraint.clone()));
+                // For scalar variables, if the current value is Nil, set it to the type object
+                if !name.starts_with('@') && !name.starts_with('%') {
+                    let is_nil =
+                        matches!(self.interpreter.env().get(&name), Some(Value::Nil) | None);
+                    if is_nil {
+                        let type_obj = Value::Package(constraint);
+                        self.set_env_with_main_alias(&name, type_obj.clone());
+                        self.update_local_if_exists(code, &name, &type_obj);
+                    }
+                }
                 *ip += 1;
             }
             OpCode::SetTopic => {

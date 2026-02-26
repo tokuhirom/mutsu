@@ -107,6 +107,20 @@ fn assign_or_and_expr(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                     },
                 ));
             }
+            // Check if LHS is a subscripted variable: @a[1] = ..., %h{k} = ...
+            if let Expr::Index { target, index } = expr {
+                let r = &r[1..];
+                let (r, _) = ws(r)?;
+                let (r, rhs) = and_expr_mode(r, mode)?;
+                return Ok((
+                    r,
+                    Expr::IndexAssign {
+                        target,
+                        index,
+                        value: Box::new(rhs),
+                    },
+                ));
+            }
         }
         return Ok((rest, expr));
     }

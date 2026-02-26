@@ -928,6 +928,16 @@ impl VM {
             Value::Pair(name, value) if name == "__mutsu_bind_index_value" => (*value, true),
             other => (other, false),
         };
+        // When assigning Nil to a typed container element, use the type object
+        let val = if matches!(val, Value::Nil) {
+            if let Some(constraint) = self.interpreter.var_type_constraint(&var_name) {
+                Value::Package(constraint)
+            } else {
+                val
+            }
+        } else {
+            val
+        };
         let encoded_idx = Self::encode_bound_index(&idx);
         let is_bound_index = if bind_mode {
             self.is_bound_index(&var_name, &encoded_idx)
@@ -1241,8 +1251,10 @@ impl VM {
             && !name.starts_with('%')
             && !name.starts_with('@')
         {
-            if !matches!(val, Value::Nil) && !self.interpreter.type_matches_value(&constraint, &val)
-            {
+            if matches!(val, Value::Nil) {
+                // Assigning Nil to a typed variable resets it to the type object
+                val = Value::Package(constraint.clone());
+            } else if !self.interpreter.type_matches_value(&constraint, &val) {
                 return Err(RuntimeError::new(format!(
                     "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
                     name,
@@ -1250,7 +1262,7 @@ impl VM {
                     runtime::utils::value_type_name(&val)
                 )));
             }
-            if !matches!(val, Value::Nil) {
+            if !matches!(val, Value::Nil | Value::Package(_)) {
                 val = self
                     .interpreter
                     .try_coerce_value_for_constraint(&constraint, val)?;

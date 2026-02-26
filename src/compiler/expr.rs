@@ -428,6 +428,28 @@ impl Compiler {
                     };
                     self.compile_expr(&method_call);
                 }
+                // sink: evaluate the expression (including calling blocks), discard result, push Nil
+                else if name == "sink" && args.len() == 1 {
+                    match &args[0] {
+                        Expr::AnonSub(body) => {
+                            // sink { ... } — execute the block body inline via do block
+                            let do_block = Expr::DoBlock {
+                                body: body.clone(),
+                                label: None,
+                            };
+                            self.compile_expr(&do_block);
+                            // Discard the block result and push Nil
+                            self.code.emit(OpCode::Pop);
+                            self.code.emit(OpCode::LoadNil);
+                        }
+                        _ => {
+                            // sink expr — evaluate, discard, push Nil
+                            self.compile_expr(&args[0]);
+                            self.code.emit(OpCode::Pop);
+                            self.code.emit(OpCode::LoadNil);
+                        }
+                    }
+                }
                 // Rewrite indir($path, { ... }) body into a callable block value so
                 // call_function("indir", ...) can execute it after switching $*CWD.
                 else if name == "indir" && args.len() >= 2 {

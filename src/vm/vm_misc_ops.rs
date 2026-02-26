@@ -350,6 +350,16 @@ impl VM {
         } else {
             raw_val
         };
+        // When assigning Nil to a typed variable, reset to the type object
+        let val = if matches!(val, Value::Nil) && !name.starts_with('@') && !name.starts_with('%') {
+            if let Some(constraint) = self.interpreter.var_type_constraint(&name) {
+                Value::Package(constraint)
+            } else {
+                val
+            }
+        } else {
+            val
+        };
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
         if matches!(

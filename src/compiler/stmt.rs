@@ -166,9 +166,7 @@ impl Compiler {
                     name_idx,
                     dynamic: is_dynamic,
                 });
-                if let Some(tc) = type_constraint
-                    && !is_hash
-                {
+                if let Some(tc) = type_constraint {
                     let tc_idx = self.code.add_constant(Value::Str(tc.clone()));
                     self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
                 }

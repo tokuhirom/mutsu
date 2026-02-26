@@ -190,6 +190,45 @@ pub(super) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("assignment expression"));
     }
     let (r, var) = var_name(input)?;
+
+    // Handle subscripted lvalues: @a[1] = ..., %h{key} = ..., $a[0] = ...
+    if r.starts_with('[') || r.starts_with('{') || r.starts_with('<') {
+        let closing = match r.as_bytes()[0] {
+            b'[' => ']',
+            b'{' => '}',
+            _ => '>',
+        };
+        let (r_idx, _) = parse_char(r, r.as_bytes()[0] as char)?;
+        let (r_idx, _) = ws(r_idx)?;
+        let (r_idx, index_expr) = expression(r_idx)?;
+        let (r_idx, _) = ws(r_idx)?;
+        let (r_idx, _) = parse_char(r_idx, closing)?;
+        let (r_after, _) = ws(r_idx)?;
+        // Check for simple assignment
+        if r_after.starts_with('=') && !r_after.starts_with("==") && !r_after.starts_with("=>") {
+            let r3 = &r_after[1..];
+            let (rest, _) = ws(r3)?;
+            let (rest, rhs) = match try_parse_assign_expr(rest) {
+                Ok(r) => r,
+                Err(_) => expression(rest)?,
+            };
+            let target = match sigil {
+                b'@' => Expr::ArrayVar(var.to_string()),
+                b'%' => Expr::HashVar(var.to_string()),
+                _ => Expr::Var(var.to_string()),
+            };
+            return Ok((
+                rest,
+                Expr::IndexAssign {
+                    target: Box::new(target),
+                    index: Box::new(index_expr),
+                    value: Box::new(rhs),
+                },
+            ));
+        }
+        return Err(PError::expected("assignment expression"));
+    }
+
     let (r2, _) = ws(r)?;
     let prefix = match sigil {
         b'@' => "@",
