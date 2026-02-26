@@ -14,9 +14,15 @@ impl Value {
             (Value::Hash(a), Value::Hash(b)) => {
                 a.len() == b.len() && a.iter().all(|(k, v)| b.get(k).is_some_and(|bv| v.eqv(bv)))
             }
-            // Pairs: recursively use eqv for values
+            // Pairs: recursively use eqv for values (Pair and ValuePair are equivalent)
             (Value::Pair(ak, av), Value::Pair(bk, bv)) => ak == bk && av.eqv(bv),
             (Value::ValuePair(ak, av), Value::ValuePair(bk, bv)) => ak.eqv(bk) && av.eqv(bv),
+            (Value::Pair(ak, av), Value::ValuePair(bk, bv)) => {
+                matches!(bk.as_ref(), Value::Str(s) if s == ak) && av.eqv(bv)
+            }
+            (Value::ValuePair(ak, av), Value::Pair(bk, bv)) => {
+                matches!(ak.as_ref(), Value::Str(s) if s == bk) && av.eqv(bv)
+            }
             // Captures: recursively use eqv for positional and named elements
             (
                 Value::Capture {

@@ -124,6 +124,7 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
             || first_char == '!'
             || first_char == '^'
             || first_char == '.'
+            || first_char == '~'
     };
     if !next_is_ident_or_twigil {
         return Ok((input, Expr::Var("__ANON_STATE__".to_string())));
@@ -155,12 +156,13 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
             return Ok((input, Expr::BareWord("self".to_string())));
         }
     }
-    // Handle twigils: $*FOO, $?FILE, $!attr, $.attr
+    // Handle twigils: $*FOO, $?FILE, $!attr, $.attr, $~MAIN
     let (rest, twigil) = if input.starts_with('*')
         || input.starts_with('?')
         || input.starts_with('!')
         || input.starts_with('^')
         || (input.starts_with('.') && input.len() > 1 && input.as_bytes()[1].is_ascii_alphabetic())
+        || (input.starts_with('~') && input.len() > 1 && input.as_bytes()[1].is_ascii_alphabetic())
     {
         (&input[1..], &input[..1])
     } else {
@@ -253,12 +255,15 @@ fn parse_qualified_ident_with_hyphens_or_empty(input: &str) -> (&str, String) {
 pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '@')?;
     // Handle twigils
-    let (rest, twigil) =
-        if input.starts_with('*') || input.starts_with('!') || input.starts_with('^') {
-            (&input[1..], &input[..1])
-        } else {
-            (input, "")
-        };
+    let (rest, twigil) = if input.starts_with('*')
+        || input.starts_with('!')
+        || input.starts_with('^')
+        || (input.starts_with('~') && input.len() > 1 && input.as_bytes()[1].is_ascii_alphabetic())
+    {
+        (&input[1..], &input[..1])
+    } else {
+        (input, "")
+    };
     // Contextualized scalar specials (e.g., @$/, @$_): parse `$...` then lift
     // to an array variable targeting the same underlying name.
     if twigil.is_empty()
@@ -286,12 +291,15 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
 pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '%')?;
     // Handle twigils
-    let (rest, twigil) =
-        if input.starts_with('*') || input.starts_with('!') || input.starts_with('^') {
-            (&input[1..], &input[..1])
-        } else {
-            (input, "")
-        };
+    let (rest, twigil) = if input.starts_with('*')
+        || input.starts_with('!')
+        || input.starts_with('^')
+        || (input.starts_with('~') && input.len() > 1 && input.as_bytes()[1].is_ascii_alphabetic())
+    {
+        (&input[1..], &input[..1])
+    } else {
+        (input, "")
+    };
     // Contextualized scalar specials (e.g., %$/, %$_): parse `$...` then lift
     // to a hash variable targeting the same underlying name.
     if twigil.is_empty()

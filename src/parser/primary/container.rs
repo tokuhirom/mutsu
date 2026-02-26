@@ -1,6 +1,7 @@
 use super::super::parse_result::{PError, PResult, parse_char};
 
 use crate::ast::{Expr, Stmt};
+use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 use super::super::expr::{expression, expression_no_sequence};
@@ -101,6 +102,19 @@ pub(super) fn paren_expr(input: &str) -> PResult<'_, Expr> {
         return seq;
     }
     if let Ok((input, _)) = parse_char(input, ')') {
+        // Parenthesized pair: (:a(3)) — mark as positional so it's not treated
+        // as a named argument in function calls.
+        let first = if matches!(
+            &first,
+            Expr::Binary {
+                op: TokenKind::FatArrow,
+                ..
+            }
+        ) {
+            Expr::PositionalPair(Box::new(first))
+        } else {
+            first
+        };
         return Ok((input, first));
     }
     // Comma-separated list with sequence operator detection

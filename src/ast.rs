@@ -144,6 +144,9 @@ pub(crate) enum Expr {
         body: Vec<Stmt>,
     },
     ArrayLiteral(Vec<Expr>),
+    /// A pair expression that was parenthesized, e.g. `(:a(3))`.
+    /// At runtime this becomes a ValuePair so it is treated as a positional argument.
+    PositionalPair(Box<Expr>),
     /// Array constructed with [...] (reports as "Array" type vs "List" for comma lists).
     BracketArray(Vec<Expr>),
     /// Capture literal: \(positional..., named...) — mixed exprs separated at compile time
@@ -702,7 +705,9 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             collect_ph_expr(then_expr, out);
             collect_ph_expr(else_expr, out);
         }
-        Expr::AssignExpr { expr, .. } | Expr::Exists(expr) => collect_ph_expr(expr, out),
+        Expr::AssignExpr { expr, .. } | Expr::Exists(expr) | Expr::PositionalPair(expr) => {
+            collect_ph_expr(expr, out)
+        }
         Expr::ArrayLiteral(es)
         | Expr::BracketArray(es)
         | Expr::StringInterpolation(es)
