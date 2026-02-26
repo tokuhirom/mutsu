@@ -188,6 +188,7 @@ roast/S06-traits/native-is-copy.t
 roast/S07-hyperrace/stress.t
 roast/S07-slip/slip.t
 roast/S09-multidim/indexing.t
+roast/S09-multidim/subs.t
 roast/S10-packages/joined-namespaces.t
 roast/S10-packages/require-and-use.t
 roast/S10-packages/use-with-class.t
@@ -384,6 +385,7 @@ roast/S32-encoding/registry.t
 roast/S32-hash/antipairs.t
 roast/S32-hash/delete.t
 roast/S32-hash/exists.t
+roast/S32-hash/hyperslice.t
 roast/S32-hash/invert.t
 roast/S32-hash/iterator.t
 roast/S32-hash/keys_values.t
@@ -410,6 +412,7 @@ roast/S32-num/abs.t
 roast/S32-num/complex-logarithms.t
 roast/S32-num/exp.t
 roast/S32-num/expmod.t
+roast/S32-num/is-prime.t
 roast/S32-num/log.t
 roast/S32-num/pi.t
 roast/S32-num/polar.t
@@ -430,6 +433,7 @@ roast/S32-str/pos.t
 roast/S32-str/samemark.t
 roast/S32-str/sprintf-c.t
 roast/S32-str/sprintf-u.t
+roast/S32-str/starts-with.t
 roast/S32-str/tc.t
 roast/S32-str/tclc.t
 roast/S32-str/trim.t

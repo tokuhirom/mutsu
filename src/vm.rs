@@ -783,6 +783,24 @@ impl VM {
             }
 
             // -- Stack manipulation --
+            OpCode::XorXor => {
+                let b = self.stack.pop().unwrap();
+                let a = self.stack.pop().unwrap();
+                let a_truthy = a.truthy();
+                let b_truthy = b.truthy();
+                let result = if a_truthy && !b_truthy {
+                    a
+                } else if !a_truthy && b_truthy {
+                    b
+                } else if a_truthy && b_truthy {
+                    Value::Nil
+                } else {
+                    // both falsy: return the last falsy value
+                    b
+                };
+                self.stack.push(result);
+                *ip += 1;
+            }
             OpCode::Dup => {
                 let val = self.stack.last().unwrap().clone();
                 self.stack.push(val);
@@ -945,6 +963,14 @@ impl VM {
             }
             OpCode::DeleteIndexExpr => {
                 self.exec_delete_index_expr_op()?;
+                *ip += 1;
+            }
+            OpCode::HyperSlice(adverb) => {
+                self.exec_hyper_slice_op(*adverb)?;
+                *ip += 1;
+            }
+            OpCode::HyperIndex => {
+                self.exec_hyper_index_op()?;
                 *ip += 1;
             }
 

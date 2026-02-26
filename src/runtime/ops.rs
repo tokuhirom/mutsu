@@ -259,14 +259,15 @@ impl Interpreter {
             "^^" => {
                 let lt = left.truthy();
                 let rt = right.truthy();
-                if lt ^ rt {
-                    if lt {
-                        Ok(left.clone())
-                    } else {
-                        Ok(right.clone())
-                    }
+                if lt && !rt {
+                    Ok(left.clone())
+                } else if !lt && rt {
+                    Ok(right.clone())
+                } else if lt && rt {
+                    Ok(Value::Nil)
                 } else {
-                    Ok(Value::Bool(false))
+                    // both falsy: return the last falsy value
+                    Ok(right.clone())
                 }
             }
             "~~" => {

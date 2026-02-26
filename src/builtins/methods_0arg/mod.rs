@@ -10,7 +10,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use super::rng::builtin_rand;
 use super::unicode::titlecase_string;
 
-mod coercion;
+pub(crate) mod coercion;
 mod collection;
 
 use std::collections::HashMap;

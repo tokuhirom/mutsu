@@ -1,4 +1,6 @@
+use crate::builtins::primality::{is_prime_bigint, is_prime_i64};
 use crate::value::{RuntimeError, Value};
+use std::collections::HashMap;
 
 /// Type coercion and specialized 0-arg methods: numerator, denominator, nude,
 /// is-prime, isNaN, re, im, conj, reals, Complex, key, value, Slip, list/Array, Range
@@ -27,31 +29,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Value::Int(i) => Some(Ok(Value::array(vec![Value::Int(*i), Value::Int(1)]))),
             _ => Some(Ok(Value::array(vec![Value::Int(0), Value::Int(1)]))),
         },
-        "is-prime" => match target {
-            Value::Int(n) => {
-                let n = n.abs();
-                let prime = if n < 2 {
-                    false
-                } else if n < 4 {
-                    true
-                } else if n % 2 == 0 || n % 3 == 0 {
-                    false
-                } else {
-                    let mut i = 5i64;
-                    let mut result = true;
-                    while i * i <= n {
-                        if n % i == 0 || n % (i + 2) == 0 {
-                            result = false;
-                            break;
-                        }
-                        i += 6;
-                    }
-                    result
-                };
-                Some(Ok(Value::Bool(prime)))
-            }
-            _ => Some(Ok(Value::Bool(false))),
-        },
+        "is-prime" => Some(value_is_prime(target)),
         "re" => match target {
             Value::Complex(r, _) => Some(Ok(Value::Num(*r))),
             Value::Int(i) => Some(Ok(Value::Num(*i as f64))),
@@ -334,5 +312,114 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Some(Ok(Value::make_instance("Supply".to_string(), attrs)))
         }
         _ => None,
+    }
+}
+
+/// Implement is-prime for any Value, with type coercion.
+/// Negative numbers are not prime.
+/// Complex with non-zero imaginary throws X::Numeric::Real.
+/// Str, Num, Rat, FatRat coerce to Int first.
+pub(crate) fn value_is_prime(target: &Value) -> Result<Value, RuntimeError> {
+    match target {
+        Value::Int(n) => {
+            if *n < 0 {
+                return Ok(Value::Bool(false));
+            }
+            Ok(Value::Bool(is_prime_i64(*n)))
+        }
+        Value::BigInt(n) => {
+            if n.sign() == num_bigint::Sign::Minus {
+                return Ok(Value::Bool(false));
+            }
+            Ok(Value::Bool(is_prime_bigint(n)))
+        }
+        Value::Num(f) => {
+            if *f < 0.0 || f.fract() != 0.0 {
+                return Ok(Value::Bool(false));
+            }
+            let n = *f as i64;
+            Ok(Value::Bool(is_prime_i64(n)))
+        }
+        Value::Rat(n, d) | Value::FatRat(n, d) => {
+            if *d == 0 {
+                return Ok(Value::Bool(false));
+            }
+            if *n < 0 {
+                return Ok(Value::Bool(false));
+            }
+            if n % d != 0 {
+                return Ok(Value::Bool(false));
+            }
+            let int_val = n / d;
+            Ok(Value::Bool(is_prime_i64(int_val)))
+        }
+        Value::BigRat(n, d) => {
+            use num_traits::Zero;
+            if d.is_zero() {
+                return Ok(Value::Bool(false));
+            }
+            if n.sign() == num_bigint::Sign::Minus {
+                return Ok(Value::Bool(false));
+            }
+            let (quot, rem) = num_integer::Integer::div_rem(n, d);
+            if !rem.is_zero() {
+                return Ok(Value::Bool(false));
+            }
+            Ok(Value::Bool(is_prime_bigint(&quot)))
+        }
+        Value::Complex(_, i) if *i != 0.0 => {
+            let mut attrs = HashMap::new();
+            attrs.insert(
+                "message".to_string(),
+                Value::Str(format!(
+                    "Cannot convert {} to Real: imaginary part not zero",
+                    match target {
+                        Value::Complex(r, i) => {
+                            if *i >= 0.0 {
+                                format!("{}+{}i", r, i)
+                            } else {
+                                format!("{}{}i", r, i)
+                            }
+                        }
+                        _ => format!("{:?}", target),
+                    }
+                )),
+            );
+            attrs.insert("target".to_string(), Value::Str("Real".to_string()));
+            attrs.insert("source".to_string(), target.clone());
+            let ex = Value::make_instance("X::Numeric::Real".to_string(), attrs);
+            let mut err =
+                RuntimeError::new("Cannot convert Complex to Real: imaginary part not zero");
+            err.exception = Some(Box::new(ex));
+            Err(err)
+        }
+        Value::Complex(r, _) => {
+            // imaginary is 0, treat as real
+            if *r < 0.0 || r.fract() != 0.0 {
+                return Ok(Value::Bool(false));
+            }
+            let n = *r as i64;
+            Ok(Value::Bool(is_prime_i64(n)))
+        }
+        Value::Str(s) => {
+            // Try to parse as a number
+            // Handle Unicode minus sign
+            let s = s.replace('\u{2212}', "-");
+            if let Ok(n) = s.parse::<i64>() {
+                if n < 0 {
+                    return Ok(Value::Bool(false));
+                }
+                return Ok(Value::Bool(is_prime_i64(n)));
+            }
+            if let Ok(f) = s.parse::<f64>() {
+                if f < 0.0 || f.fract() != 0.0 {
+                    return Ok(Value::Bool(false));
+                }
+                let n = f as i64;
+                return Ok(Value::Bool(is_prime_i64(n)));
+            }
+            Ok(Value::Bool(false))
+        }
+        _ => Ok(Value::Bool(false)),
     }
 }

@@ -219,6 +219,7 @@ impl VM {
                 | "X::AdHoc"
                 | "CompUnit::DependencySpecification"
                 | "Proxy"
+                | "array"
         )
     }
 

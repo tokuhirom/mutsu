@@ -4,7 +4,7 @@ use super::super::helpers::{
 use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 use super::super::primary::{colonpair_expr, parse_block_body, parse_call_arg_list, primary};
 
-use crate::ast::Expr;
+use crate::ast::{Expr, HyperSliceAdverb};
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
@@ -828,6 +828,59 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 args,
                 modifier: None,
                 quoted: false,
+            };
+            rest = r;
+            continue;
+        }
+
+        // Hash hyperslice: %hash{**}:adverb
+        if rest.starts_with("{**}")
+            && matches!(&expr, Expr::HashVar(_) | Expr::Var(_) | Expr::Index { .. })
+        {
+            let r = &rest[4..];
+            let (r_adv, _) = ws(r)?;
+            // Parse required adverb
+            let (adverb, r) = if r_adv.starts_with(":deepkv")
+                && !is_ident_char(r_adv.as_bytes().get(7).copied())
+            {
+                (HyperSliceAdverb::DeepKv, &r_adv[7..])
+            } else if r_adv.starts_with(":deepk")
+                && !is_ident_char(r_adv.as_bytes().get(6).copied())
+            {
+                (HyperSliceAdverb::DeepK, &r_adv[6..])
+            } else if r_adv.starts_with(":tree") && !is_ident_char(r_adv.as_bytes().get(5).copied())
+            {
+                (HyperSliceAdverb::Tree, &r_adv[5..])
+            } else if r_adv.starts_with(":kv") && !is_ident_char(r_adv.as_bytes().get(3).copied()) {
+                (HyperSliceAdverb::Kv, &r_adv[3..])
+            } else if r_adv.starts_with(":k") && !is_ident_char(r_adv.as_bytes().get(2).copied()) {
+                (HyperSliceAdverb::K, &r_adv[2..])
+            } else if r_adv.starts_with(":v") && !is_ident_char(r_adv.as_bytes().get(2).copied()) {
+                (HyperSliceAdverb::V, &r_adv[2..])
+            } else {
+                // Default to :kv if no adverb
+                (HyperSliceAdverb::Kv, r)
+            };
+            expr = Expr::HyperSlice {
+                target: Box::new(expr),
+                adverb,
+            };
+            rest = r;
+            continue;
+        }
+
+        // Hash hyperindex: %hash{||@keys}
+        if rest.starts_with("{||")
+            && matches!(&expr, Expr::HashVar(_) | Expr::Var(_) | Expr::Index { .. })
+        {
+            let r = &rest[3..];
+            let (r, _) = ws(r)?;
+            let (r, keys_expr) = expression(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, '}')?;
+            expr = Expr::HyperIndex {
+                target: Box::new(expr),
+                keys: Box::new(keys_expr),
             };
             rest = r;
             continue;
