@@ -598,6 +598,14 @@ impl Value {
                 }
             }
             Value::Proxy { .. } => "Proxy".to_string(),
+            Value::CustomType { name, .. } => {
+                if name.is_empty() {
+                    "(CustomType)".to_string()
+                } else {
+                    format!("({})", name)
+                }
+            }
+            Value::CustomTypeInstance { type_name, .. } => format!("{}()", type_name),
         }
     }
 

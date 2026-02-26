@@ -156,6 +156,8 @@ impl Value {
                 }
             }
             Value::Proxy { .. } => true,
+            Value::CustomType { .. } => false,
+            Value::CustomTypeInstance { .. } => true,
         }
     }
 
@@ -223,6 +225,8 @@ impl Value {
             }
             Value::Proxy { .. } => "Proxy",
             Value::ParametricRole { base_name, .. } => base_name.as_str(),
+            Value::CustomType { name, .. } => name.as_str(),
+            Value::CustomTypeInstance { type_name: tn, .. } => tn.as_str(),
         };
         if my_type == type_name {
             return true;
