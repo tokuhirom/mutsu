@@ -135,6 +135,7 @@ roast/S05-mass/properties-contributory.t
 roast/S05-mass/properties-derived.t
 roast/S05-mass/properties-script.t
 roast/S05-match/basics.t
+roast/S05-match/raku.t
 roast/S05-metachars/newline.t
 roast/S05-metasyntax/assertions.t
 roast/S05-metasyntax/delimiters.t
@@ -433,6 +434,7 @@ roast/S32-str/pos.t
 roast/S32-str/samemark.t
 roast/S32-str/sprintf-c.t
 roast/S32-str/sprintf-u.t
+roast/S32-str/starts-with.t
 roast/S32-str/tc.t
 roast/S32-str/tclc.t
 roast/S32-str/trim.t

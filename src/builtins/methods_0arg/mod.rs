@@ -13,6 +13,80 @@ use super::unicode::titlecase_string;
 pub(crate) mod coercion;
 mod collection;
 
+use std::collections::HashMap;
+
+/// Produce Raku-compatible `.raku` representation for a Match object.
+fn match_raku_repr(attributes: &HashMap<String, Value>) -> String {
+    let orig = attributes
+        .get("orig")
+        .map(|v| v.to_string_value())
+        .unwrap_or_default();
+    let from = match attributes.get("from") {
+        Some(Value::Int(n)) => *n,
+        _ => 0,
+    };
+    let to = match attributes.get("to") {
+        Some(Value::Int(n)) => *n,
+        _ => 0,
+    };
+
+    let escaped_orig = orig
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\t', "\\t")
+        .replace('\r', "\\r")
+        .replace('\0', "\\0");
+
+    let mut parts = vec![
+        format!(":orig(\"{}\")", escaped_orig),
+        format!(":from({})", from),
+        format!(":pos({})", to),
+    ];
+
+    // Positional captures (:list)
+    if let Some(Value::Array(items, ..)) = attributes.get("list")
+        && !items.is_empty()
+    {
+        let items_raku: Vec<String> = items.iter().map(value_raku_repr).collect();
+        let trailing = if items.len() == 1 { "," } else { "" };
+        parts.push(format!(":list(({}{})", items_raku.join(", "), trailing));
+    }
+
+    // Named captures (:hash)
+    if let Some(Value::Hash(map, ..)) = attributes.get("named")
+        && !map.is_empty()
+    {
+        let mut pairs: Vec<String> = map
+            .iter()
+            .map(|(k, v)| format!("(:{}({}))", k, value_raku_repr(v)))
+            .collect();
+        pairs.sort(); // Deterministic output
+        parts.push(format!(":hash(Map.new({}))", pairs.join(", ")));
+    }
+
+    format!("Match.new({})", parts.join(", "))
+}
+
+/// Produce `.raku` representation for a value, recursing into Match objects.
+fn value_raku_repr(val: &Value) -> String {
+    match val {
+        Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "Match" => match_raku_repr(attributes),
+        Value::Array(items, ..) => {
+            let items_raku: Vec<String> = items.iter().map(value_raku_repr).collect();
+            format!("[{}]", items_raku.join(", "))
+        }
+        other => {
+            // Use the existing raku_value helper for non-Match values
+            raku_value(other)
+        }
+    }
+}
+
 // ── 0-arg method dispatch ────────────────────────────────────────────
 /// Try to dispatch a 0-argument method call on a Value.
 /// Returns `Some(Ok(..))` / `Some(Err(..))` when handled, `None` to fall through.
@@ -365,6 +439,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     .unwrap_or(Value::Str(String::new()))));
             }
             "Bool" => return Some(Ok(Value::Bool(true))),
+            "orig" => {
+                return Some(Ok(attributes
+                    .get("orig")
+                    .cloned()
+                    .unwrap_or(Value::Str(String::new()))));
+            }
+            "raku" | "perl" => {
+                return Some(Ok(Value::Str(match_raku_repr(attributes))));
+            }
             _ => {
                 // Delegate unknown methods to string representation
                 let str_val = Value::Str(target.to_string_value());
