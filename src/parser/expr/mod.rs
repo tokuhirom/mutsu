@@ -45,20 +45,26 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
             // Auto-quote bareword on LHS of => only for plain barewords.
             // Parenthesized forms like `(Mu) => 4` must preserve the original value key.
             let consumed = &input[..input.len() - rest.len()];
+            let is_bareword = matches!(&expr, Expr::BareWord(_));
             let left = match expr {
                 Expr::BareWord(ref name) if !consumed.trim_start().starts_with('(') => {
                     Expr::Literal(Value::Str(name.clone()))
                 }
                 _ => expr,
             };
-            return Ok((
-                r,
-                Expr::Binary {
-                    left: Box::new(left),
-                    op: TokenKind::FatArrow,
-                    right: Box::new(value),
-                },
-            ));
+            let pair = Expr::Binary {
+                left: Box::new(left),
+                op: TokenKind::FatArrow,
+                right: Box::new(value),
+            };
+            // Non-bareword keys (quoted strings, expressions) produce positional pairs,
+            // not named arguments. Bareword keys (a => 3) are named arguments.
+            let result = if is_bareword {
+                pair
+            } else {
+                Expr::PositionalPair(Box::new(pair))
+            };
+            return Ok((r, result));
         }
         expr = wrap_composition_operands(expr);
         // Wrap WhateverCode expressions in a lambda, but not bare * (Whatever).
@@ -82,20 +88,24 @@ pub(super) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {
         let (r, _) = ws(r)?;
         let (r, value) = parse_fat_arrow_value(r)?;
         let consumed = &input[..input.len() - rest.len()];
+        let is_bareword = matches!(&expr, Expr::BareWord(_));
         let left = match expr {
             Expr::BareWord(ref name) if !consumed.trim_start().starts_with('(') => {
                 Expr::Literal(Value::Str(name.clone()))
             }
             _ => expr,
         };
-        return Ok((
-            r,
-            Expr::Binary {
-                left: Box::new(left),
-                op: TokenKind::FatArrow,
-                right: Box::new(value),
-            },
-        ));
+        let pair = Expr::Binary {
+            left: Box::new(left),
+            op: TokenKind::FatArrow,
+            right: Box::new(value),
+        };
+        let result = if is_bareword {
+            pair
+        } else {
+            Expr::PositionalPair(Box::new(pair))
+        };
+        return Ok((r, result));
     }
     expr = wrap_composition_operands(expr);
     // Keep bare `*` as Whatever (Inf). Only wrap true WhateverCode expressions.
@@ -732,36 +742,41 @@ mod tests {
     fn parse_fat_arrow_chains_right_associatively() {
         let (rest, expr) = expression("1 => 2 => 3 => 4").unwrap();
         assert_eq!(rest, "");
+        // Non-bareword key => outermost wrapped in PositionalPair
+        // Inner chain pairs are raw Binary (not wrapped)
         match expr {
-            Expr::Binary {
-                op: TokenKind::FatArrow,
-                left,
-                right,
-            } => {
-                assert!(matches!(*left, Expr::Literal(Value::Int(1))));
-                match *right {
-                    Expr::Binary {
-                        op: TokenKind::FatArrow,
-                        left: right_left,
-                        right: right_right,
-                    } => {
-                        assert!(matches!(*right_left, Expr::Literal(Value::Int(2))));
-                        match *right_right {
-                            Expr::Binary {
-                                op: TokenKind::FatArrow,
-                                left: tail_left,
-                                right: tail_right,
-                            } => {
-                                assert!(matches!(*tail_left, Expr::Literal(Value::Int(3))));
-                                assert!(matches!(*tail_right, Expr::Literal(Value::Int(4))));
+            Expr::PositionalPair(inner) => match *inner {
+                Expr::Binary {
+                    op: TokenKind::FatArrow,
+                    left,
+                    right,
+                } => {
+                    assert!(matches!(*left, Expr::Literal(Value::Int(1))));
+                    match *right {
+                        Expr::Binary {
+                            op: TokenKind::FatArrow,
+                            left: right_left,
+                            right: right_right,
+                        } => {
+                            assert!(matches!(*right_left, Expr::Literal(Value::Int(2))));
+                            match *right_right {
+                                Expr::Binary {
+                                    op: TokenKind::FatArrow,
+                                    left: tail_left,
+                                    right: tail_right,
+                                } => {
+                                    assert!(matches!(*tail_left, Expr::Literal(Value::Int(3))));
+                                    assert!(matches!(*tail_right, Expr::Literal(Value::Int(4))));
+                                }
+                                _ => panic!("expected final fat-arrow pair"),
                             }
-                            _ => panic!("expected final fat-arrow pair"),
                         }
+                        _ => panic!("expected nested fat-arrow pair"),
                     }
-                    _ => panic!("expected nested fat-arrow pair"),
                 }
-            }
-            _ => panic!("expected fat-arrow pair"),
+                _ => panic!("expected fat-arrow pair inside PositionalPair"),
+            },
+            _ => panic!("expected PositionalPair for non-bareword key"),
         }
     }
 
@@ -773,21 +788,26 @@ mod tests {
             Expr::Call { name, args } => {
                 assert_eq!(name, "is");
                 assert!(args.len() >= 3);
+                // Non-bareword key => outermost PositionalPair wrapping
+                // Inner chain pairs are raw Binary
                 match &args[1] {
-                    Expr::Binary {
-                        op: TokenKind::FatArrow,
-                        right,
-                        ..
-                    } => {
-                        assert!(matches!(
-                            right.as_ref(),
-                            Expr::Binary {
-                                op: TokenKind::FatArrow,
-                                ..
-                            }
-                        ));
-                    }
-                    _ => panic!("expected chained fat-arrow in second argument"),
+                    Expr::PositionalPair(inner) => match inner.as_ref() {
+                        Expr::Binary {
+                            op: TokenKind::FatArrow,
+                            right,
+                            ..
+                        } => {
+                            assert!(matches!(
+                                right.as_ref(),
+                                Expr::Binary {
+                                    op: TokenKind::FatArrow,
+                                    ..
+                                }
+                            ));
+                        }
+                        _ => panic!("expected chained fat-arrow in second argument"),
+                    },
+                    _ => panic!("expected PositionalPair for non-bareword key"),
                 }
             }
             _ => panic!("expected call expression"),

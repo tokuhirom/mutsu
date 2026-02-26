@@ -1171,6 +1171,8 @@ impl Interpreter {
         // Pairs are treated as named args by positional_value, so check raw args first
         let (label, block) = if let Some(Value::Pair(key, val)) = args.first() {
             (key.to_string(), *val.clone())
+        } else if let Some(Value::ValuePair(key, val)) = args.first() {
+            (key.to_string_value(), *val.clone())
         } else if let Some(first) = args.first() {
             if matches!(
                 first,

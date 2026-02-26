@@ -1017,39 +1017,61 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
 
     // Accept `class { ... }`, `class :: ...` (anonymous with optional traits),
     // or `class Name ...` (named class in expression context)
-    let (rest, name, parents) = if let Some(r) = rest.strip_prefix("::") {
+    let (rest, name, parents, does_roles) = if let Some(r) = rest.strip_prefix("::") {
         // Skip `::` (anonymous name placeholder)
         let (r, _) = ws(r)?;
-        // Parse `is Parent` clauses
+        // Parse `is Parent` / `does Role` clauses
         let mut parents = Vec::new();
+        let mut does_roles: Vec<String> = Vec::new();
         let mut r = r;
-        while let Some(r2) = keyword("is", r) {
-            let (r2, _) = super::super::helpers::ws1(r2)?;
-            let (r2, parent) = parse_ident_with_hyphens(r2)?;
-            parents.push(parent.to_string());
-            let (r2, _) = ws(r2)?;
-            r = r2;
+        loop {
+            if let Some(r2) = keyword("is", r) {
+                let (r2, _) = super::super::helpers::ws1(r2)?;
+                let (r2, parent) = parse_ident_with_hyphens(r2)?;
+                parents.push(parent.to_string());
+                let (r2, _) = ws(r2)?;
+                r = r2;
+            } else if let Some(r2) = keyword("does", r) {
+                let (r2, _) = super::super::helpers::ws1(r2)?;
+                let (r2, role) = parse_ident_with_hyphens(r2)?;
+                does_roles.push(role.to_string());
+                let (r2, _) = ws(r2)?;
+                r = r2;
+            } else {
+                break;
+            }
         }
         let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
-        (r, format!("__ANON_CLASS_{id}__"), parents)
+        (r, format!("__ANON_CLASS_{id}__"), parents, does_roles)
     } else if rest.starts_with('{') {
         let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
-        (rest, format!("__ANON_CLASS_{id}__"), Vec::new())
+        (rest, format!("__ANON_CLASS_{id}__"), Vec::new(), Vec::new())
     } else if rest.starts_with(|c: char| c.is_ascii_uppercase() || c == '_') {
         // Named class in expression context: `class Foo { ... }`
         let (r, class_name) = parse_ident_with_hyphens(rest)?;
         let (r, _) = ws(r)?;
         // Parse optional `is Parent` / `does Role` clauses
         let mut parents = Vec::new();
+        let mut does_roles: Vec<String> = Vec::new();
         let mut r = r;
-        while let Some(r2) = keyword("is", r).or_else(|| keyword("does", r)) {
-            let (r2, _) = super::super::helpers::ws1(r2)?;
-            let (r2, parent) = parse_ident_with_hyphens(r2)?;
-            parents.push(parent.to_string());
-            let (r2, _) = ws(r2)?;
-            r = r2;
+        loop {
+            if let Some(r2) = keyword("is", r) {
+                let (r2, _) = super::super::helpers::ws1(r2)?;
+                let (r2, parent) = parse_ident_with_hyphens(r2)?;
+                parents.push(parent.to_string());
+                let (r2, _) = ws(r2)?;
+                r = r2;
+            } else if let Some(r2) = keyword("does", r) {
+                let (r2, _) = super::super::helpers::ws1(r2)?;
+                let (r2, role) = parse_ident_with_hyphens(r2)?;
+                does_roles.push(role.to_string());
+                let (r2, _) = ws(r2)?;
+                r = r2;
+            } else {
+                break;
+            }
         }
-        (r, class_name.to_string(), parents)
+        (r, class_name.to_string(), parents, does_roles)
     } else {
         return Err(PError::expected("'{' for anonymous class"));
     };
@@ -1058,7 +1080,11 @@ pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("'{' for anonymous class body"));
     }
 
-    let (rest, body) = parse_block_body(rest)?;
+    let (rest, mut body) = parse_block_body(rest)?;
+    // Insert DoesDecl statements at the beginning of the body for `does` clauses
+    for role_name in does_roles.into_iter().rev() {
+        body.insert(0, Stmt::DoesDecl { name: role_name });
+    }
     Ok((
         rest,
         Expr::DoStmt(Box::new(Stmt::ClassDecl {

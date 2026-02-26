@@ -988,6 +988,22 @@ impl Interpreter {
                         is_stub_role: false,
                     },
                 );
+                roles.insert(
+                    "Iterator".to_string(),
+                    RoleDef {
+                        attributes: Vec::new(),
+                        methods: HashMap::new(),
+                        is_stub_role: false,
+                    },
+                );
+                roles.insert(
+                    "Iterable".to_string(),
+                    RoleDef {
+                        attributes: Vec::new(),
+                        methods: HashMap::new(),
+                        is_stub_role: false,
+                    },
+                );
                 roles
             },
             role_parents: HashMap::new(),

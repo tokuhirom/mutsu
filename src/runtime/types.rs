@@ -1209,10 +1209,13 @@ impl Interpreter {
                         self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
                     }
                 } else if pd.double_slurpy {
-                    // **@ (non-flattening slurpy): keep each argument as-is
+                    // **@ (non-flattening slurpy): keep each argument as-is, skip Pairs
                     let mut items = Vec::new();
                     while positional_idx < args.len() {
-                        items.push(unwrap_varref_value(args[positional_idx].clone()));
+                        let val = unwrap_varref_value(args[positional_idx].clone());
+                        if !matches!(&val, Value::Pair(..)) {
+                            items.push(val);
+                        }
                         positional_idx += 1;
                     }
                     if !pd.name.is_empty() {
@@ -1292,7 +1295,15 @@ impl Interpreter {
                     }
                 }
             } else {
-                // Positional param
+                // Positional param — skip over Value::Pair entries (named args)
+                while positional_idx < args.len()
+                    && matches!(
+                        unwrap_varref_value(args[positional_idx].clone()),
+                        Value::Pair(..)
+                    )
+                {
+                    positional_idx += 1;
+                }
                 if positional_idx < args.len() {
                     if pd.name == "__subsig__"
                         && let Some(sub_params) = &pd.sub_signature
@@ -1477,6 +1488,10 @@ impl Interpreter {
                         let target = self.env.get(&pd.name).cloned().unwrap_or(Value::Nil);
                         bind_sub_signature_from_value(self, sub_params, &target)?;
                     }
+                } else if !pd.required && !pd.name.is_empty() {
+                    // Optional parameter with no default and no arg: bind Nil
+                    self.bind_param_value(&pd.name, Value::Nil);
+                    self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
                 }
             }
         }

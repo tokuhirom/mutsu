@@ -383,6 +383,11 @@ impl Interpreter {
                 }
                 Ok(Value::array(results))
             }
+            "xx" => {
+                let n = to_int(right).max(0) as usize;
+                let items: Vec<Value> = std::iter::repeat_n(left.clone(), n).collect();
+                Ok(Value::Seq(std::sync::Arc::new(items)))
+            }
             "," => {
                 let mut items = match left {
                     Value::Array(values, ..) => values.to_vec(),

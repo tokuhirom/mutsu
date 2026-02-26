@@ -250,6 +250,41 @@ pub(crate) fn native_method_1arg(
                     .join(&sep);
                 Some(Ok(Value::Str(joined)))
             }
+            Value::Capture { positional, .. } => {
+                let sep = arg.to_string_value();
+                let joined = positional
+                    .iter()
+                    .map(|v| v.to_string_value())
+                    .collect::<Vec<_>>()
+                    .join(&sep);
+                Some(Ok(Value::Str(joined)))
+            }
+            Value::Pair(k, v) => {
+                let sep = arg.to_string_value();
+                Some(Ok(Value::Str(format!(
+                    "{}{}{}",
+                    k,
+                    sep,
+                    v.to_string_value()
+                ))))
+            }
+            Value::ValuePair(k, v) => {
+                let sep = arg.to_string_value();
+                Some(Ok(Value::Str(format!(
+                    "{}{}{}",
+                    k.to_string_value(),
+                    sep,
+                    v.to_string_value()
+                ))))
+            }
+            // Scalar values: .join returns the value as a string
+            Value::Str(_)
+            | Value::Int(_)
+            | Value::Num(_)
+            | Value::Rat(..)
+            | Value::Bool(_)
+            | Value::Nil => Some(Ok(Value::Str(target.to_string_value()))),
+            // Other types (LazyList, etc.) fall through to the runtime handler
             _ => None,
         },
         "flat" => {
