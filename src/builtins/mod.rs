@@ -4,6 +4,7 @@ mod arith;
 mod functions;
 mod methods_0arg;
 mod methods_narg;
+pub(crate) mod primality;
 pub(crate) mod rng;
 pub(crate) mod unicode;
 use crate::value::{RuntimeError, Value};

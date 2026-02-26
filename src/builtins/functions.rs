@@ -190,6 +190,7 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
                 Some(Ok(Value::Nil))
             }
         }
+        "is-prime" => Some(super::methods_0arg::coercion::value_is_prime(arg)),
         "abs" => Some(Ok(match arg {
             Value::Int(i) => Value::Int(i.abs()),
             Value::Num(f) => Value::Num(f.abs()),
