@@ -222,6 +222,23 @@ pub enum Value {
         base_name: String,
         type_args: Vec<Value>,
     },
+    /// A type object created by Metamodel::Primitives.create_type.
+    /// `how` is the meta-object (HOW), `repr` is the REPR name, `name` is the type name.
+    CustomType {
+        how: Box<Value>,
+        repr: String,
+        name: String,
+        id: u64,
+    },
+    /// An instance of a custom type (created by .CREATE on a CustomType).
+    CustomTypeInstance {
+        type_id: u64,
+        how: Box<Value>,
+        repr: String,
+        type_name: String,
+        attributes: Arc<HashMap<String, Value>>,
+        id: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

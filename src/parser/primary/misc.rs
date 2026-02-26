@@ -1170,14 +1170,21 @@ pub(super) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
 fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
     let mut pairs = Vec::new();
     let mut rest = input;
+    let mut pending_key: Option<String> = None;
     loop {
         let (r, _) = ws_inner(rest);
         if let Some(rest) = r.strip_prefix('}') {
+            if pending_key.is_some() {
+                return Err(PError::expected("hash value"));
+            }
             return Ok((rest, Expr::Hash(pairs)));
         }
 
         // Try colon pair syntax: :name(expr), :name, :!name, :$var, etc.
         if r.starts_with(':') && !r.starts_with("::") {
+            if pending_key.is_some() {
+                return Err(PError::expected("hash value"));
+            }
             let (r, (key, val)) = parse_colon_pair_entry(r)?;
             pairs.push((key, val));
             let (r, _) = ws_inner(r);
@@ -1191,29 +1198,56 @@ fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
             continue;
         }
 
-        // Parse key as identifier, integer, or string
-        let (r, key) = if let Ok((r, name)) = super::super::stmt::ident_pub(r) {
-            (r, name)
-        } else if let Ok((r, Expr::Literal(Value::Int(n)))) = super::number::integer(r) {
-            (r, n.to_string())
-        } else if let Ok((r, Expr::Literal(Value::BigInt(n)))) = super::number::integer(r) {
-            (r, n.to_string())
-        } else if let Ok((r, Expr::Literal(Value::Str(s)))) =
-            single_quoted_string(r).or_else(|_| double_quoted_string(r))
-        {
-            (r, s)
-        } else {
-            return Err(PError::expected("hash key"));
-        };
-        let (r, _) = ws_inner(r);
-        // Expect =>
-        if !r.starts_with("=>") {
-            return Err(PError::expected("'=>' in hash literal"));
+        if let Some(key) = pending_key.take() {
+            let (r, val) = super::super::expr::expression(r)?;
+            pairs.push((key, Some(val)));
+            let (r, _) = ws_inner(r);
+            if let Some(stripped) = r.strip_prefix(',') {
+                rest = stripped;
+            } else if let Some(stripped) = r.strip_prefix(';') {
+                rest = stripped;
+            } else {
+                rest = r;
+            }
+            continue;
         }
-        let r = &r[2..];
-        let (r, _) = ws_inner(r);
-        let (r, val) = super::super::expr::expression(r)?;
-        pairs.push((key, Some(val)));
+
+        if let Ok((r_key, key)) = parse_simple_hash_key(r) {
+            let (after_key, _) = ws_inner(r_key);
+            if let Some(after_arrow) = after_key.strip_prefix("=>") {
+                let (after_arrow, _) = ws_inner(after_arrow);
+                let (r_val, val) = super::super::expr::expression(after_arrow)?;
+                pairs.push((key, Some(val)));
+                let (r_val, _) = ws_inner(r_val);
+                if let Some(stripped) = r_val.strip_prefix(',') {
+                    rest = stripped;
+                } else if let Some(stripped) = r_val.strip_prefix(';') {
+                    rest = stripped;
+                } else {
+                    rest = r_val;
+                }
+                continue;
+            }
+
+            pending_key = Some(key);
+            let (r_key, _) = ws_inner(r_key);
+            if let Some(stripped) = r_key.strip_prefix(',') {
+                rest = stripped;
+            } else if let Some(stripped) = r_key.strip_prefix(';') {
+                rest = stripped;
+            } else {
+                rest = r_key;
+            }
+            continue;
+        }
+
+        let (r, item) = super::super::expr::expression(r)?;
+        if let Some((key, val)) = hash_pair_from_expr(&item)? {
+            pairs.push((key, Some(val)));
+        } else {
+            pending_key = Some(hash_key_from_expr(item)?);
+        }
+
         let (r, _) = ws_inner(r);
         if let Some(stripped) = r.strip_prefix(',') {
             rest = stripped;
@@ -1222,6 +1256,49 @@ fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
         } else {
             rest = r;
         }
+    }
+}
+
+fn parse_simple_hash_key(input: &str) -> PResult<'_, String> {
+    if let Ok((r, name)) = super::super::stmt::ident_pub(input) {
+        return Ok((r, name));
+    }
+    if let Ok((r, Expr::Literal(Value::Int(n)))) = super::number::integer(input) {
+        return Ok((r, n.to_string()));
+    }
+    if let Ok((r, Expr::Literal(Value::BigInt(n)))) = super::number::integer(input) {
+        return Ok((r, n.to_string()));
+    }
+    if let Ok((r, Expr::Literal(Value::Str(s)))) =
+        single_quoted_string(input).or_else(|_| double_quoted_string(input))
+    {
+        return Ok((r, s));
+    }
+    Err(PError::expected("hash key"))
+}
+
+fn hash_key_from_expr(expr: Expr) -> Result<String, PError> {
+    match expr {
+        Expr::Literal(Value::Str(s)) => Ok(s),
+        Expr::Literal(Value::Int(n)) => Ok(n.to_string()),
+        Expr::Literal(Value::BigInt(n)) => Ok(n.to_string()),
+        Expr::BareWord(name) => Ok(name),
+        _ => Err(PError::expected("hash key")),
+    }
+}
+
+fn hash_pair_from_expr(expr: &Expr) -> Result<Option<(String, Expr)>, PError> {
+    match expr {
+        Expr::Binary {
+            left,
+            op: crate::token_kind::TokenKind::FatArrow,
+            right,
+        } => Ok(Some((
+            hash_key_from_expr((**left).clone())?,
+            (**right).clone(),
+        ))),
+        Expr::PositionalPair(inner) => hash_pair_from_expr(inner),
+        _ => Ok(None),
     }
 }
 

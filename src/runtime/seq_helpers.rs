@@ -780,6 +780,40 @@ impl Interpreter {
                     .zip(rhs_args.iter())
                     .all(|(lhs, rhs)| self.parametric_arg_subtypes(lhs, rhs))
             }
+            // When RHS is a CustomType, use Raku type checking protocol
+            (_, Value::CustomType { id, how, .. }) => self.custom_type_check(left, *id, how),
+            // When LHS is a CustomType (type object), check type cache or HOW.type_check
+            (Value::CustomType { how, id, .. }, _) => {
+                if let Value::Package(_) = right {
+                    // After compose: check the type check cache
+                    let data = self.custom_type_data.get(id).cloned();
+                    if let Some(ref data) = data
+                        && let Some(ref cache) = data.type_check_cache
+                    {
+                        // Check if the RHS type is in our cache
+                        for cached_type in cache {
+                            if right == cached_type {
+                                return true;
+                            }
+                        }
+                        if data.authoritative {
+                            return false;
+                        }
+                    }
+                    // Before compose or no cache: call HOW.type_check
+                    if let Ok(result) = self.call_method_with_values(
+                        *how.clone(),
+                        "type_check",
+                        vec![Value::Nil, right.clone()],
+                    ) {
+                        result.truthy()
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
             // When RHS is a type/Package, check type membership
             (_, Value::Package(type_name)) => {
                 // Handle type smileys (:U, :D, :_)

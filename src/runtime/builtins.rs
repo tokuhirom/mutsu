@@ -357,6 +357,14 @@ impl Interpreter {
             "not" => Ok(Value::Bool(!args.first().unwrap_or(&Value::Nil).truthy())),
             "so" => Ok(Value::Bool(args.first().unwrap_or(&Value::Nil).truthy())),
             // Fallback
+            // CREATE: allocate bare instance (used as a method found via find_method)
+            "CREATE" => {
+                if let Some(target) = args.first() {
+                    self.call_method_with_values(target.clone(), "CREATE", vec![])
+                } else {
+                    Ok(Value::Nil)
+                }
+            }
             _ => self.call_function_fallback(name, &args),
         }
     }

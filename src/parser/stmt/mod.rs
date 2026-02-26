@@ -519,6 +519,7 @@ const STMT_PARSERS: &[StmtParser] = &[
     class::proto_decl,
     sub::sub_decl,
     sub::method_decl,
+    sub::submethod_decl,
     class::token_decl,
     simple::say_stmt,
     simple::put_stmt,

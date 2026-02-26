@@ -49,6 +49,7 @@ roast/S02-packages/package-lookup.t
 roast/S02-types/anon_block.t
 roast/S02-types/built-in.t
 roast/S02-types/fatrat.t
+roast/S02-types/hash_ref.t
 roast/S02-types/hyperwhatever.t
 roast/S02-types/mu.t
 roast/S02-types/nan.t
@@ -231,6 +232,7 @@ roast/S12-enums/pseudo-functional.t
 roast/S12-introspection/definite.t
 roast/S12-introspection/methods.t
 roast/S12-meta/grammarhow.t
+roast/S12-meta/primitives.t
 roast/S12-methods/calling_syntax.t
 roast/S12-methods/chaining.t
 roast/S12-methods/how.t

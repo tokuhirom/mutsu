@@ -1,7 +1,26 @@
 use super::*;
 use std::sync::Arc;
 
+const SELF_HASH_REF_SENTINEL: &str = "__mutsu_self_hash_ref";
+
 impl VM {
+    fn self_hash_ref_marker() -> Value {
+        Value::Pair(
+            SELF_HASH_REF_SENTINEL.to_string(),
+            Box::new(Value::Bool(true)),
+        )
+    }
+
+    fn resolve_hash_entry(items: &Arc<HashMap<String, Value>>, key: &str) -> Value {
+        match items.get(key) {
+            Some(Value::Pair(name, _)) if name == SELF_HASH_REF_SENTINEL => {
+                Value::Hash(items.clone())
+            }
+            Some(value) => value.clone(),
+            None => Value::Nil,
+        }
+    }
+
     pub(super) fn anon_state_key(name: &str) -> Option<String> {
         if name.starts_with("__ANON_STATE_") {
             Some(format!("__anon_state::{name}"))
@@ -535,15 +554,12 @@ impl VM {
             (Value::Hash(items), Value::Nil) => Value::Hash(items),
             (Value::Hash(items), Value::Array(keys, ..)) => Value::array(
                 keys.iter()
-                    .map(|k| {
-                        let key = k.to_string_value();
-                        items.get(&key).cloned().unwrap_or(Value::Nil)
-                    })
+                    .map(|k| Self::resolve_hash_entry(&items, &k.to_string_value()))
                     .collect(),
             ),
-            (Value::Hash(items), Value::Str(key)) => items.get(&key).cloned().unwrap_or(Value::Nil),
+            (Value::Hash(items), Value::Str(key)) => Self::resolve_hash_entry(&items, &key),
             (Value::Hash(items), Value::Int(key)) => {
-                items.get(&key.to_string()).cloned().unwrap_or(Value::Nil)
+                Self::resolve_hash_entry(&items, &key.to_string())
             }
             (
                 Value::Instance {
@@ -1226,6 +1242,11 @@ impl VM {
         if !bind_mode && self.is_bound_index(&var_name, &encoded_idx) {
             return Err(RuntimeError::new("X::Assignment::RO"));
         }
+        if !self.interpreter.env().contains_key(&var_name)
+            && let Some(slot) = self.find_local_slot(code, &var_name)
+        {
+            self.set_env_with_main_alias(&var_name, self.locals[slot].clone());
+        }
         match &idx {
             Value::Array(keys, ..) => {
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name)
@@ -1308,7 +1329,14 @@ impl VM {
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
                     match *container {
                         Value::Hash(ref mut hash) => {
-                            Arc::make_mut(hash).insert(key.clone(), val.clone());
+                            if let Value::Hash(source_hash) = &val
+                                && Arc::ptr_eq(hash, source_hash)
+                            {
+                                Arc::make_mut(hash)
+                                    .insert(key.clone(), Self::self_hash_ref_marker());
+                            } else {
+                                Arc::make_mut(hash).insert(key.clone(), val.clone());
+                            }
                         }
                         Value::Array(..) => {
                             if crate::runtime::utils::is_shaped_array(container) {
@@ -1335,7 +1363,11 @@ impl VM {
                                 self.mark_bound_index(&var_name, encoded_idx.clone());
                             }
                         }
-                        _ => {}
+                        _ => {
+                            let mut hash = std::collections::HashMap::new();
+                            hash.insert(key.clone(), val.clone());
+                            *container = Value::hash(hash);
+                        }
                     }
                 } else {
                     let mut hash = std::collections::HashMap::new();
@@ -1356,6 +1388,9 @@ impl VM {
                         .insert("*HOME".to_string(), home_val);
                 }
             }
+        }
+        if let Some(updated) = self.get_env_with_main_alias(&var_name) {
+            self.update_local_if_exists(code, &var_name, &updated);
         }
         self.stack.push(val);
         Ok(())
@@ -1383,6 +1418,9 @@ impl VM {
             if let Value::Hash(ref mut h) = *inner_hash {
                 Arc::make_mut(h).insert(outer_key, val.clone());
             }
+        }
+        if let Some(updated) = self.get_env_with_main_alias(&var_name) {
+            self.update_local_if_exists(code, &var_name, &updated);
         }
         self.stack.push(val);
     }

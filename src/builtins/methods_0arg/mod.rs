@@ -481,7 +481,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             _ => true,
         }))),
         "DEFINITE" => Some(Ok(Value::Bool(match target {
-            Value::Nil | Value::Package(_) => false,
+            Value::Nil | Value::Package(_) | Value::CustomType { .. } => false,
             Value::Slip(items) if items.is_empty() => false,
             Value::Instance { class_name, .. } if class_name == "Failure" => false,
             _ => true,
