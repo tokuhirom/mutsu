@@ -1492,6 +1492,12 @@ impl Interpreter {
             "contains" => {
                 return self.dispatch_contains(target, &args);
             }
+            "starts-with" => {
+                return self.dispatch_starts_with(target, &args);
+            }
+            "ends-with" => {
+                return self.dispatch_ends_with(target, &args);
+            }
             "index" => {
                 return self.dispatch_index(target, &args);
             }
@@ -3819,6 +3825,92 @@ impl Interpreter {
             hay.to_lowercase().contains(&needle.to_lowercase())
         } else {
             hay.contains(&needle)
+        };
+        Ok(Value::Bool(ok))
+    }
+
+    fn dispatch_starts_with(&self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.dispatch_prefix_suffix_check(target, args, true)
+    }
+
+    fn dispatch_ends_with(&self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.dispatch_prefix_suffix_check(target, args, false)
+    }
+
+    fn dispatch_prefix_suffix_check(
+        &self,
+        target: Value,
+        args: &[Value],
+        is_prefix: bool,
+    ) -> Result<Value, RuntimeError> {
+        let method_name = if is_prefix {
+            "starts-with"
+        } else {
+            "ends-with"
+        };
+        // Separate positional and named args first
+        let mut positional: Vec<Value> = Vec::new();
+        let mut ignore_case = false;
+        let mut ignore_mark = false;
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                match key.as_str() {
+                    "i" | "ignorecase" => ignore_case = value.truthy(),
+                    "m" | "ignoremark" => ignore_mark = value.truthy(),
+                    _ => {}
+                }
+            } else {
+                positional.push(arg.clone());
+            }
+        }
+        // Type objects (Package) as needle should throw
+        if let Some(Value::Package(type_name)) = positional.first() {
+            return Err(RuntimeError::new(format!(
+                "Cannot resolve caller {}({}:U)",
+                method_name, type_name
+            )));
+        }
+        let needle = positional
+            .first()
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let text = target.to_string_value();
+
+        let ok = match (ignore_case, ignore_mark) {
+            (false, false) => {
+                if is_prefix {
+                    text.starts_with(needle.as_str())
+                } else {
+                    text.ends_with(needle.as_str())
+                }
+            }
+            (true, false) => {
+                let t = text.to_lowercase();
+                let n = needle.to_lowercase();
+                if is_prefix {
+                    t.starts_with(n.as_str())
+                } else {
+                    t.ends_with(n.as_str())
+                }
+            }
+            (false, true) => {
+                let t = self.strip_marks(&text);
+                let n = self.strip_marks(&needle);
+                if is_prefix {
+                    t.starts_with(n.as_str())
+                } else {
+                    t.ends_with(n.as_str())
+                }
+            }
+            (true, true) => {
+                let t = self.strip_marks(&text).to_lowercase();
+                let n = self.strip_marks(&needle).to_lowercase();
+                if is_prefix {
+                    t.starts_with(n.as_str())
+                } else {
+                    t.ends_with(n.as_str())
+                }
+            }
         };
         Ok(Value::Bool(ok))
     }
