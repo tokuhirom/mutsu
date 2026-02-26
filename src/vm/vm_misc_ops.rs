@@ -324,6 +324,7 @@ impl VM {
             Value::Str(s) => s.clone(),
             _ => unreachable!("AssignExpr name must be a string constant"),
         };
+        self.interpreter.check_readonly_for_modify(&name)?;
         if name.starts_with('&') && !name.contains("::") {
             let bare = name.trim_start_matches('&');
             let has_variable_slot = self.interpreter.env().contains_key(&name);

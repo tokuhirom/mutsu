@@ -6,7 +6,42 @@ use crate::token_kind::lookup_unicode_char_by_name;
 use crate::ast::{Expr, ParamDef, Stmt, collect_placeholders};
 use crate::value::Value;
 
+use super::super::add_parse_warning;
 use super::{block, ident, keyword, qualified_ident, var_name};
+
+/// Known valid parameter traits for `is <trait>` in signatures.
+const VALID_PARAM_TRAITS: &[&str] = &["rw", "readonly", "copy", "required", "raw"];
+
+/// Public wrapper for `validate_param_trait` used by control.rs.
+pub(super) fn validate_param_trait_pub<'a>(
+    trait_name: &str,
+    existing_traits: &[String],
+    input: &'a str,
+) -> PResult<'a, ()> {
+    validate_param_trait(trait_name, existing_traits, input)
+}
+
+/// Validate a parameter trait name, returning a fatal parse error for unknown traits.
+/// Also warns on duplicate traits.
+fn validate_param_trait<'a>(
+    trait_name: &str,
+    existing_traits: &[String],
+    input: &'a str,
+) -> PResult<'a, ()> {
+    if !VALID_PARAM_TRAITS.contains(&trait_name) {
+        return Err(PError::fatal(format!(
+            "Can't use unknown trait 'is' -> '{}' in a parameter declaration",
+            trait_name
+        )));
+    }
+    if existing_traits.iter().any(|t| t == trait_name) {
+        add_parse_warning(format!(
+            "Potential difficulties:\n    Duplicate 'is {}' trait",
+            trait_name
+        ));
+    }
+    Ok((input, ()))
+}
 
 /// Parse a sub name, which can be a regular identifier or an operator-style name
 /// like `infix:<+>`, `prefix:<->`, `postfix:<++>`, `circumfix:<[ ]>`.
@@ -507,6 +542,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
     let mut is_test_assertion = false;
     let mut is_rw = false;
     let mut return_type = None;
+    let mut seen_traits: Vec<String> = Vec::new();
     loop {
         let (r, _) = ws(input)?;
         if r.starts_with('{') || r.is_empty() {
@@ -525,6 +561,13 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             // Parse the trait name (may include hyphens like test-assertion)
             let (r, trait_name) =
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+            if seen_traits.contains(&trait_name.to_string()) {
+                add_parse_warning(format!(
+                    "Potential difficulties:\n    Duplicate 'is {}' trait",
+                    trait_name
+                ));
+            }
+            seen_traits.push(trait_name.to_string());
             if trait_name == "export" {
                 is_export = true;
             } else if trait_name == "test-assertion" {
@@ -1028,6 +1071,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         while let Some(r2) = keyword("is", r) {
             let (r2, _) = ws1(r2)?;
             let (r2, trait_name) = ident(r2)?;
+            validate_param_trait(&trait_name, &param_traits, r2)?;
             param_traits.push(trait_name);
             let (r2, _) = ws(r2)?;
             r = r2;
@@ -1220,6 +1264,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 while let Some(r) = keyword("is", rest) {
                     let (r, _) = ws1(r)?;
                     let (r, trait_name) = ident(r)?;
+                    validate_param_trait(&trait_name, &param_traits, r)?;
                     param_traits.push(trait_name);
                     let (r, _) = ws(r)?;
                     rest = r;
@@ -1406,6 +1451,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                     while let Some(r) = keyword("is", rest) {
                         let (r, _) = ws1(r)?;
                         let (r, trait_name) = ident(r)?;
+                        validate_param_trait(&trait_name, &param_traits, r)?;
                         param_traits.push(trait_name);
                         let (r, _) = ws(r)?;
                         rest = r;
@@ -1444,6 +1490,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 while let Some(r) = keyword("is", rest) {
                     let (r, _) = ws1(r)?;
                     let (r, trait_name) = ident(r)?;
+                    validate_param_trait(&trait_name, &param_traits, r)?;
                     param_traits.push(trait_name);
                     let (r, _) = ws(r)?;
                     rest = r;
@@ -1487,6 +1534,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             while let Some(r) = keyword("is", rest) {
                 let (r, _) = ws1(r)?;
                 let (r, trait_name) = ident(r)?;
+                validate_param_trait(&trait_name, &param_traits, r)?;
                 param_traits.push(trait_name);
                 let (r, _) = ws(r)?;
                 rest = r;
@@ -1597,6 +1645,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         while let Some(r2) = keyword("is", r) {
             let (r2, _) = ws1(r2)?;
             let (r2, trait_name) = ident(r2)?;
+            validate_param_trait(&trait_name, &param_traits, r2)?;
             param_traits.push(trait_name);
             let (r2, _) = ws(r2)?;
             r = r2;
@@ -1643,6 +1692,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     while let Some(r) = keyword("is", rest) {
         let (r, _) = ws1(r)?;
         let (r, trait_name) = ident(r)?;
+        validate_param_trait(&trait_name, &param_traits, r)?;
         param_traits.push(trait_name);
         let (r, _) = ws(r)?;
         rest = r;

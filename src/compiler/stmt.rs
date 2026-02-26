@@ -200,6 +200,9 @@ impl Compiler {
                     self.code.emit(OpCode::AssignReadOnly);
                     return;
                 }
+                // Emit readonly check for assignment to potentially readonly params
+                let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                self.code.emit(OpCode::CheckReadOnly(name_idx));
                 self.compile_expr(expr);
                 self.emit_set_named_var(name);
             }
