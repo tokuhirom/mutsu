@@ -1,6 +1,6 @@
 use Test;
 
-plan 6;
+plan 8;
 
 # Basic start/await
 {
@@ -27,4 +27,11 @@ plan 6;
 {
     my @vals = do for ^4 { $_ * 2 };
     is @vals.join(','), '0,2,4,6', 'do for collects iteration results';
+}
+
+# await accepts promise sequence produced by xx
+{
+    my @results = await start { 10 } xx 3;
+    is @results.elems, 3, 'await with xx repeats start calls';
+    is @results[0], 10, 'await with xx returns awaited results';
 }
