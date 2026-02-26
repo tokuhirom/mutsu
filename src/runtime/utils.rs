@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::value::{JunctionKind, RuntimeError, Value};
 use num_traits::{Signed, ToPrimitive, Zero};
@@ -6,13 +7,110 @@ use num_traits::{Signed, ToPrimitive, Zero};
 /// Maximum number of elements when expanding an infinite range to a list.
 const MAX_RANGE_EXPAND: i64 = 1_000_000;
 
+fn shaped_array_ids() -> &'static Mutex<HashMap<usize, Vec<usize>>> {
+    static SHAPED_ARRAY_IDS: OnceLock<Mutex<HashMap<usize, Vec<usize>>>> = OnceLock::new();
+    SHAPED_ARRAY_IDS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn shaped_array_key(items: &Arc<Vec<Value>>) -> usize {
+    Arc::as_ptr(items) as usize
+}
+
 /// Check if an array is a shaped (multidimensional) array.
-/// A shaped array has nested Array elements as its first element.
+/// A shaped array is one explicitly created as multidimensional via `:shape`.
 pub(crate) fn is_shaped_array(value: &Value) -> bool {
-    if let Value::Array(items, ..) = value {
-        matches!(items.first(), Some(Value::Array(..)))
-    } else {
-        false
+    shaped_array_shape(value).is_some()
+}
+
+pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
+    let Value::Array(items, ..) = value else {
+        return None;
+    };
+    let key = shaped_array_key(items);
+
+    fn shape_matches_structure(value: &Value, shape: &[usize]) -> bool {
+        if shape.is_empty() {
+            return false;
+        }
+        let Value::Array(items, ..) = value else {
+            return false;
+        };
+        if items.len() != shape[0] {
+            return false;
+        }
+        if shape.len() == 1 {
+            return items.iter().all(|v| !matches!(v, Value::Array(..)));
+        }
+        items
+            .iter()
+            .all(|child| shape_matches_structure(child, &shape[1..]))
+    }
+
+    if items.is_empty() {
+        return None;
+    }
+
+    fn infer_shape_from_array(
+        items: &[Value],
+        ids: &HashMap<usize, Vec<usize>>,
+    ) -> Option<Vec<usize>> {
+        let first = items.first()?;
+        let Value::Array(first_items, ..) = first else {
+            return None;
+        };
+        let first_shape = ids.get(&shaped_array_key(first_items))?;
+        if !items.iter().all(|child| {
+            if let Value::Array(child_items, ..) = child {
+                ids.get(&shaped_array_key(child_items)) == Some(first_shape)
+            } else {
+                false
+            }
+        }) {
+            return None;
+        }
+        let mut shape = Vec::with_capacity(1 + first_shape.len());
+        shape.push(items.len());
+        shape.extend_from_slice(first_shape);
+        Some(shape)
+    }
+
+    let ids = shaped_array_ids().lock().ok()?;
+    let cached_shape = ids.get(&key).cloned();
+    if let Some(cached_shape) = cached_shape
+        && shape_matches_structure(value, &cached_shape)
+    {
+        return Some(cached_shape);
+    }
+    let inferred_shape = infer_shape_from_array(items.as_ref(), &ids)?;
+    if !shape_matches_structure(value, &inferred_shape) {
+        return None;
+    }
+    drop(ids);
+    if let Ok(mut ids) = shaped_array_ids().lock() {
+        ids.insert(key, inferred_shape.clone());
+    }
+    Some(inferred_shape)
+}
+
+pub(crate) fn mark_shaped_array(value: &Value, shape: Option<&[usize]>) {
+    let Value::Array(items, ..) = value else {
+        return;
+    };
+    mark_shaped_array_items(items, shape);
+}
+
+pub(crate) fn mark_shaped_array_items(items: &Arc<Vec<Value>>, shape: Option<&[usize]>) {
+    if shape.is_none() {
+        return;
+    }
+    let key = shaped_array_key(items);
+    if let Ok(mut ids) = shaped_array_ids().lock() {
+        if let Some(current_shape) = ids.get(&key)
+            && shape.is_some_and(|s| current_shape.as_slice() == s)
+        {
+            return;
+        }
+        ids.insert(key, shape.unwrap_or(&[]).to_vec());
     }
 }
 

@@ -445,13 +445,21 @@ impl Interpreter {
         }
         let len = dims[0];
         if dims.len() == 1 {
-            return Value::array(vec![Value::Nil; len]);
+            let value = Value::array(vec![Value::Nil; len]);
+            crate::runtime::utils::mark_shaped_array(&value, Some(dims));
+            return value;
         }
         let child = Self::make_shaped_array(&dims[1..]);
-        Value::array((0..len).map(|_| child.clone()).collect())
+        crate::runtime::utils::mark_shaped_array(&child, Some(&dims[1..]));
+        let value = Value::array((0..len).map(|_| child.clone()).collect());
+        crate::runtime::utils::mark_shaped_array(&value, Some(dims));
+        value
     }
 
     fn infer_array_shape(value: &Value) -> Option<Vec<usize>> {
+        if let Some(shape) = crate::runtime::utils::shaped_array_shape(value) {
+            return Some(shape);
+        }
         let Value::Array(items, ..) = value else {
             return None;
         };
