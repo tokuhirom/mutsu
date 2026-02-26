@@ -156,13 +156,19 @@ struct RegexPattern {
 
 #[derive(Clone, Default)]
 pub(crate) struct RegexCaptures {
-    named: HashMap<String, Vec<String>>,
-    positional: Vec<String>,
-    matched: String,
-    from: usize,
-    to: usize,
-    capture_start: Option<usize>,
-    capture_end: Option<usize>,
+    pub(crate) named: HashMap<String, Vec<String>>,
+    /// Nested sub-captures for named subrule matches. Key is capture name,
+    /// value is inner captures from the subrule (parallel to entries in `named`).
+    pub(crate) named_subcaps: HashMap<String, Vec<RegexCaptures>>,
+    pub(crate) positional: Vec<String>,
+    pub(crate) matched: String,
+    pub(crate) from: usize,
+    pub(crate) to: usize,
+    pub(crate) capture_start: Option<usize>,
+    pub(crate) capture_end: Option<usize>,
+    /// Code blocks encountered during matching (code + captures at that point).
+    /// Executed after match for side effects.
+    pub(crate) code_blocks: Vec<(String, HashMap<String, Vec<String>>)>,
 }
 
 #[derive(Clone)]
@@ -188,6 +194,7 @@ enum RegexAtom {
     CodeAssertion {
         code: String,
         negated: bool,
+        is_assertion: bool,
     },
     UnicodeProp {
         name: String,
@@ -313,6 +320,8 @@ pub struct Interpreter {
     suppressed_names: HashSet<String>,
     /// Last expression value from VM execution, used by REPL for auto-display.
     pub(crate) last_value: Option<Value>,
+    /// Pending env updates from regex code blocks, to be synced to VM locals.
+    pub(crate) pending_local_updates: Vec<(String, Value)>,
 }
 
 /// An entry in the encoding registry.
@@ -1007,6 +1016,7 @@ impl Interpreter {
             method_dispatch_stack: Vec::new(),
             suppressed_names: HashSet::new(),
             last_value: None,
+            pending_local_updates: Vec::new(),
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -1457,6 +1467,7 @@ impl Interpreter {
             method_dispatch_stack: Vec::new(),
             suppressed_names: self.suppressed_names.clone(),
             last_value: None,
+            pending_local_updates: Vec::new(),
         };
         cloned.init_io_environment();
         cloned

@@ -6,13 +6,15 @@ DRY_RUN=0
 LIST_ONLY=0
 RUN_ALL=0
 PR_NUMBER=""
+AGENT="codex"
 POLL_INTERVAL_SECONDS=600
 
 usage() {
     cat <<USAGE
-Usage: $0 [--pr <number>] [--all] [--list] [--limit <n>] [--dry-run]
+Usage: $0 [--agent codex|claude] [--pr <number>] [--all] [--list] [--limit <n>] [--dry-run]
 
 Options:
+  --agent <name>  Agent to run in ai-sandbox (codex|claude, default: codex)
   --pr <number>   Target a specific PR number
   --all           Run for all matching open PRs (conflict/CI failure)
   --list          Show matching PRs and exit
@@ -71,6 +73,15 @@ while [[ $# -gt 0 ]]; do
             LIMIT="$2"
             shift 2
             ;;
+        --agent)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --agent requires a value" >&2
+                usage
+                exit 1
+            fi
+            AGENT="$2"
+            shift 2
+            ;;
         --dry-run)
             DRY_RUN=1
             shift
@@ -93,8 +104,24 @@ if [[ -n "$PR_NUMBER" && "$RUN_ALL" -eq 1 ]]; then
     exit 1
 fi
 
+if [[ "$AGENT" != "codex" && "$AGENT" != "claude" ]]; then
+    echo "Error: --agent must be codex or claude" >&2
+    usage
+    exit 1
+fi
+
 require_cmd gh
 require_cmd ai-sandbox
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+run_cmd() {
+    if [[ "$AGENT" == "claude" ]]; then
+        "$@" 2>&1 | python3 "${SCRIPT_DIR}/stream-json-pretty.py"
+    else
+        "$@"
+    fi
+}
 
 build_history_prompt() {
     local branch_name="$1"
@@ -124,14 +151,18 @@ run_history_update() {
     timestamp="$(date +%Y%m%d%H%M)"
     branch_name="update-history-${timestamp}"
     prompt="$(build_history_prompt "$branch_name")"
-    cmd=(ai-sandbox "$branch_name" codex exec "$prompt")
+    if [[ "$AGENT" == "codex" ]]; then
+        cmd=(ai-sandbox --recreate "$branch_name" codex exec "$prompt")
+    else
+        cmd=(ai-sandbox --recreate "$branch_name" claude -p --verbose --output-format stream-json "$prompt")
+    fi
 
     echo "No fixable PR found. Running roast history update on: $branch_name"
     echo "Running: ${cmd[*]}"
     if [[ "$DRY_RUN" -eq 1 ]]; then
         return 0
     fi
-    "${cmd[@]}"
+    run_cmd "${cmd[@]}"
 }
 
 collect_candidates_tsv() {
@@ -199,7 +230,11 @@ run_for_pr() {
     local cmd
 
     prompt="$(build_prompt "$pr_number" "$reason" "$head_ref" "$url")"
-    cmd=(ai-sandbox "pr-${pr_number}" codex exec "$prompt")
+    if [[ "$AGENT" == "codex" ]]; then
+        cmd=(ai-sandbox --recreate "pr-${pr_number}" codex exec "$prompt")
+    else
+        cmd=(ai-sandbox --recreate "pr-${pr_number}" claude -p --verbose --output-format stream-json "$prompt")
+    fi
 
     echo "Target PR #$pr_number [$reason] $head_ref"
     echo "URL: $url"
@@ -207,7 +242,7 @@ run_for_pr() {
     if [[ "$DRY_RUN" -eq 1 ]]; then
         return 0
     fi
-    "${cmd[@]}"
+    run_cmd "${cmd[@]}"
 }
 
 if [[ -n "$PR_NUMBER" ]]; then

@@ -807,7 +807,7 @@ impl Value {
         positional: &[String],
         named: &HashMap<String, Vec<String>>,
     ) -> Self {
-        Self::make_match_object_full(matched, from, to, positional, named, None)
+        Self::make_match_object_full(matched, from, to, positional, named, &HashMap::new(), None)
     }
 
     /// Create a Match object with positional captures and original string.
@@ -817,6 +817,7 @@ impl Value {
         to: i64,
         positional: &[String],
         named: &HashMap<String, Vec<String>>,
+        named_subcaps: &HashMap<String, Vec<crate::runtime::RegexCaptures>>,
         orig: Option<&str>,
     ) -> Self {
         fn make_capture_match(s: &str, orig: Option<&str>, search_from: usize) -> Value {
@@ -854,6 +855,47 @@ impl Value {
             Value::make_instance("Match".to_string(), attrs)
         }
 
+        /// Build a Match object from a RegexCaptures, recursively handling subcaptures.
+        fn make_subcap_match(caps: &crate::runtime::RegexCaptures, orig: Option<&str>) -> Value {
+            let search_start = caps.from;
+            let pos_vals: Vec<Value> = caps
+                .positional
+                .iter()
+                .map(|s| make_capture_match(s, orig, search_start))
+                .collect();
+            let mut sub_named: HashMap<String, Value> = HashMap::new();
+            for (key, values) in &caps.named {
+                let subcaps_for_key = caps.named_subcaps.get(key);
+                let vals: Vec<Value> = values
+                    .iter()
+                    .enumerate()
+                    .map(|(i, s)| {
+                        if let Some(scs) = subcaps_for_key
+                            && let Some(sc) = scs.get(i)
+                        {
+                            return make_subcap_match(sc, orig);
+                        }
+                        make_capture_match(s, orig, search_start)
+                    })
+                    .collect();
+                if vals.len() == 1 {
+                    sub_named.insert(key.clone(), vals[0].clone());
+                } else {
+                    sub_named.insert(key.clone(), Value::array(vals));
+                }
+            }
+            let mut attrs = HashMap::new();
+            attrs.insert("str".to_string(), Value::Str(caps.matched.clone()));
+            attrs.insert("from".to_string(), Value::Int(caps.from as i64));
+            attrs.insert("to".to_string(), Value::Int(caps.to as i64));
+            attrs.insert("list".to_string(), Value::array(pos_vals));
+            attrs.insert("named".to_string(), Value::hash(sub_named));
+            if let Some(o) = orig {
+                attrs.insert("orig".to_string(), Value::Str(o.to_string()));
+            }
+            Value::make_instance("Match".to_string(), attrs)
+        }
+
         let mut attrs = HashMap::new();
         attrs.insert("str".to_string(), Value::Str(matched));
         attrs.insert("from".to_string(), Value::Int(from));
@@ -867,19 +909,28 @@ impl Value {
             .map(|s| make_capture_match(s, orig, search_start))
             .collect();
         attrs.insert("list".to_string(), Value::array(caps));
-        let mut named_caps: HashMap<String, Value> = HashMap::new();
+        let mut named_caps_map: HashMap<String, Value> = HashMap::new();
         for (key, values) in named {
+            let subcaps_for_key = named_subcaps.get(key);
             let vals: Vec<Value> = values
                 .iter()
-                .map(|s| make_capture_match(s, orig, search_start))
+                .enumerate()
+                .map(|(i, s)| {
+                    if let Some(scs) = subcaps_for_key
+                        && let Some(sc) = scs.get(i)
+                    {
+                        return make_subcap_match(sc, orig);
+                    }
+                    make_capture_match(s, orig, search_start)
+                })
                 .collect();
             if vals.len() == 1 {
-                named_caps.insert(key.clone(), vals[0].clone());
+                named_caps_map.insert(key.clone(), vals[0].clone());
             } else {
-                named_caps.insert(key.clone(), Value::array(vals));
+                named_caps_map.insert(key.clone(), Value::array(vals));
             }
         }
-        attrs.insert("named".to_string(), Value::hash(named_caps));
+        attrs.insert("named".to_string(), Value::hash(named_caps_map));
         Value::make_instance("Match".to_string(), attrs)
     }
 
