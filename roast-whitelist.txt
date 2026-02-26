@@ -49,6 +49,7 @@ roast/S02-packages/package-lookup.t
 roast/S02-types/anon_block.t
 roast/S02-types/built-in.t
 roast/S02-types/fatrat.t
+roast/S02-types/hash_ref.t
 roast/S02-types/hyperwhatever.t
 roast/S02-types/mu.t
 roast/S02-types/nan.t

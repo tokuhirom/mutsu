@@ -199,6 +199,22 @@ mod tests {
     }
 
     #[test]
+    fn parse_brace_hash_literal_mixed_pair_and_positional_items() {
+        let (rest, expr) = primary("{ a => 1, \"b\", 2 }").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Hash(pairs) => {
+                assert_eq!(pairs.len(), 2);
+                assert_eq!(pairs[0].0, "a");
+                assert!(matches!(pairs[0].1, Some(Expr::Literal(Value::Int(1)))));
+                assert_eq!(pairs[1].0, "b");
+                assert!(matches!(pairs[1].1, Some(Expr::Literal(Value::Int(2)))));
+            }
+            _ => panic!("expected hash literal"),
+        }
+    }
+
+    #[test]
     fn parse_itemized_paren_expr() {
         let (rest, expr) = primary("$(1,2)").unwrap();
         assert_eq!(rest, "");
