@@ -67,7 +67,7 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
 
     let name = if is_capture
         || p.name == "__type_only__"
-        || p.name == "__ANON_STATE__"
+        || p.name.starts_with("__ANON_STATE_")
         || p.name == "__ANON_OPTIONAL__"
         || p.name == "__subsig__"
         || p.name == "__ANON_ARRAY__"

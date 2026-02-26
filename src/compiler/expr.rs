@@ -124,6 +124,7 @@ impl Compiler {
                 }
                 TokenKind::PlusPlus => {
                     if let Expr::Var(name) = expr.as_ref() {
+                        self.ensure_anon_state_var(name);
                         let name_idx = self.code.add_constant(Value::Str(name.clone()));
                         self.code.emit(OpCode::PreIncrement(name_idx));
                     } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
@@ -138,6 +139,7 @@ impl Compiler {
                 }
                 TokenKind::MinusMinus => {
                     if let Expr::Var(name) = expr.as_ref() {
+                        self.ensure_anon_state_var(name);
                         let name_idx = self.code.add_constant(Value::Str(name.clone()));
                         self.code.emit(OpCode::PreDecrement(name_idx));
                     } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
@@ -813,6 +815,7 @@ impl Compiler {
                 expr,
             } => {
                 if let Expr::Var(name) = expr.as_ref() {
+                    self.ensure_anon_state_var(name);
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
                     self.code.emit(OpCode::PostIncrement(name_idx));
                 } else if let Expr::Index { target, index } = expr.as_ref() {
@@ -833,6 +836,7 @@ impl Compiler {
                 expr,
             } => {
                 if let Expr::Var(name) = expr.as_ref() {
+                    self.ensure_anon_state_var(name);
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
                     self.code.emit(OpCode::PostDecrement(name_idx));
                 } else if let Expr::Index { target, index } = expr.as_ref() {

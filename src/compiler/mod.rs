@@ -84,6 +84,27 @@ impl Compiler {
         slot
     }
 
+    /// Ensure an anonymous state variable (__ANON_STATE_*__) is allocated and
+    /// initialized as a state variable. Returns true if the variable was recognized.
+    fn ensure_anon_state_var(&mut self, name: &str) -> bool {
+        if !name.starts_with("__ANON_STATE_") {
+            return false;
+        }
+        // Only initialize once per compilation unit
+        if self.local_map.contains_key(name) {
+            return true;
+        }
+        // Push initial value (Int 0) then allocate as state local
+        let init_idx = self.code.add_constant(Value::Int(0));
+        self.code.emit(OpCode::LoadConst(init_idx));
+        let slot = self.alloc_local(name);
+        let key = format!("__state_{}::{}", self.current_package, name);
+        let key_idx = self.code.add_constant(Value::Str(key.clone()));
+        self.code.state_locals.push((slot as usize, key.clone()));
+        self.code.emit(OpCode::StateVarInit(slot, key_idx));
+        true
+    }
+
     fn emit_set_named_var(&mut self, name: &str) {
         if let Some(&slot) = self.local_map.get(name) {
             self.code.emit(OpCode::SetLocal(slot));

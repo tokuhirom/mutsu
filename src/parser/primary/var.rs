@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use super::super::parse_result::{PError, PResult, parse_char};
 
 use crate::ast::Expr;
@@ -9,6 +11,8 @@ use super::super::helpers::{
 };
 use super::container::paren_expr;
 use super::current_line_number;
+
+static ANON_STATE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Parse a variable name from raw string (used in interpolation).
 pub(super) fn parse_var_name_from_str(input: &str) -> (&str, String) {
@@ -127,7 +131,8 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
             || first_char == '~'
     };
     if !next_is_ident_or_twigil {
-        return Ok((input, Expr::Var("__ANON_STATE__".to_string())));
+        let id = ANON_STATE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        return Ok((input, Expr::Var(format!("__ANON_STATE_{id}__"))));
     }
     // $. followed by non-alphabetic: shorthand for self. (e.g., $.^name = self.^name)
     // Return "self" as a BareWord and leave the '.' for postfix parsing.
