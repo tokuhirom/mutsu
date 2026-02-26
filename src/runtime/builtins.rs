@@ -610,15 +610,27 @@ impl Interpreter {
 
                 if exclude_start {
                     // Remove the first element
-                    if let Value::Array(items, is_real) = &result
-                        && !items.is_empty()
-                    {
-                        let new_items = items[1..].to_vec();
-                        result = if *is_real {
-                            Value::real_array(new_items)
-                        } else {
-                            Value::array(new_items)
-                        };
+                    match &result {
+                        Value::Array(items, is_real) if !items.is_empty() => {
+                            let new_items = items[1..].to_vec();
+                            result = if *is_real {
+                                Value::real_array(new_items)
+                            } else {
+                                Value::array(new_items)
+                            };
+                        }
+                        Value::LazyList(ll) => {
+                            let mut items = ll.cache.lock().unwrap().clone().unwrap_or_default();
+                            if !items.is_empty() {
+                                items.remove(0);
+                            }
+                            result = Value::LazyList(std::sync::Arc::new(crate::value::LazyList {
+                                body: vec![],
+                                env: std::collections::HashMap::new(),
+                                cache: std::sync::Mutex::new(Some(items)),
+                            }));
+                        }
+                        _ => {}
                     }
                 }
                 return Ok(result);

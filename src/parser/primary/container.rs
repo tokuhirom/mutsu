@@ -625,34 +625,52 @@ fn quoted_word_literal(rest: &str, expr: Expr) -> Result<Option<(&str, String)>,
     }
 }
 fn angle_word_expr(word: &str) -> Expr {
-    // Raku `<...>` words are stringy, but numeric-looking words retain numeric semantics.
+    // Raku `<...>` words produce allomorphic types: numeric-looking words
+    // become IntStr, RatStr, NumStr, or ComplexStr — values that smartmatch
+    // against both their numeric type and Str.
+    // We represent allomorphs as Mixin(numeric_value, {"Str": Str(word)}).
+    // Fraction notation (e.g. <3/2>) produces a plain Rat, not RatStr.
     if let Some((n, d)) = parse_angle_rat_word(word) {
         return Expr::Literal(crate::value::make_rat(n, d));
     }
-    // Try complex number (e.g. 3+0i, -2+5i, 0+31337i) before plain numbers
     if let Some(complex) = parse_angle_complex(word) {
-        return Expr::Literal(complex);
+        return make_allomorphic_expr(complex, word);
     }
     if let Ok((rest, expr)) = super::number::integer(word)
         && rest.is_empty()
     {
+        if let Expr::Literal(val) = expr {
+            return make_allomorphic_expr(val, word);
+        }
         return expr;
     }
     if let Ok((rest, expr)) = super::number::decimal(word)
         && rest.is_empty()
     {
+        if let Expr::Literal(val) = expr {
+            return make_allomorphic_expr(val, word);
+        }
         return expr;
     }
     if let Ok((rest, expr)) = super::number::dot_decimal(word)
         && rest.is_empty()
     {
+        if let Expr::Literal(val) = expr {
+            return make_allomorphic_expr(val, word);
+        }
         return expr;
     }
-    // Try Num literals (e.g. 2e0, 3.5e2)
     if let Some(val) = parse_angle_num(word) {
-        return Expr::Literal(val);
+        return make_allomorphic_expr(val, word);
     }
     Expr::Literal(Value::Str(word.to_string()))
+}
+
+/// Create an allomorphic expression: a numeric value that also matches Str.
+fn make_allomorphic_expr(val: Value, word: &str) -> Expr {
+    let mut mixins = std::collections::HashMap::new();
+    mixins.insert("Str".to_string(), Value::Str(word.to_string()));
+    Expr::Literal(Value::Mixin(Box::new(val), mixins))
 }
 
 fn parse_angle_rat_word(word: &str) -> Option<(i64, i64)> {

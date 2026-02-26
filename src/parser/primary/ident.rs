@@ -1193,6 +1193,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !r.starts_with(';')
         && !r.starts_with('}')
         && !r.starts_with(')')
+        && !r.starts_with(']')
         && !r.starts_with(',')
         && !r.starts_with('.')
     {
@@ -1243,6 +1244,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !r.starts_with(';')
         && !r.starts_with('}')
         && !r.starts_with(')')
+        && !r.starts_with(']')
         && !r.starts_with(',')
         && !r.starts_with('.')
         && !is_stmt_modifier_ahead(r)
@@ -1306,6 +1308,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     let is_terminator = rest.starts_with(';')
         || rest.starts_with('}')
         || rest.starts_with(')')
+        || rest.starts_with(']')
         || is_stmt_modifier_ahead(rest)
         || rest.trim_start().is_empty();
 
@@ -1319,7 +1322,7 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     }
 
     // Functions that can be called with no arguments as bare words
-    if matches!(name.as_str(), "await") && is_terminator {
+    if matches!(name.as_str(), "await" | "slip") && is_terminator {
         return Ok((rest, make_call_expr(name, input, vec![])));
     }
 

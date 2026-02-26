@@ -129,7 +129,9 @@ impl VM {
             return Ok(target.clone());
         }
         let head = &indices[0];
-        if matches!(head, Value::Num(f) if f.is_infinite() && *f > 0.0) {
+        if matches!(head, Value::Whatever)
+            || matches!(head, Value::Num(f) if f.is_infinite() && *f > 0.0)
+        {
             if indices.len() > 1 && crate::runtime::utils::is_shaped_array(target) {
                 return Err(RuntimeError::new("X::NYI"));
             }
@@ -524,6 +526,9 @@ impl VM {
                 };
                 Value::array(slice)
             }
+            (Value::Hash(items), Value::Whatever) => {
+                Value::array(items.values().cloned().collect())
+            }
             (Value::Hash(items), Value::Num(f)) if f.is_infinite() && f > 0.0 => {
                 Value::array(items.values().cloned().collect())
             }
@@ -891,7 +896,14 @@ impl VM {
                         }
                     })
                     .collect(),
-                // Whatever (*) compiled as Inf — treat as zen slice
+                // Whatever (*) — treat as zen slice (all elements)
+                Value::Whatever => {
+                    let len = match &target {
+                        Value::Array(items, ..) => items.len(),
+                        _ => 0,
+                    };
+                    (0..len as i64).collect()
+                }
                 Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
                     let len = match &target {
                         Value::Array(items, ..) => items.len(),

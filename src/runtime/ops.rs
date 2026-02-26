@@ -407,6 +407,7 @@ impl Interpreter {
         match val {
             Value::Array(items, ..) => items.to_vec(),
             Value::Seq(items) => items.to_vec(),
+            Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
             Value::Hash(items) => items
                 .iter()
                 .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))

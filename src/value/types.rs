@@ -144,6 +144,7 @@ impl Value {
             Value::Regex(_) | Value::RegexWithAdverbs { .. } => true,
             Value::Version { .. } => true,
             Value::Nil => false,
+            Value::Whatever => true,
             Value::HyperWhatever => true,
             Value::Capture { positional, .. } => !positional.is_empty(),
             Value::Uni { text, .. } => !text.is_empty(),
@@ -209,10 +210,17 @@ impl Value {
             }
             Value::Channel(_) => "Channel",
             Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
+            Value::Whatever => "Whatever",
             Value::HyperWhatever => "HyperWhatever",
             Value::Capture { .. } => "Capture",
             Value::Uni { form, .. } => form.as_str(),
-            Value::Mixin(inner, _) => return inner.isa_check(type_name),
+            Value::Mixin(inner, mixins) => {
+                if inner.isa_check(type_name) {
+                    return true;
+                }
+                // Also check mixin type keys (e.g., allomorphic "Str" mixin)
+                return mixins.contains_key(type_name);
+            }
             Value::Proxy { .. } => "Proxy",
             Value::ParametricRole { base_name, .. } => base_name.as_str(),
         };

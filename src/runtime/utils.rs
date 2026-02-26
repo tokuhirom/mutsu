@@ -484,6 +484,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::Slip(_) => "Slip",
         Value::Promise(_) => "Promise",
         Value::Channel(_) => "Channel",
+        Value::Whatever => "Whatever",
         Value::HyperWhatever => "HyperWhatever",
         Value::Capture { .. } => "Capture",
         Value::Uni { form, .. } => match form.as_str() {
@@ -596,6 +597,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
     match val {
         Value::Array(items, ..) => items.to_vec(),
         Value::Seq(items) => items.to_vec(),
+        Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
         Value::Hash(items) => items
             .iter()
             .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
@@ -707,6 +709,7 @@ pub(crate) use super::sprintf::format_sprintf;
 
 pub(crate) fn coerce_to_numeric(val: Value) -> Value {
     match val {
+        Value::Mixin(inner, _) => coerce_to_numeric(*inner),
         Value::Int(_)
         | Value::Num(_)
         | Value::Rat(_, _)
@@ -766,6 +769,9 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
 }
 
 pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
+    // Unwrap allomorphic types (Mixin) to their inner numeric value
+    let left = unwrap_mixin(left);
+    let right = unwrap_mixin(right);
     let l = match &left {
         Value::Int(_)
         | Value::BigInt(_)
@@ -785,6 +791,14 @@ pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
         _ => coerce_to_numeric(right),
     };
     (l, r)
+}
+
+/// Unwrap a Mixin (allomorphic type) to its inner value.
+pub(crate) fn unwrap_mixin(val: Value) -> Value {
+    match val {
+        Value::Mixin(inner, _) => *inner,
+        other => other,
+    }
 }
 
 pub(crate) fn to_rat_parts(val: &Value) -> Option<(i64, i64)> {

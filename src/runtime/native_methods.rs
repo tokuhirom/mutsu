@@ -344,6 +344,7 @@ impl Interpreter {
         };
         let parsed = match value {
             Value::Int(i) => *i,
+            Value::Whatever => return Ok(total_len),
             Value::Num(f) if f.is_infinite() && f.is_sign_positive() => return Ok(total_len),
             Value::Num(f) if f.is_infinite() && f.is_sign_negative() => return Ok(0),
             Value::Num(f) if f.is_nan() => {

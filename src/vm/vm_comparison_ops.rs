@@ -346,10 +346,11 @@ impl VM {
         } else {
             self.interpreter.env_mut().remove("_");
         }
+        // Smartmatch must NOT force lazy values (lazy ~~ anything → False)
         let out = if negate {
-            self.eval_binary_with_junctions(left, right, Self::not_smart_match_op)?
+            self.eval_smartmatch_with_junctions(left, right, true)?
         } else {
-            self.eval_binary_with_junctions(left, right, Self::smart_match_op)?
+            self.eval_smartmatch_with_junctions(left, right, false)?
         };
         self.stack.push(out);
         self.sync_locals_from_env(code);

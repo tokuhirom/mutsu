@@ -129,6 +129,7 @@ impl Interpreter {
         }
         let (endpoint, endpoint_kind, extra_rhs) = match &right {
             Value::Num(f) if f.is_infinite() => (None, None, vec![]),
+            Value::Whatever => (None, None, vec![]),
             Value::Junction { kind: _, values } => {
                 // Junction endpoint: match against any of the junction values
                 // Use the smallest/largest value as the effective endpoint for overshoot detection
@@ -149,6 +150,7 @@ impl Interpreter {
                 let rest: Vec<Value> = items[1..].to_vec();
                 match first {
                     Value::Num(f) if f.is_infinite() => (None, None, rest),
+                    Value::Whatever => (None, None, rest),
                     Value::Sub(_) => (
                         Some(first.clone()),
                         Some(EndpointKind::Closure(first.clone())),
@@ -959,7 +961,18 @@ impl Interpreter {
         }
 
         result.extend(extra_rhs);
-        Ok(Value::array(result))
+        // When the endpoint is infinite (None), return a LazyList to preserve laziness
+        if endpoint.is_none() && endpoint_kind.is_none() {
+            Ok(Value::LazyList(std::sync::Arc::new(
+                crate::value::LazyList {
+                    body: vec![],
+                    env: std::collections::HashMap::new(),
+                    cache: std::sync::Mutex::new(Some(result)),
+                },
+            )))
+        } else {
+            Ok(Value::array(result))
+        }
     }
 
     /// Evaluate a chained sequence: infix:<...>(seed, waypoint1, waypoint2, ..., endpoint)
@@ -1013,7 +1026,12 @@ impl Interpreter {
             let seg_result = self.eval_sequence(left, endpoint, seg_exclude_end)?;
 
             // Collect results, avoiding duplicates at segment boundaries
-            if let Value::Array(items, ..) = &seg_result {
+            let items: Option<Vec<Value>> = match &seg_result {
+                Value::Array(items, ..) => Some(items.as_ref().clone()),
+                Value::LazyList(ll) => ll.cache.lock().unwrap().clone(),
+                _ => None,
+            };
+            if let Some(items) = items {
                 if all_results.is_empty() {
                     all_results.extend(items.iter().cloned());
                 } else if !items.is_empty() {
