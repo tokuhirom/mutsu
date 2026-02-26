@@ -94,6 +94,10 @@ After implementing:
 - enable auto merge
 EOF_PROMPT
 )
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+MAX_RETRIES=3
+RETRY_DELAY=30
+
 if [[ "$AGENT" == "codex" ]]; then
     CMD=(ai-sandbox "$FILE" codex exec "$PROMPT")
 else
@@ -107,4 +111,23 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
     exit 0
 fi
 
-"${CMD[@]}"
+run_cmd() {
+    if [[ "$AGENT" == "claude" ]]; then
+        "${CMD[@]}" 2>&1 | python3 "${SCRIPT_DIR}/stream-json-pretty.py"
+    else
+        "${CMD[@]}"
+    fi
+}
+
+for attempt in $(seq 1 "$MAX_RETRIES"); do
+    if run_cmd; then
+        exit 0
+    fi
+    if [[ "$attempt" -lt "$MAX_RETRIES" ]]; then
+        echo "Attempt $attempt/$MAX_RETRIES failed. Retrying in ${RETRY_DELAY}s..." >&2
+        sleep "$RETRY_DELAY"
+    fi
+done
+
+echo "All $MAX_RETRIES attempts failed for $FILE" >&2
+exit 1

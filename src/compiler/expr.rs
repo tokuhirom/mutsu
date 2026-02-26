@@ -31,8 +31,13 @@ impl Compiler {
                 self.compile_match_regex(v);
             }
             Expr::Var(name) => {
+                // Slang variables ($~MAIN, $~Quote, $~Regex, $~P5Regex)
+                if let Some(slang_name) = name.strip_prefix('~') {
+                    let idx = self.code.add_constant(Value::Str(slang_name.to_string()));
+                    self.code.emit(OpCode::LoadConst(idx));
+                }
                 // Compile-time package/module variables
-                if name == "?PACKAGE" || name == "?MODULE" {
+                else if name == "?PACKAGE" || name == "?MODULE" {
                     let idx = self
                         .code
                         .add_constant(Value::Package(self.current_package.clone()));
@@ -1240,6 +1245,10 @@ impl Compiler {
                     let idx = self.code.add_stmt(Stmt::Block(body.clone()));
                     self.code.emit(OpCode::MakeGather(idx));
                 }
+            }
+            Expr::PositionalPair(inner) => {
+                self.compile_expr(inner);
+                self.code.emit(OpCode::ContainerizePair);
             }
             Expr::CallOn { target, args } => {
                 if let Expr::CodeVar(name) = target.as_ref() {

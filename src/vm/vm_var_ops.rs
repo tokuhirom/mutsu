@@ -257,6 +257,7 @@ impl VM {
             Value::Routine {
                 package: "GLOBAL".to_string(),
                 name: name.to_string(),
+                is_regex: false,
             }
         } else if self.interpreter.is_name_suppressed(name) {
             return Err(RuntimeError::new(format!(
@@ -273,6 +274,7 @@ impl VM {
                 Value::Routine {
                     package: pkg.to_string(),
                     name: qualified_name,
+                    is_regex: false,
                 }
             } else {
                 Value::Str(name.to_string())
@@ -681,6 +683,21 @@ impl VM {
             }
             // Type parameterization: e.g. Buf[uint8] → returns the type unchanged
             (pkg @ Value::Package(_), _) => pkg,
+            // Pair subscript: $pair<key> returns value if key matches, Nil otherwise
+            (Value::Pair(key, value), Value::Str(idx)) => {
+                if key == idx {
+                    *value
+                } else {
+                    Value::Nil
+                }
+            }
+            (Value::ValuePair(key, value), Value::Str(idx)) => {
+                if key.to_string_value() == idx {
+                    *value
+                } else {
+                    Value::Nil
+                }
+            }
             _ => Value::Nil,
         };
         self.stack.push(result);

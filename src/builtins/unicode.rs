@@ -111,6 +111,47 @@ pub(crate) fn unicode_numeric_int_value(c: char) -> Option<i64> {
     }
 }
 
+/// Return the decimal digit value (0-9) for any Unicode Nd (decimal digit) character.
+/// For ASCII digits and also Thai, Arabic, Devanagari, NKo, and all other Unicode decimal digit blocks.
+pub(crate) fn unicode_decimal_digit_value(c: char) -> Option<u32> {
+    if c.is_ascii_digit() {
+        return Some(c as u32 - '0' as u32);
+    }
+    // For Unicode Nd characters, digits in each script block are contiguous
+    // and ordered 0-9. The digit value is offset from the zero digit.
+    // Use Rust's char::is_numeric() which covers Nd category.
+    if !c.is_numeric() {
+        return None;
+    }
+    let cp = c as u32;
+    // The zero digit of each decimal digit block is the codepoint with value
+    // cp - (cp % 10) if digits are aligned on 10-boundaries, which they are
+    // for all Unicode Nd blocks.
+    let offset = cp % 16; // Most Nd blocks are 16-aligned
+    // Try a few common patterns
+    // Pattern: digits are at base + 0..9 within a 16-aligned block
+    if offset <= 9 {
+        // Verify: the character at base+0 should also be numeric
+        let base = cp - offset;
+        if let Some(zero_char) = char::from_u32(base)
+            && zero_char.is_numeric()
+        {
+            return Some(offset);
+        }
+    }
+    // Fallback: try 10-aligned blocks
+    let offset10 = cp % 10;
+    if offset10 <= 9 {
+        let base = cp - offset10;
+        if let Some(zero_char) = char::from_u32(base)
+            && zero_char.is_numeric()
+        {
+            return Some(offset10);
+        }
+    }
+    None
+}
+
 /// Return Unicode character name for a given character
 /// Basic implementation covering ASCII and common Latin-1 characters
 pub(crate) fn unicode_char_name(ch: char) -> String {

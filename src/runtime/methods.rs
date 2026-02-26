@@ -683,6 +683,7 @@ impl Interpreter {
         if let Value::Routine {
             ref name,
             ref package,
+            ..
         } = target
             && method == "assuming"
         {
@@ -1234,6 +1235,7 @@ impl Interpreter {
                     Value::Enum { enum_type, .. } => enum_type.as_str(),
                     Value::Nil => "Any",
                     Value::Package(name) => name.as_str(),
+                    Value::Routine { is_regex: true, .. } => "Regex",
                     Value::Routine { .. } => "Routine",
                     Value::Sub(_) | Value::WeakSub(_) => "Sub",
                     Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
@@ -4686,6 +4688,9 @@ impl Interpreter {
                         match item {
                             Value::Pair(k, v) => {
                                 map.insert(k, *v);
+                            }
+                            Value::ValuePair(k, v) => {
+                                map.insert(k.to_string_value(), *v);
                             }
                             other => {
                                 let key = other.to_string_value();

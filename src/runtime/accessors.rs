@@ -122,6 +122,7 @@ impl Interpreter {
             return Value::Routine {
                 package: "GLOBAL".to_string(),
                 name: name.to_string(),
+                is_regex: false,
             };
         }
         // Handle package-qualified names: strip pseudo-package prefixes and
@@ -134,6 +135,7 @@ impl Interpreter {
                 return Value::Routine {
                     package: package.clone(),
                     name: routine.clone(),
+                    is_regex: false,
                 };
             }
             return Value::Nil;
@@ -147,6 +149,7 @@ impl Interpreter {
             return Value::Routine {
                 package: "GLOBAL".to_string(),
                 name: lookup_name.to_string(),
+                is_regex: false,
             };
         }
         // Check if stored as a variable first (my &f = ...)
@@ -178,6 +181,7 @@ impl Interpreter {
             Value::Routine {
                 package: self.current_package.clone(),
                 name: lookup_name.to_string(),
+                is_regex: false,
             }
         } else if self.has_proto(lookup_name)
             || self.resolve_token_defs(lookup_name).is_some()
@@ -186,6 +190,8 @@ impl Interpreter {
             Value::Routine {
                 package: self.current_package.clone(),
                 name: lookup_name.to_string(),
+                is_regex: self.resolve_token_defs(lookup_name).is_some()
+                    || self.has_proto_token(lookup_name),
             }
         } else if let Some(def) = def {
             Value::make_sub(
@@ -200,6 +206,7 @@ impl Interpreter {
             Value::Routine {
                 package: "GLOBAL".to_string(),
                 name: lookup_name.to_string(),
+                is_regex: false,
             }
         } else if bare_name.starts_with('*') {
             // Dynamic code vars (&*foo) can point to routines that are resolved
@@ -207,6 +214,7 @@ impl Interpreter {
             Value::Routine {
                 package: "GLOBAL".to_string(),
                 name: lookup_name.to_string(),
+                is_regex: false,
             }
         } else {
             Value::Nil
@@ -353,6 +361,7 @@ impl Interpreter {
                     .or_insert_with(|| Value::Routine {
                         package: def.package.clone(),
                         name: def.name.clone(),
+                        is_regex: false,
                     });
             }
         }

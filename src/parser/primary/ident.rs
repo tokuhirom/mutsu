@@ -1058,7 +1058,23 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         // Parse first arg, then check for ':'
         if let Ok((r_first, first_arg)) = expression(rest) {
             let (r_ws, _) = ws(r_first)?;
-            if r_ws.starts_with(':') && !r_ws.starts_with("::") {
+            // Check for invocant colon: foo($obj:) or foo($obj: args)
+            // Must NOT confuse with adjacent colonpairs like foo(:a :b :c)
+            // where `:b` is a colonpair, not invocant syntax.
+            let is_invocant_colon =
+                r_ws.starts_with(':') && !r_ws.starts_with("::") && r_ws.len() > 1 && {
+                    let after = r_ws.as_bytes()[1];
+                    // Colonpair starts: identifier char, !, $, @, %, &, digit
+                    !(after.is_ascii_alphabetic()
+                        || after == b'_'
+                        || after == b'!'
+                        || after == b'$'
+                        || after == b'@'
+                        || after == b'%'
+                        || after == b'&'
+                        || after.is_ascii_digit())
+                };
+            if is_invocant_colon {
                 let after_colon = &r_ws[1..];
                 let (after_ws, _) = ws(after_colon)?;
                 if after_ws.starts_with(')') {

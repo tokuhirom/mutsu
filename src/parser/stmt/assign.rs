@@ -183,6 +183,9 @@ pub(super) fn parse_assign_expr_or_comma(input: &str) -> PResult<'_, Expr> {
 /// Returns the expression as Expr::AssignExpr.
 pub(super) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr> {
     let sigil = input.as_bytes().first().copied().unwrap_or(0);
+    if sigil == b'$' && input.as_bytes().get(1).is_some_and(|c| *c == b'=') {
+        return Err(PError::expected("assignment expression"));
+    }
     if sigil != b'$' && sigil != b'@' && sigil != b'%' {
         return Err(PError::expected("assignment expression"));
     }

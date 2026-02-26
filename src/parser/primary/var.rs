@@ -124,6 +124,7 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
             || first_char == '!'
             || first_char == '^'
             || first_char == '.'
+            || first_char == '~'
     };
     if !next_is_ident_or_twigil {
         return Ok((input, Expr::Var("__ANON_STATE__".to_string())));
@@ -155,12 +156,13 @@ pub(super) fn scalar_var(input: &str) -> PResult<'_, Expr> {
             return Ok((input, Expr::BareWord("self".to_string())));
         }
     }
-    // Handle twigils: $*FOO, $?FILE, $!attr, $.attr
+    // Handle twigils: $*FOO, $?FILE, $!attr, $.attr, $~MAIN
     let (rest, twigil) = if input.starts_with('*')
         || input.starts_with('?')
         || input.starts_with('!')
         || input.starts_with('^')
         || (input.starts_with('.') && input.len() > 1 && input.as_bytes()[1].is_ascii_alphabetic())
+        || (input.starts_with('~') && input.len() > 1 && input.as_bytes()[1].is_ascii_alphabetic())
     {
         (&input[1..], &input[..1])
     } else {
@@ -253,12 +255,15 @@ fn parse_qualified_ident_with_hyphens_or_empty(input: &str) -> (&str, String) {
 pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '@')?;
     // Handle twigils
-    let (rest, twigil) =
-        if input.starts_with('*') || input.starts_with('!') || input.starts_with('^') {
-            (&input[1..], &input[..1])
-        } else {
-            (input, "")
-        };
+    let (rest, twigil) = if input.starts_with('*')
+        || input.starts_with('!')
+        || input.starts_with('^')
+        || (input.starts_with('~') && input.len() > 1 && input.as_bytes()[1].is_ascii_alphabetic())
+    {
+        (&input[1..], &input[..1])
+    } else {
+        (input, "")
+    };
     // Contextualized scalar specials (e.g., @$/, @$_): parse `$...` then lift
     // to an array variable targeting the same underlying name.
     if twigil.is_empty()
@@ -286,12 +291,15 @@ pub(super) fn array_var(input: &str) -> PResult<'_, Expr> {
 pub(super) fn hash_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '%')?;
     // Handle twigils
-    let (rest, twigil) =
-        if input.starts_with('*') || input.starts_with('!') || input.starts_with('^') {
-            (&input[1..], &input[..1])
-        } else {
-            (input, "")
-        };
+    let (rest, twigil) = if input.starts_with('*')
+        || input.starts_with('!')
+        || input.starts_with('^')
+        || (input.starts_with('~') && input.len() > 1 && input.as_bytes()[1].is_ascii_alphabetic())
+    {
+        (&input[1..], &input[..1])
+    } else {
+        (input, "")
+    };
     // Contextualized scalar specials (e.g., %$/, %$_): parse `$...` then lift
     // to a hash variable targeting the same underlying name.
     if twigil.is_empty()
@@ -419,18 +427,31 @@ pub(super) fn code_var(input: &str) -> PResult<'_, Expr> {
             }
         }
     }
-    // Handle package-qualified code refs: &ClassName::method
+    // Handle package-qualified code refs: &ClassName::method, &Foo::Bar::method, etc.
     if let Ok((_, first_ident)) = parse_ident_with_hyphens(input) {
         let after_first = &input[first_ident.len()..];
-        if let Some(after_sep) = after_first.strip_prefix("::")
-            && let Ok((rest, method_name)) = parse_ident_with_hyphens(after_sep)
-        {
-            let qualified = format!(
-                "{}::{}",
-                normalize_raku_identifier(first_ident),
-                normalize_raku_identifier(method_name)
-            );
-            return Ok((rest, Expr::CodeVar(qualified)));
+        if after_first.starts_with("::") {
+            let mut pos = 0;
+            let mut parts: Vec<String> = Vec::new();
+            // Consume all Ident:: segments
+            loop {
+                if let Ok((_, ident)) = parse_ident_with_hyphens(&input[pos..]) {
+                    let after_ident = &input[pos + ident.len()..];
+                    if after_ident.starts_with("::") {
+                        parts.push(normalize_raku_identifier(ident));
+                        pos += ident.len() + 2; // skip ident and ::
+                        continue;
+                    }
+                    // Final identifier (no :: after it)
+                    parts.push(normalize_raku_identifier(ident));
+                    pos += ident.len();
+                    if parts.len() >= 2 {
+                        let qualified = parts.join("::");
+                        return Ok((&input[pos..], Expr::CodeVar(qualified)));
+                    }
+                }
+                break;
+            }
         }
     }
     // Handle twigils on code vars: &?BLOCK, &!DISPATCHER, &^x, &*FOO

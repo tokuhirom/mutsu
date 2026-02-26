@@ -394,10 +394,10 @@ impl Interpreter {
     }
 
     fn test_fn_is_deeply(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let desc = Self::positional_string(args, 2);
+        // is-deeply can receive Pair values as positional arguments (e.g., `is-deeply (:a), (a => True), "desc"`).
+        // We must not filter out Pairs as named args here — use raw positional extraction.
+        let (left, right, desc) = Self::extract_is_deeply_args(args);
         let todo = Self::named_bool(args, "todo");
-        let left = Self::positional_value(args, 0);
-        let right = Self::positional_value(args, 1);
         let ok = match (left, right) {
             (Some(left), Some(right)) => {
                 // If either side is a Junction, thread eqv through the junction
@@ -415,6 +415,28 @@ impl Interpreter {
         };
         self.test_ok(ok, &desc, todo)?;
         Ok(Value::Bool(ok))
+    }
+
+    /// Extract (left, right, desc) for is-deeply from raw args.
+    /// The first two args are always the values being compared (even if they are Pairs).
+    /// Only known internal named pairs (__mutsu_test_callsite_line, todo) are skipped.
+    fn extract_is_deeply_args(args: &[Value]) -> (Option<&Value>, Option<&Value>, String) {
+        let mut positionals = Vec::new();
+        for arg in args {
+            if let Value::Pair(key, _) = arg
+                && (key == "__mutsu_test_callsite_line" || key == "todo")
+            {
+                continue;
+            }
+            positionals.push(arg);
+        }
+        let left = positionals.first().copied();
+        let right = positionals.get(1).copied();
+        let desc = positionals
+            .get(2)
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        (left, right, desc)
     }
 
     /// Convert Seq to List (Array) for is-deeply comparison, per Raku spec.

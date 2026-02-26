@@ -151,6 +151,7 @@ pub enum Value {
     Routine {
         package: String,
         name: String,
+        is_regex: bool,
     },
     Pair(String, Box<Value>),
     /// Pair with a non-string key (preserves the original key type for `.key`)
@@ -558,6 +559,12 @@ impl PartialEq for Value {
             (Value::Package(a), Value::Package(b)) => a == b,
             (Value::Pair(ak, av), Value::Pair(bk, bv)) => ak == bk && av == bv,
             (Value::ValuePair(ak, av), Value::ValuePair(bk, bv)) => ak == bk && av == bv,
+            (Value::Pair(ak, av), Value::ValuePair(bk, bv)) => {
+                matches!(bk.as_ref(), Value::Str(s) if s == ak) && av == bv
+            }
+            (Value::ValuePair(ak, av), Value::Pair(bk, bv)) => {
+                matches!(ak.as_ref(), Value::Str(s) if s == bk) && av == bv
+            }
             (
                 Value::Enum {
                     enum_type: at,
@@ -591,10 +598,12 @@ impl PartialEq for Value {
                 Value::Routine {
                     package: ap,
                     name: an,
+                    ..
                 },
                 Value::Routine {
                     package: bp,
                     name: bn,
+                    ..
                 },
             ) => ap == bp && an == bn,
             (

@@ -559,6 +559,7 @@ impl VM {
             self.stack.push(Value::Routine {
                 package: package.clone(),
                 name: name.clone(),
+                is_regex: false,
             });
         } else {
             return Err(RuntimeError::new("X::Undeclared::Symbols"));

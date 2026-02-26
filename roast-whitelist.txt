@@ -20,6 +20,7 @@ roast/S02-lexical-conventions/sub-block-parsing.t
 roast/S02-lexical-conventions/unicode-whitespace.t
 roast/S02-lexical-conventions/unicode.t
 roast/S02-lists/tree.t
+roast/S02-literals/adverbs.t
 roast/S02-literals/char-by-name.t
 roast/S02-literals/hex_chars.t
 roast/S02-literals/listquote-whitespace.t
@@ -125,6 +126,7 @@ roast/S04-statements/unless.t
 roast/S04-statements/until.t
 roast/S05-grammar/example.t
 roast/S05-grammar/namespace-6e.t
+roast/S05-grammar/namespace.t
 roast/S05-grammar/protos.t
 roast/S05-grammar/ws.t
 roast/S05-interpolation/lexicals.t
