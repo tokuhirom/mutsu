@@ -126,7 +126,14 @@ pub(crate) enum Expr {
         name: String,
         args: Vec<Expr>,
     },
-    Exists(Box<Expr>),
+    Exists {
+        target: Box<Expr>,
+        negated: bool,
+        arg: Option<Box<Expr>>,
+        adverb: ExistsAdverb,
+    },
+    /// Zen slice: `@a[]` — represents all indices of an array.
+    ZenSlice(Box<Expr>),
     RoutineMagic,
     BlockMagic,
     Block(Vec<Stmt>),
@@ -244,7 +251,22 @@ pub(crate) enum Expr {
     },
 }
 
+/// Secondary adverb on :exists subscript adverb
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ExistsAdverb {
+    None,
+    Kv,
+    NotKv,
+    P,
+    NotP,
+    NotV,
+    /// Invalid combos that should die at runtime
+    InvalidK,
+    InvalidNotK,
+    InvalidV,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum HyperSliceAdverb {
     Kv,
     K,
@@ -707,8 +729,14 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             collect_ph_expr(then_expr, out);
             collect_ph_expr(else_expr, out);
         }
-        Expr::AssignExpr { expr, .. } | Expr::Exists(expr) | Expr::PositionalPair(expr) => {
+        Expr::AssignExpr { expr, .. } | Expr::PositionalPair(expr) | Expr::ZenSlice(expr) => {
             collect_ph_expr(expr, out)
+        }
+        Expr::Exists { target, arg, .. } => {
+            collect_ph_expr(target, out);
+            if let Some(a) = arg {
+                collect_ph_expr(a, out);
+            }
         }
         Expr::ArrayLiteral(es)
         | Expr::BracketArray(es)

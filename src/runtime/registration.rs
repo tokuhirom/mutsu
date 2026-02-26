@@ -450,7 +450,15 @@ impl Interpreter {
                     self.validate_private_access_in_expr(caller_class, arg)?;
                 }
             }
-            Expr::Exists(inner) => self.validate_private_access_in_expr(caller_class, inner)?,
+            Expr::Exists { target, arg, .. } => {
+                self.validate_private_access_in_expr(caller_class, target)?;
+                if let Some(a) = arg {
+                    self.validate_private_access_in_expr(caller_class, a)?;
+                }
+            }
+            Expr::ZenSlice(inner) => {
+                self.validate_private_access_in_expr(caller_class, inner)?;
+            }
             _ => {}
         }
         Ok(())

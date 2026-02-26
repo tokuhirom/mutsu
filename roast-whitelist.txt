@@ -387,6 +387,7 @@ roast/S29-context/exit.t
 roast/S29-conversions/hash.t
 roast/S32-array/bool.t
 roast/S32-array/elems.t
+roast/S32-array/exists-adverb.t
 roast/S32-array/keys_values.t
 roast/S32-array/kv.t
 roast/S32-basics/pairup.t

@@ -4,12 +4,90 @@ use super::super::helpers::{
 use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 use super::super::primary::{colonpair_expr, parse_block_body, parse_call_arg_list, primary};
 
-use crate::ast::{Expr, HyperSliceAdverb};
+use crate::ast::{ExistsAdverb, Expr, HyperSliceAdverb};
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 use super::expression;
 use super::operators::{parse_postfix_update_op, parse_prefix_unary_op};
+
+/// Try to parse a secondary adverb after :exists/:!exists.
+/// Returns (remaining_input, adverb).
+fn parse_exists_secondary_adverb(input: &str) -> (&str, ExistsAdverb) {
+    if input.starts_with(":!kv") && !is_ident_char(input.as_bytes().get(4).copied()) {
+        return (&input[4..], ExistsAdverb::NotKv);
+    }
+    if input.starts_with(":kv") && !is_ident_char(input.as_bytes().get(3).copied()) {
+        return (&input[3..], ExistsAdverb::Kv);
+    }
+    if input.starts_with(":!p") && !is_ident_char(input.as_bytes().get(3).copied()) {
+        return (&input[3..], ExistsAdverb::NotP);
+    }
+    if input.starts_with(":p") && !is_ident_char(input.as_bytes().get(2).copied()) {
+        return (&input[2..], ExistsAdverb::P);
+    }
+    if input.starts_with(":!v") && !is_ident_char(input.as_bytes().get(3).copied()) {
+        return (&input[3..], ExistsAdverb::NotV);
+    }
+    if input.starts_with(":!k") && !is_ident_char(input.as_bytes().get(3).copied()) {
+        return (&input[3..], ExistsAdverb::InvalidNotK);
+    }
+    if input.starts_with(":k") && !is_ident_char(input.as_bytes().get(2).copied()) {
+        return (&input[2..], ExistsAdverb::InvalidK);
+    }
+    if input.starts_with(":v") && !is_ident_char(input.as_bytes().get(2).copied()) {
+        return (&input[2..], ExistsAdverb::InvalidV);
+    }
+    (input, ExistsAdverb::None)
+}
+
+/// Try to parse :exists or :!exists adverb on a subscript expression.
+/// Returns (remaining_input, exists_expr) or None if no adverb found.
+fn try_parse_exists_adverb(input: &str, target: Expr) -> Option<(&str, Expr)> {
+    let r = input;
+    let (r, negated) = if r.starts_with(":!exists") && !is_ident_char(r.as_bytes().get(8).copied())
+    {
+        (&r[8..], true)
+    } else if r.starts_with(":exists") && !is_ident_char(r.as_bytes().get(7).copied()) {
+        (&r[7..], false)
+    } else {
+        return None;
+    };
+    // Check for parameterized argument: :exists(expr)
+    let (r, arg) = if let Some(r_stripped) = r.strip_prefix('(') {
+        let r2 = r_stripped;
+        if let Ok((r2, _)) = ws(r2) {
+            if let Ok((r2, arg_expr)) = expression(r2) {
+                if let Ok((r2, _)) = ws(r2) {
+                    if let Ok((r2, _)) = parse_char(r2, ')') {
+                        (r2, Some(Box::new(arg_expr)))
+                    } else {
+                        (r, None)
+                    }
+                } else {
+                    (r, None)
+                }
+            } else {
+                (r, None)
+            }
+        } else {
+            (r, None)
+        }
+    } else {
+        (r, None)
+    };
+    // Check for secondary adverb
+    let (r, adverb) = parse_exists_secondary_adverb(r);
+    Some((
+        r,
+        Expr::Exists {
+            target: Box::new(target),
+            negated,
+            arg,
+            adverb,
+        },
+    ))
+}
 
 fn supports_postfix_call_adverbs(expr: &Expr) -> bool {
     matches!(
@@ -707,7 +785,15 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             let r = &rest[1..];
             let (r, _) = ws(r)?;
             // Zen slice: expr[] — returns expr unchanged (identity on lists)
+            // But check for :exists adverb first since @a[]:exists needs ZenSlice
             if let Some(after) = r.strip_prefix(']') {
+                let (r_adv, _) = ws(after)?;
+                if r_adv.starts_with(":exists") || r_adv.starts_with(":!exists") {
+                    // Will be handled by adverb check below
+                    expr = Expr::ZenSlice(Box::new(expr));
+                    rest = after;
+                    continue;
+                }
                 rest = after;
                 continue;
             }
@@ -790,19 +876,9 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 continue;
             }
             // Check for :exists / :!exists / :delete adverbs
-            if r.starts_with(":exists") && !is_ident_char(r.as_bytes().get(7).copied()) {
-                let r = &r[7..];
-                expr = Expr::Exists(Box::new(indexed_expr));
-                rest = r;
-                continue;
-            }
-            if r.starts_with(":!exists") && !is_ident_char(r.as_bytes().get(8).copied()) {
-                let r = &r[8..];
-                expr = Expr::Unary {
-                    op: TokenKind::Bang,
-                    expr: Box::new(Expr::Exists(Box::new(indexed_expr))),
-                };
-                rest = r;
+            if let Some((r_after, exists_expr)) = try_parse_exists_adverb(r, indexed_expr.clone()) {
+                expr = exists_expr;
+                rest = r_after;
                 continue;
             }
             expr = indexed_expr;
@@ -905,25 +981,13 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             // Allow whitespace before adverbs
             let (r_adv, _) = ws(r)?;
             // Check for :exists / :!exists / :delete adverbs on curly-brace subscript
-            if r_adv.starts_with(":exists") && !is_ident_char(r_adv.as_bytes().get(7).copied()) {
-                let r = &r_adv[7..];
-                expr = Expr::Exists(Box::new(Expr::Index {
-                    target: Box::new(expr),
-                    index: Box::new(index),
-                }));
-                rest = r;
-                continue;
-            }
-            if r_adv.starts_with(":!exists") && !is_ident_char(r_adv.as_bytes().get(8).copied()) {
-                let r = &r_adv[8..];
-                expr = Expr::Unary {
-                    op: TokenKind::Bang,
-                    expr: Box::new(Expr::Exists(Box::new(Expr::Index {
-                        target: Box::new(expr),
-                        index: Box::new(index),
-                    }))),
-                };
-                rest = r;
+            let indexed = Expr::Index {
+                target: Box::new(expr.clone()),
+                index: Box::new(index.clone()),
+            };
+            if let Some((r_after, exists_expr)) = try_parse_exists_adverb(r_adv, indexed) {
+                expr = exists_expr;
+                rest = r_after;
                 continue;
             }
             if r_adv.starts_with(":delete") && !is_ident_char(r_adv.as_bytes().get(7).copied()) {
@@ -952,19 +1016,11 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
 
         // Adverbs on subscript expressions: :exists / :!exists / :delete
         // These can appear with whitespace after ] or } subscripts
-        if matches!(&expr, Expr::Index { .. }) {
+        if matches!(&expr, Expr::Index { .. } | Expr::ZenSlice(_)) {
             let (r_adv2, _) = ws(rest)?;
-            if r_adv2.starts_with(":exists") && !is_ident_char(r_adv2.as_bytes().get(7).copied()) {
-                rest = &r_adv2[7..];
-                expr = Expr::Exists(Box::new(expr));
-                continue;
-            }
-            if r_adv2.starts_with(":!exists") && !is_ident_char(r_adv2.as_bytes().get(8).copied()) {
-                rest = &r_adv2[8..];
-                expr = Expr::Unary {
-                    op: TokenKind::Bang,
-                    expr: Box::new(Expr::Exists(Box::new(expr))),
-                };
+            if let Some((r_after, exists_expr)) = try_parse_exists_adverb(r_adv2, expr.clone()) {
+                expr = exists_expr;
+                rest = r_after;
                 continue;
             }
             if r_adv2.starts_with(":delete") && !is_ident_char(r_adv2.as_bytes().get(7).copied()) {

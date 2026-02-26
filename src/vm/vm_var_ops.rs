@@ -10,6 +10,38 @@ impl VM {
         }
     }
 
+    /// Convert a Failure's exception Value into a RuntimeError.
+    fn failure_to_error(exception: &Value) -> RuntimeError {
+        let message = if let Value::Instance { attributes, .. } = exception {
+            attributes
+                .get("message")
+                .map(|v| v.to_string_value())
+                .unwrap_or_else(|| "Died".to_string())
+        } else {
+            "Died".to_string()
+        };
+        let mut err = RuntimeError::new(&message);
+        err.exception = Some(Box::new(exception.clone()));
+        err
+    }
+
+    /// If the value is a Failure, throw its contained exception.
+    fn throw_if_failure(value: &Value) -> Result<(), RuntimeError> {
+        match value {
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Failure" => {
+                if let Some(ex) = attributes.get("exception") {
+                    return Err(Self::failure_to_error(ex));
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     pub(super) fn anon_state_value(&self, name: &str) -> Option<Value> {
         let key = Self::anon_state_key(name)?;
         self.interpreter.get_state_var(&key).cloned()
@@ -380,13 +412,34 @@ impl VM {
     pub(super) fn exec_index_op(&mut self) -> Result<(), RuntimeError> {
         let index = self.stack.pop().unwrap();
         let mut target = self.stack.pop().unwrap();
+        // If target is a Failure, propagate it (// will catch it as undefined)
+        if matches!(&target, Value::Instance { class_name, .. } if class_name == "Failure") {
+            self.stack.push(target);
+            return Ok(());
+        }
         if let Value::LazyList(ref ll) = target {
             target = Value::array(self.interpreter.force_lazy_list_bridge(ll)?);
         }
         let result = match (target, index) {
             (Value::Array(items, ..), Value::Int(i)) => {
                 if i < 0 {
-                    Value::Nil
+                    // Return a Failure wrapping X::OutOfRange — `//` treats it as
+                    // undefined but any further use (e.g. subscripting) will throw.
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("what".to_string(), Value::Str("Index".to_string()));
+                    attrs.insert("got".to_string(), Value::Int(i));
+                    attrs.insert("range".to_string(), Value::Str("0..^Inf".to_string()));
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::Str(format!(
+                            "Index out of range. Is: {}, should be in 0..^Inf",
+                            i
+                        )),
+                    );
+                    let ex = Value::make_instance("X::OutOfRange".to_string(), attrs);
+                    let mut failure_attrs = std::collections::HashMap::new();
+                    failure_attrs.insert("exception".to_string(), ex);
+                    Value::make_instance("Failure".to_string(), failure_attrs)
                 } else {
                     items.get(i as usize).cloned().unwrap_or(Value::Nil)
                 }
@@ -762,27 +815,202 @@ impl VM {
         Ok(())
     }
 
-    pub(super) fn exec_exists_index_expr_op(&mut self) {
-        let idx = self.stack.pop().unwrap_or(Value::Nil);
-        let target = self.stack.pop().unwrap_or(Value::Nil);
-        let exists = match (target, idx) {
-            (Value::Array(items, ..), Value::Int(i)) => {
-                i >= 0
+    /// Rich :exists adverb handler supporting negation, parameterized arg,
+    /// zen slice, and secondary adverbs (:kv, :!kv, :p, :!p, :!v).
+    pub(super) fn exec_exists_index_adv_op(
+        &mut self,
+        flags: u32,
+    ) -> Result<(), crate::value::RuntimeError> {
+        let negated_flag = flags & 1 != 0;
+        let has_arg = flags & 2 != 0;
+        let is_zen = flags & 4 != 0;
+        let adverb_bits = (flags >> 4) & 0xF;
+
+        // Pop arg if present (it's on top of stack)
+        let arg_val = if has_arg {
+            self.stack.pop().unwrap_or(Value::Nil)
+        } else {
+            Value::Nil
+        };
+
+        // Determine effective negation
+        let effective_negated = if has_arg {
+            !arg_val.truthy() // falsy arg => negate
+        } else {
+            negated_flag
+        };
+
+        // Check for invalid adverb combos — die at runtime
+        match adverb_bits {
+            6 | 7 => {
+                // InvalidK, InvalidNotK
+                return Err(crate::value::RuntimeError::new(
+                    "Unsupported combination of :exists and :k adverbs".to_string(),
+                ));
+            }
+            8 => {
+                // InvalidV
+                return Err(crate::value::RuntimeError::new(
+                    "Unsupported combination of :exists and :v adverbs".to_string(),
+                ));
+            }
+            _ => {}
+        }
+
+        let (target, indices) = if is_zen {
+            let target = self.stack.pop().unwrap_or(Value::Nil);
+            Self::throw_if_failure(&target)?;
+            let len = match &target {
+                Value::Array(items, ..) => items.len(),
+                _ => 0,
+            };
+            let idxs: Vec<i64> = (0..len as i64).collect();
+            (target, idxs)
+        } else {
+            let idx = self.stack.pop().unwrap_or(Value::Nil);
+            let target = self.stack.pop().unwrap_or(Value::Nil);
+            Self::throw_if_failure(&target)?;
+            let idxs = match &idx {
+                Value::Int(i) => vec![*i],
+                Value::Array(items, ..) if crate::runtime::utils::is_shaped_array(&target) => {
+                    // Shaped array: multi-dimensional exists (e.g. @arr[0;0]:exists)
+                    let exists = Self::index_array_multidim(&target, items.as_ref(), false)
+                        .ok()
+                        .is_some_and(|v| !matches!(v, Value::Nil));
+                    let result = Value::Bool(exists ^ effective_negated);
+                    self.stack.push(result);
+                    return Ok(());
+                }
+                Value::Array(items, ..) => items
+                    .iter()
+                    .map(|v| match v {
+                        Value::Int(i) => *i,
+                        _ => {
+                            let n = v.to_bigint();
+                            n.try_into().unwrap_or(0)
+                        }
+                    })
+                    .collect(),
+                // Whatever (*) compiled as Inf — treat as zen slice
+                Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
+                    let len = match &target {
+                        Value::Array(items, ..) => items.len(),
+                        _ => 0,
+                    };
+                    (0..len as i64).collect()
+                }
+                _ => {
+                    // For hash access, delegate to single key exists
+                    let exists = match (&target, &idx) {
+                        (Value::Hash(map), Value::Str(key)) => map.contains_key(key),
+                        (Value::Hash(map), _) => map.contains_key(&idx.to_string_value()),
+                        _ => false,
+                    };
+                    let result = Value::Bool(exists ^ effective_negated);
+                    self.stack.push(result);
+                    return Ok(());
+                }
+            };
+            (target, idxs)
+        };
+
+        let items = match &target {
+            Value::Array(items, ..) => items.as_ref(),
+            _ => &[] as &[Value],
+        };
+
+        let is_multi = indices.len() != 1 || is_zen;
+
+        if !is_multi {
+            // Single index
+            let i = indices[0];
+            let exists = i >= 0
+                && items
+                    .get(i as usize)
+                    .is_some_and(|v| !matches!(v, Value::Nil));
+            let result = exists ^ effective_negated;
+            self.stack.push(Value::Bool(result));
+            return Ok(());
+        }
+
+        // Multi-index: compute (index, exists_bool) pairs
+        let pairs: Vec<(i64, bool)> = indices
+            .iter()
+            .map(|&i| {
+                let exists = i >= 0
                     && items
                         .get(i as usize)
-                        .is_some_and(|v| !matches!(v, Value::Nil))
+                        .is_some_and(|v| !matches!(v, Value::Nil));
+                (i, exists)
+            })
+            .collect();
+
+        let result = match adverb_bits {
+            0 => {
+                // Plain :exists — list of Bools
+                let vals: Vec<Value> = pairs
+                    .iter()
+                    .map(|(_, e)| Value::Bool(*e ^ effective_negated))
+                    .collect();
+                Value::array(vals)
             }
-            (target @ Value::Array(..), Value::Array(indices, ..)) => {
-                Self::index_array_multidim(&target, indices.as_ref(), false)
-                    .ok()
-                    .is_some_and(|v| !matches!(v, Value::Nil))
+            1 => {
+                // :kv — filter by original exists, interleave (index, bool)
+                let mut vals = Vec::new();
+                for (i, exists) in &pairs {
+                    if *exists {
+                        vals.push(Value::Int(*i));
+                        vals.push(Value::Bool(*exists ^ effective_negated));
+                    }
+                }
+                Value::array(vals)
             }
-            (Value::Hash(map), Value::Str(key)) => map.contains_key(&key),
-            (Value::Hash(map), Value::Int(key)) => map.contains_key(&key.to_string()),
-            (Value::Hash(map), other) => map.contains_key(&other.to_string_value()),
-            _ => false,
+            2 => {
+                // :!kv — no filter, interleave all (index, bool)
+                let mut vals = Vec::new();
+                for (i, exists) in &pairs {
+                    vals.push(Value::Int(*i));
+                    vals.push(Value::Bool(*exists ^ effective_negated));
+                }
+                Value::array(vals)
+            }
+            3 => {
+                // :p — filter by original exists, return Pairs
+                let mut vals = Vec::new();
+                for (i, exists) in &pairs {
+                    if *exists {
+                        vals.push(Value::ValuePair(
+                            Box::new(Value::Int(*i)),
+                            Box::new(Value::Bool(*exists ^ effective_negated)),
+                        ));
+                    }
+                }
+                Value::array(vals)
+            }
+            4 => {
+                // :!p — no filter, return all Pairs
+                let mut vals = Vec::new();
+                for (i, exists) in &pairs {
+                    vals.push(Value::ValuePair(
+                        Box::new(Value::Int(*i)),
+                        Box::new(Value::Bool(*exists ^ effective_negated)),
+                    ));
+                }
+                Value::array(vals)
+            }
+            5 => {
+                // :!v — no filter, return all Bools
+                let vals: Vec<Value> = pairs
+                    .iter()
+                    .map(|(_, e)| Value::Bool(*e ^ effective_negated))
+                    .collect();
+                Value::array(vals)
+            }
+            _ => Value::Nil,
         };
-        self.stack.push(Value::Bool(exists));
+
+        self.stack.push(result);
+        Ok(())
     }
 
     fn delete_from_missing_container(idx: Value) -> Value {

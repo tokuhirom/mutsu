@@ -899,31 +899,87 @@ impl Compiler {
                 self.code.emit(OpCode::GetEnvIndex(key_idx));
             }
             // Exists check (:exists)
-            Expr::Exists(inner) => match inner.as_ref() {
-                Expr::EnvIndex(key) => {
-                    let key_idx = self.code.add_constant(Value::Str(key.clone()));
-                    self.code.emit(OpCode::ExistsEnvIndex(key_idx));
-                }
-                Expr::Index { target, index } if matches!(target.as_ref(), Expr::HashVar(name) if name == "*ENV") => {
-                    if let Expr::Literal(Value::Str(key)) = index.as_ref() {
-                        let key_idx = self.code.add_constant(Value::Str(key.clone()));
-                        self.code.emit(OpCode::ExistsEnvIndex(key_idx));
-                    } else {
+            Expr::Exists {
+                target,
+                negated,
+                arg,
+                adverb,
+            } => {
+                use crate::ast::ExistsAdverb;
+                let adverb_bits: u32 = match adverb {
+                    ExistsAdverb::None => 0,
+                    ExistsAdverb::Kv => 1,
+                    ExistsAdverb::NotKv => 2,
+                    ExistsAdverb::P => 3,
+                    ExistsAdverb::NotP => 4,
+                    ExistsAdverb::NotV => 5,
+                    ExistsAdverb::InvalidK => 6,
+                    ExistsAdverb::InvalidNotK => 7,
+                    ExistsAdverb::InvalidV => 8,
+                };
+                // Env variable special cases
+                if !negated && arg.is_none() && *adverb == ExistsAdverb::None {
+                    match target.as_ref() {
+                        Expr::EnvIndex(key) => {
+                            let key_idx = self.code.add_constant(Value::Str(key.clone()));
+                            self.code.emit(OpCode::ExistsEnvIndex(key_idx));
+                            return;
+                        }
+                        Expr::Index {
+                            target: t, index, ..
+                        } if matches!(t.as_ref(), Expr::HashVar(name) if name == "*ENV")
+                            && matches!(index.as_ref(), Expr::Literal(Value::Str(_))) =>
+                        {
+                            if let Expr::Literal(Value::Str(key)) = index.as_ref() {
+                                let key_idx = self.code.add_constant(Value::Str(key.clone()));
+                                self.code.emit(OpCode::ExistsEnvIndex(key_idx));
+                                return;
+                            }
+                        }
+                        _ => {}
+                    }
+                    // Non-index, non-env: use ExistsExpr
+                    if !matches!(target.as_ref(), Expr::Index { .. } | Expr::ZenSlice(_)) {
                         self.compile_expr(target);
-                        self.compile_expr(index);
-                        self.code.emit(OpCode::ExistsIndexExpr);
+                        self.code.emit(OpCode::ExistsExpr);
+                        return;
                     }
                 }
-                Expr::Index { target, index } => {
-                    self.compile_expr(target);
-                    self.compile_expr(index);
-                    self.code.emit(OpCode::ExistsIndexExpr);
+                // Rich case: use ExistsIndexAdv opcode
+                let is_zen = matches!(target.as_ref(), Expr::ZenSlice(_));
+                let mut flags: u32 = 0;
+                if *negated {
+                    flags |= 1;
                 }
-                _ => {
-                    self.compile_expr(inner);
-                    self.code.emit(OpCode::ExistsExpr);
+                if arg.is_some() {
+                    flags |= 2;
                 }
-            },
+                if is_zen {
+                    flags |= 4;
+                }
+                flags |= adverb_bits << 4;
+
+                match target.as_ref() {
+                    Expr::ZenSlice(inner) => {
+                        self.compile_expr(inner);
+                    }
+                    Expr::Index { target: t, index } => {
+                        self.compile_expr(t);
+                        self.compile_expr(index);
+                    }
+                    _ => {
+                        self.compile_expr(target);
+                    }
+                }
+                if let Some(a) = arg {
+                    self.compile_expr(a);
+                }
+                self.code.emit(OpCode::ExistsIndexAdv(flags));
+            }
+            Expr::ZenSlice(inner) => {
+                // Outside of :exists, zen slice is identity
+                self.compile_expr(inner);
+            }
             // Reduction ([+] @arr)
             Expr::Reduction { op, expr } => {
                 self.compile_expr(expr);
