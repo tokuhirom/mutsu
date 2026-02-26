@@ -280,6 +280,7 @@ fn make_wc_param(name: String) -> crate::ast::ParamDef {
         outer_sub_signature: None,
         code_signature: None,
         is_invocant: false,
+        shape_constraints: None,
     }
 }
 
@@ -514,6 +515,7 @@ fn wrap_whatevercode(expr: &Expr) -> Expr {
                     outer_sub_signature: None,
                     code_signature: None,
                     is_invocant: false,
+                    shape_constraints: None,
                 })
                 .collect(),
             return_type: None,
