@@ -16,7 +16,15 @@ impl Interpreter {
         }
         let saved_env = self.env.clone();
         let saved_readonly = self.save_readonly_vars();
-        let rw_bindings = self.bind_function_args_values(&def.param_defs, &def.params, &args)?;
+        let rw_bindings = match self.bind_function_args_values(&def.param_defs, &def.params, &args)
+        {
+            Ok(bindings) => bindings,
+            Err(e) => {
+                self.env = saved_env;
+                self.restore_readonly_vars(saved_readonly);
+                return Err(e);
+            }
+        };
         let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
         self.routine_stack
             .push((def.package.clone(), def.name.clone()));
@@ -64,7 +72,14 @@ impl Interpreter {
                     let saved_env = self.env.clone();
                     let saved_readonly = self.save_readonly_vars();
                     let rw_bindings =
-                        self.bind_function_args_values(&def.param_defs, &def.params, &args)?;
+                        match self.bind_function_args_values(&def.param_defs, &def.params, &args) {
+                            Ok(bindings) => bindings,
+                            Err(e) => {
+                                self.env = saved_env;
+                                self.restore_readonly_vars(saved_readonly);
+                                return Err(e);
+                            }
+                        };
                     let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
                     self.routine_stack
                         .push((def.package.clone(), def.name.clone()));

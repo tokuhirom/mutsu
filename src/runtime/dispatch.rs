@@ -331,7 +331,14 @@ impl Interpreter {
         let saved_env = self.env.clone();
         let saved_readonly = self.save_readonly_vars();
         let rw_bindings =
-            self.bind_function_args_values(&def.param_defs, &def.params, arg_values)?;
+            match self.bind_function_args_values(&def.param_defs, &def.params, arg_values) {
+                Ok(bindings) => bindings,
+                Err(e) => {
+                    self.env = saved_env;
+                    self.restore_readonly_vars(saved_readonly);
+                    return Err(e);
+                }
+            };
         self.routine_stack
             .push((def.package.clone(), def.name.clone()));
         let result = self.eval_block_value(&def.body);
@@ -418,7 +425,14 @@ impl Interpreter {
         }
         let saved_env = self.env.clone();
         let saved_readonly = self.save_readonly_vars();
-        let rw_bindings = self.bind_function_args_values(&def.param_defs, &def.params, args)?;
+        let rw_bindings = match self.bind_function_args_values(&def.param_defs, &def.params, args) {
+            Ok(bindings) => bindings,
+            Err(e) => {
+                self.env = saved_env;
+                self.restore_readonly_vars(saved_readonly);
+                return Err(e);
+            }
+        };
         self.routine_stack
             .push((def.package.clone(), def.name.clone()));
         self.proto_dispatch_stack
@@ -472,7 +486,15 @@ impl Interpreter {
         }
         let saved_env = self.env.clone();
         let saved_readonly = self.save_readonly_vars();
-        let rw_bindings = self.bind_function_args_values(&def.param_defs, &def.params, &args)?;
+        let rw_bindings = match self.bind_function_args_values(&def.param_defs, &def.params, &args)
+        {
+            Ok(bindings) => bindings,
+            Err(e) => {
+                self.env = saved_env;
+                self.restore_readonly_vars(saved_readonly);
+                return Err(e);
+            }
+        };
         self.routine_stack
             .push((def.package.clone(), def.name.clone()));
         let result = self.run_block(&def.body);
