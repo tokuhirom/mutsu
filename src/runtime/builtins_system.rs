@@ -6,6 +6,7 @@ struct ProcOptions {
     env: HashMap<String, String>,
     capture_err: bool,
     capture_out: bool,
+    win_verbatim_args: bool,
 }
 
 impl Interpreter {
@@ -82,6 +83,7 @@ impl Interpreter {
             env: HashMap::new(),
             capture_err: false,
             capture_out: false,
+            win_verbatim_args: false,
         };
         for value in args.iter().skip(skip) {
             if let Value::Hash(map) = value {
@@ -103,6 +105,9 @@ impl Interpreter {
                         "out" => {
                             opts.capture_out = inner.truthy();
                         }
+                        "win-verbatim-args" => {
+                            opts.win_verbatim_args = inner.truthy();
+                        }
                         _ => {}
                     }
                 }
@@ -112,11 +117,31 @@ impl Interpreter {
                     "cwd" => opts.cwd = Some(inner.to_string_value()),
                     "err" => opts.capture_err = inner.truthy(),
                     "out" => opts.capture_out = inner.truthy(),
+                    "win-verbatim-args" => opts.win_verbatim_args = inner.truthy(),
                     _ => {}
                 }
             }
         }
         opts
+    }
+
+    #[cfg(windows)]
+    fn apply_run_args(cmd: &mut Command, args: &[String], win_verbatim_args: bool) {
+        use std::os::windows::process::CommandExt;
+
+        if win_verbatim_args {
+            if !args.is_empty() {
+                // Raku's :win-verbatim-args forwards argv payload without Win32 quoting.
+                cmd.raw_arg(args.join(" "));
+            }
+        } else {
+            cmd.args(args);
+        }
+    }
+
+    #[cfg(not(windows))]
+    fn apply_run_args(cmd: &mut Command, args: &[String], _win_verbatim_args: bool) {
+        cmd.args(args);
     }
 
     pub(super) fn builtin_run(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -162,7 +187,7 @@ impl Interpreter {
         let command_val = Value::array(positional.iter().map(|s| Value::Str(s.clone())).collect());
 
         let mut cmd = Command::new(program);
-        cmd.args(rest_args);
+        Self::apply_run_args(&mut cmd, rest_args, opts.win_verbatim_args);
 
         if opts.capture_out {
             cmd.stdout(std::process::Stdio::piped());
@@ -391,7 +416,16 @@ impl Interpreter {
                     Value::Int(i) => Some(*i),
                     _ => None,
                 })
-                .unwrap_or_else(|| std::process::id() as i64);
+                .unwrap_or_else(|| {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        std::process::id() as i64
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        0
+                    }
+                });
             return Ok(Value::Int(pid));
         }
         Ok(Value::Int(-1))
@@ -415,7 +449,8 @@ impl Interpreter {
 
     pub(super) fn builtin_sleep_till(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         if let Some(target_time) = Self::system_time_from_value(args.first().cloned()) {
-            let now = SystemTime::now();
+            let now = std::time::SystemTime::UNIX_EPOCH
+                + std::time::Duration::from_secs_f64(crate::value::current_time_secs_f64());
             if target_time <= now {
                 return Ok(Value::Bool(false));
             }
@@ -471,7 +506,7 @@ impl Interpreter {
             match arg {
                 Value::Promise(shared) => {
                     let (result, output, stderr) = shared.wait();
-                    self.output.push_str(&output);
+                    self.emit_output(&output);
                     self.stderr_output.push_str(&stderr);
                     if shared.status() == "Broken" {
                         self.sync_shared_vars_to_env();
@@ -529,7 +564,7 @@ impl Interpreter {
                         match elem {
                             Value::Promise(shared) => {
                                 let (result, output, stderr) = shared.wait();
-                                self.output.push_str(&output);
+                                self.emit_output(&output);
                                 self.stderr_output.push_str(&stderr);
                                 if shared.status() == "Broken" {
                                     self.sync_shared_vars_to_env();
@@ -562,5 +597,65 @@ impl Interpreter {
         } else {
             Ok(Value::array(results))
         }
+    }
+    /// `signal(SIGINT, ...)` — returns a Supply that emits Signal enum values
+    /// when the process receives the specified OS signals.
+    pub(super) fn builtin_signal(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        use std::sync::mpsc;
+
+        // Extract signal numbers and their enum representations
+        let signals: Vec<(i64, Value)> = args
+            .iter()
+            .filter_map(|v| match v {
+                Value::Enum { value, .. } => Some((*value, v.clone())),
+                Value::Int(i) => Some((*i, v.clone())),
+                _ => None,
+            })
+            .collect();
+
+        let supply_id = super::native_methods::next_supply_id();
+
+        // Create channel for the Supply
+        let (tx, rx) = mpsc::channel();
+
+        // Register the channel in the supply channel map
+        if let Ok(mut map) = super::native_methods::supply_channel_map_pub().lock() {
+            map.insert(supply_id, rx);
+        }
+
+        // Set up real signal handling using pipe + sigaction
+        for (signum, sig_val) in &signals {
+            signal_watcher::register_signal(*signum as i32, supply_id, tx.clone(), sig_val.clone());
+        }
+
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("values".to_string(), Value::array(Vec::new()));
+        attrs.insert("taps".to_string(), Value::array(Vec::new()));
+        attrs.insert("supply_id".to_string(), Value::Int(supply_id as i64));
+        Ok(Value::make_instance("Supply".to_string(), attrs))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_proc_options_reads_win_verbatim_pair() {
+        let args = vec![Value::Pair(
+            "win-verbatim-args".to_string(),
+            Box::new(Value::Bool(true)),
+        )];
+        let opts = Interpreter::extract_proc_options(&args, 0);
+        assert!(opts.win_verbatim_args);
+    }
+
+    #[test]
+    fn extract_proc_options_reads_win_verbatim_hash() {
+        let mut map = HashMap::new();
+        map.insert("win-verbatim-args".to_string(), Value::Bool(true));
+        let args = vec![Value::Hash(map.into())];
+        let opts = Interpreter::extract_proc_options(&args, 0);
+        assert!(opts.win_verbatim_args);
     }
 }

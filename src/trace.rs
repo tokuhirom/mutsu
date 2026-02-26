@@ -9,6 +9,9 @@ struct TraceConfig {
 
 fn config() -> &'static TraceConfig {
     TRACE_CONFIG.get_or_init(|| {
+        #[cfg(target_arch = "wasm32")]
+        let val = String::new();
+        #[cfg(not(target_arch = "wasm32"))]
         let val = std::env::var("MUTSU_TRACE").unwrap_or_default();
         if val.is_empty() || val == "0" {
             TraceConfig {

@@ -1,9 +1,165 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::value::{JunctionKind, RuntimeError, Value};
+use num_traits::{Signed, ToPrimitive, Zero};
 
 /// Maximum number of elements when expanding an infinite range to a list.
 const MAX_RANGE_EXPAND: i64 = 1_000_000;
+
+fn shaped_array_ids() -> &'static Mutex<HashMap<usize, Vec<usize>>> {
+    static SHAPED_ARRAY_IDS: OnceLock<Mutex<HashMap<usize, Vec<usize>>>> = OnceLock::new();
+    SHAPED_ARRAY_IDS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn shaped_array_key(items: &Arc<Vec<Value>>) -> usize {
+    Arc::as_ptr(items) as usize
+}
+
+/// Check if an array is a shaped (multidimensional) array.
+/// A shaped array is one explicitly created as multidimensional via `:shape`.
+pub(crate) fn is_shaped_array(value: &Value) -> bool {
+    shaped_array_shape(value).is_some()
+}
+
+pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
+    let Value::Array(items, ..) = value else {
+        return None;
+    };
+    let key = shaped_array_key(items);
+
+    fn shape_matches_structure(value: &Value, shape: &[usize]) -> bool {
+        if shape.is_empty() {
+            return false;
+        }
+        let Value::Array(items, ..) = value else {
+            return false;
+        };
+        if items.len() != shape[0] {
+            return false;
+        }
+        if shape.len() == 1 {
+            return items.iter().all(|v| !matches!(v, Value::Array(..)));
+        }
+        items
+            .iter()
+            .all(|child| shape_matches_structure(child, &shape[1..]))
+    }
+
+    if items.is_empty() {
+        return None;
+    }
+
+    fn infer_shape_from_array(
+        items: &[Value],
+        ids: &HashMap<usize, Vec<usize>>,
+    ) -> Option<Vec<usize>> {
+        let first = items.first()?;
+        let Value::Array(first_items, ..) = first else {
+            return None;
+        };
+        let first_shape = ids.get(&shaped_array_key(first_items))?;
+        if !items.iter().all(|child| {
+            if let Value::Array(child_items, ..) = child {
+                ids.get(&shaped_array_key(child_items)) == Some(first_shape)
+            } else {
+                false
+            }
+        }) {
+            return None;
+        }
+        let mut shape = Vec::with_capacity(1 + first_shape.len());
+        shape.push(items.len());
+        shape.extend_from_slice(first_shape);
+        Some(shape)
+    }
+
+    let ids = shaped_array_ids().lock().ok()?;
+    let cached_shape = ids.get(&key).cloned();
+    if let Some(cached_shape) = cached_shape
+        && shape_matches_structure(value, &cached_shape)
+    {
+        return Some(cached_shape);
+    }
+    let inferred_shape = infer_shape_from_array(items.as_ref(), &ids)?;
+    if !shape_matches_structure(value, &inferred_shape) {
+        return None;
+    }
+    drop(ids);
+    if let Ok(mut ids) = shaped_array_ids().lock() {
+        ids.insert(key, inferred_shape.clone());
+    }
+    Some(inferred_shape)
+}
+
+pub(crate) fn mark_shaped_array(value: &Value, shape: Option<&[usize]>) {
+    let Value::Array(items, ..) = value else {
+        return;
+    };
+    mark_shaped_array_items(items, shape);
+}
+
+pub(crate) fn mark_shaped_array_items(items: &Arc<Vec<Value>>, shape: Option<&[usize]>) {
+    if shape.is_none() {
+        return;
+    }
+    let key = shaped_array_key(items);
+    if let Ok(mut ids) = shaped_array_ids().lock() {
+        if let Some(current_shape) = ids.get(&key)
+            && shape.is_some_and(|s| current_shape.as_slice() == s)
+        {
+            return;
+        }
+        ids.insert(key, shape.unwrap_or(&[]).to_vec());
+    }
+}
+
+/// Collect all leaf values from a shaped (multidimensional) array.
+pub(crate) fn shaped_array_leaves(value: &Value) -> Vec<Value> {
+    let mut leaves = Vec::new();
+    collect_leaves(value, &mut leaves);
+    leaves
+}
+
+fn collect_leaves(value: &Value, out: &mut Vec<Value>) {
+    if let Value::Array(items, ..) = value {
+        if items.iter().any(|v| matches!(v, Value::Array(..))) {
+            for item in items.iter() {
+                collect_leaves(item, out);
+            }
+        } else {
+            out.extend(items.iter().cloned());
+        }
+    } else {
+        out.push(value.clone());
+    }
+}
+
+/// Collect all (index-tuple, leaf-value) pairs from a shaped array.
+pub(crate) fn shaped_array_indexed_leaves(value: &Value) -> Vec<(Vec<i64>, Value)> {
+    let mut result = Vec::new();
+    let mut indices = Vec::new();
+    collect_indexed_leaves(value, &mut indices, &mut result);
+    result
+}
+
+fn collect_indexed_leaves(value: &Value, indices: &mut Vec<i64>, out: &mut Vec<(Vec<i64>, Value)>) {
+    if let Value::Array(items, ..) = value {
+        if items.iter().any(|v| matches!(v, Value::Array(..))) {
+            for (i, item) in items.iter().enumerate() {
+                indices.push(i as i64);
+                collect_indexed_leaves(item, indices, out);
+                indices.pop();
+            }
+        } else {
+            for (i, item) in items.iter().enumerate() {
+                let mut idx = indices.clone();
+                idx.push(i as i64);
+                out.push((idx, item.clone()));
+            }
+        }
+    }
+}
 
 pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
     match (left, right) {
@@ -271,6 +427,7 @@ pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
             | "Rat"
             | "FatRat"
             | "Complex"
+            | "atomicint"
             | "int"
             | "num"
             | "str"
@@ -296,6 +453,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::Pair(_, _) | Value::ValuePair(_, _) => "Pair",
         Value::Rat(_, _) => "Rat",
         Value::FatRat(_, _) => "FatRat",
+        Value::BigRat(_, _) => "Rat",
         Value::Complex(_, _) => "Complex",
         Value::Set(_) => "Set",
         Value::Bag(_) => "Bag",
@@ -325,10 +483,61 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         },
         Value::Mixin(inner, _) => value_type_name(inner),
         Value::Proxy { .. } => "Proxy",
+        Value::ParametricRole { .. } => "Package",
     }
 }
 
+pub(crate) fn is_chain_comparison_op(op: &str) -> bool {
+    matches!(
+        op,
+        "==" | "!="
+            | "<"
+            | ">"
+            | "<="
+            | ">="
+            | "==="
+            | "!=="
+            | "=:="
+            | "eqv"
+            | "eq"
+            | "ne"
+            | "lt"
+            | "gt"
+            | "le"
+            | "ge"
+            | "before"
+            | "after"
+            | "~~"
+            | "!~~"
+            | "cmp"
+            | "leg"
+            | "<=>"
+            | "%%"
+            | "!%%"
+    ) || matches!(
+        op.strip_prefix('!'),
+        Some("==")
+            | Some("===")
+            | Some("=:=")
+            | Some("eqv")
+            | Some("eq")
+            | Some("ne")
+            | Some("lt")
+            | Some("gt")
+            | Some("le")
+            | Some("ge")
+            | Some("before")
+            | Some("after")
+            | Some("cmp")
+            | Some("leg")
+            | Some("<=>")
+    )
+}
+
 pub(crate) fn reduction_identity(op: &str) -> Value {
+    if is_chain_comparison_op(op) {
+        return Value::Bool(true);
+    }
     match op {
         "+" | "-" | "+|" | "+^" => Value::Int(0),
         "*" | "**" => Value::Int(1),
@@ -340,11 +549,6 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
         "//" => Value::Package("Any".to_string()),
         "min" => Value::Num(f64::INFINITY),
         "max" => Value::Num(f64::NEG_INFINITY),
-        // Comparison/chaining operators: vacuous truth for empty lists
-        "==" | "!=" | "<" | ">" | "<=" | ">=" | "===" | "=:=" | "eqv" | "eq" | "ne" | "lt"
-        | "gt" | "le" | "ge" | "before" | "after" | "~~" | "cmp" | "leg" | "<=>" | "%%" => {
-            Value::Bool(true)
-        }
         // Junction operators
         "&" => Value::Junction {
             kind: crate::value::JunctionKind::All,
@@ -508,11 +712,20 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
                 Value::Int(0)
             }
         }
-        Value::Array(items, ..) => Value::Int(items.len() as i64),
+        Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => {
+            Value::Int(items.len() as i64)
+        }
         Value::Hash(items) => Value::Int(items.len() as i64),
         Value::Set(items) => Value::Int(items.len() as i64),
         Value::Bag(items) => Value::Int(items.values().sum()),
         Value::Mix(items) => Value::Num(items.values().sum()),
+        Value::LazyList(ll) => {
+            if let Some(cached) = ll.cache.lock().unwrap().as_ref() {
+                Value::Int(cached.len() as i64)
+            } else {
+                Value::Int(0)
+            }
+        }
         Value::Nil => Value::Int(0),
         Value::Instance {
             ref class_name,
@@ -600,6 +813,7 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
     match val {
         Value::Num(f) => Some(*f),
         Value::Int(i) => Some(*i as f64),
+        Value::BigInt(n) => n.to_f64(),
         Value::Rat(n, d) => {
             if *d != 0 {
                 Some(*n as f64 / *d as f64)
@@ -622,6 +836,17 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
                 Some(f64::NAN)
             }
         }
+        Value::BigRat(n, d) => {
+            if !d.is_zero() {
+                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
+            } else if n.is_positive() {
+                Some(f64::INFINITY)
+            } else if n.is_negative() {
+                Some(f64::NEG_INFINITY)
+            } else {
+                Some(f64::NAN)
+            }
+        }
         Value::Complex(r, i) => {
             if *i == 0.0 {
                 Some(*r)
@@ -638,6 +863,11 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
             attributes,
             ..
         } if class_name == "Instant" => attributes.get("value").and_then(to_float_value),
+        Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "Match" => attributes.get("str").and_then(to_float_value),
         _ => None,
     }
 }
@@ -664,8 +894,29 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
             version_cmp_parts(ap, bp) as i32
         }
         (Value::Int(a), Value::Int(b)) => a.cmp(b) as i32,
+        (Value::BigInt(a), Value::BigInt(b)) => a.cmp(b) as i32,
+        (Value::BigInt(a), Value::Int(b)) => a.cmp(&num_bigint::BigInt::from(*b)) as i32,
+        (Value::Int(a), Value::BigInt(b)) => num_bigint::BigInt::from(*a).cmp(b) as i32,
         (Value::Num(a), Value::Num(b)) => {
             a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal) as i32
+        }
+        (Value::BigInt(a), Value::Num(b)) => {
+            a.to_f64()
+                .unwrap_or(if a.is_positive() {
+                    f64::INFINITY
+                } else {
+                    f64::NEG_INFINITY
+                })
+                .partial_cmp(b)
+                .unwrap_or(std::cmp::Ordering::Equal) as i32
+        }
+        (Value::Num(a), Value::BigInt(b)) => {
+            a.partial_cmp(&b.to_f64().unwrap_or(if b.is_positive() {
+                f64::INFINITY
+            } else {
+                f64::NEG_INFINITY
+            }))
+            .unwrap_or(std::cmp::Ordering::Equal) as i32
         }
         (Value::Int(a), Value::Num(b)) => (*a as f64)
             .partial_cmp(b)

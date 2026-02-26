@@ -38,6 +38,9 @@ pub(crate) struct VM {
     interpreter: Interpreter,
     stack: Vec<Value>,
     locals: Vec<Value>,
+    in_smartmatch_rhs: bool,
+    /// Tracks the last value passed to SetTopic, used as the REPL display value.
+    last_topic_value: Option<Value>,
 }
 
 impl VM {
@@ -78,6 +81,8 @@ impl VM {
             interpreter,
             stack: Vec::new(),
             locals: Vec::new(),
+            in_smartmatch_rhs: false,
+            last_topic_value: None,
         }
     }
 
@@ -87,7 +92,7 @@ impl VM {
         mut self,
         code: &CompiledCode,
         compiled_fns: &HashMap<String, CompiledFunction>,
-    ) -> (Interpreter, Result<(), RuntimeError>) {
+    ) -> (Interpreter, Result<Option<Value>, RuntimeError>) {
         // Initialize local variable slots
         self.locals = vec![Value::Nil; code.locals.len()];
         for (i, name) in code.locals.iter().enumerate() {
@@ -114,7 +119,7 @@ impl VM {
             }
         }
         self.sync_state_locals(code);
-        (self.interpreter, Ok(()))
+        (self.interpreter, Ok(self.last_topic_value))
     }
 
     /// Run compiled bytecode without consuming self.
@@ -302,11 +307,31 @@ impl VM {
                     return Err(self.strict_undeclared_error(&name));
                 }
                 let val = self.stack.pop().unwrap();
-                let val = if name.starts_with('%') {
+                let mut val = if name.starts_with('%') {
                     runtime::coerce_to_hash(val)
                 } else {
                     val
                 };
+                if let Some(constraint) = self.interpreter.var_type_constraint(&name)
+                    && !name.starts_with('%')
+                    && !name.starts_with('@')
+                {
+                    if !matches!(val, Value::Nil)
+                        && !self.interpreter.type_matches_value(&constraint, &val)
+                    {
+                        return Err(RuntimeError::new(format!(
+                            "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
+                            name,
+                            constraint,
+                            runtime::utils::value_type_name(&val)
+                        )));
+                    }
+                    if !matches!(val, Value::Nil) {
+                        val = self
+                            .interpreter
+                            .try_coerce_value_for_constraint(&constraint, val)?;
+                    }
+                }
                 let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
                 let alias_key = format!("__mutsu_sigilless_alias::{}", name);
                 if matches!(
@@ -328,8 +353,16 @@ impl VM {
                 self.set_env_with_main_alias(&name, val);
                 *ip += 1;
             }
+            OpCode::SetVarType { name_idx, tc_idx } => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                let constraint = Self::const_str(code, *tc_idx).to_string();
+                self.interpreter
+                    .set_var_type_constraint(&name, Some(constraint));
+                *ip += 1;
+            }
             OpCode::SetTopic => {
                 let val = self.stack.pop().unwrap_or(Value::Nil);
+                self.last_topic_value = Some(val.clone());
                 self.interpreter.env_mut().insert("_".to_string(), val);
                 *ip += 1;
             }
@@ -750,6 +783,24 @@ impl VM {
             }
 
             // -- Stack manipulation --
+            OpCode::XorXor => {
+                let b = self.stack.pop().unwrap();
+                let a = self.stack.pop().unwrap();
+                let a_truthy = a.truthy();
+                let b_truthy = b.truthy();
+                let result = if a_truthy && !b_truthy {
+                    a
+                } else if !a_truthy && b_truthy {
+                    b
+                } else if a_truthy && b_truthy {
+                    Value::Nil
+                } else {
+                    // both falsy: return the last falsy value
+                    b
+                };
+                self.stack.push(result);
+                *ip += 1;
+            }
             OpCode::Dup => {
                 let val = self.stack.last().unwrap().clone();
                 self.stack.push(val);
@@ -914,6 +965,14 @@ impl VM {
                 self.exec_delete_index_expr_op()?;
                 *ip += 1;
             }
+            OpCode::HyperSlice(adverb) => {
+                self.exec_hyper_slice_op(*adverb)?;
+                *ip += 1;
+            }
+            OpCode::HyperIndex => {
+                self.exec_hyper_index_op()?;
+                *ip += 1;
+            }
 
             // -- String interpolation --
             OpCode::StringConcat(n) => {
@@ -978,7 +1037,7 @@ impl VM {
                 *ip += 1;
             }
             OpCode::StrCoerce => {
-                self.exec_str_coerce_op();
+                self.exec_str_coerce_op()?;
                 *ip += 1;
             }
             OpCode::UptoRange => {
@@ -1078,12 +1137,14 @@ impl VM {
                 catch_start,
                 control_start,
                 body_end,
+                explicit_catch,
             } => {
                 self.exec_try_catch_op(
                     code,
                     *catch_start,
                     *control_start,
                     *body_end,
+                    *explicit_catch,
                     ip,
                     compiled_fns,
                 )?;
@@ -1146,19 +1207,39 @@ impl VM {
             OpCode::Subst {
                 pattern_idx,
                 replacement_idx,
+                samemark,
             } => {
-                self.exec_subst_op(code, *pattern_idx, *replacement_idx)?;
+                self.exec_subst_op(code, *pattern_idx, *replacement_idx, *samemark)?;
                 *ip += 1;
             }
             OpCode::NonDestructiveSubst {
                 pattern_idx,
                 replacement_idx,
+                samemark,
             } => {
-                self.exec_non_destructive_subst_op(code, *pattern_idx, *replacement_idx)?;
+                self.exec_non_destructive_subst_op(
+                    code,
+                    *pattern_idx,
+                    *replacement_idx,
+                    *samemark,
+                )?;
                 *ip += 1;
             }
-            OpCode::Transliterate { from_idx, to_idx } => {
-                self.exec_transliterate_op(code, *from_idx, *to_idx);
+            OpCode::Transliterate {
+                from_idx,
+                to_idx,
+                delete,
+                complement,
+                squash,
+            } => {
+                self.exec_transliterate_op(
+                    code,
+                    *from_idx,
+                    *to_idx,
+                    *delete,
+                    *complement,
+                    *squash,
+                )?;
                 *ip += 1;
             }
 
@@ -1337,6 +1418,9 @@ impl VM {
             }
             OpCode::SubtestScope { body_end } => {
                 self.exec_subtest_scope_op(code, *body_end, ip, compiled_fns)?;
+            }
+            OpCode::ReactScope { body_end } => {
+                self.exec_react_scope_op(code, *body_end, ip, compiled_fns)?;
             }
             OpCode::WheneverScope {
                 body_idx,

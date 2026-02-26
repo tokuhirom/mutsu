@@ -41,6 +41,12 @@ fn is_core_raku_type(name: &str) -> bool {
             | "Exception"
             | "Failure"
             | "Nil"
+            | "Int"
+            | "Num"
+            | "Rat"
+            | "Complex"
+            | "Str"
+            | "Bool"
             | "Whatever"
             | "HyperWhatever"
             | "WhateverCode"
@@ -64,6 +70,16 @@ fn is_core_raku_type(name: &str) -> bool {
 }
 
 impl VM {
+    fn array_elements_match_constraint(&mut self, constraint: &str, value: &Value) -> bool {
+        match value {
+            Value::Array(items, ..) => items
+                .iter()
+                .all(|item| self.array_elements_match_constraint(constraint, item)),
+            Value::Nil => true,
+            _ => self.interpreter.type_matches_value(constraint, value),
+        }
+    }
+
     pub(super) fn exec_make_range_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -184,15 +200,41 @@ impl VM {
                 "Cannot resolve caller Numeric(Sub:D: ); none of these signatures matches:\n    (Mu:U \\v: *%_)",
             ));
         }
+        // If the value is an Instance, try calling the Numeric method
+        if let Value::Instance { .. } = &val
+            && let Ok(result) =
+                self.interpreter
+                    .call_method_with_values(val.clone(), "Numeric", vec![])
+        {
+            self.stack.push(result);
+            return Ok(());
+        }
+        // Force LazyList before numeric coercion so we can count elements
+        let val = if let Value::LazyList(ll) = &val {
+            let items = self.interpreter.force_lazy_list_bridge(ll)?;
+            Value::Seq(std::sync::Arc::new(items))
+        } else {
+            val
+        };
         let result = crate::runtime::utils::coerce_to_numeric(val);
         self.stack.push(result);
         Ok(())
     }
 
-    pub(super) fn exec_str_coerce_op(&mut self) {
+    pub(super) fn exec_str_coerce_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
+        // If the value is an Instance, try calling the Stringy method
+        if let Value::Instance { .. } = &val
+            && let Ok(result) =
+                self.interpreter
+                    .call_method_with_values(val.clone(), "Stringy", vec![])
+        {
+            self.stack.push(result);
+            return Ok(());
+        }
         self.stack
             .push(Value::Str(crate::runtime::utils::coerce_to_str(&val)));
+        Ok(())
     }
 
     pub(super) fn exec_upto_range_op(&mut self) {
@@ -288,7 +330,26 @@ impl VM {
             Value::Str(s) => s.clone(),
             _ => unreachable!("AssignExpr name must be a string constant"),
         };
-        let val = self.stack.last().unwrap().clone();
+        if name.starts_with('&') && !name.contains("::") {
+            let bare = name.trim_start_matches('&');
+            let has_variable_slot = self.interpreter.env().contains_key(&name);
+            let is_routine_symbol = self.interpreter.has_function(bare)
+                || self.interpreter.has_multi_function(bare)
+                || self.interpreter.has_proto(bare)
+                || self.interpreter.resolve_token_defs(bare).is_some()
+                || self.interpreter.has_proto_token(bare);
+            if is_routine_symbol && !has_variable_slot {
+                return Err(RuntimeError::new("X::Assignment::RO"));
+            }
+        }
+        let raw_val = self.stack.pop().unwrap_or(Value::Nil);
+        let val = if name.starts_with('%') {
+            runtime::coerce_to_hash(raw_val)
+        } else if name.starts_with('@') {
+            runtime::coerce_to_array(raw_val)
+        } else {
+            raw_val
+        };
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
         if matches!(
@@ -319,6 +380,7 @@ impl VM {
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
         }
+        self.stack.push(val);
         Ok(())
     }
 
@@ -449,28 +511,7 @@ impl VM {
         if list.is_empty() {
             self.stack.push(runtime::reduction_identity(&base_op));
         } else {
-            let is_comparison = matches!(
-                base_op.as_str(),
-                "eq" | "ne"
-                    | "lt"
-                    | "gt"
-                    | "le"
-                    | "ge"
-                    | "after"
-                    | "before"
-                    | "=="
-                    | "!="
-                    | "<"
-                    | ">"
-                    | "<="
-                    | ">="
-                    | "==="
-                    | "=:="
-                    | "eqv"
-                    | "~~"
-                    | "cmp"
-                    | "leg"
-            );
+            let is_comparison = runtime::is_chain_comparison_op(&base_op);
             if is_comparison {
                 let mut result = true;
                 for i in 0..list.len() - 1 {
@@ -591,13 +632,27 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let constraint = Self::const_str(code, tc_idx);
         let (base_constraint, _) = crate::runtime::types::strip_type_smiley(constraint);
-        let value = self.stack.last().expect("TypeCheck: empty stack");
+        let declared_constraint = base_constraint
+            .split_once('(')
+            .map_or(base_constraint, |(target, _)| target);
+        let value = self.stack.last().expect("TypeCheck: empty stack").clone();
+        if let Value::Array(..) = &value {
+            if !self.array_elements_match_constraint(constraint, &value) {
+                return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
+            }
+            return Ok(());
+        }
+        if matches!(value, Value::Nil) && self.interpreter.is_definite_constraint(constraint) {
+            return Err(RuntimeError::new(
+                "X::Syntax::Variable::MissingInitializer: Definite typed variable requires initializer",
+            ));
+        }
         if runtime::is_known_type_constraint(base_constraint) {
             if !matches!(value, Value::Nil)
-                && !self.interpreter.type_matches_value(constraint, value)
+                && !self.interpreter.type_matches_value(constraint, &value)
             {
                 let coerced = match base_constraint {
-                    "Str" => Some(Value::Str(crate::runtime::utils::coerce_to_str(value))),
+                    "Str" => Some(Value::Str(crate::runtime::utils::coerce_to_str(&value))),
                     _ => None,
                 };
                 if let Some(new_val) = coerced {
@@ -606,13 +661,26 @@ impl VM {
                     return Err(RuntimeError::new("X::Syntax::Number::LiteralType"));
                 }
             }
-        } else if !self.interpreter.has_type(base_constraint) && !is_core_raku_type(base_constraint)
+        } else if !self.interpreter.has_type(declared_constraint)
+            && !is_core_raku_type(declared_constraint)
         {
             // Unknown user-defined type — reject it
             return Err(RuntimeError::new(format!(
                 "Type '{}' is not declared",
                 constraint
             )));
+        }
+        if !matches!(value, Value::Nil) && !self.interpreter.type_matches_value(constraint, &value)
+        {
+            return Err(RuntimeError::new(
+                "X::TypeCheck::Assignment: Type check failed in assignment",
+            ));
+        }
+        if !matches!(value, Value::Nil) {
+            let coerced = self
+                .interpreter
+                .try_coerce_value_for_constraint(constraint, value.clone())?;
+            *self.stack.last_mut().unwrap() = coerced;
         }
         Ok(())
     }

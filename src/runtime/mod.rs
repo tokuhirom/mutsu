@@ -22,6 +22,18 @@ use crate::value::{
 };
 use num_traits::Signed;
 
+/// Get the current process ID (returns 0 on WASM where process IDs don't exist).
+fn current_process_id() -> i64 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::process::id() as i64
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        0
+    }
+}
+
 mod accessors;
 mod builtins;
 mod builtins_coerce;
@@ -48,6 +60,7 @@ mod resolution;
 mod run;
 mod seq_helpers;
 mod sequence;
+mod signal_watcher;
 mod sprintf;
 mod subtest;
 mod system;
@@ -89,6 +102,15 @@ struct MethodDef {
     body: Vec<Stmt>,
     is_rw: bool,
     is_private: bool,
+    return_type: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct MethodDispatchFrame {
+    receiver_class: String,
+    invocant: Value,
+    args: Vec<Value>,
+    remaining: Vec<(String, MethodDef)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,10 +151,11 @@ struct RegexPattern {
     anchor_start: bool,
     anchor_end: bool,
     ignore_case: bool,
+    ignore_mark: bool,
 }
 
 #[derive(Clone, Default)]
-struct RegexCaptures {
+pub(crate) struct RegexCaptures {
     named: HashMap<String, Vec<String>>,
     positional: Vec<String>,
     matched: String,
@@ -147,6 +170,7 @@ struct RegexToken {
     atom: RegexAtom,
     quant: RegexQuant,
     named_capture: Option<String>,
+    ratchet: bool,
 }
 
 #[derive(Clone)]
@@ -218,6 +242,11 @@ pub struct Interpreter {
     subtest_depth: usize,
     halted: bool,
     exit_code: i64,
+    /// When true, output is flushed to real stdout immediately (for Proc::Async children).
+    immediate_stdout: bool,
+    /// Tracks whether any output was emitted (useful when immediate_stdout
+    /// skips the buffer).
+    output_emitted: bool,
     bailed_out: bool,
     functions: HashMap<String, FunctionDef>,
     proto_functions: HashMap<String, FunctionDef>,
@@ -239,8 +268,11 @@ pub struct Interpreter {
     gather_items: Vec<Vec<Value>>,
     enum_types: HashMap<String, Vec<(String, i64)>>,
     classes: HashMap<String, ClassDef>,
+    hidden_classes: HashSet<String>,
+    hidden_defer_parents: HashMap<String, HashSet<String>>,
     class_trusts: HashMap<String, HashSet<String>>,
     roles: HashMap<String, RoleDef>,
+    role_parents: HashMap<String, Vec<String>>,
     role_type_params: HashMap<String, Vec<String>>,
     subsets: HashMap<String, SubsetDef>,
     proto_subs: HashSet<String>,
@@ -260,6 +292,8 @@ pub struct Interpreter {
     state_vars: HashMap<String, Value>,
     /// Variable dynamic-scope metadata used by `.VAR.dynamic`.
     var_dynamic_flags: HashMap<String, bool>,
+    /// Variable type constraints used to enforce typed re-assignment across closures.
+    var_type_constraints: HashMap<String, String>,
     let_saves: Vec<(String, Value)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
     /// Shared variables between threads. When `start` spawns a thread,
@@ -274,6 +308,11 @@ pub struct Interpreter {
     /// Stack of remaining multi dispatch candidates for callsame/nextsame/nextcallee.
     /// Each entry is (remaining_candidates, original_args).
     multi_dispatch_stack: Vec<(Vec<FunctionDef>, Vec<Value>)>,
+    method_dispatch_stack: Vec<MethodDispatchFrame>,
+    /// Names suppressed by `anon class`. These bare words should error as undeclared.
+    suppressed_names: HashSet<String>,
+    /// Last expression value from VM execution, used by REPL for auto-display.
+    pub(crate) last_value: Option<Value>,
 }
 
 /// An entry in the encoding registry.
@@ -317,7 +356,7 @@ impl Default for Interpreter {
 impl Interpreter {
     pub fn new() -> Self {
         let mut env = HashMap::new();
-        env.insert("*PID".to_string(), Value::Int(std::process::id() as i64));
+        env.insert("*PID".to_string(), Value::Int(current_process_id()));
         env.insert("@*ARGS".to_string(), Value::array(Vec::new()));
         env.insert("*INIT-INSTANT".to_string(), Value::make_instant_now());
         env.insert(
@@ -389,6 +428,8 @@ impl Interpreter {
                     "tail",
                     "min",
                     "collate",
+                    "lines",
+                    "merge",
                     "Supply",
                     "Promise",
                     "schedule-on",
@@ -447,6 +488,9 @@ impl Interpreter {
                     "kill",
                     "write",
                     "close-stdin",
+                    "ready",
+                    "print",
+                    "say",
                 ]
                 .iter()
                 .map(|s| s.to_string())
@@ -530,6 +574,16 @@ impl Interpreter {
                     .map(|s| s.to_string())
                     .collect(),
                 mro: vec!["Lock".to_string()],
+            },
+        );
+        classes.insert(
+            "Lock::Async".to_string(),
+            ClassDef {
+                parents: vec!["Lock".to_string()],
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                native_methods: HashSet::new(),
+                mro: vec!["Lock::Async".to_string()],
             },
         );
         classes.insert(
@@ -879,6 +933,8 @@ impl Interpreter {
             subtest_depth: 0,
             halted: false,
             exit_code: 0,
+            immediate_stdout: false,
+            output_emitted: false,
             bailed_out: false,
             functions: HashMap::new(),
             proto_functions: HashMap::new(),
@@ -900,6 +956,8 @@ impl Interpreter {
             gather_items: Vec::new(),
             enum_types: HashMap::new(),
             classes,
+            hidden_classes: HashSet::new(),
+            hidden_defer_parents: HashMap::new(),
             class_trusts: HashMap::new(),
             roles: {
                 let mut roles = HashMap::new();
@@ -913,6 +971,7 @@ impl Interpreter {
                 );
                 roles
             },
+            role_parents: HashMap::new(),
             role_type_params: HashMap::new(),
             subsets: HashMap::new(),
             proto_subs: HashSet::new(),
@@ -928,16 +987,21 @@ impl Interpreter {
             strict_mode: false,
             state_vars: HashMap::new(),
             var_dynamic_flags: HashMap::new(),
+            var_type_constraints: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
             shared_vars: Arc::new(Mutex::new(HashMap::new())),
             encoding_registry: Self::builtin_encodings(),
             skip_pseudo_method_native: None,
             multi_dispatch_stack: Vec::new(),
+            method_dispatch_stack: Vec::new(),
+            suppressed_names: HashSet::new(),
+            last_value: None,
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
         interpreter.init_endian_enum();
+        interpreter.init_signal_enum();
         interpreter.env.insert("Any".to_string(), Value::Nil);
         interpreter
     }
@@ -1045,6 +1109,14 @@ impl Interpreter {
         }
         self.encoding_registry.push(entry);
         Ok(())
+    }
+
+    pub(crate) fn suppress_name(&mut self, name: &str) {
+        self.suppressed_names.insert(name.to_string());
+    }
+
+    pub(crate) fn is_name_suppressed(&self, name: &str) -> bool {
+        self.suppressed_names.contains(name)
     }
 
     pub fn set_pid(&mut self, pid: i64) {
@@ -1181,6 +1253,35 @@ impl Interpreter {
         &self.output
     }
 
+    /// Clear the output buffer and reset the output-emitted flag.
+    pub fn clear_output(&mut self) {
+        self.output.clear();
+        self.output_emitted = false;
+    }
+
+    /// Returns true if any output was emitted since the last `clear_output`.
+    pub fn has_output_emitted(&self) -> bool {
+        self.output_emitted
+    }
+
+    /// Write to the output buffer and also flush to real stdout
+    /// when not inside a subtest.
+    pub(crate) fn emit_output(&mut self, text: &str) {
+        self.output_emitted = true;
+        if self.subtest_depth == 0 && self.immediate_stdout {
+            use std::io::Write;
+            let _ = std::io::stdout().write_all(text.as_bytes());
+            let _ = std::io::stdout().flush();
+        } else {
+            self.output.push_str(text);
+        }
+    }
+
+    /// Enable immediate flushing of output to stdout.
+    pub fn set_immediate_stdout(&mut self, val: bool) {
+        self.immediate_stdout = val;
+    }
+
     pub fn exit_code(&self) -> i64 {
         self.exit_code
     }
@@ -1225,6 +1326,38 @@ impl Interpreter {
         self.var_dynamic_flags.insert(key, dynamic);
     }
 
+    pub(crate) fn set_var_type_constraint(&mut self, name: &str, constraint: Option<String>) {
+        let key = name.to_string();
+        let meta_key = format!("__mutsu_type::{}", key);
+        if let Some(constraint) = constraint {
+            self.var_type_constraints.insert(key, constraint.clone());
+            self.env.insert(meta_key, Value::Str(constraint));
+        } else {
+            self.var_type_constraints.remove(&key);
+            self.env.remove(&meta_key);
+        }
+    }
+
+    pub(crate) fn var_type_constraint(&self, name: &str) -> Option<String> {
+        let key = name;
+        let meta_key = format!("__mutsu_type::{}", key);
+        if let Some(Value::Str(tc)) = self.env.get(&meta_key) {
+            return Some(tc.clone());
+        }
+        if let Some(tc) = self.var_type_constraints.get(key) {
+            return Some(tc.clone());
+        }
+        None
+    }
+
+    pub(crate) fn snapshot_var_type_constraints(&self) -> HashMap<String, String> {
+        self.var_type_constraints.clone()
+    }
+
+    pub(crate) fn restore_var_type_constraints(&mut self, snapshot: HashMap<String, String>) {
+        self.var_type_constraints = snapshot;
+    }
+
     pub(crate) fn is_var_dynamic(&self, name: &str) -> bool {
         self.var_dynamic_flags
             .get(Self::normalize_var_meta_name(name))
@@ -1251,7 +1384,7 @@ impl Interpreter {
                 }
             }
         }
-        Self {
+        let mut cloned = Self {
             env: self.env.clone(),
             output: String::new(),
             stderr_output: String::new(),
@@ -1261,6 +1394,8 @@ impl Interpreter {
             subtest_depth: 0,
             halted: false,
             exit_code: 0,
+            immediate_stdout: false,
+            output_emitted: false,
             bailed_out: false,
             functions: self.functions.clone(),
             proto_functions: self.proto_functions.clone(),
@@ -1282,8 +1417,11 @@ impl Interpreter {
             gather_items: Vec::new(),
             enum_types: self.enum_types.clone(),
             classes: self.classes.clone(),
+            hidden_classes: self.hidden_classes.clone(),
+            hidden_defer_parents: self.hidden_defer_parents.clone(),
             class_trusts: self.class_trusts.clone(),
             roles: self.roles.clone(),
+            role_parents: self.role_parents.clone(),
             role_type_params: self.role_type_params.clone(),
             subsets: self.subsets.clone(),
             proto_subs: self.proto_subs.clone(),
@@ -1299,13 +1437,19 @@ impl Interpreter {
             strict_mode: self.strict_mode,
             state_vars: HashMap::new(),
             var_dynamic_flags: self.var_dynamic_flags.clone(),
+            var_type_constraints: self.var_type_constraints.clone(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
             shared_vars: Arc::clone(&self.shared_vars),
             encoding_registry: self.encoding_registry.clone(),
             skip_pseudo_method_native: None,
             multi_dispatch_stack: Vec::new(),
-        }
+            method_dispatch_stack: Vec::new(),
+            suppressed_names: self.suppressed_names.clone(),
+            last_value: None,
+        };
+        cloned.init_io_environment();
+        cloned
     }
 
     /// Read a shared array variable. If the variable is in shared_vars, return
@@ -1415,6 +1559,23 @@ mod tests {
             .run("my $x = 0; while $x < 3 { say $x; $x = $x + 1; }")
             .unwrap();
         assert_eq!(output, "0\n1\n2\n");
+    }
+
+    #[test]
+    fn last_value_from_expression() {
+        use crate::value::Value;
+        let mut interp = Interpreter::new();
+        interp.run("3 + 4").unwrap();
+        assert_eq!(interp.last_value, Some(Value::Int(7)));
+    }
+
+    #[test]
+    fn last_value_none_for_say() {
+        let mut interp = Interpreter::new();
+        interp.run("say 42").unwrap();
+        // say is a statement (Stmt::Say), not an expression, so no last_value
+        // The REPL uses output detection instead for say/print
+        assert!(interp.last_value.is_none());
     }
 
     #[test]

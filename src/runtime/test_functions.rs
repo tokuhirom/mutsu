@@ -67,6 +67,9 @@ impl Interpreter {
             "doesn't-warn" => self.test_fn_doesnt_warn(args).map(Some),
             "is-eqv" => self.test_fn_is_eqv(args).map(Some),
             "group-of" => self.test_fn_group_of(args).map(Some),
+            "doesn't-hang" => self.test_fn_doesnt_hang(args).map(Some),
+            "make-temp-file" | "make-temp-path" => self.test_fn_make_temp_file(args).map(Some),
+            "make-temp-dir" => self.test_fn_make_temp_dir(args).map(Some),
             _ => Ok(None),
         }
     }
@@ -108,7 +111,7 @@ impl Interpreter {
 
     fn test_fn_diag(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let msg = Self::positional_string(args, 0);
-        self.output.push_str(&format!("# {}\n", msg));
+        self.emit_output(&format!("# {}\n", msg));
         Ok(Value::Nil)
     }
 
@@ -140,25 +143,9 @@ impl Interpreter {
             .unwrap_or_default();
         let ok = match (left.as_ref(), right.as_ref()) {
             (Some(left), Some(right)) => {
-                // Handle Junction on the left side (auto-threading)
-                if let Value::Junction { kind, values } = left {
-                    let right_str = self.stringify_test_value(right)?;
-                    let results: Vec<bool> = values
-                        .iter()
-                        .map(|v| {
-                            self.stringify_test_value(v)
-                                .map(|s| s == right_str)
-                                .unwrap_or(false)
-                        })
-                        .collect();
-                    match kind {
-                        crate::value::JunctionKind::Any => results.iter().any(|&b| b),
-                        crate::value::JunctionKind::All => results.iter().all(|&b| b),
-                        crate::value::JunctionKind::One => {
-                            results.iter().filter(|&&b| b).count() == 1
-                        }
-                        crate::value::JunctionKind::None => results.iter().all(|&b| !b),
-                    }
+                if matches!(left, Value::Junction { .. }) || matches!(right, Value::Junction { .. })
+                {
+                    Self::eqv_with_junctions(left, right).truthy()
                 } else {
                     self.stringify_test_value(left)? == self.stringify_test_value(right)?
                 }
@@ -221,10 +208,9 @@ impl Interpreter {
             self.test_state.get_or_insert_with(TestState::new).planned = Some(0);
             let reason_str = reason.to_string_value();
             if reason_str.is_empty() || reason_str == "True" {
-                self.output.push_str("1..0 # Skipped: no reason given\n");
+                self.emit_output("1..0 # Skipped: no reason given\n");
             } else {
-                self.output
-                    .push_str(&format!("1..0 # Skipped: {}\n", reason_str));
+                self.emit_output(&format!("1..0 # Skipped: {}\n", reason_str));
             }
             self.halted = true;
         } else {
@@ -245,17 +231,21 @@ impl Interpreter {
                 _ => return Err(RuntimeError::new("plan expects Int")),
             };
             self.test_state.get_or_insert_with(TestState::new).planned = Some(planned);
-            self.output.push_str(&format!("1..{}\n", planned));
+            self.emit_output(&format!("1..{}\n", planned));
         }
         Ok(Value::Nil)
     }
 
     fn test_fn_done_testing(&mut self) -> Result<Value, RuntimeError> {
-        let state = self.test_state.get_or_insert_with(TestState::new);
-        if state.planned.is_none() {
+        let ran = {
+            let state = self.test_state.get_or_insert_with(TestState::new);
+            if state.planned.is_some() {
+                return Ok(Value::Nil);
+            }
             state.planned = Some(state.ran);
-            self.output.push_str(&format!("1..{}\n", state.ran));
-        }
+            state.ran
+        };
+        self.emit_output(&format!("1..{}\n", ran));
         Ok(Value::Nil)
     }
 
@@ -265,28 +255,36 @@ impl Interpreter {
             Some(Value::Int(n)) => (*n).max(1) as usize,
             _ => 1usize,
         };
+        let mut lines = Vec::with_capacity(count);
         let state = self.test_state.get_or_insert_with(TestState::new);
         for _ in 0..count {
             state.ran += 1;
-            self.output
-                .push_str(&format!("ok {} - {} # SKIP\n", state.ran, desc));
+            lines.push(format!("ok {} - {} # SKIP\n", state.ran, desc));
+        }
+        for line in lines {
+            self.emit_output(&line);
         }
         Ok(Value::Nil)
     }
 
     fn test_fn_skip_rest(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let desc = Self::positional_string(args, 0);
-        let state = self.test_state.get_or_insert_with(TestState::new);
-        if let Some(planned) = state.planned {
-            while state.ran < planned {
-                state.ran += 1;
-                if desc.is_empty() {
-                    self.output.push_str(&format!("ok {} # SKIP\n", state.ran));
-                } else {
-                    self.output
-                        .push_str(&format!("ok {} - {} # SKIP\n", state.ran, desc));
+        let mut lines = Vec::new();
+        {
+            let state = self.test_state.get_or_insert_with(TestState::new);
+            if let Some(planned) = state.planned {
+                while state.ran < planned {
+                    state.ran += 1;
+                    if desc.is_empty() {
+                        lines.push(format!("ok {} # SKIP\n", state.ran));
+                    } else {
+                        lines.push(format!("ok {} - {} # SKIP\n", state.ran, desc));
+                    }
                 }
             }
+        }
+        for line in &lines {
+            self.emit_output(line);
         }
         self.halted = true;
         Ok(Value::Nil)
@@ -295,9 +293,9 @@ impl Interpreter {
     fn test_fn_bail_out(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let desc = Self::positional_string(args, 0);
         if desc.is_empty() {
-            self.output.push_str("Bail out!\n");
+            self.emit_output("Bail out!\n");
         } else {
-            self.output.push_str(&format!("Bail out! {}\n", desc));
+            self.emit_output(&format!("Bail out! {}\n", desc));
         }
         self.halted = true;
         self.bailed_out = true;
@@ -578,7 +576,8 @@ impl Interpreter {
         let desc = positionals
             .get(2)
             .map(|v| v.to_string_value())
-            .unwrap_or_default();
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| format!("The object is-a '{}'", type_name));
         (value, type_name, desc)
     }
 
@@ -616,11 +615,6 @@ impl Interpreter {
             nested.set_pid(pid.saturating_add(1));
         }
         nested.lib_paths = self.lib_paths.clone();
-        nested.functions = self.functions.clone();
-        nested.proto_functions = self.proto_functions.clone();
-        nested.token_defs = self.token_defs.clone();
-        nested.proto_subs = self.proto_subs.clone();
-        nested.proto_tokens = self.proto_tokens.clone();
         nested.classes = self.classes.clone();
         nested.class_trusts = self.class_trusts.clone();
         nested.roles = self.roles.clone();
@@ -636,7 +630,7 @@ impl Interpreter {
             }
             nested.env.insert(k.clone(), v.clone());
         }
-        let ok = nested.run(&code).is_ok();
+        let ok = nested.eval_eval_string(&code).is_ok();
         self.test_ok(ok, &desc, false)?;
         Ok(Value::Bool(ok))
     }
@@ -654,11 +648,6 @@ impl Interpreter {
             nested.set_pid(pid.saturating_add(1));
         }
         nested.lib_paths = self.lib_paths.clone();
-        nested.functions = self.functions.clone();
-        nested.proto_functions = self.proto_functions.clone();
-        nested.token_defs = self.token_defs.clone();
-        nested.proto_subs = self.proto_subs.clone();
-        nested.proto_tokens = self.proto_tokens.clone();
         nested.classes = self.classes.clone();
         nested.class_trusts = self.class_trusts.clone();
         nested.roles = self.roles.clone();
@@ -674,7 +663,7 @@ impl Interpreter {
             }
             nested.env.insert(k.clone(), v.clone());
         }
-        let ok = nested.run(&code).is_err();
+        let ok = nested.eval_eval_string(&code).is_err();
         self.test_ok(ok, &desc, false)?;
         Ok(Value::Bool(ok))
     }
@@ -789,7 +778,7 @@ impl Interpreter {
             let total = 2 + named_matchers.len();
             let state = self.test_state.get_or_insert_with(TestState::new);
             state.planned = Some(total);
-            self.output.push_str(&format!("1..{}\n", total));
+            self.emit_output(&format!("1..{}\n", total));
             self.test_ok(result.is_err(), "code dies", false)?;
             self.test_ok(
                 type_ok,
@@ -980,7 +969,14 @@ impl Interpreter {
             Some(Value::Package(name)) => name.clone(),
             _ => Self::positional_string(args, 1),
         };
-        let desc = Self::positional_string(args, 2);
+        let desc = {
+            let explicit = Self::positional_string(args, 2);
+            if explicit.is_empty() {
+                format!("The object does '{}'", role_name)
+            } else {
+                explicit
+            }
+        };
         let todo = Self::named_bool(args, "todo");
         // NOTE: does_check currently delegates to isa_check (issue #91)
         let ok = value.does_check(&role_name);
@@ -993,7 +989,14 @@ impl Interpreter {
             .cloned()
             .unwrap_or(Value::Nil);
         let method_name = Self::positional_string(args, 1);
-        let desc = Self::positional_string(args, 2);
+        let desc = {
+            let explicit = Self::positional_string(args, 2);
+            if explicit.is_empty() {
+                format!("The object can '{}'", method_name)
+            } else {
+                explicit
+            }
+        };
         let todo = Self::named_bool(args, "todo");
         let ok = self.value_can_method(&value, &method_name);
         self.test_ok(ok, &desc, todo)?;
@@ -1169,7 +1172,31 @@ impl Interpreter {
             (label, block)
         };
         let ctx = self.begin_subtest();
+        let saved_env = self.env.clone();
+        let saved_functions = self.functions.clone();
+        let saved_proto_functions = self.proto_functions.clone();
+        let saved_token_defs = self.token_defs.clone();
+        let saved_proto_subs = self.proto_subs.clone();
+        let saved_proto_tokens = self.proto_tokens.clone();
+        let saved_classes = self.classes.clone();
+        let saved_class_trusts = self.class_trusts.clone();
+        let saved_roles = self.roles.clone();
+        let saved_subsets = self.subsets.clone();
+        let saved_type_metadata = self.type_metadata.clone();
+        let saved_var_type_constraints = self.snapshot_var_type_constraints();
         let run_result = self.call_sub_value(block, vec![], true);
+        self.env = saved_env;
+        self.functions = saved_functions;
+        self.proto_functions = saved_proto_functions;
+        self.token_defs = saved_token_defs;
+        self.proto_subs = saved_proto_subs;
+        self.proto_tokens = saved_proto_tokens;
+        self.classes = saved_classes;
+        self.class_trusts = saved_class_trusts;
+        self.roles = saved_roles;
+        self.subsets = saved_subsets;
+        self.type_metadata = saved_type_metadata;
+        self.restore_var_type_constraints(saved_var_type_constraints);
         self.finish_subtest(ctx, &label, run_result.map(|_| ()))?;
         Ok(Value::Bool(true))
     }
@@ -1201,8 +1228,32 @@ impl Interpreter {
         };
         let desc = desc_key.to_string_value();
         let ctx = self.begin_subtest();
+        let saved_env = self.env.clone();
+        let saved_functions = self.functions.clone();
+        let saved_proto_functions = self.proto_functions.clone();
+        let saved_token_defs = self.token_defs.clone();
+        let saved_proto_subs = self.proto_subs.clone();
+        let saved_proto_tokens = self.proto_tokens.clone();
+        let saved_classes = self.classes.clone();
+        let saved_class_trusts = self.class_trusts.clone();
+        let saved_roles = self.roles.clone();
+        let saved_subsets = self.subsets.clone();
+        let saved_type_metadata = self.type_metadata.clone();
+        let saved_var_type_constraints = self.snapshot_var_type_constraints();
         self.test_fn_plan(&[Value::Int(plan)])?;
         let run_result = self.call_sub_value(block, vec![], true);
+        self.env = saved_env;
+        self.functions = saved_functions;
+        self.proto_functions = saved_proto_functions;
+        self.token_defs = saved_token_defs;
+        self.proto_subs = saved_proto_subs;
+        self.proto_tokens = saved_proto_tokens;
+        self.classes = saved_classes;
+        self.class_trusts = saved_class_trusts;
+        self.roles = saved_roles;
+        self.subsets = saved_subsets;
+        self.type_metadata = saved_type_metadata;
+        self.restore_var_type_constraints(saved_var_type_constraints);
         self.finish_subtest(ctx, &desc, run_result.map(|_| ()))?;
         Ok(Value::Bool(true))
     }
@@ -1254,7 +1305,7 @@ impl Interpreter {
         let ctx = self.begin_subtest();
         let test_state = self.test_state.as_mut().unwrap();
         test_state.planned = Some(2);
-        self.output.push_str("1..2\n");
+        self.emit_output("1..2\n");
         // Test 1: code threw a warning
         self.test_ok(did_warn, "code threw a warning", false)?;
         // Test 2: warning message matches test pattern
@@ -1286,7 +1337,7 @@ impl Interpreter {
                 "code must not warn but it produced a warning: {}",
                 warn_message.trim_end()
             );
-            self.output.push_str(&format!("# {}\n", diag_msg));
+            self.emit_output(&format!("# {}\n", diag_msg));
         }
         self.test_ok(!did_warn, &desc, false)?;
         Ok(Value::Bool(!did_warn))
@@ -1305,7 +1356,7 @@ impl Interpreter {
         if !ok {
             let got_raku = Self::value_raku_repr(&got);
             let expected_raku = Self::value_raku_repr(&expected);
-            self.output.push_str(&format!(
+            self.emit_output(&format!(
                 "# expected: {}\n#      got: {}\n",
                 expected_raku, got_raku
             ));
@@ -1398,5 +1449,204 @@ impl Interpreter {
                 (stdout_only, err, s)
             }
         }
+    }
+
+    /// `doesn't-hang` — run code in a subprocess and verify it completes
+    /// within a timeout. Checks stdout and stderr if expected values given.
+    fn test_fn_doesnt_hang(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        use std::process::{Command, Stdio};
+
+        let code = Self::positional_string(args, 0);
+        let desc = Self::positional_string_opt(args, 1)
+            .unwrap_or_else(|| "code does not hang".to_string());
+        let expected_out = Self::named_value(args, "out");
+        let expected_err = Self::named_value(args, "err");
+        let wait_secs = Self::named_value(args, "wait")
+            .and_then(|v| match v {
+                Value::Int(i) => Some(i as u64),
+                Value::Num(f) => Some(f as u64),
+                _ => None,
+            })
+            .unwrap_or(15);
+
+        // Get the mutsu executable path
+        let exe = self
+            .env
+            .get("*EXECUTABLE")
+            .map(|v| v.to_string_value())
+            .unwrap_or_else(|| {
+                std::env::current_exe()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|_| "target/debug/mutsu".to_string())
+            });
+
+        let mut child = Command::new(&exe)
+            .arg("-e")
+            .arg(&code)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| RuntimeError::new(format!("doesn't-hang: spawn failed: {}", e)))?;
+
+        #[cfg(unix)]
+        let pid = child.id();
+        let timeout = std::time::Duration::from_secs(wait_secs);
+        let start = std::time::Instant::now();
+
+        // Wait for the child with timeout
+        let did_not_hang = loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break true,
+                Ok(None) => {
+                    if start.elapsed() >= timeout {
+                        // Kill the hung process
+                        #[cfg(unix)]
+                        unsafe {
+                            libc::kill(pid as i32, libc::SIGKILL);
+                        }
+                        #[cfg(not(unix))]
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        break false;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Err(_) => break false,
+            }
+        };
+
+        // Collect output
+        let stdout_str = child
+            .stdout
+            .take()
+            .map(|out| {
+                use std::io::Read;
+                let mut s = String::new();
+                let mut reader = std::io::BufReader::new(out);
+                let _ = reader.read_to_string(&mut s);
+                s
+            })
+            .unwrap_or_default();
+        let stderr_str = child
+            .stderr
+            .take()
+            .map(|err| {
+                use std::io::Read;
+                let mut s = String::new();
+                let mut reader = std::io::BufReader::new(err);
+                let _ = reader.read_to_string(&mut s);
+                s
+            })
+            .unwrap_or_default();
+
+        // Run as subtest
+        let ctx = self.begin_subtest();
+        let mut plan_count = 1;
+        if did_not_hang {
+            if expected_out.is_some() {
+                plan_count += 1;
+            }
+            if expected_err.is_some() {
+                plan_count += 1;
+            }
+        }
+        self.test_fn_plan(&[Value::Int(plan_count)])?;
+        self.test_ok(did_not_hang, "program did not hang", false)?;
+        if did_not_hang {
+            if let Some(expected) = expected_out {
+                let ok = self.smart_match(&Value::Str(stdout_str), &expected);
+                self.test_ok(ok, "STDOUT", false)?;
+            }
+            if let Some(expected) = expected_err {
+                let ok = self.smart_match(&Value::Str(stderr_str), &expected);
+                self.test_ok(ok, "STDERR", false)?;
+            }
+        }
+        self.finish_subtest(ctx, &desc, Ok(()))?;
+        Ok(Value::Bool(did_not_hang))
+    }
+
+    /// `make-temp-file` — create a temporary file, optionally with content.
+    fn test_fn_make_temp_file(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let content = Self::named_value(args, "content");
+        let chmod_val = Self::named_value(args, "chmod");
+
+        let tmp_dir = std::env::temp_dir();
+        let rand_name = format!(
+            "mutsu_roast_{}_{}",
+            std::process::id(),
+            crate::runtime::native_methods::next_supply_id()
+        );
+        let path = tmp_dir.join(rand_name);
+
+        if let Some(c) = content {
+            let text = c.to_string_value();
+            std::fs::write(&path, &text)
+                .map_err(|e| RuntimeError::new(format!("make-temp-file: cannot write: {}", e)))?;
+        } else if chmod_val.is_some() {
+            // :chmod without :content — create empty file
+            std::fs::write(&path, "")
+                .map_err(|e| RuntimeError::new(format!("make-temp-file: cannot create: {}", e)))?;
+        }
+        // When neither :content nor :chmod is given, don't create the file
+
+        if let Some(Value::Int(_mode)) = chmod_val {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let perms = std::fs::Permissions::from_mode(_mode as u32);
+                let _ = std::fs::set_permissions(&path, perms);
+            }
+        }
+
+        let path_str = path.to_string_lossy().to_string();
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("path".to_string(), Value::Str(path_str));
+        Ok(Value::make_instance("IO::Path".to_string(), attrs))
+    }
+
+    /// `make-temp-dir` — create a temporary directory.
+    fn test_fn_make_temp_dir(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let chmod_val = Self::named_value(args, "chmod");
+
+        let tmp_dir = std::env::temp_dir();
+        let rand_name = format!(
+            "mutsu_roast_dir_{}_{}",
+            std::process::id(),
+            crate::runtime::native_methods::next_supply_id()
+        );
+        let path = tmp_dir.join(rand_name);
+        std::fs::create_dir_all(&path)
+            .map_err(|e| RuntimeError::new(format!("make-temp-dir: cannot create: {}", e)))?;
+
+        if let Some(Value::Int(_mode)) = chmod_val {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let perms = std::fs::Permissions::from_mode(_mode as u32);
+                let _ = std::fs::set_permissions(&path, perms);
+            }
+        }
+
+        let path_str = path.to_string_lossy().to_string();
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("path".to_string(), Value::Str(path_str));
+        Ok(Value::make_instance("IO::Path".to_string(), attrs))
+    }
+
+    fn positional_string_opt(args: &[Value], idx: usize) -> Option<String> {
+        let mut pos_idx = 0;
+        for arg in args {
+            match arg {
+                Value::Pair(..) | Value::ValuePair(..) => continue,
+                _ => {
+                    if pos_idx == idx {
+                        return Some(arg.to_string_value());
+                    }
+                    pos_idx += 1;
+                }
+            }
+        }
+        None
     }
 }

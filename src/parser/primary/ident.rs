@@ -15,7 +15,7 @@ fn is_superscript_digit(c: char) -> bool {
 }
 
 use super::super::expr::{expression, or_expr_pub};
-use super::super::helpers::{ws, ws1};
+use super::super::helpers::{normalize_raku_identifier, ws, ws1};
 use super::current_line_number;
 use super::misc::parse_block_body;
 use super::regex::{parse_call_arg_list, scan_to_delim};
@@ -39,6 +39,61 @@ fn make_call_expr(name: String, input: &str, args: Vec<Expr>) -> Expr {
     Expr::Call {
         name: name.clone(),
         args: attach_test_callsite_line(&name, input, args),
+    }
+}
+
+/// Parse a user-declared circumfix operator: `open args close` → Call circumfix:<open close>(args)
+pub(super) fn declared_circumfix_op(input: &str) -> PResult<'_, Expr> {
+    if let Some((name, open_len, close_delim)) =
+        crate::parser::stmt::simple::match_user_declared_circumfix_op(input)
+    {
+        let rest = &input[open_len..];
+        let (rest, _) = super::super::helpers::ws(rest)?;
+        // Check for empty circumfix: `open close` with nothing inside
+        if let Some(after) = rest.strip_prefix(close_delim.as_str()) {
+            return Ok((after, Expr::Call { name, args: vec![] }));
+        }
+        // Parse first argument
+        let (r, arg) = super::super::expr::expression(rest)?;
+        let args = vec![arg];
+        let (r, _) = super::super::helpers::ws(r)?;
+        // Check if more args follow (comma-separated)
+        if let Some(after_comma) = r.strip_prefix(',') {
+            let (r, _) = super::super::helpers::ws(after_comma)?;
+            return parse_circumfix_rest(r, &close_delim, name, args);
+        }
+        // Check for closing delimiter
+        if let Some(after) = r.strip_prefix(close_delim.as_str()) {
+            return Ok((after, Expr::Call { name, args }));
+        }
+        return Err(PError::expected("closing circumfix delimiter"));
+    }
+    Err(PError::expected("declared circumfix operator"))
+}
+
+fn parse_circumfix_rest<'a>(
+    mut rest: &'a str,
+    close_delim: &str,
+    name: String,
+    mut args: Vec<Expr>,
+) -> PResult<'a, Expr> {
+    loop {
+        if let Some(after) = rest.strip_prefix(close_delim) {
+            return Ok((after, Expr::Call { name, args }));
+        }
+        let (r, arg) = super::super::expr::expression(rest)?;
+        args.push(arg);
+        let (r, _) = super::super::helpers::ws(r)?;
+        if let Some(after_comma) = r.strip_prefix(',') {
+            let (r, _) = super::super::helpers::ws(after_comma)?;
+            rest = r;
+            continue;
+        }
+        let (r, _) = super::super::helpers::ws(r)?;
+        if let Some(after) = r.strip_prefix(close_delim) {
+            return Ok((after, Expr::Call { name, args }));
+        }
+        return Err(PError::expected("closing circumfix delimiter or ','"));
     }
 }
 
@@ -342,7 +397,6 @@ pub(super) fn is_listop(name: &str) -> bool {
             | "grep"
             | "map"
             | "sort"
-            | "first"
             | "any"
             | "all"
             | "none"
@@ -380,7 +434,7 @@ pub(super) fn is_listop(name: &str) -> bool {
 pub(super) fn is_expr_listop(name: &str) -> bool {
     matches!(
         name,
-        "EVAL" | "flat" | "slip" | "run" | "shell" | "cross" | "await" | "dir"
+        "EVAL" | "flat" | "slip" | "run" | "shell" | "cross" | "await" | "dir" | "first"
     ) || crate::parser::stmt::simple::is_imported_function(name)
 }
 
@@ -548,7 +602,7 @@ fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
 
 pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     let (rest, name) = super::super::stmt::parse_raku_ident(input)?;
-    let name = name.to_string();
+    let name = normalize_raku_identifier(name);
 
     // Handle special expression keywords before qualified name resolution
     match name.as_str() {
@@ -716,8 +770,10 @@ pub(super) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         "my" | "our" | "state" => {
             // my/our/state declaration in expression context
             // e.g., (my $x = 5) or (state $x = 3)
-            if let Ok((r, stmt)) = super::super::stmt::my_decl_expr_pub(input) {
-                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            match super::super::stmt::my_decl_expr_pub(input) {
+                Ok((r, stmt)) => return Ok((r, Expr::DoStmt(Box::new(stmt)))),
+                Err(err) if err.is_fatal() => return Err(err),
+                Err(_) => {}
             }
         }
         "constant" => {

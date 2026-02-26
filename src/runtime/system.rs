@@ -13,19 +13,49 @@ impl Interpreter {
             && !matches!(name.as_str(), "NaN" | "Inf" | "Empty")
     }
 
+    /// Collect operator sub names from the current environment for EVAL pre-registration.
+    /// Only collects circumfix/postcircumfix operators since they require parser support
+    /// to recognize their delimiter syntax. Other operator categories (prefix, postfix,
+    /// infix, term) work through runtime dispatch without parser pre-registration.
+    fn collect_operator_sub_names(&self) -> Vec<String> {
+        let mut names = Vec::new();
+        for key in self.functions.keys() {
+            // Strip package prefix if present (e.g. "GLOBAL::circumfix:<⌊ ⌋>")
+            let name = if let Some(pos) = key.rfind("::") {
+                &key[pos + 2..]
+            } else {
+                key.as_str()
+            };
+            if name.starts_with("circumfix:") || name.starts_with("postcircumfix:") {
+                names.push(name.to_string());
+            }
+        }
+        // Also check env for operator subs stored as variables
+        for key in self.env.keys() {
+            if key.starts_with("circumfix:") || key.starts_with("postcircumfix:") {
+                names.push(key.clone());
+            }
+        }
+        names
+    }
+
     pub(super) fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
         let routine_snapshot = self.snapshot_routine_registry();
         let trimmed = code.trim();
         let previous_pod = self.env.get("=pod").cloned();
         self.collect_pod_blocks(trimmed);
+        // Collect operator sub names so the parser recognizes them in EVAL context
+        let op_names = self.collect_operator_sub_names();
         // General case: parse and evaluate as Raku code
-        let mut result = parse_dispatch::parse_source(trimmed).and_then(|(stmts, _)| {
-            let value = self.eval_block_value(&stmts)?;
-            if self.eval_result_is_unresolved_bareword(&stmts, &value) {
-                return Err(RuntimeError::new("X::Undeclared::Symbols"));
-            }
-            Ok(value)
-        });
+        let mut result = crate::parser::parse_program_with_operators(trimmed, &op_names).and_then(
+            |(stmts, _)| {
+                let value = self.eval_block_value(&stmts)?;
+                if self.eval_result_is_unresolved_bareword(&stmts, &value) {
+                    return Err(RuntimeError::new("X::Undeclared::Symbols"));
+                }
+                Ok(value)
+            },
+        );
         // Fallback: parser still rejects forms like `~< foo bar >`.
         // Rewrite to an equivalent parenthesized form and try again.
         if result.is_err()
@@ -44,6 +74,22 @@ impl Interpreter {
             && let Some(inner) = unwrap_parenthesized_statements(trimmed)
         {
             result = parse_dispatch::parse_source(inner).and_then(|(stmts, _)| {
+                let value = self.eval_block_value(&stmts)?;
+                if self.eval_result_is_unresolved_bareword(&stmts, &value) {
+                    return Err(RuntimeError::new("X::Undeclared::Symbols"));
+                }
+                Ok(value)
+            });
+        }
+        // EVAL should accept routine declarations in snippet context.
+        // If unit-scope parsing rejects a declaration, retry inside an implicit block.
+        if result.is_err()
+            && trimmed.contains("sub ")
+            && let Some(err) = result.as_ref().err()
+            && err.message.contains("X::UnitScope::Invalid")
+        {
+            let wrapped = format!("{{ {}; }}", trimmed);
+            result = parse_dispatch::parse_source(&wrapped).and_then(|(stmts, _)| {
                 let value = self.eval_block_value(&stmts)?;
                 if self.eval_result_is_unresolved_bareword(&stmts, &value) {
                     return Err(RuntimeError::new("X::Undeclared::Symbols"));

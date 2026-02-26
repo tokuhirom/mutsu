@@ -29,11 +29,14 @@ fn is_infinite_range(value: &Value) -> bool {
 
 fn flat_val_deep(v: &Value, out: &mut Vec<Value>) {
     match v {
-        Value::Array(items, ..) => {
+        // Lists (not true Arrays), Seqs, and Slips are flattened recursively
+        Value::Array(items, false) | Value::Seq(items) | Value::Slip(items) => {
             for item in items.iter() {
                 flat_val_deep(item, out);
             }
         }
+        // True Arrays (is_array=true) are itemized containers — don't descend
+        Value::Array(_, true) => out.push(v.clone()),
         Value::Range(..)
         | Value::RangeExcl(..)
         | Value::RangeExclStart(..)
@@ -51,6 +54,9 @@ pub(crate) fn native_function(name: &str, args: &[Value]) -> Option<Result<Value
     // Always-variadic functions: route regardless of arity.
     // zip:with needs interpreter access (for calling the combiner), so return None
     // when a :with Pair is present to fall through to the interpreter.
+    if name == "sum" {
+        return native_function_variadic(name, args);
+    }
     if name == "zip" {
         if args
             .iter()
@@ -74,10 +80,7 @@ fn native_function_0arg(name: &str) -> Option<Result<Value, RuntimeError>> {
         "rand" => Some(Ok(Value::Num(builtin_rand()))),
         "now" => Some(Ok(Value::make_instant_now())),
         "time" => {
-            let secs = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0);
+            let secs = crate::value::current_time_secs_f64() as i64;
             Some(Ok(Value::Int(secs)))
         }
         "srand" => {
@@ -378,30 +381,76 @@ fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, Runtime
             Value::LazyList(_) => None,
             _ => Some(Ok(Value::Int(1))),
         },
-        "reverse" => Some(Ok(match arg {
-            Value::Array(items, ..) => {
-                let mut reversed = (**items).clone();
-                reversed.reverse();
-                Value::array(reversed)
+        "reverse" => {
+            if crate::runtime::utils::is_shaped_array(arg) {
+                return Some(Err(RuntimeError::illegal_on_fixed_dimension_array(
+                    "reverse",
+                )));
             }
-            Value::Str(s) => Value::Str(s.chars().rev().collect()),
-            _ => Value::Nil,
-        })),
-        "sort" => Some(Ok(match arg {
-            Value::Array(items, ..) => {
-                let mut sorted = (**items).clone();
-                sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
-                Value::array(sorted)
+            Some(Ok(match arg {
+                Value::Array(items, ..) => {
+                    let mut reversed = (**items).clone();
+                    reversed.reverse();
+                    Value::array(reversed)
+                }
+                Value::Str(s) => Value::Str(s.chars().rev().collect()),
+                _ => Value::Nil,
+            }))
+        }
+        "sort" => {
+            if crate::runtime::utils::is_shaped_array(arg) {
+                let mut leaves = crate::runtime::utils::shaped_array_leaves(arg);
+                leaves.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
+                return Some(Ok(Value::array(leaves)));
             }
-            _ => Value::Nil,
-        })),
+            Some(Ok(match arg {
+                Value::Array(items, ..) => {
+                    let mut sorted = (**items).clone();
+                    sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
+                    Value::array(sorted)
+                }
+                _ => Value::Nil,
+            }))
+        }
+        "rotate" => {
+            if crate::runtime::utils::is_shaped_array(arg) {
+                return Some(Err(RuntimeError::illegal_on_fixed_dimension_array(
+                    "rotate",
+                )));
+            }
+            Some(Ok(match arg {
+                Value::Array(items, ..) => {
+                    // rotate with no count defaults to 1
+                    let n = 1usize;
+                    let len = items.len();
+                    if len == 0 {
+                        Value::array(Vec::new())
+                    } else {
+                        let n = n % len;
+                        let mut rotated = Vec::with_capacity(len);
+                        rotated.extend_from_slice(&items[n..]);
+                        rotated.extend_from_slice(&items[..n]);
+                        Value::array(rotated)
+                    }
+                }
+                _ => Value::Nil,
+            }))
+        }
         "flat" => {
+            if crate::runtime::utils::is_shaped_array(arg) {
+                let leaves = crate::runtime::utils::shaped_array_leaves(arg);
+                return Some(Ok(Value::Seq(std::sync::Arc::new(leaves))));
+            }
             if is_infinite_range(arg) {
                 return Some(Ok(arg.clone()));
             }
             let mut flat = Vec::new();
-            flat_val_deep(arg, &mut flat);
-            Some(Ok(Value::array(flat)))
+            // Top-level: iterate the arg's elements and flatten each
+            let items = crate::runtime::utils::value_to_list(arg);
+            for item in &items {
+                flat_val_deep(item, &mut flat);
+            }
+            Some(Ok(Value::Seq(std::sync::Arc::new(flat))))
         }
         "first" => Some(Ok(match arg {
             Value::Array(items, ..) => items.first().cloned().unwrap_or(Value::Nil),
@@ -479,6 +528,15 @@ fn native_function_2arg(
         }
         "join" => {
             let sep = arg1.to_string_value();
+            if crate::runtime::utils::is_shaped_array(arg2) {
+                let leaves = crate::runtime::utils::shaped_array_leaves(arg2);
+                let joined = leaves
+                    .iter()
+                    .map(|v| v.to_string_value())
+                    .collect::<Vec<_>>()
+                    .join(&sep);
+                return Some(Ok(Value::Str(joined)));
+            }
             match arg2 {
                 Value::Array(items, ..) => {
                     let joined = items
@@ -489,6 +547,29 @@ fn native_function_2arg(
                     Some(Ok(Value::Str(joined)))
                 }
                 _ => Some(Ok(Value::Str(String::new()))),
+            }
+        }
+        "rotate" => {
+            if crate::runtime::utils::is_shaped_array(arg1) {
+                return Some(Err(RuntimeError::illegal_on_fixed_dimension_array(
+                    "rotate",
+                )));
+            }
+            match arg1 {
+                Value::Array(items, ..) => {
+                    let count = runtime::to_int(arg2);
+                    let len = items.len() as i64;
+                    if len == 0 {
+                        return Some(Ok(Value::array(Vec::new())));
+                    }
+                    let n = ((count % len) + len) % len;
+                    let n = n as usize;
+                    let mut rotated = Vec::with_capacity(items.len());
+                    rotated.extend_from_slice(&items[n..]);
+                    rotated.extend_from_slice(&items[..n]);
+                    Some(Ok(Value::array(rotated)))
+                }
+                _ => Some(Ok(Value::Nil)),
             }
         }
         "index" => {
@@ -712,7 +793,77 @@ fn native_function_variadic(name: &str, args: &[Value]) -> Option<Result<Value, 
             for arg in args {
                 flat_val_deep(arg, &mut result);
             }
-            Some(Ok(Value::array(result)))
+            Some(Ok(Value::Seq(std::sync::Arc::new(result))))
+        }
+        "sum" => {
+            let mut total: i64 = 0;
+            let mut has_num = false;
+            let mut total_f: f64 = 0.0;
+            for arg in args {
+                match arg {
+                    Value::Int(i) => {
+                        if has_num {
+                            total_f += *i as f64;
+                        } else {
+                            total += i;
+                        }
+                    }
+                    Value::Num(f) => {
+                        if !has_num {
+                            total_f = total as f64;
+                            has_num = true;
+                        }
+                        total_f += f;
+                    }
+                    Value::Range(a, b) => {
+                        let n = b - a + 1;
+                        if n > 0 {
+                            let s = n * (a + b) / 2;
+                            if has_num {
+                                total_f += s as f64;
+                            } else {
+                                total += s;
+                            }
+                        }
+                    }
+                    Value::RangeExcl(a, b) => {
+                        let n = b - a;
+                        if n > 0 {
+                            let b_adj = b - 1;
+                            let s = n * (a + b_adj) / 2;
+                            if has_num {
+                                total_f += s as f64;
+                            } else {
+                                total += s;
+                            }
+                        }
+                    }
+                    Value::Array(items, ..) | Value::Seq(items) => {
+                        for item in items.iter() {
+                            if has_num {
+                                total_f += item.to_f64();
+                            } else if let Value::Num(_) = item {
+                                total_f = total as f64 + item.to_f64();
+                                has_num = true;
+                            } else {
+                                total += item.to_f64() as i64;
+                            }
+                        }
+                    }
+                    _ => {
+                        if has_num {
+                            total_f += arg.to_f64();
+                        } else {
+                            total += arg.to_f64() as i64;
+                        }
+                    }
+                }
+            }
+            if has_num {
+                Some(Ok(Value::Num(total_f)))
+            } else {
+                Some(Ok(Value::Int(total)))
+            }
         }
         _ => None,
     }

@@ -403,6 +403,20 @@ impl Interpreter {
         }
     }
 
+    fn has_named_slurpy_param(param_defs: &[ParamDef]) -> bool {
+        for pd in param_defs {
+            if pd.slurpy && pd.name.starts_with('%') {
+                return true;
+            }
+            if let Some(sub) = &pd.sub_signature
+                && Self::has_named_slurpy_param(sub)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
     fn shaped_dims_from_new_args(args: &[Value]) -> Option<Vec<usize>> {
         let shape_val = args.iter().find_map(|arg| match arg {
             Value::Pair(name, value) if name == "shape" => Some(value.as_ref().clone()),
@@ -431,13 +445,21 @@ impl Interpreter {
         }
         let len = dims[0];
         if dims.len() == 1 {
-            return Value::array(vec![Value::Nil; len]);
+            let value = Value::array(vec![Value::Nil; len]);
+            crate::runtime::utils::mark_shaped_array(&value, Some(dims));
+            return value;
         }
         let child = Self::make_shaped_array(&dims[1..]);
-        Value::array((0..len).map(|_| child.clone()).collect())
+        crate::runtime::utils::mark_shaped_array(&child, Some(&dims[1..]));
+        let value = Value::array((0..len).map(|_| child.clone()).collect());
+        crate::runtime::utils::mark_shaped_array(&value, Some(dims));
+        value
     }
 
     fn infer_array_shape(value: &Value) -> Option<Vec<usize>> {
+        if let Some(shape) = crate::runtime::utils::shaped_array_shape(value) {
+            return Some(shape);
+        }
         let Value::Array(items, ..) = value else {
             return None;
         };
@@ -511,14 +533,34 @@ impl Interpreter {
                                 .map(|attr| (attr.to_string(), value.clone()))
                         })
                         .collect();
-                    let (result, _updated) = self.run_instance_method_resolved(
+                    let role_param_bindings: Vec<(String, Value)> = mixins
+                        .iter()
+                        .filter_map(|(key, value)| {
+                            key.strip_prefix("__mutsu_role_param__")
+                                .map(|name| (name.to_string(), value.clone()))
+                        })
+                        .collect();
+                    let mut saved_role_params: Vec<(String, Option<Value>)> = Vec::new();
+                    for (name, value) in &role_param_bindings {
+                        saved_role_params.push((name.clone(), self.env.get(name).cloned()));
+                        self.env.insert(name.clone(), value.clone());
+                    }
+                    let method_result = self.run_instance_method_resolved(
                         &role_name,
                         &role_name,
                         def,
                         role_attrs,
                         args,
                         Some(target.clone()),
-                    )?;
+                    );
+                    for (name, previous) in saved_role_params {
+                        if let Some(prev) = previous {
+                            self.env.insert(name, prev);
+                        } else {
+                            self.env.remove(&name);
+                        }
+                    }
+                    let (result, _updated) = method_result?;
                     return Ok(result);
                 }
             }
@@ -570,6 +612,36 @@ impl Interpreter {
             }
         }
 
+        // Role type-object method punning: calling a role method on the type object
+        // first instantiates the role, then dispatches the method on that instance.
+        if method != "new" {
+            if let Value::Package(role_name) = &target
+                && let Some(role) = self.roles.get(role_name)
+            {
+                let is_public_attr_accessor = args.is_empty()
+                    && role
+                        .attributes
+                        .iter()
+                        .any(|(attr_name, is_public, _, _)| *is_public && attr_name == method);
+                if role.methods.contains_key(method) || is_public_attr_accessor {
+                    let instance = self.dispatch_new(target.clone(), Vec::new())?;
+                    return self.call_method_with_values(instance, method, args);
+                }
+            } else if let Value::ParametricRole { base_name, .. } = &target
+                && let Some(role) = self.roles.get(base_name)
+            {
+                let is_public_attr_accessor = args.is_empty()
+                    && role
+                        .attributes
+                        .iter()
+                        .any(|(attr_name, is_public, _, _)| *is_public && attr_name == method);
+                if role.methods.contains_key(method) || is_public_attr_accessor {
+                    let instance = self.dispatch_new(target.clone(), Vec::new())?;
+                    return self.call_method_with_values(instance, method, args);
+                }
+            }
+        }
+
         // Skip native fast path for pseudo-methods when called with quoted syntax
         let skip_pseudo = self
             .skip_pseudo_method_native
@@ -582,7 +654,8 @@ impl Interpreter {
             || (matches!(method, "max" | "min")
                 && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply"))
             || (method == "Supply"
-                && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supplier"));
+                && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supplier"))
+            || (matches!(&target, Value::Instance { class_name, .. } if self.has_user_method(class_name, method)));
         let native_result = if bypass_native_fastpath {
             None
         } else {
@@ -597,6 +670,52 @@ impl Interpreter {
             return result;
         }
 
+        // Force LazyList and re-dispatch as Seq for methods that need element access
+        if let Value::LazyList(ll) = &target
+            && matches!(method, "elems" | "list" | "Array" | "Numeric" | "Int")
+        {
+            let items = self.force_lazy_list_bridge(ll)?;
+            let seq = Value::Seq(std::sync::Arc::new(items));
+            return self.call_method_with_values(seq, method, args);
+        }
+
+        // Resolve Value::Routine to Value::Sub for method dispatch
+        if let Value::Routine {
+            ref name,
+            ref package,
+        } = target
+            && method == "assuming"
+        {
+            // Create a wrapper Sub that delegates to the multi-dispatch routine
+            let mut sub_data = crate::value::SubData {
+                package: package.clone(),
+                name: name.clone(),
+                params: Vec::new(),
+                param_defs: Vec::new(),
+                body: vec![],
+                env: self.env().clone(),
+                assumed_positional: Vec::new(),
+                assumed_named: std::collections::HashMap::new(),
+                id: crate::value::next_instance_id(),
+                empty_sig: false,
+            };
+            // Store the routine name so call_sub_value can dispatch
+            sub_data
+                .env
+                .insert("__mutsu_routine_name".to_string(), Value::Str(name.clone()));
+            // Apply assumed args
+            for arg in &args {
+                if let Value::Pair(key, boxed) = arg {
+                    if key == "__mutsu_test_callsite_line" {
+                        continue;
+                    }
+                    sub_data.assumed_named.insert(key.clone(), *boxed.clone());
+                } else {
+                    sub_data.assumed_positional.push(arg.clone());
+                }
+            }
+            return Ok(Value::Sub(std::sync::Arc::new(sub_data)));
+        }
         if let Value::Sub(data) = &target {
             if method == "assuming" {
                 let mut next = (**data).clone();
@@ -644,8 +763,9 @@ impl Interpreter {
                 let mut known_named: std::collections::HashSet<String> =
                     std::collections::HashSet::new();
                 Self::collect_named_param_keys(&next.param_defs, &mut known_named);
+                let allows_extra_named = Self::has_named_slurpy_param(&next.param_defs);
                 for name in incoming_named.keys() {
-                    if !known_named.contains(name) {
+                    if !allows_extra_named && !known_named.contains(name) {
                         return Ok(make_failure(
                             &next,
                             Value::Str("Unexpected".to_string()),
@@ -790,6 +910,13 @@ impl Interpreter {
             return self.call_method_with_values(Value::Sub(strong), method, args);
         }
 
+        if method == "join"
+            && let Value::LazyList(list) = &target
+        {
+            let items = self.force_lazy_list_bridge(list)?;
+            return self.call_method_with_values(Value::real_array(items), method, args);
+        }
+
         if let Some(meta_method) = method.strip_prefix('^')
             && meta_method != "name"
         {
@@ -804,7 +931,15 @@ impl Interpreter {
             && class_name == "Perl6::Metamodel::ClassHOW"
             && matches!(
                 method,
-                "can" | "isa" | "lookup" | "find_method" | "add_method" | "name" | "ver" | "auth"
+                "can"
+                    | "isa"
+                    | "lookup"
+                    | "find_method"
+                    | "add_method"
+                    | "name"
+                    | "ver"
+                    | "auth"
+                    | "methods"
             )
         {
             return self.dispatch_classhow_method(method, args);
@@ -836,17 +971,17 @@ impl Interpreter {
                 return self.dispatch_are(target, &args);
             }
             "say" if args.is_empty() => {
-                self.output.push_str(&crate::runtime::gist_value(&target));
-                self.output.push('\n');
+                let s = format!("{}\n", crate::runtime::gist_value(&target));
+                self.emit_output(&s);
                 return Ok(Value::Nil);
             }
             "print" if args.is_empty() => {
-                self.output.push_str(&target.to_string_value());
+                self.emit_output(&target.to_string_value());
                 return Ok(Value::Nil);
             }
             "put" if args.is_empty() => {
-                self.output.push_str(&crate::runtime::gist_value(&target));
-                self.output.push('\n');
+                let s = format!("{}\n", crate::runtime::gist_value(&target));
+                self.emit_output(&s);
                 return Ok(Value::Nil);
             }
             "shape" if args.is_empty() => {
@@ -980,10 +1115,7 @@ impl Interpreter {
             "at" => {
                 if let Some(cls) = self.promise_class_name(&target) {
                     let at_time = args.first().map(|v| v.to_f64()).unwrap_or(0.0);
-                    let now = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs_f64();
+                    let now = crate::value::current_time_secs_f64();
                     let delay = (at_time - now).max(0.0);
                     let promise = SharedPromise::new_with_class(cls);
                     let ret = Value::Promise(promise.clone());
@@ -1089,10 +1221,11 @@ impl Interpreter {
                     | Value::GenericRange { .. } => "Range",
                     Value::Array(_, true) => "Array",
                     Value::Array(_, false) => "List",
-                    Value::LazyList(_) => "Array",
+                    Value::LazyList(_) => "Seq",
                     Value::Hash(_) => "Hash",
                     Value::Rat(_, _) => "Rat",
                     Value::FatRat(_, _) => "FatRat",
+                    Value::BigRat(_, _) => "Rat",
                     Value::Complex(_, _) => "Complex",
                     Value::Set(_) => "Set",
                     Value::Bag(_) => "Bag",
@@ -1119,8 +1252,38 @@ impl Interpreter {
                         return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
                     }
                     Value::Proxy { .. } => "Proxy",
+                    Value::ParametricRole {
+                        base_name,
+                        type_args,
+                    } => {
+                        let args_str: Vec<String> = type_args
+                            .iter()
+                            .map(|a| match a {
+                                Value::Package(n) => n.clone(),
+                                Value::ParametricRole { .. } => {
+                                    // Recursively get the WHAT name for nested parametric roles
+                                    if let Ok(Value::Package(n)) =
+                                        self.call_method_with_values(a.clone(), "WHAT", Vec::new())
+                                    {
+                                        // Strip surrounding parens from (Name)
+                                        n.trim_start_matches('(').trim_end_matches(')').to_string()
+                                    } else {
+                                        a.to_string_value()
+                                    }
+                                }
+                                _ => a.to_string_value(),
+                            })
+                            .collect();
+                        let name = format!("{}[{}]", base_name, args_str.join(","));
+                        return Ok(Value::Package(name));
+                    }
                 };
-                return Ok(Value::Package(type_name.to_string()));
+                let visible_type_name = if crate::value::is_internal_anon_type_name(type_name) {
+                    ""
+                } else {
+                    type_name
+                };
+                return Ok(Value::Package(visible_type_name.to_string()));
             }
             "HOW" => {
                 if !args.is_empty() {
@@ -1210,40 +1373,99 @@ impl Interpreter {
                 }
             }
             "match" => {
-                if let Some(pattern) = args.first() {
-                    let text = target.to_string_value();
-                    return match pattern {
-                        Value::Regex(pat) | Value::Str(pat) => {
-                            if let Some(captures) = self.regex_match_with_captures(pat, &text) {
-                                let matched = captures.matched.clone();
-                                let from = captures.from as i64;
-                                let to = captures.to as i64;
-                                for (i, v) in captures.positional.iter().enumerate() {
-                                    self.env.insert(i.to_string(), Value::Str(v.clone()));
-                                }
-                                for (k, v) in &captures.named {
-                                    let value = if v.len() == 1 {
-                                        Value::Str(v[0].clone())
-                                    } else {
-                                        Value::array(v.iter().cloned().map(Value::Str).collect())
-                                    };
-                                    self.env.insert(format!("<{}>", k), value);
-                                }
-                                Ok(Value::make_match_object_with_captures(
-                                    matched,
-                                    from,
-                                    to,
-                                    &captures.positional,
-                                    &captures.named,
-                                ))
-                            } else {
-                                Ok(Value::Nil)
-                            }
-                        }
-                        _ => Ok(Value::Nil),
-                    };
+                if args.is_empty() {
+                    return Ok(Value::Nil);
                 }
-                return Ok(Value::Nil);
+                let text = target.to_string_value();
+                let mut overlap = false;
+                let mut anchored_pos: Option<usize> = None;
+                let mut pattern_arg: Option<&Value> = None;
+                for arg in &args {
+                    if let Value::Pair(key, value) = arg {
+                        if (key == "ov" || key == "overlap") && value.truthy() {
+                            overlap = true;
+                        } else if key == "p" || key == "pos" {
+                            anchored_pos = Some(value.to_f64() as usize);
+                        }
+                        continue;
+                    }
+                    if pattern_arg.is_none() {
+                        pattern_arg = Some(arg);
+                    }
+                }
+                let Some(pattern) = pattern_arg else {
+                    return Ok(Value::Nil);
+                };
+                return match pattern {
+                    Value::Regex(pat) | Value::Str(pat) => {
+                        if overlap {
+                            let all = self.regex_match_all_with_captures(pat, &text);
+                            if all.is_empty() {
+                                return Ok(Value::Nil);
+                            }
+                            let mut best_by_start: std::collections::BTreeMap<
+                                usize,
+                                RegexCaptures,
+                            > = std::collections::BTreeMap::new();
+                            for capture in all {
+                                let key = capture.from;
+                                match best_by_start.get(&key) {
+                                    Some(existing) if capture.to <= existing.to => {}
+                                    _ => {
+                                        best_by_start.insert(key, capture);
+                                    }
+                                }
+                            }
+                            let matches = best_by_start
+                                .into_values()
+                                .map(|c| {
+                                    Value::make_match_object_with_captures(
+                                        c.matched,
+                                        c.from as i64,
+                                        c.to as i64,
+                                        &c.positional,
+                                        &c.named,
+                                    )
+                                })
+                                .collect::<Vec<_>>();
+                            return Ok(Value::array(matches));
+                        }
+                        // Use anchored match if :p(N) or :pos(N) is specified
+                        let captures = if let Some(pos) = anchored_pos {
+                            self.regex_match_with_captures_at(pat, &text, pos)
+                        } else {
+                            self.regex_match_with_captures(pat, &text)
+                        };
+                        if let Some(captures) = captures {
+                            let matched = captures.matched.clone();
+                            let from = captures.from as i64;
+                            let to = captures.to as i64;
+                            for (i, v) in captures.positional.iter().enumerate() {
+                                self.env.insert(i.to_string(), Value::Str(v.clone()));
+                            }
+                            for (k, v) in &captures.named {
+                                let value = if v.len() == 1 {
+                                    Value::Str(v[0].clone())
+                                } else {
+                                    Value::array(v.iter().cloned().map(Value::Str).collect())
+                                };
+                                self.env.insert(format!("<{}>", k), value);
+                            }
+                            let match_obj = Value::make_match_object_with_captures(
+                                matched,
+                                from,
+                                to,
+                                &captures.positional,
+                                &captures.named,
+                            );
+                            self.env.insert("/".to_string(), match_obj.clone());
+                            Ok(match_obj)
+                        } else {
+                            Ok(Value::Nil)
+                        }
+                    }
+                    _ => Ok(Value::Nil),
+                };
             }
             "subst" => {
                 return self.dispatch_subst(target, &args);
@@ -1478,7 +1700,7 @@ impl Interpreter {
                             | Value::GenericRange { .. } => {
                                 values.extend(Self::value_to_list(arg));
                             }
-                            Value::Slip(items) => {
+                            Value::Slip(items) | Value::Seq(items) => {
                                 values.extend(items.iter().cloned());
                             }
                             other => values.push(other.clone()),
@@ -1488,6 +1710,37 @@ impl Interpreter {
                     attrs.insert("values".to_string(), Value::array(values));
                     attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     attrs.insert("live".to_string(), Value::Bool(false));
+                    return Ok(Value::make_instance("Supply".to_string(), attrs));
+                }
+            }
+            "repository-for-name" => {
+                if let Value::Package(ref class_name) = target
+                    && class_name == "CompUnit::RepositoryRegistry"
+                {
+                    let name = args.first().map(Value::to_string_value).unwrap_or_default();
+                    if let Some(prefix) = name.strip_prefix("file#") {
+                        let new_args = vec![Value::Pair(
+                            "prefix".to_string(),
+                            Box::new(Value::Str(prefix.to_string())),
+                        )];
+                        return self.call_method_with_values(
+                            Value::Package("CompUnit::Repository::FileSystem".to_string()),
+                            "new",
+                            new_args,
+                        );
+                    }
+                    return Ok(Value::Nil);
+                }
+            }
+            "signal" => {
+                if let Value::Package(ref class_name) = target
+                    && class_name == "Supply"
+                {
+                    let mut attrs = HashMap::new();
+                    attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    attrs.insert("live".to_string(), Value::Bool(true));
+                    attrs.insert("signals".to_string(), Value::array(args.clone()));
                     return Ok(Value::make_instance("Supply".to_string(), attrs));
                 }
             }
@@ -1595,10 +1848,7 @@ impl Interpreter {
                 if let Value::Package(ref class_name) = target
                     && class_name == "DateTime"
                 {
-                    let secs = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .map(|d| d.as_secs_f64())
-                        .unwrap_or(0.0);
+                    let secs = crate::value::current_time_secs_f64();
                     let mut attrs = HashMap::new();
                     attrs.insert("epoch".to_string(), Value::Num(secs));
                     return Ok(Value::make_instance("DateTime".to_string(), attrs));
@@ -1608,10 +1858,7 @@ impl Interpreter {
                 if let Value::Package(ref class_name) = target
                     && class_name == "Date"
                 {
-                    let secs = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0);
+                    let secs = crate::value::current_time_secs_f64() as u64;
                     let days = secs / 86_400;
                     let mut attrs = HashMap::new();
                     attrs.insert("days".to_string(), Value::Int(days as i64));
@@ -1688,6 +1935,9 @@ impl Interpreter {
             }
             "grep" => {
                 return self.dispatch_grep(target, &args);
+            }
+            "first" if !args.is_empty() => {
+                return self.dispatch_first(target, &args);
             }
             "tree" if !args.is_empty() => {
                 return self.dispatch_tree(target, &args);
@@ -2131,6 +2381,53 @@ impl Interpreter {
                     _ => {}
                 }
             }
+            if class_name == "CompUnit::Repository::FileSystem" {
+                match method {
+                    "install" => {
+                        return Err(RuntimeError::new("Cannot install on CUR::FileSystem"));
+                    }
+                    "need" => {
+                        let short_name = match args.first() {
+                            Some(Value::CompUnitDepSpec { short_name }) => short_name.clone(),
+                            _ => return Ok(Value::Nil),
+                        };
+                        let prefix = attributes
+                            .get("prefix")
+                            .map(Value::to_string_value)
+                            .unwrap_or_default();
+                        let canonical_prefix = std::fs::canonicalize(&prefix)
+                            .unwrap_or_else(|_| std::path::PathBuf::from(&prefix))
+                            .to_string_lossy()
+                            .to_string();
+                        let cache_key =
+                            format!("__mutsu_compunit::{}::{}", canonical_prefix, short_name);
+                        if let Some(existing) = self.env.get(&cache_key).cloned() {
+                            return Ok(existing);
+                        }
+                        let relative = short_name.replace("::", "/");
+                        let mut found = None;
+                        for ext in [".rakumod", ".pm6", ".raku", ".pm"] {
+                            let candidate = std::path::Path::new(&canonical_prefix)
+                                .join(format!("{relative}{ext}"));
+                            if candidate.exists() {
+                                found = Some(candidate);
+                                break;
+                            }
+                        }
+                        if found.is_none() {
+                            return Ok(Value::Nil);
+                        }
+                        let mut attrs = HashMap::new();
+                        attrs.insert("from".to_string(), Value::Str("Raku".to_string()));
+                        attrs.insert("short-name".to_string(), Value::Str(short_name));
+                        attrs.insert("precompiled".to_string(), Value::Bool(false));
+                        let compunit = Value::make_instance("CompUnit".to_string(), attrs);
+                        self.env.insert(cache_key, compunit.clone());
+                        return Ok(compunit);
+                    }
+                    _ => {}
+                }
+            }
             if method == "can" {
                 let method_name = args
                     .first()
@@ -2238,6 +2535,49 @@ impl Interpreter {
             return Ok(result);
         }
 
+        // Value-type dispatch for user-defined methods (e.g. `augment class Array/Hash/List`).
+        // Non-instance values still need to find methods declared on their type object.
+        if !matches!(target, Value::Instance { .. } | Value::Package(_)) {
+            let class_name = crate::runtime::utils::value_type_name(&target);
+            let dispatch_class = if self.has_user_method(class_name, method) {
+                Some(class_name)
+            } else if matches!(target, Value::Array(_, false))
+                && self.has_user_method("Array", method)
+            {
+                // @-sigiled values are list-like internally, but augmenting Array methods
+                // should still apply to them.
+                Some("Array")
+            } else {
+                None
+            };
+            if let Some(dispatch_class) = dispatch_class {
+                let attrs = HashMap::new();
+                let (result, _updated) = self.run_instance_method(
+                    dispatch_class,
+                    attrs,
+                    method,
+                    args,
+                    Some(target.clone()),
+                )?;
+                return Ok(result);
+            }
+        }
+
+        // .can for Package values
+        if method == "can"
+            && !args.is_empty()
+            && let Value::Package(ref class_name) = target
+        {
+            let method_name = args[0].to_string_value();
+            if (self.class_has_method(class_name, &method_name)
+                || self.has_user_method(class_name, &method_name))
+                && let Some(val) = self.classhow_find_method(&target, &method_name)
+            {
+                return Ok(Value::array(vec![val]));
+            }
+            return Ok(Value::array(Vec::new()));
+        }
+
         // Fallback methods
         match method {
             "DUMP" if args.is_empty() => match target {
@@ -2246,6 +2586,9 @@ impl Interpreter {
             },
             "gist" if args.is_empty() => match target {
                 Value::Package(name) => {
+                    if crate::value::is_internal_anon_type_name(&name) {
+                        return Ok(Value::Str("()".to_string()));
+                    }
                     let short = name.split("::").last().unwrap_or(&name);
                     Ok(Value::Str(format!("({})", short)))
                 }
@@ -2616,10 +2959,27 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let mut source: Option<String> = None;
         let mut start_rule = "TOP".to_string();
+        let mut rule_args: Vec<Value> = Vec::new();
         for arg in args {
             if let Value::Pair(key, value) = arg {
                 if key == "rule" || key == "token" {
                     start_rule = value.to_string_value();
+                } else if key == "args" {
+                    // :args(\(42)) passes a Capture; :args(42,) passes an Array
+                    match value.as_ref() {
+                        Value::Capture {
+                            positional,
+                            named: _,
+                        } => {
+                            rule_args = positional.clone();
+                        }
+                        Value::Array(arr, _) => {
+                            rule_args = arr.as_ref().clone();
+                        }
+                        other => {
+                            rule_args = vec![other.clone()];
+                        }
+                    }
                 }
                 continue;
             }
@@ -2650,7 +3010,7 @@ impl Interpreter {
         }
         self.env.insert("_".to_string(), Value::Str(text.clone()));
         let result = (|| -> Result<Value, RuntimeError> {
-            let pattern = match self.eval_token_call_values(&start_rule, &[]) {
+            let pattern = match self.eval_token_call_values(&start_rule, &rule_args) {
                 Ok(Some(pattern)) => pattern,
                 Ok(None) => {
                     self.env.insert("/".to_string(), Value::Nil);
@@ -2666,6 +3026,15 @@ impl Interpreter {
                 }
                 Err(err) => return Err(err),
             };
+
+            // Bind rule args to the env so code assertions { ... } can access them
+            if !rule_args.is_empty()
+                && let Some(def) = self
+                    .resolve_token_defs(&start_rule)
+                    .and_then(|defs| defs.into_iter().next())
+            {
+                let _ = self.bind_function_args_values(&def.param_defs, &def.params, &rule_args);
+            }
 
             let Some(captures) = self.regex_match_with_captures(&pattern, &text) else {
                 self.env.insert("/".to_string(), Value::Nil);
@@ -2872,6 +3241,7 @@ impl Interpreter {
                     body: sub_data.body.clone(),
                     is_rw: false,
                     is_private: false,
+                    return_type: None,
                 };
                 if let Some(class_def) = self.classes.get_mut(&class_name) {
                     class_def.methods.insert(method_name, vec![def]);
@@ -2882,11 +3252,412 @@ impl Interpreter {
                     class_name
                 )))
             }
+            "methods" if !args.is_empty() => self.dispatch_classhow_methods(&args),
             _ => Err(RuntimeError::new(format!(
                 "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
                 method
             ))),
         }
+    }
+
+    fn dispatch_classhow_methods(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let invocant = &args[0];
+        let class_name = match invocant {
+            Value::Package(name) => name.clone(),
+            Value::Instance { class_name, .. } => class_name.clone(),
+            other => value_type_name(other).to_string(),
+        };
+
+        // Parse named arguments
+        let mut local = false;
+        let mut all = false;
+        let mut private = false;
+        let mut tree = false;
+        for arg in &args[1..] {
+            if let Value::Pair(key, value) = arg {
+                match key.as_str() {
+                    "local" => local = value.truthy(),
+                    "all" => all = value.truthy(),
+                    "private" => private = value.truthy(),
+                    "tree" => tree = value.truthy(),
+                    _ => {}
+                }
+            }
+        }
+
+        if tree {
+            return self.classhow_methods_tree(&class_name, private);
+        }
+
+        let mut result = Vec::new();
+
+        if local {
+            // Only methods defined directly on this class
+            self.collect_class_methods(&class_name, private, &mut result);
+        } else {
+            // Walk MRO (already includes the class itself)
+            let mro = self.class_mro(&class_name);
+
+            for cn in &mro {
+                if !all && (cn == "Any" || cn == "Mu") {
+                    continue;
+                }
+                self.collect_class_methods(cn, private, &mut result);
+            }
+
+            // For built-in types that don't have class defs, add known methods
+            if result.is_empty() || !self.classes.contains_key(&class_name) {
+                self.collect_builtin_type_methods(&class_name, &mut result);
+                if all {
+                    self.collect_builtin_type_methods("Any", &mut result);
+                    self.collect_builtin_type_methods("Mu", &mut result);
+                }
+            }
+        }
+
+        Ok(Value::array(result))
+    }
+
+    fn collect_builtin_type_methods(&self, type_name: &str, result: &mut Vec<Value>) {
+        let methods: &[&str] = match type_name {
+            "Str" => &[
+                "chars",
+                "codes",
+                "comb",
+                "chomp",
+                "chop",
+                "contains",
+                "ends-with",
+                "fc",
+                "flip",
+                "index",
+                "indices",
+                "lc",
+                "lines",
+                "match",
+                "ords",
+                "pred",
+                "rindex",
+                "split",
+                "starts-with",
+                "substr",
+                "succ",
+                "tc",
+                "trim",
+                "trim-leading",
+                "trim-trailing",
+                "uc",
+                "words",
+                "wordcase",
+                "NFC",
+                "NFD",
+                "NFKC",
+                "NFKD",
+                "encode",
+                "IO",
+                "Numeric",
+                "Int",
+                "Num",
+                "Rat",
+                "Bool",
+                "Str",
+                "gist",
+                "raku",
+                "elems",
+                "fmt",
+            ],
+            "Int" | "Num" | "Rat" | "Complex" => &[
+                "abs", "ceiling", "floor", "round", "sign", "sqrt", "log", "log10", "exp",
+                "is-prime", "chr", "base", "polymod", "pred", "succ", "Numeric", "Int", "Num",
+                "Rat", "Bool", "Str", "gist", "raku",
+            ],
+            "List" | "Array" => &[
+                "elems",
+                "end",
+                "keys",
+                "values",
+                "kv",
+                "pairs",
+                "antipairs",
+                "join",
+                "map",
+                "grep",
+                "first",
+                "sort",
+                "reverse",
+                "rotate",
+                "unique",
+                "repeated",
+                "squish",
+                "flat",
+                "eager",
+                "lazy",
+                "head",
+                "tail",
+                "skip",
+                "push",
+                "pop",
+                "shift",
+                "unshift",
+                "splice",
+                "append",
+                "prepend",
+                "classify",
+                "categorize",
+                "min",
+                "max",
+                "minmax",
+                "sum",
+                "pick",
+                "roll",
+                "permutations",
+                "combinations",
+                "rotor",
+                "batch",
+                "produce",
+                "reduce",
+                "Bool",
+                "Str",
+                "gist",
+                "raku",
+                "Numeric",
+                "Int",
+                "Array",
+                "List",
+            ],
+            "Hash" => &[
+                "elems",
+                "keys",
+                "values",
+                "kv",
+                "pairs",
+                "antipairs",
+                "push",
+                "append",
+                "classify-list",
+                "categorize-list",
+                "Bool",
+                "Str",
+                "gist",
+                "raku",
+                "Numeric",
+                "Int",
+            ],
+            "Bool" => &[
+                "pred", "succ", "pick", "roll", "Numeric", "Int", "Num", "Rat", "Bool", "Str",
+                "gist", "raku",
+            ],
+            "Range" => &[
+                "min", "max", "bounds", "elems", "list", "flat", "reverse", "pick", "roll", "sum",
+                "rand", "minmax", "infinite", "is-int", "Bool", "Str", "gist", "raku", "Numeric",
+                "Int",
+            ],
+            "Sub" | "Method" | "Block" | "Routine" | "Code" => &[
+                "name",
+                "signature",
+                "arity",
+                "count",
+                "of",
+                "returns",
+                "Bool",
+                "Str",
+                "gist",
+                "raku",
+            ],
+            "Signature" => &[
+                "params", "arity", "count", "returns", "Bool", "Str", "gist", "raku",
+            ],
+            "Any" => &[
+                "say",
+                "put",
+                "print",
+                "note",
+                "so",
+                "not",
+                "defined",
+                "WHAT",
+                "WHERE",
+                "HOW",
+                "WHY",
+                "iterator",
+                "flat",
+                "eager",
+                "lazy",
+                "map",
+                "grep",
+                "first",
+                "sort",
+                "reverse",
+                "unique",
+                "repeated",
+                "squish",
+                "head",
+                "tail",
+                "skip",
+                "min",
+                "max",
+                "minmax",
+                "elems",
+                "end",
+                "keys",
+                "values",
+                "kv",
+                "pairs",
+                "antipairs",
+                "classify",
+                "categorize",
+                "join",
+                "pick",
+                "roll",
+                "sum",
+                "reduce",
+                "produce",
+                "rotor",
+                "batch",
+                "Bool",
+                "Str",
+                "gist",
+                "raku",
+                "Numeric",
+                "Int",
+            ],
+            "Mu" => &[
+                "defined", "WHAT", "WHERE", "HOW", "WHY", "WHICH", "Bool", "Str", "gist", "raku",
+                "clone", "new",
+            ],
+            _ => &[],
+        };
+        for name in methods {
+            if !result.iter().any(|v| {
+                if let Value::Instance { attributes, .. } = v {
+                    attributes
+                        .get("name")
+                        .map(|n| n.to_string_value())
+                        .as_deref()
+                        == Some(name)
+                } else {
+                    false
+                }
+            }) {
+                result.push(self.make_native_method_object(name));
+            }
+        }
+    }
+
+    fn collect_class_methods(
+        &self,
+        class_name: &str,
+        include_private: bool,
+        result: &mut Vec<Value>,
+    ) {
+        if let Some(class_def) = self.classes.get(class_name) {
+            // First add accessor methods for public attributes (in order)
+            for (attr_name, is_public, ..) in &class_def.attributes {
+                if *is_public && !class_def.methods.contains_key(attr_name) {
+                    result.push(self.make_native_method_object(attr_name));
+                }
+            }
+            // Then add explicit methods
+            for (method_name, overloads) in &class_def.methods {
+                if overloads.is_empty() {
+                    continue;
+                }
+                // Skip private methods unless :private
+                let first = &overloads[0];
+                if first.is_private && !include_private {
+                    continue;
+                }
+                let is_multi = overloads.len() > 1;
+                let return_type = first.return_type.clone();
+                let method_obj = self.make_method_object(method_name, first, is_multi, return_type);
+                result.push(method_obj);
+            }
+            // Also include native (built-in) methods
+            for native_name in &class_def.native_methods {
+                let method_obj = self.make_native_method_object(native_name);
+                result.push(method_obj);
+            }
+        }
+    }
+
+    fn make_native_method_object(&self, name: &str) -> Value {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("name".to_string(), Value::Str(name.to_string()));
+        attrs.insert("is_dispatcher".to_string(), Value::Bool(false));
+        let sig_attrs = {
+            let mut sa = std::collections::HashMap::new();
+            sa.insert("params".to_string(), Value::array(Vec::new()));
+            sa
+        };
+        attrs.insert(
+            "signature".to_string(),
+            Value::make_instance("Signature".to_string(), sig_attrs),
+        );
+        attrs.insert("returns".to_string(), Value::Package("Mu".to_string()));
+        attrs.insert("of".to_string(), Value::Package("Mu".to_string()));
+        Value::make_instance("Method".to_string(), attrs)
+    }
+
+    fn make_method_object(
+        &self,
+        name: &str,
+        method_def: &MethodDef,
+        is_dispatcher: bool,
+        return_type: Option<String>,
+    ) -> Value {
+        let mut attrs = std::collections::HashMap::new();
+
+        // Store the display name (with ! prefix for private methods)
+        let display_name = if method_def.is_private {
+            format!("!{}", name)
+        } else {
+            name.to_string()
+        };
+        attrs.insert("name".to_string(), Value::Str(display_name));
+        attrs.insert("is_dispatcher".to_string(), Value::Bool(is_dispatcher));
+
+        // Build a Signature object for this method
+        let param_defs = &method_def.param_defs;
+        let sig_attrs = {
+            let mut sa = std::collections::HashMap::new();
+            sa.insert(
+                "params".to_string(),
+                make_params_value_from_param_defs(param_defs),
+            );
+            sa
+        };
+        attrs.insert(
+            "signature".to_string(),
+            Value::make_instance("Signature".to_string(), sig_attrs),
+        );
+
+        // Return type
+        let rt = return_type.unwrap_or_else(|| "Mu".to_string());
+        attrs.insert("returns".to_string(), Value::Package(rt.clone()));
+        attrs.insert("of".to_string(), Value::Package(rt));
+
+        Value::make_instance("Method".to_string(), attrs)
+    }
+
+    fn classhow_methods_tree(
+        &self,
+        class_name: &str,
+        include_private: bool,
+    ) -> Result<Value, RuntimeError> {
+        let mut result = Vec::new();
+
+        // First: own methods
+        self.collect_class_methods(class_name, include_private, &mut result);
+
+        // Then: each parent's tree as a nested array
+        if let Some(class_def) = self.classes.get(class_name) {
+            for parent in &class_def.parents {
+                let subtree = self.classhow_methods_tree(parent, include_private)?;
+                result.push(subtree);
+            }
+        }
+
+        Ok(Value::array(result))
     }
 
     fn dispatch_subst(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -3431,13 +4202,32 @@ impl Interpreter {
             let mut best: Option<Value> = None;
             let mut out: Vec<Value> = Vec::new();
             for (idx, item) in items.iter().enumerate() {
-                if matches!(item, Value::Nil) {
+                if matches!(item, Value::Nil) || matches!(item, Value::Package(n) if n == "Any") {
                     continue;
                 }
                 let ord = if let Some(current) = &best {
-                    match (to_float_value(item), to_float_value(current)) {
-                        (Some(a), Some(b)) => {
-                            a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
+                    // Use `cmp` semantics: numeric comparison for numeric
+                    // pairs, string comparison otherwise
+                    match (item, current) {
+                        (Value::Int(a), Value::Int(b)) => a.cmp(b),
+                        (Value::Num(a), Value::Num(b)) => {
+                            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                        }
+                        (Value::Int(a), Value::Num(b)) => (*a as f64)
+                            .partial_cmp(b)
+                            .unwrap_or(std::cmp::Ordering::Equal),
+                        (Value::Num(a), Value::Int(b)) => a
+                            .partial_cmp(&(*b as f64))
+                            .unwrap_or(std::cmp::Ordering::Equal),
+                        (Value::Rat(..), _) | (_, Value::Rat(..)) => {
+                            if let (Some((an, ad)), Some((bn, bd))) = (
+                                crate::runtime::to_rat_parts(item),
+                                crate::runtime::to_rat_parts(current),
+                            ) {
+                                crate::runtime::compare_rat_parts((an, ad), (bn, bd))
+                            } else {
+                                item.to_string_value().cmp(&current.to_string_value())
+                            }
                         }
                         _ => item.to_string_value().cmp(&current.to_string_value()),
                     }
@@ -3450,16 +4240,25 @@ impl Interpreter {
                 if replace {
                     best = Some(item.clone());
                     out.clear();
-                    out.push(Value::Pair(idx.to_string(), Box::new(item.clone())));
+                    out.push(Value::ValuePair(
+                        Box::new(Value::Int(idx as i64)),
+                        Box::new(item.clone()),
+                    ));
                 } else if ord == std::cmp::Ordering::Equal {
-                    out.push(Value::Pair(idx.to_string(), Box::new(item.clone())));
+                    out.push(Value::ValuePair(
+                        Box::new(Value::Int(idx as i64)),
+                        Box::new(item.clone()),
+                    ));
                 }
             }
-            Value::array(out)
+            Value::Seq(Arc::new(out))
         };
         Ok(match target {
             Value::Array(items, ..) => to_pairs(&items),
-            other => Value::array(vec![Value::Pair("0".to_string(), Box::new(other))]),
+            other => Value::Seq(Arc::new(vec![Value::ValuePair(
+                Box::new(Value::Int(0)),
+                Box::new(other),
+            )])),
         })
     }
 
@@ -3615,7 +4414,7 @@ impl Interpreter {
                             self.env.insert("_".to_string(), b.clone());
                             let key_b = self.eval_block_value(&data.body).unwrap_or(Value::Nil);
                             self.env = saved;
-                            key_a.to_string_value().cmp(&key_b.to_string_value())
+                            compare_values(&key_a, &key_b).cmp(&0)
                         });
                     } else {
                         items_mut.sort_by(|a, b| {
@@ -3717,9 +4516,59 @@ impl Interpreter {
     }
 
     fn dispatch_new(&mut self, target: Value, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        if let Value::ParametricRole {
+            base_name,
+            type_args,
+        } = &target
+            && let Some(role) = self.roles.get(base_name).cloned()
+        {
+            let mut named_args: HashMap<String, Value> = HashMap::new();
+            let mut positional_args: Vec<Value> = Vec::new();
+            for arg in &args {
+                if let Value::Pair(key, value) = arg {
+                    named_args.insert(key.clone(), *value.clone());
+                } else {
+                    positional_args.push(arg.clone());
+                }
+            }
+
+            let mut mixins = HashMap::new();
+            mixins.insert(format!("__mutsu_role__{}", base_name), Value::Bool(true));
+            mixins.insert(
+                format!("__mutsu_role_typeargs__{}", base_name),
+                Value::array(type_args.clone()),
+            );
+            if let Some(param_names) = self.role_type_params.get(base_name) {
+                for (param_name, type_arg) in param_names.iter().zip(type_args.iter()) {
+                    mixins.insert(
+                        format!("__mutsu_role_param__{}", param_name),
+                        type_arg.clone(),
+                    );
+                }
+            }
+            for (idx, (attr_name, _is_public, default_expr, _is_rw)) in
+                role.attributes.iter().enumerate()
+            {
+                let value = if let Some(v) = named_args.get(attr_name) {
+                    v.clone()
+                } else if let Some(v) = positional_args.get(idx) {
+                    v.clone()
+                } else if let Some(expr) = default_expr {
+                    self.eval_block_value(&[Stmt::Expr(expr.clone())])?
+                } else {
+                    Value::Nil
+                };
+                mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
+            }
+            return Ok(Value::Mixin(
+                Box::new(Value::make_instance(base_name.clone(), HashMap::new())),
+                mixins,
+            ));
+        }
+
         if let Value::Package(class_name) = &target {
             match class_name.as_str() {
-                "Array" | "List" | "Positional" => {
+                "Array" | "List" | "Positional" | "array" => {
                     if let Some(dims) = Self::shaped_dims_from_new_args(&args) {
                         return Ok(Self::make_shaped_array(&dims));
                     }
@@ -3837,6 +4686,34 @@ impl Interpreter {
                         )
                     })?;
                     return Ok(Value::CompUnitDepSpec { short_name });
+                }
+                "CompUnit::Repository::FileSystem" => {
+                    let mut prefix = ".".to_string();
+                    for arg in &args {
+                        if let Value::Pair(key, value) = arg
+                            && key == "prefix"
+                        {
+                            prefix = value.to_string_value();
+                        }
+                    }
+                    let prefix_path = if prefix.is_empty() { "." } else { &prefix };
+                    let canonical_prefix = std::fs::canonicalize(prefix_path)
+                        .unwrap_or_else(|_| std::path::PathBuf::from(prefix_path))
+                        .to_string_lossy()
+                        .to_string();
+                    let cache_key = format!("__mutsu_repo_fs::{}", canonical_prefix);
+                    if let Some(existing) = self.env.get(&cache_key).cloned() {
+                        return Ok(existing);
+                    }
+                    let mut attrs = HashMap::new();
+                    attrs.insert(
+                        "prefix".to_string(),
+                        self.make_io_path_instance(&canonical_prefix),
+                    );
+                    attrs.insert("short-id".to_string(), Value::Str("file".to_string()));
+                    let repo = Value::make_instance(class_name.clone(), attrs);
+                    self.env.insert(cache_key, repo.clone());
+                    return Ok(repo);
                 }
                 "Proc::Async" => {
                     let mut positional = Vec::new();
@@ -4027,11 +4904,11 @@ impl Interpreter {
                     let frame = Value::make_instance("Backtrace::Frame".to_string(), frame_attrs);
                     return Ok(Value::array(vec![frame]));
                 }
-                "Lock" => {
+                "Lock" | "Lock::Async" => {
                     let mut attrs = HashMap::new();
                     let lock_id = super::native_methods::next_lock_id() as i64;
                     attrs.insert("lock-id".to_string(), Value::Int(lock_id));
-                    return Ok(Value::make_instance("Lock".to_string(), attrs));
+                    return Ok(Value::make_instance(class_name.clone(), attrs));
                 }
                 "Slip" => {
                     return Ok(Value::slip(args.clone()));
@@ -4044,6 +4921,38 @@ impl Interpreter {
                     )));
                 }
                 _ => {}
+            }
+            if let Some(role) = self.roles.get(class_name).cloned() {
+                let mut named_args: HashMap<String, Value> = HashMap::new();
+                let mut positional_args: Vec<Value> = Vec::new();
+                for arg in &args {
+                    if let Value::Pair(key, value) = arg {
+                        named_args.insert(key.clone(), *value.clone());
+                    } else {
+                        positional_args.push(arg.clone());
+                    }
+                }
+
+                let mut mixins = HashMap::new();
+                mixins.insert(format!("__mutsu_role__{}", class_name), Value::Bool(true));
+                for (idx, (attr_name, _is_public, default_expr, _is_rw)) in
+                    role.attributes.iter().enumerate()
+                {
+                    let value = if let Some(v) = named_args.get(attr_name) {
+                        v.clone()
+                    } else if let Some(v) = positional_args.get(idx) {
+                        v.clone()
+                    } else if let Some(expr) = default_expr {
+                        self.eval_block_value(&[Stmt::Expr(expr.clone())])?
+                    } else {
+                        Value::Nil
+                    };
+                    mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
+                }
+                return Ok(Value::Mixin(
+                    Box::new(Value::make_instance(class_name.clone(), HashMap::new())),
+                    mixins,
+                ));
             }
             if self.classes.contains_key(class_name) {
                 // Check for user-defined .new method first
@@ -4196,6 +5105,62 @@ impl Interpreter {
             }
             other => Ok(other),
         }
+    }
+
+    fn dispatch_first(&mut self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        // Separate named args (Pairs) from positional args
+        let mut positional = Vec::new();
+        let mut has_neg_v = false;
+        let mut has_end = false;
+        let mut has_k = false;
+        let mut has_kv = false;
+        let mut has_p = false;
+        for arg in args {
+            match arg {
+                Value::Pair(key, value) if key == "v" => {
+                    if !value.truthy() {
+                        has_neg_v = true;
+                    }
+                }
+                Value::Pair(key, value) if key == "end" => {
+                    if value.truthy() {
+                        has_end = true;
+                    }
+                }
+                Value::Pair(key, value) if key == "k" => {
+                    has_k = value.truthy();
+                }
+                Value::Pair(key, value) if key == "kv" => {
+                    has_kv = value.truthy();
+                }
+                Value::Pair(key, value) if key == "p" => {
+                    has_p = value.truthy();
+                }
+                _ => positional.push(arg.clone()),
+            }
+        }
+        if has_neg_v {
+            return Err(RuntimeError::new(
+                "Throwing `:!v` on first is not supported",
+            ));
+        }
+        // Check for Bool matcher (X::Match::Bool)
+        if matches!(positional.first(), Some(Value::Bool(_))) {
+            let mut err = RuntimeError::new("Cannot use Bool as a matcher");
+            err.exception = Some(Box::new(Value::make_instance(
+                "X::Match::Bool".to_string(),
+                std::collections::HashMap::new(),
+            )));
+            return Err(err);
+        }
+        let func = positional.first().cloned();
+        let items = crate::runtime::utils::value_to_list(&target);
+        if let Some((idx, value)) = self.find_first_match_over_items(func, &items, has_end)? {
+            return Ok(super::builtins_collection::format_first_result(
+                idx, value, has_k, has_kv, has_p,
+            ));
+        }
+        Ok(Value::Nil)
     }
 
     /// `$n.polymod(@divisors)` — successive modular decomposition.

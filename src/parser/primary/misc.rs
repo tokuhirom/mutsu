@@ -240,6 +240,11 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         .strip_prefix(':')
         .filter(|r| !r.starts_with(':'))
         .ok_or_else(|| PError::expected("colonpair"))?;
+    // :{ ... }: typed hash literal (Hash[Mu,Any]).
+    // For now we treat it like a regular hash literal.
+    if r.starts_with('{') {
+        return block_or_hash_expr(r);
+    }
     // :(...): signature literal.
     if let Some(mut r) = r.strip_prefix('(') {
         let (r2, _) = ws(r)?;
@@ -421,7 +426,7 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         let (r, _) = ws(after_paren)?;
         let (r, first) = expression(r)?;
         let (r, _) = ws(r)?;
-        // Check for separated list: :name(a, b, ...) or :name(a; b; ...)
+        // Check for separated list: :name(a, b, ...) or :name(a; b; ...) or :name(a,)
         if r.starts_with(',') || (r.starts_with(';') && !r.starts_with(";;")) {
             let mut items = vec![first];
             let mut r = r;
@@ -429,6 +434,11 @@ pub(in crate::parser) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 let sep = if r.starts_with(',') { ',' } else { ';' };
                 let (r2, _) = parse_char(r, sep)?;
                 let (r2, _) = ws(r2)?;
+                // Trailing comma: :name(a,)
+                if r2.starts_with(')') {
+                    r = r2;
+                    break;
+                }
                 let (r2, next) = expression(r2)?;
                 let (r2, _) = ws(r2)?;
                 items.push(next);
@@ -727,7 +737,7 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
 }
 
 /// Parse a block `{ stmts }` as AnonSub or `{}` / `{ key => val, ... }` as Hash.
-pub(super) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
+pub(in crate::parser) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
     if !input.starts_with('{') {
         return Err(PError::expected("block or hash"));
     }
@@ -791,6 +801,13 @@ fn is_hash_literal_start(input: &str) -> bool {
             return true;
         }
     }
+    // numeric key => val
+    if let Ok((r, _)) = super::number::integer(input) {
+        let (r, _) = ws_inner(r);
+        if r.starts_with("=>") {
+            return true;
+        }
+    }
     // Quoted key => val
     if (input.starts_with('"') || input.starts_with('\''))
         && let Ok((r, _)) = single_quoted_string(input).or_else(|_| double_quoted_string(input))
@@ -849,26 +866,80 @@ fn is_hash_literal_start(input: &str) -> bool {
 static ANON_CLASS_COUNTER: AtomicU64 = AtomicU64::new(0);
 static ANON_ROLE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// Parse an anonymous class expression: `class { ... }`
+/// Parse a class expression: `class { ... }`, `class Foo { ... }`, or `class :: is Parent { ... }`
+/// Named classes in expression context register the class AND return the type object.
 pub(super) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
     let rest = keyword("class", input).ok_or_else(|| PError::expected("anonymous class"))?;
     let (rest, _) = ws(rest)?;
-    // Must be followed by '{' (no name) to be an anonymous class
-    if !rest.starts_with('{') {
+
+    // Accept `class { ... }`, `class :: ...` (anonymous with optional traits),
+    // or `class Name ...` (named class in expression context)
+    let (rest, name, parents) = if let Some(r) = rest.strip_prefix("::") {
+        // Skip `::` (anonymous name placeholder)
+        let (r, _) = ws(r)?;
+        // Parse `is Parent` clauses
+        let mut parents = Vec::new();
+        let mut r = r;
+        while let Some(r2) = keyword("is", r) {
+            let (r2, _) = super::super::helpers::ws1(r2)?;
+            let (r2, parent) = parse_ident_with_hyphens(r2)?;
+            parents.push(parent.to_string());
+            let (r2, _) = ws(r2)?;
+            r = r2;
+        }
+        let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
+        (r, format!("__ANON_CLASS_{id}__"), parents)
+    } else if rest.starts_with('{') {
+        let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
+        (rest, format!("__ANON_CLASS_{id}__"), Vec::new())
+    } else if rest.starts_with(|c: char| c.is_ascii_uppercase() || c == '_') {
+        // Named class in expression context: `class Foo { ... }`
+        let (r, class_name) = parse_ident_with_hyphens(rest)?;
+        let (r, _) = ws(r)?;
+        // Parse optional `is Parent` / `does Role` clauses
+        let mut parents = Vec::new();
+        let mut r = r;
+        while let Some(r2) = keyword("is", r).or_else(|| keyword("does", r)) {
+            let (r2, _) = super::super::helpers::ws1(r2)?;
+            let (r2, parent) = parse_ident_with_hyphens(r2)?;
+            parents.push(parent.to_string());
+            let (r2, _) = ws(r2)?;
+            r = r2;
+        }
+        (r, class_name.to_string(), parents)
+    } else {
         return Err(PError::expected("'{' for anonymous class"));
+    };
+
+    if !rest.starts_with('{') {
+        return Err(PError::expected("'{' for anonymous class body"));
     }
-    let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let name = format!("__ANON_CLASS_{id}__");
+
     let (rest, body) = parse_block_body(rest)?;
     Ok((
         rest,
         Expr::DoStmt(Box::new(Stmt::ClassDecl {
             name,
             name_expr: None,
-            parents: Vec::new(),
+            parents,
+            is_hidden: false,
+            hidden_parents: Vec::new(),
             body,
         })),
     ))
+}
+
+/// Parse an anonymous grammar expression: `grammar { ... }`
+pub(super) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
+    let rest = keyword("grammar", input).ok_or_else(|| PError::expected("anonymous grammar"))?;
+    let (rest, _) = ws(rest)?;
+    if !rest.starts_with('{') {
+        return Err(PError::expected("'{' for anonymous grammar"));
+    }
+    let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let name = format!("__ANON_GRAMMAR_{id}__");
+    let (rest, body) = parse_block_body(rest)?;
+    Ok((rest, Expr::DoStmt(Box::new(Stmt::Package { name, body }))))
 }
 
 /// Parse an anonymous role expression: `role { ... }`
@@ -917,9 +988,13 @@ fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
             continue;
         }
 
-        // Parse key as identifier or string
+        // Parse key as identifier, integer, or string
         let (r, key) = if let Ok((r, name)) = super::super::stmt::ident_pub(r) {
             (r, name)
+        } else if let Ok((r, Expr::Literal(Value::Int(n)))) = super::number::integer(r) {
+            (r, n.to_string())
+        } else if let Ok((r, Expr::Literal(Value::BigInt(n)))) = super::number::integer(r) {
+            (r, n.to_string())
         } else if let Ok((r, Expr::Literal(Value::Str(s)))) =
             single_quoted_string(r).or_else(|_| double_quoted_string(r))
         {

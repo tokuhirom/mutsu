@@ -25,6 +25,7 @@ fn regex_single_quote_atom(literal: String, ignore_case: bool) -> RegexAtom {
                 atom: RegexAtom::Literal(ch),
                 quant: RegexQuant::One,
                 named_capture: None,
+                ratchet: false,
             })
             .collect();
         RegexAtom::Group(RegexPattern {
@@ -32,6 +33,7 @@ fn regex_single_quote_atom(literal: String, ignore_case: bool) -> RegexAtom {
             anchor_start: false,
             anchor_end: false,
             ignore_case,
+            ignore_mark: false,
         })
     }
 }
@@ -47,6 +49,115 @@ fn split_prop_args(s: &str) -> (&str, Option<&str>) {
 }
 
 impl Interpreter {
+    /// Split a regex pattern on top-level `|` or `||` alternation operators.
+    /// Respects grouping: `(...)`, `[...]`, `{...}`, `<...>` and escapes.
+    fn split_top_level_alternation(pattern: &str) -> Vec<String> {
+        let mut parts = Vec::new();
+        let mut current = String::new();
+        let mut depth_paren = 0i32;
+        let mut depth_bracket = 0i32;
+        let mut depth_brace = 0i32;
+        let mut depth_angle = 0i32;
+        let mut escaped = false;
+        let mut in_single_quote = false;
+        let mut chars = pattern.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if escaped {
+                current.push(ch);
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                current.push(ch);
+                escaped = true;
+                continue;
+            }
+            if ch == '\'' {
+                in_single_quote = !in_single_quote;
+                current.push(ch);
+                continue;
+            }
+            if in_single_quote {
+                current.push(ch);
+                continue;
+            }
+            match ch {
+                '(' => {
+                    depth_paren += 1;
+                    current.push(ch);
+                }
+                ')' => {
+                    depth_paren -= 1;
+                    current.push(ch);
+                }
+                '[' => {
+                    depth_bracket += 1;
+                    current.push(ch);
+                }
+                ']' => {
+                    depth_bracket -= 1;
+                    current.push(ch);
+                }
+                '{' => {
+                    depth_brace += 1;
+                    current.push(ch);
+                }
+                '}' => {
+                    depth_brace -= 1;
+                    current.push(ch);
+                }
+                '<' => {
+                    depth_angle += 1;
+                    current.push(ch);
+                }
+                '>' => {
+                    depth_angle -= 1;
+                    current.push(ch);
+                }
+                '|' if depth_paren == 0
+                    && depth_bracket == 0
+                    && depth_brace == 0
+                    && depth_angle == 0 =>
+                {
+                    // Skip second | for ||
+                    if chars.peek() == Some(&'|') {
+                        chars.next();
+                    }
+                    parts.push(std::mem::take(&mut current));
+                }
+                _ => current.push(ch),
+            }
+        }
+        if !current.is_empty() || !parts.is_empty() {
+            parts.push(current);
+        }
+        parts
+    }
+
+    fn has_unquoted_ltm_separator(pattern: &str) -> bool {
+        let mut in_single = false;
+        let mut escaped = false;
+        for ch in pattern.chars() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == '\'' {
+                in_single = !in_single;
+                continue;
+            }
+            if !in_single && ch == '%' {
+                return true;
+            }
+        }
+        false
+    }
+
     fn split_simple_quantified_atom(atom: &str) -> Option<(String, String)> {
         let quant = atom.chars().last()?;
         if !matches!(quant, '?' | '+' | '*') {
@@ -88,6 +199,9 @@ impl Interpreter {
             let sep_mode = caps.get(3).map(|m| m.as_str());
             let sep = caps.get(4).map(|m| m.as_str());
             return Self::build_ltm_expansion(atom, count_spec, sep_mode, sep);
+        }
+        if !Self::has_unquoted_ltm_separator(pattern) {
+            return pattern.to_string();
         }
         if let Some(caps) = bare_sep.captures(&compact) {
             let atom = caps
@@ -220,15 +334,26 @@ impl Interpreter {
         let interpolated = self.interpolate_regex_scalars(pattern);
         let mut source = interpolated.trim_start();
         let mut ignore_case = false;
+        let mut ignore_mark = false;
         let mut sigspace = false;
         loop {
+            if let Some(rest) = source.strip_prefix(":ignorecase") {
+                ignore_case = true;
+                source = rest.trim_start();
+                continue;
+            }
+            if let Some(rest) = source.strip_prefix(":ignoremark") {
+                ignore_mark = true;
+                source = rest.trim_start();
+                continue;
+            }
             if let Some(rest) = source.strip_prefix(":i") {
                 ignore_case = true;
                 source = rest.trim_start();
                 continue;
             }
-            if let Some(rest) = source.strip_prefix(":ignorecase") {
-                ignore_case = true;
+            if let Some(rest) = source.strip_prefix(":sigspace") {
+                sigspace = true;
                 source = rest.trim_start();
                 continue;
             }
@@ -237,10 +362,17 @@ impl Interpreter {
                 source = rest.trim_start();
                 continue;
             }
-            if let Some(rest) = source.strip_prefix(":sigspace") {
-                sigspace = true;
-                source = rest.trim_start();
-                continue;
+            if let Some(rest) = source.strip_prefix(":m") {
+                // Make sure it's :m and not :mm or :my or other identifiers
+                if rest.is_empty()
+                    || rest.starts_with(' ')
+                    || rest.starts_with(':')
+                    || rest.starts_with('/')
+                {
+                    ignore_mark = true;
+                    source = rest.trim_start();
+                    continue;
+                }
             }
             break;
         }
@@ -256,6 +388,44 @@ impl Interpreter {
         } else if let Some(inner) = source.strip_prefix("<<").and_then(|s| s.strip_suffix(">>")) {
             source = inner.trim();
         }
+
+        // Handle top-level alternation (| or ||)
+        let top_alts = Self::split_top_level_alternation(source);
+        if top_alts.len() > 1 {
+            let mut alt_patterns = Vec::new();
+            for alt in &top_alts {
+                let alt_src = alt.trim();
+                if alt_src.is_empty() {
+                    continue;
+                }
+                // Re-apply inline adverbs for each alternative
+                let alt_pat = if ignore_case && !alt_src.starts_with(":i") {
+                    format!(":i {}", alt_src)
+                } else {
+                    alt_src.to_string()
+                };
+                if let Some(p) = self.parse_regex(&alt_pat) {
+                    alt_patterns.push(p);
+                }
+            }
+            if alt_patterns.len() > 1 {
+                return Some(RegexPattern {
+                    tokens: vec![RegexToken {
+                        atom: RegexAtom::Alternation(alt_patterns),
+                        quant: RegexQuant::One,
+                        named_capture: None,
+                        ratchet: false,
+                    }],
+                    anchor_start: false,
+                    anchor_end: false,
+                    ignore_case,
+                    ignore_mark,
+                });
+            } else if alt_patterns.len() == 1 {
+                return alt_patterns.into_iter().next();
+            }
+        }
+
         let expanded = Self::expand_ltm_pattern(source);
         let mut chars = expanded.chars().peekable();
         let mut tokens = Vec::new();
@@ -278,6 +448,7 @@ impl Interpreter {
                                 }),
                                 quant: RegexQuant::ZeroOrMore,
                                 named_capture: pending_named_capture.take(),
+                                ratchet: false,
                             });
                         }
                     } else {
@@ -291,6 +462,7 @@ impl Interpreter {
                             }),
                             quant: RegexQuant::OneOrMore,
                             named_capture: pending_named_capture.take(),
+                            ratchet: false,
                         });
                     }
                 }
@@ -331,6 +503,7 @@ impl Interpreter {
                     atom: RegexAtom::Literal('$'),
                     quant: RegexQuant::One,
                     named_capture: None,
+                    ratchet: false,
                 });
                 continue;
             }
@@ -447,6 +620,7 @@ impl Interpreter {
                                         atom: RegexAtom::Literal(c),
                                         quant: RegexQuant::One,
                                         named_capture: None,
+                                        ratchet: false,
                                     });
                                 }
                                 RegexAtom::Literal(*resolved.last().unwrap())
@@ -658,6 +832,7 @@ impl Interpreter {
                                                     }),
                                                     quant: RegexQuant::One,
                                                     named_capture: None,
+                                                    ratchet: false,
                                                 },
                                                 RegexToken {
                                                     atom: RegexAtom::CharClass(CharClass {
@@ -668,11 +843,13 @@ impl Interpreter {
                                                     }),
                                                     quant: RegexQuant::ZeroOrMore,
                                                     named_capture: None,
+                                                    ratchet: false,
                                                 },
                                             ],
                                             anchor_start: false,
                                             anchor_end: false,
                                             ignore_case,
+                                            ignore_mark,
                                         })
                                     }
                                     _ => RegexAtom::Named(name),
@@ -721,10 +898,12 @@ impl Interpreter {
                                 atom: RegexAtom::Alternation(alt_patterns),
                                 quant: RegexQuant::One,
                                 named_capture: None,
+                                ratchet: false,
                             }],
                             anchor_start: false,
                             anchor_end: false,
                             ignore_case,
+                            ignore_mark,
                         };
                         RegexAtom::CaptureGroup(group_pat)
                     } else {
@@ -787,6 +966,29 @@ impl Interpreter {
                         }
                     }
                 }
+                '{' => {
+                    // Code block in regex: { ... }
+                    let mut code = String::new();
+                    let mut depth = 1usize;
+                    for ch in chars.by_ref() {
+                        if ch == '{' {
+                            depth += 1;
+                            code.push(ch);
+                        } else if ch == '}' {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
+                            }
+                            code.push(ch);
+                        } else {
+                            code.push(ch);
+                        }
+                    }
+                    RegexAtom::CodeAssertion {
+                        code,
+                        negated: false,
+                    }
+                }
                 other => RegexAtom::Literal(other),
             };
             let mut quant = RegexQuant::One;
@@ -810,13 +1012,17 @@ impl Interpreter {
             // Handle ':' ratchet modifier (prevents backtracking)
             // For now, just consume it — our engine doesn't backtrack into
             // quantified atoms in the same way, so this is a no-op
-            if chars.peek() == Some(&':') {
+            let ratchet = if chars.peek() == Some(&':') {
                 chars.next();
-            }
+                true
+            } else {
+                false
+            };
             tokens.push(RegexToken {
                 atom,
                 quant,
                 named_capture: pending_named_capture.take(),
+                ratchet,
             });
         }
         Some(RegexPattern {
@@ -824,6 +1030,7 @@ impl Interpreter {
             anchor_start,
             anchor_end,
             ignore_case,
+            ignore_mark,
         })
     }
 

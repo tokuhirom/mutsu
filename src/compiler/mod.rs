@@ -152,17 +152,32 @@ impl Compiler {
                     continue;
                 }
                 if sub.named {
-                    bind_stmts.push(Stmt::Assign {
+                    let method_result = Expr::MethodCall {
+                        target: Box::new(Expr::Var(target_name.clone())),
                         name: sub.name.clone(),
-                        expr: Expr::MethodCall {
-                            target: Box::new(Expr::Var(target_name.clone())),
+                        args: Vec::new(),
+                        modifier: None,
+                        quoted: false,
+                    };
+                    // If the named param has a sub_signature (e.g. :key($k)),
+                    // bind to the sub_signature variable instead of the param name.
+                    if let Some(inner_params) = &sub.sub_signature {
+                        for inner in inner_params {
+                            if !inner.name.is_empty() {
+                                bind_stmts.push(Stmt::Assign {
+                                    name: inner.name.clone(),
+                                    expr: method_result.clone(),
+                                    op: AssignOp::Assign,
+                                });
+                            }
+                        }
+                    } else {
+                        bind_stmts.push(Stmt::Assign {
                             name: sub.name.clone(),
-                            args: Vec::new(),
-                            modifier: None,
-                            quoted: false,
-                        },
-                        op: AssignOp::Assign,
-                    });
+                            expr: method_result,
+                            op: AssignOp::Assign,
+                        });
+                    }
                 } else {
                     bind_stmts.push(Stmt::Assign {
                         name: sub.name.clone(),
@@ -187,6 +202,45 @@ impl Compiler {
             });
         }
         bind_stmts
+    }
+
+    fn for_iterable_source_name(iterable: &Expr) -> Option<String> {
+        match iterable {
+            Expr::Var(name) => Some(name.clone()),
+            Expr::ArrayLiteral(items) if items.len() == 1 => match &items[0] {
+                Expr::Var(name) => Some(name.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn normalize_for_iterable(iterable: &Expr) -> Expr {
+        match iterable {
+            // Scalar variables are item containers in `for` and should not be flattened.
+            Expr::Var(_) => Expr::ArrayLiteral(vec![iterable.clone()]),
+            _ => iterable.clone(),
+        }
+    }
+
+    fn for_rw_writeback_stmt(
+        param: &Option<String>,
+        param_def: &Option<crate::ast::ParamDef>,
+        iterable: &Expr,
+    ) -> Option<Stmt> {
+        let has_rw = param_def
+            .as_ref()
+            .is_some_and(|def| def.traits.iter().any(|t| t == "rw"));
+        if !has_rw {
+            return None;
+        }
+        let param_name = param.as_ref()?;
+        let source_name = Self::for_iterable_source_name(iterable)?;
+        Some(Stmt::Assign {
+            name: source_name,
+            expr: Expr::Var(param_name.clone()),
+            op: AssignOp::Assign,
+        })
     }
 
     pub(crate) fn compile(

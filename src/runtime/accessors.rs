@@ -96,6 +96,10 @@ impl Interpreter {
         self.when_matched = v;
     }
 
+    pub(crate) fn is_role(&self, name: &str) -> bool {
+        self.roles.contains_key(name)
+    }
+
     pub(crate) fn smart_match_values(&mut self, left: &Value, right: &Value) -> bool {
         self.smart_match(left, right)
     }
@@ -171,6 +175,14 @@ impl Interpreter {
         };
         if is_multi {
             // Multi subs should resolve via the dispatcher at call time
+            Value::Routine {
+                package: self.current_package.clone(),
+                name: lookup_name.to_string(),
+            }
+        } else if self.has_proto(lookup_name)
+            || self.resolve_token_defs(lookup_name).is_some()
+            || self.has_proto_token(lookup_name)
+        {
             Value::Routine {
                 package: self.current_package.clone(),
                 name: lookup_name.to_string(),

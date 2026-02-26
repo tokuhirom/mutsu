@@ -3,7 +3,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::ast::{ParamDef, Stmt};
 use num_bigint::BigInt as NumBigInt;
-use num_traits::{ToPrimitive, Zero};
+use num_integer::Integer;
+use num_traits::{Signed, ToPrimitive, Zero};
 use std::sync::{Arc, Condvar, Mutex, Weak};
 
 mod display;
@@ -11,7 +12,23 @@ mod error;
 pub(crate) mod signature;
 mod types;
 
-pub use display::{tclc_str, wordcase_str};
+/// Get current time as seconds since UNIX epoch (returns 0.0 on WASM).
+pub(crate) fn current_time_secs_f64() -> f64 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        0.0
+    }
+}
+
+pub(crate) use display::is_internal_anon_type_name;
+pub use display::{format_complex, tclc_str, wordcase_str};
 pub use error::{RuntimeError, RuntimeErrorCode};
 // SubData is re-exported so callers can destructure Value::Sub(data)
 
@@ -74,6 +91,31 @@ pub fn make_rat(num: i64, den: i64) -> Value {
     Value::Rat(n, d)
 }
 
+pub fn make_big_rat(num: NumBigInt, den: NumBigInt) -> Value {
+    if den.is_zero() {
+        if num.is_zero() {
+            return Value::Rat(0, 0);
+        }
+        return if num.is_positive() {
+            Value::Rat(1, 0)
+        } else {
+            Value::Rat(-1, 0)
+        };
+    }
+    let g = num.gcd(&den);
+    let mut n = num / &g;
+    let mut d = den / &g;
+    if d.is_negative() {
+        n = -n;
+        d = -d;
+    }
+    if let (Some(n_i64), Some(d_i64)) = (n.to_i64(), d.to_i64()) {
+        Value::Rat(n_i64, d_i64)
+    } else {
+        Value::BigRat(n, d)
+    }
+}
+
 #[allow(private_interfaces)]
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -97,6 +139,7 @@ pub enum Value {
     Hash(Arc<HashMap<String, Value>>),
     Rat(i64, i64),
     FatRat(i64, i64),
+    BigRat(NumBigInt, NumBigInt),
     Complex(f64, f64),
     Set(Arc<HashSet<String>>),
     Bag(Arc<HashMap<String, i64>>),
@@ -124,6 +167,7 @@ pub enum Value {
         exhaustive: bool,
         repeat: Option<usize>,
         perl5: bool,
+        pos: bool,
     },
     Sub(Arc<SubData>),
     /// A weak reference to a Sub (used for &?BLOCK self-references to break cycles).
@@ -169,6 +213,12 @@ pub enum Value {
     Proxy {
         fetcher: Box<Value>,
         storer: Box<Value>,
+    },
+    /// A parametric role type, e.g. `R1[C1]` or `R1[C1, C2]`.
+    /// `base_name` is the role name, `type_args` are the type arguments.
+    ParametricRole {
+        base_name: String,
+        type_args: Vec<Value>,
     },
 }
 
@@ -408,6 +458,19 @@ impl PartialEq for SharedChannel {
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
+        let match_equals_pair_array =
+            |attrs: &Arc<HashMap<String, Value>>, arr: &Arc<Vec<Value>>| {
+                if arr.len() != 2 {
+                    return false;
+                }
+                let Some(from) = attrs.get("from") else {
+                    return false;
+                };
+                let Some(matched) = attrs.get("str") else {
+                    return false;
+                };
+                arr[0] == *from && arr[1] == *matched
+            };
         match (self, other) {
             (Value::Int(a), Value::Int(b)) => a == b,
             (Value::BigInt(a), Value::BigInt(b)) => a == b,
@@ -458,6 +521,22 @@ impl PartialEq for Value {
                 }
                 (*n as f64 / *d as f64) == *f
             }
+            (Value::BigRat(an, ad), Value::BigRat(bn, bd)) => an == bn && ad == bd,
+            (Value::BigRat(n, d), Value::Int(i)) | (Value::Int(i), Value::BigRat(n, d)) => {
+                !d.is_zero() && *n == NumBigInt::from(*i) * d
+            }
+            (Value::BigRat(n, d), Value::Rat(rn, rd))
+            | (Value::Rat(rn, rd), Value::BigRat(n, d)) => {
+                !d.is_zero()
+                    && *rd != 0
+                    && n.clone() * NumBigInt::from(*rd) == NumBigInt::from(*rn) * d
+            }
+            (Value::BigRat(n, d), Value::Num(f)) | (Value::Num(f), Value::BigRat(n, d)) => {
+                if d.is_zero() {
+                    return false;
+                }
+                (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)) == *f
+            }
             (Value::Complex(r1, i1), Value::Complex(r2, i2)) => {
                 let f_eq = |a: &f64, b: &f64| (a.is_nan() && b.is_nan()) || a == b;
                 f_eq(r1, r2) && f_eq(i1, i2)
@@ -498,14 +577,16 @@ impl PartialEq for Value {
                     exhaustive: aex,
                     repeat: ar,
                     perl5: ap5,
+                    pos: apos,
                 },
                 Value::RegexWithAdverbs {
                     pattern: bp,
                     exhaustive: bex,
                     repeat: br,
                     perl5: bp5,
+                    pos: bpos,
                 },
-            ) => ap == bp && aex == bex && ar == br && ap5 == bp5,
+            ) => ap == bp && aex == bex && ar == br && ap5 == bp5 && apos == bpos,
             (
                 Value::Routine {
                     package: ap,
@@ -528,6 +609,22 @@ impl PartialEq for Value {
                     ..
                 },
             ) => a == b && aa == ba,
+            (
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                },
+                Value::Array(items, ..),
+            ) if class_name == "Match" => match_equals_pair_array(attributes, items),
+            (
+                Value::Array(items, ..),
+                Value::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                },
+            ) if class_name == "Match" => match_equals_pair_array(attributes, items),
             (
                 Value::Junction {
                     kind: ak,
@@ -563,6 +660,16 @@ impl PartialEq for Value {
             (Value::Promise(a), Value::Promise(b)) => a == b,
             (Value::Channel(a), Value::Channel(b)) => a == b,
             (Value::Nil, Value::Nil) => true,
+            (
+                Value::Capture {
+                    positional: ap,
+                    named: an,
+                },
+                Value::Capture {
+                    positional: bp,
+                    named: bn,
+                },
+            ) => ap == bp && an == bn,
             _ => false,
         }
     }
@@ -677,10 +784,7 @@ impl Value {
 
     /// Create an Instant value from the current system time.
     pub(crate) fn make_instant_now() -> Self {
-        let secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs_f64())
-            .unwrap_or(0.0);
+        let secs = current_time_secs_f64();
         let mut attrs = HashMap::new();
         attrs.insert("value".to_string(), Value::Num(secs));
         Value::make_instance("Instant".to_string(), attrs)
@@ -694,16 +798,30 @@ impl Value {
         positional: &[String],
         named: &HashMap<String, Vec<String>>,
     ) -> Self {
+        fn make_capture_match(s: &str) -> Value {
+            let mut attrs = HashMap::new();
+            attrs.insert("str".to_string(), Value::Str(s.to_string()));
+            attrs.insert("from".to_string(), Value::Int(0));
+            attrs.insert("to".to_string(), Value::Int(s.chars().count() as i64));
+            attrs.insert("list".to_string(), Value::array(Vec::new()));
+            attrs.insert("named".to_string(), Value::hash(HashMap::new()));
+            Value::make_instance("Match".to_string(), attrs)
+        }
+
         let mut attrs = HashMap::new();
         attrs.insert("str".to_string(), Value::Str(matched));
         attrs.insert("from".to_string(), Value::Int(from));
         attrs.insert("to".to_string(), Value::Int(to));
-        let caps: Vec<Value> = positional.iter().map(|s| Value::Str(s.clone())).collect();
+        let caps: Vec<Value> = positional.iter().map(|s| make_capture_match(s)).collect();
         attrs.insert("list".to_string(), Value::array(caps));
         let mut named_caps: HashMap<String, Value> = HashMap::new();
         for (key, values) in named {
-            let vals: Vec<Value> = values.iter().cloned().map(Value::Str).collect();
-            named_caps.insert(key.clone(), Value::array(vals));
+            let vals: Vec<Value> = values.iter().map(|s| make_capture_match(s)).collect();
+            if vals.len() == 1 {
+                named_caps.insert(key.clone(), vals[0].clone());
+            } else {
+                named_caps.insert(key.clone(), Value::array(vals));
+            }
         }
         attrs.insert("named".to_string(), Value::hash(named_caps));
         Value::make_instance("Match".to_string(), attrs)
@@ -741,6 +859,7 @@ impl Value {
                 | Value::Num(_)
                 | Value::Rat(_, _)
                 | Value::FatRat(_, _)
+                | Value::BigRat(_, _)
         )
     }
 
@@ -767,6 +886,17 @@ impl Value {
                 } else if *n == 0 {
                     f64::NAN
                 } else if *n > 0 {
+                    f64::INFINITY
+                } else {
+                    f64::NEG_INFINITY
+                }
+            }
+            Value::BigRat(n, d) => {
+                if !d.is_zero() {
+                    n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)
+                } else if n.is_zero() {
+                    f64::NAN
+                } else if n.is_positive() {
                     f64::INFINITY
                 } else {
                     f64::NEG_INFINITY
@@ -800,6 +930,13 @@ impl Value {
             Value::Rat(n, d) => {
                 if *d != 0 {
                     NumBigInt::from(n / d)
+                } else {
+                    NumBigInt::from(0)
+                }
+            }
+            Value::BigRat(n, d) => {
+                if !d.is_zero() {
+                    n / d
                 } else {
                     NumBigInt::from(0)
                 }

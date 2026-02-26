@@ -1,6 +1,8 @@
 use std::env;
 use std::fs;
-use std::io::{self, IsTerminal, Read};
+#[cfg(feature = "native")]
+use std::io::IsTerminal;
+use std::io::{self, Read};
 
 use mutsu::{Interpreter, RuntimeError};
 
@@ -90,9 +92,15 @@ fn main() {
         lib_paths = env_paths;
     }
 
+    #[cfg(feature = "native")]
     if repl_flag || (filtered_args.is_empty() && io::stdin().is_terminal()) {
         mutsu::repl::run_repl();
         return;
+    }
+    #[cfg(not(feature = "native"))]
+    if repl_flag {
+        eprintln!("REPL is not available in this build");
+        std::process::exit(1);
     }
 
     let (input, program_name) = if !filtered_args.is_empty() && filtered_args[0] == "-e" {
@@ -144,13 +152,15 @@ fn main() {
     }
 
     let mut interpreter = Interpreter::new();
+    interpreter.set_immediate_stdout(true);
     for path in lib_paths {
         interpreter.add_lib_path(path);
     }
     interpreter.set_program_path(&program_name);
     match interpreter.run(&input) {
-        Ok(output) => {
-            print!("{}", output);
+        Ok(_output) => {
+            // Output is written directly to stdout during execution.
+            // Subtest-indented output is also flushed here.
             let code = interpreter.exit_code();
             if code != 0 {
                 std::process::exit(code as i32);
@@ -158,12 +168,6 @@ fn main() {
         }
         Err(err) => {
             print_error("Runtime error", &err);
-            let output_buf = interpreter.output();
-            if !output_buf.is_empty() {
-                eprintln!("--- buffered TAP output ---");
-                print!("{}", output_buf);
-                eprintln!("--- end buffered TAP output ---");
-            }
             let code = interpreter.exit_code();
             std::process::exit(if code != 0 { code as i32 } else { 1 });
         }

@@ -152,6 +152,14 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
             }
         };
         let (r, _) = ws(r)?;
+        // Do not consume full loop headers as statement modifiers.
+        // This preserves parsing of:
+        //   { ... }
+        //   for @values -> $v { ... }
+        // as two statements, rather than block + postfix modifier + lambda.
+        if r.starts_with("->") || r.starts_with('{') {
+            return Ok((rest, stmt));
+        }
         let (r, _) = opt_char(r, ';');
         return Ok((
             r,

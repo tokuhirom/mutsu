@@ -30,7 +30,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn resolve_token_defs(&self, name: &str) -> Option<Vec<FunctionDef>> {
+    pub(crate) fn resolve_token_defs(&self, name: &str) -> Option<Vec<FunctionDef>> {
         if name.contains("::") {
             let mut defs = Vec::new();
             if let Some(exact) = self.token_defs.get(name) {
@@ -72,7 +72,7 @@ impl Interpreter {
         if defs.is_empty() { None } else { Some(defs) }
     }
 
-    pub(super) fn has_proto_token(&self, name: &str) -> bool {
+    pub(crate) fn has_proto_token(&self, name: &str) -> bool {
         if name.contains("::") {
             return self.proto_tokens.contains(name);
         }
@@ -115,9 +115,54 @@ impl Interpreter {
                         return Some((cn.clone(), def));
                     }
                 }
+                // Method name is present on this class, but no candidate matched.
+                // Do not continue to parent classes; this preserves dispatch
+                // consistency for hidden/interface cases.
+                return None;
             }
         }
         None
+    }
+
+    pub(super) fn resolve_all_methods_with_owner(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        arg_values: &[Value],
+    ) -> Vec<(String, MethodDef)> {
+        let mro = self.class_mro(class_name);
+        let mut matches = Vec::new();
+        for cn in mro {
+            if let Some(overloads) = self
+                .classes
+                .get(&cn)
+                .and_then(|c| c.methods.get(method_name))
+                .cloned()
+            {
+                for def in overloads {
+                    if def.is_private {
+                        continue;
+                    }
+                    if self.method_args_match(arg_values, &def.param_defs) {
+                        matches.push((cn.clone(), def));
+                    }
+                }
+            }
+        }
+        matches
+    }
+
+    pub(super) fn should_skip_defer_method_candidate(
+        &self,
+        receiver_class: &str,
+        candidate_owner: &str,
+    ) -> bool {
+        if receiver_class != candidate_owner && self.hidden_classes.contains(candidate_owner) {
+            return true;
+        }
+        self.hidden_defer_parents
+            .get(receiver_class)
+            .is_some_and(|hidden| hidden.contains(candidate_owner))
     }
 
     pub(super) fn resolve_private_method_with_owner(
@@ -265,9 +310,11 @@ impl Interpreter {
     }
 
     pub(super) fn make_supply_instance(&self) -> Value {
+        let sid = super::native_methods::next_supply_id();
         let mut attrs = HashMap::new();
         attrs.insert("values".to_string(), Value::array(Vec::new()));
         attrs.insert("taps".to_string(), Value::array(Vec::new()));
+        attrs.insert("supply_id".to_string(), Value::Int(sid as i64));
         Value::make_instance("Supply".to_string(), attrs)
     }
 
@@ -289,21 +336,44 @@ impl Interpreter {
             return self.call_function(name, args);
         }
         if let Value::Sub(data) = func {
-            let mut call_args = args.clone();
+            let (sanitized_args, callsite_line) = self.sanitize_call_args(&args);
+            self.test_pending_callsite_line = callsite_line;
+            let mut call_args = sanitized_args.clone();
             if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
-                let mut positional = data.assumed_positional.clone();
+                let mut positional = Vec::new();
                 let mut named = data.assumed_named.clone();
-                for arg in &args {
+                let mut incoming_positional = Vec::new();
+                for arg in &sanitized_args {
                     if let Value::Pair(key, boxed) = arg {
                         named.insert(key.clone(), *boxed.clone());
                     } else {
-                        positional.push(arg.clone());
+                        incoming_positional.push(arg.clone());
                     }
                 }
+                // Fill bare `*` primers from incoming positional args in order.
+                // Remaining positional args are appended after all fixed primers.
+                let mut incoming_idx = 0usize;
+                for assumed in &data.assumed_positional {
+                    let is_placeholder = matches!(assumed, Value::Num(f) if f.is_infinite())
+                        || matches!(assumed, Value::Rat(_, 0));
+                    if is_placeholder {
+                        if incoming_idx < incoming_positional.len() {
+                            positional.push(incoming_positional[incoming_idx].clone());
+                            incoming_idx += 1;
+                        }
+                    } else {
+                        positional.push(assumed.clone());
+                    }
+                }
+                positional.extend(incoming_positional.into_iter().skip(incoming_idx));
                 call_args = positional;
                 for (key, value) in named {
                     call_args.push(Value::Pair(key, Box::new(value)));
                 }
+            }
+            // Routine wrapper from .assuming() on a multi-dispatch sub
+            if let Some(Value::Str(routine_name)) = data.env.get("__mutsu_routine_name").cloned() {
+                return self.call_function(&routine_name, call_args);
             }
             if let (Some(left), Some(right)) = (
                 data.env.get("__mutsu_compose_left").cloned(),
@@ -340,7 +410,7 @@ impl Interpreter {
                 self.bind_function_args_values(&data.param_defs, &data.params, &call_args)?;
             new_env = self.env.clone();
             if data.params.is_empty() {
-                for arg in &args {
+                for arg in &sanitized_args {
                     if let Value::Pair(name, value) = arg {
                         new_env.insert(format!(":{}", name), *value.clone());
                     }
@@ -348,9 +418,10 @@ impl Interpreter {
             }
             // Bind implicit $_ for bare blocks called with arguments
             if data.params.is_empty()
-                && !args.is_empty()
-                && let Some(first_positional) =
-                    args.iter().find(|v| !matches!(v, Value::Pair(_, _)))
+                && !sanitized_args.is_empty()
+                && let Some(first_positional) = sanitized_args
+                    .iter()
+                    .find(|v| !matches!(v, Value::Pair(_, _)))
             {
                 new_env.insert("_".to_string(), first_positional.clone());
             }
@@ -487,7 +558,7 @@ impl Interpreter {
         }
         let value = interp.env().get("_").cloned().unwrap_or(Value::Nil);
         *self = interp;
-        result.map(|_| value)
+        result.map(|_last_value| value)
     }
 
     pub(super) fn eval_map_over_items(
@@ -820,5 +891,36 @@ impl Interpreter {
             return Ok(Value::array(result));
         }
         Ok(Value::array(list_items))
+    }
+
+    pub(super) fn find_first_match_over_items(
+        &mut self,
+        func: Option<Value>,
+        list_items: &[Value],
+        from_end: bool,
+    ) -> Result<Option<(usize, Value)>, RuntimeError> {
+        if list_items.is_empty() {
+            return Ok(None);
+        }
+        let matcher = func;
+        let len = list_items.len();
+        for idx in 0..len {
+            let actual_idx = if from_end { len - 1 - idx } else { idx };
+            let item = list_items[actual_idx].clone();
+            let matched = if let Some(pattern) = &matcher {
+                if matches!(pattern, Value::Sub(_)) {
+                    self.call_sub_value(pattern.clone(), vec![item.clone()], true)?
+                        .truthy()
+                } else {
+                    self.smart_match(&item, pattern)
+                }
+            } else {
+                true
+            };
+            if matched {
+                return Ok(Some((actual_idx, item)));
+            }
+        }
+        Ok(None)
     }
 }

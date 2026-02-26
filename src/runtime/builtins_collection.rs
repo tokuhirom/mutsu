@@ -1,6 +1,25 @@
 use super::*;
 use std::collections::HashMap as StdHashMap;
 
+/// Format the result of `first()` according to adverb flags (:k, :kv, :p).
+pub(super) fn format_first_result(
+    idx: usize,
+    value: Value,
+    has_k: bool,
+    has_kv: bool,
+    has_p: bool,
+) -> Value {
+    if has_k {
+        Value::Int(idx as i64)
+    } else if has_kv {
+        Value::array(vec![Value::Int(idx as i64), value])
+    } else if has_p {
+        Value::ValuePair(Box::new(Value::Int(idx as i64)), Box::new(value))
+    } else {
+        value
+    }
+}
+
 impl Interpreter {
     pub(super) fn builtin_elems(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.len() != 1 {
@@ -117,28 +136,29 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_keys(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let val = args.first().cloned();
-        Ok(match val {
-            Some(Value::Hash(items)) => {
-                Value::array(items.keys().map(|k| Value::Str(k.clone())).collect())
-            }
-            Some(Value::Pair(key, _)) => Value::array(vec![Value::Str(key)]),
-            Some(Value::ValuePair(key, _)) => Value::array(vec![*key]),
-            Some(Value::Nil) | None => Value::array(Vec::new()),
-            _ => Value::array(Vec::new()),
-        })
+        self.builtin_unary_collection_method(args, "keys")
     }
 
     pub(super) fn builtin_values(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let val = args.first().cloned();
-        Ok(match val {
-            Some(Value::Hash(items)) => Value::array(items.values().cloned().collect()),
-            Some(Value::Pair(_, value)) | Some(Value::ValuePair(_, value)) => {
-                Value::array(vec![*value])
-            }
-            Some(Value::Nil) | None => Value::array(Vec::new()),
-            _ => Value::array(Vec::new()),
-        })
+        self.builtin_unary_collection_method(args, "values")
+    }
+
+    pub(super) fn builtin_kv(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.builtin_unary_collection_method(args, "kv")
+    }
+
+    pub(super) fn builtin_pairs(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.builtin_unary_collection_method(args, "pairs")
+    }
+
+    fn builtin_unary_collection_method(
+        &self,
+        args: &[Value],
+        method: &str,
+    ) -> Result<Value, RuntimeError> {
+        let target = args.first().cloned().unwrap_or(Value::Nil);
+        crate::builtins::native_method_0arg(&target, method)
+            .unwrap_or_else(|| Ok(Value::array(Vec::new())))
     }
 
     pub(super) fn builtin_abs(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -199,18 +219,26 @@ impl Interpreter {
             .first()
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        let list = args.get(1).cloned();
-        Ok(match list {
-            Some(Value::Array(items, ..)) => {
-                let joined = items
-                    .iter()
-                    .map(|v| v.to_string_value())
-                    .collect::<Vec<_>>()
-                    .join(&sep);
-                Value::Str(joined)
-            }
-            _ => Value::Str(String::new()),
-        })
+        if args.len() == 2
+            && let Some(Value::Array(items, ..)) = args.get(1)
+        {
+            let joined = items
+                .iter()
+                .map(|v| v.to_string_value())
+                .collect::<Vec<_>>()
+                .join(&sep);
+            return Ok(Value::Str(joined));
+        }
+        // Multi-arg: join(sep, item1, item2, ...)
+        if args.len() > 1 {
+            let joined = args[1..]
+                .iter()
+                .map(|v| v.to_string_value())
+                .collect::<Vec<_>>()
+                .join(&sep);
+            return Ok(Value::Str(joined));
+        }
+        Ok(Value::Str(String::new()))
     }
 
     pub(super) fn builtin_list(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -226,7 +254,7 @@ impl Interpreter {
         for arg in args {
             Self::flat_into(arg, &mut result);
         }
-        Ok(Value::array(result))
+        Ok(Value::Seq(std::sync::Arc::new(result)))
     }
 
     pub(crate) fn flat_into(val: &Value, out: &mut Vec<Value>) {
@@ -281,10 +309,14 @@ impl Interpreter {
                 let comparator = first.clone();
                 let mut items: Vec<Value> = Vec::new();
                 for arg in args.iter().skip(1) {
-                    match arg {
-                        Value::Array(elems, ..) => items.extend(elems.iter().cloned()),
-                        Value::Seq(elems) => items.extend(elems.iter().cloned()),
-                        other => items.push(other.clone()),
+                    if crate::runtime::utils::is_shaped_array(arg) {
+                        items.extend(crate::runtime::utils::shaped_array_leaves(arg));
+                    } else {
+                        match arg {
+                            Value::Array(elems, ..) => items.extend(elems.iter().cloned()),
+                            Value::Seq(elems) => items.extend(elems.iter().cloned()),
+                            other => items.push(other.clone()),
+                        }
                     }
                 }
                 // Delegate to dispatch_sort which handles all callable types
@@ -293,6 +325,11 @@ impl Interpreter {
         }
         let val = args.first().cloned();
         Ok(match val {
+            Some(ref v) if crate::runtime::utils::is_shaped_array(v) => {
+                let mut leaves = crate::runtime::utils::shaped_array_leaves(v);
+                leaves.sort_by_key(|a| a.to_string_value());
+                Value::array(leaves)
+            }
             Some(Value::Array(mut items, ..)) => {
                 Arc::make_mut(&mut items).sort_by_key(|a| a.to_string_value());
                 Value::Array(items, false)
@@ -305,16 +342,20 @@ impl Interpreter {
         let func = args.first().cloned();
         let mut list_items = Vec::new();
         for arg in args.iter().skip(1) {
-            match arg {
-                Value::Array(items, ..) => list_items.extend(items.iter().cloned()),
-                Value::Range(a, b) => list_items.extend((*a..=*b).map(Value::Int)),
-                Value::RangeExcl(a, b) => list_items.extend((*a..*b).map(Value::Int)),
-                Value::RangeExclStart(a, b) => list_items.extend((*a + 1..=*b).map(Value::Int)),
-                Value::RangeExclBoth(a, b) => list_items.extend((*a + 1..*b).map(Value::Int)),
-                v if v.is_range() => {
-                    list_items.extend(crate::runtime::utils::value_to_list(v));
+            if crate::runtime::utils::is_shaped_array(arg) {
+                list_items.extend(crate::runtime::utils::shaped_array_leaves(arg));
+            } else {
+                match arg {
+                    Value::Array(items, ..) => list_items.extend(items.iter().cloned()),
+                    Value::Range(a, b) => list_items.extend((*a..=*b).map(Value::Int)),
+                    Value::RangeExcl(a, b) => list_items.extend((*a..*b).map(Value::Int)),
+                    Value::RangeExclStart(a, b) => list_items.extend((*a + 1..=*b).map(Value::Int)),
+                    Value::RangeExclBoth(a, b) => list_items.extend((*a + 1..*b).map(Value::Int)),
+                    v if v.is_range() => {
+                        list_items.extend(crate::runtime::utils::value_to_list(v));
+                    }
+                    other => list_items.push(other.clone()),
                 }
-                other => list_items.push(other.clone()),
             }
         }
         self.eval_map_over_items(func, list_items)
@@ -335,6 +376,75 @@ impl Interpreter {
             }
         }
         self.eval_grep_over_items(func, list_items)
+    }
+
+    pub(super) fn builtin_first(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // Separate named args (Pairs) from positional args
+        let mut positional = Vec::new();
+        let mut has_v = false;
+        let mut has_neg_v = false;
+        let mut has_end = false;
+        let mut has_k = false;
+        let mut has_kv = false;
+        let mut has_p = false;
+        for arg in args {
+            match arg {
+                Value::Pair(key, value) if key == "v" => {
+                    if value.truthy() {
+                        has_v = true;
+                    } else {
+                        has_neg_v = true;
+                    }
+                }
+                Value::Pair(key, value) if key == "end" => {
+                    if value.truthy() {
+                        has_end = true;
+                    }
+                }
+                Value::Pair(key, value) if key == "k" => {
+                    has_k = value.truthy();
+                }
+                Value::Pair(key, value) if key == "kv" => {
+                    has_kv = value.truthy();
+                }
+                Value::Pair(key, value) if key == "p" => {
+                    has_p = value.truthy();
+                }
+                _ => positional.push(arg.clone()),
+            }
+        }
+        if has_neg_v {
+            return Err(RuntimeError::new(
+                "Throwing `:!v` on first is not supported",
+            ));
+        }
+        let _ = has_v; // :v is the default behavior
+        // Check for Bool matcher (X::Match::Bool)
+        if matches!(positional.first(), Some(Value::Bool(_))) {
+            let mut err = RuntimeError::new("Cannot use Bool as a matcher");
+            err.exception = Some(Box::new(Value::make_instance(
+                "X::Match::Bool".to_string(),
+                std::collections::HashMap::new(),
+            )));
+            return Err(err);
+        }
+        let func = positional.first().cloned();
+        let mut list_items = Vec::new();
+        for arg in positional.iter().skip(1) {
+            match arg {
+                Value::Array(items, ..) => list_items.extend(items.iter().cloned()),
+                Value::Range(a, b) => list_items.extend((*a..=*b).map(Value::Int)),
+                Value::RangeExcl(a, b) => list_items.extend((*a..*b).map(Value::Int)),
+                v if v.is_range() => {
+                    list_items.extend(crate::runtime::utils::value_to_list(v));
+                }
+                other => list_items.push(other.clone()),
+            }
+        }
+        if let Some((idx, value)) = self.find_first_match_over_items(func, &list_items, has_end)? {
+            return Ok(format_first_result(idx, value, has_k, has_kv, has_p));
+        }
+        Ok(Value::Nil)
     }
 
     pub(super) fn builtin_classify(

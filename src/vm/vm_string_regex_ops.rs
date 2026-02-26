@@ -1,53 +1,49 @@
 use super::*;
 
-/// Expand a tr/// character spec, supporting `a..z` ranges.
-fn expand_tr_spec(spec: &str) -> Vec<char> {
-    let chars: Vec<char> = spec.chars().collect();
-    let mut result = Vec::new();
-    let mut i = 0;
-    while i < chars.len() {
-        if i + 2 < chars.len() && chars[i + 1] == '.' && i + 3 <= chars.len() {
-            // Check for `a..z` pattern (two dots)
-            if i + 3 < chars.len() && chars[i + 2] == '.' {
-                // `a..z` range
-                let start = chars[i] as u32;
-                let end = chars[i + 3] as u32;
-                if start <= end {
-                    for c in start..=end {
-                        if let Some(ch) = char::from_u32(c) {
-                            result.push(ch);
-                        }
-                    }
-                }
-                i += 4;
-                continue;
+/// Apply samemark on a per-word basis: split both source and target by whitespace,
+/// apply samemark to each word pair, then reassemble with the replacement's whitespace.
+fn samemark_per_word(target: &str, source: &str) -> String {
+    let src_words: Vec<&str> = source.split_whitespace().collect();
+    if src_words.is_empty() {
+        return target.to_string();
+    }
+
+    // Split target into words and whitespace segments
+    let mut result = String::new();
+    let mut word_idx = 0;
+    let mut chars = target.chars().peekable();
+    while chars.peek().is_some() {
+        // Collect leading whitespace
+        let mut ws = String::new();
+        while let Some(&ch) = chars.peek() {
+            if ch.is_whitespace() {
+                ws.push(ch);
+                chars.next();
+            } else {
+                break;
             }
         }
-        result.push(chars[i]);
-        i += 1;
+        result.push_str(&ws);
+        // Collect word
+        let mut word = String::new();
+        while let Some(&ch) = chars.peek() {
+            if ch.is_whitespace() {
+                break;
+            }
+            word.push(ch);
+            chars.next();
+        }
+        if !word.is_empty() {
+            let src_word = if word_idx < src_words.len() {
+                src_words[word_idx]
+            } else {
+                src_words.last().unwrap()
+            };
+            result.push_str(&crate::builtins::samemark_string(&word, src_word));
+            word_idx += 1;
+        }
     }
     result
-}
-
-/// Perform transliteration: replace each char in `from` with corresponding char in `to`.
-fn transliterate_str(text: &str, from_spec: &str, to_spec: &str) -> String {
-    let from_chars = expand_tr_spec(from_spec);
-    let to_chars = expand_tr_spec(to_spec);
-    text.chars()
-        .map(|c| {
-            if let Some(pos) = from_chars.iter().position(|&fc| fc == c) {
-                if pos < to_chars.len() {
-                    to_chars[pos]
-                } else if !to_chars.is_empty() {
-                    *to_chars.last().unwrap()
-                } else {
-                    c
-                }
-            } else {
-                c
-            }
-        })
-        .collect()
 }
 
 impl VM {
@@ -56,6 +52,7 @@ impl VM {
         code: &CompiledCode,
         pattern_idx: u32,
         replacement_idx: u32,
+        samemark: bool,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
         let replacement = Self::const_str(code, replacement_idx).to_string();
@@ -69,17 +66,29 @@ impl VM {
         if let Some((start, end)) = self.interpreter.regex_find_first_bridge(&pattern, &text) {
             let start_b = runtime::char_idx_to_byte(&text, start);
             let end_b = runtime::char_idx_to_byte(&text, end);
+            let matched_text = &text[start_b..end_b];
+            let replacement = if samemark {
+                // Use per-word samemark when both source and replacement contain whitespace
+                if matched_text.contains(char::is_whitespace)
+                    && replacement.contains(char::is_whitespace)
+                {
+                    samemark_per_word(&replacement, matched_text)
+                } else {
+                    crate::builtins::samemark_string(&replacement, matched_text)
+                }
+            } else {
+                replacement
+            };
             let mut out = String::new();
             out.push_str(&text[..start_b]);
             out.push_str(&replacement);
             out.push_str(&text[end_b..]);
             let result = Value::Str(out);
-            self.interpreter
-                .env_mut()
-                .insert("_".to_string(), result.clone());
-            self.stack.push(result);
+            self.interpreter.env_mut().insert("_".to_string(), result);
+            // Push Bool::True so `$x ~~ s///` returns True on match
+            self.stack.push(Value::Bool(true));
         } else {
-            self.stack.push(Value::Str(text));
+            self.stack.push(Value::Nil);
         }
         Ok(())
     }
@@ -89,6 +98,7 @@ impl VM {
         code: &CompiledCode,
         pattern_idx: u32,
         replacement_idx: u32,
+        samemark: bool,
     ) -> Result<(), RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
         let replacement = Self::const_str(code, replacement_idx).to_string();
@@ -102,6 +112,12 @@ impl VM {
         if let Some((start, end)) = self.interpreter.regex_find_first_bridge(&pattern, &text) {
             let start_b = runtime::char_idx_to_byte(&text, start);
             let end_b = runtime::char_idx_to_byte(&text, end);
+            let matched_text = &text[start_b..end_b];
+            let replacement = if samemark {
+                crate::builtins::samemark_string(&replacement, matched_text)
+            } else {
+                replacement
+            };
             let mut out = String::new();
             out.push_str(&text[..start_b]);
             out.push_str(&replacement);
@@ -118,7 +134,10 @@ impl VM {
         code: &CompiledCode,
         from_idx: u32,
         to_idx: u32,
-    ) {
+        delete: bool,
+        complement: bool,
+        squash: bool,
+    ) -> Result<(), RuntimeError> {
         let from = Self::const_str(code, from_idx).to_string();
         let to = Self::const_str(code, to_idx).to_string();
         let target = self
@@ -127,12 +146,26 @@ impl VM {
             .get("_")
             .cloned()
             .unwrap_or(Value::Nil);
-        let text = target.to_string_value();
-        let result = transliterate_str(&text, &from, &to);
-        self.interpreter
-            .env_mut()
-            .insert("_".to_string(), Value::Str(result.clone()));
-        self.stack.push(Value::Str(result));
+
+        let mut args = vec![Value::Pair(from, Box::new(Value::Str(to)))];
+        if delete {
+            args.push(Value::Pair("d".to_string(), Box::new(Value::Bool(true))));
+        }
+        if complement {
+            args.push(Value::Pair("c".to_string(), Box::new(Value::Bool(true))));
+        }
+        if squash {
+            args.push(Value::Pair("s".to_string(), Box::new(Value::Bool(true))));
+        }
+
+        let result = self.interpreter.dispatch_trans(target, &args)?;
+        if self.in_smartmatch_rhs {
+            self.interpreter
+                .env_mut()
+                .insert("_".to_string(), result.clone());
+        }
+        self.stack.push(result);
+        Ok(())
     }
 
     pub(super) fn exec_hyper_op(
@@ -261,6 +294,10 @@ impl VM {
                     }
                 }
                 Value::array(results)
+            }
+            "!" => {
+                let inner = self.eval_reduction_operator_values(&op, &left, &right)?;
+                Value::Bool(!inner.truthy())
             }
             _ => {
                 return Err(RuntimeError::new(format!(

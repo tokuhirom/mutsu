@@ -4,7 +4,7 @@ use super::super::helpers::{
 use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 use super::super::primary::{colonpair_expr, parse_block_body, parse_call_arg_list, primary};
 
-use crate::ast::Expr;
+use crate::ast::{Expr, HyperSliceAdverb};
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
@@ -182,6 +182,11 @@ fn is_postfix_operator_boundary(rest: &str) -> bool {
 }
 
 fn parse_custom_postfix_operator(input: &str) -> Option<(String, usize)> {
+    // Don't consume characters that are closing delimiters of circumfix operators
+    if crate::parser::stmt::simple::is_circumfix_close_delimiter(input) {
+        return None;
+    }
+
     if input.starts_with('!') {
         return Some(("!".to_string(), '!'.len_utf8()));
     }
@@ -332,6 +337,7 @@ pub(super) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         && (c == b'@'
             || c == b'%'
             || c == b'$'
+            || c == b'.'
             || c == b'('
             || c == b'['
             || c.is_ascii_alphabetic()
@@ -360,7 +366,7 @@ fn postfix_expr_tight(input: &str) -> PResult<'_, Expr> {
 /// Continue applying postfix operations (including whitespace-dotty) to an
 /// already-parsed expression.  Used after prefix operators like `^` to allow
 /// `^10 .method` to call `.method` on the range result.
-fn postfix_expr_continue(input: &str, expr: Expr) -> PResult<'_, Expr> {
+pub(in crate::parser) fn postfix_expr_continue(input: &str, expr: Expr) -> PResult<'_, Expr> {
     postfix_expr_loop(input, expr, true)
 }
 
@@ -827,6 +833,59 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             continue;
         }
 
+        // Hash hyperslice: %hash{**}:adverb
+        if rest.starts_with("{**}")
+            && matches!(&expr, Expr::HashVar(_) | Expr::Var(_) | Expr::Index { .. })
+        {
+            let r = &rest[4..];
+            let (r_adv, _) = ws(r)?;
+            // Parse required adverb
+            let (adverb, r) = if r_adv.starts_with(":deepkv")
+                && !is_ident_char(r_adv.as_bytes().get(7).copied())
+            {
+                (HyperSliceAdverb::DeepKv, &r_adv[7..])
+            } else if r_adv.starts_with(":deepk")
+                && !is_ident_char(r_adv.as_bytes().get(6).copied())
+            {
+                (HyperSliceAdverb::DeepK, &r_adv[6..])
+            } else if r_adv.starts_with(":tree") && !is_ident_char(r_adv.as_bytes().get(5).copied())
+            {
+                (HyperSliceAdverb::Tree, &r_adv[5..])
+            } else if r_adv.starts_with(":kv") && !is_ident_char(r_adv.as_bytes().get(3).copied()) {
+                (HyperSliceAdverb::Kv, &r_adv[3..])
+            } else if r_adv.starts_with(":k") && !is_ident_char(r_adv.as_bytes().get(2).copied()) {
+                (HyperSliceAdverb::K, &r_adv[2..])
+            } else if r_adv.starts_with(":v") && !is_ident_char(r_adv.as_bytes().get(2).copied()) {
+                (HyperSliceAdverb::V, &r_adv[2..])
+            } else {
+                // Default to :kv if no adverb
+                (HyperSliceAdverb::Kv, r)
+            };
+            expr = Expr::HyperSlice {
+                target: Box::new(expr),
+                adverb,
+            };
+            rest = r;
+            continue;
+        }
+
+        // Hash hyperindex: %hash{||@keys}
+        if rest.starts_with("{||")
+            && matches!(&expr, Expr::HashVar(_) | Expr::Var(_) | Expr::Index { .. })
+        {
+            let r = &rest[3..];
+            let (r, _) = ws(r)?;
+            let (r, keys_expr) = expression(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, '}')?;
+            expr = Expr::HyperIndex {
+                target: Box::new(expr),
+                keys: Box::new(keys_expr),
+            };
+            rest = r;
+            continue;
+        }
+
         // Hash indexing with braces: %hash{"key"}, %hash{$var}, @a[0]{"key"}, etc.
         if rest.starts_with('{')
             && matches!(
@@ -956,6 +1015,24 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 };
                 continue;
             }
+            // Hyper indexing: expr»[idx] (or expr>>[idx]) => expr».AT-POS(idx)
+            if let Some(r) = after_hyper.strip_prefix('[') {
+                let (r, _) = ws(r)?;
+                if let Some(after) = r.strip_prefix(']') {
+                    rest = after;
+                    continue;
+                }
+                let (r, index) = parse_bracket_indices(r)?;
+                let (r, _) = ws(r)?;
+                let (r, _) = parse_char(r, ']')?;
+                expr = Expr::HyperMethodCall {
+                    target: Box::new(expr),
+                    name: "AT-POS".to_string(),
+                    args: vec![index],
+                };
+                rest = r;
+                continue;
+            }
             // Check for ».method or >>.method
             let r = after_hyper.strip_prefix('.').unwrap_or(after_hyper);
             if let Ok((r, name)) =
@@ -982,6 +1059,25 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     target: Box::new(expr),
                     name,
                     args: Vec::new(),
+                };
+                rest = r;
+                continue;
+            }
+        }
+
+        // User-declared postcircumfix operators: expr⌊arg⌋ → postcircumfix:<⌊ ⌋>(expr, arg)
+        if let Some((name, open_len, close_delim)) =
+            crate::parser::stmt::simple::match_user_declared_postcircumfix_op(rest)
+        {
+            let r = &rest[open_len..];
+            let (r, _) = ws(r)?;
+            let (r, arg) = expression(r)?;
+            let (r, _) = ws(r)?;
+            if r.starts_with(close_delim.as_str()) {
+                let r = &r[close_delim.len()..];
+                expr = Expr::Call {
+                    name,
+                    args: vec![expr, arg],
                 };
                 rest = r;
                 continue;
@@ -1033,7 +1129,20 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             }
         }
 
-        // Postfix i (imaginary number): (expr)i → Complex(0, expr)
+        // Postfix i (imaginary number): (expr)i or (expr)\i → Complex(0, expr)
+        // The \i form uses unspace to separate the postfix from the preceding token
+        // (e.g. Inf\i avoids being parsed as the identifier "Infi").
+        if rest.starts_with("\\i") && !is_ident_char(rest.as_bytes().get(2).copied()) {
+            rest = &rest[2..];
+            expr = Expr::MethodCall {
+                target: Box::new(expr),
+                name: "i".to_string(),
+                args: vec![],
+                modifier: None,
+                quoted: false,
+            };
+            continue;
+        }
         if rest.starts_with('i') && !is_ident_char(rest.as_bytes().get(1).copied()) {
             rest = &rest[1..];
             expr = Expr::MethodCall {

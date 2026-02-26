@@ -3,8 +3,10 @@ use super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
 
 use crate::ast::{Expr, Stmt};
+use crate::token_kind::TokenKind;
 use crate::value::Value;
 
+use super::sub::parse_type_constraint_expr;
 use super::{
     class::{module_decl, package_decl, proto_decl, role_decl},
     ident, keyword, parse_assign_expr_or_comma, parse_statement_modifier, qualified_ident,
@@ -30,8 +32,65 @@ fn typed_default_expr(type_name: &str) -> Expr {
     }
 }
 
+fn is_supported_variable_trait(trait_name: &str) -> bool {
+    if matches!(trait_name, "default" | "export") {
+        return true;
+    }
+    // Type-ish variable traits are accepted in roast (e.g. `is List`, `is Map`).
+    trait_name
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_uppercase())
+}
+
 fn parse_sigilless_decl_name(input: &str) -> PResult<'_, String> {
     super::parse_sub_name_pub(input)
+}
+
+fn parse_array_shape_suffix(input: &str) -> PResult<'_, Vec<Expr>> {
+    let (rest, _) = parse_char(input, '[')?;
+    let (rest, _) = ws(rest)?;
+    let mut dims = Vec::new();
+    let mut rest = rest;
+
+    while !rest.starts_with(']') {
+        let (r, dim) = expression(rest)?;
+        dims.push(dim);
+        let (r, _) = ws(r)?;
+        if r.starts_with(',') || (r.starts_with(';') && !r.starts_with(";;")) {
+            let sep = if r.starts_with(',') { ',' } else { ';' };
+            let (r, _) = parse_char(r, sep)?;
+            let (r, _) = ws(r)?;
+            rest = r;
+            continue;
+        }
+        rest = r;
+    }
+
+    let (rest, _) = parse_char(rest, ']')?;
+    Ok((rest, dims))
+}
+
+fn shaped_array_new_expr(dims: Vec<Expr>) -> Expr {
+    let shape_value = if dims.len() == 1 {
+        dims.into_iter()
+            .next()
+            .unwrap_or(Expr::Literal(Value::Int(0)))
+    } else {
+        Expr::ArrayLiteral(dims)
+    };
+
+    Expr::MethodCall {
+        target: Box::new(Expr::BareWord("Array".to_string())),
+        name: "new".to_string(),
+        args: vec![Expr::Binary {
+            left: Box::new(Expr::Literal(Value::Str("shape".to_string()))),
+            op: TokenKind::FatArrow,
+            right: Box::new(shape_value),
+        }],
+        modifier: None,
+        quoted: false,
+    }
 }
 
 fn register_term_symbol_from_decl_name(name: &str) {
@@ -213,6 +272,10 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         return class_decl_body(r);
     }
+    // my grammar Name { ... }
+    if keyword("grammar", rest).is_some() {
+        return super::class::grammar_decl(rest);
+    }
     // my role Name[...] { ... }
     if keyword("role", rest).is_some() {
         return role_decl(rest);
@@ -238,9 +301,12 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         }
         return Ok((r, stmt));
     }
-    // my regex Name { ... }
+    // my regex/token/rule Name { ... }
     // Reuse token/regex/rule declaration parsing so `<Name>` works in regexes.
-    if keyword("regex", rest).is_some() {
+    if keyword("regex", rest).is_some()
+        || keyword("token", rest).is_some()
+        || keyword("rule", rest).is_some()
+    {
         let (rest, stmt) = super::class::token_decl(rest)?;
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -300,30 +366,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     let (rest, type_constraint) = {
         // Try to parse a type name followed by a sigil or \
         let saved = rest;
-        if let Ok((r, tc)) = ident(rest) {
-            // Preserve type smileys :D, :U, :_ as part of the type constraint.
-            let (r, tc) = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
-                let smiley = &r[..2];
-                (&r[2..], format!("{}{}", tc, smiley))
-            } else {
-                (r, tc)
-            };
-            // Check for coercion type syntax: Type(FromType)
-            let (r, tc) = if let Some(inner) = r.strip_prefix('(') {
-                // Parse the coercion type: e.g. Str(Match)
-                if let Ok((r2, _from_type)) = ident(inner) {
-                    if let Some(after) = r2.strip_prefix(')') {
-                        // Successfully parsed Type(FromType) — use the target type
-                        (after, tc)
-                    } else {
-                        (r, tc)
-                    }
-                } else {
-                    (r, tc)
-                }
-            } else {
-                (r, tc)
-            };
+        if let Some((r, tc)) = parse_type_constraint_expr(rest) {
             let (r2, _) = ws(r)?;
             if r2.starts_with('$')
                 || r2.starts_with('@')
@@ -436,13 +479,29 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         rest
     };
 
-    // Skip `is default(...)` or other `is` traits on variables
+    // Optional shaped-array declaration suffix: my @arr[2;2];
+    let (rest, shape_dims) = if is_array && rest.starts_with('[') {
+        let (rest, dims) = parse_array_shape_suffix(rest)?;
+        let (rest, _) = ws(rest)?;
+        (rest, Some(dims))
+    } else {
+        (rest, None)
+    };
+
+    // Parse variable traits. Only a small set is currently supported on
+    // lexical/package variable declarations; unknown traits are compile-time errors.
     let rest = {
         let mut r = rest;
         while let Some(after_is) = keyword("is", r) {
             let (r2, _) = ws1(after_is)?;
             // Parse trait name
-            let (r2, _trait_name) = ident(r2)?;
+            let (r2, trait_name) = ident(r2)?;
+            if !is_supported_variable_trait(&trait_name) {
+                return Err(PError::fatal(format!(
+                    "X::Comp::Trait::Unknown: Unknown variable trait 'is {}'",
+                    trait_name
+                )));
+            }
             let (r2, _) = ws(r2)?;
             // Parse optional trait argument: (expr)
             if let Some(r3) = r2.strip_prefix('(') {
@@ -474,10 +533,33 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 
     // Assignment
     if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {
-        #[cfg(test)]
-        eprintln!("my_decl: taking assignment branch");
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
+        // class-scope routine aliasing form:
+        //   our &name = method name(...) { ... }
+        // This should register as a real method declaration (with is_our),
+        // not as a plain code-variable assignment.
+        if is_our && is_code {
+            if let Some(r) = keyword("method", rest) {
+                let (r, _) = ws1(r)?;
+                let (r, stmt) = method_decl_body(r, false, true)?;
+                if apply_modifier {
+                    return parse_statement_modifier(r, stmt);
+                }
+                return Ok((r, stmt));
+            }
+            if let Some(r) = keyword("multi", rest) {
+                let (r, _) = ws1(r)?;
+                if let Some(r) = keyword("method", r) {
+                    let (r, _) = ws1(r)?;
+                    let (r, stmt) = method_decl_body(r, true, true)?;
+                    if apply_modifier {
+                        return parse_statement_modifier(r, stmt);
+                    }
+                    return Ok((r, stmt));
+                }
+            }
+        }
         let (rest, expr) = parse_assign_expr_or_comma(rest)?;
         let stmt = Stmt::VarDecl {
             name,
@@ -562,7 +644,11 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 
     let (rest, _) = opt_char(rest, ';');
     let expr = if is_array {
-        Expr::Literal(Value::real_array(Vec::new()))
+        if let Some(dims) = shape_dims {
+            shaped_array_new_expr(dims)
+        } else {
+            Expr::Literal(Value::real_array(Vec::new()))
+        }
     } else if is_hash {
         Expr::Hash(Vec::new())
     } else if let Some(tc) = type_constraint.as_deref() {
@@ -966,6 +1052,10 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         };
         let (rest, _) = ws(rest)?;
         let (rest, expr) = parse_comma_or_expr(rest)?;
+        // Track compile-time string constants for operator name resolution
+        if let crate::ast::Expr::Literal(crate::value::Value::Str(ref s)) = expr {
+            super::simple::register_compile_time_constant(&name, s.clone());
+        }
         let (rest, _) = ws(rest)?;
         let (rest, _) = opt_char(rest, ';');
         return Ok((
@@ -1000,7 +1090,7 @@ pub(super) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
     let (rest, base) = if let Some(r) = keyword("of", rest) {
         let (r, _) = ws1(r)?;
-        let (r, base) = ident(r)?;
+        let (r, base) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
         let (r, _) = ws(r)?;
         (r, base)
     } else {

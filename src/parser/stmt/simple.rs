@@ -26,6 +26,8 @@ struct LexicalScope {
     test_assertion_subs: HashSet<String>,
     imported_functions: HashSet<String>,
     term_symbols: HashMap<String, TermBinding>,
+    /// Compile-time constants (name → string value) for resolving `<<$x>>` in operator names.
+    compile_time_constants: HashMap<String, String>,
 }
 
 thread_local! {
@@ -42,6 +44,9 @@ thread_local! {
 
     /// Program file path, used to find modules relative to the script.
     static PROGRAM_PATH: RefCell<Option<String>> = const { RefCell::new(None) };
+
+    /// Operator sub names to pre-register after scope reset (for EVAL).
+    static EVAL_OPERATOR_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
 static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -224,6 +229,10 @@ pub(in crate::parser) fn register_user_sub(name: &str) {
             .expect("scope stack should never be empty");
         current.user_subs.insert(name.to_string());
     });
+    // Circumfix/postcircumfix subs change how expressions parse, so invalidate memos.
+    if name.starts_with("circumfix:") || name.starts_with("postcircumfix:") {
+        crate::parser::invalidate_all_memos();
+    }
 }
 
 /// Register a user-declared sub with `is test-assertion`.
@@ -241,6 +250,21 @@ pub(in crate::parser) fn register_user_test_assertion_sub(name: &str) {
 pub(in crate::parser) fn reset_user_subs() {
     SCOPES.with(|s| {
         *s.borrow_mut() = vec![LexicalScope::default()];
+    });
+    // Apply pre-seeded operator names (for EVAL context)
+    EVAL_OPERATOR_PRESEED.with(|preseed| {
+        let names = preseed.borrow();
+        for name in names.iter() {
+            register_user_sub(name);
+            register_user_callable_term_symbol(name);
+        }
+    });
+}
+
+/// Set operator sub names to pre-register after scope reset (for EVAL).
+pub(in crate::parser) fn set_eval_operator_preseed(names: Vec<String>) {
+    EVAL_OPERATOR_PRESEED.with(|preseed| {
+        *preseed.borrow_mut() = names;
     });
 }
 
@@ -384,6 +408,144 @@ pub(in crate::parser) fn match_user_declared_term_symbol(
             }
         }
         best
+    })
+}
+
+/// Match a user-declared circumfix operator against the current input.
+/// Returns `(full_name, open_len, close_delim)` when input begins with an in-scope
+/// `circumfix:<open close>` operator's opening delimiter.
+pub(in crate::parser) fn match_user_declared_circumfix_op(
+    input: &str,
+) -> Option<(String, usize, String)> {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        let mut best: Option<(String, usize, String)> = None;
+
+        for scope in scopes.iter().rev() {
+            for name in &scope.user_subs {
+                let Some(delims) = name
+                    .strip_prefix("circumfix:<")
+                    .and_then(|s| s.strip_suffix('>'))
+                else {
+                    continue;
+                };
+                // Split into open and close delimiters (space-separated)
+                let parts: Vec<&str> = delims.split_whitespace().collect();
+                if parts.len() != 2 {
+                    continue;
+                }
+                let open = parts[0];
+                let close = parts[1];
+                if !input.starts_with(open) {
+                    continue;
+                }
+                let consumed = open.len();
+                if best
+                    .as_ref()
+                    .is_none_or(|(_, best_len, _)| consumed > *best_len)
+                {
+                    best = Some((name.clone(), consumed, close.to_string()));
+                }
+            }
+        }
+        best
+    })
+}
+
+/// Match a user-declared postcircumfix operator against the current input.
+/// Returns `(full_name, open_len, close_delim)` when input begins with an in-scope
+/// `postcircumfix:<open close>` operator's opening delimiter.
+pub(in crate::parser) fn match_user_declared_postcircumfix_op(
+    input: &str,
+) -> Option<(String, usize, String)> {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        let mut best: Option<(String, usize, String)> = None;
+
+        for scope in scopes.iter().rev() {
+            for name in &scope.user_subs {
+                let Some(delims) = name
+                    .strip_prefix("postcircumfix:<")
+                    .and_then(|s| s.strip_suffix('>'))
+                else {
+                    continue;
+                };
+                // Split into open and close delimiters (space-separated)
+                let parts: Vec<&str> = delims.split_whitespace().collect();
+                if parts.len() != 2 {
+                    continue;
+                }
+                let open = parts[0];
+                let close = parts[1];
+                if !input.starts_with(open) {
+                    continue;
+                }
+                let consumed = open.len();
+                if best
+                    .as_ref()
+                    .is_none_or(|(_, best_len, _)| consumed > *best_len)
+                {
+                    best = Some((name.clone(), consumed, close.to_string()));
+                }
+            }
+        }
+        best
+    })
+}
+
+/// Check if the input starts with a registered circumfix or postcircumfix closing delimiter.
+/// Used to prevent the postfix operator parser from consuming closing delimiters.
+pub(in crate::parser) fn is_circumfix_close_delimiter(input: &str) -> bool {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        for scope in scopes.iter().rev() {
+            for name in &scope.user_subs {
+                let delims = if let Some(d) = name
+                    .strip_prefix("circumfix:<")
+                    .and_then(|s| s.strip_suffix('>'))
+                {
+                    d
+                } else if let Some(d) = name
+                    .strip_prefix("postcircumfix:<")
+                    .and_then(|s| s.strip_suffix('>'))
+                {
+                    d
+                } else {
+                    continue;
+                };
+                let parts: Vec<&str> = delims.split_whitespace().collect();
+                if parts.len() == 2 && input.starts_with(parts[1]) {
+                    return true;
+                }
+            }
+        }
+        false
+    })
+}
+
+/// Register a compile-time constant value (for resolving `<<$x>>` in operator names).
+pub(in crate::parser) fn register_compile_time_constant(name: &str, value: String) {
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let current = scopes
+            .last_mut()
+            .expect("scope stack should never be empty");
+        current
+            .compile_time_constants
+            .insert(name.to_string(), value);
+    });
+}
+
+/// Look up a compile-time constant by name.
+pub(in crate::parser) fn lookup_compile_time_constant(name: &str) -> Option<String> {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        for scope in scopes.iter().rev() {
+            if let Some(value) = scope.compile_time_constants.get(name) {
+                return Some(value.clone());
+            }
+        }
+        None
     })
 }
 
@@ -1030,8 +1192,23 @@ pub(super) fn subtest_stmt(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Parse a block statement: { ... }
+/// If the block is followed by `.method(...)`, treat it as a block expression
+/// with postfix operators (e.g. `{ $^a }.assuming(123)()`).
 pub(super) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
+    // Try to parse as a hash expression first (e.g. `{:a(4)}`, `{a => 1}`)
+    if let Ok((rest, hash_expr)) = crate::parser::primary::misc::block_or_hash_expr(input)
+        && matches!(hash_expr, Expr::Hash(_))
+    {
+        return parse_statement_modifier(rest, Stmt::Expr(hash_expr));
+    }
     let (rest, body) = block(input)?;
+    let (r_ws, _) = ws(rest)?;
+    if r_ws.starts_with('.') && !r_ws.starts_with("..") {
+        // Use AnonSub so the block compiles as a closure value, not inline code
+        let block_expr = Expr::AnonSub(body);
+        let (rest, expr) = super::super::expr::postfix_expr_continue(rest, block_expr)?;
+        return parse_statement_modifier(rest, Stmt::Expr(expr));
+    }
     parse_statement_modifier(rest, Stmt::Block(body))
 }
 

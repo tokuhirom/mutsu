@@ -144,6 +144,7 @@ impl VM {
                 | "Bool"
                 | "Pair"
                 | "Map"
+                | "QuantHash"
                 | "Set"
                 | "Bag"
                 | "Mix"
@@ -218,6 +219,7 @@ impl VM {
                 | "X::AdHoc"
                 | "CompUnit::DependencySpecification"
                 | "Proxy"
+                | "array"
         )
     }
 
@@ -232,6 +234,16 @@ impl VM {
 
     pub(super) fn label_matches(error_label: &Option<String>, loop_label: &Option<String>) -> bool {
         error_label.as_deref() == loop_label.as_deref() || error_label.is_none()
+    }
+
+    /// Force a LazyList into a Seq by evaluating the gather body.
+    fn force_lazy_if_needed(&mut self, val: Value) -> Result<Value, RuntimeError> {
+        if let Value::LazyList(ll) = &val {
+            let items = self.interpreter.force_lazy_list_bridge(ll)?;
+            Ok(Value::Seq(std::sync::Arc::new(items)))
+        } else {
+            Ok(val)
+        }
     }
 
     pub(super) fn eval_binary_with_junctions(
@@ -256,6 +268,9 @@ impl VM {
                 .collect();
             return Ok(Value::junction(kind, results?));
         }
+        // Force LazyList values before arithmetic/comparison operations
+        let left = self.force_lazy_if_needed(left)?;
+        let right = self.force_lazy_if_needed(right)?;
         f(self, left, right)
     }
 

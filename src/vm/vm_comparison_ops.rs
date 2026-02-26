@@ -3,10 +3,19 @@ use super::*;
 pub(super) fn value_to_f64(v: &Value) -> f64 {
     match v {
         Value::Int(n) => *n as f64,
+        Value::BigInt(n) => num_traits::ToPrimitive::to_f64(n).unwrap_or(0.0),
         Value::Num(n) => *n,
         Value::Rat(n, d) => {
             if *d != 0 {
                 *n as f64 / *d as f64
+            } else {
+                0.0
+            }
+        }
+        Value::BigRat(n, d) => {
+            if d != &num_bigint::BigInt::from(0) {
+                num_traits::ToPrimitive::to_f64(n).unwrap_or(0.0)
+                    / num_traits::ToPrimitive::to_f64(d).unwrap_or(1.0)
             } else {
                 0.0
             }
@@ -315,7 +324,11 @@ impl VM {
         self.interpreter
             .env_mut()
             .insert("_".to_string(), left.clone());
-        self.run_range(code, rhs_start, rhs_end, compiled_fns)?;
+        let saved_in_smartmatch_rhs = self.in_smartmatch_rhs;
+        self.in_smartmatch_rhs = true;
+        let rhs_run = self.run_range(code, rhs_start, rhs_end, compiled_fns);
+        self.in_smartmatch_rhs = saved_in_smartmatch_rhs;
+        rhs_run?;
         let right = self.stack.pop().unwrap_or(Value::Nil);
         if let Some(var_name) = lhs_var {
             let modified_topic = self

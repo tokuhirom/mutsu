@@ -15,6 +15,8 @@ impl Interpreter {
                 name,
                 name_expr,
                 parents,
+                is_hidden,
+                hidden_parents,
                 body: _,
             } = &stmts[idx]
             {
@@ -23,6 +25,8 @@ impl Interpreter {
                     name: name.clone(),
                     name_expr: name_expr.clone(),
                     parents: parents.clone(),
+                    is_hidden: *is_hidden,
+                    hidden_parents: hidden_parents.clone(),
                     body,
                 });
             }
@@ -37,59 +41,49 @@ impl Interpreter {
         let mut pending_todo: Option<(String, usize)> = None; // (reason, remaining_count)
         let mut skip_lines_remaining: usize = 0;
         let mut skip_reason: String = String::new();
-        // Count-based skip where the skipped line is a block opener `{`.
-        // In that case, consume the whole block while emitting a single skip line.
-        let mut skip_count_block_depth: usize = 0;
         // Block-level skip: skip the next { ... } block
         let mut skip_block_pending: Option<String> = None;
         let mut skip_block_depth: usize = 0;
         let mut skip_block_reason: String = String::new();
+        let test_funcs = [
+            "is(",
+            "is ",
+            "ok ",
+            "ok(",
+            "nok ",
+            "nok(",
+            "isnt ",
+            "isnt(",
+            "cmp-ok ",
+            "cmp-ok(",
+            "isa-ok ",
+            "isa-ok(",
+            "does-ok ",
+            "lives-ok",
+            "dies-ok",
+            "throws-like",
+            "like ",
+            "like(",
+            "unlike ",
+            "pass ",
+            "pass(",
+            "flunk ",
+            "is-primed-sig",
+            "is-primed-call",
+            "priming-fails-bind-ok",
+        ];
 
         for line in input.lines() {
             let trimmed = line.trim_start();
 
-            // Continue skipping the remainder of a count-skipped block.
-            if skip_count_block_depth > 0 {
-                for ch in trimmed.chars() {
-                    if ch == '{' {
-                        skip_count_block_depth += 1;
-                    } else if ch == '}' {
-                        skip_count_block_depth -= 1;
-                        if skip_count_block_depth == 0 {
-                            break;
-                        }
-                    }
-                }
-                output.push('\n');
-                continue;
-            }
-
-            // Count-based skip: skip the next N non-comment, non-empty lines
+            // Count-based skip: skip the next N test assertion lines.
             if skip_lines_remaining > 0 {
-                if !trimmed.is_empty() && !trimmed.starts_with('#') {
-                    // If the next non-empty line is a block opening `{`,
-                    // convert to block-level skip so the entire block is skipped.
-                    if trimmed.starts_with('{') {
-                        skip_lines_remaining -= 1;
-                        skip_block_depth = 1;
-                        skip_block_reason = skip_reason.clone();
-                        output.push('\n');
-                        continue;
-                    }
+                if test_funcs.iter().any(|f| trimmed.starts_with(f)) {
                     skip_lines_remaining -= 1;
-                    // Emit a skip() call for each skipped test line
                     output.push_str(&format!("skip '{}', 1;\n", skip_reason));
-                    if trimmed.starts_with('{') {
-                        for ch in trimmed.chars() {
-                            if ch == '{' {
-                                skip_count_block_depth += 1;
-                            } else if ch == '}' && skip_count_block_depth > 0 {
-                                skip_count_block_depth -= 1;
-                            }
-                        }
-                    }
                     continue;
                 }
+                output.push_str(line);
                 output.push('\n');
                 continue;
             }
@@ -107,33 +101,6 @@ impl Interpreter {
                     continue;
                 } else {
                     // Not a block — treat as single-line skip for test assertions.
-                    let test_funcs = [
-                        "is(",
-                        "is ",
-                        "ok ",
-                        "ok(",
-                        "nok ",
-                        "nok(",
-                        "isnt ",
-                        "isnt(",
-                        "cmp-ok ",
-                        "cmp-ok(",
-                        "isa-ok ",
-                        "isa-ok(",
-                        "does-ok ",
-                        "lives-ok",
-                        "dies-ok",
-                        "throws-like",
-                        "like ",
-                        "like(",
-                        "unlike ",
-                        "pass ",
-                        "pass(",
-                        "flunk ",
-                        "is-primed-sig",
-                        "is-primed-call",
-                        "priming-fails-bind-ok",
-                    ];
                     if test_funcs.iter().any(|f| trimmed.starts_with(f)) {
                         output.push_str(&format!("skip '{}', 1;\n", reason));
                         skip_block_pending = None;
@@ -161,33 +128,6 @@ impl Interpreter {
                     continue;
                 }
                 // Emit skip for lines that look like test assertions
-                let test_funcs = [
-                    "is(",
-                    "is ",
-                    "ok ",
-                    "ok(",
-                    "nok ",
-                    "nok(",
-                    "isnt ",
-                    "isnt(",
-                    "cmp-ok ",
-                    "cmp-ok(",
-                    "isa-ok ",
-                    "isa-ok(",
-                    "does-ok ",
-                    "lives-ok",
-                    "dies-ok",
-                    "throws-like",
-                    "like ",
-                    "like(",
-                    "unlike ",
-                    "pass ",
-                    "pass(",
-                    "flunk ",
-                    "is-primed-sig",
-                    "is-primed-call",
-                    "priming-fails-bind-ok",
-                ];
                 if test_funcs.iter().any(|f| trimmed.starts_with(f)) {
                     output.push_str(&format!("skip '{}', 1;\n", skip_block_reason));
                 } else {
@@ -371,7 +311,10 @@ impl Interpreter {
         if leave_result.is_err() && body_result.is_ok() {
             leave_result?;
         }
-        body_result?;
+        let last_value = body_result?;
+        // Only store last_value if _ was actually set during this execution
+        // (not inherited from a previous REPL line)
+        self.last_value = last_value;
 
         // Auto-call MAIN sub if defined
         if self.resolve_function("MAIN").is_some() {
@@ -407,7 +350,7 @@ impl Interpreter {
                 Err(e) if e.return_value.is_some() => {}
                 Err(e) if e.message.is_empty() => {}
                 Err(e) => return Err(e),
-                Ok(()) => {}
+                Ok(_) => {}
             }
         }
         self.finish()?;
@@ -436,7 +379,7 @@ impl Interpreter {
         let vm = crate::vm::VM::new(interp);
         let (interp, result) = vm.run(&code, &compiled_fns);
         *self = interp;
-        result
+        result.map(|_| ())
     }
 
     pub(super) fn finish(&mut self) -> Result<(), RuntimeError> {
@@ -518,11 +461,21 @@ mod tests {
     use super::Interpreter;
 
     #[test]
-    fn preprocess_count_skip_consumes_entire_block() {
-        let src = "#?rakudo 1 skip 'reason'\n{\n    is EVAL('$bar'), Any, 'x'\n}\nsay 42;\n";
+    fn preprocess_count_skip_skips_only_next_test() {
+        let src = "#?rakudo 1 skip 'reason'\n{\n    is EVAL('$bar'), Any, 'x'\n    is 42, 42, 'still runs';\n}\nsay 42;\n";
         let out = Interpreter::preprocess_roast_directives(src);
         assert!(out.contains("skip 'reason', 1;"));
-        assert!(!out.contains("is EVAL('$bar')"));
+        assert!(!out.contains("is EVAL('$bar'), Any, 'x'"));
+        assert!(out.contains("is 42, 42, 'still runs';"));
+        assert!(out.contains("say 42;"));
+    }
+
+    #[test]
+    fn preprocess_block_skip_consumes_entire_block() {
+        let src = "#?rakudo skip 'reason'\n{\n    is EVAL('$bar'), Any, 'x'\n}\nsay 42;\n";
+        let out = Interpreter::preprocess_roast_directives(src);
+        assert!(out.contains("skip 'reason', 1;"));
+        assert!(!out.contains("is EVAL('$bar'), Any, 'x'"));
         assert!(out.contains("say 42;"));
     }
 }

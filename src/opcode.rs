@@ -15,6 +15,10 @@ pub(crate) enum OpCode {
     SetLocal(u32),
     GetGlobal(u32),
     SetGlobal(u32),
+    SetVarType {
+        name_idx: u32,
+        tc_idx: u32,
+    },
     SetTopic,
     GetArrayVar(u32),
     GetHashVar(u32),
@@ -153,6 +157,10 @@ pub(crate) enum OpCode {
     /// Call .defined on top of stack, replace with Bool result
     CallDefined,
 
+    // -- Logical --
+    /// Logical XOR: pops two values, returns truthy one if exactly one is truthy, else Nil/falsy
+    XorXor,
+
     // -- Stack manipulation --
     Dup,
     Pop,
@@ -266,6 +274,12 @@ pub(crate) enum OpCode {
     Index,
     DeleteIndexNamed(u32),
     DeleteIndexExpr,
+    /// Hash hyperslice: recursively iterate hash with given adverb mode.
+    /// Stack: [target] → [result list]
+    HyperSlice(u8),
+    /// Hash hyperindex: drill into nested hash by key path.
+    /// Stack: [target, keys] → [value]
+    HyperIndex,
 
     // -- String interpolation --
     StringConcat(u32),
@@ -371,18 +385,23 @@ pub(crate) enum OpCode {
     Subst {
         pattern_idx: u32,
         replacement_idx: u32,
+        samemark: bool,
     },
 
     // -- Non-destructive substitution (S///) --
     NonDestructiveSubst {
         pattern_idx: u32,
         replacement_idx: u32,
+        samemark: bool,
     },
 
     // -- Transliteration (tr///) --
     Transliterate {
         from_idx: u32,
         to_idx: u32,
+        delete: bool,
+        complement: bool,
+        squash: bool,
     },
 
     // -- Take (gather/take) --
@@ -436,6 +455,9 @@ pub(crate) enum OpCode {
         catch_start: u32,
         control_start: u32,
         body_end: u32,
+        /// True when CATCH { } is explicitly present — unhandled exceptions
+        /// (no `when`/`default` match) must be re-thrown.
+        explicit_catch: bool,
     },
 
     // -- Error handling --
@@ -453,6 +475,9 @@ pub(crate) enum OpCode {
     RegisterRole(u32),
     RegisterSubset(u32),
     SubtestScope {
+        body_end: u32,
+    },
+    ReactScope {
         body_end: u32,
     },
     WheneverScope {
@@ -607,6 +632,7 @@ impl CompiledCode {
             OpCode::DoBlockExpr { body_end, .. } => *body_end = target,
             OpCode::DoGivenExpr { body_end, .. } => *body_end = target,
             OpCode::SubtestScope { body_end, .. } => *body_end = target,
+            OpCode::ReactScope { body_end, .. } => *body_end = target,
             _ => panic!("patch_body_end on opcode without body_end"),
         }
     }

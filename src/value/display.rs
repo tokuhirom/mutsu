@@ -1,4 +1,10 @@
 use super::*;
+use num_bigint::BigInt as NumBigInt;
+use num_traits::{Signed, ToPrimitive, Zero};
+
+pub(crate) fn is_internal_anon_type_name(name: &str) -> bool {
+    name.starts_with("__ANON_") && name.ends_with("__")
+}
 
 /// Format a Num in scientific notation matching Raku's output (e.g. `1e+40`, `-1e-05`).
 fn format_num_scientific(f: f64) -> String {
@@ -79,19 +85,141 @@ pub fn wordcase_str(s: &str) -> String {
 
 pub fn format_complex(r: f64, i: f64) -> String {
     fn fmt_num(v: f64) -> String {
-        if v.fract() == 0.0 && v.is_finite() {
+        if v.is_nan() {
+            "NaN".to_string()
+        } else if v.is_infinite() {
+            if v > 0.0 {
+                "Inf".to_string()
+            } else {
+                "-Inf".to_string()
+            }
+        } else if v.fract() == 0.0 {
             format!("{}", v as i64)
         } else {
             format!("{}", v)
         }
     }
+    // Use \i notation when imaginary part is Inf, -Inf, or NaN
+    let imag_special = i.is_infinite() || i.is_nan();
+    let suffix = if imag_special { "\\i" } else { "i" };
     if i == 0.0 {
         format!("{}+0i", fmt_num(r))
-    } else if i < 0.0 {
-        format!("{}{}i", fmt_num(r), fmt_num(i))
+    } else if i.is_nan() {
+        format!("{}+NaN\\i", fmt_num(r))
+    } else if i < 0.0 || (i.is_infinite() && i.is_sign_negative()) {
+        format!("{}-{}{}", fmt_num(r), fmt_num(i.abs()), suffix)
     } else {
-        format!("{}+{}i", fmt_num(r), fmt_num(i))
+        format!("{}+{}{}", fmt_num(r), fmt_num(i), suffix)
     }
+}
+
+fn format_terminating_ratio_exact(
+    numer: i64,
+    denom: i64,
+    append_dot_zero_for_integer: bool,
+) -> String {
+    if denom == 0 {
+        if numer == 0 {
+            return "NaN".to_string();
+        }
+        return if numer > 0 { "Inf" } else { "-Inf" }.to_string();
+    }
+
+    let sign = (numer < 0) ^ (denom < 0);
+    let n = (numer as i128).abs();
+    let d = (denom as i128).abs();
+    let int_part = n / d;
+    let mut rem = n % d;
+
+    if rem == 0 {
+        if append_dot_zero_for_integer {
+            return format!("{}{}.0", if sign { "-" } else { "" }, int_part);
+        }
+        return format!("{}{}", if sign { "-" } else { "" }, int_part);
+    }
+
+    let mut frac = String::new();
+    while rem != 0 {
+        rem *= 10;
+        let digit = rem / d;
+        rem %= d;
+        frac.push(char::from(b'0' + (digit as u8)));
+    }
+
+    format!("{}{}.{}", if sign { "-" } else { "" }, int_part, frac)
+}
+
+fn format_ratio_bigint_decimal(
+    numer: &NumBigInt,
+    denom: &NumBigInt,
+    append_dot_zero_for_integer: bool,
+    max_fraction_digits: Option<usize>,
+) -> String {
+    if denom.is_zero() {
+        if numer.is_zero() {
+            return "NaN".to_string();
+        }
+        return if numer.is_positive() {
+            "Inf".to_string()
+        } else {
+            "-Inf".to_string()
+        };
+    }
+
+    let sign = numer.is_negative() ^ denom.is_negative();
+    let n = numer.abs();
+    let d = denom.abs();
+    let int_part = &n / &d;
+    let mut rem = n % &d;
+
+    if rem.is_zero() {
+        if append_dot_zero_for_integer {
+            return format!("{}{}.0", if sign { "-" } else { "" }, int_part);
+        }
+        return format!("{}{}", if sign { "-" } else { "" }, int_part);
+    }
+
+    let mut frac = String::new();
+    while !rem.is_zero() {
+        if max_fraction_digits.is_some_and(|limit| frac.len() >= limit) {
+            break;
+        }
+        rem *= 10u8;
+        let digit = &rem / &d;
+        rem %= &d;
+        let ch = digit.to_u8().unwrap_or(0);
+        frac.push(char::from(b'0' + ch));
+    }
+
+    format!("{}{}.{}", if sign { "-" } else { "" }, int_part, frac)
+}
+
+fn has_terminating_decimal(denom: i64) -> bool {
+    if denom == 0 {
+        return false;
+    }
+    let mut dd = (denom as i128).abs();
+    while dd % 2 == 0 {
+        dd /= 2;
+    }
+    while dd % 5 == 0 {
+        dd /= 5;
+    }
+    dd == 1
+}
+
+fn has_terminating_decimal_bigint(denom: &NumBigInt) -> bool {
+    if denom.is_zero() {
+        return false;
+    }
+    let mut dd = denom.abs();
+    while (&dd % 2u8).is_zero() {
+        dd /= 2u8;
+    }
+    while (&dd % 5u8).is_zero() {
+        dd /= 5u8;
+    }
+    dd == NumBigInt::from(1u8)
 }
 
 impl Value {
@@ -189,27 +317,12 @@ impl Value {
                 } else if *n % *d == 0 {
                     // Exact integer: Rat(10, 2) => "5"
                     format!("{}", *n / *d)
+                } else if has_terminating_decimal(*d) {
+                    // Exact decimal representation without f64 rounding.
+                    format_terminating_ratio_exact(*n, *d, false)
                 } else {
                     let whole = *n as f64 / *d as f64;
-                    // Check if it can be represented as exact decimal
-                    let mut dd = *d;
-                    while dd % 2 == 0 {
-                        dd /= 2;
-                    }
-                    while dd % 5 == 0 {
-                        dd /= 5;
-                    }
-                    if dd == 1 {
-                        // Exact decimal representation
-                        let s = format!("{}", whole);
-                        if s.contains('.') {
-                            s
-                        } else {
-                            format!("{}.0", whole)
-                        }
-                    } else {
-                        format!("{:.6}", whole)
-                    }
+                    format!("{:.6}", whole)
                 }
             }
             Value::FatRat(a, b) => {
@@ -223,25 +336,28 @@ impl Value {
                     }
                 } else if *a % *b == 0 {
                     format!("{}", *a / *b)
+                } else if has_terminating_decimal(*b) {
+                    format_terminating_ratio_exact(*a, *b, false)
                 } else {
                     let whole = *a as f64 / *b as f64;
-                    let mut dd = *b;
-                    while dd % 2 == 0 {
-                        dd /= 2;
-                    }
-                    while dd % 5 == 0 {
-                        dd /= 5;
-                    }
-                    if dd == 1 {
-                        let s = format!("{}", whole);
-                        if s.contains('.') {
-                            s
-                        } else {
-                            format!("{}.0", whole)
-                        }
+                    format!("{:.6}", whole)
+                }
+            }
+            Value::BigRat(n, d) => {
+                if d.is_zero() {
+                    if n.is_zero() {
+                        "NaN".to_string()
+                    } else if n.is_positive() {
+                        "Inf".to_string()
                     } else {
-                        format!("{:.6}", whole)
+                        "-Inf".to_string()
                     }
+                } else if (n % d).is_zero() {
+                    format!("{}", n / d)
+                } else if has_terminating_decimal_bigint(d) {
+                    format_ratio_bigint_decimal(n, d, false, None)
+                } else {
+                    format_ratio_bigint_decimal(n, d, false, Some(6))
                 }
             }
             Value::Complex(r, i) => format_complex(*r, *i),
@@ -286,7 +402,20 @@ impl Value {
             Value::CompUnitDepSpec { short_name } => {
                 format!("CompUnit::DependencySpecification({})", short_name)
             }
-            Value::Package(s) => format!("({})", s),
+            Value::Package(s) => {
+                if is_internal_anon_type_name(s) {
+                    "()".to_string()
+                } else {
+                    format!("({})", s)
+                }
+            }
+            Value::ParametricRole {
+                base_name,
+                type_args,
+            } => {
+                let args: Vec<String> = type_args.iter().map(|a| a.to_string_value()).collect();
+                format!("({}[{}])", base_name, args.join(","))
+            }
             Value::Routine { package, name } => format!("{}::{}", package, name),
             Value::Sub(data) => data.name.clone(),
             Value::WeakSub(weak) => match weak.upgrade() {
@@ -376,6 +505,16 @@ impl Value {
                 .get("gist")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_else(|| format!("{}()", class_name)),
+            Value::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Method" || class_name == "Sub" || class_name == "Routine" => {
+                attributes
+                    .get("name")
+                    .map(|v: &Value| v.to_string_value())
+                    .unwrap_or_else(|| format!("{}()", class_name))
+            }
             Value::Instance { class_name, .. } => format!("{}()", class_name),
             Value::Junction { kind, values } => {
                 let kind_str = match kind {
@@ -397,6 +536,7 @@ impl Value {
                 exhaustive,
                 repeat,
                 perl5,
+                ..
             } => {
                 let mut prefix = String::new();
                 if *exhaustive {

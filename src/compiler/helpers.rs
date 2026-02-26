@@ -67,6 +67,7 @@ impl Compiler {
                 | "unshift"
                 | "append"
                 | "prepend"
+                | "splice"
                 | "undefine"
                 | "VAR"
                 | "indir"
@@ -527,11 +528,13 @@ impl Compiler {
                 main_stmts.push(stmt.clone());
             }
         }
+        let has_explicit_catch = catch_stmts.is_some();
         // Emit TryCatch placeholder.
         let try_idx = self.code.emit(OpCode::TryCatch {
             catch_start: 0,
             control_start: 0,
             body_end: 0,
+            explicit_catch: has_explicit_catch,
         });
         // Compile main body (last Stmt::Expr/Call leaves value on stack)
         let mut main_leaves_value = false;
@@ -752,12 +755,16 @@ impl Compiler {
             merged.extend(loop_body);
             loop_body = merged;
         }
+        if let Some(writeback) = Self::for_rw_writeback_stmt(param, param_def, iterable) {
+            loop_body.push(writeback);
+        }
         let arity = if !params.is_empty() {
             params.len() as u32
         } else {
             1
         };
-        self.compile_expr(iterable);
+        let normalized_iterable = Self::normalize_for_iterable(iterable);
+        self.compile_expr(&normalized_iterable);
         let loop_idx = self.code.emit(OpCode::ForLoop {
             param_idx,
             param_local: None,

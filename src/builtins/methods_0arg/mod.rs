@@ -1,8 +1,8 @@
 #![allow(clippy::result_large_err)]
 
 use crate::runtime;
-use crate::value::{RuntimeError, Value, make_rat};
-use num_traits::Signed;
+use crate::value::{RuntimeError, Value, make_big_rat, make_rat};
+use num_traits::{Signed, ToPrimitive};
 use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
@@ -140,6 +140,22 @@ fn dispatch_capture(
         }
         "Bool" => Some(Ok(Value::Bool(!positional.is_empty() || !named.is_empty()))),
         "WHAT" => Some(Ok(Value::Package("Capture".to_string()))),
+        "flat" => {
+            // $(expr) produces a Capture representing an itemized container.
+            // .flat on it should return itself as opaque (don't descend).
+            let cap = Value::Capture {
+                positional: positional.to_vec(),
+                named: named.clone(),
+            };
+            Some(Ok(Value::Seq(Arc::new(vec![cap]))))
+        }
+        "Seq" | "List" => {
+            let cap = Value::Capture {
+                positional: positional.to_vec(),
+                named: named.clone(),
+            };
+            Some(Ok(Value::Seq(Arc::new(vec![cap]))))
+        }
         _ => None,
     }
 }
@@ -171,6 +187,11 @@ fn is_value_lazy(value: &Value) -> bool {
 fn flatten_deep_value(value: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
     match value {
         Value::Array(items, is_array) if !*is_array || flatten_arrays => {
+            for item in items.iter() {
+                flatten_deep_value(item, out, flatten_arrays);
+            }
+        }
+        Value::Seq(items) | Value::Slip(items) => {
             for item in items.iter() {
                 flatten_deep_value(item, out, flatten_arrays);
             }
@@ -222,6 +243,32 @@ fn raku_value(v: &Value) -> String {
                 }
             }
         }
+        Value::BigRat(n, d) => {
+            if d == &num_bigint::BigInt::from(0) {
+                if n == &num_bigint::BigInt::from(0) {
+                    "NaN".to_string()
+                } else if n > &num_bigint::BigInt::from(0) {
+                    "Inf".to_string()
+                } else {
+                    "-Inf".to_string()
+                }
+            } else if (n % d) == num_bigint::BigInt::from(0) {
+                format!("{}.0", n / d)
+            } else {
+                let mut dd = d.abs();
+                while (&dd % 2u8) == num_bigint::BigInt::from(0) {
+                    dd /= 2u8;
+                }
+                while (&dd % 5u8) == num_bigint::BigInt::from(0) {
+                    dd /= 5u8;
+                }
+                if dd == num_bigint::BigInt::from(1u8) {
+                    v.to_string_value()
+                } else {
+                    format!("<{}/{}>", n, d)
+                }
+            }
+        }
         Value::FatRat(n, d) => format!("<{}/{}>", n, d),
         Value::Bool(b) => if *b { "True" } else { "False" }.to_string(),
         Value::Num(f) => {
@@ -237,6 +284,7 @@ fn raku_value(v: &Value) -> String {
                 format!("{}", f)
             }
         }
+        Value::Complex(r, i) => format!("<{}>", crate::value::format_complex(*r, *i)),
         Value::Pair(key, value) => format!("{} => {}", key, raku_value(value)),
         Value::ValuePair(key, value) => {
             let key_repr = match key.as_ref() {
@@ -271,6 +319,25 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     .get("message")
                     .cloned()
                     .unwrap_or(Value::Str(String::new()))));
+            }
+            _ => {}
+        }
+    }
+
+    // Array of Match objects: .to returns last element's .to, .from returns first element's .from
+    if let Value::Array(arr, _) = target {
+        match method {
+            "to" | "pos" => {
+                if let Some(last) = arr.last() {
+                    return native_method_0arg(last, method);
+                }
+                return Some(Ok(Value::Int(0)));
+            }
+            "from" => {
+                if let Some(first) = arr.first() {
+                    return native_method_0arg(first, method);
+                }
+                return Some(Ok(Value::Int(0)));
             }
             _ => {}
         }
@@ -516,6 +583,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         Value::Int(0)
                     }
                 }
+                // LazyList needs interpreter to force; fall through to runtime
+                Value::LazyList(_) => return None,
                 _ => Value::Int(1),
             };
             Some(Ok(result))
@@ -579,6 +648,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "flat" => match target {
             Value::Array(items, ..) => {
+                let mut result = Vec::new();
+                for item in items.iter() {
+                    flatten_deep_value(item, &mut result, false);
+                }
+                Some(Ok(Value::Seq(Arc::new(result))))
+            }
+            Value::Seq(items) | Value::Slip(items) => {
                 let mut result = Vec::new();
                 for item in items.iter() {
                     flatten_deep_value(item, &mut result, false);
@@ -697,6 +773,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             Some(Ok(Value::Int(s.chars().count() as i64)))
         }
         "lines" => {
+            // Skip for Supply instances — handled by native Supply.lines
+            if let Value::Instance { class_name, .. } = target
+                && (class_name == "Supply"
+                    || class_name == "IO::Handle"
+                    || class_name == "IO::Path")
+            {
+                return None;
+            }
             let s = target.to_string_value();
             let lines: Vec<Value> = crate::builtins::split_lines_chomped(&s)
                 .into_iter()
@@ -779,6 +863,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         Some(Ok(Value::Str(format!("{}", *n / *d))))
                     }
                 } else {
+                    if method == "gist" {
+                        return Some(Ok(Value::Str(target.to_string_value())));
+                    }
                     let mut dd = *d;
                     while dd % 2 == 0 {
                         dd /= 2;
@@ -870,7 +957,53 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     Some(Ok(Value::Str(target.to_string_value())))
                 }
             }
+            Value::BigInt(i) => {
+                if method == "raku" || method == "perl" {
+                    Some(Ok(Value::Str(format!("{i}.0"))))
+                } else {
+                    Some(Ok(Value::Str(i.to_string())))
+                }
+            }
             Value::Int(i) => Some(Ok(Value::Str(format!("{}", i)))),
+            Value::Complex(r, i) => {
+                if method == "raku" || method == "perl" {
+                    Some(Ok(Value::Str(format!(
+                        "<{}>",
+                        crate::value::format_complex(*r, *i)
+                    ))))
+                } else {
+                    Some(Ok(Value::Str(crate::value::format_complex(*r, *i))))
+                }
+            }
+            Value::Hash(map) => {
+                if method == "raku" || method == "perl" {
+                    let mut sorted_keys: Vec<&String> = map.keys().collect();
+                    sorted_keys.sort();
+                    let parts: Vec<String> = sorted_keys
+                        .iter()
+                        .map(|k| {
+                            let v = &map[*k];
+                            if let Value::Bool(true) = v {
+                                format!(":{}", k)
+                            } else if let Value::Bool(false) = v {
+                                format!(":!{}", k)
+                            } else {
+                                format!(":{}({})", k, raku_value(v))
+                            }
+                        })
+                        .collect();
+                    Some(Ok(Value::Str(format!("{{{}}}", parts.join(", ")))))
+                } else {
+                    // gist
+                    let mut sorted_keys: Vec<&String> = map.keys().collect();
+                    sorted_keys.sort();
+                    let parts: Vec<String> = sorted_keys
+                        .iter()
+                        .map(|k| format!("{} => {}", k, map[*k].to_string_value()))
+                        .collect();
+                    Some(Ok(Value::Str(format!("{{{}}}", parts.join(", ")))))
+                }
+            }
             _ => Some(Ok(Value::Str(target.to_string_value()))),
         },
         "head" => match target {
@@ -945,8 +1078,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "log" => match target {
             Value::Int(i) => Some(Ok(Value::Num((*i as f64).ln()))),
+            Value::BigInt(i) => Some(Ok(Value::Num(i.to_f64().unwrap_or(f64::INFINITY).ln()))),
             Value::Num(f) => Some(Ok(Value::Num(f.ln()))),
             Value::Rat(n, d) if *d != 0 => Some(Ok(Value::Num((*n as f64 / *d as f64).ln()))),
+            Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::Num(
+                (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).ln(),
+            ))),
             Value::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
                 let arg = i.atan2(*r);
@@ -956,6 +1093,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "log2" => match target {
             Value::Int(i) => Some(Ok(Value::Num((*i as f64).log2()))),
+            Value::BigInt(i) => Some(Ok(Value::Num(i.to_f64().unwrap_or(f64::INFINITY).log2()))),
             Value::Num(f) => Some(Ok(Value::Num(f.log2()))),
             Value::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
@@ -967,6 +1105,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "log10" => match target {
             Value::Int(i) => Some(Ok(Value::Num((*i as f64).log10()))),
+            Value::BigInt(i) => Some(Ok(Value::Num(i.to_f64().unwrap_or(f64::INFINITY).log10()))),
             Value::Num(f) => Some(Ok(Value::Num(f.log10()))),
             Value::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
@@ -978,8 +1117,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         },
         "exp" => match target {
             Value::Int(i) => Some(Ok(Value::Num((*i as f64).exp()))),
+            Value::BigInt(i) => Some(Ok(Value::Num(i.to_f64().unwrap_or(f64::INFINITY).exp()))),
             Value::Num(f) => Some(Ok(Value::Num(f.exp()))),
             Value::Rat(n, d) if *d != 0 => Some(Ok(Value::Num((*n as f64 / *d as f64).exp()))),
+            Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::Num(
+                (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).exp(),
+            ))),
             Value::Complex(r, i) => {
                 // exp(a+bi) = exp(a) * (cos(b) + i*sin(b))
                 let ea = r.exp();
@@ -991,9 +1134,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             // .atan2 with no args defaults to x=1
             let y = match target {
                 Value::Int(i) => *i as f64,
+                Value::BigInt(i) => i.to_f64().unwrap_or(f64::INFINITY),
                 Value::Num(f) => *f,
                 Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
                 Value::FatRat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
+                    n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)
+                }
                 Value::Str(s) => match s.parse::<f64>() {
                     Ok(f) => f,
                     Err(_) => return Some(Ok(Value::Num(f64::NAN))),
@@ -1012,9 +1159,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             let x = match target {
                 Value::Int(i) => *i as f64,
+                Value::BigInt(i) => i.to_f64().unwrap_or(f64::INFINITY),
                 Value::Num(f) => *f,
                 Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
                 Value::FatRat(n, d) if *d != 0 => *n as f64 / *d as f64,
+                Value::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
+                    n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)
+                }
                 Value::Str(s) => match s.parse::<f64>() {
                     Ok(f) => f,
                     Err(_) => return Some(Ok(Value::Num(f64::NAN))),
@@ -1052,6 +1203,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
         "Rat" => match target {
             Value::Rat(_, _) => Some(Ok(target.clone())),
+            Value::BigRat(_, _) => Some(Ok(target.clone())),
             Value::Int(i) => Some(Ok(make_rat(*i, 1))),
             Value::Num(f) => {
                 let denom = 1_000_000i64;
@@ -1059,13 +1211,16 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 Some(Ok(make_rat(numer, denom)))
             }
             Value::FatRat(n, d) => Some(Ok(make_rat(*n, *d))),
+            Value::Instance { .. } => None,
             Value::Package(_) => Some(Ok(make_rat(0, 1))),
             _ => Some(Ok(make_rat(0, 1))),
         },
         "FatRat" => match target {
             Value::FatRat(_, _) => Some(Ok(target.clone())),
             Value::Rat(n, d) => Some(Ok(Value::FatRat(*n, *d))),
+            Value::BigRat(_, _) => Some(Ok(target.clone())),
             Value::Int(i) => Some(Ok(Value::FatRat(*i, 1))),
+            Value::BigInt(i) => Some(Ok(make_big_rat(i.clone(), num_bigint::BigInt::from(1)))),
             Value::Num(f) => {
                 let denom = 1_000_000i64;
                 let numer = (f * denom as f64).round() as i64;

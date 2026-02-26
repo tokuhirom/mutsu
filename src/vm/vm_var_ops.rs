@@ -23,6 +23,11 @@ impl VM {
     }
 
     fn array_depth(value: &Value) -> usize {
+        if let Some(shape) = crate::runtime::utils::shaped_array_shape(value)
+            && !shape.is_empty()
+        {
+            return shape.len();
+        }
         match value {
             Value::Array(items, ..) => {
                 let child = items
@@ -74,6 +79,9 @@ impl VM {
         }
         let head = &indices[0];
         if matches!(head, Value::Num(f) if f.is_infinite() && *f > 0.0) {
+            if indices.len() > 1 && crate::runtime::utils::is_shaped_array(target) {
+                return Err(RuntimeError::new("X::NYI"));
+            }
             let Value::Array(items, ..) = target else {
                 return Ok(Value::Nil);
             };
@@ -103,7 +111,10 @@ impl VM {
         indices: &[Value],
         val: Value,
     ) -> Result<(), RuntimeError> {
-        let depth = Self::array_depth(target);
+        let shape = crate::runtime::utils::shaped_array_shape(target);
+        let depth = shape
+            .as_ref()
+            .map_or_else(|| Self::array_depth(target), |s| s.len());
         if indices.len() < depth && depth > 1 {
             return Err(Self::not_enough_dimensions_error(
                 "assign to",
@@ -120,19 +131,26 @@ impl VM {
         let Value::Array(items, ..) = target else {
             return Err(RuntimeError::new("Index out of bounds"));
         };
-        let arr = Arc::make_mut(items);
-        if i >= arr.len() {
+        if i >= items.len() {
             return Err(RuntimeError::new("Index out of bounds"));
         }
+        let arr = Arc::make_mut(items);
         if indices.len() == 1 {
             arr[i] = val;
-            return Ok(());
+        } else {
+            Self::assign_array_multidim(&mut arr[i], &indices[1..], val)?;
         }
-        Self::assign_array_multidim(&mut arr[i], &indices[1..], val)
+        if let Some(shape) = shape.as_deref() {
+            crate::runtime::utils::mark_shaped_array_items(items, Some(shape));
+        }
+        Ok(())
     }
 
     fn delete_array_multidim(target: &mut Value, indices: &[Value]) -> Result<Value, RuntimeError> {
-        let depth = Self::array_depth(target);
+        let shape = crate::runtime::utils::shaped_array_shape(target);
+        let depth = shape
+            .as_ref()
+            .map_or_else(|| Self::array_depth(target), |s| s.len());
         if indices.len() < depth && depth > 1 {
             return Err(Self::not_enough_dimensions_error(
                 "delete from",
@@ -149,16 +167,23 @@ impl VM {
         let Value::Array(items, ..) = target else {
             return Ok(Value::Package("Any".to_string()));
         };
-        let arr = Arc::make_mut(items);
-        if i >= arr.len() {
+        if i >= items.len() {
             return Ok(Value::Package("Any".to_string()));
         }
+        let arr = Arc::make_mut(items);
         if indices.len() == 1 {
             let prev = arr[i].clone();
             arr[i] = Value::Nil;
+            if let Some(shape) = shape.as_deref() {
+                crate::runtime::utils::mark_shaped_array_items(items, Some(shape));
+            }
             return Ok(prev);
         }
-        Self::delete_array_multidim(&mut arr[i], &indices[1..])
+        let deleted = Self::delete_array_multidim(&mut arr[i], &indices[1..])?;
+        if let Some(shape) = shape.as_deref() {
+            crate::runtime::utils::mark_shaped_array_items(items, Some(shape));
+        }
+        Ok(deleted)
     }
 
     fn encode_bound_index(idx: &Value) -> String {
@@ -233,10 +258,32 @@ impl VM {
                 package: "GLOBAL".to_string(),
                 name: name.to_string(),
             }
+        } else if self.interpreter.is_name_suppressed(name) {
+            return Err(RuntimeError::new(format!(
+                "X::Undeclared::Symbols: Undeclared name:\n    {} used at line 1",
+                name,
+            )));
+        } else if let Some((pkg, sym)) = name.rsplit_once("::")
+            && let Some(stripped_sym) = sym.strip_prefix('&')
+        {
+            let qualified_name = format!("{pkg}::{stripped_sym}");
+            if self.interpreter.has_function(&qualified_name)
+                || self.interpreter.has_multi_function(&qualified_name)
+            {
+                Value::Routine {
+                    package: pkg.to_string(),
+                    name: qualified_name,
+                }
+            } else {
+                Value::Str(name.to_string())
+            }
         } else if let Some(v) = self.interpreter.env().get(name) {
             if matches!(v, Value::Enum { .. } | Value::Nil) {
                 v.clone()
-            } else if self.interpreter.has_class(name) || Self::is_builtin_type(name) {
+            } else if self.interpreter.has_class(name)
+                || self.interpreter.is_role(name)
+                || Self::is_builtin_type(name)
+            {
                 Value::Package(name.to_string())
             } else if !name.starts_with('$') && !name.starts_with('@') && !name.starts_with('%') {
                 v.clone()
@@ -244,6 +291,7 @@ impl VM {
                 Value::Str(name.to_string())
             }
         } else if self.interpreter.has_class(name)
+            || self.interpreter.is_role(name)
             || Self::is_builtin_type(name)
             || Self::is_type_with_smiley(name, &self.interpreter)
         {
@@ -289,6 +337,8 @@ impl VM {
         } else if name.starts_with("Metamodel::") {
             // Meta-object protocol type objects
             Value::Package(name.to_string())
+        } else if name.contains("::") {
+            Value::Package(name.to_string())
         } else if name.chars().count() == 1 {
             // Single unicode character — check for vulgar fractions etc.
             let ch = name.chars().next().unwrap();
@@ -321,8 +371,25 @@ impl VM {
                 }
             }
             (target @ Value::Array(..), Value::Array(indices, ..)) => {
-                let strict_oob = indices.len() > 1;
-                Self::index_array_multidim(&target, indices.as_ref(), strict_oob)?
+                let depth = Self::array_depth(&target);
+                if depth <= 1 && indices.len() > 1 {
+                    // Positional slice: @a[0,1,2] returns (@a[0], @a[1], @a[2])
+                    let Value::Array(items, ..) = &target else {
+                        unreachable!()
+                    };
+                    let mut out = Vec::with_capacity(indices.len());
+                    for idx in indices.iter() {
+                        if let Some(i) = Self::index_to_usize(idx) {
+                            out.push(items.get(i).cloned().unwrap_or(Value::Nil));
+                        } else {
+                            out.push(Value::Nil);
+                        }
+                    }
+                    Value::array(out)
+                } else {
+                    let strict_oob = indices.len() > 1;
+                    Self::index_array_multidim(&target, indices.as_ref(), strict_oob)?
+                }
             }
             (Value::Array(items, ..), Value::Range(a, b)) => {
                 let start = a.max(0) as usize;
@@ -601,6 +668,17 @@ impl VM {
                     positional.get(i as usize).cloned().unwrap_or(Value::Nil)
                 }
             }
+            // Role parameterization: e.g. R1[C1] → ParametricRole
+            (Value::Package(name), idx) if self.interpreter.is_role(&name) => {
+                let type_args = match idx {
+                    Value::Array(items, ..) => items.as_ref().clone(),
+                    other => vec![other],
+                };
+                Value::ParametricRole {
+                    base_name: name,
+                    type_args,
+                }
+            }
             // Type parameterization: e.g. Buf[uint8] → returns the type unchanged
             (pkg @ Value::Package(_), _) => pkg,
             _ => Value::Nil,
@@ -826,6 +904,11 @@ impl VM {
             other => (other, false),
         };
         let encoded_idx = Self::encode_bound_index(&idx);
+        let is_bound_index = if bind_mode {
+            self.is_bound_index(&var_name, &encoded_idx)
+        } else {
+            false
+        };
         if !bind_mode && self.is_bound_index(&var_name, &encoded_idx) {
             return Err(RuntimeError::new("X::Assignment::RO"));
         }
@@ -834,7 +917,37 @@ impl VM {
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name)
                     && matches!(container, Value::Array(..))
                 {
-                    Self::assign_array_multidim(container, keys.as_ref(), val.clone())?;
+                    let is_shaped = crate::runtime::utils::is_shaped_array(container);
+                    if is_shaped {
+                        if bind_mode && is_bound_index {
+                            return Err(RuntimeError::new("X::Assignment::RO"));
+                        }
+                        // Multidimensional indexing: @arr[0;0] = 'x'
+                        Self::assign_array_multidim(container, keys.as_ref(), val.clone())?;
+                    } else {
+                        // Flat slice assignment: @a[2,3,4,6] = <foo bar foo bar>
+                        // Auto-extend the array to accommodate all indices
+                        let max_idx = keys
+                            .iter()
+                            .filter_map(Self::index_to_usize)
+                            .max()
+                            .unwrap_or(0);
+                        if let Value::Array(items, ..) = container {
+                            let arr = Arc::make_mut(items);
+                            if max_idx >= arr.len() {
+                                arr.resize(max_idx + 1, Value::Package("Any".to_string()));
+                            }
+                        }
+                        // Assign each value to the corresponding index
+                        let vals = match &val {
+                            Value::Array(v, ..) => (**v).clone(),
+                            _ => vec![val.clone()],
+                        };
+                        for (i, key) in keys.iter().enumerate() {
+                            let v = vals.get(i).cloned().unwrap_or(Value::Nil);
+                            Self::assign_array_multidim(container, std::slice::from_ref(key), v)?;
+                        }
+                    }
                     if bind_mode {
                         self.mark_bound_index(&var_name, encoded_idx);
                     }
@@ -866,17 +979,44 @@ impl VM {
             _ => {
                 // Check if the target is an array variable — use numeric index assignment
                 let key = idx.to_string_value();
+                let array_elem_constraint = self.interpreter.var_type_constraint(&var_name);
+                if let Some(constraint) = array_elem_constraint
+                    && !matches!(val, Value::Nil)
+                    && !self.interpreter.type_matches_value(&constraint, &val)
+                {
+                    return Err(RuntimeError::new(format!(
+                        "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
+                        var_name,
+                        constraint,
+                        runtime::utils::value_type_name(&val)
+                    )));
+                }
                 if let Some(container) = self.interpreter.env_mut().get_mut(&var_name) {
                     match *container {
                         Value::Hash(ref mut hash) => {
                             Arc::make_mut(hash).insert(key.clone(), val.clone());
                         }
                         Value::Array(..) => {
-                            Self::assign_array_multidim(
-                                container,
-                                std::slice::from_ref(&idx),
-                                val.clone(),
-                            )?;
+                            if crate::runtime::utils::is_shaped_array(container) {
+                                if bind_mode && is_bound_index {
+                                    return Err(RuntimeError::new("X::Assignment::RO"));
+                                }
+                                Self::assign_array_multidim(
+                                    container,
+                                    std::slice::from_ref(&idx),
+                                    val.clone(),
+                                )?;
+                            } else if let Some(i) = Self::index_to_usize(&idx) {
+                                if let Value::Array(items, ..) = container {
+                                    let arr = Arc::make_mut(items);
+                                    if i >= arr.len() {
+                                        arr.resize(i + 1, Value::Package("Any".to_string()));
+                                    }
+                                    arr[i] = val.clone();
+                                }
+                            } else {
+                                return Err(RuntimeError::new("Index out of bounds"));
+                            }
                             if bind_mode {
                                 self.mark_bound_index(&var_name, encoded_idx.clone());
                             }
@@ -940,14 +1080,16 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
         let val = self.locals[idx].clone();
-        let name = code.locals.get(idx).cloned().unwrap_or_default();
-        let env_has_name = self.interpreter.env().contains_key(&name);
-        let is_internal = name.starts_with("__");
-        let is_special = matches!(name.as_str(), "_" | "/" | "!" | "¢");
-        if !env_has_name && !is_internal && !is_special && matches!(val, Value::Nil) {
-            return Err(RuntimeError::new(format!(
-                "X::Undeclared::Symbols: Variable '{name}' is not declared"
-            )));
+        // Fast path: non-Nil values are always valid — skip env lookup
+        if matches!(val, Value::Nil) {
+            let name = code.locals.get(idx).cloned().unwrap_or_default();
+            let is_internal = name.starts_with("__");
+            let is_special = matches!(name.as_str(), "_" | "/" | "!" | "¢");
+            if !is_internal && !is_special && !self.interpreter.env().contains_key(&name) {
+                return Err(RuntimeError::new(format!(
+                    "X::Undeclared::Symbols: Variable '{name}' is not declared"
+                )));
+            }
         }
         self.stack.push(val);
         Ok(())
@@ -970,13 +1112,37 @@ impl VM {
         } else {
             val
         };
-        let val = if name.starts_with('%') {
+        let mut val = if name.starts_with('%') {
             runtime::coerce_to_hash(val)
         } else if name.starts_with('@') {
             runtime::coerce_to_array(val)
         } else {
             val
         };
+        if let Some(constraint) = self.interpreter.var_type_constraint(name)
+            && !name.starts_with('%')
+            && !name.starts_with('@')
+        {
+            if matches!(val, Value::Nil) && self.interpreter.is_definite_constraint(&constraint) {
+                return Err(RuntimeError::new(
+                    "X::Syntax::Variable::MissingInitializer: Definite typed variable requires initializer",
+                ));
+            }
+            if !matches!(val, Value::Nil) && !self.interpreter.type_matches_value(&constraint, &val)
+            {
+                return Err(RuntimeError::new(format!(
+                    "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
+                    name,
+                    constraint,
+                    runtime::utils::value_type_name(&val)
+                )));
+            }
+            if !matches!(val, Value::Nil) {
+                val = self
+                    .interpreter
+                    .try_coerce_value_for_constraint(&constraint, val)?;
+            }
+        }
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
         if matches!(
@@ -1036,16 +1202,35 @@ impl VM {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
-        let val = self.stack.last().unwrap().clone();
+        let raw_val = self.stack.pop().unwrap_or(Value::Nil);
         let idx = idx as usize;
         let name = &code.locals[idx];
-        let val = if name.starts_with('%') {
-            runtime::coerce_to_hash(val)
+        let mut val = if name.starts_with('%') {
+            runtime::coerce_to_hash(raw_val)
         } else if name.starts_with('@') {
-            runtime::coerce_to_array(val)
+            runtime::coerce_to_array(raw_val)
         } else {
-            val
+            raw_val
         };
+        if let Some(constraint) = self.interpreter.var_type_constraint(name)
+            && !name.starts_with('%')
+            && !name.starts_with('@')
+        {
+            if !matches!(val, Value::Nil) && !self.interpreter.type_matches_value(&constraint, &val)
+            {
+                return Err(RuntimeError::new(format!(
+                    "X::TypeCheck::Assignment: Type check failed in assignment to '{}'; expected {}, got {}",
+                    name,
+                    constraint,
+                    runtime::utils::value_type_name(&val)
+                )));
+            }
+            if !matches!(val, Value::Nil) {
+                val = self
+                    .interpreter
+                    .try_coerce_value_for_constraint(&constraint, val)?;
+            }
+        }
         let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
         if matches!(
@@ -1076,6 +1261,7 @@ impl VM {
                 .env_mut()
                 .insert(format!(".{}", attr), val.clone());
         }
+        self.stack.push(val);
         Ok(())
     }
 
@@ -1121,6 +1307,133 @@ impl VM {
         } else {
             format!("${}", name)
         }
+    }
+
+    /// Execute HyperSlice opcode: recursively iterate a hash.
+    pub(super) fn exec_hyper_slice_op(&mut self, adverb: u8) -> Result<(), RuntimeError> {
+        use crate::ast::HyperSliceAdverb;
+
+        let target = self.stack.pop().unwrap();
+        let adverb = match adverb {
+            0 => HyperSliceAdverb::Kv,
+            1 => HyperSliceAdverb::K,
+            2 => HyperSliceAdverb::V,
+            3 => HyperSliceAdverb::Tree,
+            4 => HyperSliceAdverb::DeepK,
+            5 => HyperSliceAdverb::DeepKv,
+            _ => HyperSliceAdverb::Kv,
+        };
+
+        let hash = match target {
+            Value::Hash(h) => h,
+            _ => {
+                return Err(RuntimeError::new(
+                    "Cannot use {**} hyperslice on a non-Hash value".to_string(),
+                ));
+            }
+        };
+
+        let mut result = Vec::new();
+        let path: Vec<String> = Vec::new();
+        Self::hyperslice_recurse(&hash, &path, adverb, &mut result);
+        self.stack.push(Value::array(result));
+        Ok(())
+    }
+
+    fn hyperslice_recurse(
+        hash: &std::collections::HashMap<String, Value>,
+        path: &[String],
+        adverb: crate::ast::HyperSliceAdverb,
+        result: &mut Vec<Value>,
+    ) {
+        use crate::ast::HyperSliceAdverb;
+
+        for (key, value) in hash.iter() {
+            let mut cur_path: Vec<String> = path.to_vec();
+            cur_path.push(key.clone());
+
+            match adverb {
+                HyperSliceAdverb::Kv => {
+                    if let Value::Hash(inner) = value {
+                        Self::hyperslice_recurse(inner, &cur_path, adverb, result);
+                    } else {
+                        result.push(Value::Str(key.clone()));
+                        result.push(value.clone());
+                    }
+                }
+                HyperSliceAdverb::K => {
+                    if let Value::Hash(inner) = value {
+                        Self::hyperslice_recurse(inner, &cur_path, adverb, result);
+                    } else {
+                        result.push(Value::Str(key.clone()));
+                    }
+                }
+                HyperSliceAdverb::V => {
+                    if let Value::Hash(inner) = value {
+                        Self::hyperslice_recurse(inner, &cur_path, adverb, result);
+                    } else {
+                        result.push(value.clone());
+                    }
+                }
+                HyperSliceAdverb::Tree => {
+                    // Tree mode: yield key-value pairs for all entries,
+                    // including sub-hashes (as their original Value::Hash)
+                    result.push(Value::Str(key.clone()));
+                    result.push(value.clone());
+                    if let Value::Hash(inner) = value {
+                        Self::hyperslice_recurse(inner, &cur_path, adverb, result);
+                    }
+                }
+                HyperSliceAdverb::DeepK => {
+                    if let Value::Hash(inner) = value {
+                        Self::hyperslice_recurse(inner, &cur_path, adverb, result);
+                    } else {
+                        let key_array: Vec<Value> =
+                            cur_path.iter().map(|s| Value::Str(s.clone())).collect();
+                        result.push(Value::array(key_array));
+                    }
+                }
+                HyperSliceAdverb::DeepKv => {
+                    if let Value::Hash(inner) = value {
+                        Self::hyperslice_recurse(inner, &cur_path, adverb, result);
+                    } else {
+                        let key_array: Vec<Value> =
+                            cur_path.iter().map(|s| Value::Str(s.clone())).collect();
+                        result.push(Value::array(key_array));
+                        result.push(value.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    /// Execute HyperIndex opcode: drill into nested hash by key path.
+    pub(super) fn exec_hyper_index_op(&mut self) -> Result<(), RuntimeError> {
+        let keys = self.stack.pop().unwrap();
+        let target = self.stack.pop().unwrap();
+
+        let key_list = match keys {
+            Value::Array(items, ..) => items,
+            Value::Seq(items) => Arc::new(items.to_vec()),
+            _ => Arc::new(vec![keys]),
+        };
+
+        let mut current = target;
+        for key in key_list.iter() {
+            match current {
+                Value::Hash(ref h) => {
+                    let k = key.to_string_value();
+                    current = h.get(&k).cloned().unwrap_or(Value::Nil);
+                }
+                _ => {
+                    current = Value::Nil;
+                    break;
+                }
+            }
+        }
+
+        self.stack.push(current);
+        Ok(())
     }
 }
 

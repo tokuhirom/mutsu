@@ -37,8 +37,10 @@ pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
         if let Some(after_open) = rest.strip_prefix(":<<")
             && let Some(end_pos) = after_open.find(">>")
         {
-            let op_symbol = after_open[..end_pos].trim();
+            let raw_symbol = after_open[..end_pos].trim();
             let after_close = &after_open[end_pos + 2..];
+            // Resolve compile-time constants: $var or {name}
+            let op_symbol = resolve_operator_symbol(raw_symbol);
             let full_name = format!("{}:<{}>", base, op_symbol);
             return Ok((after_close, full_name));
         }
@@ -87,6 +89,49 @@ pub(super) fn parse_sub_name(input: &str) -> PResult<'_, String> {
         return Ok((after_close, full_name));
     }
     Ok((rest, base))
+}
+
+/// Validate that circumfix/postcircumfix operators have exactly 2 delimiter parts.
+fn validate_categorical_parts(name: &str) -> Result<(), PError> {
+    for prefix in &["circumfix:<", "postcircumfix:<"] {
+        if let Some(rest) = name.strip_prefix(prefix)
+            && let Some(delims) = rest.strip_suffix('>')
+        {
+            let parts: Vec<&str> = delims.split_whitespace().collect();
+            if parts.len() > 2 {
+                return Err(PError::fatal(
+                    "X::Syntax::AddCategorical::TooManyParts: Too many parts in categorical name"
+                        .to_string(),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Resolve compile-time constants in operator symbol names.
+/// Handles `$var` (scalar constant) and `{name}` (sigilless constant).
+fn resolve_operator_symbol(raw: &str) -> String {
+    let trimmed = raw.trim();
+    // $variable form: look up as compile-time constant
+    if let Some(bare_name) = trimmed.strip_prefix('$') {
+        // Constants are stored without the $ sigil
+        if let Some(value) = super::simple::lookup_compile_time_constant(bare_name) {
+            return value;
+        }
+        // Also try with the sigil
+        if let Some(value) = super::simple::lookup_compile_time_constant(trimmed) {
+            return value;
+        }
+    }
+    // {name} form: look up sigilless constant
+    if let Some(inner) = trimmed.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
+        let inner = inner.trim();
+        if let Some(value) = super::simple::lookup_compile_time_constant(inner) {
+            return value;
+        }
+    }
+    trimmed.to_string()
 }
 
 fn unescape_operator_single_quoted(s: &str) -> String {
@@ -266,6 +311,8 @@ pub(super) fn sub_decl_body(
         (rest, name, Some(expr))
     } else {
         let (rest, name) = parse_sub_name(input)?;
+        // Validate circumfix/postcircumfix operator part count
+        validate_categorical_parts(&name)?;
         // Register user-declared sub so it can be called without parens later
         super::simple::register_user_sub(&name);
         super::simple::register_user_callable_term_symbol(&name);
@@ -450,14 +497,16 @@ pub(super) struct SubTraits {
     pub is_export: bool,
     pub is_test_assertion: bool,
     pub is_rw: bool,
+    pub return_type: Option<String>,
 }
 
-/// Parse sub/method traits like `is test-assertion`, `is export`, `returns Str`, etc.
+/// Parse sub/method traits like `is test-assertion`, `is export`, `returns Str`, `of Num`, etc.
 /// Returns `SubTraits` indicating which traits were found.
 pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
     let mut is_export = false;
     let mut is_test_assertion = false;
     let mut is_rw = false;
+    let mut return_type = None;
     loop {
         let (r, _) = ws(input)?;
         if r.starts_with('{') || r.is_empty() {
@@ -467,6 +516,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     is_export,
                     is_test_assertion,
                     is_rw,
+                    return_type,
                 },
             ));
         }
@@ -489,15 +539,25 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
         }
         if let Some(r) = keyword("returns", r) {
             let (r, _) = ws(r)?;
-            let (r, _type_name) =
+            let (r, type_name) =
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == ':')?;
+            return_type = Some(type_name.to_string());
+            input = r;
+            continue;
+        }
+        if let Some(r) = keyword("of", r) {
+            let (r, _) = ws(r)?;
+            let (r, type_name) =
+                take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == ':')?;
+            return_type = Some(type_name.to_string());
             input = r;
             continue;
         }
         if let Some(r) = r.strip_prefix("-->") {
             let (r, _) = ws(r)?;
-            let (r, _type_name) =
+            let (r, type_name) =
                 take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == ':')?;
+            return_type = Some(type_name.to_string());
             input = r;
             continue;
         }
@@ -507,6 +567,7 @@ pub(super) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 is_export,
                 is_test_assertion,
                 is_rw,
+                return_type,
             },
         ));
     }
@@ -817,6 +878,36 @@ fn parse_required_suffix(input: &str) -> (&str, bool, bool) {
     }
 }
 
+pub(super) fn parse_type_constraint_expr(input: &str) -> Option<(&str, String)> {
+    let (mut rest, mut type_name) = qualified_ident(input).ok()?;
+    while rest.starts_with('[') {
+        let (r2, suffix) = parse_generic_suffix(rest).ok()?;
+        type_name.push_str(&suffix);
+        rest = r2;
+    }
+    if rest.starts_with(":D") || rest.starts_with(":U") || rest.starts_with(":_") {
+        type_name.push_str(&rest[..2]);
+        rest = &rest[2..];
+    }
+
+    let (r2, _) = ws(rest).ok()?;
+    if let Some(after_open) = r2.strip_prefix('(') {
+        let (after_ws, _) = ws(after_open).ok()?;
+        if let Some(r3) = after_ws.strip_prefix(')') {
+            let (r3, _) = ws(r3).ok()?;
+            return Some((r3, format!("{}()", type_name)));
+        }
+        if let Some((inner_r, source_type)) = parse_type_constraint_expr(after_ws) {
+            let (inner_r, _) = ws(inner_r).ok()?;
+            if let Some(r3) = inner_r.strip_prefix(')') {
+                let (r3, _) = ws(r3).ok()?;
+                return Some((r3, format!("{}({})", type_name, source_type)));
+            }
+        }
+    }
+    Some((rest, type_name))
+}
+
 fn parse_where_constraint_expr(input: &str) -> PResult<'_, Expr> {
     let (r, _) = ws(input)?;
     if r.starts_with('{') {
@@ -890,20 +981,42 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
             return Ok((r, p));
         }
         let (r, _) = ws(r)?;
-        // Optional capture variable name with sigil
+        // Optional capture variable name with sigil, optionally followed by
+        // a capture sub-signature: |$c ($a, $b?)
         if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') {
             let (r, name) = var_name(r)?;
             let mut p = make_param(name);
             p.slurpy = true;
+            let (r, _) = ws(r)?;
+            if r.starts_with('(') {
+                let (r, _) = parse_char(r, '(')?;
+                let (r, _) = ws(r)?;
+                let (r, sub_params) = parse_param_list(r)?;
+                let (r, _) = ws(r)?;
+                let (r, _) = parse_char(r, ')')?;
+                p.sub_signature = Some(sub_params);
+                return Ok((r, p));
+            }
             return Ok((r, p));
         }
-        // Sigilless capture variable name: |c, |args
+        // Sigilless capture variable name: |c, |args, optionally followed by
+        // a capture sub-signature: |c ($a, $b?)
         if let Ok((r_ident, name)) = ident(r)
             && !matches!(name.as_str(), "where" | "is")
         {
             let mut p = make_param(name);
             p.slurpy = true;
             p.sigilless = true;
+            let (r_ident, _) = ws(r_ident)?;
+            if r_ident.starts_with('(') {
+                let (r_ident, _) = parse_char(r_ident, '(')?;
+                let (r_ident, _) = ws(r_ident)?;
+                let (r_ident, sub_params) = parse_param_list(r_ident)?;
+                let (r_ident, _) = ws(r_ident)?;
+                let (r_ident, _) = parse_char(r_ident, ')')?;
+                p.sub_signature = Some(sub_params);
+                return Ok((r_ident, p));
+            }
             return Ok((r_ident, p));
         }
         // Bare |, possibly followed by traits/where
@@ -1039,22 +1152,8 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
         && rest.contains('(');
     if type_constraint.is_none()
         && !skip_type_for_named_alias
-        && let Ok((r, tc)) = qualified_ident(rest)
+        && let Some((r, tc)) = parse_type_constraint_expr(rest)
     {
-        let mut tc_full = tc;
-        let mut r = r;
-        while r.starts_with('[') {
-            let (r2, suffix) = parse_generic_suffix(r)?;
-            tc_full.push_str(&suffix);
-            r = r2;
-        }
-        // Preserve type smileys :D, :U, :_ as part of the type constraint
-        let (r, tc) = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
-            let smiley = &r[..2];
-            (&r[2..], format!("{}{}", tc_full, smiley))
-        } else {
-            (r, tc_full)
-        };
         let (r2, _) = ws(r)?;
 
         // Check for coercion type: Int() or Int(Rat)
@@ -1072,7 +1171,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                     named = true;
                     rest = &rest[1..];
                 }
-            } else if let Ok((inner_r, source_type)) = qualified_ident(after_ws) {
+            } else if let Some((inner_r, source_type)) = parse_type_constraint_expr(after_ws) {
                 let (inner_r, _) = ws(inner_r)?;
                 if let Some(r3) = inner_r.strip_prefix(')') {
                     let (r3, _) = ws(r3)?;
@@ -1312,6 +1411,25 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                         rest = r;
                     }
                     p.traits = param_traits;
+                    let (rest, where_constraint) = if let Some(r) = keyword("where", rest) {
+                        let (r, _) = ws1(r)?;
+                        let (r, constraint) = parse_where_constraint_expr(r)?;
+                        (r, Some(Box::new(constraint)))
+                    } else {
+                        (rest, None)
+                    };
+                    p.where_constraint = where_constraint;
+                    let (rest_ws, _) = ws(rest)?;
+                    let (rest, default) = if rest_ws.starts_with('=') && !rest_ws.starts_with("==")
+                    {
+                        let rest = &rest_ws[1..];
+                        let (rest, _) = ws(rest)?;
+                        let (rest, expr) = expression(rest)?;
+                        (rest, Some(expr))
+                    } else {
+                        (rest_ws, None)
+                    };
+                    p.default = default;
                     return Ok((rest, p));
                 }
                 // Handle optional (?) / required (!) suffix after alias
@@ -1340,6 +1458,16 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                     (rest, None)
                 };
                 p.where_constraint = where_constraint;
+                let (rest_ws, _) = ws(rest)?;
+                let (rest, default) = if rest_ws.starts_with('=') && !rest_ws.starts_with("==") {
+                    let rest = &rest_ws[1..];
+                    let (rest, _) = ws(rest)?;
+                    let (rest, expr) = expression(rest)?;
+                    (rest, Some(expr))
+                } else {
+                    (rest_ws, None)
+                };
+                p.default = default;
                 return Ok((rest, p));
             }
             // Multiple params or complex: treat as sub-signature
@@ -1375,6 +1503,16 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
                 (rest, None)
             };
             p.where_constraint = where_constraint;
+            let (rest_ws, _) = ws(rest)?;
+            let (rest, default) = if rest_ws.starts_with('=') && !rest_ws.starts_with("==") {
+                let rest = &rest_ws[1..];
+                let (rest, _) = ws(rest)?;
+                let (rest, expr) = expression(rest)?;
+                (rest, Some(expr))
+            } else {
+                (rest_ws, None)
+            };
+            p.default = default;
             return Ok((rest, p));
         }
     }
@@ -1596,19 +1734,20 @@ pub(super) fn method_decl_body(input: &str, multi: bool, is_our: bool) -> PResul
     };
     let (rest, _) = ws(rest)?;
 
-    let (rest, (params, param_defs)) = if rest.starts_with('(') {
+    let (rest, (params, param_defs, param_return_type)) = if rest.starts_with('(') {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
-        let (r, pd) = parse_param_list(r)?;
+        let (r, (pd, rt)) = parse_param_list_with_return(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
         let names: Vec<String> = pd.iter().map(|p| p.name.clone()).collect();
-        (r, (names, pd))
+        (r, (names, pd, rt))
     } else {
-        (rest, (Vec::new(), Vec::new()))
+        (rest, (Vec::new(), Vec::new(), None))
     };
 
     let (rest, traits) = parse_sub_traits(rest)?;
+    let return_type = traits.return_type.or(param_return_type);
     let (rest, body) = block(rest)?;
     Ok((
         rest,
@@ -1622,6 +1761,7 @@ pub(super) fn method_decl_body(input: &str, multi: bool, is_our: bool) -> PResul
             is_rw: traits.is_rw,
             is_private,
             is_our,
+            return_type,
         },
     ))
 }

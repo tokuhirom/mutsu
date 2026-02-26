@@ -399,6 +399,15 @@ impl Interpreter {
             return Ok(Value::make_instance(class_name.to_string(), attributes));
         }
         if target_var.starts_with('@') {
+            // Check for shaped (multidimensional) arrays - these don't support
+            // mutating operations like push/pop/shift/unshift/splice/append/prepend
+            if matches!(
+                method,
+                "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
+            ) && is_shaped_array(&target)
+            {
+                return Err(RuntimeError::illegal_on_fixed_dimension_array(method));
+            }
             let key = target_var.to_string();
             match method {
                 "push" => {
@@ -430,7 +439,9 @@ impl Interpreter {
                     };
                     for arg in args {
                         match arg {
-                            Value::Array(vals, ..) => items.extend(vals.iter().cloned()),
+                            Value::Array(vals, is_array) if is_array => {
+                                items.extend(vals.iter().cloned())
+                            }
                             other => items.push(other),
                         }
                     }
@@ -583,7 +594,9 @@ impl Interpreter {
                     if method == "append" {
                         for arg in &args {
                             match arg {
-                                Value::Array(inner, ..) => items.extend(inner.iter().cloned()),
+                                Value::Array(inner, is_array) if *is_array => {
+                                    items.extend(inner.iter().cloned())
+                                }
                                 other => items.push(other.clone()),
                             }
                         }

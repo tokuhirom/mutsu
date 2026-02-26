@@ -170,6 +170,7 @@ fn inject_implicit_rule_ws(pattern: &str) -> String {
     let mut in_single = false;
     let mut in_double = false;
     let mut escaped = false;
+    let mut brace_depth = 0usize;
     while i < chars.len() {
         let c = chars[i];
         if escaped {
@@ -192,6 +193,27 @@ fn inject_implicit_rule_ws(pattern: &str) -> String {
         }
         if c == '"' && !in_single {
             in_double = !in_double;
+            out.push(c);
+            i += 1;
+            continue;
+        }
+        // Track brace depth to skip ws injection inside code blocks { ... }
+        if !in_single && !in_double {
+            if c == '{' {
+                brace_depth += 1;
+                out.push(c);
+                i += 1;
+                continue;
+            }
+            if c == '}' && brace_depth > 0 {
+                brace_depth -= 1;
+                out.push(c);
+                i += 1;
+                continue;
+            }
+        }
+        // Inside a code block — pass through without ws injection
+        if brace_depth > 0 {
             out.push(c);
             i += 1;
             continue;
@@ -245,6 +267,45 @@ pub(crate) fn class_decl(input: &str) -> PResult<'_, Stmt> {
     class_decl_body(rest)
 }
 
+/// Parse `anon class Name { ... }` declaration.
+/// The class is created but not installed in the lexical scope.
+/// Emits a ClassDecl (registered under the real name) followed by a call to
+/// `__MUTSU_UNREGISTER_CLASS__` to remove the name from the scope.
+pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("anon", input).ok_or_else(|| PError::expected("anon class declaration"))?;
+    let (rest, _) = ws1(rest)?;
+    let rest = keyword("class", rest).ok_or_else(|| PError::expected("class after anon"))?;
+    let (rest, _) = ws1(rest)?;
+    // Parse the class name
+    let (rest, user_name) = qualified_ident(rest)?;
+    let (rest, _) = ws(rest)?;
+    // Parse parent classes
+    let mut parents = Vec::new();
+    let mut r = rest;
+    while let Some(r2) = keyword("is", r) {
+        let (r2, _) = ws1(r2)?;
+        let (r2, parent) = qualified_ident(r2)?;
+        parents.push(parent);
+        let (r2, _) = ws(r2)?;
+        r = r2;
+    }
+    let (rest, body) = block(r)?;
+    let class_decl = Stmt::ClassDecl {
+        name: user_name.clone(),
+        name_expr: None,
+        parents,
+        is_hidden: false,
+        hidden_parents: Vec::new(),
+        body,
+    };
+    // Emit the class registration followed by unregistering the name from the scope
+    let unregister = Stmt::Expr(Expr::Call {
+        name: "__MUTSU_UNREGISTER_CLASS__".to_string(),
+        args: vec![Expr::Literal(Value::Str(user_name))],
+    });
+    Ok((rest, Stmt::Block(vec![class_decl, unregister])))
+}
+
 /// Parse the body of a class declaration (after `class` keyword and whitespace).
 pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
     let (rest, name, name_expr) = if input.starts_with("::") {
@@ -258,12 +319,18 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
 
     // Parent classes: is Parent
+    let mut is_hidden = false;
+    let mut hidden_parents = Vec::new();
     let mut parents = Vec::new();
     let mut r = rest;
     while let Some(r2) = keyword("is", r) {
         let (r2, _) = ws1(r2)?;
         let (r2, parent) = qualified_ident(r2)?;
-        parents.push(parent);
+        if parent == "hidden" {
+            is_hidden = true;
+        } else {
+            parents.push(parent);
+        }
         let (r2, _) = ws(r2)?;
         r = r2;
     }
@@ -297,12 +364,24 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
             r = r2;
         }
     }
+    // hides Parent — like inheritance for method lookup, but the hidden parent
+    // is skipped by deferal (`nextsame`/`callsame`) candidate selection.
+    while let Some(r2) = keyword("hides", r) {
+        let (r2, _) = ws1(r2)?;
+        let (r2, parent) = qualified_ident(r2)?;
+        parents.push(parent.clone());
+        hidden_parents.push(parent);
+        let (r2, _) = ws(r2)?;
+        r = r2;
+    }
 
     let (rest, body) = block(r)?;
     let class_stmt = Stmt::ClassDecl {
         name: name.clone(),
         name_expr,
         parents,
+        is_hidden,
+        hidden_parents,
         body,
     };
     let mut stmts = Vec::new();
@@ -319,7 +398,7 @@ pub(super) fn class_decl_body(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Parse optional role type parameters like `[::T]` or `[::T1, ::T2]`.
-/// Returns the type parameter names (without the `::` prefix).
+/// Returns parameter names for either type params (`::T`) or value params (`$x`).
 fn parse_optional_role_type_params(input: &str) -> PResult<'_, Vec<String>> {
     let (r, _) = ws(input)?;
     if !r.starts_with('[') {
@@ -341,7 +420,7 @@ fn parse_optional_role_type_params(input: &str) -> PResult<'_, Vec<String>> {
     }
     let content = &r[1..end]; // content between [ and ]
     let rest = &r[end + 1..];
-    // Parse type params: split by comma and look for ::Name patterns
+    // Parse params: split by comma and look for ::Name or sigiled vars like $x.
     let mut params = Vec::new();
     for part in content.split(',') {
         let trimmed = part.trim();
@@ -351,10 +430,24 @@ fn parse_optional_role_type_params(input: &str) -> PResult<'_, Vec<String>> {
             if let Ok((_, name)) = ident(name_part) {
                 params.push(name);
             }
+        } else if let Some(stripped) = trimmed
+            .strip_prefix('$')
+            .or_else(|| trimmed.strip_prefix('@'))
+            .or_else(|| trimmed.strip_prefix('%'))
+            .or_else(|| trimmed.strip_prefix('&'))
+        {
+            if let Ok((_, name)) = ident(stripped.trim()) {
+                params.push(name);
+            }
         } else {
-            // Could be "Cool ::T" pattern — look for :: within
+            // Could be "Cool ::T" or "Int $x" pattern — look for marker within.
             if let Some(pos) = trimmed.find("::") {
                 let after = &trimmed[pos + 2..];
+                if let Ok((_, name)) = ident(after.trim()) {
+                    params.push(name);
+                }
+            } else if let Some(pos) = trimmed.find('$') {
+                let after = &trimmed[pos + 1..];
                 if let Ok((_, name)) = ident(after.trim()) {
                     params.push(name);
                 }
@@ -395,6 +488,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
     let (mut rest, type_params) = parse_optional_role_type_params(rest)?;
+    let mut parent_roles: Vec<String> = Vec::new();
 
     // Optional `does Role[...]` clauses.
     while let Some(r) = keyword("does", rest) {
@@ -406,6 +500,7 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
                 name
             )));
         }
+        parent_roles.push(role_name);
         let (r, _) = skip_optional_role_args(r)?;
         rest = r;
     }
@@ -419,10 +514,13 @@ pub(super) fn role_decl(input: &str) -> PResult<'_, Stmt> {
         rest = r;
     }
 
-    let (rest, body) = match block(rest) {
+    let (rest, mut body) = match block(rest) {
         Ok(ok) => ok,
         Err(_) => consume_raw_braced_body(rest)?,
     };
+    for role_name in parent_roles.into_iter().rev() {
+        body.insert(0, Stmt::DoesDecl { name: role_name });
+    }
     Ok((
         rest,
         Stmt::RoleDecl {
@@ -581,6 +679,8 @@ pub(super) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 name,
                 name_expr: None,
                 parents: Vec::new(),
+                is_hidden: false,
+                hidden_parents: Vec::new(),
                 body: Vec::new(),
             },
         ));

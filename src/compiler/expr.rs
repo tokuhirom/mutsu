@@ -26,6 +26,10 @@ impl Compiler {
                     self.code.emit(OpCode::LoadConst(idx));
                 }
             },
+            // m/regex/ — compile as $_ ~~ /regex/, matching against $_
+            Expr::MatchRegex(v) => {
+                self.compile_match_regex(v);
+            }
             Expr::Var(name) => {
                 // Compile-time package/module variables
                 if name == "?PACKAGE" || name == "?MODULE" {
@@ -43,8 +47,9 @@ impl Compiler {
                 }
             }
             Expr::ArrayVar(name) => {
-                let var_name = if self.local_map.contains_key(name) {
-                    format!("@{}", name)
+                let sigiled = format!("@{}", name);
+                let var_name = if self.local_map.contains_key(sigiled.as_str()) {
+                    sigiled
                 } else {
                     self.qualify_variable_name(&format!("@{}", name))
                 };
@@ -52,8 +57,9 @@ impl Compiler {
                 self.code.emit(OpCode::GetArrayVar(name_idx));
             }
             Expr::HashVar(name) => {
-                let var_name = if self.local_map.contains_key(name) {
-                    format!("%{}", name)
+                let sigiled = format!("%{}", name);
+                let var_name = if self.local_map.contains_key(sigiled.as_str()) {
+                    sigiled
                 } else {
                     self.qualify_variable_name(&format!("%{}", name))
                 };
@@ -194,6 +200,13 @@ impl Compiler {
                         self.code.patch_jump(jump_end);
                         return;
                     }
+                    TokenKind::XorXor => {
+                        // a ^^ b: return truthy value if exactly one is truthy, else Nil/last falsy
+                        self.compile_expr(left);
+                        self.compile_expr(right);
+                        self.code.emit(OpCode::XorXor);
+                        return;
+                    }
                     TokenKind::SlashSlash | TokenKind::OrElse => {
                         // a // b: result is a if not nil, else b
                         self.compile_expr(left);
@@ -253,7 +266,15 @@ impl Compiler {
                             negate: matches!(op, TokenKind::BangTilde),
                             lhs_var,
                         });
-                        self.compile_expr(right);
+                        // When RHS is m/regex/, unwrap to the regex value since
+                        // SmartMatchExpr already handles the matching against LHS
+                        match right.as_ref() {
+                            Expr::MatchRegex(v) => {
+                                let idx = self.code.add_constant(v.clone());
+                                self.code.emit(OpCode::LoadConst(idx));
+                            }
+                            _ => self.compile_expr(right),
+                        }
                         self.code.patch_smart_match_rhs_end(sm_idx);
                         return;
                     }
@@ -387,8 +408,10 @@ impl Compiler {
                     self.compile_expr(&method_call);
                 }
                 // Rewrite push(@arr, val...)/unshift(@arr, val...)/append/prepend → @arr.push(val...)
-                else if matches!(name.as_str(), "push" | "unshift" | "append" | "prepend")
-                    && args.len() >= 2
+                else if matches!(
+                    name.as_str(),
+                    "push" | "unshift" | "append" | "prepend" | "splice"
+                ) && args.len() >= 2
                     && matches!(args[0], Expr::ArrayVar(_) | Expr::Var(_))
                 {
                     let method_call = Expr::MethodCall {
@@ -418,6 +441,68 @@ impl Compiler {
                         arity,
                         arg_sources_idx,
                     });
+                }
+                // Rewrite cas($target, $expected, $new) into:
+                // do {
+                //   my $__cas_seen = $target;
+                //   if $__cas_seen == $expected { $target = $new }
+                //   $__cas_seen
+                // }
+                else if name == "cas" && args.len() == 3 {
+                    let assign_stmt = match &args[0] {
+                        Expr::Var(target_name) => Some(Stmt::Assign {
+                            name: target_name.clone(),
+                            expr: args[2].clone(),
+                            op: AssignOp::Assign,
+                        }),
+                        Expr::Index { target, index } => Some(Stmt::Expr(Expr::IndexAssign {
+                            target: target.clone(),
+                            index: index.clone(),
+                            value: Box::new(args[2].clone()),
+                        })),
+                        _ => None,
+                    };
+                    if let Some(assign_stmt) = assign_stmt {
+                        let seen_name = format!(
+                            "__mutsu_cas_seen_{}",
+                            STATE_COUNTER.fetch_add(1, Ordering::Relaxed)
+                        );
+                        let cas_expr = Expr::DoBlock {
+                            body: vec![
+                                Stmt::VarDecl {
+                                    name: seen_name.clone(),
+                                    expr: args[0].clone(),
+                                    type_constraint: None,
+                                    is_state: false,
+                                    is_our: false,
+                                },
+                                Stmt::If {
+                                    cond: Expr::Binary {
+                                        left: Box::new(Expr::Var(seen_name.clone())),
+                                        op: TokenKind::EqEq,
+                                        right: Box::new(args[1].clone()),
+                                    },
+                                    then_branch: vec![assign_stmt],
+                                    else_branch: vec![],
+                                },
+                                Stmt::Expr(Expr::Var(seen_name)),
+                            ],
+                            label: None,
+                        };
+                        self.compile_expr(&cas_expr);
+                    } else {
+                        let arity = args.len() as u32;
+                        let arg_sources_idx = self.add_arg_sources_constant(args);
+                        for arg in args {
+                            self.compile_expr(arg);
+                        }
+                        let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                        self.code.emit(OpCode::CallFunc {
+                            name_idx,
+                            arity,
+                            arg_sources_idx,
+                        });
+                    }
                 }
                 // Rewrite cas($var, &fn) to assignment expression:
                 // $var = fn($var)
@@ -667,6 +752,17 @@ impl Compiler {
                     self.code.emit(OpCode::Index);
                 }
             }
+            // Hash hyperslice: %hash{**}:adverb
+            Expr::HyperSlice { target, adverb } => {
+                self.compile_expr(target);
+                self.code.emit(OpCode::HyperSlice(*adverb as u8));
+            }
+            // Hash hyperindex: %hash{||@keys}
+            Expr::HyperIndex { target, keys } => {
+                self.compile_expr(target);
+                self.compile_expr(keys);
+                self.code.emit(OpCode::HyperIndex);
+            }
             // String interpolation
             Expr::StringInterpolation(parts) => {
                 let n = parts.len() as u32;
@@ -800,31 +896,47 @@ impl Compiler {
             Expr::Subst {
                 pattern,
                 replacement,
+                samemark,
             } => {
                 let pattern_idx = self.code.add_constant(Value::Str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::Str(replacement.clone()));
                 self.code.emit(OpCode::Subst {
                     pattern_idx,
                     replacement_idx,
+                    samemark: *samemark,
                 });
             }
             // S/// non-destructive substitution
             Expr::NonDestructiveSubst {
                 pattern,
                 replacement,
+                samemark,
             } => {
                 let pattern_idx = self.code.add_constant(Value::Str(pattern.clone()));
                 let replacement_idx = self.code.add_constant(Value::Str(replacement.clone()));
                 self.code.emit(OpCode::NonDestructiveSubst {
                     pattern_idx,
                     replacement_idx,
+                    samemark: *samemark,
                 });
             }
             // tr/// transliteration
-            Expr::Transliterate { from, to } => {
+            Expr::Transliterate {
+                from,
+                to,
+                delete,
+                complement,
+                squash,
+            } => {
                 let from_idx = self.code.add_constant(Value::Str(from.clone()));
                 let to_idx = self.code.add_constant(Value::Str(to.clone()));
-                self.code.emit(OpCode::Transliterate { from_idx, to_idx });
+                self.code.emit(OpCode::Transliterate {
+                    from_idx,
+                    to_idx,
+                    delete: *delete,
+                    complement: *complement,
+                    squash: *squash,
+                });
             }
             // HyperOp (>>op<<): compile sub-expressions, delegate operation
             Expr::HyperOp {
@@ -1004,6 +1116,12 @@ impl Compiler {
                 }
                 Stmt::RoleDecl { name, .. } => {
                     // Register the role and return the role type object.
+                    self.compile_stmt(stmt);
+                    let name_idx = self.code.add_constant(Value::Str(name.clone()));
+                    self.code.emit(OpCode::GetBareWord(name_idx));
+                }
+                Stmt::Package { name, .. } => {
+                    // Register the package and return the type object.
                     self.compile_stmt(stmt);
                     let name_idx = self.code.add_constant(Value::Str(name.clone()));
                     self.code.emit(OpCode::GetBareWord(name_idx));
@@ -1239,5 +1357,26 @@ impl Compiler {
             TokenKind::DotDotDotCaret => Some(OpCode::Sequence { exclude_end: true }),
             _ => None,
         }
+    }
+
+    /// Compile a regex value as `$_ ~~ /regex/`, so it matches against $_
+    /// and sets $/ with the match result.
+    fn compile_match_regex(&mut self, v: &Value) {
+        let lhs_var = Some("_".to_string());
+        // Load $_ as the LHS
+        let name_idx = self
+            .code
+            .add_constant(Value::Str(self.qualify_variable_name("_")));
+        self.code.emit(OpCode::GetGlobal(name_idx));
+        // SmartMatchExpr will set $_ to LHS, run RHS, then smartmatch
+        let sm_idx = self.code.emit(OpCode::SmartMatchExpr {
+            rhs_end: 0,
+            negate: false,
+            lhs_var,
+        });
+        // RHS: load the regex constant
+        let idx = self.code.add_constant(v.clone());
+        self.code.emit(OpCode::LoadConst(idx));
+        self.code.patch_smart_match_rhs_end(sm_idx);
     }
 }

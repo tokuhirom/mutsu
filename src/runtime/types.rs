@@ -1,5 +1,18 @@
 use super::*;
 
+const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
+
+#[inline]
+fn is_internal_named_arg(arg: &Value) -> bool {
+    match arg {
+        Value::Pair(key, _) => key == TEST_CALLSITE_LINE_KEY,
+        Value::ValuePair(key, _) => {
+            matches!(key.as_ref(), Value::Str(s) if s == TEST_CALLSITE_LINE_KEY)
+        }
+        _ => false,
+    }
+}
+
 /// Parse a coercion type like "Int()" or "Int(Rat)".
 /// Returns Some((target_type, optional_source_type)) if it's a coercion type.
 fn parse_coercion_type(constraint: &str) -> Option<(&str, Option<&str>)> {
@@ -225,7 +238,7 @@ fn bind_sub_signature_from_value(
             continue;
         };
         if let Some(constraint) = &sub_pd.type_constraint {
-            if let Some((target, source)) = parse_coercion_type(constraint) {
+            if let Some((_target, source)) = parse_coercion_type(constraint) {
                 if let Some(src) = source
                     && !interpreter.type_matches_value(src, &candidate)
                 {
@@ -236,7 +249,7 @@ fn bind_sub_signature_from_value(
                         super::value_type_name(&candidate)
                     )));
                 }
-                candidate = coerce_value(target, candidate);
+                candidate = interpreter.try_coerce_value_for_constraint(constraint, candidate)?;
             } else if !interpreter.type_matches_value(constraint, &candidate) {
                 return Err(RuntimeError::new(format!(
                     "X::TypeCheck::Argument: Type check failed for {}: expected {}, got {}",
@@ -246,7 +259,8 @@ fn bind_sub_signature_from_value(
                 )));
             }
         }
-        if !sub_pd.name.is_empty() {
+        let bind_alias_name = !(sub_pd.named && sub_pd.sub_signature.is_some());
+        if !sub_pd.name.is_empty() && bind_alias_name {
             interpreter
                 .env
                 .insert(sub_pd.name.clone(), candidate.clone());
@@ -392,6 +406,51 @@ impl Interpreter {
         }
     }
 
+    pub(super) fn init_signal_enum(&mut self) {
+        // Use libc constants on Unix, standard POSIX numbers on other platforms
+        let variants = vec![
+            ("SIGHUP".to_string(), Self::sig_num(1)),
+            ("SIGINT".to_string(), Self::sig_num(2)),
+            ("SIGQUIT".to_string(), Self::sig_num(3)),
+            ("SIGILL".to_string(), Self::sig_num(4)),
+            ("SIGABRT".to_string(), Self::sig_num(6)),
+            ("SIGFPE".to_string(), Self::sig_num(8)),
+            ("SIGKILL".to_string(), Self::sig_num(9)),
+            ("SIGSEGV".to_string(), Self::sig_num(11)),
+            ("SIGPIPE".to_string(), Self::sig_num(13)),
+            ("SIGALRM".to_string(), Self::sig_num(14)),
+            ("SIGTERM".to_string(), Self::sig_num(15)),
+            ("SIGUSR1".to_string(), Self::sig_num(10)),
+            ("SIGUSR2".to_string(), Self::sig_num(12)),
+            ("SIGCHLD".to_string(), Self::sig_num(17)),
+            ("SIGCONT".to_string(), Self::sig_num(18)),
+            ("SIGSTOP".to_string(), Self::sig_num(19)),
+            ("SIGTSTP".to_string(), Self::sig_num(20)),
+            ("SIGTTIN".to_string(), Self::sig_num(21)),
+            ("SIGTTOU".to_string(), Self::sig_num(22)),
+        ];
+        self.enum_types
+            .insert("Signal".to_string(), variants.clone());
+        self.env
+            .insert("Signal".to_string(), Value::Str("Signal".to_string()));
+        for (index, (key, val)) in variants.iter().enumerate() {
+            let enum_val = Value::Enum {
+                enum_type: "Signal".to_string(),
+                key: key.clone(),
+                value: *val,
+                index,
+            };
+            self.env
+                .insert(format!("Signal::{}", key), enum_val.clone());
+            self.env.insert(key.clone(), enum_val);
+        }
+    }
+
+    /// Get signal number — use the POSIX default value on all platforms.
+    fn sig_num(default: i64) -> i64 {
+        default
+    }
+
     pub(super) fn version_from_value(arg: Value) -> Value {
         use crate::value::VersionPart;
         match arg {
@@ -497,6 +556,9 @@ impl Interpreter {
         if constraint == "int" && value_type == "Int" {
             return true;
         }
+        if constraint == "atomicint" && value_type == "Int" {
+            return true;
+        }
         if constraint == "str" && value_type == "Str" {
             return true;
         }
@@ -524,7 +586,7 @@ impl Interpreter {
             return true;
         }
         if matches!(constraint, "Callable" | "Code" | "Block")
-            && matches!(value_type, "Sub" | "Routine")
+            && matches!(value_type, "Sub" | "Routine" | "Method" | "Block")
         {
             return true;
         }
@@ -532,7 +594,12 @@ impl Interpreter {
             return true;
         }
         // Role-like type relationships
-        if constraint == "Positional" && matches!(value_type, "Array" | "List" | "Seq") {
+        if constraint == "Positional"
+            && matches!(
+                value_type,
+                "Array" | "List" | "Seq" | "Range" | "Buf" | "Blob" | "Capture"
+            )
+        {
             return true;
         }
         // Array is-a List in Raku type hierarchy
@@ -540,7 +607,10 @@ impl Interpreter {
             return true;
         }
         if constraint == "Associative"
-            && matches!(value_type, "Hash" | "Map" | "Bag" | "Set" | "Mix")
+            && matches!(
+                value_type,
+                "Hash" | "Map" | "Pair" | "Bag" | "Set" | "Mix" | "QuantHash" | "Capture"
+            )
         {
             return true;
         }
@@ -552,10 +622,25 @@ impl Interpreter {
         self.classes.contains_key(name)
             || self.roles.contains_key(name)
             || self.enum_types.contains_key(name)
+            || self.subsets.contains_key(name)
     }
 
     pub(crate) fn has_role(&self, name: &str) -> bool {
         self.roles.contains_key(name)
+    }
+
+    pub(crate) fn is_definite_constraint(&self, constraint: &str) -> bool {
+        let (base_constraint, smiley) = strip_type_smiley(constraint);
+        if smiley == Some(":D") {
+            return true;
+        }
+        if let Some((target, _source)) = parse_coercion_type(base_constraint) {
+            return self.is_definite_constraint(target);
+        }
+        if let Some(subset) = self.subsets.get(base_constraint) {
+            return self.is_definite_constraint(&subset.base);
+        }
+        false
     }
 
     pub(crate) fn eval_does_values(
@@ -621,10 +706,35 @@ impl Interpreter {
     }
 
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
+        let package_matches_type = |package_name: &str, type_name: &str| -> bool {
+            if Self::type_matches(type_name, package_name) {
+                return true;
+            }
+            if let Some(class_def) = self.classes.get(package_name) {
+                return class_def
+                    .parents
+                    .clone()
+                    .iter()
+                    .any(|parent| Self::type_matches(type_name, parent));
+            }
+            false
+        };
+        if let Value::Package(package_name) = value
+            && let Some((target, source)) = parse_coercion_type(constraint)
+        {
+            let target_ok = package_matches_type(package_name, target);
+            let source_ok = source.is_some_and(|src| self.type_matches_value(src, value));
+            return target_ok || source_ok;
+        }
+        if let Value::Package(package_name) = value
+            && package_matches_type(package_name, constraint)
+        {
+            return true;
+        }
         // Handle coercion types: Int() matches anything, Int(Rat) matches Rat
-        if let Some((_, source)) = parse_coercion_type(constraint) {
+        if let Some((target, source)) = parse_coercion_type(constraint) {
             return if let Some(src) = source {
-                self.type_matches_value(src, value)
+                self.type_matches_value(src, value) || self.type_matches_value(target, value)
             } else {
                 true
             };
@@ -679,8 +789,9 @@ impl Interpreter {
             if !self.type_matches_value(&subset.base, value) {
                 return false;
             }
+            let predicate_value = self.coerce_value_for_constraint(&subset.base, value.clone());
             let saved = self.env.get("_").cloned();
-            self.env.insert("_".to_string(), value.clone());
+            self.env.insert("_".to_string(), predicate_value);
             let ok = if let Some(pred) = &subset.predicate {
                 self.eval_block_value(&[Stmt::Expr(pred.clone())])
                     .map(|v| v.truthy())
@@ -694,6 +805,10 @@ impl Interpreter {
                 self.env.remove("_");
             }
             return ok;
+        }
+        // Role constraints should accept composed role instances/mixins.
+        if self.roles.contains_key(constraint) && value.does_check(constraint) {
+            return true;
         }
         // Check Instance class name against constraint (including parent classes)
         if let Value::Instance { class_name, .. } = value {
@@ -724,22 +839,39 @@ impl Interpreter {
                 param_defs.iter().filter(|p| !p.named).collect();
             let mut i = 0usize;
             for pd in positional_params {
-                let is_capture_param = pd.name == "_capture";
+                let is_capture_param = pd.name == "_capture" || (pd.slurpy && pd.sigilless);
                 let is_subsig_capture = pd.name == "__subsig__" && pd.sub_signature.is_some();
                 let arg_for_checks: Option<Value> = if pd.slurpy || is_capture_param {
-                    // For single-star slurpy (*@), flatten array arguments
-                    let mut items = Vec::new();
-                    for arg in &args[i..] {
-                        let arg = unwrap_varref_value(arg.clone());
-                        if !pd.double_slurpy
-                            && let Value::Array(arr, ..) = &arg
-                        {
-                            items.extend(arr.iter().cloned());
-                            continue;
+                    if is_capture_param {
+                        // |c capture params preserve both positional and named parts.
+                        let mut positional = Vec::new();
+                        let mut named = std::collections::HashMap::new();
+                        for arg in &args[i..] {
+                            let arg = unwrap_varref_value(arg.clone());
+                            if let Value::Pair(key, val) = arg {
+                                named.insert(key, *val);
+                            } else {
+                                positional.push(arg);
+                            }
                         }
-                        items.push(arg);
+                        Some(Value::Capture { positional, named })
+                    } else {
+                        // For single-star slurpy (*@), flatten list arguments but preserve
+                        // itemized Arrays ($[...] / .item) as single positional values.
+                        let mut items = Vec::new();
+                        for arg in &args[i..] {
+                            let arg = unwrap_varref_value(arg.clone());
+                            if !pd.double_slurpy
+                                && let Value::Array(arr, is_array) = &arg
+                                && !*is_array
+                            {
+                                items.extend(arr.iter().cloned());
+                                continue;
+                            }
+                            items.push(arg);
+                        }
+                        Some(Value::array(items))
                     }
-                    Some(Value::array(items))
                 } else if is_subsig_capture {
                     Some(sub_signature_target_from_remaining_args(
                         &args[i..]
@@ -833,7 +965,7 @@ impl Interpreter {
                             .unwrap_or(false),
                         expr => self
                             .eval_block_value(&[Stmt::Expr(expr.clone())])
-                            .map(|v| v.truthy())
+                            .map(|v| self.smart_match(arg, &v))
                             .unwrap_or(false),
                     };
                     self.env = saved;
@@ -841,7 +973,7 @@ impl Interpreter {
                         return false;
                     }
                 }
-                if is_capture_param || is_subsig_capture {
+                if is_subsig_capture {
                     i = args.len();
                 } else if !pd.slurpy {
                     i += 1;
@@ -861,28 +993,73 @@ impl Interpreter {
             .collect();
         let positional_params: Vec<&ParamDef> =
             filtered_params.iter().filter(|p| !p.named).collect();
+        let positional_arg_count = args
+            .iter()
+            .filter(|arg| !matches!(arg, Value::Pair(..)))
+            .count();
         let mut required = 0usize;
-        let mut has_slurpy = false;
+        let mut has_positional_slurpy = false;
+        let mut has_hash_slurpy = false;
         for pd in &positional_params {
             if pd.slurpy {
-                has_slurpy = true;
+                if pd.name.starts_with('%') || pd.sigilless {
+                    has_hash_slurpy = true;
+                } else {
+                    has_positional_slurpy = true;
+                }
             } else {
                 required += 1;
             }
         }
-        if has_slurpy {
-            if args.len() < required {
+        if has_positional_slurpy {
+            if positional_arg_count < required {
                 return false;
             }
-        } else if args.len() != required {
+        } else if positional_arg_count != required {
             return false;
         }
-        self.args_match_param_types(args, &filtered_params)
+        if !has_hash_slurpy {
+            let named_params: std::collections::HashSet<&str> = filtered_params
+                .iter()
+                .filter(|p| p.named)
+                .map(|p| p.name.as_str())
+                .collect();
+            for arg in args {
+                if let Value::Pair(key, _) = arg
+                    && key != TEST_CALLSITE_LINE_KEY
+                    && !named_params.contains(key.as_str())
+                {
+                    return false;
+                }
+                if let Value::ValuePair(key, _) = arg
+                    && let Value::Str(name) = key.as_ref()
+                    && name != TEST_CALLSITE_LINE_KEY
+                    && !named_params.contains(name.as_str())
+                {
+                    return false;
+                }
+            }
+        }
+        if !self.args_match_param_types(args, &filtered_params) {
+            return false;
+        }
+        true
     }
 
     /// Create an error for calling a sub with empty signature `()` with arguments.
     pub(crate) fn reject_args_for_empty_sig(args: &[Value]) -> RuntimeError {
-        if let Some(Value::Pair(k, _)) = args.iter().find(|a| matches!(a, Value::Pair(..))) {
+        if let Some(k) = args.iter().find_map(|a| match a {
+            Value::Pair(key, _) if key != TEST_CALLSITE_LINE_KEY => Some(key.clone()),
+            Value::ValuePair(key, _) => {
+                if let Value::Str(name) = key.as_ref()
+                    && name != TEST_CALLSITE_LINE_KEY
+                {
+                    return Some(name.clone());
+                }
+                None
+            }
+            _ => None,
+        }) {
             return RuntimeError::new(format!("Unexpected named argument '{}' passed", k));
         }
         RuntimeError::new(
@@ -896,10 +1073,20 @@ impl Interpreter {
         params: &[String],
         args: &[Value],
     ) -> Result<Vec<(String, String)>, RuntimeError> {
-        let plain_args: Vec<Value> = args.iter().cloned().map(unwrap_varref_value).collect();
+        let filtered_args: Vec<Value> = args
+            .iter()
+            .filter(|arg| !is_internal_named_arg(&unwrap_varref_value((*arg).clone())))
+            .cloned()
+            .collect();
+        let plain_args: Vec<Value> = filtered_args
+            .iter()
+            .cloned()
+            .map(unwrap_varref_value)
+            .collect();
         // Always set @_ for legacy Perl-style argument access
         self.env
             .insert("@_".to_string(), Value::array(plain_args.clone()));
+        let args = filtered_args.as_slice();
         let arg_sources = self.take_pending_call_arg_sources();
         let mut rw_bindings = Vec::new();
         if param_defs.is_empty() {
@@ -911,34 +1098,84 @@ impl Interpreter {
             }
             // Legacy path: bind positional placeholders ($^a, $^b) by position,
             // and named placeholders ($:name) by matching Pair arg keys.
+            let positional_args: Vec<Value> = plain_args
+                .iter()
+                .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+                .cloned()
+                .collect();
+            let named_args: Vec<(String, Value)> = plain_args
+                .iter()
+                .filter_map(|a| {
+                    if let Value::Pair(key, val) = a {
+                        Some((key.clone(), *val.clone()))
+                    } else if let Value::ValuePair(key, val) = a {
+                        if let Value::Str(name) = key.as_ref() {
+                            Some((name.clone(), *val.clone()))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let mut consumed_named = std::collections::HashSet::new();
             let mut positional_idx = 0usize;
             for param in params.iter() {
                 if let Some(key) = param.strip_prefix(':') {
                     // Named placeholder: match by Pair key
-                    if let Some(Value::Pair(_, val)) = plain_args
-                        .iter()
-                        .find(|a| matches!(a, Value::Pair(k, _) if k == key))
-                    {
-                        self.bind_param_value(param, *val.clone());
+                    if let Some((_, val)) = named_args.iter().find(|(k, _)| k == key) {
+                        self.bind_param_value(param, val.clone());
+                        consumed_named.insert(key.to_string());
                     }
-                } else {
-                    // Positional placeholder: skip Pair args
-                    while positional_idx < plain_args.len()
-                        && matches!(&plain_args[positional_idx], Value::Pair(..))
-                    {
-                        positional_idx += 1;
-                    }
-                    if positional_idx < plain_args.len() {
-                        self.bind_param_value(param, plain_args[positional_idx].clone());
-                        positional_idx += 1;
-                    } else if param.starts_with('^') {
+                } else if positional_idx < positional_args.len() {
+                    let value = positional_args[positional_idx].clone();
+                    if param.starts_with("&^") && !self.type_matches_value("Callable", &value) {
                         return Err(RuntimeError::new(format!(
-                            "Missing required implicit placeholder parameter ${}",
-                            param
+                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected Callable, got {}",
+                            param,
+                            super::value_type_name(&value)
                         )));
                     }
+                    if param.starts_with("@^") && !self.type_matches_value("Positional", &value) {
+                        return Err(RuntimeError::new(format!(
+                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected Positional, got {}",
+                            param,
+                            super::value_type_name(&value)
+                        )));
+                    }
+                    if param.starts_with("%^") && !self.type_matches_value("Associative", &value) {
+                        return Err(RuntimeError::new(format!(
+                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected Associative, got {}",
+                            param,
+                            super::value_type_name(&value)
+                        )));
+                    }
+                    self.bind_param_value(param, value);
+                    positional_idx += 1;
+                } else if param.starts_with('^')
+                    || param.starts_with("@^")
+                    || param.starts_with("%^")
+                    || param.starts_with("&^")
+                {
+                    return Err(RuntimeError::new(format!(
+                        "Missing required implicit placeholder parameter ${}",
+                        param
+                    )));
                 }
             }
+            self.env.insert(
+                "@_".to_string(),
+                Value::array(positional_args[positional_idx..].to_vec()),
+            );
+            let mut leftover_named = std::collections::HashMap::new();
+            for (key, val) in named_args {
+                if !consumed_named.contains(&key) {
+                    leftover_named.insert(key, val);
+                }
+            }
+            self.env
+                .insert("%_".to_string(), Value::hash(leftover_named));
             return Ok(rw_bindings);
         }
         let mut positional_idx = 0usize;
@@ -949,17 +1186,21 @@ impl Interpreter {
                     // |c — capture parameter: preserve positional and named parts.
                     let mut positional = Vec::new();
                     let mut named = std::collections::HashMap::new();
-                    while positional_idx < args.len() {
-                        let arg = unwrap_varref_value(args[positional_idx].clone());
+                    for arg in args[positional_idx..].iter().cloned() {
+                        let arg = unwrap_varref_value(arg);
                         if let Value::Pair(key, val) = arg {
                             named.insert(key, *val);
                         } else {
                             positional.push(arg);
                         }
-                        positional_idx += 1;
                     }
+                    let capture_value = Value::Capture { positional, named };
                     if !pd.name.is_empty() {
-                        self.bind_param_value(&pd.name, Value::Capture { positional, named });
+                        self.bind_param_value(&pd.name, capture_value.clone());
+                        self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
+                    }
+                    if let Some(sub_params) = &pd.sub_signature {
+                        bind_sub_signature_from_value(self, sub_params, &capture_value)?;
                     }
                 } else if is_hash_slurpy {
                     // *%hash — collect Pair arguments into a hash
@@ -972,6 +1213,7 @@ impl Interpreter {
                     }
                     if !pd.name.is_empty() {
                         self.bind_param_value(&pd.name, Value::hash(hash_items));
+                        self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
                     }
                 } else if pd.double_slurpy {
                     // **@ (non-flattening slurpy): keep each argument as-is
@@ -987,18 +1229,24 @@ impl Interpreter {
                             format!("@{}", pd.name)
                         };
                         self.bind_param_value(&key, Value::array(items));
+                        self.set_var_type_constraint(&key, pd.type_constraint.clone());
                     }
                 } else {
                     let mut items = Vec::new();
                     while positional_idx < args.len() {
-                        // *@ (flattening slurpy): flatten array/list args
+                        // *@ (flattening slurpy): flatten list args but preserve
+                        // itemized Arrays ($[...] / .item) as single values.
                         // Skip Pair values — they are named args for *%_ or will be rejected
                         match unwrap_varref_value(args[positional_idx].clone()) {
                             Value::Pair(..) => {
                                 // Named arg — leave for *%_ slurpy or post-loop check
                             }
-                            Value::Array(arr, ..) => {
-                                items.extend(arr.iter().cloned());
+                            Value::Array(arr, is_array) => {
+                                if is_array {
+                                    items.push(Value::Array(arr.clone(), true));
+                                } else {
+                                    items.extend(arr.iter().cloned());
+                                }
                             }
                             other => {
                                 items.push(other);
@@ -1014,6 +1262,7 @@ impl Interpreter {
                             format!("@{}", pd.name)
                         };
                         self.bind_param_value(&key, slurpy_value.clone());
+                        self.set_var_type_constraint(&key, pd.type_constraint.clone());
                     }
                     // Unpack sub-signature from the slurpy array (e.g., *[$a, $b, $c])
                     if let Some(sub_params) = &pd.sub_signature {
@@ -1034,6 +1283,7 @@ impl Interpreter {
                         && key == match_key
                     {
                         self.bind_param_value(&pd.name, *val.clone());
+                        self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
                         if let Some(sub_params) = &pd.sub_signature {
                             bind_sub_signature_from_value(self, sub_params, &val)?;
                         }
@@ -1045,6 +1295,7 @@ impl Interpreter {
                     let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?;
                     if !pd.name.is_empty() {
                         self.bind_param_value(&pd.name, value);
+                        self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
                     }
                 }
             } else {
@@ -1075,6 +1326,10 @@ impl Interpreter {
                         rw_bindings.push((pd.name.clone(), source_name));
                     }
                     let raw_arg = args[positional_idx].clone();
+                    let source_type_constraint = varref_from_value(&raw_arg)
+                        .and_then(|(source_name, _)| self.var_type_constraint(&source_name));
+                    let bound_type_constraint =
+                        source_type_constraint.or_else(|| pd.type_constraint.clone());
                     let mut value = unwrap_varref_value(raw_arg.clone());
                     if pd.sigilless {
                         let alias_key = sigilless_alias_key(&pd.name);
@@ -1091,19 +1346,13 @@ impl Interpreter {
                     if pd.name != "__type_only__"
                         && let Some(constraint) = &pd.type_constraint
                     {
-                        let type_error_kind = if constraint.chars().all(|c| c.is_ascii_uppercase())
-                            && self.env.contains_key(constraint)
-                        {
-                            "X::TypeCheck::Binding"
-                        } else {
-                            "X::TypeCheck::Argument"
-                        };
+                        let type_error_kind = "X::TypeCheck::Binding::Parameter";
                         if let Some(captured_name) = constraint.strip_prefix("::") {
                             self.env.insert(
                                 captured_name.to_string(),
                                 Self::captured_type_object(&value),
                             );
-                        } else if let Some((target, source)) = parse_coercion_type(constraint) {
+                        } else if let Some((_target, source)) = parse_coercion_type(constraint) {
                             // Coercion type: check source type if specified, then coerce
                             if let Some(src) = source
                                 && !self.type_matches_value(src, &value)
@@ -1124,7 +1373,7 @@ impl Interpreter {
                                 err.exception = Some(Box::new(exception));
                                 return Err(err);
                             }
-                            value = self.coerce_value_with_method(target, value);
+                            value = self.try_coerce_value_for_constraint(constraint, value)?;
                         } else if pd.name.starts_with('@') {
                             let ok = match &value {
                                 Value::Array(items, ..) => {
@@ -1175,6 +1424,8 @@ impl Interpreter {
                                 constraint,
                                 super::value_type_name(&value)
                             )));
+                        } else {
+                            value = self.try_coerce_value_for_constraint(constraint, value)?;
                         }
                         if (constraint.starts_with("Associative[")
                             || constraint.starts_with("Hash["))
@@ -1203,6 +1454,7 @@ impl Interpreter {
                                 }
                             }
                             self.bind_param_value(&pd.name, Value::hash(map));
+                            self.set_var_type_constraint(&pd.name, bound_type_constraint.clone());
                             if let Some(sub_params) = &pd.sub_signature {
                                 let target = self.env.get(&pd.name).cloned().unwrap_or(Value::Nil);
                                 bind_sub_signature_from_value(self, sub_params, &target)?;
@@ -1211,6 +1463,7 @@ impl Interpreter {
                             continue;
                         }
                         self.bind_param_value(&pd.name, value);
+                        self.set_var_type_constraint(&pd.name, bound_type_constraint.clone());
                     }
                     if let Some(sub_params) = &pd.sub_signature {
                         let target = self
@@ -1225,6 +1478,7 @@ impl Interpreter {
                     let value = self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?;
                     if !pd.name.is_empty() {
                         self.bind_param_value(&pd.name, value);
+                        self.set_var_type_constraint(&pd.name, pd.type_constraint.clone());
                     }
                     if let Some(sub_params) = &pd.sub_signature {
                         let target = self.env.get(&pd.name).cloned().unwrap_or(Value::Nil);
@@ -1240,7 +1494,7 @@ impl Interpreter {
             .any(|pd| pd.slurpy && (pd.name.starts_with('%') || pd.sigilless));
         let has_sub_sig = param_defs.iter().any(|pd| pd.sub_signature.is_some());
         if !has_hash_slurpy && !has_sub_sig {
-            for arg in args.iter() {
+            for arg in plain_args.iter() {
                 let arg = unwrap_varref_value(arg.clone());
                 if let Value::Pair(key, _) = arg {
                     // Check if this named arg was consumed by a named param or colon placeholder
@@ -1251,6 +1505,18 @@ impl Interpreter {
                         return Err(RuntimeError::new(format!(
                             "Unexpected named argument '{}' passed",
                             key
+                        )));
+                    }
+                } else if let Value::ValuePair(key, _) = arg
+                    && let Value::Str(name) = key.as_ref()
+                {
+                    let consumed = param_defs.iter().any(|pd| {
+                        (pd.named && pd.name == *name) || pd.name == format!(":{}", name)
+                    });
+                    if !consumed {
+                        return Err(RuntimeError::new(format!(
+                            "Unexpected named argument '{}' passed",
+                            name
                         )));
                     }
                 }
@@ -1265,9 +1531,14 @@ impl Interpreter {
                 .iter()
                 .filter(|pd| !pd.named && !pd.slurpy)
                 .count();
-            let positional_arg_count = args
+            let positional_arg_count = plain_args
                 .iter()
-                .filter(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
+                .filter(|a| {
+                    !matches!(
+                        unwrap_varref_value((*a).clone()),
+                        Value::Pair(..) | Value::ValuePair(..)
+                    )
+                })
                 .count();
             if positional_arg_count > positional_param_count {
                 return Err(RuntimeError::new(format!(
@@ -1281,15 +1552,38 @@ impl Interpreter {
 
     /// Coerce a value to the target type, trying built-in coercions first,
     /// then falling back to target class COERCE when available.
-    fn coerce_value_with_method(&mut self, target: &str, value: Value) -> Value {
+    fn try_coerce_value_with_method(
+        &mut self,
+        target: &str,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        let base_target =
+            if target.ends_with(":D") || target.ends_with(":U") || target.ends_with(":_") {
+                &target[..target.len() - 2]
+            } else {
+                target
+            };
+        if let Value::Instance {
+            class_name,
+            attributes,
+            ..
+        } = &value
+            && self.class_has_method(class_name, base_target)
+        {
+            let (coerced, _) = self.run_instance_method(
+                class_name,
+                (**attributes).clone(),
+                base_target,
+                vec![],
+                Some(value.clone()),
+            )?;
+            return Ok(coerced);
+        }
         let result = coerce_value(target, value.clone());
         if std::mem::discriminant(&result) == std::mem::discriminant(&value) {
-            let base_target =
-                if target.ends_with(":D") || target.ends_with(":U") || target.ends_with(":_") {
-                    &target[..target.len() - 2]
-                } else {
-                    target
-                };
+            if let Ok(coerced) = self.call_method_with_values(value.clone(), base_target, vec![]) {
+                return Ok(coerced);
+            }
             if self.classes.contains_key(base_target)
                 && let Ok(coerced) = self.call_method_with_values(
                     Value::Package(base_target.to_string()),
@@ -1297,9 +1591,36 @@ impl Interpreter {
                     vec![value],
                 )
             {
-                return coerced;
+                return Ok(coerced);
             }
         }
-        result
+        Ok(result)
+    }
+
+    pub(crate) fn coerce_value_for_constraint(&mut self, constraint: &str, value: Value) -> Value {
+        self.try_coerce_value_for_constraint(constraint, value.clone())
+            .unwrap_or(value)
+    }
+
+    pub(crate) fn try_coerce_value_for_constraint(
+        &mut self,
+        constraint: &str,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        let (constraint, _) = strip_type_smiley(constraint);
+        if let Some((target, source)) = parse_coercion_type(constraint) {
+            let intermediate = if let Some(src) = source {
+                self.try_coerce_value_for_constraint(src, value)?
+            } else {
+                value
+            };
+            return self.try_coerce_value_with_method(target, intermediate);
+        }
+        if let Some(subset) = self.subsets.get(constraint).cloned()
+            && subset.base != constraint
+        {
+            return self.try_coerce_value_for_constraint(&subset.base, value);
+        }
+        Ok(value)
     }
 }

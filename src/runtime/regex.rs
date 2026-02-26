@@ -474,6 +474,29 @@ impl Interpreter {
         None
     }
 
+    /// Match regex anchored at a specific character position.
+    /// Returns captures only if the match starts exactly at `pos`.
+    pub(crate) fn regex_match_with_captures_at(
+        &self,
+        pattern: &str,
+        text: &str,
+        pos: usize,
+    ) -> Option<RegexCaptures> {
+        let parsed = self.parse_regex(pattern)?;
+        let pkg = self.current_package.clone();
+        let chars: Vec<char> = text.chars().collect();
+        if pos > chars.len() {
+            return None;
+        }
+        self.regex_match_end_from_caps_in_pkg(&parsed, &chars, pos, &pkg)
+            .map(|(end, mut caps)| {
+                caps.from = caps.capture_start.unwrap_or(pos);
+                caps.to = caps.capture_end.unwrap_or(end);
+                caps.matched = chars[caps.from..caps.to].iter().collect();
+                caps
+            })
+    }
+
     pub(super) fn regex_match_all_with_captures(
         &self,
         pattern: &str,
@@ -508,6 +531,49 @@ impl Interpreter {
     pub(super) fn regex_find_first(&self, pattern: &str, text: &str) -> Option<(usize, usize)> {
         let parsed = self.parse_regex(pattern)?;
         let pkg = self.current_package.clone();
+
+        // When :m (ignoremark) is set, strip combining marks from input and match,
+        // then map positions back to the original text.
+        if parsed.ignore_mark {
+            use unicode_normalization::UnicodeNormalization;
+            // Build stripped text and position map (stripped char index -> original char index)
+            let orig_chars: Vec<char> = text.chars().collect();
+            let mut stripped_chars: Vec<char> = Vec::new();
+            let mut pos_map: Vec<usize> = Vec::new(); // stripped idx -> original idx
+            for (orig_idx, ch) in orig_chars.iter().enumerate() {
+                // Decompose char and check if it has combining marks
+                let decomposed: Vec<char> = ch.to_string().nfd().collect();
+                for dch in &decomposed {
+                    if !unicode_normalization::char::is_combining_mark(*dch) {
+                        stripped_chars.push(*dch);
+                        pos_map.push(orig_idx);
+                    }
+                }
+            }
+            // Also map end position (one past last char)
+            pos_map.push(orig_chars.len());
+
+            if parsed.anchor_start {
+                return self
+                    .regex_match_end_from_in_pkg(&parsed, &stripped_chars, 0, &pkg)
+                    .map(|end| (pos_map[0], pos_map[end]));
+            }
+            for start in 0..=stripped_chars.len() {
+                if let Some(end) =
+                    self.regex_match_end_from_in_pkg(&parsed, &stripped_chars, start, &pkg)
+                {
+                    let orig_start = pos_map[start];
+                    let orig_end = if end < pos_map.len() {
+                        pos_map[end]
+                    } else {
+                        orig_chars.len()
+                    };
+                    return Some((orig_start, orig_end));
+                }
+            }
+            return None;
+        }
+
         let chars: Vec<char> = text.chars().collect();
         if parsed.anchor_start {
             return self
@@ -648,134 +714,12 @@ impl Interpreter {
         start: usize,
         pkg: &str,
     ) -> Option<(usize, RegexCaptures)> {
-        let apply_named_capture =
-            |token: &RegexToken, from: usize, to: usize, caps: RegexCaptures| -> RegexCaptures {
-                let Some(name) = token.named_capture.as_ref() else {
-                    return caps;
-                };
-                let mut updated = caps;
-                let captured: String = chars[from..to].iter().collect();
-                updated
-                    .named
-                    .entry(name.clone())
-                    .or_default()
-                    .push(captured);
-                updated
-            };
-        let mut stack = Vec::new();
-        stack.push((0usize, start, RegexCaptures::default()));
-        while let Some((idx, pos, caps)) = stack.pop() {
-            if idx == pattern.tokens.len() {
-                if pattern.anchor_end {
-                    if pos == chars.len() {
-                        return Some((pos, caps));
-                    }
-                } else {
-                    return Some((pos, caps));
-                }
-                continue;
-            }
-            let token = &pattern.tokens[idx];
-            match token.quant {
-                RegexQuant::One => {
-                    if let Some((next, new_caps)) = self.regex_match_atom_with_capture_in_pkg(
-                        &token.atom,
-                        chars,
-                        pos,
-                        &caps,
-                        pkg,
-                        pattern.ignore_case,
-                    ) {
-                        stack.push((
-                            idx + 1,
-                            next,
-                            apply_named_capture(token, pos, next, new_caps),
-                        ));
-                    }
-                }
-                RegexQuant::ZeroOrOne => {
-                    stack.push((idx + 1, pos, caps.clone()));
-                    if let Some((next, new_caps)) = self.regex_match_atom_with_capture_in_pkg(
-                        &token.atom,
-                        chars,
-                        pos,
-                        &caps,
-                        pkg,
-                        pattern.ignore_case,
-                    ) {
-                        stack.push((
-                            idx + 1,
-                            next,
-                            apply_named_capture(token, pos, next, new_caps),
-                        ));
-                    }
-                }
-                RegexQuant::ZeroOrMore => {
-                    let mut positions = Vec::new();
-                    positions.push((pos, caps.clone()));
-                    let mut current = pos;
-                    let mut current_caps = caps.clone();
-                    while let Some((next, new_caps)) = self.regex_match_atom_with_capture_in_pkg(
-                        &token.atom,
-                        chars,
-                        current,
-                        &current_caps,
-                        pkg,
-                        pattern.ignore_case,
-                    ) {
-                        if next == current {
-                            break;
-                        }
-                        let new_caps = apply_named_capture(token, current, next, new_caps);
-                        current_caps = new_caps.clone();
-                        positions.push((next, new_caps));
-                        current = next;
-                    }
-                    for (p, c) in positions {
-                        stack.push((idx + 1, p, c));
-                    }
-                }
-                RegexQuant::OneOrMore => {
-                    let (mut current, mut current_caps) = match self
-                        .regex_match_atom_with_capture_in_pkg(
-                            &token.atom,
-                            chars,
-                            pos,
-                            &caps,
-                            pkg,
-                            pattern.ignore_case,
-                        ) {
-                        Some((next, new_caps)) => {
-                            let new_caps = apply_named_capture(token, pos, next, new_caps);
-                            (next, new_caps)
-                        }
-                        None => continue,
-                    };
-                    let mut positions = Vec::new();
-                    positions.push((current, current_caps.clone()));
-                    while let Some((next, new_caps)) = self.regex_match_atom_with_capture_in_pkg(
-                        &token.atom,
-                        chars,
-                        current,
-                        &current_caps,
-                        pkg,
-                        pattern.ignore_case,
-                    ) {
-                        if next == current {
-                            break;
-                        }
-                        let new_caps = apply_named_capture(token, current, next, new_caps);
-                        current_caps = new_caps.clone();
-                        positions.push((next, new_caps));
-                        current = next;
-                    }
-                    for (p, c) in positions {
-                        stack.push((idx + 1, p, c));
-                    }
-                }
-            }
+        let mut matches = self.regex_match_ends_from_caps_in_pkg(pattern, chars, start, pkg);
+        if matches.is_empty() {
+            return None;
         }
-        None
+        matches.sort_by_key(|(end, caps)| (*end, caps.positional.len(), caps.named.len()));
+        matches.pop()
     }
 
     fn regex_match_ends_from_caps_in_pkg(
@@ -812,14 +756,22 @@ impl Interpreter {
             let token = &pattern.tokens[idx];
             match token.quant {
                 RegexQuant::One => {
-                    for (next, new_caps) in self.regex_match_atom_all_with_capture_in_pkg(
+                    let mut candidates = self.regex_match_atom_all_with_capture_in_pkg(
                         &token.atom,
                         chars,
                         pos,
                         &caps,
                         pkg,
                         pattern.ignore_case,
-                    ) {
+                    );
+                    if token.ratchet {
+                        candidates
+                            .sort_by_key(|(next, c)| (*next, c.positional.len(), c.named.len()));
+                        if let Some(best) = candidates.pop() {
+                            candidates = vec![best];
+                        }
+                    }
+                    for (next, new_caps) in candidates {
                         stack.push((
                             idx + 1,
                             next,
@@ -828,15 +780,26 @@ impl Interpreter {
                     }
                 }
                 RegexQuant::ZeroOrOne => {
-                    stack.push((idx + 1, pos, caps.clone()));
-                    for (next, new_caps) in self.regex_match_atom_all_with_capture_in_pkg(
+                    let mut candidates = self.regex_match_atom_all_with_capture_in_pkg(
                         &token.atom,
                         chars,
                         pos,
                         &caps,
                         pkg,
                         pattern.ignore_case,
-                    ) {
+                    );
+                    if token.ratchet {
+                        candidates
+                            .sort_by_key(|(next, c)| (*next, c.positional.len(), c.named.len()));
+                        if let Some(best) = candidates.pop() {
+                            candidates = vec![best];
+                        } else {
+                            candidates.clear();
+                        }
+                    } else {
+                        stack.push((idx + 1, pos, caps.clone()));
+                    }
+                    for (next, new_caps) in candidates {
                         stack.push((
                             idx + 1,
                             next,
@@ -864,6 +827,11 @@ impl Interpreter {
                         current_caps = new_caps.clone();
                         positions.push((next, new_caps));
                         current = next;
+                    }
+                    if token.ratchet
+                        && let Some(last) = positions.last().cloned()
+                    {
+                        positions = vec![last];
                     }
                     for (p, c) in positions {
                         stack.push((idx + 1, p, c));
@@ -903,6 +871,11 @@ impl Interpreter {
                         positions.push((next, new_caps));
                         current = next;
                     }
+                    if token.ratchet
+                        && let Some(last) = positions.last().cloned()
+                    {
+                        positions = vec![last];
+                    }
                     for (p, c) in positions {
                         stack.push((idx + 1, p, c));
                     }
@@ -921,6 +894,26 @@ impl Interpreter {
         pkg: &str,
         ignore_case: bool,
     ) -> Vec<(usize, RegexCaptures)> {
+        if let RegexAtom::CaptureGroup(pattern) = atom {
+            let mut out = Vec::new();
+            for (end, inner_caps) in
+                self.regex_match_ends_from_caps_in_pkg(pattern, chars, pos, pkg)
+            {
+                let captured: String = chars[pos..end].iter().collect();
+                let mut new_caps = current_caps.clone();
+                for (k, v) in inner_caps.named {
+                    new_caps.named.entry(k).or_default().extend(v);
+                }
+                for v in inner_caps.positional {
+                    new_caps.positional.push(v);
+                }
+                new_caps.positional.push(captured);
+                out.push((end, new_caps));
+            }
+            out.sort_by_key(|(end, caps)| (*end, caps.positional.len(), caps.named.len()));
+            out.dedup_by(|(end_a, _), (end_b, _)| end_a == end_b);
+            return out;
+        }
         if let RegexAtom::Named(name) = atom {
             let spec = Self::parse_named_regex_lookup_spec(name);
             let arg_values = if spec.arg_exprs.is_empty() {

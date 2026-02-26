@@ -279,6 +279,7 @@ pub(super) enum LogicalOp {
     And,        // and (word)
     OrOr,       // ||
     AndAnd,     // &&
+    XorXor,     // ^^
     DefinedOr,  // //
     AndThen,    // andthen
     NotAndThen, // notandthen
@@ -294,6 +295,7 @@ impl LogicalOp {
             LogicalOp::And => TokenKind::AndAnd,
             LogicalOp::OrOr => TokenKind::OrOr,
             LogicalOp::AndAnd => TokenKind::AndAnd,
+            LogicalOp::XorXor => TokenKind::XorXor,
             LogicalOp::DefinedOr => TokenKind::SlashSlash,
             LogicalOp::AndThen => TokenKind::AndThen,
             LogicalOp::NotAndThen => TokenKind::NotAndThen,
@@ -323,6 +325,20 @@ impl JunctiveOp {
 
 pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize)> {
     let next_non_ws = |s: &str| s.trim_start().chars().next();
+    let unary_term_start = |c: char| {
+        c == '$'
+            || c == '@'
+            || c == '%'
+            || c == '&'
+            || c == '('
+            || c == '['
+            || c == '{'
+            || c == '"'
+            || c == '\''
+            || c == '*'
+            || c.is_ascii_digit()
+            || c.is_ascii_alphabetic()
+    };
     if input.starts_with('!')
         && !input.starts_with("!!")
         && !input.starts_with("!~~")
@@ -347,18 +363,8 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
         && !input.starts_with("--")
         && !input.starts_with("->")
         && let Some(c) = next_non_ws(&input[1..])
-        && (c == '$'
-            || c == '@'
-            || c == '%'
-            || c == '&'
-            || c == '('
-            || c == '"'
-            || c == '\''
-            || c == '*'
-            || c == '.'  // topic method call: -.method
-            || c == '\u{221E}' // ∞
-            || c.is_ascii_digit()
-            || c.is_ascii_alphabetic())
+        && (unary_term_start(c) || c == '.' || c == '\u{221E}')
+    // topic call / ∞
     {
         Some((PrefixUnaryOp::Negate, 1))
     } else if input.starts_with('\u{2212}') {
@@ -369,31 +375,13 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
     } else if input.starts_with('+')
         && !input.starts_with("++")
         && let Some(c) = next_non_ws(&input[1..])
-        && (c == '$'
-            || c == '@'
-            || c == '%'
-            || c == '&'
-            || c == '('
-            || c == '"'
-            || c == '\''
-            || c == '*'
-            || c.is_ascii_digit()
-            || c.is_ascii_alphabetic())
+        && unary_term_start(c)
     {
         Some((PrefixUnaryOp::Positive, 1))
     } else if input.starts_with('~')
         && !input.starts_with("~~")
         && let Some(c) = next_non_ws(&input[1..])
-        && (c == '$'
-            || c == '@'
-            || c == '%'
-            || c == '&'
-            || c == '('
-            || c == '"'
-            || c == '\''
-            || c == '*'
-            || c.is_ascii_digit()
-            || c.is_ascii_alphabetic())
+        && unary_term_start(c)
     {
         Some((PrefixUnaryOp::Stringify, 1))
     } else {
@@ -480,6 +468,8 @@ pub(super) fn parse_junction_infix_op(input: &str) -> Option<(JunctionInfixOp, u
 pub(super) fn parse_or_or_op(input: &str) -> Option<(LogicalOp, usize)> {
     if input.starts_with("||") && !input.starts_with("||=") {
         Some((LogicalOp::OrOr, 2))
+    } else if input.starts_with("^^") && !input.starts_with("^^=") {
+        Some((LogicalOp::XorXor, 2))
     } else if input.starts_with("//") && !input.starts_with("///") && !input.starts_with("//=") {
         Some((LogicalOp::DefinedOr, 2))
     } else if input.starts_with("min") && !is_ident_char(input.as_bytes().get(3).copied()) {
@@ -497,6 +487,22 @@ pub(super) fn parse_and_and_op(input: &str) -> Option<(LogicalOp, usize)> {
     } else {
         None
     }
+}
+
+/// Parse negated logical operator: `!||`, `!^^`, `!&&`
+/// Returns (inner_op, total_len) where total_len includes the `!` prefix.
+pub(super) fn parse_negated_logical_op(input: &str) -> Option<(LogicalOp, usize)> {
+    let inner = input.strip_prefix('!')?;
+    if let Some((op, len)) = parse_or_or_op(inner) {
+        // Only negate ||, ^^; not // or min/max
+        if matches!(op, LogicalOp::OrOr | LogicalOp::XorXor) {
+            return Some((op, len + 1));
+        }
+    }
+    if let Some((op, len)) = parse_and_and_op(inner) {
+        return Some((op, len + 1));
+    }
+    None
 }
 
 pub(super) fn parse_word_logical_op(input: &str) -> Option<(LogicalOp, usize)> {

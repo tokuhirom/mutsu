@@ -86,17 +86,24 @@ pub(crate) enum Expr {
     HashVar(String),
     CodeVar(String),
     EnvIndex(String),
+    /// m/pattern/ — match against $_ and return the result
+    MatchRegex(Value),
     Subst {
         pattern: String,
         replacement: String,
+        samemark: bool,
     },
     NonDestructiveSubst {
         pattern: String,
         replacement: String,
+        samemark: bool,
     },
     Transliterate {
         from: String,
         to: String,
+        delete: bool,
+        complement: bool,
+        squash: bool,
     },
     MethodCall {
         target: Box<Expr>,
@@ -220,6 +227,26 @@ pub(crate) enum Expr {
         name: String,
     },
     PseudoStash(String),
+    /// Hash hyperslice: %hash{**}:adverb
+    HyperSlice {
+        target: Box<Expr>,
+        adverb: HyperSliceAdverb,
+    },
+    /// Hash hyperindex: %hash{||@keys}
+    HyperIndex {
+        target: Box<Expr>,
+        keys: Box<Expr>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HyperSliceAdverb {
+    Kv,
+    K,
+    V,
+    Tree,
+    DeepK,
+    DeepKv,
 }
 
 #[derive(Debug, Clone)]
@@ -379,6 +406,8 @@ pub(crate) enum Stmt {
         name: String,
         name_expr: Option<Expr>,
         parents: Vec<String>,
+        is_hidden: bool,
+        hidden_parents: Vec<String>,
         body: Vec<Stmt>,
     },
     HasDecl {
@@ -399,6 +428,7 @@ pub(crate) enum Stmt {
         is_rw: bool,
         is_private: bool,
         is_our: bool,
+        return_type: Option<String>,
     },
     RoleDecl {
         name: String,
@@ -460,14 +490,33 @@ pub(crate) fn collect_placeholders(stmts: &[Stmt]) -> Vec<String> {
         collect_ph_stmt(stmt, &mut names);
     }
     // Sort by the name component (strip & and ^ prefixes) so that
-    // $^a, $^b, &^c sort as a, b, c regardless of sigil.
+    // $^a, @^a, %^a, &^a sort as a regardless of sigil.
     names.sort_by(|a, b| {
-        let a_name = a.trim_start_matches('&').trim_start_matches('^');
-        let b_name = b.trim_start_matches('&').trim_start_matches('^');
+        let a_name = placeholder_sort_key(a);
+        let b_name = placeholder_sort_key(b);
         a_name.cmp(b_name)
     });
     names.dedup();
     names
+}
+
+fn placeholder_sort_key(name: &str) -> &str {
+    let without_sigil = if let Some(first) = name.chars().next() {
+        if matches!(first, '$' | '@' | '%' | '&') {
+            &name[first.len_utf8()..]
+        } else {
+            name
+        }
+    } else {
+        name
+    };
+    if let Some(stripped) = without_sigil.strip_prefix('^') {
+        stripped
+    } else if let Some(stripped) = without_sigil.strip_prefix(':') {
+        stripped
+    } else {
+        without_sigil
+    }
 }
 
 fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
@@ -604,6 +653,18 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
                 out.push(prefixed);
             }
         }
+        Expr::ArrayVar(name) if name.starts_with('^') => {
+            let prefixed = format!("@{}", name);
+            if !out.contains(&prefixed) {
+                out.push(prefixed);
+            }
+        }
+        Expr::HashVar(name) if name.starts_with('^') => {
+            let prefixed = format!("%{}", name);
+            if !out.contains(&prefixed) {
+                out.push(prefixed);
+            }
+        }
         Expr::Binary { left, right, .. } => {
             collect_ph_expr(left, out);
             collect_ph_expr(right, out);
@@ -679,12 +740,6 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
                 for s in c {
                     collect_ph_stmt(s, out);
                 }
-            }
-        }
-        Expr::CodeVar(name) if name.starts_with('^') => {
-            let prefixed = format!("&{}", name);
-            if !out.contains(&prefixed) {
-                out.push(prefixed);
             }
         }
         Expr::CodeVar(_) => {}

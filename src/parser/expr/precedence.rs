@@ -166,52 +166,73 @@ fn not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     or_or_expr_mode(input, mode)
 }
 
-/// || and //
+/// || , ^^ , and //
 fn or_or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (mut rest, mut left) = and_and_expr_mode(input, mode)?;
     loop {
         let (r, _) = ws(rest)?;
-        if let Some((op, len)) = parse_or_or_op(r) {
-            let r = &r[len..];
-            let (r, _) = ws(r)?;
-            let (r, right) = if mode == ExprMode::Full {
-                if r.starts_with("not")
-                    && !is_ident_char(r.as_bytes().get(3).copied())
-                    && !r[3..].starts_with('(')
-                {
-                    not_expr_mode(r, mode).map_err(|err| {
-                        enrich_expected_error(
-                            err,
-                            "expected expression after logical operator",
-                            r.len(),
-                        )
-                    })?
-                } else {
-                    and_and_expr_mode(r, mode).map_err(|err| {
-                        enrich_expected_error(
-                            err,
-                            "expected expression after logical operator",
-                            r.len(),
-                        )
-                    })?
-                }
-            } else if r.starts_with("not")
+        // Check for negated logical ops first: !|| , !^^
+        let (negated, op_result) = if let Some((op, len)) = parse_negated_logical_op(r) {
+            if matches!(op, LogicalOp::OrOr | LogicalOp::XorXor) {
+                (true, Some((op, len)))
+            } else {
+                (false, None)
+            }
+        } else {
+            (false, None)
+        };
+        let (op, len) = if let Some(pair) = op_result {
+            pair
+        } else if let Some(pair) = parse_or_or_op(r) {
+            pair
+        } else {
+            break;
+        };
+        let r = &r[len..];
+        let (r, _) = ws(r)?;
+        let (r, right) = if mode == ExprMode::Full {
+            if r.starts_with("not")
                 && !is_ident_char(r.as_bytes().get(3).copied())
                 && !r[3..].starts_with('(')
             {
-                not_expr_mode(r, mode)?
+                not_expr_mode(r, mode).map_err(|err| {
+                    enrich_expected_error(
+                        err,
+                        "expected expression after logical operator",
+                        r.len(),
+                    )
+                })?
             } else {
-                and_and_expr_mode(r, mode)?
-            };
-            left = Expr::Binary {
-                left: Box::new(left),
-                op: op.token_kind(),
-                right: Box::new(right),
-            };
-            rest = r;
-            continue;
-        }
-        break;
+                and_and_expr_mode(r, mode).map_err(|err| {
+                    enrich_expected_error(
+                        err,
+                        "expected expression after logical operator",
+                        r.len(),
+                    )
+                })?
+            }
+        } else if r.starts_with("not")
+            && !is_ident_char(r.as_bytes().get(3).copied())
+            && !r[3..].starts_with('(')
+        {
+            not_expr_mode(r, mode)?
+        } else {
+            and_and_expr_mode(r, mode)?
+        };
+        let binary = Expr::Binary {
+            left: Box::new(left),
+            op: op.token_kind(),
+            right: Box::new(right),
+        };
+        left = if negated {
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(binary),
+            }
+        } else {
+            binary
+        };
+        rest = r;
     }
     Ok((rest, left))
 }
@@ -221,25 +242,43 @@ fn and_and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (mut rest, mut left) = comparison_expr_mode(input, mode)?;
     loop {
         let (r, _) = ws(rest)?;
-        if let Some((op, len)) = parse_and_and_op(r) {
-            let r = &r[len..];
-            let (r, _) = ws(r)?;
-            let (r, right) = if mode == ExprMode::Full {
-                comparison_expr_mode(r, mode).map_err(|err| {
-                    enrich_expected_error(err, "expected expression after '&&'", r.len())
-                })?
+        // Check for negated !&&
+        let (negated, op, len) = if let Some((op, len)) = parse_negated_logical_op(r) {
+            if matches!(op, LogicalOp::AndAnd) {
+                (true, op, len)
+            } else if let Some((op, len)) = parse_and_and_op(r) {
+                (false, op, len)
             } else {
-                comparison_expr_mode(r, mode)?
-            };
-            left = Expr::Binary {
-                left: Box::new(left),
-                op: op.token_kind(),
-                right: Box::new(right),
-            };
-            rest = r;
-            continue;
-        }
-        break;
+                break;
+            }
+        } else if let Some((op, len)) = parse_and_and_op(r) {
+            (false, op, len)
+        } else {
+            break;
+        };
+        let r = &r[len..];
+        let (r, _) = ws(r)?;
+        let (r, right) = if mode == ExprMode::Full {
+            comparison_expr_mode(r, mode).map_err(|err| {
+                enrich_expected_error(err, "expected expression after '&&'", r.len())
+            })?
+        } else {
+            comparison_expr_mode(r, mode)?
+        };
+        let binary = Expr::Binary {
+            left: Box::new(left),
+            op: op.token_kind(),
+            right: Box::new(right),
+        };
+        left = if negated {
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(binary),
+            }
+        } else {
+            binary
+        };
+        rest = r;
     }
     Ok((rest, left))
 }
@@ -387,6 +426,88 @@ fn parse_list_infix_loop<'a>(input: &'a str, left: &mut Expr) -> Result<&'a str,
             };
             rest = r;
             continue;
+        }
+        // Negated bracket infix operators: ![op]
+        if let Some(r_after_bang) = r.strip_prefix('!')
+            && let Some(bracket_infix) = parse_bracket_infix_op(r_after_bang)
+        {
+            match bracket_infix {
+                BracketInfix::PlainOp(op, len) => {
+                    let r = &r[1 + len..];
+                    let (r, _) = ws(r)?;
+                    let (r, right) = range_expr(r).map_err(|err| {
+                        enrich_expected_error(
+                            err,
+                            "expected expression after negated bracket infix op",
+                            r.len(),
+                        )
+                    })?;
+                    let binary = if let Some(tk) = op_str_to_token_kind(&op) {
+                        Expr::Binary {
+                            left: Box::new(left.clone()),
+                            op: tk,
+                            right: Box::new(right),
+                        }
+                    } else {
+                        Expr::InfixFunc {
+                            name: op,
+                            left: Box::new(left.clone()),
+                            right: vec![right],
+                            modifier: None,
+                        }
+                    };
+                    *left = Expr::Unary {
+                        op: TokenKind::Bang,
+                        expr: Box::new(binary),
+                    };
+                    rest = r;
+                    continue;
+                }
+                BracketInfix::MetaOp(meta, op, len) => {
+                    let r = &r[1 + len..];
+                    let (r, _) = ws(r)?;
+                    let (r, right) = range_expr(r).map_err(|err| {
+                        enrich_expected_error(
+                            err,
+                            "expected expression after negated bracket meta infix op",
+                            r.len(),
+                        )
+                    })?;
+                    *left = Expr::Unary {
+                        op: TokenKind::Bang,
+                        expr: Box::new(Expr::MetaOp {
+                            meta,
+                            op,
+                            left: Box::new(left.clone()),
+                            right: Box::new(right),
+                        }),
+                    };
+                    rest = r;
+                    continue;
+                }
+                BracketInfix::UserInfix(name, len) => {
+                    let r = &r[1 + len..];
+                    let (r, _) = ws(r)?;
+                    let (r, right) = range_expr(r).map_err(|err| {
+                        enrich_expected_error(
+                            err,
+                            "expected expression after negated bracket user infix op",
+                            r.len(),
+                        )
+                    })?;
+                    *left = Expr::Unary {
+                        op: TokenKind::Bang,
+                        expr: Box::new(Expr::InfixFunc {
+                            name,
+                            left: Box::new(left.clone()),
+                            right: vec![right],
+                            modifier: None,
+                        }),
+                    };
+                    rest = r;
+                    continue;
+                }
+            }
         }
         // Bracket infix operators: [+], [R-], [Z*], [Z[cmp]], [blue], etc.
         if let Some(bracket_infix) = parse_bracket_infix_op(r) {
@@ -706,34 +827,23 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             ));
         }
     }
-    if let Some(r) = r.strip_prefix("!===") {
-        let (r, _) = ws(r)?;
-        let (r, right) = if mode == ExprMode::Full {
-            junctive_expr_mode(r, mode).map_err(|err| PError {
-                messages: merge_expected_messages(
-                    "expected expression after comparison operator",
-                    &err.messages,
-                ),
-                remaining_len: err.remaining_len.or(Some(r.len())),
-            })?
-        } else {
-            junctive_expr_mode(r, mode)?
-        };
-        return Ok((
+    // Detect !. which is not a valid metaop
+    if r.starts_with("!.") && !r.starts_with("!..") {
+        let after = &r[2..];
+        let after_trimmed = after.trim_start();
+        if after_trimmed.starts_with('"') || after_trimmed.starts_with('\'') {
+            return Err(PError::expected_at(
+                "X::Obsolete: Unsupported use of !. to concatenate strings; in Raku please use ~",
+                r,
+            ));
+        }
+        return Err(PError::expected_at(
+            "X::Syntax::CannotMeta: Cannot negate . because it is too fiddly",
             r,
-            Expr::Unary {
-                op: TokenKind::Bang,
-                expr: Box::new(Expr::Binary {
-                    left: Box::new(left),
-                    op: TokenKind::EqEqEq,
-                    right: Box::new(right),
-                }),
-            },
         ));
     }
-    if let Some(r) = r.strip_prefix("!eqv")
-        && !is_ident_char(r.as_bytes().first().copied())
-    {
+    if let Some((op, len)) = parse_negated_meta_comparison_op(r) {
+        let r = &r[len..];
         let (r, _) = ws(r)?;
         let (r, right) = if mode == ExprMode::Full {
             junctive_expr_mode(r, mode).map_err(|err| PError {
@@ -746,17 +856,75 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         } else {
             junctive_expr_mode(r, mode)?
         };
-        return Ok((
-            r,
-            Expr::Unary {
-                op: TokenKind::Bang,
-                expr: Box::new(Expr::Binary {
-                    left: Box::new(left),
-                    op: TokenKind::Ident("eqv".to_string()),
-                    right: Box::new(right),
-                }),
-            },
-        ));
+        let mut result = Expr::Unary {
+            op: TokenKind::Bang,
+            expr: Box::new(Expr::Binary {
+                left: Box::new(left),
+                op: op.token_kind(),
+                right: Box::new(right.clone()),
+            }),
+        };
+        // Support chaining: "a" !after "b" !after "c" → (!after) && (!after)
+        let mut prev_right = right;
+        let mut r = r;
+        loop {
+            let (r2, _) = ws(r)?;
+            // Try negated meta comparison for chaining
+            if let Some((cop, chain_len)) = parse_negated_meta_comparison_op(r2) {
+                let r2 = &r2[chain_len..];
+                let (r2, _) = ws(r2)?;
+                let (r2, next_right) = junctive_expr_mode(r2, mode).map_err(|err| PError {
+                    messages: merge_expected_messages(
+                        "expected expression after chained negated comparison operator",
+                        &err.messages,
+                    ),
+                    remaining_len: err.remaining_len.or(Some(r2.len())),
+                })?;
+                let next_cmp = Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(Expr::Binary {
+                        left: Box::new(prev_right),
+                        op: cop.token_kind(),
+                        right: Box::new(next_right.clone()),
+                    }),
+                };
+                result = Expr::Binary {
+                    left: Box::new(result),
+                    op: TokenKind::AndAnd,
+                    right: Box::new(next_cmp),
+                };
+                prev_right = next_right;
+                r = r2;
+                continue;
+            }
+            // Also try regular comparison for mixed chaining
+            if let Some((cop, chain_len)) = parse_comparison_op(r2) {
+                let r2 = &r2[chain_len..];
+                let (r2, _) = ws(r2)?;
+                let (r2, next_right) = junctive_expr_mode(r2, mode).map_err(|err| PError {
+                    messages: merge_expected_messages(
+                        "expected expression after chained comparison operator",
+                        &err.messages,
+                    ),
+                    remaining_len: err.remaining_len.or(Some(r2.len())),
+                })?;
+                let next_cmp = Expr::Binary {
+                    left: Box::new(prev_right),
+                    op: cop.token_kind(),
+                    right: Box::new(next_right.clone()),
+                };
+                result = Expr::Binary {
+                    left: Box::new(result),
+                    op: TokenKind::AndAnd,
+                    right: Box::new(next_cmp),
+                };
+                prev_right = next_right;
+                r = r2;
+                continue;
+            }
+            break;
+        }
+        return Ok((r, result));
     }
     if let Some((op, len)) = parse_comparison_op(r) {
         let r = &r[len..];
@@ -775,54 +943,70 @@ fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         if matches!(op, ComparisonOp::SmartMatch | ComparisonOp::SmartNotMatch) {
             right = wrap_smartmatch_rhs(right);
         }
-        if mode == ExprMode::Full {
-            let mut result = Expr::Binary {
-                left: Box::new(left),
-                op: op.token_kind(),
-                right: Box::new(right.clone()),
-            };
-            // Chained comparisons: 2 < $_ < 4 → (2 < $_) && ($_ < 4)
-            let mut prev_right = right;
-            let mut r = r;
-            loop {
-                let (r2, _) = ws(r)?;
-                if let Some((cop, chain_len)) = parse_comparison_op(r2) {
-                    let r2 = &r2[chain_len..];
-                    let (r2, _) = ws(r2)?;
-                    let (r2, next_right) = junctive_expr_mode(r2, mode).map_err(|err| PError {
-                        messages: merge_expected_messages(
-                            "expected expression after chained comparison operator",
-                            &err.messages,
-                        ),
-                        remaining_len: err.remaining_len.or(Some(r2.len())),
-                    })?;
-                    let next_cmp = Expr::Binary {
+        let mut result = Expr::Binary {
+            left: Box::new(left),
+            op: op.token_kind(),
+            right: Box::new(right.clone()),
+        };
+        // Chained comparisons: 2 < $_ < 4 → (2 < $_) && ($_ < 4)
+        let mut prev_right = right;
+        let mut r = r;
+        loop {
+            let (r2, _) = ws(r)?;
+            if let Some((cop, chain_len)) = parse_negated_meta_comparison_op(r2) {
+                let r2 = &r2[chain_len..];
+                let (r2, _) = ws(r2)?;
+                let (r2, next_right) = junctive_expr_mode(r2, mode).map_err(|err| PError {
+                    messages: merge_expected_messages(
+                        "expected expression after chained negated comparison operator",
+                        &err.messages,
+                    ),
+                    remaining_len: err.remaining_len.or(Some(r2.len())),
+                })?;
+                let next_cmp = Expr::Unary {
+                    op: TokenKind::Bang,
+                    expr: Box::new(Expr::Binary {
                         left: Box::new(prev_right),
                         op: cop.token_kind(),
                         right: Box::new(next_right.clone()),
-                    };
-                    result = Expr::Binary {
-                        left: Box::new(result),
-                        op: TokenKind::AndAnd,
-                        right: Box::new(next_cmp),
-                    };
-                    prev_right = next_right;
-                    r = r2;
-                } else {
-                    break;
-                }
+                    }),
+                };
+                result = Expr::Binary {
+                    left: Box::new(result),
+                    op: TokenKind::AndAnd,
+                    right: Box::new(next_cmp),
+                };
+                prev_right = next_right;
+                r = r2;
+                continue;
             }
-            return Ok((r, result));
-        } else {
-            return Ok((
-                r,
-                Expr::Binary {
-                    left: Box::new(left),
-                    op: op.token_kind(),
-                    right: Box::new(right),
-                },
-            ));
+            if let Some((cop, chain_len)) = parse_comparison_op(r2) {
+                let r2 = &r2[chain_len..];
+                let (r2, _) = ws(r2)?;
+                let (r2, next_right) = junctive_expr_mode(r2, mode).map_err(|err| PError {
+                    messages: merge_expected_messages(
+                        "expected expression after chained comparison operator",
+                        &err.messages,
+                    ),
+                    remaining_len: err.remaining_len.or(Some(r2.len())),
+                })?;
+                let next_cmp = Expr::Binary {
+                    left: Box::new(prev_right),
+                    op: cop.token_kind(),
+                    right: Box::new(next_right.clone()),
+                };
+                result = Expr::Binary {
+                    left: Box::new(result),
+                    op: TokenKind::AndAnd,
+                    right: Box::new(next_cmp),
+                };
+                prev_right = next_right;
+                r = r2;
+                continue;
+            }
+            break;
         }
+        return Ok((r, result));
     }
 
     Ok((rest, left))
@@ -933,6 +1117,22 @@ fn parse_comparison_op(r: &str) -> Option<(ComparisonOp, usize)> {
     } else {
         None
     }
+}
+
+fn parse_negated_meta_comparison_op(r: &str) -> Option<(ComparisonOp, usize)> {
+    let inner = r.strip_prefix('!')?;
+    let (op, len) = parse_comparison_op(inner)?;
+    // Operators that already have their own !-prefixed spelling are not meta-negated forms.
+    if matches!(
+        op,
+        ComparisonOp::NumNe
+            | ComparisonOp::NotDivisibleBy
+            | ComparisonOp::SmartMatch
+            | ComparisonOp::SmartNotMatch
+    ) {
+        return None;
+    }
+    Some((op, len + 1))
 }
 
 /// Range: ..  ..^  ^..  ^..^
@@ -1058,6 +1258,7 @@ fn op_str_to_token_kind(op: &str) -> Option<TokenKind> {
         "~~" => Some(TokenKind::SmartMatch),
         "&&" => Some(TokenKind::AndAnd),
         "||" => Some(TokenKind::OrOr),
+        "^^" => Some(TokenKind::XorXor),
         "//" => Some(TokenKind::SlashSlash),
         "%%" => Some(TokenKind::PercentPercent),
         "+&" => Some(TokenKind::BitAnd),
@@ -1243,7 +1444,7 @@ fn parse_bracket_infix_op(input: &str) -> Option<BracketInfix> {
 
     // Check if it's a meta-prefixed op
     let first = flattened.as_bytes()[0];
-    if first == b'R' || first == b'Z' || first == b'X' {
+    if first == b'R' || first == b'Z' || first == b'X' || first == b'!' {
         let meta_ch = &flattened[..1];
         let op = &flattened[1..];
         // Make sure inner op is valid (known op or known meta pattern)
