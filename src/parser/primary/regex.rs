@@ -450,6 +450,7 @@ pub(super) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // rx/pattern/ or rx{pattern}
     if let Ok((rest, _)) = parse_tag(input, "rx") {
         let (spec, adverbs) = parse_match_adverbs(rest)?;
+        let (spec, _) = ws(spec)?;
         let (open_ch, close_ch, is_paired) = if spec.starts_with('/') {
             ('/', '/', false)
         } else if spec.starts_with('{') {
