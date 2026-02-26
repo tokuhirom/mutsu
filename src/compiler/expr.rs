@@ -158,6 +158,106 @@ impl Compiler {
                 }
             },
             Expr::Binary { left, op, right } => {
+                if let TokenKind::Ident(name) = op
+                    && name == "xx"
+                {
+                    let acc_name = self.next_tmp_name("__mutsu_xx_acc_");
+                    let count_name = self.next_tmp_name("__mutsu_xx_count_");
+                    let index_name = self.next_tmp_name("__mutsu_xx_index_");
+                    let value_name = self.next_tmp_name("__mutsu_xx_value_");
+                    let item_name = self.next_tmp_name("__mutsu_xx_item_");
+
+                    // Evaluate the repetition count once.
+                    self.compile_stmt(&Stmt::VarDecl {
+                        name: count_name.clone(),
+                        expr: *right.clone(),
+                        type_constraint: None,
+                        is_state: false,
+                        is_our: false,
+                    });
+                    // Accumulator array and loop counter.
+                    self.compile_stmt(&Stmt::VarDecl {
+                        name: acc_name.clone(),
+                        expr: Expr::ArrayLiteral(Vec::new()),
+                        type_constraint: None,
+                        is_state: false,
+                        is_our: false,
+                    });
+                    self.compile_stmt(&Stmt::VarDecl {
+                        name: index_name.clone(),
+                        expr: Expr::Literal(Value::Int(0)),
+                        type_constraint: None,
+                        is_state: false,
+                        is_our: false,
+                    });
+
+                    let cond = Expr::Binary {
+                        left: Box::new(Expr::Var(index_name.clone())),
+                        op: TokenKind::Lt,
+                        right: Box::new(Expr::Var(count_name.clone())),
+                    };
+                    let step = Expr::AssignExpr {
+                        name: index_name.clone(),
+                        expr: Box::new(Expr::Binary {
+                            left: Box::new(Expr::Var(index_name.clone())),
+                            op: TokenKind::Plus,
+                            right: Box::new(Expr::Literal(Value::Int(1))),
+                        }),
+                    };
+                    let push_value = Expr::MethodCall {
+                        target: Box::new(Expr::Var(acc_name.clone())),
+                        name: "push".to_string(),
+                        args: vec![Expr::Var(value_name.clone())],
+                        modifier: None,
+                        quoted: false,
+                    };
+                    let push_item = Expr::MethodCall {
+                        target: Box::new(Expr::Var(acc_name.clone())),
+                        name: "push".to_string(),
+                        args: vec![Expr::Var(item_name.clone())],
+                        modifier: None,
+                        quoted: false,
+                    };
+                    self.compile_stmt(&Stmt::Loop {
+                        init: None,
+                        cond: Some(cond),
+                        step: Some(step),
+                        body: vec![
+                            Stmt::Assign {
+                                name: value_name.clone(),
+                                expr: *left.clone(),
+                                op: AssignOp::Assign,
+                            },
+                            Stmt::If {
+                                cond: Expr::Binary {
+                                    left: Box::new(Expr::Var(value_name.clone())),
+                                    op: TokenKind::Ident("isa".to_string()),
+                                    right: Box::new(Expr::Literal(Value::Str("Slip".to_string()))),
+                                },
+                                then_branch: vec![Stmt::For {
+                                    iterable: Expr::Var(value_name.clone()),
+                                    param: Some(item_name.clone()),
+                                    param_def: Box::new(None),
+                                    params: Vec::new(),
+                                    body: vec![Stmt::Expr(push_item)],
+                                    label: None,
+                                }],
+                                else_branch: vec![Stmt::Expr(push_value)],
+                            },
+                        ],
+                        repeat: false,
+                        label: None,
+                    });
+                    self.compile_expr(&Expr::MethodCall {
+                        target: Box::new(Expr::Var(acc_name)),
+                        name: "Seq".to_string(),
+                        args: Vec::new(),
+                        modifier: None,
+                        quoted: false,
+                    });
+                    return;
+                }
+
                 // Detect `funcname |capture` pattern (listop call with capture slip)
                 if *op == TokenKind::Pipe
                     && matches!(right.as_ref(), Expr::BareWord(_))
