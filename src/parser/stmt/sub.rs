@@ -1782,6 +1782,13 @@ pub(super) fn method_decl(input: &str) -> PResult<'_, Stmt> {
     method_decl_body(rest, multi, false)
 }
 
+/// Parse `submethod` declaration (treated like method, not inherited by subclasses).
+pub(super) fn submethod_decl(input: &str) -> PResult<'_, Stmt> {
+    let r = keyword("submethod", input).ok_or_else(|| PError::expected("submethod declaration"))?;
+    let (r, _) = ws1(r)?;
+    method_decl_body(r, false, false)
+}
+
 pub(super) fn method_decl_body(input: &str, multi: bool, is_our: bool) -> PResult<'_, Stmt> {
     let (rest, is_private) = if let Some(rest) = input.strip_prefix('!') {
         (rest, true)

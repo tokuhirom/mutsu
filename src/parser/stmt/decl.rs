@@ -298,6 +298,12 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
         return method_decl_body(r, false, is_our);
     }
 
+    // my/our submethod name(...) { ... }
+    if let Some(r) = keyword("submethod", rest) {
+        let (r, _) = ws1(r)?;
+        return method_decl_body(r, false, is_our);
+    }
+
     // my class Name is Parent { ... }
     if let Some(r) = keyword("class", rest) {
         let (r, _) = ws1(r)?;

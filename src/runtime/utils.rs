@@ -497,6 +497,8 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         Value::Mixin(inner, _) => value_type_name(inner),
         Value::Proxy { .. } => "Proxy",
         Value::ParametricRole { .. } => "Package",
+        Value::CustomType { .. } => "CustomType",
+        Value::CustomTypeInstance { .. } => "CustomTypeInstance",
     }
 }
 

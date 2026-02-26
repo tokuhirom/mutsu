@@ -975,6 +975,71 @@ impl Interpreter {
             return self.dispatch_classhow_method(method, args);
         }
 
+        // CREATE method: allocate a bare instance without BUILD
+        if method == "CREATE" && args.is_empty() {
+            match &target {
+                Value::CustomType {
+                    how,
+                    repr,
+                    name,
+                    id,
+                    ..
+                } => {
+                    return Ok(Value::CustomTypeInstance {
+                        type_id: *id,
+                        how: how.clone(),
+                        repr: repr.clone(),
+                        type_name: name.clone(),
+                        attributes: std::sync::Arc::new(HashMap::new()),
+                        id: crate::value::next_instance_id(),
+                    });
+                }
+                Value::Package(class_name) => {
+                    return Ok(Value::make_instance(class_name.clone(), HashMap::new()));
+                }
+                _ => {}
+            }
+        }
+
+        // Custom type method dispatch: delegate to HOW.find_method
+        // Skip pseudo-methods (HOW, WHAT, DEFINITE, REPR, etc.) which are handled natively.
+        if !matches!(
+            method,
+            "HOW"
+                | "WHAT"
+                | "WHO"
+                | "WHY"
+                | "WHICH"
+                | "WHERE"
+                | "DEFINITE"
+                | "VAR"
+                | "REPR"
+                | "Str"
+                | "Stringy"
+                | "gist"
+                | "raku"
+                | "perl"
+                | "say"
+                | "print"
+                | "put"
+                | "note"
+                | "new"
+        ) && let Value::CustomType { ref how, .. } | Value::CustomTypeInstance { ref how, .. } =
+            target
+        {
+            let how_clone = *how.clone();
+            let found = self.call_method_with_values(
+                how_clone,
+                "find_method",
+                vec![target.clone(), Value::Str(method.to_string())],
+            );
+            if let Ok(callable) = found
+                && !matches!(callable, Value::Nil)
+            {
+                return self.eval_call_on_value(callable, vec![target.clone()]);
+            }
+        }
+
         // Primary method dispatch by name
         match method {
             "new" if matches!(&target, Value::Package(name) if name == "Failure") => {
@@ -1284,6 +1349,10 @@ impl Interpreter {
                         return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
                     }
                     Value::Proxy { .. } => "Proxy",
+                    Value::CustomType { name, .. } => {
+                        return Ok(Value::Package(name.clone()));
+                    }
+                    Value::CustomTypeInstance { type_name: tn, .. } => tn.as_str(),
                     Value::ParametricRole {
                         base_name,
                         type_args,
@@ -1322,6 +1391,18 @@ impl Interpreter {
                     return Err(RuntimeError::new(
                         "X::Syntax::Argument::MOPMacro: HOW does not take arguments",
                     ));
+                }
+                // Return custom HOW for CustomType/CustomTypeInstance
+                // Check rebless map first for reblessed instances
+                if let Value::CustomTypeInstance { id, .. } = &target
+                    && let Some(new_how) = self.rebless_map.get(id).cloned()
+                {
+                    return Ok(new_how);
+                }
+                if let Value::CustomType { ref how, .. }
+                | Value::CustomTypeInstance { ref how, .. } = target
+                {
+                    return Ok(*how.clone());
                 }
                 // Return a meta-object (ClassHOW) for any value
                 let type_name = match &target {
@@ -2688,6 +2769,9 @@ impl Interpreter {
                 _ => Ok(Value::Nil),
             },
             "REPR" if args.is_empty() => match target {
+                Value::CustomType { repr, .. } | Value::CustomTypeInstance { repr, .. } => {
+                    Ok(Value::Str(repr))
+                }
                 Value::Package(name) if self.classes.contains_key(&name) => {
                     Ok(Value::Str("P6opaque".to_string()))
                 }
@@ -2739,6 +2823,10 @@ impl Interpreter {
                     })
                     .unwrap_or_else(|| "Anon".to_string());
                 Ok(Value::Package(name))
+            }
+            // Metamodel::Primitives static methods
+            _ if matches!(&target, Value::Package(n) if n == "Metamodel::Primitives") => {
+                self.metamodel_primitives_dispatch(method, args)
             }
             _ => {
                 // Method calls on callables compose by applying the method to the
@@ -3167,6 +3255,14 @@ impl Interpreter {
     fn classhow_find_method(&self, invocant: &Value, method_name: &str) -> Option<Value> {
         if let Some(value) = self.classhow_lookup(invocant, method_name) {
             return Some(value);
+        }
+        // CREATE is a built-in method on all types
+        if method_name == "CREATE" {
+            return Some(Value::Routine {
+                package: "Mu".to_string(),
+                name: "CREATE".to_string(),
+                is_regex: false,
+            });
         }
         if let Value::Package(class_name) = invocant
             && let Some(class_def) = self.classes.get(class_name)

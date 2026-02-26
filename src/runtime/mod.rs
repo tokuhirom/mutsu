@@ -47,6 +47,7 @@ mod class;
 mod dispatch;
 mod handle;
 mod io;
+mod metamodel;
 mod methods;
 mod methods_mut;
 mod methods_trans;
@@ -324,6 +325,27 @@ pub struct Interpreter {
     pub(crate) pending_local_updates: Vec<(String, Value)>,
     /// Set of variable names that are readonly (default parameter binding).
     readonly_vars: HashSet<String>,
+    /// Metadata for custom types created by Metamodel::Primitives.create_type.
+    pub(crate) custom_type_data: HashMap<u64, CustomTypeData>,
+    /// Rebless mapping: instance_id -> new HOW value.
+    /// Used by Metamodel::Primitives.rebless to track reblessed objects.
+    pub(crate) rebless_map: HashMap<u64, Value>,
+}
+
+/// Metadata stored per custom type created by Metamodel::Primitives.
+#[derive(Debug, Clone)]
+pub(crate) struct CustomTypeData {
+    /// Type checking cache: list of types this type accepts.
+    pub(crate) type_check_cache: Option<Vec<Value>>,
+    /// Whether the type check cache is authoritative (no fallback to HOW.type_check).
+    pub(crate) authoritative: bool,
+    /// Whether to call HOW.accepts_type for smartmatch checks.
+    pub(crate) call_accepts: bool,
+    /// Whether compose_type has been called.
+    pub(crate) composed: bool,
+    /// Whether this type was created with :mixin flag.
+    #[allow(dead_code)]
+    pub(crate) is_mixin: bool,
 }
 
 /// An entry in the encoding registry.
@@ -1036,6 +1058,8 @@ impl Interpreter {
             last_value: None,
             pending_local_updates: Vec::new(),
             readonly_vars: HashSet::new(),
+            custom_type_data: HashMap::new(),
+            rebless_map: HashMap::new(),
         };
         interpreter.init_io_environment();
         interpreter.init_order_enum();
@@ -1488,6 +1512,8 @@ impl Interpreter {
             last_value: None,
             pending_local_updates: Vec::new(),
             readonly_vars: HashSet::new(),
+            custom_type_data: self.custom_type_data.clone(),
+            rebless_map: self.rebless_map.clone(),
         };
         cloned.init_io_environment();
         cloned
