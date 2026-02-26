@@ -124,6 +124,7 @@ roast/S04-statements/quietly.t
 roast/S04-statements/repeat.t
 roast/S04-statements/unless.t
 roast/S04-statements/until.t
+roast/S04-statements/when.t
 roast/S05-grammar/example.t
 roast/S05-grammar/namespace-6e.t
 roast/S05-grammar/namespace.t

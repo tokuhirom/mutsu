@@ -294,6 +294,8 @@ pub(crate) enum OpCode {
     // -- Given/When control --
     Proceed,
     Succeed,
+    /// Tag the current value as coming from a named container (for Scalar binding)
+    TagContainerRef(u32),
 
     // -- Unary coercion --
     NumCoerce,

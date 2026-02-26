@@ -39,6 +39,9 @@ impl VM {
             'body_redo: loop {
                 match self.run_range(code, body_start, loop_end, compiled_fns) {
                     Ok(()) => break 'body_redo,
+                    Err(e) if e.is_succeed => {
+                        break 'body_redo;
+                    }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, label) => {
                         continue 'body_redo;
                     }
@@ -97,7 +100,10 @@ impl VM {
             None
         };
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
+        let saved_topic_source = self.topic_source_var.take();
+        let container_binding = self.container_ref_var.take();
         'for_loop: for item in chunked_items {
+            self.topic_source_var = container_binding.clone();
             // Only set $_ when no named parameter is given (for @list { ... })
             // When -> $k is used, $_ should remain from the enclosing scope
             if param_name.is_none() {
@@ -137,6 +143,9 @@ impl VM {
                         }
                         break 'body_redo;
                     }
+                    Err(e) if e.is_succeed => {
+                        break 'body_redo;
+                    }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
                         if param_name.is_none() {
                             self.interpreter
@@ -166,6 +175,7 @@ impl VM {
                 break;
             }
         }
+        self.topic_source_var = saved_topic_source;
         if let Some(coll) = collected {
             self.stack.push(Value::array(coll));
         }
@@ -194,6 +204,9 @@ impl VM {
             'body_redo: loop {
                 match self.run_range(code, body_start, step_begin, compiled_fns) {
                     Ok(()) => break 'body_redo,
+                    Err(e) if e.is_succeed => {
+                        break 'body_redo;
+                    }
                     Err(e) if e.is_redo && Self::label_matches(&e.label, &spec.label) => {
                         continue 'body_redo;
                     }
@@ -300,6 +313,7 @@ impl VM {
                 if let Some(v) = e.return_value {
                     last = v;
                 }
+                self.container_ref_var = e.container_name;
                 self.interpreter.set_when_matched(true);
             }
             Err(e) => {
@@ -367,6 +381,7 @@ impl VM {
                 let last = self.stack.last().cloned().unwrap_or(Value::Nil);
                 let mut sig = RuntimeError::succeed_signal();
                 sig.return_value = Some(last);
+                sig.container_name = self.container_ref_var.take();
                 return Err(sig);
             }
         }
@@ -383,10 +398,21 @@ impl VM {
     ) -> Result<(), RuntimeError> {
         let body_start = *ip + 1;
         let end = body_end as usize;
-        self.run_range(code, body_start, end, compiled_fns)?;
+        match self.run_range(code, body_start, end, compiled_fns) {
+            Ok(()) => {}
+            Err(e) if e.is_succeed => {
+                self.interpreter.set_when_matched(true);
+                return Err(e);
+            }
+            Err(e) => return Err(e),
+        }
         self.interpreter.set_when_matched(true);
+        let last = self.stack.last().cloned().unwrap_or(Value::Nil);
+        let mut sig = RuntimeError::succeed_signal();
+        sig.return_value = Some(last);
+        sig.container_name = self.container_ref_var.take();
         *ip = end;
-        Ok(())
+        Err(sig)
     }
 
     pub(super) fn exec_repeat_loop_op(
@@ -462,7 +488,7 @@ impl VM {
                 *ip = end;
                 Ok(())
             }
-            Err(e) if e.return_value.is_some() => {
+            Err(e) if e.return_value.is_some() && !e.is_succeed => {
                 self.interpreter.discard_let_saves(let_mark);
                 Err(e)
             }
@@ -524,11 +550,18 @@ impl VM {
                 self.interpreter.env_mut().insert("_".to_string(), err_val);
                 let saved_when = self.interpreter.when_matched();
                 self.interpreter.set_when_matched(false);
+                let catch_stack_base = self.stack.len();
                 let when_handled =
                     match self.run_range(code, catch_begin, control_begin, compiled_fns) {
                         Ok(()) => self.interpreter.when_matched(),
                         // succeed from `when` inside CATCH means exception was handled
-                        Err(catch_err) if catch_err.is_succeed => true,
+                        Err(catch_err) if catch_err.is_succeed => {
+                            // Truncate values left by default body, then push Nil
+                            // (Raku: try { die; CATCH { default { "caught" } } } returns Nil)
+                            self.stack.truncate(catch_stack_base);
+                            self.stack.push(Value::Nil);
+                            true
+                        }
                         Err(catch_err) => return Err(catch_err),
                     };
                 self.interpreter.set_when_matched(saved_when);

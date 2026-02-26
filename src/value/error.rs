@@ -46,6 +46,8 @@ pub struct RuntimeError {
     pub is_fail: bool,
     pub is_warn: bool,
     pub label: Option<String>,
+    /// Container name for Scalar container binding (e.g. when/default returning $a)
+    pub container_name: Option<String>,
     /// Structured exception object (e.g. X::AdHoc, X::Promise::Vowed)
     pub exception: Option<Box<Value>>,
 }
@@ -67,6 +69,7 @@ impl RuntimeError {
             is_fail: false,
             is_warn: false,
             label: None,
+            container_name: None,
             exception: None,
         }
     }
@@ -92,6 +95,7 @@ impl RuntimeError {
             is_fail: false,
             is_warn: false,
             label: None,
+            container_name: None,
             exception: None,
         }
     }

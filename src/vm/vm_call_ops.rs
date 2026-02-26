@@ -276,11 +276,30 @@ impl VM {
 
         // When the method name was quoted (e.g. ."DEFINITE"()), skip the native
         // pseudo-method fast path so user-defined methods are called instead.
-        let skip_native = quoted
+        let mut skip_native = quoted
             && matches!(
                 method.as_str(),
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             );
+        // Also skip native if the target has a user-defined method with this name,
+        // but NOT for pseudo-methods like DEFINITE, WHAT, etc. which are macros.
+        if !skip_native
+            && !matches!(
+                method.as_str(),
+                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+            )
+        {
+            let class_name = match &target {
+                Value::Instance { class_name, .. } => Some(class_name.as_str()),
+                Value::Package(name) => Some(name.as_str()),
+                _ => None,
+            };
+            if let Some(cn) = class_name
+                && self.interpreter.has_user_method(cn, &method)
+            {
+                skip_native = true;
+            }
+        }
         if skip_native {
             self.interpreter.skip_pseudo_method_native = Some(method.clone());
         }
@@ -440,11 +459,30 @@ impl VM {
             self.stack.push(junction_result);
             return Ok(());
         }
-        let skip_native = quoted
+        let mut skip_native = quoted
             && matches!(
                 method.as_str(),
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             );
+        // Also skip native if the target has a user-defined method with this name,
+        // but NOT for pseudo-methods like DEFINITE, WHAT, etc. which are macros.
+        if !skip_native
+            && !matches!(
+                method.as_str(),
+                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+            )
+        {
+            let class_name = match &target {
+                Value::Instance { class_name, .. } => Some(class_name.as_str()),
+                Value::Package(name) => Some(name.as_str()),
+                _ => None,
+            };
+            if let Some(cn) = class_name
+                && self.interpreter.has_user_method(cn, &method)
+            {
+                skip_native = true;
+            }
+        }
         if skip_native {
             self.interpreter.skip_pseudo_method_native = Some(method.clone());
         }
