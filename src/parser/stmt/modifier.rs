@@ -25,6 +25,7 @@ fn rewrite_placeholder_block_modifier_stmt(stmt: Stmt, cond: &Expr) -> Stmt {
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
+                is_dynamic: false,
             });
         }
         rewritten.extend(body.clone());

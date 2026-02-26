@@ -131,6 +131,7 @@ impl Compiler {
                 type_constraint,
                 is_state,
                 is_our,
+                is_dynamic,
             } => {
                 // X::Dynamic::Package: dynamic variables cannot have package-like names
                 if Self::is_dynamic_package_var(name) {
@@ -149,7 +150,7 @@ impl Compiler {
                     self.code.emit(OpCode::Die);
                     return;
                 }
-                let is_dynamic = self.var_is_dynamic(name);
+                let is_dynamic = *is_dynamic || self.var_is_dynamic(name);
                 self.compile_expr(expr);
                 // Skip TypeCheck for hash declarations: the type constraint
                 // applies to element values, not to the collection itself.
@@ -191,8 +192,38 @@ impl Compiler {
             Stmt::Assign {
                 name,
                 expr,
-                op: AssignOp::Assign | AssignOp::Bind,
+                op: op @ (AssignOp::Assign | AssignOp::Bind),
             } if name != "*PID" => {
+                // Handle $CALLER::varname = expr or $CALLER::varname := expr
+                if let Some((bare_name, depth)) = Self::parse_caller_prefix(name) {
+                    if matches!(op, AssignOp::Bind) {
+                        // For := (bind), if the RHS is a variable, set up an alias
+                        if let Expr::Var(rhs_name) = expr {
+                            let target_idx = self.code.add_constant(Value::Str(bare_name));
+                            let source_idx = self.code.add_constant(Value::Str(rhs_name.clone()));
+                            self.code.emit(OpCode::BindCallerVar {
+                                target_idx,
+                                source_idx,
+                                depth: depth as u32,
+                            });
+                        } else {
+                            self.compile_expr(expr);
+                            let name_idx = self.code.add_constant(Value::Str(bare_name));
+                            self.code.emit(OpCode::SetCallerVar {
+                                name_idx,
+                                depth: depth as u32,
+                            });
+                        }
+                    } else {
+                        self.compile_expr(expr);
+                        let name_idx = self.code.add_constant(Value::Str(bare_name));
+                        self.code.emit(OpCode::SetCallerVar {
+                            name_idx,
+                            depth: depth as u32,
+                        });
+                    }
+                    return;
+                }
                 if name.starts_with('&')
                     && !name.contains("::")
                     && !self.local_map.contains_key(name.as_str())

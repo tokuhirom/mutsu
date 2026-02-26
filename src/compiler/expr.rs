@@ -31,6 +31,21 @@ impl Compiler {
                 self.compile_match_regex(v);
             }
             Expr::Var(name) => {
+                // $CALLER:: / $CALLER::CALLER:: variable access
+                if let Some((bare_name, depth)) = Self::parse_caller_prefix(name) {
+                    let name_idx = self.code.add_constant(Value::Str(bare_name));
+                    self.code.emit(OpCode::GetCallerVar {
+                        name_idx,
+                        depth: depth as u32,
+                    });
+                    return;
+                }
+                // $DYNAMIC:: variable access
+                if let Some(bare_name) = name.strip_prefix("DYNAMIC::") {
+                    let name_idx = self.code.add_constant(Value::Str(bare_name.to_string()));
+                    self.code.emit(OpCode::GetDynamicVar(name_idx));
+                    return;
+                }
                 // X::Dynamic::Package: dynamic variables cannot have package-like names
                 if Self::is_dynamic_package_var(name) {
                     self.emit_dynamic_package_error(name);
@@ -511,6 +526,7 @@ impl Compiler {
                                     type_constraint: None,
                                     is_state: false,
                                     is_our: false,
+                                    is_dynamic: false,
                                 },
                                 Stmt::If {
                                     cond: Expr::Binary {
@@ -1126,9 +1142,10 @@ impl Compiler {
                     name,
                     expr,
                     is_state,
+                    is_dynamic: ast_is_dynamic,
                     ..
                 } => {
-                    let is_dynamic = self.var_is_dynamic(name);
+                    let is_dynamic = *ast_is_dynamic || self.var_is_dynamic(name);
                     // my $x = expr in expression context → declare, assign, return value
                     if *is_state {
                         self.compile_expr(expr);

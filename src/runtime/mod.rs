@@ -300,6 +300,13 @@ pub struct Interpreter {
     state_vars: HashMap<String, Value>,
     /// Variable dynamic-scope metadata used by `.VAR.dynamic`.
     var_dynamic_flags: HashMap<String, bool>,
+    /// Stack of caller environments for $CALLER:: / $DYNAMIC:: resolution.
+    /// Each entry is a snapshot of the env at the point a sub/function was called.
+    caller_env_stack: Vec<HashMap<String, Value>>,
+    /// Variable binding aliases: maps target name -> source name.
+    /// When target is read, the value of source is returned instead.
+    /// Set up by $CALLER::target := $source binding.
+    var_bindings: HashMap<String, String>,
     /// Variable type constraints used to enforce typed re-assignment across closures.
     var_type_constraints: HashMap<String, String>,
     let_saves: Vec<(String, Value)>,
@@ -1046,6 +1053,8 @@ impl Interpreter {
             strict_mode: false,
             state_vars: HashMap::new(),
             var_dynamic_flags: HashMap::new(),
+            caller_env_stack: Vec::new(),
+            var_bindings: HashMap::new(),
             var_type_constraints: HashMap::new(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
@@ -1428,6 +1437,124 @@ impl Interpreter {
             .unwrap_or(false)
     }
 
+    pub(crate) fn push_caller_env(&mut self) {
+        self.caller_env_stack.push(self.env.clone());
+    }
+
+    pub(crate) fn pop_caller_env(&mut self) {
+        self.caller_env_stack.pop();
+    }
+
+    /// Look up a variable through the $CALLER:: chain.
+    /// `depth` is the number of CALLER:: levels (1 for $CALLER::x, 2 for $CALLER::CALLER::x).
+    /// `name` is the bare variable name without sigil (e.g. "a" for $a).
+    pub(crate) fn get_caller_var(&self, name: &str, depth: usize) -> Result<Value, RuntimeError> {
+        let stack_len = self.caller_env_stack.len();
+        if depth > stack_len {
+            return Err(RuntimeError::new(format!(
+                "Cannot access caller variable '${name}' — not enough caller frames"
+            )));
+        }
+        let env = &self.caller_env_stack[stack_len - depth];
+        if let Some(val) = env.get(name) {
+            // Check that the variable is declared `is dynamic`
+            if !self.is_var_dynamic(name) {
+                return Err(RuntimeError::new(format!(
+                    "Cannot access '${name}' through CALLER, because it is not declared as dynamic"
+                )));
+            }
+            Ok(val.clone())
+        } else {
+            Err(RuntimeError::new(format!(
+                "Cannot access '${name}' through CALLER"
+            )))
+        }
+    }
+
+    /// Set a variable through the $CALLER:: chain.
+    pub(crate) fn set_caller_var(
+        &mut self,
+        name: &str,
+        depth: usize,
+        value: Value,
+    ) -> Result<(), RuntimeError> {
+        let stack_len = self.caller_env_stack.len();
+        if depth > stack_len {
+            return Err(RuntimeError::new(format!(
+                "Cannot access caller variable '${name}' — not enough caller frames"
+            )));
+        }
+        if !self.is_var_dynamic(name) {
+            return Err(RuntimeError::new(format!(
+                "Cannot access '${name}' through CALLER, because it is not declared as dynamic"
+            )));
+        }
+        let idx = stack_len - depth;
+        self.caller_env_stack[idx].insert(name.to_string(), value.clone());
+        // Also update current env if the variable exists there
+        if self.env.contains_key(name) {
+            self.env.insert(name.to_string(), value);
+        }
+        Ok(())
+    }
+
+    /// Look up a variable through $DYNAMIC:: — searches the entire caller stack.
+    pub(crate) fn get_dynamic_var(&self, name: &str) -> Result<Value, RuntimeError> {
+        // Search from the most recent caller to the oldest
+        for env in self.caller_env_stack.iter().rev() {
+            if let Some(val) = env.get(name)
+                && self.is_var_dynamic(name)
+            {
+                return Ok(val.clone());
+            }
+        }
+        // Also check current env
+        if let Some(val) = self.env.get(name)
+            && self.is_var_dynamic(name)
+        {
+            return Ok(val.clone());
+        }
+        Err(RuntimeError::new(format!(
+            "Cannot find dynamic variable '${name}'"
+        )))
+    }
+
+    /// Bind a caller variable to a local variable ($CALLER::target := $source).
+    /// This creates an alias so that future reads/writes of target go through source.
+    pub(crate) fn bind_caller_var(
+        &mut self,
+        target_name: &str,
+        source_name: &str,
+        depth: usize,
+    ) -> Result<(), RuntimeError> {
+        let stack_len = self.caller_env_stack.len();
+        if depth > stack_len {
+            return Err(RuntimeError::new(format!(
+                "Cannot access caller variable '${target_name}' — not enough caller frames"
+            )));
+        }
+        if !self.is_var_dynamic(target_name) {
+            return Err(RuntimeError::new(format!(
+                "Cannot access '${target_name}' through CALLER, because it is not declared as dynamic"
+            )));
+        }
+        // Copy the current value to the caller env and set up the binding alias
+        let source_val = self.env.get(source_name).cloned().unwrap_or(Value::Nil);
+        let idx = stack_len - depth;
+        self.caller_env_stack[idx].insert(target_name.to_string(), source_val.clone());
+        // Set up binding alias so reads of target_name resolve to source_name
+        self.var_bindings
+            .insert(target_name.to_string(), source_name.to_string());
+        // Also update current env
+        self.env.insert(target_name.to_string(), source_val);
+        Ok(())
+    }
+
+    /// Resolve a variable name through bindings (follow aliases).
+    pub(crate) fn resolve_binding(&self, name: &str) -> Option<&str> {
+        self.var_bindings.get(name).map(|s| s.as_str())
+    }
+
     pub(crate) fn has_class(&self, name: &str) -> bool {
         self.classes.contains_key(name)
     }
@@ -1500,6 +1627,8 @@ impl Interpreter {
             strict_mode: self.strict_mode,
             state_vars: HashMap::new(),
             var_dynamic_flags: self.var_dynamic_flags.clone(),
+            caller_env_stack: Vec::new(),
+            var_bindings: HashMap::new(),
             var_type_constraints: self.var_type_constraints.clone(),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),

@@ -44,6 +44,12 @@ impl VM {
     }
 
     pub(super) fn get_env_with_main_alias(&self, name: &str) -> Option<Value> {
+        // Follow binding aliases ($CALLER::target := $source)
+        if let Some(resolved) = self.interpreter.resolve_binding(name)
+            && let Some(val) = self.interpreter.env().get(resolved)
+        {
+            return Some(val.clone());
+        }
         if let Some(val) = self.interpreter.env().get(name) {
             return Some(val.clone());
         }
@@ -529,6 +535,9 @@ impl VM {
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack_depth = self.stack.len();
 
+        // Push caller environment for $CALLER:: / $DYNAMIC:: resolution
+        self.interpreter.push_caller_env();
+
         if !fn_name.is_empty() {
             self.interpreter
                 .push_routine(fn_package.to_string(), fn_name.to_string());
@@ -538,6 +547,7 @@ impl VM {
             if !fn_name.is_empty() {
                 self.interpreter.pop_routine();
             }
+            self.interpreter.pop_caller_env();
             self.stack.truncate(saved_stack_depth);
             self.locals = saved_locals;
             return Err(Interpreter::reject_args_for_empty_sig(&args));
@@ -553,6 +563,7 @@ impl VM {
                     if !fn_name.is_empty() {
                         self.interpreter.pop_routine();
                     }
+                    self.interpreter.pop_caller_env();
                     self.stack.truncate(saved_stack_depth);
                     self.locals = saved_locals;
                     *self.interpreter.env_mut() = saved_env;
@@ -636,6 +647,8 @@ impl VM {
         if !fn_name.is_empty() {
             self.interpreter.pop_routine();
         }
+
+        self.interpreter.pop_caller_env();
 
         let mut restored_env = saved_env;
         self.interpreter

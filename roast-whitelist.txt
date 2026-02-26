@@ -40,6 +40,7 @@ roast/S02-magicals/pid.t
 roast/S02-names-vars/contextual.t
 roast/S02-names/SETTING-6e.t
 roast/S02-names/bare-sigil.t
+roast/S02-names/caller.t
 roast/S02-names/dynamic-scope.t
 roast/S02-names/indirect.t
 roast/S02-names/strict.t

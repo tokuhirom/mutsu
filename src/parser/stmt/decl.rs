@@ -33,7 +33,7 @@ fn typed_default_expr(type_name: &str) -> Expr {
 }
 
 fn is_supported_variable_trait(trait_name: &str) -> bool {
-    if matches!(trait_name, "default" | "export") {
+    if matches!(trait_name, "default" | "export" | "dynamic") {
         return true;
     }
     // Type-ish variable traits are accepted in roast (e.g. `is List`, `is Map`).
@@ -365,6 +365,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 type_constraint: None,
                 is_state,
                 is_our,
+                is_dynamic: false,
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -381,6 +382,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 type_constraint: None,
                 is_state,
                 is_our,
+                is_dynamic: false,
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -395,6 +397,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 type_constraint: None,
                 is_state,
                 is_our,
+                is_dynamic: false,
             },
         ));
     }
@@ -434,6 +437,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 type_constraint,
                 is_state,
                 is_our,
+                is_dynamic: false,
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -450,6 +454,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 type_constraint,
                 is_state,
                 is_our,
+                is_dynamic: false,
             };
             if apply_modifier {
                 return parse_statement_modifier(r, stmt);
@@ -466,6 +471,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                 type_constraint,
                 is_state,
                 is_our,
+                is_dynamic: false,
             },
         ));
     }
@@ -527,6 +533,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
 
     // Parse variable traits. Only a small set is currently supported on
     // lexical/package variable declarations; unknown traits are compile-time errors.
+    let mut has_dynamic_trait = false;
     let rest = {
         let mut r = rest;
         while let Some(after_is) = keyword("is", r) {
@@ -538,6 +545,9 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
                     "X::Comp::Trait::Unknown: Unknown variable trait 'is {}'",
                     trait_name
                 )));
+            }
+            if trait_name == "dynamic" {
+                has_dynamic_trait = true;
             }
             let (r2, _) = ws(r2)?;
             // Parse optional trait argument: (expr)
@@ -611,6 +621,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             type_constraint,
             is_state,
             is_our,
+            is_dynamic: has_dynamic_trait,
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -650,6 +661,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             type_constraint,
             is_state,
             is_our,
+            is_dynamic: has_dynamic_trait,
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -679,6 +691,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             type_constraint,
             is_state,
             is_our,
+            is_dynamic: has_dynamic_trait,
         };
         if apply_modifier {
             return parse_statement_modifier(rest, stmt);
@@ -708,6 +721,7 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
             type_constraint,
             is_state,
             is_our,
+            is_dynamic: has_dynamic_trait,
         },
     ))
 }
@@ -767,6 +781,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
             type_constraint: None,
             is_state: false,
             is_our: false,
+            is_dynamic: false,
         }];
         for (i, var_name) in names.iter().enumerate() {
             stmts.push(Stmt::VarDecl {
@@ -778,6 +793,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
+                is_dynamic: false,
             });
         }
         return Ok((rest, Stmt::SyntheticBlock(stmts)));
@@ -793,6 +809,7 @@ pub(super) fn parse_destructuring_decl(input: &str) -> PResult<'_, Stmt> {
             type_constraint: None,
             is_state: false,
             is_our: false,
+            is_dynamic: false,
         });
     }
     Ok((rest, Stmt::SyntheticBlock(stmts)))
@@ -1110,6 +1127,7 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
+                is_dynamic: false,
             },
         ));
     }
@@ -1122,6 +1140,7 @@ pub(super) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
             type_constraint: None,
             is_state: false,
             is_our: false,
+            is_dynamic: false,
         },
     ))
 }
