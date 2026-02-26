@@ -2,6 +2,25 @@ use super::*;
 use std::sync::Arc;
 
 impl VM {
+    pub(super) fn anon_state_key(name: &str) -> Option<String> {
+        if name.starts_with("__ANON_STATE_") {
+            Some(format!("__anon_state::{name}"))
+        } else {
+            None
+        }
+    }
+
+    pub(super) fn anon_state_value(&self, name: &str) -> Option<Value> {
+        let key = Self::anon_state_key(name)?;
+        self.interpreter.get_state_var(&key).cloned()
+    }
+
+    pub(super) fn sync_anon_state_value(&mut self, name: &str, value: &Value) {
+        if let Some(key) = Self::anon_state_key(name) {
+            self.interpreter.set_state_var(key, value.clone());
+        }
+    }
+
     fn term_symbol_from_name(name: &str) -> Option<&str> {
         let bytes = name.as_bytes();
         if bytes.is_empty() {
@@ -820,7 +839,10 @@ impl VM {
 
     pub(super) fn exec_post_increment_op(&mut self, code: &CompiledCode, name_idx: u32) {
         let name = Self::const_str(code, name_idx);
-        let val = self.get_env_with_main_alias(name).unwrap_or(Value::Int(0));
+        let val = self
+            .get_env_with_main_alias(name)
+            .or_else(|| self.anon_state_value(name))
+            .unwrap_or(Value::Int(0));
         let new_val = match &val {
             Value::Int(i) => Value::Int(i + 1),
             Value::Bool(_) => Value::Bool(true),
@@ -828,6 +850,7 @@ impl VM {
             _ => Value::Int(1),
         };
         self.set_env_with_main_alias(name, new_val.clone());
+        self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
         // Write back to source variable when incrementing $_ bound to a container
         if name == "_"
@@ -842,7 +865,10 @@ impl VM {
 
     pub(super) fn exec_post_decrement_op(&mut self, code: &CompiledCode, name_idx: u32) {
         let name = Self::const_str(code, name_idx);
-        let val = self.get_env_with_main_alias(name).unwrap_or(Value::Int(0));
+        let val = self
+            .get_env_with_main_alias(name)
+            .or_else(|| self.anon_state_value(name))
+            .unwrap_or(Value::Int(0));
         let new_val = match &val {
             Value::Int(i) => Value::Int(i - 1),
             Value::Bool(_) => Value::Bool(false),
@@ -850,6 +876,7 @@ impl VM {
             _ => Value::Int(-1),
         };
         self.set_env_with_main_alias(name, new_val.clone());
+        self.sync_anon_state_value(name, &new_val);
         self.update_local_if_exists(code, name, &new_val);
         self.stack.push(val);
     }
