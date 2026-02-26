@@ -2535,13 +2535,30 @@ impl Interpreter {
             }
         }
 
-        // Package (type object) dispatch — check user-defined methods
-        if let Value::Package(ref name) = target
-            && self.has_user_method(name, method)
-        {
-            let attrs = HashMap::new();
-            let (result, _updated) = self.run_instance_method(name, attrs, method, args, None)?;
-            return Ok(result);
+        // Package (type object) dispatch — private method call
+        if let Value::Package(ref name) = target {
+            if let Some(private_method_name) = method.strip_prefix('!')
+                && let Some((resolved_owner, method_def)) =
+                    self.resolve_private_method_any_owner(name, private_method_name, &args)
+            {
+                let attrs = HashMap::new();
+                let (result, _updated) = self.run_instance_method_resolved(
+                    name,
+                    &resolved_owner,
+                    method_def,
+                    attrs,
+                    args,
+                    Some(target.clone()),
+                )?;
+                return Ok(result);
+            }
+            // Package (type object) dispatch — check user-defined methods
+            if self.has_user_method(name, method) {
+                let attrs = HashMap::new();
+                let (result, _updated) =
+                    self.run_instance_method(name, attrs, method, args, None)?;
+                return Ok(result);
+            }
         }
 
         // Value-type dispatch for user-defined methods (e.g. `augment class Array/Hash/List`).

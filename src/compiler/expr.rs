@@ -31,6 +31,15 @@ impl Compiler {
                 self.compile_match_regex(v);
             }
             Expr::Var(name) => {
+                // X::Dynamic::Package: dynamic variables cannot have package-like names
+                if Self::is_dynamic_package_var(name) {
+                    self.emit_dynamic_package_error(name);
+                    return;
+                }
+                // Track dynamic variable access for postdeclaration check
+                if name.starts_with('*') && !self.local_map.contains_key(name.as_str()) {
+                    self.accessed_dynamic_vars.insert(name.clone());
+                }
                 // Slang variables ($~MAIN, $~Quote, $~Regex, $~P5Regex)
                 if let Some(slang_name) = name.strip_prefix('~') {
                     let idx = self.code.add_constant(Value::Str(slang_name.to_string()));

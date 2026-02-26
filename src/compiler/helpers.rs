@@ -48,6 +48,40 @@ impl Compiler {
         }
     }
 
+    /// Check if a variable name is a dynamic variable with a package-like name (contains ::).
+    pub(super) fn is_dynamic_package_var(name: &str) -> bool {
+        let stripped = name.trim_start_matches(['$', '@', '%', '&']);
+        if let Some(after_star) = stripped.strip_prefix('*') {
+            after_star.contains("::")
+        } else {
+            false
+        }
+    }
+
+    /// Emit X::Dynamic::Package error for a dynamic variable with :: in name.
+    pub(super) fn emit_dynamic_package_error(&mut self, name: &str) {
+        let symbol = Self::dynamic_var_symbol(name);
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("symbol".to_string(), Value::Str(symbol));
+        let err = Value::make_instance("X::Dynamic::Package".to_string(), attrs);
+        let idx = self.code.add_constant(err);
+        self.code.emit(OpCode::LoadConst(idx));
+        self.code.emit(OpCode::Die);
+    }
+
+    /// Reconstruct the full symbol name (with sigil) from the internal name.
+    pub(super) fn dynamic_var_symbol(name: &str) -> String {
+        // If name starts with a sigil (@, %, &), it already has the sigil
+        if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
+            name.to_string()
+        } else if name.starts_with('*') {
+            // $* variable — sigil $ was stripped
+            format!("${}", name)
+        } else {
+            format!("${}", name)
+        }
+    }
+
     pub(super) fn var_is_dynamic(&self, name: &str) -> bool {
         if self.dynamic_scope_all {
             return true;

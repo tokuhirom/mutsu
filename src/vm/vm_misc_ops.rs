@@ -763,6 +763,11 @@ impl VM {
         let mut restored_env = saved_env.clone();
         for (k, v) in current_env {
             if saved_env.contains_key(&k) {
+                // Dynamic variables (e.g. $*VAR) are scoped to the block:
+                // restore to the saved value rather than propagating the inner value.
+                if k.starts_with('*') {
+                    continue;
+                }
                 restored_env.insert(k, v);
             }
         }

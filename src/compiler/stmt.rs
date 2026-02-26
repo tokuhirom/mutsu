@@ -132,6 +132,23 @@ impl Compiler {
                 is_state,
                 is_our,
             } => {
+                // X::Dynamic::Package: dynamic variables cannot have package-like names
+                if Self::is_dynamic_package_var(name) {
+                    self.emit_dynamic_package_error(name);
+                    return;
+                }
+                // X::Dynamic::Postdeclaration: dynamic variable used before declaration
+                if name.starts_with('*') && self.accessed_dynamic_vars.contains(name) {
+                    let symbol = Self::dynamic_var_symbol(name);
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("symbol".to_string(), Value::Str(symbol));
+                    let err =
+                        Value::make_instance("X::Dynamic::Postdeclaration".to_string(), attrs);
+                    let idx = self.code.add_constant(err);
+                    self.code.emit(OpCode::LoadConst(idx));
+                    self.code.emit(OpCode::Die);
+                    return;
+                }
                 let is_dynamic = self.var_is_dynamic(name);
                 self.compile_expr(expr);
                 // Skip TypeCheck for hash declarations: the type constraint

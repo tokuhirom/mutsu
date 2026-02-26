@@ -37,6 +37,7 @@ roast/S02-magicals/args.t
 roast/S02-magicals/block.t
 roast/S02-magicals/file_line.t
 roast/S02-magicals/pid.t
+roast/S02-names-vars/contextual.t
 roast/S02-names/SETTING-6e.t
 roast/S02-names/bare-sigil.t
 roast/S02-names/dynamic-scope.t
