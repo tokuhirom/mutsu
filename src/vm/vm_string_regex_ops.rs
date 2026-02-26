@@ -295,6 +295,10 @@ impl VM {
                 }
                 Value::array(results)
             }
+            "!" => {
+                let inner = self.eval_reduction_operator_values(&op, &left, &right)?;
+                Value::Bool(!inner.truthy())
+            }
             _ => {
                 return Err(RuntimeError::new(format!(
                     "Unknown meta operator: {}",

@@ -68,6 +68,7 @@ pub(crate) enum TokenKind {
     Gte,
     AndAnd,
     OrOr,
+    XorXor, // ^^
     OrWord,
     OrElse,
     AndThen,

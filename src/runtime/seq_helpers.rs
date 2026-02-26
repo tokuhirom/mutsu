@@ -486,12 +486,13 @@ impl Interpreter {
             ) => {
                 let text = left.to_string_value();
                 if let Some(captures) = self.regex_match_with_captures(pat, &text) {
-                    let match_obj = Value::make_match_object_with_captures(
+                    let match_obj = Value::make_match_object_full(
                         captures.matched.clone(),
                         captures.from as i64,
                         captures.to as i64,
                         &captures.positional,
                         &captures.named,
+                        Some(&text),
                     );
                     self.env.insert("/".to_string(), match_obj);
                     for (i, v) in captures.positional.iter().enumerate() {

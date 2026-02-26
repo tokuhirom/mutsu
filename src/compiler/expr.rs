@@ -200,6 +200,13 @@ impl Compiler {
                         self.code.patch_jump(jump_end);
                         return;
                     }
+                    TokenKind::XorXor => {
+                        // a ^^ b: return truthy value if exactly one is truthy, else Nil/last falsy
+                        self.compile_expr(left);
+                        self.compile_expr(right);
+                        self.code.emit(OpCode::XorXor);
+                        return;
+                    }
                     TokenKind::SlashSlash | TokenKind::OrElse => {
                         // a // b: result is a if not nil, else b
                         self.compile_expr(left);
@@ -401,8 +408,10 @@ impl Compiler {
                     self.compile_expr(&method_call);
                 }
                 // Rewrite push(@arr, val...)/unshift(@arr, val...)/append/prepend → @arr.push(val...)
-                else if matches!(name.as_str(), "push" | "unshift" | "append" | "prepend")
-                    && args.len() >= 2
+                else if matches!(
+                    name.as_str(),
+                    "push" | "unshift" | "append" | "prepend" | "splice"
+                ) && args.len() >= 2
                     && matches!(args[0], Expr::ArrayVar(_) | Expr::Var(_))
                 {
                     let method_call = Expr::MethodCall {
@@ -742,6 +751,17 @@ impl Compiler {
                     self.compile_expr(index);
                     self.code.emit(OpCode::Index);
                 }
+            }
+            // Hash hyperslice: %hash{**}:adverb
+            Expr::HyperSlice { target, adverb } => {
+                self.compile_expr(target);
+                self.code.emit(OpCode::HyperSlice(*adverb as u8));
+            }
+            // Hash hyperindex: %hash{||@keys}
+            Expr::HyperIndex { target, keys } => {
+                self.compile_expr(target);
+                self.compile_expr(keys);
+                self.code.emit(OpCode::HyperIndex);
             }
             // String interpolation
             Expr::StringInterpolation(parts) => {

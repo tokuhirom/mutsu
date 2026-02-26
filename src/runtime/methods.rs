@@ -445,13 +445,21 @@ impl Interpreter {
         }
         let len = dims[0];
         if dims.len() == 1 {
-            return Value::array(vec![Value::Nil; len]);
+            let value = Value::array(vec![Value::Nil; len]);
+            crate::runtime::utils::mark_shaped_array(&value, Some(dims));
+            return value;
         }
         let child = Self::make_shaped_array(&dims[1..]);
-        Value::array((0..len).map(|_| child.clone()).collect())
+        crate::runtime::utils::mark_shaped_array(&child, Some(&dims[1..]));
+        let value = Value::array((0..len).map(|_| child.clone()).collect());
+        crate::runtime::utils::mark_shaped_array(&value, Some(dims));
+        value
     }
 
     fn infer_array_shape(value: &Value) -> Option<Vec<usize>> {
+        if let Some(shape) = crate::runtime::utils::shaped_array_shape(value) {
+            return Some(shape);
+        }
         let Value::Array(items, ..) = value else {
             return None;
         };
@@ -1445,12 +1453,13 @@ impl Interpreter {
                                 };
                                 self.env.insert(format!("<{}>", k), value);
                             }
-                            let match_obj = Value::make_match_object_with_captures(
+                            let match_obj = Value::make_match_object_full(
                                 matched,
                                 from,
                                 to,
                                 &captures.positional,
                                 &captures.named,
+                                Some(&text),
                             );
                             self.env.insert("/".to_string(), match_obj.clone());
                             Ok(match_obj)
@@ -1493,6 +1502,12 @@ impl Interpreter {
             }
             "contains" => {
                 return self.dispatch_contains(target, &args);
+            }
+            "starts-with" => {
+                return self.dispatch_starts_with(target, &args);
+            }
+            "ends-with" => {
+                return self.dispatch_ends_with(target, &args);
             }
             "index" => {
                 return self.dispatch_index(target, &args);
@@ -3053,12 +3068,13 @@ impl Interpreter {
                 };
                 self.env.insert(format!("<{}>", k), value);
             }
-            let match_obj = Value::make_match_object_with_captures(
+            let match_obj = Value::make_match_object_full(
                 captures.matched,
                 captures.from as i64,
                 captures.to as i64,
                 &captures.positional,
                 &captures.named,
+                Some(&text),
             );
             self.env.insert("/".to_string(), match_obj.clone());
             Ok(match_obj)
@@ -3825,6 +3841,92 @@ impl Interpreter {
         Ok(Value::Bool(ok))
     }
 
+    fn dispatch_starts_with(&self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.dispatch_prefix_suffix_check(target, args, true)
+    }
+
+    fn dispatch_ends_with(&self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.dispatch_prefix_suffix_check(target, args, false)
+    }
+
+    fn dispatch_prefix_suffix_check(
+        &self,
+        target: Value,
+        args: &[Value],
+        is_prefix: bool,
+    ) -> Result<Value, RuntimeError> {
+        let method_name = if is_prefix {
+            "starts-with"
+        } else {
+            "ends-with"
+        };
+        // Separate positional and named args first
+        let mut positional: Vec<Value> = Vec::new();
+        let mut ignore_case = false;
+        let mut ignore_mark = false;
+        for arg in args {
+            if let Value::Pair(key, value) = arg {
+                match key.as_str() {
+                    "i" | "ignorecase" => ignore_case = value.truthy(),
+                    "m" | "ignoremark" => ignore_mark = value.truthy(),
+                    _ => {}
+                }
+            } else {
+                positional.push(arg.clone());
+            }
+        }
+        // Type objects (Package) as needle should throw
+        if let Some(Value::Package(type_name)) = positional.first() {
+            return Err(RuntimeError::new(format!(
+                "Cannot resolve caller {}({}:U)",
+                method_name, type_name
+            )));
+        }
+        let needle = positional
+            .first()
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let text = target.to_string_value();
+
+        let ok = match (ignore_case, ignore_mark) {
+            (false, false) => {
+                if is_prefix {
+                    text.starts_with(needle.as_str())
+                } else {
+                    text.ends_with(needle.as_str())
+                }
+            }
+            (true, false) => {
+                let t = text.to_lowercase();
+                let n = needle.to_lowercase();
+                if is_prefix {
+                    t.starts_with(n.as_str())
+                } else {
+                    t.ends_with(n.as_str())
+                }
+            }
+            (false, true) => {
+                let t = self.strip_marks(&text);
+                let n = self.strip_marks(&needle);
+                if is_prefix {
+                    t.starts_with(n.as_str())
+                } else {
+                    t.ends_with(n.as_str())
+                }
+            }
+            (true, true) => {
+                let t = self.strip_marks(&text).to_lowercase();
+                let n = self.strip_marks(&needle).to_lowercase();
+                if is_prefix {
+                    t.starts_with(n.as_str())
+                } else {
+                    t.ends_with(n.as_str())
+                }
+            }
+        };
+        Ok(Value::Bool(ok))
+    }
+
     fn dispatch_index(&self, target: Value, args: &[Value]) -> Result<Value, RuntimeError> {
         // Type objects (Package) as needle are not allowed
         if let Some(Value::Package(type_name)) = args.first() {
@@ -4408,7 +4510,7 @@ impl Interpreter {
                             self.env.insert("_".to_string(), b.clone());
                             let key_b = self.eval_block_value(&data.body).unwrap_or(Value::Nil);
                             self.env = saved;
-                            key_a.to_string_value().cmp(&key_b.to_string_value())
+                            compare_values(&key_a, &key_b).cmp(&0)
                         });
                     } else {
                         items_mut.sort_by(|a, b| {
@@ -4562,7 +4664,7 @@ impl Interpreter {
 
         if let Value::Package(class_name) = &target {
             match class_name.as_str() {
-                "Array" | "List" | "Positional" => {
+                "Array" | "List" | "Positional" | "array" => {
                     if let Some(dims) = Self::shaped_dims_from_new_args(&args) {
                         return Ok(Self::make_shaped_array(&dims));
                     }
@@ -4906,6 +5008,50 @@ impl Interpreter {
                 }
                 "Slip" => {
                     return Ok(Value::slip(args.clone()));
+                }
+                "Match" => {
+                    // Match.new(:orig("..."), :from(N), :pos(N), :list(...), :hash(...))
+                    let mut orig = String::new();
+                    let mut from: i64 = 0;
+                    let mut to: i64 = 0;
+                    let mut list = Value::array(Vec::new());
+                    let mut hash = Value::hash(HashMap::new());
+                    for arg in &args {
+                        if let Value::Pair(key, value) = arg {
+                            match key.as_str() {
+                                "orig" => orig = value.to_string_value(),
+                                "from" => from = to_int(value),
+                                "pos" | "to" => to = to_int(value),
+                                "list" => list = *value.clone(),
+                                "hash" => hash = *value.clone(),
+                                _ => {}
+                            }
+                        }
+                    }
+                    // Compute matched string from orig[from..pos]
+                    let matched: String = orig
+                        .chars()
+                        .skip(from as usize)
+                        .take((to - from) as usize)
+                        .collect();
+                    let mut attrs = HashMap::new();
+                    attrs.insert("str".to_string(), Value::Str(matched));
+                    attrs.insert("from".to_string(), Value::Int(from));
+                    attrs.insert("to".to_string(), Value::Int(to));
+                    attrs.insert("orig".to_string(), Value::Str(orig));
+                    // Convert list to positional captures
+                    if let Value::Array(items, ..) = &list {
+                        attrs.insert("list".to_string(), Value::array(items.to_vec()));
+                    } else {
+                        attrs.insert("list".to_string(), Value::array(Vec::new()));
+                    }
+                    // Convert hash (Map) to named captures
+                    if let Value::Hash(map, ..) = &hash {
+                        attrs.insert("named".to_string(), Value::hash(map.as_ref().clone()));
+                    } else {
+                        attrs.insert("named".to_string(), Value::hash(HashMap::new()));
+                    }
+                    return Ok(Value::make_instance("Match".to_string(), attrs));
                 }
                 // Types that cannot be instantiated with .new
                 "HyperWhatever" | "Whatever" | "Junction" => {

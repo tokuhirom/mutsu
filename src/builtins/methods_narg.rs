@@ -96,16 +96,8 @@ pub(crate) fn native_method_1arg(
             let needle = arg.to_string_value();
             Some(Ok(Value::Bool(s.contains(&needle))))
         }
-        "starts-with" => {
-            let s = target.to_string_value();
-            let prefix = arg.to_string_value();
-            Some(Ok(Value::Bool(s.starts_with(&prefix))))
-        }
-        "ends-with" => {
-            let s = target.to_string_value();
-            let suffix = arg.to_string_value();
-            Some(Ok(Value::Bool(s.ends_with(&suffix))))
-        }
+        // starts-with and ends-with are handled in runtime/methods.rs
+        // to support named args (:i, :ignorecase, :m, :ignoremark)
         "samemark" => {
             let target_str = target.to_string_value();
             let source_str = arg.to_string_value();
