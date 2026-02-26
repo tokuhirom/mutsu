@@ -393,6 +393,7 @@ impl Interpreter {
                 return self.call_sub_value(left, left_args, false);
             }
             let saved_env = self.env.clone();
+            let saved_readonly = self.save_readonly_vars();
             let mut new_env = saved_env.clone();
             for (k, v) in &data.env {
                 if merge_all {
@@ -407,7 +408,14 @@ impl Interpreter {
             }
             self.env = new_env.clone();
             let rw_bindings =
-                self.bind_function_args_values(&data.param_defs, &data.params, &call_args)?;
+                match self.bind_function_args_values(&data.param_defs, &data.params, &call_args) {
+                    Ok(bindings) => bindings,
+                    Err(e) => {
+                        self.env = saved_env;
+                        self.restore_readonly_vars(saved_readonly);
+                        return Err(e);
+                    }
+                };
             new_env = self.env.clone();
             if data.params.is_empty() {
                 for arg in &sanitized_args {
@@ -489,6 +497,7 @@ impl Interpreter {
             // Apply rw bindings after merge so they take precedence
             self.apply_rw_bindings_to_env(&rw_bindings, &mut merged);
             self.env = merged;
+            self.restore_readonly_vars(saved_readonly);
             return match result {
                 Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
                 Err(e) if e.is_fail => Ok(Value::Nil),

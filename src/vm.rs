@@ -1040,11 +1040,11 @@ impl VM {
 
             // -- Postfix operators --
             OpCode::PostIncrement(name_idx) => {
-                self.exec_post_increment_op(code, *name_idx);
+                self.exec_post_increment_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::PostDecrement(name_idx) => {
-                self.exec_post_decrement_op(code, *name_idx);
+                self.exec_post_decrement_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::PostIncrementIndex(name_idx) => {
@@ -1483,6 +1483,11 @@ impl VM {
             }
             OpCode::AssignReadOnly => {
                 return Err(RuntimeError::new("X::Assignment::RO"));
+            }
+            OpCode::CheckReadOnly(name_idx) => {
+                let name = Self::const_str(code, *name_idx);
+                self.interpreter.check_readonly_for_modify(name)?;
+                *ip += 1;
             }
 
             // -- Let scope management --
