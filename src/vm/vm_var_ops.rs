@@ -829,6 +829,14 @@ impl VM {
         };
         self.set_env_with_main_alias(name, new_val.clone());
         self.update_local_if_exists(code, name, &new_val);
+        // Write back to source variable when incrementing $_ bound to a container
+        if name == "_"
+            && let Some(ref source_var) = self.topic_source_var
+        {
+            let sv = source_var.clone();
+            self.set_env_with_main_alias(&sv, new_val.clone());
+            self.update_local_if_exists(code, &sv, &new_val);
+        }
         self.stack.push(val);
     }
 

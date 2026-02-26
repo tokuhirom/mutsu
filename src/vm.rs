@@ -41,6 +41,10 @@ pub(crate) struct VM {
     in_smartmatch_rhs: bool,
     /// Tracks the last value passed to SetTopic, used as the REPL display value.
     last_topic_value: Option<Value>,
+    /// Container name from when/default body (for Scalar container binding)
+    container_ref_var: Option<String>,
+    /// Source variable name for topic binding in for loops
+    topic_source_var: Option<String>,
 }
 
 impl VM {
@@ -83,6 +87,8 @@ impl VM {
             locals: Vec::new(),
             in_smartmatch_rhs: false,
             last_topic_value: None,
+            container_ref_var: None,
+            topic_source_var: None,
         }
     }
 
@@ -1012,6 +1018,11 @@ impl VM {
             }
             OpCode::Succeed => {
                 return Err(RuntimeError::succeed_signal());
+            }
+            OpCode::TagContainerRef(name_idx) => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                self.container_ref_var = Some(name);
+                *ip += 1;
             }
 
             // -- Postfix operators --

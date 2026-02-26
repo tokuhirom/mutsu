@@ -20,7 +20,7 @@ my $v5 = do given 7 {
     when 42 { "no" }
     default { "fallback" }
 };
-is $v5, Nil, 'do given default branch returns Nil';
+is $v5, "fallback", 'do given default branch returns default value';
 
 my $v6 = do given 5 {
     when 5 { proceed }
