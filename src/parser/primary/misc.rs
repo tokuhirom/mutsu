@@ -1198,20 +1198,54 @@ fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
             continue;
         }
 
-        let (r, item) = super::super::expr::expression(r)?;
-        let pair_entry = if pending_key.is_none() {
-            hash_pair_from_expr(&item)?
-        } else {
-            None
-        };
+        if let Some(key) = pending_key.take() {
+            let (r, val) = super::super::expr::expression(r)?;
+            pairs.push((key, Some(val)));
+            let (r, _) = ws_inner(r);
+            if let Some(stripped) = r.strip_prefix(',') {
+                rest = stripped;
+            } else if let Some(stripped) = r.strip_prefix(';') {
+                rest = stripped;
+            } else {
+                rest = r;
+            }
+            continue;
+        }
 
-        if let Some((key, val)) = pair_entry {
+        if let Ok((r_key, key)) = parse_simple_hash_key(r) {
+            let (after_key, _) = ws_inner(r_key);
+            if let Some(after_arrow) = after_key.strip_prefix("=>") {
+                let (after_arrow, _) = ws_inner(after_arrow);
+                let (r_val, val) = super::super::expr::expression(after_arrow)?;
+                pairs.push((key, Some(val)));
+                let (r_val, _) = ws_inner(r_val);
+                if let Some(stripped) = r_val.strip_prefix(',') {
+                    rest = stripped;
+                } else if let Some(stripped) = r_val.strip_prefix(';') {
+                    rest = stripped;
+                } else {
+                    rest = r_val;
+                }
+                continue;
+            }
+
+            pending_key = Some(key);
+            let (r_key, _) = ws_inner(r_key);
+            if let Some(stripped) = r_key.strip_prefix(',') {
+                rest = stripped;
+            } else if let Some(stripped) = r_key.strip_prefix(';') {
+                rest = stripped;
+            } else {
+                rest = r_key;
+            }
+            continue;
+        }
+
+        let (r, item) = super::super::expr::expression(r)?;
+        if let Some((key, val)) = hash_pair_from_expr(&item)? {
             pairs.push((key, Some(val)));
         } else {
-            match pending_key.take() {
-                Some(key) => pairs.push((key, Some(item))),
-                None => pending_key = Some(hash_key_from_expr(item)?),
-            }
+            pending_key = Some(hash_key_from_expr(item)?);
         }
 
         let (r, _) = ws_inner(r);
@@ -1223,6 +1257,24 @@ fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
             rest = r;
         }
     }
+}
+
+fn parse_simple_hash_key(input: &str) -> PResult<'_, String> {
+    if let Ok((r, name)) = super::super::stmt::ident_pub(input) {
+        return Ok((r, name));
+    }
+    if let Ok((r, Expr::Literal(Value::Int(n)))) = super::number::integer(input) {
+        return Ok((r, n.to_string()));
+    }
+    if let Ok((r, Expr::Literal(Value::BigInt(n)))) = super::number::integer(input) {
+        return Ok((r, n.to_string()));
+    }
+    if let Ok((r, Expr::Literal(Value::Str(s)))) =
+        single_quoted_string(input).or_else(|_| double_quoted_string(input))
+    {
+        return Ok((r, s));
+    }
+    Err(PError::expected("hash key"))
 }
 
 fn hash_key_from_expr(expr: Expr) -> Result<String, PError> {

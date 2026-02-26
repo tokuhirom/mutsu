@@ -215,6 +215,20 @@ mod tests {
     }
 
     #[test]
+    fn parse_brace_hash_literal_pair_with_expression_value() {
+        let (rest, expr) = primary("{ status => * != 0 }").unwrap();
+        assert_eq!(rest, "");
+        match expr {
+            Expr::Hash(pairs) => {
+                assert_eq!(pairs.len(), 1);
+                assert_eq!(pairs[0].0, "status");
+                assert!(pairs[0].1.is_some());
+            }
+            _ => panic!("expected hash literal"),
+        }
+    }
+
+    #[test]
     fn parse_itemized_paren_expr() {
         let (rest, expr) = primary("$(1,2)").unwrap();
         assert_eq!(rest, "");
