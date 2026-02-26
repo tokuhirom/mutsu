@@ -235,6 +235,21 @@ pub(super) fn itemized_paren_expr(input: &str) -> PResult<'_, Expr> {
     Ok((rest, Expr::CaptureLiteral(vec![inner])))
 }
 
+/// Parse itemized brace expression: `${ }`.
+///
+/// In Raku, `${ a => 1, b => 2 }` creates an itemized hash — it wraps the
+/// hash in a Scalar container so it's treated as a single element.
+pub(super) fn itemized_brace_expr(input: &str) -> PResult<'_, Expr> {
+    let Some(rest) = input.strip_prefix('$') else {
+        return Err(PError::expected("itemized brace expression"));
+    };
+    if !rest.starts_with('{') {
+        return Err(PError::expected("itemized brace expression"));
+    }
+    let (rest, inner) = super::misc::block_or_hash_expr(rest)?;
+    Ok((rest, Expr::CaptureLiteral(vec![inner])))
+}
+
 /// Parse itemized bracket expression: `$[...]`.
 ///
 /// Rakudo lowers this as a normal bracket constructor followed by `.item`.

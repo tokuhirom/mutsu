@@ -2,6 +2,7 @@ use super::super::parse_result::{PError, PResult, parse_char, parse_tag, take_wh
 
 use crate::ast::Expr;
 use crate::regex_validate::validate_regex_syntax;
+use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 /// Validate a regex pattern at parse time, converting any RuntimeError to PError.
@@ -847,6 +848,25 @@ pub(super) fn topic_method_call(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("topic method call"));
     }
     let r = &input[1..];
+    // .++ and .-- — postfix increment/decrement on $_
+    if let Some(rest) = r.strip_prefix("++") {
+        return Ok((
+            rest,
+            Expr::PostfixOp {
+                op: TokenKind::PlusPlus,
+                expr: Box::new(Expr::Var("_".to_string())),
+            },
+        ));
+    }
+    if let Some(rest) = r.strip_prefix("--") {
+        return Ok((
+            rest,
+            Expr::PostfixOp {
+                op: TokenKind::MinusMinus,
+                expr: Box::new(Expr::Var("_".to_string())),
+            },
+        ));
+    }
     // .() — invoke topic as callable
     if r.starts_with('(') {
         let (r, _) = parse_char(r, '(')?;
