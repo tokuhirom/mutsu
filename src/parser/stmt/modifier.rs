@@ -227,11 +227,12 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
         })?;
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
+        let given_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &topic);
         return Ok((
             r,
             Stmt::Given {
                 topic,
-                body: vec![stmt],
+                body: vec![given_stmt],
             },
         ));
     }
