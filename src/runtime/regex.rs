@@ -424,30 +424,190 @@ impl Interpreter {
         out
     }
 
-    #[allow(dead_code)]
-    pub(super) fn regex_is_match(&self, pattern: &str, text: &str) -> bool {
-        let parsed = match self.parse_regex(pattern) {
-            Some(p) => p,
-            None => return false,
-        };
-        let pkg = self.current_package.clone();
-        let chars: Vec<char> = text.chars().collect();
-        if parsed.anchor_start {
-            return self.regex_match_from_in_pkg(&parsed, &chars, 0, &pkg);
-        }
-        for start in 0..=chars.len() {
-            if self.regex_match_from_in_pkg(&parsed, &chars, start, &pkg) {
-                return true;
+    fn restore_env_entries(&mut self, restore: HashMap<String, Option<Value>>) {
+        for (key, value) in restore {
+            match value {
+                Some(v) => {
+                    self.env.insert(key, v);
+                }
+                None => {
+                    self.env.remove(&key);
+                }
             }
         }
-        false
     }
 
-    pub(super) fn regex_match_with_captures(
-        &self,
-        pattern: &str,
-        text: &str,
-    ) -> Option<RegexCaptures> {
+    fn find_top_level_semicolon(text: &str) -> Option<usize> {
+        let mut paren = 0usize;
+        let mut bracket = 0usize;
+        let mut brace = 0usize;
+        let mut quote: Option<char> = None;
+        let mut escaped = false;
+        for (idx, ch) in text.char_indices() {
+            if let Some(q) = quote {
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                if ch == '\\' {
+                    escaped = true;
+                    continue;
+                }
+                if ch == q {
+                    quote = None;
+                }
+                continue;
+            }
+            match ch {
+                '\'' | '"' => quote = Some(ch),
+                '(' => paren += 1,
+                ')' => paren = paren.saturating_sub(1),
+                '[' => bracket += 1,
+                ']' => bracket = bracket.saturating_sub(1),
+                '{' => brace += 1,
+                '}' => brace = brace.saturating_sub(1),
+                ';' if paren == 0 && bracket == 0 && brace == 0 => return Some(idx),
+                _ => {}
+            }
+        }
+        None
+    }
+
+    fn find_matching_brace_end(text: &str, open_idx: usize) -> Option<usize> {
+        let mut depth = 0usize;
+        let mut quote: Option<char> = None;
+        let mut escaped = false;
+        for (idx, ch) in text.char_indices().skip_while(|(i, _)| *i < open_idx) {
+            if let Some(q) = quote {
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                if ch == '\\' {
+                    escaped = true;
+                    continue;
+                }
+                if ch == q {
+                    quote = None;
+                }
+                continue;
+            }
+            match ch {
+                '\'' | '"' => quote = Some(ch),
+                '{' => depth += 1,
+                '}' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        return Some(idx);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    fn parse_regex_declarative_prefix(pattern: &str) -> (Vec<(String, String)>, String) {
+        let mut decls = Vec::new();
+        let mut rest = pattern;
+        let mut preserved_adverbs: Vec<String> = Vec::new();
+        loop {
+            let trimmed = rest.trim_start();
+            rest = trimmed;
+            let Some(after_colon) = rest.strip_prefix(':') else {
+                break;
+            };
+            let name_len = after_colon
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
+                .unwrap_or(after_colon.len());
+            if name_len == 0 {
+                break;
+            }
+            let name = &after_colon[..name_len];
+            if !matches!(
+                name,
+                "ratchet"
+                    | "ignorecase"
+                    | "ignoremark"
+                    | "sigspace"
+                    | "i"
+                    | "m"
+                    | "s"
+                    | "r"
+                    | "x"
+                    | "p5"
+            ) {
+                break;
+            }
+            preserved_adverbs.push(format!(":{name}"));
+            rest = &after_colon[name_len..];
+        }
+        loop {
+            let trimmed = rest.trim_start();
+            rest = trimmed;
+            let Some(after_colon) = rest.strip_prefix(':') else {
+                break;
+            };
+            let name_len = after_colon
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
+                .unwrap_or(after_colon.len());
+            if name_len == 0 {
+                break;
+            }
+            let decl_name = &after_colon[..name_len];
+            if !matches!(
+                decl_name,
+                "my" | "our" | "state" | "constant" | "temp" | "let"
+            ) {
+                break;
+            }
+            let after_name = &after_colon[name_len..];
+            let body = after_name.trim_start();
+            let stmt_text;
+            let consumed_len;
+            let scoped_token_decl = matches!(decl_name, "my" | "our" | "state")
+                && (body.starts_with("token ")
+                    || body.starts_with("regex ")
+                    || body.starts_with("rule "));
+            if scoped_token_decl {
+                let Some(open_idx) = body.find('{') else {
+                    break;
+                };
+                let Some(close_idx) = Self::find_matching_brace_end(body, open_idx) else {
+                    break;
+                };
+                let mut end_idx = close_idx + 1;
+                if body[end_idx..].starts_with(';') {
+                    end_idx += 1;
+                }
+                stmt_text = format!("{decl_name} {}", body[..end_idx].trim());
+                consumed_len =
+                    (rest.len() - after_name.len()) + (after_name.len() - body.len()) + end_idx;
+            } else {
+                let Some(semi_idx) = Self::find_top_level_semicolon(body) else {
+                    break;
+                };
+                stmt_text = format!("{decl_name} {}", body[..semi_idx].trim());
+                consumed_len = (rest.len() - after_name.len())
+                    + (after_name.len() - body.len())
+                    + semi_idx
+                    + 1;
+            }
+            decls.push((decl_name.to_string(), stmt_text));
+            rest = &rest[consumed_len..];
+        }
+        let mut remaining = String::new();
+        if !preserved_adverbs.is_empty() {
+            remaining.push_str(&preserved_adverbs.join(" "));
+            if !rest.trim_start().is_empty() {
+                remaining.push(' ');
+            }
+        }
+        remaining.push_str(rest.trim_start());
+        (decls, remaining)
+    }
+
+    fn regex_match_with_captures_core(&self, pattern: &str, text: &str) -> Option<RegexCaptures> {
         let parsed = self.parse_regex(pattern)?;
         let pkg = self.current_package.clone();
         let chars: Vec<char> = text.chars().collect();
@@ -474,10 +634,173 @@ impl Interpreter {
         None
     }
 
+    fn parse_anchored_single_subrule(pattern: &str) -> Option<String> {
+        let compact: String = pattern.chars().filter(|c| !c.is_whitespace()).collect();
+        let inner = compact.strip_prefix("^<")?.strip_suffix(">$")?;
+        if inner.is_empty() || inner.contains('<') || inner.contains('>') || inner.contains("::") {
+            return None;
+        }
+        Some(inner.to_string())
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn regex_is_match(&mut self, pattern: &str, text: &str) -> bool {
+        self.regex_match_with_captures(pattern, text).is_some()
+    }
+
+    pub(super) fn regex_match_with_captures(
+        &mut self,
+        pattern: &str,
+        text: &str,
+    ) -> Option<RegexCaptures> {
+        if let Some(raw_name) = Self::parse_anchored_single_subrule(pattern) {
+            let spec = Self::parse_named_regex_lookup_spec(&raw_name);
+            let candidates = self.resolve_token_patterns_static_in_pkg(
+                &spec.lookup_name,
+                &self.current_package.clone(),
+            );
+            let mut best: Option<RegexCaptures> = None;
+            for (sub_pat, sub_pkg) in candidates {
+                if sub_pat == pattern {
+                    continue;
+                }
+                let saved_pkg = self.current_package.clone();
+                self.current_package = sub_pkg;
+                let mut caps = self.regex_match_with_captures(&sub_pat, text);
+                self.current_package = saved_pkg;
+                if let Some(mut caps) = caps.take() {
+                    if caps.from != 0 || caps.to != text.chars().count() {
+                        continue;
+                    }
+                    if !spec.silent {
+                        caps.named
+                            .entry(spec.lookup_name.clone())
+                            .or_default()
+                            .push(caps.matched.clone());
+                    }
+                    let better = best.as_ref().map(|b| caps.to > b.to).unwrap_or(true);
+                    if better {
+                        best = Some(caps);
+                    }
+                }
+            }
+            if best.is_some() {
+                return best;
+            }
+        }
+
+        let (declarators, remaining_pattern) = Self::parse_regex_declarative_prefix(pattern);
+        if declarators.is_empty() {
+            return self.regex_match_with_captures_core(pattern, text);
+        }
+
+        let mut restore_always: HashMap<String, Option<Value>> = HashMap::new();
+        let mut restore_on_fail: HashMap<String, Option<Value>> = HashMap::new();
+        let saved_token_defs = self.token_defs.clone();
+
+        for (decl_name, stmt_src) in declarators {
+            let before_env = self.env.clone();
+            let mut handled_state_postfix = false;
+            let mut handled_direct_assign = false;
+            if decl_name == "state" {
+                let state_src = stmt_src.trim_start_matches("state").trim();
+                if let Some(name) = state_src
+                    .strip_prefix('$')
+                    .and_then(|s| s.strip_suffix("++"))
+                    .map(str::trim)
+                {
+                    let cur = match self.env.get(name) {
+                        Some(Value::Int(i)) => *i,
+                        _ => 0,
+                    };
+                    self.env.insert(name.to_string(), Value::Int(cur + 1));
+                    handled_state_postfix = true;
+                } else if let Some(name) = state_src
+                    .strip_prefix('$')
+                    .and_then(|s| s.strip_suffix("--"))
+                    .map(str::trim)
+                {
+                    let cur = match self.env.get(name) {
+                        Some(Value::Int(i)) => *i,
+                        _ => 0,
+                    };
+                    self.env.insert(name.to_string(), Value::Int(cur - 1));
+                    handled_state_postfix = true;
+                }
+            }
+            if !handled_state_postfix && (decl_name == "temp" || decl_name == "let") {
+                let assign_src = if decl_name == "temp" {
+                    stmt_src.trim_start_matches("temp").trim()
+                } else {
+                    stmt_src.trim_start_matches("let").trim()
+                };
+                if let Some((lhs, rhs)) = assign_src.split_once('=') {
+                    let lhs = lhs.trim();
+                    if let Some(name) = lhs.strip_prefix('$').map(str::trim) {
+                        let caps = RegexCaptures::default();
+                        if let Some(value) = self.eval_regex_expr_value(rhs.trim(), &caps) {
+                            self.env.insert(name.to_string(), value);
+                            handled_direct_assign = true;
+                        }
+                    }
+                }
+            }
+            if !handled_state_postfix && !handled_direct_assign {
+                let eval_src = stmt_src.clone();
+                let Ok((stmts, _)) = crate::parse_dispatch::parse_source(&eval_src) else {
+                    self.token_defs = saved_token_defs;
+                    self.restore_env_entries(restore_always);
+                    self.restore_env_entries(restore_on_fail);
+                    return None;
+                };
+                if self.eval_block_value(&stmts).is_err() {
+                    self.token_defs = saved_token_defs;
+                    self.restore_env_entries(restore_always);
+                    self.restore_env_entries(restore_on_fail);
+                    return None;
+                }
+            }
+
+            let mut changed = HashSet::new();
+            for key in before_env.keys() {
+                if before_env.get(key) != self.env.get(key) {
+                    changed.insert(key.clone());
+                }
+            }
+            for key in self.env.keys() {
+                if !before_env.contains_key(key) {
+                    changed.insert(key.clone());
+                }
+            }
+            if matches!(decl_name.as_str(), "my" | "constant" | "temp") {
+                for key in changed {
+                    restore_always
+                        .entry(key.clone())
+                        .or_insert_with(|| before_env.get(&key).cloned());
+                }
+            } else if decl_name == "let" {
+                for key in changed {
+                    restore_on_fail
+                        .entry(key.clone())
+                        .or_insert_with(|| before_env.get(&key).cloned());
+                }
+            }
+        }
+
+        let result = self.regex_match_with_captures_core(&remaining_pattern, text);
+        let matched = result.is_some();
+        self.token_defs = saved_token_defs;
+        self.restore_env_entries(restore_always);
+        if !matched {
+            self.restore_env_entries(restore_on_fail);
+        }
+        result
+    }
+
     /// Match regex anchored at a specific character position.
     /// Returns captures only if the match starts exactly at `pos`.
     pub(crate) fn regex_match_with_captures_at(
-        &self,
+        &mut self,
         pattern: &str,
         text: &str,
         pos: usize,
@@ -588,11 +911,13 @@ impl Interpreter {
         None
     }
 
-    pub(super) fn regex_match_len_at_start(&self, pattern: &str, text: &str) -> Option<usize> {
-        let parsed = self.parse_regex(pattern)?;
-        let pkg = self.current_package.clone();
-        let chars: Vec<char> = text.chars().collect();
-        self.regex_match_end_from_in_pkg(&parsed, &chars, 0, &pkg)
+    pub(super) fn regex_match_len_at_start(&mut self, pattern: &str, text: &str) -> Option<usize> {
+        let captures = self.regex_match_with_captures(pattern, text)?;
+        if captures.from == 0 {
+            Some(captures.to)
+        } else {
+            None
+        }
     }
 
     fn regex_match_len_at_start_in_pkg(
@@ -601,9 +926,18 @@ impl Interpreter {
         text: &str,
         pkg: &str,
     ) -> Option<usize> {
-        let parsed = self.parse_regex(pattern)?;
-        let chars: Vec<char> = text.chars().collect();
-        self.regex_match_end_from_in_pkg(&parsed, &chars, 0, pkg)
+        let mut interp = Interpreter {
+            env: self.env.clone(),
+            functions: self.functions.clone(),
+            proto_functions: self.proto_functions.clone(),
+            token_defs: self.token_defs.clone(),
+            current_package: pkg.to_string(),
+            var_dynamic_flags: self.var_dynamic_flags.clone(),
+            var_type_constraints: self.var_type_constraints.clone(),
+            state_vars: self.state_vars.clone(),
+            ..Default::default()
+        };
+        interp.regex_match_len_at_start(pattern, text)
     }
 
     fn regex_match_end_from_in_pkg(
@@ -1426,15 +1760,32 @@ impl Interpreter {
                 let tail: Vec<char> = chars[pos..].to_vec();
                 let mut best: Option<(usize, RegexCaptures)> = None;
                 for (sub_pat, sub_pkg) in candidates {
-                    if let Some(parsed) = self.parse_regex(&sub_pat)
-                        && let Some((inner_end, inner_caps)) =
-                            self.regex_match_end_from_caps_in_pkg(&parsed, &tail, 0, &sub_pkg)
+                    let tail_text: String = tail.iter().collect();
+                    let mut interp = Interpreter {
+                        env: self.env.clone(),
+                        functions: self.functions.clone(),
+                        proto_functions: self.proto_functions.clone(),
+                        token_defs: self.token_defs.clone(),
+                        current_package: sub_pkg.clone(),
+                        var_dynamic_flags: self.var_dynamic_flags.clone(),
+                        var_type_constraints: self.var_type_constraints.clone(),
+                        state_vars: self.state_vars.clone(),
+                        ..Default::default()
+                    };
+                    if let Some(mut inner_caps) =
+                        interp.regex_match_with_captures(&sub_pat, &tail_text)
                     {
+                        if inner_caps.from != 0 {
+                            continue;
+                        }
+                        let inner_end = inner_caps.to;
                         let better = best
                             .as_ref()
                             .map(|(best_end, _)| inner_end > *best_end)
                             .unwrap_or(true);
                         if better {
+                            inner_caps.from = 0;
+                            inner_caps.to = inner_end;
                             best = Some((inner_end, inner_caps));
                         }
                     }
