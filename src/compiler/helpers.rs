@@ -92,6 +92,23 @@ impl Compiler {
         names.contains(&Self::normalize_dynamic_scope_name(name))
     }
 
+    /// Parse CALLER:: prefix(es) from a variable name.
+    /// Returns (bare_name, depth) where depth is the number of CALLER:: levels.
+    /// E.g. "CALLER::a" -> ("a", 1), "CALLER::CALLER::a" -> ("a", 2).
+    pub(crate) fn parse_caller_prefix(name: &str) -> Option<(String, usize)> {
+        let mut remaining = name;
+        let mut depth = 0;
+        while let Some(rest) = remaining.strip_prefix("CALLER::") {
+            depth += 1;
+            remaining = rest;
+        }
+        if depth > 0 {
+            Some((remaining.to_string(), depth))
+        } else {
+            None
+        }
+    }
+
     pub(super) fn is_normalized_stmt_call_name(name: &str) -> bool {
         matches!(
             name,
@@ -964,6 +981,7 @@ impl Compiler {
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
+                is_dynamic: false,
             },
             Stmt::VarDecl {
                 name: ran_var.clone(),
@@ -971,6 +989,7 @@ impl Compiler {
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
+                is_dynamic: false,
             },
         ];
 

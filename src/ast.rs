@@ -304,6 +304,7 @@ pub(crate) enum Stmt {
         type_constraint: Option<String>,
         is_state: bool,
         is_our: bool,
+        is_dynamic: bool,
     },
     Assign {
         name: String,

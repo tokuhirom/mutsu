@@ -819,6 +819,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
+                is_dynamic: false,
             })
         });
         let step = repeat_param.map(|name| Expr::AssignExpr {
@@ -854,6 +855,7 @@ pub(super) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
+                is_dynamic: false,
             })
         });
         let step = repeat_param.map(|name| Expr::AssignExpr {
@@ -997,6 +999,7 @@ pub(super) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             type_constraint: None,
             is_state: false,
             is_our: false,
+            is_dynamic: false,
         });
     }
     with_body.extend(body);

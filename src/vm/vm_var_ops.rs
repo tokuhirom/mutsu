@@ -1099,6 +1099,20 @@ impl VM {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
+        // Handle $CALLER::varname++ — increment through caller scope
+        if let Some((bare_name, depth)) = crate::compiler::Compiler::parse_caller_prefix(name) {
+            let val = self.interpreter.get_caller_var(&bare_name, depth)?;
+            let new_val = match &val {
+                Value::Int(i) => Value::Int(i + 1),
+                Value::Bool(_) => Value::Bool(true),
+                Value::Rat(n, d) => make_rat(n + d, *d),
+                _ => Value::Int(1),
+            };
+            self.interpreter
+                .set_caller_var(&bare_name, depth, new_val)?;
+            self.stack.push(val);
+            return Ok(());
+        }
         self.interpreter.check_readonly_for_increment(name)?;
         let val = self
             .get_env_with_main_alias(name)
@@ -1431,10 +1445,18 @@ impl VM {
         idx: u32,
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
+        // Check if this variable has a binding alias (e.g. from $CALLER::foo := $other_var)
+        let name = code.locals.get(idx).cloned().unwrap_or_default();
+        if let Some(bound_to) = self.interpreter.resolve_binding(&name) {
+            let bound_to = bound_to.to_string();
+            if let Some(val) = self.interpreter.env().get(&bound_to).cloned() {
+                self.stack.push(val);
+                return Ok(());
+            }
+        }
         let val = self.locals[idx].clone();
         // Fast path: non-Nil values are always valid — skip env lookup
         if matches!(val, Value::Nil) {
-            let name = code.locals.get(idx).cloned().unwrap_or_default();
             let is_internal = name.starts_with("__");
             let is_special = matches!(name.as_str(), "_" | "/" | "!" | "¢");
             if !is_internal && !is_special && !self.interpreter.env().contains_key(&name) {

@@ -1477,6 +1477,36 @@ impl VM {
                 self.exec_set_var_dynamic_op(code, *name_idx, *dynamic);
                 *ip += 1;
             }
+            OpCode::GetCallerVar { name_idx, depth } => {
+                let name = Self::const_str(code, *name_idx);
+                let val = self.interpreter.get_caller_var(name, *depth as usize)?;
+                self.stack.push(val);
+                *ip += 1;
+            }
+            OpCode::SetCallerVar { name_idx, depth } => {
+                let val = self.stack.pop().unwrap_or(Value::Nil);
+                let name = Self::const_str(code, *name_idx);
+                self.interpreter
+                    .set_caller_var(name, *depth as usize, val)?;
+                *ip += 1;
+            }
+            OpCode::BindCallerVar {
+                target_idx,
+                source_idx,
+                depth,
+            } => {
+                let target = Self::const_str(code, *target_idx);
+                let source = Self::const_str(code, *source_idx);
+                self.interpreter
+                    .bind_caller_var(target, source, *depth as usize)?;
+                *ip += 1;
+            }
+            OpCode::GetDynamicVar(name_idx) => {
+                let name = Self::const_str(code, *name_idx);
+                let val = self.interpreter.get_dynamic_var(name)?;
+                self.stack.push(val);
+                *ip += 1;
+            }
             OpCode::AssignExprLocal(idx) => {
                 self.exec_assign_expr_local_op(code, *idx)?;
                 *ip += 1;

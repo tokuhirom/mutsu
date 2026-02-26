@@ -395,6 +395,7 @@ impl Interpreter {
             }
             let saved_env = self.env.clone();
             let saved_readonly = self.save_readonly_vars();
+            self.push_caller_env();
             let mut new_env = saved_env.clone();
             for (k, v) in &data.env {
                 if merge_all {
@@ -412,6 +413,7 @@ impl Interpreter {
                 match self.bind_function_args_values(&data.param_defs, &data.params, &call_args) {
                     Ok(bindings) => bindings,
                     Err(e) => {
+                        self.pop_caller_env();
                         self.env = saved_env;
                         self.restore_readonly_vars(saved_readonly);
                         return Err(e);
@@ -482,6 +484,7 @@ impl Interpreter {
                     self.restore_let_saves(let_mark);
                 }
             }
+            self.pop_caller_env();
             let mut merged = saved_env;
             if merge_all {
                 for (k, v) in self.env.iter() {
