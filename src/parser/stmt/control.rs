@@ -5,6 +5,7 @@ use super::super::parse_result::{PError, PResult, opt_char, parse_char, take_whi
 use crate::ast::{AssignOp, Expr, ParamDef, Stmt, collect_placeholders};
 use crate::token_kind::TokenKind;
 
+use super::decl::parse_array_shape_suffix;
 use super::{block, ident, keyword, parse_comma_or_expr, statement, var_name};
 
 pub(super) fn if_stmt(input: &str) -> PResult<'_, Stmt> {
@@ -271,6 +272,7 @@ pub(super) fn parse_for_params(
                 outer_sub_signature: None,
                 code_signature: None,
                 is_invocant: false,
+                shape_constraints: None,
             };
             return Ok((r, (Some(unpack_name), Some(unpack_def), Vec::new())));
         }
@@ -314,6 +316,7 @@ pub(super) fn parse_for_params(
                 outer_sub_signature: None,
                 code_signature: None,
                 is_invocant: false,
+                shape_constraints: None,
             };
             return Ok((r, (Some(unpack_name), Some(unpack_def), Vec::new())));
         }
@@ -382,6 +385,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 outer_sub_signature: None,
                 code_signature: None,
                 is_invocant: false,
+                shape_constraints: None,
             },
         ));
     }
@@ -407,7 +411,19 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         rest
     };
 
+    let for_original_sigil = rest.as_bytes().first().copied().unwrap_or(b'$');
     let (r, name) = var_name(rest)?;
+
+    // Shape constraint for array parameters
+    let mut shape_constraints = None;
+    let r = if for_original_sigil == b'@' && r.starts_with('[') {
+        let (r2, dims) = parse_array_shape_suffix(r)?;
+        shape_constraints = Some(dims);
+        r2
+    } else {
+        r
+    };
+
     let mut rest = if r.starts_with('?') || r.starts_with('!') {
         &r[1..]
     } else {
@@ -458,6 +474,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             outer_sub_signature: None,
             code_signature: None,
             is_invocant: false,
+            shape_constraints,
         },
     ))
 }
@@ -521,6 +538,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 traits: Vec::new(),
                 optional_marker: false,
                 is_invocant: false,
+                shape_constraints: None,
             },
         ));
     }
@@ -543,7 +561,19 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     } else {
         rest
     };
+    let original_sigil = rest.as_bytes().first().copied().unwrap_or(b'$');
     let (rest, name) = var_name(rest)?;
+
+    // Shape constraint for array parameters: @a[3], @a[*]
+    let mut shape_constraints = None;
+    let rest = if original_sigil == b'@' && rest.starts_with('[') {
+        let (r, dims) = parse_array_shape_suffix(rest)?;
+        shape_constraints = Some(dims);
+        r
+    } else {
+        rest
+    };
+
     // Optional marker on pointy params: $x? / $x!
     let mut rest = if rest.starts_with('?') || rest.starts_with('!') {
         &rest[1..]
@@ -588,10 +618,17 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         rest = r;
     }
 
+    // Prefix name with sigil for proper runtime binding
+    let param_name = match original_sigil {
+        b'@' => format!("@{}", name),
+        b'%' => format!("%{}", name),
+        b'&' => format!("&{}", name),
+        _ => name,
+    };
     Ok((
         rest,
         ParamDef {
-            name,
+            name: param_name,
             default,
             multi_invocant: true,
             required: false,
@@ -608,6 +645,7 @@ pub(super) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             traits,
             optional_marker: false,
             is_invocant: false,
+            shape_constraints,
         },
     ))
 }

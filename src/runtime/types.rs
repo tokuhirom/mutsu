@@ -1455,6 +1455,10 @@ impl Interpreter {
                             positional_idx += 1;
                             continue;
                         }
+                        // Shape constraint check for array parameters
+                        if let Some(shape_exprs) = &pd.shape_constraints {
+                            self.check_shape_constraint(&pd.name, &value, shape_exprs, args)?;
+                        }
                         self.bind_param_value(&pd.name, value);
                         self.set_var_type_constraint(&pd.name, bound_type_constraint.clone());
                     }
@@ -1605,5 +1609,101 @@ impl Interpreter {
             return self.try_coerce_value_for_constraint(&subset.base, value);
         }
         Ok(value)
+    }
+
+    /// Check shape constraint for array parameters in signatures.
+    fn check_shape_constraint(
+        &mut self,
+        param_name: &str,
+        value: &Value,
+        shape_exprs: &[Expr],
+        all_args: &[Value],
+    ) -> Result<(), RuntimeError> {
+        let _ = all_args; // reserved for future use
+        let actual_shape = crate::runtime::utils::shaped_array_shape(value);
+
+        // Evaluate expected dimensions from shape expressions
+        let mut expected_dims: Vec<Option<usize>> = Vec::new();
+        for expr in shape_exprs {
+            match expr {
+                Expr::Whatever | Expr::HyperWhatever => {
+                    // * means any size for this dimension
+                    expected_dims.push(None);
+                }
+                _ => {
+                    let dim_val = self.eval_block_value(&[Stmt::Expr(expr.clone())])?;
+                    match &dim_val {
+                        Value::HyperWhatever => {
+                            expected_dims.push(None);
+                        }
+                        Value::Int(n) => {
+                            expected_dims.push(Some(*n as usize));
+                        }
+                        Value::BigInt(n) => {
+                            use num_traits::ToPrimitive;
+                            expected_dims.push(Some(n.to_usize().unwrap_or(0)));
+                        }
+                        Value::Num(n) if n.is_infinite() || n.is_nan() => {
+                            // Inf/NaN means wildcard (e.g. * coerced to Inf)
+                            expected_dims.push(None);
+                        }
+                        Value::Num(n) => {
+                            expected_dims.push(Some(*n as usize));
+                        }
+                        _ => {
+                            let coerced = crate::runtime::utils::coerce_to_numeric(dim_val);
+                            match &coerced {
+                                Value::Int(n) => expected_dims.push(Some(*n as usize)),
+                                Value::Num(n) if n.is_infinite() || n.is_nan() => {
+                                    expected_dims.push(None);
+                                }
+                                _ => expected_dims.push(None),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Get actual shape
+        let actual = match &actual_shape {
+            Some(shape) => shape.clone(),
+            None => {
+                // Unshaped array - reject unless shape constraint is just [*]
+                // (single wildcard dimension accepts unshaped arrays)
+                if expected_dims.len() == 1 && expected_dims[0].is_none() {
+                    return Ok(());
+                }
+                return Err(RuntimeError::new(format!(
+                    "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected shaped array with {} dimension(s)",
+                    param_name,
+                    expected_dims.len()
+                )));
+            }
+        };
+
+        // Check number of dimensions matches
+        if actual.len() != expected_dims.len() {
+            return Err(RuntimeError::new(format!(
+                "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {} dimension(s), got {}",
+                param_name,
+                expected_dims.len(),
+                actual.len()
+            )));
+        }
+
+        // Check each dimension
+        for (i, (expected, &actual_dim)) in expected_dims.iter().zip(actual.iter()).enumerate() {
+            if let Some(expected_dim) = expected
+                && *expected_dim != actual_dim
+            {
+                return Err(RuntimeError::new(format!(
+                    "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; dimension {} expected {}, got {}",
+                    param_name, i, expected_dim, actual_dim
+                )));
+            }
+        }
+
+        Ok(())
     }
 }

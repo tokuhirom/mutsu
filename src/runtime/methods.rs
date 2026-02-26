@@ -417,7 +417,7 @@ impl Interpreter {
         false
     }
 
-    fn shaped_dims_from_new_args(args: &[Value]) -> Option<Vec<usize>> {
+    fn shaped_dims_from_new_args(&self, args: &[Value]) -> Option<Vec<usize>> {
         let shape_val = args.iter().find_map(|arg| match arg {
             Value::Pair(name, value) if name == "shape" => Some(value.as_ref().clone()),
             _ => None,
@@ -425,13 +425,33 @@ impl Interpreter {
         let dims_vals = match shape_val {
             Value::Array(items, ..) | Value::Seq(items) | Value::Slip(items) => items.to_vec(),
             Value::Int(i) => vec![Value::Int(i)],
+            Value::Package(ref name) => {
+                // Enum type as shape: use the number of enum variants
+                if let Some(variants) = self.enum_types.get(name) {
+                    vec![Value::Int(variants.len() as i64)]
+                } else if name == "Bool" {
+                    // Bool is a builtin enum with 2 values (False, True)
+                    vec![Value::Int(2)]
+                } else {
+                    return None;
+                }
+            }
             _ => return None,
         };
         let mut dims = Vec::with_capacity(dims_vals.len());
-        for dim in dims_vals {
+        for dim in &dims_vals {
             let n = match dim {
-                Value::Int(i) if i >= 0 => i as usize,
-                Value::Num(f) if f >= 0.0 => f as usize,
+                Value::Int(i) if *i >= 0 => *i as usize,
+                Value::Num(f) if *f >= 0.0 => *f as usize,
+                Value::Package(name) => {
+                    if let Some(variants) = self.enum_types.get(name) {
+                        variants.len()
+                    } else if name == "Bool" {
+                        2
+                    } else {
+                        return None;
+                    }
+                }
                 _ => return None,
             };
             dims.push(n);
@@ -445,13 +465,13 @@ impl Interpreter {
         }
         let len = dims[0];
         if dims.len() == 1 {
-            let value = Value::array(vec![Value::Nil; len]);
+            let value = Value::real_array(vec![Value::Nil; len]);
             crate::runtime::utils::mark_shaped_array(&value, Some(dims));
             return value;
         }
         let child = Self::make_shaped_array(&dims[1..]);
         crate::runtime::utils::mark_shaped_array(&child, Some(&dims[1..]));
-        let value = Value::array((0..len).map(|_| child.clone()).collect());
+        let value = Value::real_array((0..len).map(|_| child.clone()).collect());
         crate::runtime::utils::mark_shaped_array(&value, Some(dims));
         value
     }
@@ -823,6 +843,7 @@ impl Interpreter {
                                 outer_sub_signature: None,
                                 code_signature: None,
                                 is_invocant: false,
+                                shape_constraints: None,
                             })
                             .collect()
                     } else {
@@ -847,6 +868,7 @@ impl Interpreter {
                                 outer_sub_signature: None,
                                 code_signature: None,
                                 is_invocant: false,
+                                shape_constraints: None,
                             });
                         }
                         if use_named {
@@ -868,6 +890,7 @@ impl Interpreter {
                                 outer_sub_signature: None,
                                 code_signature: None,
                                 is_invocant: false,
+                                shape_constraints: None,
                             });
                         }
                         defs
@@ -3267,6 +3290,7 @@ impl Interpreter {
                             outer_sub_signature: None,
                             code_signature: None,
                             is_invocant: false,
+                            shape_constraints: None,
                         })
                         .collect(),
                     body: sub_data.body.clone(),
@@ -4698,8 +4722,36 @@ impl Interpreter {
         if let Value::Package(class_name) = &target {
             match class_name.as_str() {
                 "Array" | "List" | "Positional" | "array" => {
-                    if let Some(dims) = Self::shaped_dims_from_new_args(&args) {
-                        return Ok(Self::make_shaped_array(&dims));
+                    if let Some(dims) = self.shaped_dims_from_new_args(&args) {
+                        // Check for :data argument to populate the shaped array
+                        let data = args.iter().find_map(|arg| match arg {
+                            Value::Pair(name, value) if name == "data" => {
+                                Some(value.as_ref().clone())
+                            }
+                            _ => None,
+                        });
+                        let shaped = Self::make_shaped_array(&dims);
+                        if let Some(data_val) = data {
+                            // Populate the shaped array with data
+                            let data_items = match data_val {
+                                Value::Array(items, ..)
+                                | Value::Seq(items)
+                                | Value::Slip(items) => items.to_vec(),
+                                other => vec![other],
+                            };
+                            if let Value::Array(ref items, is_arr) = shaped {
+                                let mut new_items = items.as_ref().clone();
+                                for (i, val) in data_items.into_iter().enumerate() {
+                                    if i < new_items.len() {
+                                        new_items[i] = val;
+                                    }
+                                }
+                                let result = Value::Array(std::sync::Arc::new(new_items), is_arr);
+                                crate::runtime::utils::mark_shaped_array(&result, Some(&dims));
+                                return Ok(result);
+                            }
+                        }
+                        return Ok(shaped);
                     }
                     let mut items = Vec::new();
                     for arg in &args {

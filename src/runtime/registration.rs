@@ -82,6 +82,7 @@ impl Interpreter {
             outer_sub_signature: None,
             code_signature: None,
             is_invocant: false,
+            shape_constraints: None,
         }
     }
 
@@ -509,6 +510,7 @@ impl Interpreter {
                     outer_sub_signature: None,
                     code_signature: None,
                     is_invocant: false,
+                    shape_constraints: None,
                 });
             }
             if use_named {
@@ -530,6 +532,7 @@ impl Interpreter {
                     outer_sub_signature: None,
                     code_signature: None,
                     is_invocant: false,
+                    shape_constraints: None,
                 });
             }
             // If neither @_ nor %_ is used, this is a true empty signature
@@ -730,6 +733,7 @@ impl Interpreter {
                     outer_sub_signature: None,
                     code_signature: None,
                     is_invocant: false,
+                    shape_constraints: None,
                 });
             }
             if use_named {
@@ -751,6 +755,7 @@ impl Interpreter {
                     outer_sub_signature: None,
                     code_signature: None,
                     is_invocant: false,
+                    shape_constraints: None,
                 });
             }
             let is_empty = defs.is_empty();
@@ -1248,6 +1253,7 @@ impl Interpreter {
                             outer_sub_signature: None,
                             code_signature: None,
                             is_invocant: false,
+                            shape_constraints: None,
                         };
                         let mut our_param_defs = vec![self_param];
                         our_param_defs.extend(

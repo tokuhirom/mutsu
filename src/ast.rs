@@ -27,6 +27,8 @@ pub(crate) struct ParamDef {
     pub(crate) code_signature: Option<(Vec<ParamDef>, Option<String>)>,
     /// True when this parameter is the explicit invocant (e.g. `$self:` in a method signature).
     pub(crate) is_invocant: bool,
+    /// Shape constraint for array parameters, e.g. `@a[3]`, `@a[4,4]`, `@a[*]`, `@a[$n]`.
+    pub(crate) shape_constraints: Option<Vec<Expr>>,
 }
 
 #[derive(Debug, Clone)]
@@ -906,6 +908,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                     outer_sub_signature: None,
                     code_signature: None,
                     is_invocant: false,
+                    shape_constraints: None,
                 })
                 .collect(),
             return_type: None,

@@ -856,12 +856,20 @@ pub(super) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
         // Single param: -> $n { body }
         let (r, return_type) = skip_pointy_return_type(r)?;
         let (r, body) = parse_block_body(r)?;
-        let simple_single = first.traits.is_empty();
+        let simple_single = first.traits.is_empty() && first.shape_constraints.is_none();
         if simple_single {
+            // Strip sigil prefix for Lambda (it handles sigils internally)
+            let lambda_name = first
+                .name
+                .strip_prefix('@')
+                .or_else(|| first.name.strip_prefix('%'))
+                .or_else(|| first.name.strip_prefix('&'))
+                .unwrap_or(&first.name)
+                .to_string();
             Ok((
                 r,
                 Expr::Lambda {
-                    param: first.name,
+                    param: lambda_name,
                     body,
                 },
             ))

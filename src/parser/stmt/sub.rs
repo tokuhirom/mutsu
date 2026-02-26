@@ -6,6 +6,7 @@ use crate::token_kind::lookup_unicode_char_by_name;
 use crate::ast::{Expr, ParamDef, Stmt, collect_placeholders};
 use crate::value::Value;
 
+use super::decl::parse_array_shape_suffix;
 use super::{block, ident, keyword, qualified_ident, var_name};
 
 /// Parse a sub name, which can be a regular identifier or an operator-style name
@@ -833,6 +834,7 @@ fn make_param(name: String) -> ParamDef {
         outer_sub_signature: None,
         code_signature: None,
         is_invocant: false,
+        shape_constraints: None,
     }
 }
 
@@ -1562,6 +1564,16 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     let param_sigil = rest.as_bytes().first().copied();
     let (rest, name) = var_name(rest)?;
 
+    // Shape constraint for array parameters: @a[3], @a[4,4], @a[*], @a[$n]
+    let mut shape_constraints = None;
+    let rest = if original_sigil == b'@' && rest.starts_with('[') {
+        let (r, dims) = parse_array_shape_suffix(rest)?;
+        shape_constraints = Some(dims);
+        r
+    } else {
+        rest
+    };
+
     // Code signature constraint: &foo:(Str --> Bool)
     let mut code_sig = None;
     let rest = if original_sigil == b'&' && rest.starts_with(":(") {
@@ -1701,6 +1713,7 @@ pub(super) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     p.where_constraint = where_constraint;
     p.traits = param_traits;
     p.code_signature = code_sig;
+    p.shape_constraints = shape_constraints;
     Ok((rest, p))
 }
 
