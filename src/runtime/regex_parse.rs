@@ -60,6 +60,7 @@ impl Interpreter {
         let mut depth_angle = 0i32;
         let mut escaped = false;
         let mut in_single_quote = false;
+        let mut in_double_quote = false;
         let mut chars = pattern.chars().peekable();
 
         while let Some(ch) = chars.next() {
@@ -73,12 +74,17 @@ impl Interpreter {
                 escaped = true;
                 continue;
             }
-            if ch == '\'' {
+            if ch == '\'' && !in_double_quote {
                 in_single_quote = !in_single_quote;
                 current.push(ch);
                 continue;
             }
-            if in_single_quote {
+            if ch == '"' && !in_single_quote {
+                in_double_quote = !in_double_quote;
+                current.push(ch);
+                continue;
+            }
+            if in_single_quote || in_double_quote {
                 current.push(ch);
                 continue;
             }
@@ -137,6 +143,7 @@ impl Interpreter {
 
     fn has_unquoted_ltm_separator(pattern: &str) -> bool {
         let mut in_single = false;
+        let mut in_double = false;
         let mut escaped = false;
         for ch in pattern.chars() {
             if escaped {
@@ -147,11 +154,15 @@ impl Interpreter {
                 escaped = true;
                 continue;
             }
-            if ch == '\'' {
+            if ch == '\'' && !in_double {
                 in_single = !in_single;
                 continue;
             }
-            if !in_single && ch == '%' {
+            if ch == '"' && !in_single {
+                in_double = !in_double;
+                continue;
+            }
+            if !in_single && !in_double && ch == '%' {
                 return true;
             }
         }
@@ -693,6 +704,32 @@ impl Interpreter {
                             break;
                         }
                         literal.push(ch);
+                    }
+                    regex_single_quote_atom(literal, ignore_case)
+                }
+                '"' | '\u{201C}' | '\u{201E}' => {
+                    // Double-quoted literal string in Raku regex: "foo" matches literally
+                    // TODO: support interpolation inside double-quoted regex strings
+                    let close = match c {
+                        '"' => '"',
+                        '\u{201C}' | '\u{201E}' => '\u{201D}',
+                        _ => unreachable!(),
+                    };
+                    let mut literal = String::new();
+                    loop {
+                        match chars.next() {
+                            Some('\\') => match chars.next() {
+                                Some('n') => literal.push('\n'),
+                                Some('t') => literal.push('\t'),
+                                Some('r') => literal.push('\r'),
+                                Some('0') => literal.push('\0'),
+                                Some(other) => literal.push(other),
+                                None => break,
+                            },
+                            Some(ch) if ch == close => break,
+                            Some(ch) => literal.push(ch),
+                            None => break,
+                        }
                     }
                     regex_single_quote_atom(literal, ignore_case)
                 }
