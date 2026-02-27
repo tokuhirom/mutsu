@@ -1809,6 +1809,27 @@ pub(super) fn is_known_call(name: &str) -> bool {
     KNOWN_CALLS.contains(&name) || is_imported_function(name)
 }
 
+/// Return true when parsing this known call as a standalone statement would
+/// truncate a larger expression (e.g. `defined($x) ?? 1 !! 2`).
+fn known_call_is_expression_prefix(input: &str, rest_after_call: &str) -> bool {
+    let Ok((rest_after_call, _)) = ws(rest_after_call) else {
+        return false;
+    };
+    if rest_after_call.is_empty()
+        || rest_after_call.starts_with(';')
+        || rest_after_call.starts_with('}')
+    {
+        return false;
+    }
+    if is_stmt_modifier_keyword(rest_after_call) {
+        return false;
+    }
+    if let Ok((expr_rest, _)) = expression(input) {
+        return expr_rest.len() < rest_after_call.len();
+    }
+    false
+}
+
 /// Parse a known function call as statement.
 pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, name) = ident(input)?;
@@ -1842,6 +1863,9 @@ pub(super) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
         })?
     };
     let mut args = args;
+    if known_call_is_expression_prefix(input, rest) {
+        return Err(PError::expected("known function call"));
+    }
     if is_test_assertion_callable(&name) {
         args.push(crate::ast::CallArg::Named {
             name: "__mutsu_test_callsite_line".to_string(),
