@@ -1,8 +1,10 @@
 use super::super::expr::expression;
 use super::super::helpers::{skip_balanced_parens, ws, ws1};
-use super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
+use super::super::parse_result::{
+    PError, PResult, merge_expected_messages, opt_char, parse_char, take_while1,
+};
 
-use crate::ast::{Expr, Stmt};
+use crate::ast::{AssignOp, Expr, Stmt};
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
@@ -27,6 +29,27 @@ fn strip_type_smiley_suffix(type_name: &str) -> &str {
 fn typed_default_expr(type_name: &str) -> Expr {
     if strip_type_smiley_suffix(type_name) == "Mu" {
         Expr::BareWord("Mu".to_string())
+    } else {
+        Expr::Literal(Value::Nil)
+    }
+}
+
+fn default_decl_expr(
+    is_array: bool,
+    is_hash: bool,
+    shape_dims: Option<&[Expr]>,
+    type_constraint: Option<&str>,
+) -> Expr {
+    if is_array {
+        if let Some(dims) = shape_dims {
+            shaped_array_new_expr(dims.to_vec())
+        } else {
+            Expr::Literal(Value::real_array(Vec::new()))
+        }
+    } else if is_hash {
+        Expr::Hash(Vec::new())
+    } else if let Some(tc) = type_constraint {
+        typed_default_expr(tc)
     } else {
         Expr::Literal(Value::Nil)
     }
@@ -760,6 +783,83 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     }
 
     // Assignment
+    if let Some((stripped, op)) = super::assign::parse_compound_assign_op(rest) {
+        let (rest, _) = ws(stripped)?;
+        let (rest, rhs) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected right-hand expression after compound assignment",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(rest.len())),
+        })?;
+        let decl_stmt = Stmt::VarDecl {
+            name: name.clone(),
+            expr: default_decl_expr(
+                is_array,
+                is_hash,
+                shape_dims.as_deref(),
+                type_constraint.as_deref(),
+            ),
+            type_constraint: type_constraint.clone(),
+            is_state,
+            is_our,
+            is_dynamic: has_dynamic_trait,
+            is_export: has_export_trait,
+            export_tags: export_tags.clone(),
+        };
+        let assign_stmt = Stmt::Assign {
+            name: name.clone(),
+            expr: super::assign::compound_assigned_value_expr(Expr::Var(name.clone()), op, rhs),
+            op: AssignOp::Assign,
+        };
+        let stmt = Stmt::SyntheticBlock(vec![decl_stmt, assign_stmt]);
+        if apply_modifier {
+            return parse_statement_modifier(rest, stmt);
+        }
+        return Ok((rest, stmt));
+    }
+    if let Some((stripped, op_name)) = super::assign::parse_custom_compound_assign_op(rest) {
+        let (rest, _) = ws(stripped)?;
+        let (rest, rhs) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected right-hand expression after compound assignment",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(rest.len())),
+        })?;
+        let decl_stmt = Stmt::VarDecl {
+            name: name.clone(),
+            expr: default_decl_expr(
+                is_array,
+                is_hash,
+                shape_dims.as_deref(),
+                type_constraint.as_deref(),
+            ),
+            type_constraint: type_constraint.clone(),
+            is_state,
+            is_our,
+            is_dynamic: has_dynamic_trait,
+            is_export: has_export_trait,
+            export_tags: export_tags.clone(),
+        };
+        let assign_stmt = Stmt::Assign {
+            name: name.clone(),
+            expr: Expr::InfixFunc {
+                name: op_name,
+                left: Box::new(Expr::Var(name.clone())),
+                right: vec![rhs],
+                modifier: None,
+            },
+            op: AssignOp::Assign,
+        };
+        let stmt = Stmt::SyntheticBlock(vec![decl_stmt, assign_stmt]);
+        if apply_modifier {
+            return parse_statement_modifier(rest, stmt);
+        }
+        return Ok((rest, stmt));
+    }
+
+    // Assignment
     if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
@@ -887,19 +987,12 @@ fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, Stmt> {
     }
 
     let (rest, _) = opt_char(rest, ';');
-    let expr = if is_array {
-        if let Some(dims) = shape_dims {
-            shaped_array_new_expr(dims)
-        } else {
-            Expr::Literal(Value::real_array(Vec::new()))
-        }
-    } else if is_hash {
-        Expr::Hash(Vec::new())
-    } else if let Some(tc) = type_constraint.as_deref() {
-        typed_default_expr(tc)
-    } else {
-        Expr::Literal(Value::Nil)
-    };
+    let expr = default_decl_expr(
+        is_array,
+        is_hash,
+        shape_dims.as_deref(),
+        type_constraint.as_deref(),
+    );
     Ok((
         rest,
         Stmt::VarDecl {
